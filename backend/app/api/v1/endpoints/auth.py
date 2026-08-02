@@ -39,7 +39,7 @@ async def register(payload: RegisterRequest, db: AsyncSession = Depends(get_db))
         user = User(name=payload.name, email=payload.email, hashed_password=payload.password, organization_id=org.id, role="Admin")
         db.add(user)
         await db.commit()
-        return {"message": "Registration successful", "user_id": user.id, "org_id": org.id}
+        return {"message": "Registration successful", "user_id": user.id, "org_id": org.id, "name": user.name, "email": user.email, "role": user.role}
     except HTTPException:
         await db.rollback()
         raise

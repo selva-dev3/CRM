@@ -1,3 +1,4 @@
+import io
 from fastapi import APIRouter, HTTPException, status, Query, Depends
 from typing import List, Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -5,6 +6,7 @@ from sqlalchemy import select, func
 from app.database import get_db
 from app.models import ReportExport, Deal, Lead
 from app.schemas.crm_schemas import ReportData, MessageResponse
+from app.services.s3_service import s3_service
 
 router = APIRouter()
 
@@ -89,16 +91,23 @@ async def delete_custom_report(report_id: str, db: AsyncSession = Depends(get_db
 async def export_report_pdf(report_type: str, db: AsyncSession = Depends(get_db)):
     return {"pdf_url": f"https://api.crm.com/exports/reports_{report_type}.pdf"}
 
-@router.post("/export/csv", summary="Export report dataset to CSV spreadsheet")
+@router.post("/export/csv", summary="Generate CSV report dataset and upload to MinIO S3 bucket")
 async def export_report_csv(report_type: str, db: AsyncSession = Depends(get_db)):
     try:
-        r = ReportExport(organization_id="org-1", report_type=report_type, file_format="csv", download_url=f"https://api.crm.com/exports/reports_{report_type}.csv", requested_by="usr-1")
+        csv_content = f"Report Type,Generated At\n{report_type},2026-08-02\n".encode("utf-8")
+        file_obj = io.BytesIO(csv_content)
+        
+        object_name = f"exports/{report_type}.csv"
+        s3_key = s3_service.upload_file(file_obj, object_name=object_name, content_type="text/csv")
+        presigned_url = s3_service.generate_presigned_url(s3_key)
+
+        r = ReportExport(organization_id="org-1", report_type=report_type, file_format="csv", download_url=presigned_url, requested_by="usr-1")
         db.add(r)
         await db.commit()
         return {"csv_url": r.download_url}
     except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Report S3 export failed: {str(e)}")
 
 @router.post("/schedule", response_model=MessageResponse, summary="Schedule recurring automated email delivery of report")
 async def schedule_report_email(report_type: str, email: str, frequency: str = "Weekly", db: AsyncSession = Depends(get_db)):

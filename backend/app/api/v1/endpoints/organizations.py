@@ -1,10 +1,11 @@
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
 from app.models import Organization, OrganizationSetting, OrganizationSubscription
 from app.schemas.crm_schemas import OrganizationResponse, OrganizationUpdate, MessageResponse
+from app.services.s3_service import s3_service
 
 router = APIRouter()
 
@@ -73,9 +74,21 @@ async def get_usage(db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
     return {"users_used": 1, "users_limit": org.max_users, "storage_gb_used": 0.5, "storage_gb_limit": 500.0}
 
-@router.post("/branding", response_model=MessageResponse, summary="Update organization branding & colors")
-async def update_branding(logo_url: Optional[str] = None, primary_color: Optional[str] = "#3B82F6", db: AsyncSession = Depends(get_db)):
-    return {"message": "Organization branding updated", "status": "success"}
+@router.post("/branding", response_model=MessageResponse, summary="Update organization branding & upload logo to MinIO S3")
+async def update_branding(logo_file: Optional[UploadFile] = File(None), primary_color: Optional[str] = "#3B82F6", db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(Organization).limit(1))
+    org = res.scalars().first()
+    if not org:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+    try:
+        logo_url = None
+        if logo_file:
+            object_name = f"branding/{org.id}_{logo_file.filename}"
+            s3_key = s3_service.upload_file(logo_file.file, object_name=object_name, content_type=logo_file.content_type)
+            logo_url = s3_service.generate_presigned_url(s3_key)
+        return {"message": "Organization branding and logo updated on S3", "status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Branding S3 upload failed: {str(e)}")
 
 @router.post("/domains/verify", response_model=MessageResponse, summary="Verify organization custom domain TXT record")
 async def verify_domain(domain: str, db: AsyncSession = Depends(get_db)):

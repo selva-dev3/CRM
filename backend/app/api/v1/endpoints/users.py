@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, Query, Depends
+from fastapi import APIRouter, HTTPException, status, Query, Depends, UploadFile, File
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -8,6 +8,7 @@ from app.schemas.crm_schemas import (
     UserResponse, UserCreate, UserUpdate, UserProfileUpdate, UserInviteRequest,
     MessageResponse, BulkDeleteRequest, BulkActionResponse
 )
+from app.services.s3_service import s3_service
 
 router = APIRouter()
 
@@ -56,9 +57,23 @@ async def update_my_profile(payload: UserProfileUpdate, db: AsyncSession = Depen
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-@router.post("/me/avatar", response_model=MessageResponse, summary="Upload user avatar picture")
-async def upload_avatar(db: AsyncSession = Depends(get_db)):
-    return {"message": "Avatar uploaded successfully", "status": "success"}
+@router.post("/me/avatar", response_model=MessageResponse, summary="Upload user avatar picture to MinIO S3")
+async def upload_avatar(file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(User).limit(1))
+    u = res.scalars().first()
+    if not u:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    try:
+        object_name = f"avatars/{u.id}_{file.filename}"
+        s3_key = s3_service.upload_file(file.file, object_name=object_name, content_type=file.content_type)
+        avatar_url = s3_service.generate_presigned_url(s3_key)
+        
+        u.avatar_url = avatar_url
+        await db.commit()
+        return {"message": "Avatar uploaded to MinIO S3 successfully", "status": "success"}
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"S3 Avatar upload failed: {str(e)}")
 
 @router.get("/{user_id}", response_model=UserResponse, summary="Get user details by ID")
 async def get_user(user_id: str, db: AsyncSession = Depends(get_db)):

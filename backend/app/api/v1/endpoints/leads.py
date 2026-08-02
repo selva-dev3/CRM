@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, Query, Depends
+from fastapi import APIRouter, HTTPException, status, Query, Depends, UploadFile, File
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -8,6 +8,7 @@ from app.schemas.crm_schemas import (
     LeadResponse, LeadCreate, LeadUpdate, LeadConvertRequest, MessageResponse, BulkDeleteRequest, BulkActionResponse,
     NoteResponse, TaskResponse, TaskCreate, EmailResponse, EmailSendRequest, CallLogResponse, CallLogBase, DocumentResponse
 )
+from app.services.s3_service import s3_service
 
 router = APIRouter()
 
@@ -250,17 +251,30 @@ async def log_lead_call(lead_id: str, payload: CallLogBase, db: AsyncSession = D
 
 @router.get("/{lead_id}/documents", response_model=List[DocumentResponse], summary="List documents attached to lead")
 async def get_lead_documents(lead_id: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(Lead).where(Lead.id == lead_id))
-    if not res.scalars().first():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Lead '{lead_id}' not found")
-    return []
+    res = await db.execute(select(LeadAttachment).where(LeadAttachment.lead_id == lead_id))
+    atts = res.scalars().all()
+    return [{"id": a.id, "filename": a.filename, "file_size": a.file_size or 0, "mime_type": a.mime_type or "application/pdf", "download_url": a.file_url or "", "uploaded_at": str(a.created_at)} for a in atts]
 
-@router.post("/{lead_id}/documents", response_model=DocumentResponse, summary="Attach document to lead")
-async def upload_lead_document(lead_id: str, filename: str, db: AsyncSession = Depends(get_db)):
+@router.post("/{lead_id}/documents", response_model=DocumentResponse, summary="Attach document file to lead via MinIO S3")
+async def upload_lead_document(lead_id: str, file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Lead).where(Lead.id == lead_id))
     if not res.scalars().first():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Lead '{lead_id}' not found")
-    return {"id": "doc-new", "filename": filename, "file_size": 204800, "mime_type": "application/pdf", "download_url": f"https://api.crm.com/docs/{filename}", "uploaded_at": "2026-08-02"}
+    try:
+        object_name = f"leads/{lead_id}/{file.filename}"
+        s3_key = s3_service.upload_file(file.file, object_name=object_name, content_type=file.content_type)
+        presigned_url = s3_service.generate_presigned_url(s3_key)
+        
+        file.file.seek(0, 2)
+        file_size = file.file.tell()
+
+        att = LeadAttachment(lead_id=lead_id, filename=file.filename, file_url=presigned_url, file_size=file_size, mime_type=file.content_type)
+        db.add(att)
+        await db.commit()
+        return {"id": att.id, "filename": att.filename, "file_size": att.file_size, "mime_type": att.mime_type, "download_url": att.file_url, "uploaded_at": str(att.created_at)}
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Lead attachment S3 upload failed: {str(e)}")
 
 @router.post("/{lead_id}/archive", response_model=MessageResponse, summary="Archive lead")
 async def archive_lead(lead_id: str, db: AsyncSession = Depends(get_db)):

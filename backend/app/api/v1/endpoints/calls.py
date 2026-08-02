@@ -5,6 +5,7 @@ from sqlalchemy import select
 from app.database import get_db
 from app.models import CallLog
 from app.schemas.crm_schemas import CallLogResponse, CallLogBase, MessageResponse, BulkDeleteRequest, BulkActionResponse
+from app.services.s3_service import s3_service
 
 router = APIRouter()
 
@@ -85,12 +86,17 @@ async def delete_call(call_id: str, db: AsyncSession = Depends(get_db)):
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-@router.get("/{call_id}/recording", summary="Get audio recording URL for call")
+@router.get("/{call_id}/recording", summary="Get MinIO S3 audio recording presigned URL for call")
 async def get_call_recording(call_id: str, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(CallLog).where(CallLog.id == call_id))
-    if not res.scalars().first():
+    c = res.scalars().first()
+    if not c:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Call log '{call_id}' not found")
-    return {"call_id": call_id, "recording_url": f"https://api.crm.com/recordings/{call_id}.mp3", "duration_seconds": 0}
+    try:
+        recording_url = s3_service.generate_presigned_url(f"recordings/{call_id}.mp3")
+        return {"call_id": call_id, "recording_url": recording_url, "duration_seconds": c.duration_seconds}
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to generate S3 recording URL: {str(e)}")
 
 @router.get("/{call_id}/sentiment", summary="Get AI voice sentiment analysis & emotion score")
 async def get_call_sentiment(call_id: str, db: AsyncSession = Depends(get_db)):
