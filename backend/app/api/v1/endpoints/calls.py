@@ -10,22 +10,24 @@ router = APIRouter()
 
 @router.get("", response_model=List[CallLogResponse], summary="List all call logs")
 async def list_calls(page: int = 1, limit: int = 20, db: AsyncSession = Depends(get_db)):
-    stmt = select(CallLog).offset((page - 1) * limit).limit(limit)
-    res = await db.execute(stmt)
-    calls = res.scalars().all()
-    if calls:
+    try:
+        stmt = select(CallLog).offset((page - 1) * limit).limit(limit)
+        res = await db.execute(stmt)
+        calls = res.scalars().all()
         return [{"id": c.id, "contact_id": c.contact_id, "call_type": c.call_type, "duration_seconds": c.duration_seconds, "notes": c.notes, "timestamp": str(c.timestamp)} for c in calls]
-    return [
-        {"id": "cl-1", "contact_id": "cnt-1", "call_type": "Outbound", "duration_seconds": 320, "notes": "Discussed feature roadmap", "timestamp": "2026-08-02T11:30:00Z"},
-        {"id": "cl-2", "contact_id": "cnt-2", "call_type": "Inbound", "duration_seconds": 140, "notes": "Inquired about enterprise SLA", "timestamp": "2026-08-02T09:15:00Z"}
-    ]
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 @router.post("", response_model=CallLogResponse, status_code=status.HTTP_201_CREATED, summary="Log a new call manually")
 async def log_call(payload: CallLogBase, db: AsyncSession = Depends(get_db)):
-    c = CallLog(organization_id="org-1", contact_id=payload.contact_id, call_type=payload.call_type, duration_seconds=payload.duration_seconds, notes=payload.notes)
-    db.add(c)
-    await db.commit()
-    return {"id": c.id, "contact_id": c.contact_id, "call_type": c.call_type, "duration_seconds": c.duration_seconds, "notes": c.notes, "timestamp": str(c.timestamp)}
+    try:
+        c = CallLog(organization_id="org-1", contact_id=payload.contact_id, call_type=payload.call_type, duration_seconds=payload.duration_seconds, notes=payload.notes)
+        db.add(c)
+        await db.commit()
+        return {"id": c.id, "contact_id": c.contact_id, "call_type": c.call_type, "duration_seconds": c.duration_seconds, "notes": c.notes, "timestamp": str(c.timestamp)}
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to log call: {str(e)}")
 
 @router.post("/trigger-outbound", summary="Trigger click-to-dial call via Twilio/telephony")
 async def trigger_outbound_call(phone_number: str, contact_id: str, db: AsyncSession = Depends(get_db)):
@@ -41,7 +43,7 @@ async def create_call_disposition(name: str, db: AsyncSession = Depends(get_db))
 
 @router.get("/stats/rep-performance", summary="Get telephony statistics per sales rep")
 async def get_call_stats(db: AsyncSession = Depends(get_db)):
-    return [{"user_id": "usr-1", "total_calls": 45, "total_duration_mins": 185.0, "avg_duration_secs": 246}]
+    return []
 
 @router.post("/voicemail", response_model=MessageResponse, summary="Log voicemail drop execution")
 async def log_voicemail_drop(contact_id: str, voicemail_template_id: str, db: AsyncSession = Depends(get_db)):
@@ -49,29 +51,50 @@ async def log_voicemail_drop(contact_id: str, voicemail_template_id: str, db: As
 
 @router.post("/bulk-delete", response_model=BulkActionResponse, summary="Bulk delete call logs")
 async def bulk_delete_calls(payload: BulkDeleteRequest, db: AsyncSession = Depends(get_db)):
-    return {"affected_count": len(payload.ids), "message": "Call logs deleted successfully"}
+    try:
+        stmt = select(CallLog).where(CallLog.id.in_(payload.ids))
+        res = await db.execute(stmt)
+        items = res.scalars().all()
+        for item in items:
+            await db.delete(item)
+        await db.commit()
+        return {"affected_count": len(items), "message": "Call logs deleted successfully"}
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 @router.get("/{call_id}", response_model=CallLogResponse, summary="Get call log details by ID")
 async def get_call(call_id: str, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(CallLog).where(CallLog.id == call_id))
     c = res.scalars().first()
-    if c:
-        return {"id": c.id, "contact_id": c.contact_id, "call_type": c.call_type, "duration_seconds": c.duration_seconds, "notes": c.notes, "timestamp": str(c.timestamp)}
-    return {"id": call_id, "contact_id": "cnt-1", "call_type": "Outbound", "duration_seconds": 320, "notes": "Discussed feature roadmap", "timestamp": "2026-08-02T11:30:00Z"}
+    if not c:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Call log '{call_id}' not found")
+    return {"id": c.id, "contact_id": c.contact_id, "call_type": c.call_type, "duration_seconds": c.duration_seconds, "notes": c.notes, "timestamp": str(c.timestamp)}
 
 @router.delete("/{call_id}", response_model=MessageResponse, summary="Delete call log by ID")
 async def delete_call(call_id: str, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(CallLog).where(CallLog.id == call_id))
     c = res.scalars().first()
-    if c:
+    if not c:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Call log '{call_id}' not found")
+    try:
         await db.delete(c)
         await db.commit()
-    return {"message": f"Call log {call_id} deleted", "status": "success"}
+        return {"message": f"Call log {call_id} deleted successfully", "status": "success"}
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 @router.get("/{call_id}/recording", summary="Get audio recording URL for call")
 async def get_call_recording(call_id: str, db: AsyncSession = Depends(get_db)):
-    return {"call_id": call_id, "recording_url": f"https://api.crm.com/recordings/{call_id}.mp3", "duration_seconds": 320}
+    res = await db.execute(select(CallLog).where(CallLog.id == call_id))
+    if not res.scalars().first():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Call log '{call_id}' not found")
+    return {"call_id": call_id, "recording_url": f"https://api.crm.com/recordings/{call_id}.mp3", "duration_seconds": 0}
 
 @router.get("/{call_id}/sentiment", summary="Get AI voice sentiment analysis & emotion score")
 async def get_call_sentiment(call_id: str, db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(CallLog).where(CallLog.id == call_id))
+    if not res.scalars().first():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Call log '{call_id}' not found")
     return {"call_id": call_id, "overall_sentiment": "Positive", "confidence_score": 0.89, "customer_interest": "High"}

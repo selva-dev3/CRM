@@ -10,23 +10,21 @@ router = APIRouter()
 
 @router.get("", response_model=List[NotificationItem], summary="List notifications for logged in user")
 async def list_notifications(page: int = 1, limit: int = 20, unread_only: bool = False, db: AsyncSession = Depends(get_db)):
-    stmt = select(Notification).offset((page - 1) * limit).limit(limit)
-    if unread_only:
-        stmt = stmt.where(Notification.is_read == False)
-    res = await db.execute(stmt)
-    notifications = res.scalars().all()
-    if notifications:
+    try:
+        stmt = select(Notification).offset((page - 1) * limit).limit(limit)
+        if unread_only:
+            stmt = stmt.where(Notification.is_read == False)
+        res = await db.execute(stmt)
+        notifications = res.scalars().all()
         return [{"id": n.id, "title": n.title, "message": n.message, "is_read": n.is_read, "created_at": str(n.created_at)} for n in notifications]
-    return [
-        {"id": "ntf-1", "title": "New Lead Assigned", "message": "Lead Alice Johnson assigned to you", "is_read": False, "created_at": "2026-08-02T10:00:00Z"},
-        {"id": "ntf-2", "title": "Task Overdue", "message": "Task 'Follow up TechCorp' is overdue", "is_read": True, "created_at": "2026-08-01T15:00:00Z"}
-    ]
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 @router.get("/unread-count", summary="Get unread notification count badge")
 async def get_unread_count(db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Notification).where(Notification.is_read == False))
     items = res.scalars().all()
-    return {"unread_count": len(items) if items else 5}
+    return {"unread_count": len(items)}
 
 @router.post("/read-all", response_model=MessageResponse, summary="Mark all notifications as read")
 async def mark_all_notifications_read(db: AsyncSession = Depends(get_db)):
@@ -54,22 +52,42 @@ async def send_system_alert(title: str, message: str, db: AsyncSession = Depends
 
 @router.post("/bulk-delete", response_model=BulkActionResponse, summary="Bulk delete notifications")
 async def bulk_delete_notifications(payload: BulkDeleteRequest, db: AsyncSession = Depends(get_db)):
-    return {"affected_count": len(payload.ids), "message": "Notifications deleted successfully"}
+    try:
+        stmt = select(Notification).where(Notification.id.in_(payload.ids))
+        res = await db.execute(stmt)
+        items = res.scalars().all()
+        for item in items:
+            await db.delete(item)
+        await db.commit()
+        return {"affected_count": len(items), "message": "Notifications deleted successfully"}
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 @router.post("/{notification_id}/read", response_model=MessageResponse, summary="Mark single notification as read")
 async def mark_notification_read(notification_id: str, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Notification).where(Notification.id == notification_id))
     n = res.scalars().first()
-    if n:
+    if not n:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Notification '{notification_id}' not found")
+    try:
         n.is_read = True
         await db.commit()
-    return {"message": f"Notification {notification_id} marked as read", "status": "success"}
+        return {"message": f"Notification {notification_id} marked as read", "status": "success"}
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 @router.delete("/{notification_id}", response_model=MessageResponse, summary="Delete single notification")
 async def delete_notification(notification_id: str, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Notification).where(Notification.id == notification_id))
     n = res.scalars().first()
-    if n:
+    if not n:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Notification '{notification_id}' not found")
+    try:
         await db.delete(n)
         await db.commit()
-    return {"message": f"Notification {notification_id} deleted", "status": "success"}
+        return {"message": f"Notification {notification_id} deleted", "status": "success"}
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
