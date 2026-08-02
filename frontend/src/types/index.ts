@@ -1,0 +1,167 @@
+// CRM Core Domain Types
+
+export type UserRole =
+  | 'Super Admin'
+  | 'Organization Admin'
+  | 'Sales Manager'
+  | 'Sales Executive'
+  | 'Marketing Executive'
+  | 'Customer Support';
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  avatar?: string;
+  organizationId: string;
+  createdAt: string;
+}
+
+export interface Lead {
+  id: string;
+  title: string;
+  company: string;
+  contactName: string;
+  email: string;
+  phone: string;
+  status: 'New' | 'Contacted' | 'Qualified' | 'Unqualified' | 'Converted';
+  score?: number; // AI Lead Score
+  assignedTo?: string;
+  createdAt: string;
+}
+
+export interface Contact {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  companyId?: string;
+  position?: string;
+  createdAt: string;
+}
+
+export interface Company {
+  id: string;
+  name: string;
+  industry: string;
+  website?: string;
+  size?: string;
+  createdAt: string;
+}
+
+export type DealStage = 'Prospecting' | 'Qualification' | 'Proposal' | 'Negotiation' | 'Closed Won' | 'Closed Lost';
+
+export interface Deal {
+  id: string;
+  title: string;
+  amount: number;
+  stage: DealStage;
+  contactId?: string;
+  companyId?: string;
+  expectedCloseDate: string;
+  probability: number;
+  assignedTo: string;
+}
+
+export interface Task {
+  id: string;
+  title: string;
+  description?: string;
+  dueDate: string;
+  priority: 'Low' | 'Medium' | 'High' | 'Urgent';
+  status: 'Pending' | 'In Progress' | 'Completed';
+  assignedTo: string;
+}
+
+export interface Meeting {
+  id: string;
+  title: string;
+  startTime: string;
+  endTime: string;
+  attendees: string[];
+  meetingLink?: string;
+  summary?: string; // AI Meeting Summary
+}
+
+export interface Call {
+  id: string;
+  contactId: string;
+  type: 'Inbound' | 'Outbound';
+  duration: number; // in seconds
+  notes?: string;
+  timestamp: string;
+}
+
+export interface Email {
+  id: string;
+  to: string[];
+  from: string;
+  subject: string;
+  body: string;
+  sentAt: string;
+  isAiGenerated?: boolean;
+}
+
+export interface Note {
+  id: string;
+  entityType: 'Lead' | 'Contact' | 'Deal' | 'Company';
+  entityId: string;
+  content: string;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface Document {
+  id: string;
+  name: string;
+  url: string;
+  size: number;
+  type: string;
+  uploadedAt: string;
+}
+
+export interface Product {
+  id: string;
+  name: string;
+  sku: string;
+  price: number;
+  category: string;
+}
+
+export interface Quote {
+  id: string;
+  quoteNumber: string;
+  dealId?: string;
+  items: { productId: string; quantity: number; unitPrice: number }[];
+  totalAmount: number;
+  status: 'Draft' | 'Sent' | 'Accepted' | 'Declined';
+  validUntil: string;
+}
+
+export interface Invoice {
+  id: string;
+  invoiceNumber: string;
+  quoteId?: string;
+  amount: number;
+  status: 'Draft' | 'Issued' | 'Paid' | 'Overdue';
+  dueDate: string;
+  issuedAt: string;
+}
+
+export interface Report {
+  id: string;
+  title: string;
+  type: 'Sales Forecast' | 'Lead Conversion' | 'Revenue' | 'Activity';
+  data: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface Notification {
+  id: string;
+  userId: string;
+  title: string;
+  message: string;
+  isRead: boolean;
+  createdAt: string;
+}
