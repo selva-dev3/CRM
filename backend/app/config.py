@@ -21,10 +21,11 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
 
-    # AWS S3 Storage
-    AWS_ACCESS_KEY_ID: Optional[str] = None
-    AWS_SECRET_ACCESS_KEY: Optional[str] = None
-    AWS_S3_BUCKET: Optional[str] = None
+    # AWS S3 / MinIO Storage
+    AWS_ENDPOINT_URL: str = "http://minio:9000"
+    AWS_ACCESS_KEY_ID: str = "minioadmin"
+    AWS_SECRET_ACCESS_KEY: str = "minioadmin"
+    AWS_S3_BUCKET: str = "crm-enterprise-bucket"
     AWS_REGION: str = "us-east-1"
 
     # AI API Keys
