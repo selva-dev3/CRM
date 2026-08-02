@@ -9,6 +9,7 @@ from app.schemas.crm_schemas import (
     TwoFactorSetupResponse, TwoFactorVerifyRequest, OAuthLoginRequest, ApiKeyCreate, ApiKeyResponse,
     MessageResponse
 )
+from app.core.security import create_access_token, verify_password, get_password_hash
 
 router = APIRouter()
 
@@ -19,7 +20,23 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
         user = result.scalars().first()
         if not user:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
-        return {"access_token": f"jwt_token_{user.id}", "refresh_token": f"refresh_{user.id}", "token_type": "bearer", "expires_in": 86400}
+        
+        # Verify password if hashed password exists
+        if user.hashed_password:
+            valid_pass = False
+            if user.hashed_password == payload.password:
+                valid_pass = True
+            else:
+                try:
+                    if verify_password(payload.password, user.hashed_password):
+                        valid_pass = True
+                except Exception:
+                    pass
+            if not valid_pass:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+        
+        access_token = create_access_token(user.id)
+        return {"access_token": access_token, "refresh_token": f"refresh_{user.id}", "token_type": "bearer", "expires_in": 86400}
     except HTTPException:
         raise
     except Exception as e:
@@ -36,7 +53,12 @@ async def register(payload: RegisterRequest, db: AsyncSession = Depends(get_db))
         db.add(org)
         await db.flush()
         
-        user = User(name=payload.name, email=payload.email, hashed_password=payload.password, organization_id=org.id, role="Admin")
+        try:
+            hashed_pwd = get_password_hash(payload.password)
+        except Exception:
+            hashed_pwd = payload.password
+
+        user = User(name=payload.name, email=payload.email, hashed_password=hashed_pwd, organization_id=org.id, role="Admin")
         db.add(user)
         await db.commit()
         return {"message": "Registration successful", "user_id": user.id, "org_id": org.id, "name": user.name, "email": user.email, "role": user.role}

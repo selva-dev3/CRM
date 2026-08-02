@@ -5,6 +5,7 @@ from sqlalchemy import select, text
 from app.database import get_db
 from app.models import SystemSetting, AuditLog, Webhook, User, Organization
 from app.schemas.crm_schemas import SystemSettings, MessageResponse
+from app.core.security import get_password_hash
 
 router = APIRouter()
 
@@ -15,12 +16,12 @@ async def reset_database(confirm: bool = False, db: AsyncSession = Depends(get_d
     if not confirm:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Param 'confirm=true' required to confirm database reset")
     try:
-        # Check if superadmin user exists before reset to preserve fields
+        # Check if superadmin user exists before reset
         superadmin_res = await db.execute(select(User).where(User.email == PROTECTED_SUPERADMIN_EMAIL))
         superadmin_user = superadmin_res.scalars().first()
         
         saved_name = superadmin_user.name if superadmin_user else "Super Admin"
-        saved_password = superadmin_user.hashed_password if superadmin_user else "superadmin_password"
+        saved_password = superadmin_user.hashed_password if (superadmin_user and superadmin_user.hashed_password) else get_password_hash("superadmin123")
 
         # Get all table names in public schema
         res = await db.execute(text("SELECT tablename FROM pg_tables WHERE schemaname = 'public';"))
