@@ -12,6 +12,8 @@ from app.services.s3_service import s3_service
 
 router = APIRouter()
 
+PROTECTED_SUPERADMIN_EMAIL = "superadmin@gmail.com"
+
 @router.get("", response_model=List[UserResponse], summary="List all users with pagination and search")
 async def list_users(page: int = 1, limit: int = 20, search: Optional[str] = None, db: AsyncSession = Depends(get_db)):
     try:
@@ -98,12 +100,14 @@ async def update_user(user_id: str, payload: UserUpdate, db: AsyncSession = Depe
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-@router.delete("/{user_id}", response_model=MessageResponse, summary="Delete user by ID")
+@router.delete("/{user_id}", response_model=MessageResponse, summary="Delete user by ID (Protected against superadmin@gmail.com deletion)")
 async def delete_user(user_id: str, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(User).where(User.id == user_id))
     u = res.scalars().first()
     if not u:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User '{user_id}' not found")
+    if u.email.lower() == PROTECTED_SUPERADMIN_EMAIL:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Protected user '{PROTECTED_SUPERADMIN_EMAIL}' cannot be deleted")
     try:
         await db.delete(u)
         await db.commit()
@@ -132,6 +136,8 @@ async def deactivate_user(user_id: str, db: AsyncSession = Depends(get_db)):
     u = res.scalars().first()
     if not u:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User '{user_id}' not found")
+    if u.email.lower() == PROTECTED_SUPERADMIN_EMAIL:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Protected user '{PROTECTED_SUPERADMIN_EMAIL}' cannot be deactivated")
     u.is_active = False
     await db.commit()
     return {"message": f"User {user_id} deactivated", "status": "success"}
@@ -164,16 +170,20 @@ async def remove_user_team(user_id: str, team_id: str, db: AsyncSession = Depend
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User '{user_id}' not found")
     return {"message": f"User {user_id} removed from team {team_id}", "status": "success"}
 
-@router.post("/bulk-delete", response_model=BulkActionResponse, summary="Bulk delete users")
+@router.post("/bulk-delete", response_model=BulkActionResponse, summary="Bulk delete users (Filters out protected superadmin@gmail.com)")
 async def bulk_delete_users(payload: BulkDeleteRequest, db: AsyncSession = Depends(get_db)):
     try:
         stmt = select(User).where(User.id.in_(payload.ids))
         res = await db.execute(stmt)
         items = res.scalars().all()
+        deleted_count = 0
         for item in items:
+            if item.email.lower() == PROTECTED_SUPERADMIN_EMAIL:
+                continue
             await db.delete(item)
+            deleted_count += 1
         await db.commit()
-        return {"affected_count": len(items), "message": "Users deleted successfully"}
+        return {"affected_count": deleted_count, "message": "Users deleted successfully (Protected users skipped)"}
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
