@@ -1,5 +1,9 @@
-from fastapi import APIRouter, HTTPException, status, Query
+from fastapi import APIRouter, HTTPException, status, Query, Depends
 from typing import List, Optional, Dict, Any
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from app.database import get_db
+from app.models import AIConversation, AIPrompt
 from app.schemas.crm_schemas import (
     AIScoreResponse, AIGenerateEmailRequest, AIGenerateEmailResponse, AISalesForecastResponse, MessageResponse
 )
@@ -7,29 +11,29 @@ from app.schemas.crm_schemas import (
 router = APIRouter()
 
 @router.post("/lead-scoring/evaluate", response_model=AIScoreResponse, summary="Calculate AI lead score & key contributing factors")
-async def evaluate_lead_score(lead_id: str):
+async def evaluate_lead_score(lead_id: str, db: AsyncSession = Depends(get_db)):
     return {"score": 88.5, "reasons": ["Company size fits ICP", "C-level executive contact", "High website activity"]}
 
 @router.post("/lead-scoring/batch", summary="Batch recalculate AI lead scores across organization")
-async def batch_lead_scoring():
+async def batch_lead_scoring(db: AsyncSession = Depends(get_db)):
     return {"processed_count": 150, "updated_count": 42}
 
 @router.post("/email-writer/generate", response_model=AIGenerateEmailResponse, summary="Generate personalized cold outreach email using LLM")
-async def generate_email(payload: AIGenerateEmailRequest):
+async def generate_email(payload: AIGenerateEmailRequest, db: AsyncSession = Depends(get_db)):
     return {
         "subject": "Transforming your sales pipeline with AI automation",
         "body": f"Hi there,\n\nI noticed your team is scaling operations. {payload.prompt}\n\nBest regards,\nSales Team"
     }
 
 @router.post("/email-writer/improve", response_model=AIGenerateEmailResponse, summary="Rewrite and polish email draft to adjust tone and brevity")
-async def improve_email(email_text: str, tone: str = "Professional"):
+async def improve_email(email_text: str, tone: str = "Professional", db: AsyncSession = Depends(get_db)):
     return {
         "subject": "Follow up on our discussion",
         "body": f"[Improved ({tone})]: {email_text}"
     }
 
 @router.post("/deal-forecaster/predict", response_model=AISalesForecastResponse, summary="Predict deal win probability and key risk factors")
-async def predict_deal_forecast(deal_id: str):
+async def predict_deal_forecast(deal_id: str, db: AsyncSession = Depends(get_db)):
     return {
         "predicted_revenue": 85000.0,
         "confidence_percentage": 82.4,
@@ -37,14 +41,14 @@ async def predict_deal_forecast(deal_id: str):
     }
 
 @router.post("/sales-assistant/chat", summary="Query interactive AI Sales Assistant for advice & answers")
-async def sales_assistant_chat(message: str, conversation_id: Optional[str] = None):
+async def sales_assistant_chat(message: str, conversation_id: Optional[str] = None, db: AsyncSession = Depends(get_db)):
     return {
         "conversation_id": conversation_id or "chat-100",
         "reply": f"Based on your CRM data: {message}. I recommend scheduling a follow-up demo call this Thursday."
     }
 
 @router.post("/call-summarizer/summarize", summary="Generate AI summary & key takeaways from call transcript")
-async def summarize_call(transcript: str):
+async def summarize_call(transcript: str, db: AsyncSession = Depends(get_db)):
     return {
         "summary": "Customer expressed interest in enterprise SLA and multi-tenant security features.",
         "key_takeaways": ["Requires SOC2 compliance report", "Budget approved for Q3"],
@@ -52,11 +56,11 @@ async def summarize_call(transcript: str):
     }
 
 @router.post("/sentiment-analyzer/analyze", summary="Analyze customer text or message sentiment")
-async def analyze_sentiment(text: str):
+async def analyze_sentiment(text: str, db: AsyncSession = Depends(get_db)):
     return {"sentiment": "Positive", "polarity_score": 0.85, "urgency": "Medium"}
 
 @router.post("/next-best-action/suggest", summary="Recommend Next Best Action for sales rep on lead or deal")
-async def suggest_next_best_action(entity_type: str, entity_id: str):
+async def suggest_next_best_action(entity_type: str, entity_id: str, db: AsyncSession = Depends(get_db)):
     return {
         "entity_type": entity_type,
         "entity_id": entity_id,
@@ -65,7 +69,7 @@ async def suggest_next_best_action(entity_type: str, entity_id: str):
     }
 
 @router.post("/company-enricher/enrich", summary="AI research and auto-enrich company firmographics")
-async def enrich_company(company_name: str, domain: Optional[str] = None):
+async def enrich_company(company_name: str, domain: Optional[str] = None, db: AsyncSession = Depends(get_db)):
     return {
         "company_name": company_name,
         "industry": "Enterprise Software",
@@ -75,7 +79,7 @@ async def enrich_company(company_name: str, domain: Optional[str] = None):
     }
 
 @router.post("/objection-handler/suggest", summary="Generate AI response strategies for customer objections")
-async def suggest_objection_handling(objection_text: str):
+async def suggest_objection_handling(objection_text: str, db: AsyncSession = Depends(get_db)):
     return {
         "objection": objection_text,
         "talking_points": [
@@ -86,7 +90,7 @@ async def suggest_objection_handling(objection_text: str):
     }
 
 @router.post("/contract-analyzer/review", summary="AI contract review for risk clauses and compliance")
-async def review_contract(contract_text: str):
+async def review_contract(contract_text: str, db: AsyncSession = Depends(get_db)):
     return {
         "risk_level": "Low",
         "flagged_clauses": [
@@ -95,7 +99,7 @@ async def review_contract(contract_text: str):
     }
 
 @router.post("/competitor-intelligence/battlecard", summary="Generate AI competitor battlecard & positioning points")
-async def get_competitor_battlecard(competitor_name: str):
+async def get_competitor_battlecard(competitor_name: str, db: AsyncSession = Depends(get_db)):
     return {
         "competitor": competitor_name,
         "our_strengths": ["Native AI integration", "5x faster API performance", "Custom workflow builder"],
@@ -104,32 +108,32 @@ async def get_competitor_battlecard(competitor_name: str):
     }
 
 @router.post("/icp-matcher/evaluate", summary="Evaluate lead match score against Ideal Customer Profile")
-async def evaluate_icp_match(lead_id: str):
+async def evaluate_icp_match(lead_id: str, db: AsyncSession = Depends(get_db)):
     return {"lead_id": lead_id, "icp_fit_percentage": 92.0, "fit_tier": "Tier 1 (High Priority)"}
 
 @router.post("/churn-predictor/evaluate", summary="Predict customer churn risk score for account")
-async def predict_churn_risk(company_id: str):
+async def predict_churn_risk(company_id: str, db: AsyncSession = Depends(get_db)):
     return {"company_id": company_id, "churn_risk_score": 15.2, "status": "Healthy", "factors": ["High daily active user logins"]}
 
 @router.post("/pricing-optimizer/suggest", summary="AI discount & price optimization recommendation")
-async def optimize_pricing(deal_id: str):
+async def optimize_pricing(deal_id: str, db: AsyncSession = Depends(get_db)):
     return {"deal_id": deal_id, "recommended_discount_pct": 8.0, "probability_impact": "+15% win likelihood"}
 
 @router.post("/transcription/speech-to-text", summary="Transcribe speech audio file to text using Whisper AI model")
-async def speech_to_text(audio_file_name: str = "meeting.mp3"):
+async def speech_to_text(audio_file_name: str = "meeting.mp3", db: AsyncSession = Depends(get_db)):
     return {"text": "Thank you everyone for joining today's CRM demonstration...", "confidence": 0.96}
 
 @router.get("/usage-stats", summary="Get AI API token usage & budget consumption statistics")
-async def get_ai_usage_stats():
+async def get_ai_usage_stats(db: AsyncSession = Depends(get_db)):
     return {"tokens_used_this_month": 1450000, "estimated_cost_usd": 14.50, "token_limit": 10000000}
 
 @router.get("/models", summary="List available AI model options (OpenAI GPT-4o, Anthropic Claude 3.5 Sonnet)")
-async def list_ai_models():
+async def list_ai_models(db: AsyncSession = Depends(get_db)):
     return [
         {"model_id": "gpt-4o", "provider": "OpenAI", "is_active": True},
         {"model_id": "claude-3-5-sonnet", "provider": "Anthropic", "is_active": False}
     ]
 
 @router.post("/models/switch", response_model=MessageResponse, summary="Switch default active AI model provider")
-async def switch_ai_model(model_id: str):
+async def switch_ai_model(model_id: str, db: AsyncSession = Depends(get_db)):
     return {"message": f"Active AI model switched to '{model_id}'", "status": "success"}
