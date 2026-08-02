@@ -28,6 +28,15 @@ class Settings(BaseSettings):
     AWS_S3_BUCKET: str = "crm-enterprise-bucket"
     AWS_REGION: str = "us-east-1"
 
+    # SMTP Gmail Email Configuration
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USER: Optional[str] = "selvakumar.dev3@gmail.com"
+    SMTP_PASSWORD: Optional[str] = "cxwromupefrpeovz"
+    EMAILS_FROM_EMAIL: str = "selvakumar.dev3@gmail.com"
+    EMAILS_FROM_NAME: str = "Enterprise CRM Support"
+    RESET_TOKEN_EXPIRE_MINUTES: int = 60
+
     # AI API Keys
     OPENAI_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None

@@ -9,7 +9,8 @@ from app.schemas.crm_schemas import (
     TwoFactorSetupResponse, TwoFactorVerifyRequest, OAuthLoginRequest, ApiKeyCreate, ApiKeyResponse,
     MessageResponse
 )
-from app.core.security import create_access_token, verify_password, get_password_hash
+from app.core.security import create_access_token, verify_password, get_password_hash, generate_random_code
+from app.services.email_service import send_reset_password_email
 
 router = APIRouter()
 
@@ -81,15 +82,20 @@ async def refresh_token(refresh_token: str, db: AsyncSession = Depends(get_db)):
 async def logout(db: AsyncSession = Depends(get_db)):
     return {"message": "Logged out successfully", "status": "success"}
 
-@router.post("/forgot-password", response_model=MessageResponse, summary="Trigger password reset email")
+@router.post("/forgot-password", response_model=MessageResponse, summary="Trigger password reset email with 14-char random code")
 async def forgot_password(payload: PasswordResetRequest, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(User).where(User.email == payload.email))
+    email_clean = payload.email.strip()
+    res = await db.execute(select(User).where(User.email.ilike(email_clean)))
     user = res.scalars().first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User with specified email not found")
-    return {"message": f"Reset link sent to {payload.email}", "status": "success"}
+    
+    # Generate random 14-character alphanumeric token code
+    reset_token = generate_random_code(14)
+    send_reset_password_email(email_to=user.email, token=reset_token, user_name=user.name)
+    return {"message": f"Password reset email sent to {payload.email}", "status": "success"}
 
-@router.post("/reset-password", response_model=MessageResponse, summary="Reset password using token")
+@router.post("/reset-password", response_model=MessageResponse, summary="Reset password using 14-char token")
 async def reset_password(token: str, new_password: str, db: AsyncSession = Depends(get_db)):
     if not token or len(token) < 5:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset token")
