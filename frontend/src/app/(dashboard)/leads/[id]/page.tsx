@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -22,10 +22,11 @@ import {
   Activity,
   ChevronRight,
   X,
-  CheckCircle2
+  CheckCircle2,
+  Plus
 } from 'lucide-react';
 import { Button, Card, Label, Input, Badge, Alert, AlertDescription } from '@/components/ui';
-import { useLeadQuery, useUpdateLeadMutation, useDeleteLeadMutation, Lead } from '@/lib/api/leads';
+import { useLeadQuery, useCreateLeadMutation, useUpdateLeadMutation, useDeleteLeadMutation, Lead } from '@/lib/api/leads';
 import { useOrganizationsQuery } from '@/lib/api/organizations';
 import { useCompaniesQuery } from '@/lib/api/companies';
 import { useUsersQuery } from '@/lib/api/users';
@@ -42,16 +43,18 @@ export default function LeadDetailPage() {
   const { data: companies = [], isLoading: isCompaniesLoading } = useCompaniesQuery();
   const { data: users = [], isLoading: isUsersLoading } = useUsersQuery(1, 100);
 
+  const createLeadMutation = useCreateLeadMutation();
   const updateLeadMutation = useUpdateLeadMutation();
   const deleteLeadMutation = useDeleteLeadMutation();
 
   // Modals & Banners State
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Edit Modal Form State
+  // Form State
   const [contactName, setContactName] = useState('');
   const [company, setCompany] = useState('');
   const [customCompany, setCustomCompany] = useState('');
@@ -80,8 +83,41 @@ export default function LeadDetailPage() {
     return found ? found.name : 'Enterprise Organization';
   }, [lead, organizations]);
 
+  const resetForm = () => {
+    setContactName('');
+    setCompany(companies.length > 0 ? companies[0].name : '');
+    setCustomCompany('');
+    setTitle('');
+    setEmail('');
+    setPhone('');
+    setWebsite('');
+    setIndustry('');
+    setCompanySize('');
+    setCountry('');
+    setStateName('');
+    setCity('');
+    setAddress('');
+    setPostalCode('');
+    setStatus('New');
+    setSource('Website');
+    setOrganizationId(organizations.length > 0 ? organizations[0].id : 'org-1');
+    setScore(75);
+    setAssignedTo('');
+    setIsArchived(false);
+    setErrorMessage(null);
+  };
+
+  const handleOpenCreateModal = () => {
+    setIsEditMode(false);
+    resetForm();
+    if (organizations.length > 0) setOrganizationId(organizations[0].id);
+    if (companies.length > 0) setCompany(companies[0].name);
+    setIsModalOpen(true);
+  };
+
   const handleOpenEditModal = () => {
     if (!lead) return;
+    setIsEditMode(true);
     setContactName(lead.contact_name || '');
     setCompany(lead.company || '');
     setCustomCompany('');
@@ -103,17 +139,16 @@ export default function LeadDetailPage() {
     setAssignedTo(lead.assigned_to || '');
     setIsArchived(lead.is_archived ?? false);
     setErrorMessage(null);
-    setIsEditModalOpen(true);
+    setIsModalOpen(true);
   };
 
-  const handleCloseEditModal = () => {
-    if (updateLeadMutation.isPending) return;
-    setIsEditModalOpen(false);
+  const handleCloseModal = () => {
+    if (createLeadMutation.isPending || updateLeadMutation.isPending) return;
+    setIsModalOpen(false);
   };
 
-  const handleSubmitEdit = async (e: React.FormEvent) => {
+  const handleSubmitForm = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!lead) return;
     setErrorMessage(null);
     setSuccessMessage(null);
 
@@ -152,17 +187,26 @@ export default function LeadDetailPage() {
         organization_id: organizationId || (organizations[0]?.id ?? 'org-1'),
       };
 
-      await updateLeadMutation.mutateAsync({ id: lead.id, payload });
-      await queryClient.invalidateQueries({ queryKey: ['lead', lead.id] });
-      await refetch();
-      setIsEditModalOpen(false);
-      setSuccessMessage('Lead updated successfully!');
+      if (isEditMode && lead) {
+        await updateLeadMutation.mutateAsync({ id: lead.id, payload });
+        await queryClient.invalidateQueries({ queryKey: ['lead', lead.id] });
+        await refetch();
+        setSuccessMessage('Lead updated successfully!');
+      } else {
+        const newLead = await createLeadMutation.mutateAsync(payload);
+        setSuccessMessage(`Lead "${newLead.contact_name}" created successfully! Redirecting...`);
+        setTimeout(() => {
+          router.push(`/leads/${newLead.id}`);
+        }, 1000);
+      }
+
+      setIsModalOpen(false);
 
       setTimeout(() => {
         setSuccessMessage(null);
       }, 4000);
     } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to update lead.');
+      setErrorMessage(err?.message || 'Failed to save lead.');
     }
   };
 
@@ -252,7 +296,15 @@ export default function LeadDetailPage() {
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+          <Button
+            type="button"
+            onClick={handleOpenCreateModal}
+            size="sm"
+            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 h-9 shadow-xs cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5 mr-1.5" /> + Add New Lead
+          </Button>
           <Button
             type="button"
             variant="outline"
@@ -496,25 +548,29 @@ export default function LeadDetailPage() {
         </div>
       </div>
 
-      {/* EDIT LEAD MODAL DIALOG */}
-      {isEditModalOpen && (
+      {/* CREATE & EDIT LEAD MODAL DIALOG */}
+      {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
           <div className="relative w-full max-w-3xl max-h-[90vh] bg-white rounded-2xl border border-slate-300 shadow-2xl overflow-hidden flex flex-col text-black">
             {/* Modal Header */}
             <div className="p-5 border-b border-slate-200 bg-slate-50 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white shrink-0">
-                  <Pencil className="w-4 h-4" />
+                  {isEditMode ? <Pencil className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
                 </div>
                 <div>
-                  <h3 className="text-base font-black text-black">Edit Sales Lead</h3>
-                  <p className="text-xs font-bold text-slate-800">Update details for {lead.contact_name}</p>
+                  <h3 className="text-base font-black text-black">
+                    {isEditMode ? 'Edit Sales Lead' : 'Create New Sales Lead'}
+                  </h3>
+                  <p className="text-xs font-bold text-slate-800">
+                    {isEditMode ? `Update details for ${lead.contact_name}` : 'Fill lead, company & location details below'}
+                  </p>
                 </div>
               </div>
               <button
                 type="button"
-                onClick={handleCloseEditModal}
-                disabled={updateLeadMutation.isPending}
+                onClick={handleCloseModal}
+                disabled={createLeadMutation.isPending || updateLeadMutation.isPending}
                 className="p-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-200 transition cursor-pointer"
               >
                 <X className="w-5 h-5" />
@@ -532,7 +588,7 @@ export default function LeadDetailPage() {
             )}
 
             {/* Modal Form Body */}
-            <form onSubmit={handleSubmitEdit} className="p-6 space-y-6 overflow-y-auto flex-1">
+            <form onSubmit={handleSubmitForm} className="p-6 space-y-6 overflow-y-auto flex-1">
               {/* 1. Contact Information */}
               <div className="space-y-3">
                 <h4 className="text-xs font-black uppercase tracking-wider text-indigo-700 pb-1 border-b border-slate-200">
@@ -543,6 +599,7 @@ export default function LeadDetailPage() {
                     <Label className="text-xs font-black text-black">Contact Name *</Label>
                     <Input
                       required
+                      placeholder="e.g. John Doe"
                       value={contactName}
                       onChange={(e) => setContactName(e.target.value)}
                       className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
@@ -553,6 +610,7 @@ export default function LeadDetailPage() {
                     <Input
                       type="email"
                       required
+                      placeholder="john@acme.com"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
@@ -561,6 +619,7 @@ export default function LeadDetailPage() {
                   <div className="space-y-1.5">
                     <Label className="text-xs font-black text-black">Phone Number</Label>
                     <Input
+                      placeholder="+1 (555) 000-0000"
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
                       className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
@@ -569,6 +628,7 @@ export default function LeadDetailPage() {
                   <div className="space-y-1.5">
                     <Label className="text-xs font-black text-black">Opportunity / Lead Title</Label>
                     <Input
+                      placeholder="e.g. Enterprise Deal"
                       value={title}
                       onChange={(e) => setTitle(e.target.value)}
                       className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
@@ -798,12 +858,12 @@ export default function LeadDetailPage() {
                   <div className="flex items-center gap-2 pb-2">
                     <input
                       type="checkbox"
-                      id="isArchivedCheckDetail"
+                      id="isArchivedCheckForm"
                       checked={isArchived}
                       onChange={(e) => setIsArchived(e.target.checked)}
                       className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
                     />
-                    <label htmlFor="isArchivedCheckDetail" className="text-xs font-black text-slate-800 cursor-pointer select-none">
+                    <label htmlFor="isArchivedCheckForm" className="text-xs font-black text-slate-800 cursor-pointer select-none">
                       Archive this lead
                     </label>
                   </div>
@@ -815,24 +875,24 @@ export default function LeadDetailPage() {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={handleCloseEditModal}
-                  disabled={updateLeadMutation.isPending}
+                  onClick={handleCloseModal}
+                  disabled={createLeadMutation.isPending || updateLeadMutation.isPending}
                   className="border-slate-300 text-black font-bold hover:bg-slate-100 text-xs"
                 >
                   Cancel
                 </Button>
                 <Button
                   type="submit"
-                  disabled={updateLeadMutation.isPending}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-sm text-xs px-5"
+                  disabled={createLeadMutation.isPending || updateLeadMutation.isPending}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-sm text-xs px-5 cursor-pointer"
                 >
-                  {updateLeadMutation.isPending ? (
+                  {createLeadMutation.isPending || updateLeadMutation.isPending ? (
                     <>
                       <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                      Saving Changes...
+                      {isEditMode ? 'Saving Changes...' : 'Creating Lead...'}
                     </>
                   ) : (
-                    'Save Changes'
+                    isEditMode ? 'Save Changes' : 'Create Lead'
                   )}
                 </Button>
               </div>
