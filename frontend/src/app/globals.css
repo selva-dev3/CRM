@@ -1,208 +1,199 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
-/* ============================================
-   Enterprise CRM — Light / Neutral Professional Theme
-   Inspired by Salesforce Lightning & HubSpot CRM
-   Designed for 8+ hours daily high-productivity use
-   ============================================ */
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+	--color-background: var(--background);
+	--color-foreground: var(--foreground);
+	--font-sans: var(--font-sans);
+	--font-mono: var(--font-geist-mono);
+	--font-heading: var(--font-sans);
+	--color-sidebar-ring: var(--sidebar-ring);
+	--color-sidebar-border: var(--sidebar-border);
+	--color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+	--color-sidebar-accent: var(--sidebar-accent);
+	--color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+	--color-sidebar-primary: var(--sidebar-primary);
+	--color-sidebar-foreground: var(--sidebar-foreground);
+	--color-sidebar: var(--sidebar);
+	--color-chart-5: var(--chart-5);
+	--color-chart-4: var(--chart-4);
+	--color-chart-3: var(--chart-3);
+	--color-chart-2: var(--chart-2);
+	--color-chart-1: var(--chart-1);
+	--color-ring: var(--ring);
+	--color-input: var(--input);
+	--color-border: var(--border);
+	--color-destructive: var(--destructive);
+	--color-accent-foreground: var(--accent-foreground);
+	--color-accent: var(--accent);
+	--color-muted-foreground: var(--muted-foreground);
+	--color-muted: var(--muted);
+	--color-secondary-foreground: var(--secondary-foreground);
+	--color-secondary: var(--secondary);
+	--color-primary-foreground: var(--primary-foreground);
+	--color-primary: var(--primary);
+	--color-popover-foreground: var(--popover-foreground);
+	--color-popover: var(--popover);
+	--color-card-foreground: var(--card-foreground);
+	--color-card: var(--card);
+	--radius-sm: calc(var(--radius) * 0.6);
+	--radius-md: calc(var(--radius) * 0.8);
+	--radius-lg: var(--radius);
+	--radius-xl: calc(var(--radius) * 1.4);
+	--radius-2xl: calc(var(--radius) * 1.8);
+	--radius-3xl: calc(var(--radius) * 2.2);
+	--radius-4xl: calc(var(--radius) * 2.6);
+}
 
 :root {
-  /* Base Surfaces */
-  --background: #f8fafc;       /* Slate-50 app body */
-  --surface: #ffffff;          /* Pure white cards, panels, modals */
-  --surface-hover: #f1f5f9;    /* Slate-100 row hover, subtle hover states */
-  --border: #e2e8f0;           /* Slate-200 dividers and soft card borders */
-  --border-strong: #cbd5e1;    /* Slate-300 input borders & emphasized lines */
+	--background: oklch(1 0 0);
+	--foreground: oklch(0.148 0.004 228.8);
+	--card: oklch(1 0 0);
+	--card-foreground: oklch(0.148 0.004 228.8);
+	--popover: oklch(1 0 0);
+	--popover-foreground: oklch(0.148 0.004 228.8);
+	--primary: oklch(0.5 0.134 242.749);
+	--primary-foreground: oklch(0.977 0.013 236.62);
+	--secondary: oklch(0.967 0.001 286.375);
+	--secondary-foreground: oklch(0.21 0.006 285.885);
+	--muted: oklch(0.963 0.002 197.1);
+	--muted-foreground: oklch(0.56 0.021 213.5);
+	--accent: oklch(0.963 0.002 197.1);
+	--accent-foreground: oklch(0.218 0.008 223.9);
+	--destructive: oklch(0.577 0.245 27.325);
+	--border: oklch(0.925 0.005 214.3);
+	--input: oklch(0.925 0.005 214.3);
+	--ring: oklch(0.723 0.014 214.4);
+	--chart-1: oklch(0.905 0.182 98.111);
+	--chart-2: oklch(0.795 0.184 86.047);
+	--chart-3: oklch(0.681 0.162 75.834);
+	--chart-4: oklch(0.554 0.135 66.442);
+	--chart-5: oklch(0.476 0.114 61.907);
+	--radius: 0.625rem;
+	--sidebar: oklch(0.987 0.002 197.1);
+	--sidebar-foreground: oklch(0.148 0.004 228.8);
+	--sidebar-primary: oklch(0.588 0.158 241.966);
+	--sidebar-primary-foreground: oklch(0.977 0.013 236.62);
+	--sidebar-accent: oklch(0.963 0.002 197.1);
+	--sidebar-accent-foreground: oklch(0.218 0.008 223.9);
+	--sidebar-border: oklch(0.925 0.005 214.3);
+	--sidebar-ring: oklch(0.723 0.014 214.4);
 
-  /* Text Colors */
-  --text-primary: #0f172a;     /* Slate-900 high contrast body text */
-  --text-secondary: #475569;   /* Slate-600 secondary subheadings & labels */
-  --text-muted: #94a3b8;       /* Slate-400 placeholders & disabled text */
-  --text-on-accent: #ffffff;   /* Pure white text on primary buttons */
+	/* ─── Semantic status tokens ─────────────────────────────────────── */
+	--status-success: oklch(0.65 0.15 145);
+	--status-success-bg: oklch(0.95 0.02 145);
+	--status-warning: oklch(0.72 0.16 75);
+	--status-warning-bg: oklch(0.96 0.02 75);
+	--status-danger: oklch(0.55 0.22 25);
+	--status-danger-bg: oklch(0.94 0.03 25);
+	--status-info: oklch(0.65 0.1 250);
+	--status-info-bg: oklch(0.95 0.02 250);
 
-  /* Enterprise Accent — Clean Indigo/Blue */
-  --accent: #4f46e5;           /* Indigo-600 primary brand color */
-  --accent-hover: #4338ca;     /* Indigo-700 hover state */
-  --accent-subtle: #eef2ff;    /* Indigo-50 soft active background */
-  --accent-ring: rgba(79, 70, 229, 0.25);
-
-  /* Status Indicators */
-  --success: #10b981;
-  --success-subtle: #ecfdf5;
-  --warning: #f59e0b;
-  --warning-subtle: #fffbeb;
-  --danger: #ef4444;
-  --danger-subtle: #fef2f2;
-  --info: #0284c7;
-  --info-subtle: #f0f9ff;
-
-  /* Elevation Shadows — Soft & Calm */
-  --shadow-sm: 0 1px 2px 0 rgba(15, 23, 42, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(15, 23, 42, 0.08), 0 2px 4px -2px rgba(15, 23, 42, 0.05);
-  --shadow-lg: 0 10px 15px -3px rgba(15, 23, 42, 0.08), 0 4px 6px -4px rgba(15, 23, 42, 0.04);
-
-  /* Border Radii */
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-
-  /* Typography */
-  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+	/* ─── Density system ─────────────────────────────────────────────── */
+	--density-row: 56px;
+	--density-pad: 14px;
+	--density-gap: 14px;
 }
 
-* {
-  box-sizing: border-box;
+.dark {
+	--background: oklch(0.148 0.004 228.8);
+	--foreground: oklch(0.987 0.002 197.1);
+	--card: oklch(0.218 0.008 223.9);
+	--card-foreground: oklch(0.987 0.002 197.1);
+	--popover: oklch(0.218 0.008 223.9);
+	--popover-foreground: oklch(0.987 0.002 197.1);
+	--primary: oklch(0.443 0.11 240.79);
+	--primary-foreground: oklch(0.977 0.013 236.62);
+	--secondary: oklch(0.274 0.006 286.033);
+	--secondary-foreground: oklch(0.985 0 0);
+	--muted: oklch(0.275 0.011 216.9);
+	--muted-foreground: oklch(0.723 0.014 214.4);
+	--accent: oklch(0.275 0.011 216.9);
+	--accent-foreground: oklch(0.987 0.002 197.1);
+	--destructive: oklch(0.704 0.191 22.216);
+	--border: oklch(1 0 0 / 10%);
+	--input: oklch(1 0 0 / 15%);
+	--ring: oklch(0.56 0.021 213.5);
+	--chart-1: oklch(0.905 0.182 98.111);
+	--chart-2: oklch(0.795 0.184 86.047);
+	--chart-3: oklch(0.681 0.162 75.834);
+	--chart-4: oklch(0.554 0.135 66.442);
+	--chart-5: oklch(0.476 0.114 61.907);
+	--sidebar: oklch(0.218 0.008 223.9);
+	--sidebar-foreground: oklch(0.987 0.002 197.1);
+	--sidebar-primary: oklch(0.685 0.169 237.323);
+	--sidebar-primary-foreground: oklch(0.293 0.066 243.157);
+	--sidebar-accent: oklch(0.275 0.011 216.9);
+	--sidebar-accent-foreground: oklch(0.987 0.002 197.1);
+	--sidebar-border: oklch(1 0 0 / 10%);
+	--sidebar-ring: oklch(0.56 0.021 213.5);
+
+	/* ─── Semantic status tokens (dark) ──────────────────────────────── */
+	--status-success: oklch(0.72 0.13 145);
+	--status-success-bg: oklch(0.28 0.04 145);
+	--status-warning: oklch(0.78 0.14 75);
+	--status-warning-bg: oklch(0.3 0.04 75);
+	--status-danger: oklch(0.65 0.2 25);
+	--status-danger-bg: oklch(0.28 0.05 25);
+	--status-info: oklch(0.7 0.1 250);
+	--status-info-bg: oklch(0.28 0.04 250);
 }
 
-html,
-body {
-  padding: 0;
-  margin: 0;
-  background-color: var(--background);
-  color: var(--text-primary);
-  font-family: var(--font-sans);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+/* ─── Density modes ─────────────────────────────────────────────────── */
+html[data-density="compact"] {
+	--density-row: 40px;
+	--density-pad: 10px;
+	--density-gap: 10px;
 }
 
-/* Numeric/data columns should align cleanly in tables */
-.tabular-nums,
-table td.numeric {
-  font-variant-numeric: tabular-nums;
+html[data-density="compact"] table th {
+	height: 2.25rem;
 }
 
-a {
-  color: var(--accent);
-  text-decoration: none;
+html[data-density="compact"] table td {
+	padding-top: 0.5rem;
+	padding-bottom: 0.5rem;
 }
 
-a:hover {
-  color: var(--accent-hover);
+html[data-density="compact"] input,
+html[data-density="compact"] select,
+html[data-density="compact"] textarea {
+	min-height: 2rem;
 }
 
-/* Scrollbars — thin, unobtrusive */
-::-webkit-scrollbar {
-  width: 7px;
-  height: 7px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: 8px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
-}
-
-/* Visible keyboard focus (accessibility) */
-:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-
-/* Reduced motion respected */
+/* ─── Reduced motion ────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
+	*, *::before, *::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+	}
 }
 
-/* ============================================
-   Salesforce & HubSpot Style Reusable Classes
-   ============================================ */
-
-.card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
+@layer base {
+	* {
+		@apply border-border outline-ring/50;
+	}
+	body {
+		@apply bg-background text-foreground;
+		overflow-x: hidden !important;
+	}
+	button:not(:disabled), [role="button"]:not(:disabled) {
+		cursor: pointer;
+	}
+	html {
+		@apply font-sans;
+		overflow-x: hidden !important;
+	}
 }
 
-.btn-primary {
-  background: var(--accent);
-  color: var(--text-on-accent);
-  border-radius: var(--radius-sm);
-  font-weight: 600;
-  transition: background-color 0.15s ease;
-}
-
-.btn-primary:hover {
-  background: var(--accent-hover);
-}
-
-.btn-primary:focus-visible {
-  box-shadow: 0 0 0 3px var(--accent-ring);
-}
-
-.btn-secondary {
-  background: var(--surface);
-  color: var(--text-primary);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  font-weight: 500;
-  transition: background-color 0.15s ease;
-}
-
-.btn-secondary:hover {
-  background: var(--surface-hover);
-}
-
-.badge-success {
-  background: var(--success-subtle);
-  color: var(--success);
-}
-
-.badge-warning {
-  background: var(--warning-subtle);
-  color: var(--warning);
-}
-
-.badge-danger {
-  background: var(--danger-subtle);
-  color: var(--danger);
-}
-
-.badge-info {
-  background: var(--info-subtle);
-  color: var(--info);
-}
-
-.badge-accent {
-  background: var(--accent-subtle);
-  color: var(--accent);
-}
-
-.input-field {
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-
-.input-field:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-ring);
-  outline: none;
-}
-
-.sidebar {
-  background: var(--surface);
-  border-right: 1px solid var(--border);
-}
-
-.table-row-hover:hover {
-  background: var(--surface-hover);
+/* Hide horizontal scrollbar globally */
+*::-webkit-scrollbar:horizontal,
+html::-webkit-scrollbar:horizontal,
+body::-webkit-scrollbar:horizontal,
+[data-slot="table-container"]::-webkit-scrollbar:horizontal,
+.table-container::-webkit-scrollbar:horizontal {
+	display: none !important;
+	height: 0 !important;
 }
