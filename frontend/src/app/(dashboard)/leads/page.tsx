@@ -19,6 +19,7 @@ import { DataTable, DataTableColumn, TableActionOption } from '@/components/shar
 import { useLeadsQuery, useCreateLeadMutation, useUpdateLeadMutation, Lead } from '@/lib/api/leads';
 import { useOrganizationsQuery } from '@/lib/api/organizations';
 import { useCompaniesQuery } from '@/lib/api/companies';
+import { useUsersQuery } from '@/lib/api/users';
 
 export default function LeadsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -44,12 +45,15 @@ export default function LeadsPage() {
   const [status, setStatus] = useState('New');
   const [source, setSource] = useState('Website');
   const [organizationId, setOrganizationId] = useState('');
+  const [score, setScore] = useState<number>(75);
+  const [assignedTo, setAssignedTo] = useState<string>('');
+  const [isArchived, setIsArchived] = useState<boolean>(false);
 
   // Feedback Banner State
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // TanStack Query Hooks for Leads, Organizations, & Companies API
+  // TanStack Query Hooks for Leads, Organizations, Companies & Users API
   const { data: leads = [], isLoading, isError, refetch } = useLeadsQuery({
     search: searchTerm || undefined,
     status: statusFilter || undefined,
@@ -57,6 +61,7 @@ export default function LeadsPage() {
 
   const { data: organizations = [], isLoading: isOrgsLoading } = useOrganizationsQuery();
   const { data: companies = [], isLoading: isCompaniesLoading } = useCompaniesQuery();
+  const { data: users = [], isLoading: isUsersLoading } = useUsersQuery(1, 100);
 
   // Auto-set initial organization ID when organizations data is loaded from API
   useEffect(() => {
@@ -87,6 +92,9 @@ export default function LeadsPage() {
     setStatus('New');
     setSource('Website');
     setOrganizationId(organizations.length > 0 ? organizations[0].id : 'org-1');
+    setScore(75);
+    setAssignedTo('');
+    setIsArchived(false);
     setErrorMessage(null);
   };
 
@@ -116,6 +124,9 @@ export default function LeadsPage() {
     setStatus(lead.status || 'New');
     setSource(lead.source || 'Website');
     setOrganizationId(lead.organization_id || (organizations[0]?.id ?? 'org-1'));
+    setScore(lead.score ?? 75);
+    setAssignedTo(lead.assigned_to || '');
+    setIsArchived(lead.is_archived ?? false);
     setErrorMessage(null);
     setIsModalOpen(true);
   };
@@ -160,6 +171,9 @@ export default function LeadsPage() {
         postal_code: postalCode.trim() || undefined,
         status,
         source,
+        score: Number(score) || 75,
+        assigned_to: assignedTo.trim() || undefined,
+        is_archived: isArchived,
         organization_id: organizationId || (organizations[0]?.id ?? 'org-1'),
       };
 
@@ -577,7 +591,7 @@ export default function LeadsPage() {
               {/* 4. Classification & Organization */}
               <div className="space-y-3 pt-2">
                 <h4 className="text-xs font-black uppercase tracking-wider text-indigo-700 pb-1 border-b border-slate-200">
-                  4. Status, Source & Organization
+                  4. Status, Source, Score & Organization
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="space-y-1.5">
@@ -628,6 +642,54 @@ export default function LeadsPage() {
                         ))
                       )}
                     </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1 items-end">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">AI Score (0-100)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={100}
+                      placeholder="75"
+                      value={score}
+                      onChange={(e) => setScore(Number(e.target.value))}
+                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Assigned To User</Label>
+                    <select
+                      value={assignedTo}
+                      onChange={(e) => setAssignedTo(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="">Unassigned (None)</option>
+                      {isUsersLoading ? (
+                        <option value="" disabled>Loading users...</option>
+                      ) : (
+                        users.map((u) => (
+                          <option key={u.id} value={u.id}>
+                            {u.name} ({u.role})
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-2 pb-2">
+                    <input
+                      type="checkbox"
+                      id="isArchivedCheck"
+                      checked={isArchived}
+                      onChange={(e) => setIsArchived(e.target.checked)}
+                      className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
+                    />
+                    <label htmlFor="isArchivedCheck" className="text-xs font-black text-slate-800 cursor-pointer select-none">
+                      Archive this lead
+                    </label>
                   </div>
                 </div>
               </div>
