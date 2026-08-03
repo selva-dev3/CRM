@@ -1,20 +1,53 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { navigationConfig } from '@/config/navigation';
 import { AIChatAssistant } from '@/components/ai/ai-chat-assistant';
+import { getSessionToken, clearSessionToken } from '@/lib/api-client';
+import { LogOut, Loader2 } from 'lucide-react';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const token = getSessionToken();
+    if (!token) {
+      setIsAuthenticated(false);
+      router.push('/login');
+    } else {
+      setIsAuthenticated(true);
+    }
+  }, [router, pathname]);
+
+  const handleLogout = () => {
+    clearSessionToken();
+    router.push('/login');
+  };
+
+  // Show loading spinner while verifying session token
+  if (isAuthenticated === null) {
+    return (
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-gray-950 text-white space-y-4">
+        <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+        <p className="text-sm text-gray-400 font-medium">Verifying Session Token...</p>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return null;
+  }
 
   return (
     <div className="flex h-screen bg-gray-950 text-gray-100 overflow-hidden">
       {/* Sidebar */}
       <aside className="w-64 border-r border-gray-800 bg-gray-900 flex flex-col">
         <div className="p-5 border-b border-gray-800 flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-white">
+          <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-600/30">
             CRM
           </div>
           <span className="font-bold text-lg text-white tracking-wide">Enterprise CRM</span>
@@ -51,6 +84,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <div className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-sm font-medium border border-gray-700">
               Admin
             </div>
+            <button
+              type="button"
+              onClick={handleLogout}
+              title="Sign Out"
+              className="p-2 rounded-lg text-gray-400 hover:text-rose-400 hover:bg-gray-800 transition cursor-pointer flex items-center gap-1.5 text-xs font-medium"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>Logout</span>
+            </button>
           </div>
         </header>
 

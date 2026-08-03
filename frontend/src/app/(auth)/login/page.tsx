@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLoginMutation } from '@/lib/api';
+import { getSessionToken, setSessionToken } from '@/lib/api-client';
 import { 
   ArrowRight, 
   CheckCircle2, 
@@ -28,14 +29,19 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  // If user already has a valid token in session/storage, auto-redirect to dashboard
+  useEffect(() => {
+    const existingToken = getSessionToken();
+    if (existingToken) {
+      router.push('/dashboard');
+    }
+  }, [router]);
+
   // TanStack React Query Mutation imported from @/lib/api/auth.ts
   const loginMutation = useLoginMutation({
     onSuccess: (data) => {
       if (data.access_token) {
-        localStorage.setItem('token', data.access_token);
-        if (rememberMe) {
-          document.cookie = `token=${data.access_token}; path=/; max-age=86400; SameSite=Lax`;
-        }
+        setSessionToken(data.access_token, rememberMe);
 
         setSuccess('Authentication successful! Redirecting to dashboard...');
         
@@ -201,7 +207,7 @@ export default function LoginPage() {
           {loginMutation.isPending ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin text-white" />
-              <span>Authenticating with TanStack Query...</span>
+              <span>Authenticating with Session Token...</span>
             </>
           ) : (
             <>
@@ -216,7 +222,7 @@ export default function LoginPage() {
       <div className="pt-2 text-center">
         <span className="inline-flex items-center space-x-1.5 text-[11px] text-slate-500">
           <Globe className="w-3 h-3 text-emerald-400 animate-pulse" />
-          <span>TanStack Module <code className="text-indigo-400 font-mono">@/lib/api/auth.ts</code> + Railway API</span>
+          <span>Session Token Authentication + Railway API</span>
         </span>
       </div>
 
