@@ -271,6 +271,7 @@ class LeadUpdate(BaseModel):
     score: Optional[float] = None
     assigned_to: Optional[str] = None
     is_archived: Optional[bool] = None
+    organization_id: Optional[str] = None
 
 class LeadResponse(LeadBase):
     id: str

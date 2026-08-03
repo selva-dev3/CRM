@@ -178,10 +178,22 @@ async def update_lead(lead_id: str, payload: LeadUpdate, db: AsyncSession = Depe
         if payload.contact_name is not None: l.contact_name = payload.contact_name
         if payload.email is not None: l.email = payload.email
         if payload.phone is not None: l.phone = payload.phone
+        if payload.website is not None: l.website = payload.website
+        if payload.industry is not None: l.industry = payload.industry
+        if payload.company_size is not None: l.company_size = payload.company_size
+        if payload.country is not None: l.country = payload.country
+        if payload.state is not None: l.state = payload.state
+        if payload.city is not None: l.city = payload.city
+        if payload.address is not None: l.address = payload.address
+        if payload.postal_code is not None: l.postal_code = payload.postal_code
         if payload.status is not None: l.status = payload.status
         if payload.source is not None: l.source = payload.source
+        if payload.score is not None: l.score = payload.score
+        if payload.assigned_to is not None: l.assigned_to = payload.assigned_to
+        if payload.is_archived is not None: l.is_archived = payload.is_archived
+        if payload.organization_id is not None: l.organization_id = payload.organization_id
         await db.commit()
-        return {"id": l.id, "title": l.title, "company": l.company, "contact_name": l.contact_name, "email": l.email, "phone": l.phone, "status": l.status, "source": l.source, "score": l.score, "assigned_to": l.assigned_to, "organization_id": l.organization_id, "created_at": str(l.created_at)}
+        return lead_to_dict(l)
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
