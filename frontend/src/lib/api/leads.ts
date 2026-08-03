@@ -92,6 +92,10 @@ export async function fetchLeadsApi(params: FetchLeadsParams = {}): Promise<Lead
   return apiClient.get<Lead[]>(endpoint);
 }
 
+export async function getLeadByIdApi(id: string): Promise<Lead> {
+  return apiClient.get<Lead>(`/leads/${id}`);
+}
+
 export async function createLeadApi(payload: CreateLeadPayload): Promise<Lead> {
   return apiClient.post<Lead>('/leads', payload);
 }
@@ -112,6 +116,14 @@ export function useLeadsQuery(params: FetchLeadsParams = {}) {
   return useQuery({
     queryKey: ['leads', params],
     queryFn: () => fetchLeadsApi(params),
+  });
+}
+
+export function useLeadQuery(id: string) {
+  return useQuery({
+    queryKey: ['lead', id],
+    queryFn: () => getLeadByIdApi(id),
+    enabled: !!id,
   });
 }
 

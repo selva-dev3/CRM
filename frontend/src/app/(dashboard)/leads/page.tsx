@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { 
   Plus, 
   Building2, 
@@ -23,6 +24,7 @@ import { useCompaniesQuery } from '@/lib/api/companies';
 import { useUsersQuery } from '@/lib/api/users';
 
 export default function LeadsPage() {
+  const router = useRouter();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [leadToDelete, setLeadToDelete] = useState<Lead | null>(null);
@@ -348,6 +350,7 @@ export default function LeadsPage() {
         getRowKey={(item) => item.id}
         emptyTitle="No leads found"
         emptyDescription="Click '+ Add New Lead' above to create your first sales lead."
+        onRowClick={(lead) => router.push(`/leads/${lead.id}`)}
         showAvatar
         getAvatarData={(item) => ({ name: item.contact_name, color: '#4f46e5' })}
         actionVariant="menu"

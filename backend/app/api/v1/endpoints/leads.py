@@ -164,7 +164,7 @@ async def get_lead(lead_id: str, db: AsyncSession = Depends(get_db)):
     l = res.scalars().first()
     if not l:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Lead '{lead_id}' not found")
-    return {"id": l.id, "title": l.title, "company": l.company, "contact_name": l.contact_name, "email": l.email, "phone": l.phone, "status": l.status, "source": l.source, "score": l.score, "assigned_to": l.assigned_to, "organization_id": l.organization_id, "created_at": str(l.created_at)}
+    return lead_to_dict(l)
 
 @router.put("/{lead_id}", response_model=LeadResponse, summary="Update lead by ID")
 async def update_lead(lead_id: str, payload: LeadUpdate, db: AsyncSession = Depends(get_db)):
