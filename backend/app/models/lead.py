@@ -1,4 +1,4 @@
-from sqlalchemy import String, Boolean, DateTime, Float, Text, ForeignKey, func
+from sqlalchemy import String, Boolean, DateTime, Float, Integer, Text, ForeignKey, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from typing import Optional
 import uuid
@@ -86,4 +86,6 @@ class LeadAttachment(Base):
     lead_id: Mapped[str] = mapped_column(String, ForeignKey("leads.id", ondelete="CASCADE"), index=True)
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     file_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    file_size: Mapped[Optional[int]] = mapped_column(Integer, default=0)
+    mime_type: Mapped[Optional[str]] = mapped_column(String(100))
     uploaded_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
