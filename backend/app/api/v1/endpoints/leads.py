@@ -3,7 +3,7 @@ from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
-from app.models import Lead, LeadNote, LeadAttachment
+from app.models import Lead, LeadNote, LeadAttachment, User, Task, Email, CallLog, Contact
 from app.schemas.crm_schemas import (
     LeadResponse, LeadCreate, LeadUpdate, LeadConvertRequest, MessageResponse, BulkDeleteRequest, BulkActionResponse,
     NoteResponse, TaskResponse, TaskCreate, EmailResponse, EmailSendRequest, CallLogResponse, CallLogBase, DocumentResponse
@@ -244,9 +244,87 @@ async def recalculate_lead_score(lead_id: str, db: AsyncSession = Depends(get_db
 @router.get("/{lead_id}/timeline", summary="Get activity timeline for lead")
 async def get_lead_timeline(lead_id: str, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Lead).where(Lead.id == lead_id))
-    if not res.scalars().first():
+    l = res.scalars().first()
+    if not l:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Lead '{lead_id}' not found")
-    return []
+    
+    timeline = [
+        {
+            "id": f"created-{l.id}",
+            "event_type": "lead_created",
+            "title": "Lead Registered",
+            "description": f"Lead '{l.contact_name}' created from {l.source}",
+            "timestamp": str(l.created_at)
+        }
+    ]
+
+    # 1. Notes from DB
+    notes_res = await db.execute(select(LeadNote).where(LeadNote.lead_id == lead_id))
+    for n in notes_res.scalars().all():
+        timeline.append({
+            "id": f"note-{n.id}",
+            "event_type": "note_added",
+            "title": "Note Added",
+            "description": n.content,
+            "timestamp": str(n.created_at)
+        })
+
+    # 2. Attachments from DB
+    atts_res = await db.execute(select(LeadAttachment).where(LeadAttachment.lead_id == lead_id))
+    for a in atts_res.scalars().all():
+        timeline.append({
+            "id": f"doc-{a.id}",
+            "event_type": "document_attached",
+            "title": "Document Attached",
+            "description": f"File '{a.filename}' uploaded to storage",
+            "timestamp": str(a.created_at)
+        })
+
+    # 3. Tasks from DB for this lead
+    lead_tag = f"[Lead:{lead_id}]"
+    tasks_res = await db.execute(
+        select(Task).where(
+            Task.organization_id == l.organization_id,
+            Task.description.contains(lead_tag)
+        )
+    )
+    for t in tasks_res.scalars().all():
+        clean_desc = (t.description or "").replace(f"\n{lead_tag}", "").replace(lead_tag, "").strip()
+        timeline.append({
+            "id": f"task-{t.id}",
+            "event_type": "task_created",
+            "title": f"Task Created: {t.title}",
+            "description": clean_desc if clean_desc else f"Priority: {t.priority}, Status: {t.status}",
+            "timestamp": str(t.created_at)
+        })
+
+    # 4. Emails from DB for this lead
+    emails_res = await db.execute(select(Email).where(Email.to_email == l.email))
+    for e in emails_res.scalars().all():
+        timeline.append({
+            "id": f"email-{e.id}",
+            "event_type": "email_sent",
+            "title": f"Email Sent: {e.subject}",
+            "description": f"Sent to {e.to_email}",
+            "timestamp": str(e.sent_at)
+        })
+
+    # 5. Calls from DB for this lead
+    c_res = await db.execute(select(Contact.id).where(Contact.email == l.email))
+    c_ids = c_res.scalars().all()
+    if c_ids:
+        calls_res = await db.execute(select(CallLog).where(CallLog.contact_id.in_(c_ids)))
+        for cl in calls_res.scalars().all():
+            timeline.append({
+                "id": f"call-{cl.id}",
+                "event_type": "call_logged",
+                "title": f"{cl.call_type} Call Logged",
+                "description": cl.notes or f"Duration: {cl.duration_seconds} sec",
+                "timestamp": str(cl.timestamp)
+            })
+
+    timeline.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+    return timeline
 
 @router.get("/{lead_id}/notes", response_model=List[NoteResponse], summary="List notes attached to lead")
 async def get_lead_notes(lead_id: str, db: AsyncSession = Depends(get_db)):
@@ -260,7 +338,14 @@ async def add_lead_note(lead_id: str, content: str, db: AsyncSession = Depends(g
     if not res.scalars().first():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Lead '{lead_id}' not found")
     try:
-        n = LeadNote(lead_id=lead_id, content=content, created_by="usr-1")
+        u_res = await db.execute(select(User).limit(1))
+        u = u_res.scalars().first()
+        if not u:
+            u = User(email="system@crm.com", hashed_password="hashed_password_placeholder", first_name="System", last_name="User")
+            db.add(u)
+            await db.flush()
+
+        n = LeadNote(lead_id=lead_id, content=content, created_by=u.id)
         db.add(n)
         await db.commit()
         return {"id": n.id, "entity_type": "lead", "entity_id": lead_id, "content": n.content, "created_by": n.created_by, "created_at": str(n.created_at)}
@@ -271,44 +356,215 @@ async def add_lead_note(lead_id: str, content: str, db: AsyncSession = Depends(g
 @router.get("/{lead_id}/tasks", response_model=List[TaskResponse], summary="List tasks assigned to lead")
 async def get_lead_tasks(lead_id: str, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Lead).where(Lead.id == lead_id))
-    if not res.scalars().first():
+    l = res.scalars().first()
+    if not l:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Lead '{lead_id}' not found")
-    return []
+    
+    lead_tag = f"[Lead:{lead_id}]"
+    t_res = await db.execute(
+        select(Task).where(
+            Task.organization_id == l.organization_id,
+            Task.description.contains(lead_tag)
+        )
+    )
+    tasks = t_res.scalars().all()
+    
+    output = []
+    for t in tasks:
+        clean_desc = (t.description or "").replace(f"\n{lead_tag}", "").replace(lead_tag, "").strip()
+        output.append({
+            "id": t.id,
+            "title": t.title,
+            "description": clean_desc if clean_desc else None,
+            "priority": t.priority,
+            "due_date": str(t.due_date) if t.due_date else None,
+            "status": t.status,
+            "assigned_to": t.assigned_to,
+            "created_at": str(t.created_at)
+        })
+    return output
 
 @router.post("/{lead_id}/tasks", response_model=TaskResponse, summary="Create task for lead")
 async def create_lead_task(lead_id: str, payload: TaskCreate, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Lead).where(Lead.id == lead_id))
-    if not res.scalars().first():
+    l = res.scalars().first()
+    if not l:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Lead '{lead_id}' not found")
-    return {"id": "tsk-new", "title": payload.title, "description": payload.description, "priority": payload.priority, "due_date": payload.due_date, "status": payload.status, "assigned_to": payload.assigned_to, "created_at": "2026-08-02"}
+    try:
+        assigned_user_id = payload.assigned_to
+        if not assigned_user_id:
+            u_res = await db.execute(select(User.id).limit(1))
+            assigned_user_id = u_res.scalars().first()
+            if not assigned_user_id:
+                u = User(email="system@crm.com", hashed_password="hashed_password_placeholder", first_name="System", last_name="User")
+                db.add(u)
+                await db.flush()
+                assigned_user_id = u.id
+
+        from datetime import datetime
+        due_dt = None
+        if payload.due_date:
+            try:
+                due_dt = datetime.fromisoformat(payload.due_date)
+            except Exception:
+                due_dt = datetime.utcnow()
+        else:
+            due_dt = datetime.utcnow()
+
+        lead_tag = f"[Lead:{lead_id}]"
+        raw_desc = payload.description or ""
+        tagged_desc = f"{raw_desc}\n{lead_tag}" if raw_desc else lead_tag
+
+        t = Task(
+            organization_id=l.organization_id,
+            title=payload.title,
+            description=tagged_desc,
+            priority=payload.priority or "Medium",
+            status=payload.status or "Pending",
+            due_date=due_dt,
+            assigned_to=assigned_user_id
+        )
+        db.add(t)
+        await db.commit()
+        await db.refresh(t)
+        return {
+            "id": t.id,
+            "title": t.title,
+            "description": payload.description,
+            "priority": t.priority,
+            "due_date": str(t.due_date) if t.due_date else None,
+            "status": t.status,
+            "assigned_to": t.assigned_to,
+            "created_at": str(t.created_at)
+        }
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 @router.get("/{lead_id}/emails", response_model=List[EmailResponse], summary="List emails exchanged with lead")
 async def get_lead_emails(lead_id: str, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Lead).where(Lead.id == lead_id))
-    if not res.scalars().first():
+    l = res.scalars().first()
+    if not l:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Lead '{lead_id}' not found")
-    return []
+    
+    lead_tag = f"[Lead:{lead_id}]"
+    e_res = await db.execute(
+        select(Email).where(
+            Email.organization_id == l.organization_id,
+            Email.body_text.contains(lead_tag)
+        )
+    )
+    emails = e_res.scalars().all()
+    return [
+        {
+            "id": e.id,
+            "from_email": e.from_email,
+            "to": [e.to_email],
+            "subject": e.subject,
+            "sent_at": str(e.sent_at)
+        }
+        for e in emails
+    ]
 
 @router.post("/{lead_id}/emails/send", response_model=EmailResponse, summary="Send email to lead")
 async def send_lead_email(lead_id: str, payload: EmailSendRequest, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Lead).where(Lead.id == lead_id))
-    if not res.scalars().first():
+    l = res.scalars().first()
+    if not l:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Lead '{lead_id}' not found")
-    return {"id": "eml-sent", "from_email": "usr-1@company.com", "to": [str(x) for x in payload.to], "subject": payload.subject, "sent_at": "2026-08-02"}
+    try:
+        to_addr = payload.to[0] if payload.to else l.email
+        lead_tag = f"[Lead:{lead_id}]"
+        raw_body = payload.body or ""
+        tagged_body = f"{raw_body}\n{lead_tag}" if raw_body else lead_tag
+
+        em = Email(
+            organization_id=l.organization_id,
+            from_email="sales@enterprise-crm.com",
+            to_email=str(to_addr),
+            subject=payload.subject,
+            body_text=tagged_body,
+            status="sent"
+        )
+        db.add(em)
+        await db.commit()
+        await db.refresh(em)
+        return {
+            "id": em.id,
+            "from_email": em.from_email,
+            "to": [em.to_email],
+            "subject": em.subject,
+            "sent_at": str(em.sent_at)
+        }
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 @router.get("/{lead_id}/calls", response_model=List[CallLogResponse], summary="List call logs for lead")
 async def get_lead_calls(lead_id: str, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Lead).where(Lead.id == lead_id))
-    if not res.scalars().first():
+    l = res.scalars().first()
+    if not l:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Lead '{lead_id}' not found")
-    return []
+
+    c_res = await db.execute(select(Contact.id).where(Contact.email == l.email))
+    c_ids = c_res.scalars().all()
+
+    if c_ids:
+        cl_res = await db.execute(select(CallLog).where(CallLog.contact_id.in_(c_ids)))
+        calls = cl_res.scalars().all()
+    else:
+        calls = []
+
+    return [
+        {
+            "id": cl.id,
+            "contact_id": lead_id,
+            "call_type": cl.call_type,
+            "duration_seconds": cl.duration_seconds,
+            "notes": cl.notes,
+            "timestamp": str(cl.timestamp)
+        }
+        for cl in calls
+    ]
 
 @router.post("/{lead_id}/calls", response_model=CallLogResponse, summary="Log call with lead")
 async def log_lead_call(lead_id: str, payload: CallLogBase, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Lead).where(Lead.id == lead_id))
-    if not res.scalars().first():
+    l = res.scalars().first()
+    if not l:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Lead '{lead_id}' not found")
-    return {"id": "cl-new", "contact_id": lead_id, "call_type": payload.call_type, "duration_seconds": payload.duration_seconds, "notes": payload.notes, "timestamp": "2026-08-02"}
+    try:
+        c_res = await db.execute(select(Contact.id).where(Contact.email == l.email).limit(1))
+        c_id = c_res.scalars().first()
+        if not c_id:
+            c = Contact(first_name=l.contact_name, last_name="", email=l.email, organization_id=l.organization_id)
+            db.add(c)
+            await db.flush()
+            c_id = c.id
+
+        cl = CallLog(
+            organization_id=l.organization_id,
+            contact_id=c_id,
+            call_type=payload.call_type or "Outbound",
+            duration_seconds=payload.duration_seconds or 0,
+            notes=payload.notes
+        )
+        db.add(cl)
+        await db.commit()
+        await db.refresh(cl)
+        return {
+            "id": cl.id,
+            "contact_id": lead_id,
+            "call_type": cl.call_type,
+            "duration_seconds": cl.duration_seconds,
+            "notes": cl.notes,
+            "timestamp": str(cl.timestamp)
+        }
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 @router.get("/{lead_id}/documents", response_model=List[DocumentResponse], summary="List documents attached to lead")
 async def get_lead_documents(lead_id: str, db: AsyncSession = Depends(get_db)):
