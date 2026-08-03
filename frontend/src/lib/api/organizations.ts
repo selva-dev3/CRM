@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 
 export interface OrganizationItem {
@@ -9,6 +9,11 @@ export interface OrganizationItem {
   max_users?: number;
   created_at?: string;
   members_count?: number;
+}
+
+export interface UpdateOrganizationPayload {
+  name?: string;
+  domain?: string;
 }
 
 export async function fetchOrganizationsApi(): Promise<OrganizationItem[]> {
@@ -36,6 +41,10 @@ export async function fetchOrganizationByIdApi(id: string): Promise<Organization
   return apiClient.get<OrganizationItem>(`/organizations/${id}`);
 }
 
+export async function updateOrganizationApi(id: string, payload: UpdateOrganizationPayload): Promise<OrganizationItem> {
+  return apiClient.put<OrganizationItem>(`/organizations/${id}`, payload);
+}
+
 export function useOrganizationsQuery() {
   return useQuery({
     queryKey: ['organizations'],
@@ -48,5 +57,17 @@ export function useOrganizationByIdQuery(id: string) {
     queryKey: ['organization', id],
     queryFn: () => fetchOrganizationByIdApi(id),
     enabled: Boolean(id),
+  });
+}
+
+export function useUpdateOrganizationMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: UpdateOrganizationPayload }) => updateOrganizationApi(id, payload),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['organizations'] });
+      queryClient.invalidateQueries({ queryKey: ['organization', id] });
+    },
   });
 }

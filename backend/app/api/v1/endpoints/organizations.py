@@ -35,7 +35,22 @@ async def get_organization_by_id(org_id: str, db: AsyncSession = Depends(get_db)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Organization with ID '{org_id}' not found")
     return {"id": org.id, "name": org.name, "domain": org.domain, "plan": org.plan, "max_users": org.max_users, "created_at": str(org.created_at), "members_count": 1}
 
-@router.put("", response_model=OrganizationResponse, summary="Update organization settings")
+@router.put("/{org_id}", response_model=OrganizationResponse, summary="Update organization settings by ID")
+async def update_organization_by_id(org_id: str, payload: OrganizationUpdate, db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(Organization).where(Organization.id == org_id))
+    org = res.scalars().first()
+    if not org:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Organization with ID '{org_id}' not found to update")
+    try:
+        if payload.name: org.name = payload.name
+        if payload.domain: org.domain = payload.domain
+        await db.commit()
+        return {"id": org.id, "name": org.name, "domain": org.domain, "plan": org.plan, "max_users": org.max_users, "created_at": str(org.created_at), "members_count": 1}
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+@router.put("", response_model=OrganizationResponse, summary="Update default organization settings")
 async def update_organization(payload: OrganizationUpdate, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Organization).limit(1))
     org = res.scalars().first()
