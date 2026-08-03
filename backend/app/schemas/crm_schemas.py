@@ -386,7 +386,7 @@ class MeetingResponse(MeetingBase):
 
 # 11. Call Log Schemas
 class CallLogBase(BaseModel):
-    contact_id: str
+    contact_id: Optional[str] = None
     call_type: str = "Outbound"  # Outbound, Inbound
     duration_seconds: int = 0
     notes: Optional[str] = None

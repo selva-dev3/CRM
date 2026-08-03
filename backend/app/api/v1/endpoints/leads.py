@@ -508,26 +508,27 @@ async def get_lead_calls(lead_id: str, db: AsyncSession = Depends(get_db)):
     if not l:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Lead '{lead_id}' not found")
 
-    c_res = await db.execute(select(Contact.id).where(Contact.email == l.email))
-    c_ids = c_res.scalars().all()
+    lead_tag = f"[Lead:{lead_id}]"
+    cl_res = await db.execute(
+        select(CallLog).where(
+            CallLog.organization_id == l.organization_id,
+            CallLog.notes.contains(lead_tag)
+        )
+    )
+    calls = cl_res.scalars().all()
 
-    if c_ids:
-        cl_res = await db.execute(select(CallLog).where(CallLog.contact_id.in_(c_ids)))
-        calls = cl_res.scalars().all()
-    else:
-        calls = []
-
-    return [
-        {
+    output = []
+    for cl in calls:
+        clean_notes = (cl.notes or "").replace(f"\n{lead_tag}", "").replace(lead_tag, "").strip()
+        output.append({
             "id": cl.id,
             "contact_id": lead_id,
             "call_type": cl.call_type,
             "duration_seconds": cl.duration_seconds,
-            "notes": cl.notes,
+            "notes": clean_notes if clean_notes else None,
             "timestamp": str(cl.timestamp)
-        }
-        for cl in calls
-    ]
+        })
+    return output
 
 @router.post("/{lead_id}/calls", response_model=CallLogResponse, summary="Log call with lead")
 async def log_lead_call(lead_id: str, payload: CallLogBase, db: AsyncSession = Depends(get_db)):
@@ -544,12 +545,16 @@ async def log_lead_call(lead_id: str, payload: CallLogBase, db: AsyncSession = D
             await db.flush()
             c_id = c.id
 
+        lead_tag = f"[Lead:{lead_id}]"
+        raw_notes = payload.notes or ""
+        tagged_notes = f"{raw_notes}\n{lead_tag}" if raw_notes else lead_tag
+
         cl = CallLog(
             organization_id=l.organization_id,
             contact_id=c_id,
             call_type=payload.call_type or "Outbound",
             duration_seconds=payload.duration_seconds or 0,
-            notes=payload.notes
+            notes=tagged_notes
         )
         db.add(cl)
         await db.commit()
@@ -559,7 +564,7 @@ async def log_lead_call(lead_id: str, payload: CallLogBase, db: AsyncSession = D
             "contact_id": lead_id,
             "call_type": cl.call_type,
             "duration_seconds": cl.duration_seconds,
-            "notes": cl.notes,
+            "notes": payload.notes,
             "timestamp": str(cl.timestamp)
         }
     except Exception as e:
