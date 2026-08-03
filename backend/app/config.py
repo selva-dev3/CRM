@@ -31,8 +31,8 @@ class Settings(BaseSettings):
     # SMTP Gmail Email Configuration
     SMTP_HOST: str = "smtp.gmail.com"
     SMTP_PORT: int = 587
-    SMTP_USER: Optional[str] = "selvakumar.dev3@gmail.com"
-    SMTP_PASSWORD: Optional[str] = "cxwromupefrpeovz"
+    SMTP_USER: Optional[str] = None
+    SMTP_PASSWORD: Optional[str] = None
     EMAILS_FROM_EMAIL: str = "selvakumar.dev3@gmail.com"
     EMAILS_FROM_NAME: str = "Enterprise CRM Support"
     RESET_TOKEN_EXPIRE_MINUTES: int = 60
