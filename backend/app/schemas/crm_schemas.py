@@ -219,6 +219,8 @@ class OrganizationUpdate(BaseModel):
     registration_number: Optional[str] = None
     status: Optional[str] = None
     domain: Optional[str] = None
+    plan: Optional[str] = None
+    max_users: Optional[int] = None
 
 class OrganizationResponse(OrganizationBase):
     id: str

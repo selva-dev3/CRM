@@ -75,6 +75,8 @@ export interface UpdateOrganizationPayload {
   registration_number?: string;
   status?: string;
   domain?: string;
+  plan?: string;
+  max_users?: number;
 }
 
 export async function fetchOrganizationsApi(): Promise<OrganizationItem[]> {
