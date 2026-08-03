@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     POSTGRES_PASSWORD: Optional[str] = None
     POSTGRES_DB: Optional[str] = None
     POSTGRES_PORT: Optional[str] = None
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/crm_db"
+    DATABASE_URL: str = None
 
     # Redis & Celery
     REDIS_HOST: str = "localhost"
