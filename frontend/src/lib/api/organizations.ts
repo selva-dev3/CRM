@@ -11,6 +11,13 @@ export interface OrganizationItem {
   members_count?: number;
 }
 
+export interface CreateOrganizationPayload {
+  name: string;
+  domain?: string;
+  plan?: string;
+  max_users?: number;
+}
+
 export interface UpdateOrganizationPayload {
   name?: string;
   domain?: string;
@@ -41,6 +48,10 @@ export async function fetchOrganizationByIdApi(id: string): Promise<Organization
   return apiClient.get<OrganizationItem>(`/organizations/${id}`);
 }
 
+export async function createOrganizationApi(payload: CreateOrganizationPayload): Promise<OrganizationItem> {
+  return apiClient.post<OrganizationItem>('/organizations', payload);
+}
+
 export async function updateOrganizationApi(id: string, payload: UpdateOrganizationPayload): Promise<OrganizationItem> {
   return apiClient.put<OrganizationItem>(`/organizations/${id}`, payload);
 }
@@ -57,6 +68,17 @@ export function useOrganizationByIdQuery(id: string) {
     queryKey: ['organization', id],
     queryFn: () => fetchOrganizationByIdApi(id),
     enabled: Boolean(id),
+  });
+}
+
+export function useCreateOrganizationMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: CreateOrganizationPayload) => createOrganizationApi(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['organizations'] });
+    },
   });
 }
 

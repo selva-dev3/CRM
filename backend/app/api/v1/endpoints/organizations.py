@@ -4,10 +4,34 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
 from app.models import Organization, OrganizationSetting, OrganizationSubscription
-from app.schemas.crm_schemas import OrganizationResponse, OrganizationUpdate, MessageResponse
+from app.schemas.crm_schemas import OrganizationResponse, OrganizationCreate, OrganizationUpdate, MessageResponse
 from app.services.s3_service import s3_service
 
 router = APIRouter()
+
+@router.post("", response_model=OrganizationResponse, status_code=status.HTTP_201_CREATED, summary="Create a new organization")
+async def create_organization(payload: OrganizationCreate, db: AsyncSession = Depends(get_db)):
+    try:
+        org = Organization(
+            name=payload.name,
+            domain=payload.domain,
+            plan=payload.plan,
+            max_users=payload.max_users
+        )
+        db.add(org)
+        await db.commit()
+        return {
+            "id": org.id,
+            "name": org.name,
+            "domain": org.domain,
+            "plan": org.plan,
+            "max_users": org.max_users,
+            "created_at": str(org.created_at),
+            "members_count": 1
+        }
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to create organization: {str(e)}")
 
 @router.get("", response_model=OrganizationResponse, summary="Get current organization details")
 async def get_organization(db: AsyncSession = Depends(get_db)):
