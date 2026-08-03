@@ -266,37 +266,59 @@ export default function LeadDetailPage() {
         {/* Right Column (Sidebar metrics on desktop) */}
         <div className="space-y-6">
           {/* Card 4: Qualification & Engagement Score */}
-          <Card className="p-6 bg-slate-900 text-white rounded-2xl shadow-sm space-y-5">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <span className="text-xs font-black uppercase tracking-wider text-indigo-300 flex items-center gap-1.5">
-                <Activity className="w-4 h-4 text-emerald-400" /> Qualification Score
+          <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <span className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-1.5">
+                <Activity className="w-4 h-4 text-indigo-600" /> Qualification Score
               </span>
-              <span className="text-2xl font-black text-white">{lead.score ?? 75}/100</span>
+              {(lead.score ?? 75) >= 70 ? (
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-black text-[11px]">
+                  🔥 High Intent
+                </span>
+              ) : (lead.score ?? 75) >= 40 ? (
+                <span className="px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-black text-[11px]">
+                  ⚡ Warm Lead
+                </span>
+              ) : (
+                <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 font-black text-[11px]">
+                  ❄️ Cold Lead
+                </span>
+              )}
             </div>
 
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-xs font-bold text-slate-300">
-                <span>Engagement Health</span>
-                <span>{lead.score ?? 75}%</span>
+            <div className="flex items-baseline justify-between">
+              <div>
+                <div className="text-3xl font-black text-slate-950 tracking-tight">
+                  {lead.score ?? 75}
+                  <span className="text-sm font-bold text-slate-600 ml-1">/ 100</span>
+                </div>
+                <p className="text-[11px] font-bold text-slate-600 mt-0.5">Engagement & Conversion Potential</p>
               </div>
-              <div className="w-full h-2.5 rounded-full bg-slate-950 overflow-hidden border border-slate-800">
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                <span>Engagement Health</span>
+                <span className="font-black text-slate-900">{lead.score ?? 75}%</span>
+              </div>
+              <div className="w-full h-3 rounded-full bg-slate-100 overflow-hidden border border-slate-200 p-0.5">
                 <div
-                  className="h-full bg-gradient-to-r from-indigo-500 to-emerald-400 rounded-full transition-all duration-500"
+                  className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-500 rounded-full transition-all duration-500"
                   style={{ width: `${Math.min(100, Math.max(0, lead.score ?? 75))}%` }}
                 />
               </div>
             </div>
 
-            <div className="pt-2 grid grid-cols-2 gap-3 border-t border-slate-800 text-xs">
-              <div>
-                <span className="block text-[10px] font-black uppercase text-slate-400">Current Stage</span>
-                <span className="inline-block mt-1 px-2.5 py-0.5 rounded-md bg-indigo-900/60 border border-indigo-700 text-indigo-200 font-bold">
+            <div className="pt-2 grid grid-cols-2 gap-3 border-t border-slate-100 text-xs">
+              <div className="space-y-1">
+                <span className="block text-[10px] font-black uppercase text-slate-800">Current Stage</span>
+                <span className="inline-block px-2.5 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 font-black">
                   {lead.status}
                 </span>
               </div>
-              <div>
-                <span className="block text-[10px] font-black uppercase text-slate-400">Lead Source</span>
-                <span className="inline-block mt-1 px-2.5 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-slate-200 font-bold">
+              <div className="space-y-1">
+                <span className="block text-[10px] font-black uppercase text-slate-800">Lead Source</span>
+                <span className="inline-block px-2.5 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-slate-800 font-bold">
                   {lead.source}
                 </span>
               </div>
