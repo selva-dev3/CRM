@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 @import "tailwindcss";
 
 @custom-variant dark (&:is(.dark *));
@@ -47,6 +48,8 @@
 }
 
 :root {
+	--font-sans: 'Inter', var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
+	--font-geist-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 	--background: oklch(1 0 0);
 	--foreground: oklch(0.148 0.004 228.8);
 	--card: oklch(1 0 0);
@@ -80,7 +83,7 @@
 	--sidebar-border: oklch(0.925 0.005 214.3);
 	--sidebar-ring: oklch(0.723 0.014 214.4);
 
-	/* ─── Semantic status tokens ─────────────────────────────────────── */
+	/* ─── Semantic status tokens (HR domain) ─────────────────────────── */
 	--status-success: oklch(0.65 0.15 145);
 	--status-success-bg: oklch(0.95 0.02 145);
 	--status-warning: oklch(0.72 0.16 75);
@@ -140,6 +143,11 @@
 	--status-info-bg: oklch(0.28 0.04 250);
 }
 
+/* ─── Enterprise Typography & Font Sizes ───────────────────────────── */
+html {
+	font-size: 13.5px; /* Enterprise CRM Crisp Typography Scale */
+}
+
 /* ─── Density modes ─────────────────────────────────────────────────── */
 html[data-density="compact"] {
 	--density-row: 40px;
@@ -149,17 +157,20 @@ html[data-density="compact"] {
 
 html[data-density="compact"] table th {
 	height: 2.25rem;
+	font-size: 0.75rem;
 }
 
 html[data-density="compact"] table td {
 	padding-top: 0.5rem;
 	padding-bottom: 0.5rem;
+	font-size: 0.8125rem;
 }
 
 html[data-density="compact"] input,
 html[data-density="compact"] select,
 html[data-density="compact"] textarea {
 	min-height: 2rem;
+	font-size: 0.8125rem;
 }
 
 /* ─── Reduced motion ────────────────────────────────────────────────── */
@@ -177,13 +188,16 @@ html[data-density="compact"] textarea {
 	}
 	body {
 		@apply bg-background text-foreground;
+		font-family: var(--font-sans);
+		font-size: 0.875rem; /* 13.5px base body size */
+		line-height: 1.4;
 		overflow-x: hidden !important;
 	}
 	button:not(:disabled), [role="button"]:not(:disabled) {
 		cursor: pointer;
 	}
 	html {
-		@apply font-sans;
+		font-family: var(--font-sans);
 		overflow-x: hidden !important;
 	}
 }
