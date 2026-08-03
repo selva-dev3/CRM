@@ -278,7 +278,7 @@ async def get_lead_timeline(lead_id: str, db: AsyncSession = Depends(get_db)):
             "event_type": "document_attached",
             "title": "Document Attached",
             "description": f"File '{a.filename}' uploaded to storage",
-            "timestamp": str(a.created_at)
+            "timestamp": str(getattr(a, "uploaded_at", getattr(a, "created_at", "")))
         })
 
     # 3. Tasks from DB for this lead
@@ -576,7 +576,7 @@ async def log_lead_call(lead_id: str, payload: CallLogBase, db: AsyncSession = D
 async def get_lead_documents(lead_id: str, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(LeadAttachment).where(LeadAttachment.lead_id == lead_id))
     atts = res.scalars().all()
-    return [{"id": a.id, "filename": a.filename, "file_size": a.file_size or 0, "mime_type": a.mime_type or "application/pdf", "download_url": a.file_url or "", "uploaded_at": str(a.created_at)} for a in atts]
+    return [{"id": a.id, "filename": a.filename, "file_size": a.file_size or 0, "mime_type": a.mime_type or "application/pdf", "download_url": a.file_url or "", "uploaded_at": str(getattr(a, "uploaded_at", getattr(a, "created_at", "")))} for a in atts]
 
 @router.post("/{lead_id}/documents", response_model=DocumentResponse, summary="Attach document file to lead via MinIO S3")
 async def upload_lead_document(lead_id: str, file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
@@ -594,7 +594,8 @@ async def upload_lead_document(lead_id: str, file: UploadFile = File(...), db: A
         att = LeadAttachment(lead_id=lead_id, filename=file.filename, file_url=presigned_url, file_size=file_size, mime_type=file.content_type)
         db.add(att)
         await db.commit()
-        return {"id": att.id, "filename": att.filename, "file_size": att.file_size, "mime_type": att.mime_type, "download_url": att.file_url, "uploaded_at": str(att.created_at)}
+        await db.refresh(att)
+        return {"id": att.id, "filename": att.filename, "file_size": att.file_size or 0, "mime_type": att.mime_type or "application/pdf", "download_url": att.file_url, "uploaded_at": str(getattr(att, "uploaded_at", getattr(att, "created_at", "")))}
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Lead attachment S3 upload failed: {str(e)}")
