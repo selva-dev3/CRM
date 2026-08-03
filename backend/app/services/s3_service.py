@@ -26,8 +26,19 @@ class S3Service:
             )
         )
 
+    def _ensure_bucket_exists(self):
+        """Ensures the S3 bucket exists before performing operations."""
+        try:
+            self.s3_client.head_bucket(Bucket=self.bucket_name)
+        except Exception:
+            try:
+                self.s3_client.create_bucket(Bucket=self.bucket_name)
+            except Exception:
+                pass
+
     def upload_file(self, file_obj: BinaryIO, object_name: str, content_type: Optional[str] = None) -> str:
         """Uploads a file object to MinIO S3 bucket and returns the object key."""
+        self._ensure_bucket_exists()
         extra_args = {}
         if content_type:
             extra_args["ContentType"] = content_type
