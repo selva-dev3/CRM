@@ -32,6 +32,7 @@ def lead_to_dict(l: Lead) -> dict:
         "source": l.source,
         "score": getattr(l, "score", 50.0),
         "assigned_to": getattr(l, "assigned_to", None),
+        "is_archived": getattr(l, "is_archived", False),
         "organization_id": getattr(l, "organization_id", "org-1"),
         "created_at": str(l.created_at) if getattr(l, "created_at", None) else "2026-01-01",
     }
@@ -70,6 +71,9 @@ async def create_lead(payload: LeadCreate, db: AsyncSession = Depends(get_db)):
             postal_code=payload.postal_code,
             status=payload.status,
             source=payload.source,
+            score=payload.score if payload.score is not None else 50.0,
+            assigned_to=payload.assigned_to,
+            is_archived=payload.is_archived if payload.is_archived is not None else False,
         )
         db.add(l)
         await db.commit()

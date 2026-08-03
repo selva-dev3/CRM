@@ -244,6 +244,9 @@ class LeadBase(BaseModel):
     postal_code: Optional[str] = None
     status: str = "New"
     source: str = "Website"
+    score: Optional[float] = 50.0
+    assigned_to: Optional[str] = None
+    is_archived: Optional[bool] = False
     organization_id: Optional[str] = "org-1"
 
 class LeadCreate(LeadBase):
@@ -266,6 +269,8 @@ class LeadUpdate(BaseModel):
     status: Optional[str] = None
     source: Optional[str] = None
     score: Optional[float] = None
+    assigned_to: Optional[str] = None
+    is_archived: Optional[bool] = None
 
 class LeadResponse(LeadBase):
     id: str

@@ -19,6 +19,8 @@ export interface Lead {
   status: string;
   source: string;
   score?: number;
+  assigned_to?: string | null;
+  is_archived?: boolean;
   organization_id?: string;
   created_at?: string;
 }
@@ -39,6 +41,9 @@ export interface CreateLeadPayload {
   postal_code?: string;
   status?: string;
   source?: string;
+  score?: number;
+  assigned_to?: string | null;
+  is_archived?: boolean;
   organization_id?: string;
 }
 
@@ -58,6 +63,9 @@ export interface UpdateLeadPayload {
   postal_code?: string;
   status?: string;
   source?: string;
+  score?: number;
+  assigned_to?: string | null;
+  is_archived?: boolean;
   organization_id?: string;
 }
 
