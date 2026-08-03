@@ -1108,7 +1108,17 @@ export default function LeadDetailPage() {
                       <td className="py-3.5 px-4 text-right">
                         {d.download_url && (
                           <a
-                            href={d.download_url}
+                            href={
+                              d.download_url.startsWith('http') && !d.download_url.includes('minio.railway.internal')
+                                ? d.download_url
+                                : `${(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1').replace(/\/$/, '')}${
+                                    d.download_url.startsWith('/api/v1')
+                                      ? d.download_url.replace('/api/v1', '')
+                                      : d.download_url.startsWith('/')
+                                      ? d.download_url
+                                      : `/${d.download_url}`
+                                  }`
+                            }
                             target="_blank"
                             rel="noreferrer"
                             className="inline-flex items-center text-xs font-black text-indigo-600 hover:text-indigo-800 hover:underline"

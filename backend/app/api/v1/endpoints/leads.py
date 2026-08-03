@@ -1,5 +1,6 @@
 import io
 from fastapi import APIRouter, HTTPException, status, Query, Depends, UploadFile, File
+from fastapi.responses import StreamingResponse
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -593,7 +594,36 @@ async def log_lead_call(lead_id: str, payload: CallLogBase, db: AsyncSession = D
 async def get_lead_documents(lead_id: str, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(LeadAttachment).where(LeadAttachment.lead_id == lead_id))
     atts = res.scalars().all()
-    return [{"id": a.id, "filename": a.filename, "file_size": a.file_size or 0, "mime_type": a.mime_type or "application/pdf", "download_url": a.file_url or "", "uploaded_at": str(getattr(a, "uploaded_at", getattr(a, "created_at", "")))} for a in atts]
+    output = []
+    for a in atts:
+        download_proxy = f"/api/v1/leads/{lead_id}/documents/{a.id}/download"
+        output.append({
+            "id": a.id,
+            "filename": a.filename,
+            "file_size": a.file_size or 0,
+            "mime_type": a.mime_type or "application/pdf",
+            "download_url": download_proxy,
+            "uploaded_at": str(getattr(a, "uploaded_at", getattr(a, "created_at", "")))
+        })
+    return output
+
+@router.get("/{lead_id}/documents/{document_id}/download", summary="Download lead document file")
+async def download_lead_document(lead_id: str, document_id: str, db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(LeadAttachment).where(LeadAttachment.id == document_id, LeadAttachment.lead_id == lead_id))
+    att = res.scalars().first()
+    if not att:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document attachment not found")
+    try:
+        object_name = f"leads/{lead_id}/{att.filename}"
+        s3_obj = s3_service.s3_client.get_object(Bucket=s3_service.bucket_name, Key=object_name)
+        file_bytes = s3_obj['Body'].read()
+        return StreamingResponse(
+            io.BytesIO(file_bytes),
+            media_type=att.mime_type or "application/octet-stream",
+            headers={"Content-Disposition": f'attachment; filename="{att.filename}"'}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to fetch document file: {str(e)}")
 
 @router.post("/{lead_id}/documents", response_model=DocumentResponse, summary="Attach document file to lead via MinIO S3")
 async def upload_lead_document(lead_id: str, file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
@@ -612,7 +642,15 @@ async def upload_lead_document(lead_id: str, file: UploadFile = File(...), db: A
         db.add(att)
         await db.commit()
         await db.refresh(att)
-        return {"id": att.id, "filename": att.filename, "file_size": att.file_size or 0, "mime_type": att.mime_type or "application/pdf", "download_url": att.file_url, "uploaded_at": str(getattr(att, "uploaded_at", getattr(att, "created_at", "")))}
+        download_proxy = f"/api/v1/leads/{lead_id}/documents/{att.id}/download"
+        return {
+            "id": att.id,
+            "filename": att.filename,
+            "file_size": att.file_size or 0,
+            "mime_type": att.mime_type or "application/pdf",
+            "download_url": download_proxy,
+            "uploaded_at": str(getattr(att, "uploaded_at", getattr(att, "created_at", "")))
+        }
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Lead attachment S3 upload failed: {str(e)}")
