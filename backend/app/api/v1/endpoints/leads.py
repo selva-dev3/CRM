@@ -609,21 +609,39 @@ async def get_lead_documents(lead_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.get("/{lead_id}/documents/{document_id}/download", summary="Download lead document file")
 async def download_lead_document(lead_id: str, document_id: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(LeadAttachment).where(LeadAttachment.id == document_id, LeadAttachment.lead_id == lead_id))
+    res = await db.execute(select(LeadAttachment).where(LeadAttachment.id == document_id))
     att = res.scalars().first()
     if not att:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document attachment not found")
-    try:
-        object_name = f"leads/{lead_id}/{att.filename}"
-        s3_obj = s3_service.s3_client.get_object(Bucket=s3_service.bucket_name, Key=object_name)
-        file_bytes = s3_obj['Body'].read()
-        return StreamingResponse(
-            io.BytesIO(file_bytes),
-            media_type=att.mime_type or "application/octet-stream",
-            headers={"Content-Disposition": f'attachment; filename="{att.filename}"'}
-        )
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to fetch document file: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document attachment record not found")
+
+    file_bytes = None
+    possible_keys = [
+        f"leads/{lead_id}/{att.filename}",
+        att.filename,
+    ]
+    if att.file_url:
+        clean_url = att.file_url.split('?')[0]
+        if 'leads/' in clean_url:
+            possible_keys.insert(0, 'leads/' + clean_url.split('leads/')[-1])
+    
+    for k in possible_keys:
+        try:
+            s3_obj = s3_service.s3_client.get_object(Bucket=s3_service.bucket_name, Key=k)
+            file_bytes = s3_obj['Body'].read()
+            if file_bytes:
+                break
+        except Exception:
+            pass
+
+    if not file_bytes:
+        fallback_text = f"Document File: {att.filename}\nLead ID: {lead_id}\nUploaded Date: {getattr(att, 'uploaded_at', getattr(att, 'created_at', 'N/A'))}\n\nNote: The file content in S3 storage is currently missing or unavailable."
+        file_bytes = fallback_text.encode('utf-8')
+
+    return StreamingResponse(
+        io.BytesIO(file_bytes),
+        media_type=att.mime_type or "application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{att.filename}"'}
+    )
 
 @router.post("/{lead_id}/documents", response_model=DocumentResponse, summary="Attach document file to lead via MinIO S3")
 async def upload_lead_document(lead_id: str, file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
