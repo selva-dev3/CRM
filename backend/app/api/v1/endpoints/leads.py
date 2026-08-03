@@ -1,3 +1,4 @@
+import io
 from fastapi import APIRouter, HTTPException, status, Query, Depends, UploadFile, File
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -583,12 +584,12 @@ async def upload_lead_document(lead_id: str, file: UploadFile = File(...), db: A
     if not res.scalars().first():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Lead '{lead_id}' not found")
     try:
+        contents = await file.read()
+        file_size = len(contents)
         object_name = f"leads/{lead_id}/{file.filename}"
-        s3_key = s3_service.upload_file(file.file, object_name=object_name, content_type=file.content_type)
-        presigned_url = s3_service.generate_presigned_url(s3_key)
         
-        file.file.seek(0, 2)
-        file_size = file.file.tell()
+        s3_key = s3_service.upload_file(io.BytesIO(contents), object_name=object_name, content_type=file.content_type)
+        presigned_url = s3_service.generate_presigned_url(s3_key)
 
         att = LeadAttachment(lead_id=lead_id, filename=file.filename, file_url=presigned_url, file_size=file_size, mime_type=file.content_type)
         db.add(att)
