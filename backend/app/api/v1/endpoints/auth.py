@@ -257,15 +257,23 @@ async def verify_magic_link(token: str, db: AsyncSession = Depends(get_db)):
 async def list_api_keys(db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(ApiKey).limit(10))
     keys = res.scalars().all()
-    return [{"id": k.id, "name": k.name, "key": k.key_hash, "created_at": str(k.created_at), "last_used": str(k.last_used)} for k in keys]
+    return [{"id": k.id, "name": k.name, "api_key": k.key_hash, "created_at": str(k.created_at), "last_used": str(k.last_used)} for k in keys]
 
 @router.post("/api-keys", response_model=ApiKeyResponse, summary="Create new API key")
 async def create_api_key(payload: ApiKeyCreate, db: AsyncSession = Depends(get_db)):
     try:
-        key = ApiKey(organization_id="org-1", name=payload.name, key_hash="crm_live_newkey123")
+        org_res = await db.execute(select(Organization).limit(1))
+        org = org_res.scalars().first()
+        if not org:
+            org = Organization(name="Default Enterprise CRM")
+            db.add(org)
+            await db.flush()
+        
+        api_key_str = f"crm_live_{generate_random_code(24)}"
+        key = ApiKey(organization_id=org.id, name=payload.name, key_hash=api_key_str)
         db.add(key)
         await db.commit()
-        return {"id": key.id, "name": key.name, "key": key.key_hash, "created_at": "2026-08-02"}
+        return {"id": key.id, "name": key.name, "api_key": key.key_hash, "created_at": str(key.created_at)}
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

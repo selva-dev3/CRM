@@ -62,7 +62,8 @@ class ApiKeyCreate(BaseModel):
 class ApiKeyResponse(BaseModel):
     id: str
     name: str
-    key: str
+    api_key: Optional[str] = None
+    key: Optional[str] = None
     created_at: str
     last_used: Optional[str] = None
 
