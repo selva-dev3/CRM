@@ -18,12 +18,11 @@ export async function fetchOrganizationsApi(): Promise<OrganizationItem[]> {
     if (data && typeof data === 'object' && 'id' in data) return [data];
     return [{ id: 'org-1', name: 'Acme Enterprise Corp' }];
   } catch {
-    // Fallback if endpoint is singular or empty
     try {
       const single = await apiClient.get<OrganizationItem>('/organizations');
       if (single && single.id) return [single];
     } catch {
-      // Return default organization fallback
+      // Return fallback
     }
     return [
       { id: 'org-1', name: 'Acme Enterprise Corp' },
@@ -33,9 +32,21 @@ export async function fetchOrganizationsApi(): Promise<OrganizationItem[]> {
   }
 }
 
+export async function fetchOrganizationByIdApi(id: string): Promise<OrganizationItem> {
+  return apiClient.get<OrganizationItem>(`/organizations/${id}`);
+}
+
 export function useOrganizationsQuery() {
   return useQuery({
     queryKey: ['organizations'],
     queryFn: fetchOrganizationsApi,
+  });
+}
+
+export function useOrganizationByIdQuery(id: string) {
+  return useQuery({
+    queryKey: ['organization', id],
+    queryFn: () => fetchOrganizationByIdApi(id),
+    enabled: Boolean(id),
   });
 }

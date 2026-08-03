@@ -25,6 +25,16 @@ async def list_all_organizations(db: AsyncSession = Depends(get_db)):
         return [{"id": "org-1", "name": "Default Enterprise Organization", "domain": "enterprise.crm.com", "plan": "Enterprise", "max_users": 100, "created_at": "2026-01-01", "members_count": 1}]
     return [{"id": o.id, "name": o.name, "domain": o.domain, "plan": o.plan, "max_users": o.max_users, "created_at": str(o.created_at), "members_count": 1} for o in orgs]
 
+@router.get("/{org_id}", response_model=OrganizationResponse, summary="Get organization details by ID")
+async def get_organization_by_id(org_id: str, db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(Organization).where(Organization.id == org_id))
+    org = res.scalars().first()
+    if not org:
+        if org_id == "org-1":
+            return {"id": "org-1", "name": "Default Enterprise Organization", "domain": "enterprise.crm.com", "plan": "Enterprise", "max_users": 100, "created_at": "2026-01-01", "members_count": 1}
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Organization with ID '{org_id}' not found")
+    return {"id": org.id, "name": org.name, "domain": org.domain, "plan": org.plan, "max_users": org.max_users, "created_at": str(org.created_at), "members_count": 1}
+
 @router.put("", response_model=OrganizationResponse, summary="Update organization settings")
 async def update_organization(payload: OrganizationUpdate, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Organization).limit(1))
