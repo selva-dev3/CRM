@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -20,40 +20,160 @@ import {
   ShieldCheck,
   Building,
   Activity,
-  ChevronRight
+  ChevronRight,
+  X,
+  CheckCircle2
 } from 'lucide-react';
-import { Button, Card, Badge, Alert, AlertDescription } from '@/components/ui';
-import { useLeadQuery, useDeleteLeadMutation } from '@/lib/api/leads';
+import { Button, Card, Label, Input, Badge, Alert, AlertDescription } from '@/components/ui';
+import { useLeadQuery, useUpdateLeadMutation, useDeleteLeadMutation, Lead } from '@/lib/api/leads';
 import { useOrganizationsQuery } from '@/lib/api/organizations';
+import { useCompaniesQuery } from '@/lib/api/companies';
+import { useUsersQuery } from '@/lib/api/users';
+import { useQueryClient } from '@tanstack/react-query';
 
 export default function LeadDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const leadId = (params?.id as string) || '';
 
-  const { data: lead, isLoading, isError, error } = useLeadQuery(leadId);
-  const { data: organizations = [] } = useOrganizationsQuery();
+  const { data: lead, isLoading, isError, error, refetch } = useLeadQuery(leadId);
+  const { data: organizations = [], isLoading: isOrgsLoading } = useOrganizationsQuery();
+  const { data: companies = [], isLoading: isCompaniesLoading } = useCompaniesQuery();
+  const { data: users = [], isLoading: isUsersLoading } = useUsersQuery(1, 100);
+
+  const updateLeadMutation = useUpdateLeadMutation();
   const deleteLeadMutation = useDeleteLeadMutation();
-  const [isDeleting, setIsDeleting] = React.useState(false);
+
+  // Modals & Banners State
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Edit Modal Form State
+  const [contactName, setContactName] = useState('');
+  const [company, setCompany] = useState('');
+  const [customCompany, setCustomCompany] = useState('');
+  const [title, setTitle] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [website, setWebsite] = useState('');
+  const [industry, setIndustry] = useState('');
+  const [companySize, setCompanySize] = useState('');
+  const [country, setCountry] = useState('');
+  const [stateName, setStateName] = useState('');
+  const [city, setCity] = useState('');
+  const [address, setAddress] = useState('');
+  const [postalCode, setPostalCode] = useState('');
+  const [status, setStatus] = useState('New');
+  const [source, setSource] = useState('Website');
+  const [organizationId, setOrganizationId] = useState('');
+  const [score, setScore] = useState<number>(75);
+  const [assignedTo, setAssignedTo] = useState<string>('');
+  const [isArchived, setIsArchived] = useState<boolean>(false);
 
   // Helper to resolve org name if ID matches
-  const orgName = React.useMemo(() => {
+  const orgName = useMemo(() => {
     if (!lead?.organization_id) return 'Enterprise Organization';
     const found = organizations.find((o) => o.id === lead.organization_id);
     return found ? found.name : 'Enterprise Organization';
   }, [lead, organizations]);
 
-  const handleDelete = async () => {
+  const handleOpenEditModal = () => {
     if (!lead) return;
-    if (confirm(`Are you sure you want to delete lead "${lead.contact_name}"?`)) {
-      try {
-        setIsDeleting(true);
-        await deleteLeadMutation.mutateAsync(lead.id);
-        router.push('/leads');
-      } catch (err) {
-        alert('Failed to delete lead.');
-        setIsDeleting(false);
-      }
+    setContactName(lead.contact_name || '');
+    setCompany(lead.company || '');
+    setCustomCompany('');
+    setTitle(lead.title || '');
+    setEmail(lead.email || '');
+    setPhone(lead.phone || '');
+    setWebsite(lead.website || '');
+    setIndustry(lead.industry || '');
+    setCompanySize(lead.company_size || '');
+    setCountry(lead.country || '');
+    setStateName(lead.state || '');
+    setCity(lead.city || '');
+    setAddress(lead.address || '');
+    setPostalCode(lead.postal_code || '');
+    setStatus(lead.status || 'New');
+    setSource(lead.source || 'Website');
+    setOrganizationId(lead.organization_id || (organizations[0]?.id ?? 'org-1'));
+    setScore(lead.score ?? 75);
+    setAssignedTo(lead.assigned_to || '');
+    setIsArchived(lead.is_archived ?? false);
+    setErrorMessage(null);
+    setIsEditModalOpen(true);
+  };
+
+  const handleCloseEditModal = () => {
+    if (updateLeadMutation.isPending) return;
+    setIsEditModalOpen(false);
+  };
+
+  const handleSubmitEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!lead) return;
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    const finalCompany = company === 'other' ? customCompany.trim() : company.trim();
+
+    if (!contactName.trim() || !email.trim()) {
+      setErrorMessage('Contact Name and Email are required.');
+      return;
+    }
+
+    if (!finalCompany) {
+      setErrorMessage('Company Name is required.');
+      return;
+    }
+
+    try {
+      const payload = {
+        contact_name: contactName.trim(),
+        company: finalCompany,
+        title: title.trim() || `${contactName.trim()} Opportunity`,
+        email: email.trim(),
+        phone: phone.trim() || undefined,
+        website: website.trim() || undefined,
+        industry: industry.trim() || undefined,
+        company_size: companySize || undefined,
+        country: country.trim() || undefined,
+        state: stateName.trim() || undefined,
+        city: city.trim() || undefined,
+        address: address.trim() || undefined,
+        postal_code: postalCode.trim() || undefined,
+        status,
+        source,
+        score: Number(score) || 75,
+        assigned_to: assignedTo.trim() || undefined,
+        is_archived: isArchived,
+        organization_id: organizationId || (organizations[0]?.id ?? 'org-1'),
+      };
+
+      await updateLeadMutation.mutateAsync({ id: lead.id, payload });
+      await queryClient.invalidateQueries({ queryKey: ['lead', lead.id] });
+      await refetch();
+      setIsEditModalOpen(false);
+      setSuccessMessage('Lead updated successfully!');
+
+      setTimeout(() => {
+        setSuccessMessage(null);
+      }, 4000);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Failed to update lead.');
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!lead) return;
+    try {
+      await deleteLeadMutation.mutateAsync(lead.id);
+      setIsDeleteModalOpen(false);
+      router.push('/leads');
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Failed to delete lead.');
     }
   };
 
@@ -98,6 +218,16 @@ export default function LeadDetailPage() {
         </span>
       </nav>
 
+      {/* Success Banner */}
+      {successMessage && (
+        <Alert variant="default" className="bg-emerald-50 border-emerald-300 text-emerald-950 font-bold">
+          <CheckCircle2 className="h-4 w-4 text-emerald-600 mr-2" />
+          <AlertDescription className="text-emerald-900 font-bold">
+            {successMessage}
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Header Banner */}
       <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-5 sm:p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-5">
         <div className="flex items-start sm:items-center gap-4">
@@ -123,28 +253,30 @@ export default function LeadDetailPage() {
 
         {/* Action Controls */}
         <div className="flex items-center gap-3 shrink-0">
-          <Link href="/leads">
-            <Button variant="outline" size="sm" className="border-slate-300 text-slate-900 font-bold hover:bg-slate-100 text-xs px-4 h-9">
-              <Pencil className="w-3.5 h-3.5 mr-1.5" /> Edit Lead
-            </Button>
-          </Link>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleOpenEditModal}
+            className="border-slate-300 text-slate-900 font-bold hover:bg-slate-100 text-xs px-4 h-9 cursor-pointer"
+          >
+            <Pencil className="w-3.5 h-3.5 mr-1.5" /> Edit Lead
+          </Button>
           <Button
             type="button"
             variant="destructive"
             size="sm"
-            onClick={handleDelete}
-            disabled={isDeleting}
-            className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs px-4 h-9 shadow-xs"
+            onClick={() => setIsDeleteModalOpen(true)}
+            className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs px-4 h-9 shadow-xs cursor-pointer"
           >
-            {isDeleting ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5 mr-1.5" />}
-            Delete Lead
+            <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Delete Lead
           </Button>
         </div>
       </div>
 
       {/* Main Responsive Grid Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column (2 Cols wide on desktop) */}
+        {/* Left Column */}
         <div className="lg:col-span-2 space-y-6">
           {/* Card 1: Lead Overview & Contact Info */}
           <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-6">
@@ -263,7 +395,7 @@ export default function LeadDetailPage() {
           </Card>
         </div>
 
-        {/* Right Column (Sidebar metrics on desktop) */}
+        {/* Right Column */}
         <div className="space-y-6">
           {/* Card 4: Qualification & Engagement Score */}
           <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-5">
@@ -363,6 +495,417 @@ export default function LeadDetailPage() {
           </Card>
         </div>
       </div>
+
+      {/* EDIT LEAD MODAL DIALOG */}
+      {isEditModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
+          <div className="relative w-full max-w-3xl max-h-[90vh] bg-white rounded-2xl border border-slate-300 shadow-2xl overflow-hidden flex flex-col text-black">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-200 bg-slate-50 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white shrink-0">
+                  <Pencil className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-black">Edit Sales Lead</h3>
+                  <p className="text-xs font-bold text-slate-800">Update details for {lead.contact_name}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleCloseEditModal}
+                disabled={updateLeadMutation.isPending}
+                className="p-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-200 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Error Banner inside Modal */}
+            {errorMessage && (
+              <div className="px-6 pt-4 shrink-0">
+                <Alert variant="destructive" className="bg-rose-50 border-rose-300 text-rose-950 font-bold">
+                  <AlertCircle className="h-4 w-4 text-rose-600 mr-2" />
+                  <AlertDescription className="text-rose-900 font-bold text-xs">{errorMessage}</AlertDescription>
+                </Alert>
+              </div>
+            )}
+
+            {/* Modal Form Body */}
+            <form onSubmit={handleSubmitEdit} className="p-6 space-y-6 overflow-y-auto flex-1">
+              {/* 1. Contact Information */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-black uppercase tracking-wider text-indigo-700 pb-1 border-b border-slate-200">
+                  1. Contact Information
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Contact Name *</Label>
+                    <Input
+                      required
+                      value={contactName}
+                      onChange={(e) => setContactName(e.target.value)}
+                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Email Address *</Label>
+                    <Input
+                      type="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Phone Number</Label>
+                    <Input
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Opportunity / Lead Title</Label>
+                    <Input
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. Company & Industry Details */}
+              <div className="space-y-3 pt-2">
+                <h4 className="text-xs font-black uppercase tracking-wider text-indigo-700 pb-1 border-b border-slate-200">
+                  2. Company & Industry Details
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Select Company *</Label>
+                    <select
+                      value={company}
+                      onChange={(e) => setCompany(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      {companies.map((c) => (
+                        <option key={c.id} value={c.name}>
+                          {c.name}
+                        </option>
+                      ))}
+                      <option value="other">+ Enter Custom Company Name</option>
+                    </select>
+
+                    {company === 'other' && (
+                      <Input
+                        placeholder="Enter company name"
+                        value={customCompany}
+                        onChange={(e) => setCustomCompany(e.target.value)}
+                        className="bg-white border-indigo-400 text-black font-bold text-xs mt-2"
+                      />
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Website</Label>
+                    <Input
+                      placeholder="https://company.com"
+                      value={website}
+                      onChange={(e) => setWebsite(e.target.value)}
+                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Industry</Label>
+                    <Input
+                      placeholder="e.g. Software, Finance"
+                      value={industry}
+                      onChange={(e) => setIndustry(e.target.value)}
+                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Company Size</Label>
+                    <select
+                      value={companySize}
+                      onChange={(e) => setCompanySize(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="">Select Company Size...</option>
+                      <option value="1-10">1-10 Employees</option>
+                      <option value="11-50">11-50 Employees</option>
+                      <option value="51-200">51-200 Employees</option>
+                      <option value="201-500">201-500 Employees</option>
+                      <option value="501-1000">501-1000 Employees</option>
+                      <option value="1000+">1000+ Employees</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. Address & Location */}
+              <div className="space-y-3 pt-2">
+                <h4 className="text-xs font-black uppercase tracking-wider text-indigo-700 pb-1 border-b border-slate-200">
+                  3. Address & Location
+                </h4>
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Address</Label>
+                    <Input
+                      placeholder="Street address, suite, or building"
+                      value={address}
+                      onChange={(e) => setAddress(e.target.value)}
+                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-black text-black">City</Label>
+                      <Input
+                        placeholder="e.g. Chennai"
+                        value={city}
+                        onChange={(e) => setCity(e.target.value)}
+                        className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-black text-black">State</Label>
+                      <Input
+                        placeholder="e.g. TN"
+                        value={stateName}
+                        onChange={(e) => setStateName(e.target.value)}
+                        className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-black text-black">Country</Label>
+                      <Input
+                        placeholder="e.g. India"
+                        value={country}
+                        onChange={(e) => setCountry(e.target.value)}
+                        className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-black text-black">Postal Code</Label>
+                      <Input
+                        placeholder="600096"
+                        value={postalCode}
+                        onChange={(e) => setPostalCode(e.target.value)}
+                        className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. Classification & Organization */}
+              <div className="space-y-3 pt-2">
+                <h4 className="text-xs font-black uppercase tracking-wider text-indigo-700 pb-1 border-b border-slate-200">
+                  4. Status, Source, Score & Organization
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Lead Status</Label>
+                    <select
+                      value={status}
+                      onChange={(e) => setStatus(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="New">New</option>
+                      <option value="Contacted">Contacted</option>
+                      <option value="Qualified">Qualified</option>
+                      <option value="Unqualified">Unqualified</option>
+                      <option value="Converted">Converted</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Lead Source</Label>
+                    <select
+                      value={source}
+                      onChange={(e) => setSource(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="Website">Website</option>
+                      <option value="LinkedIn">LinkedIn</option>
+                      <option value="Referral">Referral</option>
+                      <option value="Cold Call">Cold Call</option>
+                      <option value="Event">Event</option>
+                      <option value="Partner">Partner</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Organization *</Label>
+                    <select
+                      value={organizationId}
+                      onChange={(e) => setOrganizationId(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      {isOrgsLoading ? (
+                        <option value="">Loading...</option>
+                      ) : (
+                        organizations.map((org) => (
+                          <option key={org.id} value={org.id}>
+                            {org.name}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1 items-end">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">AI Score (0-100)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={100}
+                      placeholder="75"
+                      value={score}
+                      onChange={(e) => setScore(Number(e.target.value))}
+                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Assigned To User</Label>
+                    <select
+                      value={assignedTo}
+                      onChange={(e) => setAssignedTo(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="">Unassigned (None)</option>
+                      {isUsersLoading ? (
+                        <option value="" disabled>Loading users...</option>
+                      ) : (
+                        users.map((u) => (
+                          <option key={u.id} value={u.id}>
+                            {u.name} ({u.role})
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-2 pb-2">
+                    <input
+                      type="checkbox"
+                      id="isArchivedCheckDetail"
+                      checked={isArchived}
+                      onChange={(e) => setIsArchived(e.target.checked)}
+                      className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
+                    />
+                    <label htmlFor="isArchivedCheckDetail" className="text-xs font-black text-slate-800 cursor-pointer select-none">
+                      Archive this lead
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Actions */}
+              <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-3 shrink-0">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleCloseEditModal}
+                  disabled={updateLeadMutation.isPending}
+                  className="border-slate-300 text-black font-bold hover:bg-slate-100 text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={updateLeadMutation.isPending}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-sm text-xs px-5"
+                >
+                  {updateLeadMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                      Saving Changes...
+                    </>
+                  ) : (
+                    'Save Changes'
+                  )}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE CONFIRMATION MODAL DIALOG */}
+      {isDeleteModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
+          <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl overflow-hidden text-black">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-200 bg-rose-50 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-rose-600 flex items-center justify-center text-white shrink-0">
+                  <Trash2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-rose-950">Delete Sales Lead</h3>
+                  <p className="text-xs font-bold text-rose-700">Confirm permanent lead removal</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsDeleteModalOpen(false)}
+                disabled={deleteLeadMutation.isPending}
+                className="p-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-200 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 space-y-4">
+              <p className="text-xs font-bold text-slate-700 leading-relaxed">
+                Are you sure you want to delete sales lead <span className="font-black text-slate-950">"{lead.contact_name}"</span> ({lead.company})?
+              </p>
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-[11px] font-bold">
+                ⚠️ Warning: This action cannot be undone and will permanently remove this lead from the database.
+              </div>
+
+              {/* Modal Actions */}
+              <div className="pt-2 flex items-center justify-end gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsDeleteModalOpen(false)}
+                  disabled={deleteLeadMutation.isPending}
+                  className="border-slate-300 text-black font-bold hover:bg-slate-100 text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleConfirmDelete}
+                  disabled={deleteLeadMutation.isPending}
+                  className="bg-rose-600 hover:bg-rose-700 text-white font-bold shadow-sm text-xs px-5 cursor-pointer"
+                >
+                  {deleteLeadMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                      Deleting Lead...
+                    </>
+                  ) : (
+                    'Delete Lead'
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
