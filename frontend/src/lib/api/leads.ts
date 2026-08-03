@@ -8,6 +8,14 @@ export interface Lead {
   contact_name: string;
   email: string;
   phone?: string;
+  website?: string;
+  industry?: string;
+  company_size?: string;
+  country?: string;
+  state?: string;
+  city?: string;
+  address?: string;
+  postal_code?: string;
   status: string;
   source: string;
   score?: number;
@@ -21,6 +29,33 @@ export interface CreateLeadPayload {
   contact_name: string;
   email: string;
   phone?: string;
+  website?: string;
+  industry?: string;
+  company_size?: string;
+  country?: string;
+  state?: string;
+  city?: string;
+  address?: string;
+  postal_code?: string;
+  status?: string;
+  source?: string;
+  organization_id?: string;
+}
+
+export interface UpdateLeadPayload {
+  title?: string;
+  company?: string;
+  contact_name?: string;
+  email?: string;
+  phone?: string;
+  website?: string;
+  industry?: string;
+  company_size?: string;
+  country?: string;
+  state?: string;
+  city?: string;
+  address?: string;
+  postal_code?: string;
   status?: string;
   source?: string;
   organization_id?: string;
@@ -53,6 +88,10 @@ export async function createLeadApi(payload: CreateLeadPayload): Promise<Lead> {
   return apiClient.post<Lead>('/leads', payload);
 }
 
+export async function updateLeadApi(id: string, payload: UpdateLeadPayload): Promise<Lead> {
+  return apiClient.put<Lead>(`/leads/${id}`, payload);
+}
+
 // ---------------------------------------------------------------------------
 // TanStack Query Hooks
 // ---------------------------------------------------------------------------
@@ -71,6 +110,17 @@ export function useCreateLeadMutation() {
     mutationFn: (payload: CreateLeadPayload) => createLeadApi(payload),
     onSuccess: () => {
       // Invalidate leads query cache to refresh table automatically
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+    },
+  });
+}
+
+export function useUpdateLeadMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: UpdateLeadPayload }) => updateLeadApi(id, payload),
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['leads'] });
     },
   });

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Plus, 
   Building2, 
@@ -11,16 +11,18 @@ import {
   CheckCircle2, 
   AlertCircle,
   Sparkles,
-  RefreshCw
+  RefreshCw,
+  Pencil
 } from 'lucide-react';
 import { Button, Card, Label, Input, Badge, Alert, AlertDescription } from '@/components/ui';
 import { DataTable, DataTableColumn, TableActionOption } from '@/components/shared/data-table';
-import { useLeadsQuery, useCreateLeadMutation, Lead } from '@/lib/api/leads';
+import { useLeadsQuery, useCreateLeadMutation, useUpdateLeadMutation, Lead } from '@/lib/api/leads';
 import { useOrganizationsQuery } from '@/lib/api/organizations';
 import { useCompaniesQuery } from '@/lib/api/companies';
 
 export default function LeadsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   
@@ -31,6 +33,14 @@ export default function LeadsPage() {
   const [title, setTitle] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [website, setWebsite] = useState('');
+  const [industry, setIndustry] = useState('');
+  const [companySize, setCompanySize] = useState('');
+  const [country, setCountry] = useState('');
+  const [stateName, setStateName] = useState('');
+  const [city, setCity] = useState('');
+  const [address, setAddress] = useState('');
+  const [postalCode, setPostalCode] = useState('');
   const [status, setStatus] = useState('New');
   const [source, setSource] = useState('Website');
   const [organizationId, setOrganizationId] = useState('');
@@ -48,15 +58,32 @@ export default function LeadsPage() {
   const { data: organizations = [], isLoading: isOrgsLoading } = useOrganizationsQuery();
   const { data: companies = [], isLoading: isCompaniesLoading } = useCompaniesQuery();
 
+  // Auto-set initial organization ID when organizations data is loaded from API
+  useEffect(() => {
+    if (organizations.length > 0 && !organizationId) {
+      setOrganizationId(organizations[0].id);
+    }
+  }, [organizations, organizationId]);
+
   const createLeadMutation = useCreateLeadMutation();
+  const updateLeadMutation = useUpdateLeadMutation();
 
   const resetForm = () => {
+    setEditingLead(null);
     setContactName('');
     setCompany(companies.length > 0 ? companies[0].name : '');
     setCustomCompany('');
     setTitle('');
     setEmail('');
     setPhone('');
+    setWebsite('');
+    setIndustry('');
+    setCompanySize('');
+    setCountry('');
+    setStateName('');
+    setCity('');
+    setAddress('');
+    setPostalCode('');
     setStatus('New');
     setSource('Website');
     setOrganizationId(organizations.length > 0 ? organizations[0].id : 'org-1');
@@ -70,8 +97,31 @@ export default function LeadsPage() {
     setIsModalOpen(true);
   };
 
+  const handleOpenEditModal = (lead: Lead) => {
+    setEditingLead(lead);
+    setContactName(lead.contact_name || '');
+    setCompany(lead.company || '');
+    setCustomCompany('');
+    setTitle(lead.title || '');
+    setEmail(lead.email || '');
+    setPhone(lead.phone || '');
+    setWebsite(lead.website || '');
+    setIndustry(lead.industry || '');
+    setCompanySize(lead.company_size || '');
+    setCountry(lead.country || '');
+    setStateName(lead.state || '');
+    setCity(lead.city || '');
+    setAddress(lead.address || '');
+    setPostalCode(lead.postal_code || '');
+    setStatus(lead.status || 'New');
+    setSource(lead.source || 'Website');
+    setOrganizationId(lead.organization_id || (organizations[0]?.id ?? 'org-1'));
+    setErrorMessage(null);
+    setIsModalOpen(true);
+  };
+
   const handleCloseModal = () => {
-    if (createLeadMutation.isPending) return;
+    if (createLeadMutation.isPending || updateLeadMutation.isPending) return;
     setIsModalOpen(false);
     resetForm();
   };
@@ -100,14 +150,27 @@ export default function LeadsPage() {
         title: title.trim() || `${contactName.trim()} Opportunity`,
         email: email.trim(),
         phone: phone.trim() || undefined,
+        website: website.trim() || undefined,
+        industry: industry.trim() || undefined,
+        company_size: companySize || undefined,
+        country: country.trim() || undefined,
+        state: stateName.trim() || undefined,
+        city: city.trim() || undefined,
+        address: address.trim() || undefined,
+        postal_code: postalCode.trim() || undefined,
         status,
         source,
         organization_id: organizationId || (organizations[0]?.id ?? 'org-1'),
       };
 
-      await createLeadMutation.mutateAsync(payload);
-      
-      setSuccessMessage(`Lead for "${contactName}" created successfully!`);
+      if (editingLead) {
+        await updateLeadMutation.mutateAsync({ id: editingLead.id, payload });
+        setSuccessMessage(`Lead "${contactName}" updated successfully!`);
+      } else {
+        await createLeadMutation.mutateAsync(payload);
+        setSuccessMessage(`Lead for "${contactName}" created successfully!`);
+      }
+
       setIsModalOpen(false);
       resetForm();
 
@@ -115,7 +178,7 @@ export default function LeadsPage() {
         setSuccessMessage(null);
       }, 4000);
     } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to create lead. Please check API server.');
+      setErrorMessage(err?.message || `Failed to ${editingLead ? 'update' : 'create'} lead. Please check API server.`);
     }
   };
 
@@ -203,7 +266,7 @@ export default function LeadsPage() {
   const actions: TableActionOption<Lead>[] = [
     {
       label: 'Edit Lead',
-      onClick: (lead) => alert(`Edit lead: ${lead.contact_name}`),
+      onClick: (lead) => handleOpenEditModal(lead),
     },
     {
       label: 'Delete Lead',
@@ -276,19 +339,23 @@ export default function LeadsPage() {
         }
       />
 
-      {/* CREATE LEAD MODAL DIALOG */}
+      {/* CREATE / EDIT LEAD MODAL DIALOG */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
-          <div className="relative w-full max-w-lg bg-white rounded-2xl border border-slate-300 shadow-2xl overflow-hidden text-black">
+          <div className="relative w-full max-w-2xl bg-white rounded-2xl border border-slate-300 shadow-2xl overflow-hidden text-black max-h-[90vh] flex flex-col">
             {/* Modal Header */}
-            <div className="p-5 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+            <div className="p-5 border-b border-slate-200 bg-slate-50 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white">
-                  <Plus className="w-5 h-5" />
+                  {editingLead ? <Pencil className="w-4 h-4" /> : <Plus className="w-5 h-5" />}
                 </div>
                 <div>
-                  <h3 className="text-lg font-black text-black">Create New Sales Lead</h3>
-                  <p className="text-xs font-bold text-slate-700">Select company & organization from live API lists</p>
+                  <h3 className="text-lg font-black text-black">
+                    {editingLead ? 'Edit Sales Lead' : 'Create New Sales Lead'}
+                  </h3>
+                  <p className="text-xs font-bold text-slate-700">
+                    {editingLead ? `Update details for ${editingLead.contact_name}` : 'Fill lead, company & location details below'}
+                  </p>
                 </div>
               </div>
               <button
@@ -301,7 +368,7 @@ export default function LeadsPage() {
             </div>
 
             {/* Modal Form */}
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <form onSubmit={handleSubmit} className="p-6 space-y-5 overflow-y-auto max-h-[calc(90vh-130px)]">
               {errorMessage && (
                 <Alert variant="destructive" className="bg-rose-50 border-rose-300 text-rose-950 font-bold">
                   <AlertCircle className="h-4 w-4 text-rose-600 mr-2" />
@@ -311,164 +378,283 @@ export default function LeadsPage() {
                 </Alert>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* 1. Contact & Lead Overview */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-black uppercase tracking-wider text-indigo-700 pb-1 border-b border-slate-200">
+                  1. Contact Information
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Contact Name *</Label>
+                    <Input
+                      type="text"
+                      required
+                      placeholder="e.g. John Doe"
+                      value={contactName}
+                      onChange={(e) => setContactName(e.target.value)}
+                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Email Address *</Label>
+                    <Input
+                      type="email"
+                      required
+                      placeholder="john@acmecorp.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Phone Number</Label>
+                    <Input
+                      type="tel"
+                      placeholder="+1 (555) 000-0000"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Opportunity / Lead Title</Label>
+                    <Input
+                      type="text"
+                      placeholder="e.g. Enterprise Cloud Deal"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. Company Information */}
+              <div className="space-y-3 pt-2">
+                <h4 className="text-xs font-black uppercase tracking-wider text-indigo-700 pb-1 border-b border-slate-200">
+                  2. Company & Industry Details
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Select Company *</Label>
+                    <select
+                      value={company}
+                      onChange={(e) => setCompany(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      {isCompaniesLoading ? (
+                        <option value="">Loading companies...</option>
+                      ) : (
+                        companies.map((c) => (
+                          <option key={c.id} value={c.name}>
+                            {c.name}
+                          </option>
+                        ))
+                      )}
+                      <option value="other">+ Enter Custom Company...</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Website</Label>
+                    <Input
+                      type="url"
+                      placeholder="https://company.com"
+                      value={website}
+                      onChange={(e) => setWebsite(e.target.value)}
+                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                    />
+                  </div>
+                </div>
+
+                {company === 'other' && (
+                  <div className="space-y-1.5 animate-in fade-in-50">
+                    <Label className="text-xs font-black text-black">Custom Company Name *</Label>
+                    <Input
+                      type="text"
+                      required
+                      placeholder="Enter new company name..."
+                      value={customCompany}
+                      onChange={(e) => setCustomCompany(e.target.value)}
+                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                    />
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Industry</Label>
+                    <Input
+                      type="text"
+                      placeholder="e.g. Software, Finance, Healthcare"
+                      value={industry}
+                      onChange={(e) => setIndustry(e.target.value)}
+                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Company Size</Label>
+                    <select
+                      value={companySize}
+                      onChange={(e) => setCompanySize(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="">Select Company Size...</option>
+                      <option value="1-10">1-10 Employees</option>
+                      <option value="11-50">11-50 Employees</option>
+                      <option value="51-200">51-200 Employees</option>
+                      <option value="201-500">201-500 Employees</option>
+                      <option value="500+">500+ Employees</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. Location & Address Details */}
+              <div className="space-y-3 pt-2">
+                <h4 className="text-xs font-black uppercase tracking-wider text-indigo-700 pb-1 border-b border-slate-200">
+                  3. Address & Location
+                </h4>
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-black text-black">Contact Name *</Label>
+                  <Label className="text-xs font-black text-black">Address</Label>
                   <Input
                     type="text"
-                    required
-                    placeholder="e.g. John Doe"
-                    value={contactName}
-                    onChange={(e) => setContactName(e.target.value)}
+                    placeholder="Street address, suite, or building"
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
                     className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
                   />
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-black text-black">Select Company *</Label>
-                  <select
-                    value={company}
-                    onChange={(e) => setCompany(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    {isCompaniesLoading ? (
-                      <option value="">Loading companies...</option>
-                    ) : (
-                      companies.map((c) => (
-                        <option key={c.id} value={c.name}>
-                          {c.name}
-                        </option>
-                      ))
-                    )}
-                    <option value="other">+ Enter Custom Company...</option>
-                  </select>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">City</Label>
+                    <Input
+                      type="text"
+                      placeholder="e.g. Chennai"
+                      value={city}
+                      onChange={(e) => setCity(e.target.value)}
+                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">State</Label>
+                    <Input
+                      type="text"
+                      placeholder="e.g. TN"
+                      value={stateName}
+                      onChange={(e) => setStateName(e.target.value)}
+                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Country</Label>
+                    <Input
+                      type="text"
+                      placeholder="e.g. India"
+                      value={country}
+                      onChange={(e) => setCountry(e.target.value)}
+                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Postal Code</Label>
+                    <Input
+                      type="text"
+                      placeholder="600096"
+                      value={postalCode}
+                      onChange={(e) => setPostalCode(e.target.value)}
+                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                    />
+                  </div>
                 </div>
               </div>
 
-              {company === 'other' && (
-                <div className="space-y-1.5 animate-in fade-in-50">
-                  <Label className="text-xs font-black text-black">Custom Company Name *</Label>
-                  <Input
-                    type="text"
-                    required
-                    placeholder="Enter new company name..."
-                    value={customCompany}
-                    onChange={(e) => setCustomCompany(e.target.value)}
-                    className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
-                  />
-                </div>
-              )}
+              {/* 4. Classification & Organization */}
+              <div className="space-y-3 pt-2">
+                <h4 className="text-xs font-black uppercase tracking-wider text-indigo-700 pb-1 border-b border-slate-200">
+                  4. Status, Source & Organization
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Lead Status</Label>
+                    <select
+                      value={status}
+                      onChange={(e) => setStatus(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="New">New</option>
+                      <option value="Contacted">Contacted</option>
+                      <option value="Qualified">Qualified</option>
+                      <option value="Unqualified">Unqualified</option>
+                      <option value="Converted">Converted</option>
+                    </select>
+                  </div>
 
-              <div className="space-y-1.5">
-                <Label className="text-xs font-black text-black">Opportunity / Lead Title</Label>
-                <Input
-                  type="text"
-                  placeholder="e.g. Enterprise Cloud Deal"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
-                />
-              </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Lead Source</Label>
+                    <select
+                      value={source}
+                      onChange={(e) => setSource(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="Website">Website</option>
+                      <option value="LinkedIn">LinkedIn</option>
+                      <option value="Referral">Referral</option>
+                      <option value="Cold Call">Cold Call</option>
+                      <option value="Event">Event</option>
+                      <option value="Partner">Partner</option>
+                    </select>
+                  </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-black text-black">Email Address *</Label>
-                  <Input
-                    type="email"
-                    required
-                    placeholder="john@acmecorp.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
-                  />
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Organization *</Label>
+                    <select
+                      value={organizationId}
+                      onChange={(e) => setOrganizationId(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      {isOrgsLoading ? (
+                        <option value="">Loading...</option>
+                      ) : (
+                        organizations.map((org) => (
+                          <option key={org.id} value={org.id}>
+                            {org.name}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  </div>
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-black text-black">Phone Number</Label>
-                  <Input
-                    type="tel"
-                    placeholder="+1 (555) 000-0000"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-black text-black">Lead Status</Label>
-                  <select
-                    value={status}
-                    onChange={(e) => setStatus(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="New">New</option>
-                    <option value="Contacted">Contacted</option>
-                    <option value="Qualified">Qualified</option>
-                    <option value="Unqualified">Unqualified</option>
-                    <option value="Converted">Converted</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-black text-black">Lead Source</Label>
-                  <select
-                    value={source}
-                    onChange={(e) => setSource(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="Website">Website</option>
-                    <option value="LinkedIn">LinkedIn</option>
-                    <option value="Referral">Referral</option>
-                    <option value="Cold Call">Cold Call</option>
-                    <option value="Event">Event</option>
-                    <option value="Partner">Partner</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Dynamic API-connected Organization Dropdown List */}
-              <div className="space-y-1.5">
-                <Label className="text-xs font-black text-black">Select Organization *</Label>
-                <select
-                  value={organizationId}
-                  onChange={(e) => setOrganizationId(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  {isOrgsLoading ? (
-                    <option value="">Loading organizations...</option>
-                  ) : (
-                    organizations.map((org) => (
-                      <option key={org.id} value={org.id}>
-                        {org.name} ({org.id})
-                      </option>
-                    ))
-                  )}
-                </select>
               </div>
 
               {/* Modal Actions */}
-              <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-3">
+              <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-3 shrink-0">
                 <Button
                   type="button"
                   variant="outline"
                   onClick={handleCloseModal}
-                  disabled={createLeadMutation.isPending}
+                  disabled={createLeadMutation.isPending || updateLeadMutation.isPending}
                   className="border-slate-300 text-black font-bold hover:bg-slate-100 text-xs"
                 >
                   Cancel
                 </Button>
                 <Button
                   type="submit"
-                  disabled={createLeadMutation.isPending}
+                  disabled={createLeadMutation.isPending || updateLeadMutation.isPending}
                   className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-sm text-xs px-5"
                 >
-                  {createLeadMutation.isPending ? (
+                  {createLeadMutation.isPending || updateLeadMutation.isPending ? (
                     <>
                       <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                      Creating Lead...
+                      {editingLead ? 'Updating Lead...' : 'Creating Lead...'}
                     </>
                   ) : (
-                    'Create Lead'
+                    editingLead ? 'Save Changes' : 'Create Lead'
                   )}
                 </Button>
               </div>

@@ -234,6 +234,14 @@ class LeadBase(BaseModel):
     contact_name: str
     email: EmailStr
     phone: Optional[str] = None
+    website: Optional[str] = None
+    industry: Optional[str] = None
+    company_size: Optional[str] = None
+    country: Optional[str] = None
+    state: Optional[str] = None
+    city: Optional[str] = None
+    address: Optional[str] = None
+    postal_code: Optional[str] = None
     status: str = "New"
     source: str = "Website"
     organization_id: Optional[str] = "org-1"
@@ -244,7 +252,19 @@ class LeadCreate(LeadBase):
 class LeadUpdate(BaseModel):
     title: Optional[str] = None
     company: Optional[str] = None
+    contact_name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    website: Optional[str] = None
+    industry: Optional[str] = None
+    company_size: Optional[str] = None
+    country: Optional[str] = None
+    state: Optional[str] = None
+    city: Optional[str] = None
+    address: Optional[str] = None
+    postal_code: Optional[str] = None
     status: Optional[str] = None
+    source: Optional[str] = None
     score: Optional[float] = None
 
 class LeadResponse(LeadBase):

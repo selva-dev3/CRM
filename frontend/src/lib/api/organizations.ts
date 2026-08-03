@@ -79,25 +79,24 @@ export interface UpdateOrganizationPayload {
   max_users?: number;
 }
 
-export async function fetchOrganizationsApi(): Promise<OrganizationItem[]> {
+export async function getAllOrganizationsApi(): Promise<OrganizationItem[]> {
   try {
     const data = await apiClient.get<OrganizationItem[] | OrganizationItem>('/organizations/all');
     if (Array.isArray(data)) return data;
     if (data && typeof data === 'object' && 'id' in data) return [data];
-    return [{ id: 'org-1', name: 'Acme Enterprise Corp' }];
-  } catch {
+  } catch (err) {
     try {
       const single = await apiClient.get<OrganizationItem>('/organizations');
       if (single && single.id) return [single];
-    } catch {
-      // Return fallback
+    } catch (err2) {
+      // return fallback if needed
     }
-    return [
-      { id: 'org-1', name: 'Acme Enterprise Corp' },
-      { id: 'org-2', name: 'Global Tech Solutions' },
-      { id: 'org-3', name: 'Starlight Operations' },
-    ];
   }
+  return [];
+}
+
+export async function fetchOrganizationsApi(): Promise<OrganizationItem[]> {
+  return getAllOrganizationsApi();
 }
 
 export async function fetchOrganizationByIdApi(id: string): Promise<OrganizationItem> {
@@ -115,7 +114,7 @@ export async function updateOrganizationApi(id: string, payload: UpdateOrganizat
 export function useOrganizationsQuery() {
   return useQuery({
     queryKey: ['organizations'],
-    queryFn: fetchOrganizationsApi,
+    queryFn: getAllOrganizationsApi,
   });
 }
 

@@ -12,6 +12,30 @@ from app.services.s3_service import s3_service
 
 router = APIRouter()
 
+def lead_to_dict(l: Lead) -> dict:
+    return {
+        "id": l.id,
+        "title": l.title,
+        "company": l.company,
+        "contact_name": l.contact_name,
+        "email": l.email,
+        "phone": getattr(l, "phone", None),
+        "website": getattr(l, "website", None),
+        "industry": getattr(l, "industry", None),
+        "company_size": getattr(l, "company_size", None),
+        "country": getattr(l, "country", None),
+        "state": getattr(l, "state", None),
+        "city": getattr(l, "city", None),
+        "address": getattr(l, "address", None),
+        "postal_code": getattr(l, "postal_code", None),
+        "status": l.status,
+        "source": l.source,
+        "score": getattr(l, "score", 50.0),
+        "assigned_to": getattr(l, "assigned_to", None),
+        "organization_id": getattr(l, "organization_id", "org-1"),
+        "created_at": str(l.created_at) if getattr(l, "created_at", None) else "2026-01-01",
+    }
+
 @router.get("", response_model=List[LeadResponse], summary="List all leads with pagination & search")
 async def list_leads(page: int = 1, limit: int = 20, search: Optional[str] = None, status: Optional[str] = None, db: AsyncSession = Depends(get_db)):
     try:
@@ -22,17 +46,34 @@ async def list_leads(page: int = 1, limit: int = 20, search: Optional[str] = Non
             stmt = stmt.where(Lead.status == status)
         res = await db.execute(stmt)
         leads = res.scalars().all()
-        return [{"id": l.id, "title": l.title, "company": l.company, "contact_name": l.contact_name, "email": l.email, "phone": l.phone, "status": l.status, "source": l.source, "score": l.score, "assigned_to": l.assigned_to, "organization_id": l.organization_id, "created_at": str(l.created_at)} for l in leads]
+        return [lead_to_dict(l) for l in leads]
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 @router.post("", response_model=LeadResponse, status_code=status.HTTP_201_CREATED, summary="Create a new lead")
 async def create_lead(payload: LeadCreate, db: AsyncSession = Depends(get_db)):
     try:
-        l = Lead(organization_id=payload.organization_id, title=payload.title, company=payload.company, contact_name=payload.contact_name, email=payload.email, phone=payload.phone, status=payload.status, source=payload.source)
+        l = Lead(
+            organization_id=payload.organization_id,
+            title=payload.title,
+            company=payload.company,
+            contact_name=payload.contact_name,
+            email=payload.email,
+            phone=payload.phone,
+            website=payload.website,
+            industry=payload.industry,
+            company_size=payload.company_size,
+            country=payload.country,
+            state=payload.state,
+            city=payload.city,
+            address=payload.address,
+            postal_code=payload.postal_code,
+            status=payload.status,
+            source=payload.source,
+        )
         db.add(l)
         await db.commit()
-        return {"id": l.id, "title": l.title, "company": l.company, "contact_name": l.contact_name, "email": l.email, "phone": l.phone, "status": l.status, "source": l.source, "score": l.score, "assigned_to": l.assigned_to, "organization_id": l.organization_id, "created_at": str(l.created_at)}
+        return lead_to_dict(l)
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to create lead: {str(e)}")
@@ -128,9 +169,13 @@ async def update_lead(lead_id: str, payload: LeadUpdate, db: AsyncSession = Depe
     if not l:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Lead '{lead_id}' not found")
     try:
-        if payload.title: l.title = payload.title
-        if payload.company: l.company = payload.company
-        if payload.status: l.status = payload.status
+        if payload.title is not None: l.title = payload.title
+        if payload.company is not None: l.company = payload.company
+        if payload.contact_name is not None: l.contact_name = payload.contact_name
+        if payload.email is not None: l.email = payload.email
+        if payload.phone is not None: l.phone = payload.phone
+        if payload.status is not None: l.status = payload.status
+        if payload.source is not None: l.source = payload.source
         await db.commit()
         return {"id": l.id, "title": l.title, "company": l.company, "contact_name": l.contact_name, "email": l.email, "phone": l.phone, "status": l.status, "source": l.source, "score": l.score, "assigned_to": l.assigned_to, "organization_id": l.organization_id, "created_at": str(l.created_at)}
     except Exception as e:
