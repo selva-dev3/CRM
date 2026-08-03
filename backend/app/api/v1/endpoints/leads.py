@@ -29,7 +29,7 @@ async def list_leads(page: int = 1, limit: int = 20, search: Optional[str] = Non
 @router.post("", response_model=LeadResponse, status_code=status.HTTP_201_CREATED, summary="Create a new lead")
 async def create_lead(payload: LeadCreate, db: AsyncSession = Depends(get_db)):
     try:
-        l = Lead(organization_id="org-1", title=payload.title, company=payload.company, contact_name=payload.contact_name, email=payload.email, phone=payload.phone, status=payload.status, source=payload.source)
+        l = Lead(organization_id=payload.organization_id, title=payload.title, company=payload.company, contact_name=payload.contact_name, email=payload.email, phone=payload.phone, status=payload.status, source=payload.source)
         db.add(l)
         await db.commit()
         return {"id": l.id, "title": l.title, "company": l.company, "contact_name": l.contact_name, "email": l.email, "phone": l.phone, "status": l.status, "source": l.source, "score": l.score, "assigned_to": l.assigned_to, "organization_id": l.organization_id, "created_at": str(l.created_at)}
