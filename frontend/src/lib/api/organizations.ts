@@ -4,6 +4,24 @@ import { apiClient } from '@/lib/api-client';
 export interface OrganizationItem {
   id: string;
   name: string;
+  slug?: string;
+  email?: string;
+  phone?: string;
+  website?: string;
+  industry?: string;
+  company_size?: string;
+  country?: string;
+  state?: string;
+  city?: string;
+  address?: string;
+  postal_code?: string;
+  timezone?: string;
+  currency?: string;
+  language?: string;
+  logo_url?: string;
+  tax_number?: string;
+  registration_number?: string;
+  status?: string;
   domain?: string;
   plan?: string;
   max_users?: number;
@@ -13,6 +31,24 @@ export interface OrganizationItem {
 
 export interface CreateOrganizationPayload {
   name: string;
+  slug?: string;
+  email?: string;
+  phone?: string;
+  website?: string;
+  industry?: string;
+  company_size?: string;
+  country?: string;
+  state?: string;
+  city?: string;
+  address?: string;
+  postal_code?: string;
+  timezone?: string;
+  currency?: string;
+  language?: string;
+  logo_url?: string;
+  tax_number?: string;
+  registration_number?: string;
+  status?: string;
   domain?: string;
   plan?: string;
   max_users?: number;
@@ -20,6 +56,24 @@ export interface CreateOrganizationPayload {
 
 export interface UpdateOrganizationPayload {
   name?: string;
+  slug?: string;
+  email?: string;
+  phone?: string;
+  website?: string;
+  industry?: string;
+  company_size?: string;
+  country?: string;
+  state?: string;
+  city?: string;
+  address?: string;
+  postal_code?: string;
+  timezone?: string;
+  currency?: string;
+  language?: string;
+  logo_url?: string;
+  tax_number?: string;
+  registration_number?: string;
+  status?: string;
   domain?: string;
 }
 

@@ -173,21 +173,57 @@ class RoleResponse(RoleBase):
 # 4. Organization Schemas
 class OrganizationBase(BaseModel):
     name: str
+    slug: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    website: Optional[str] = None
+    industry: Optional[str] = None
+    company_size: Optional[str] = None
+    country: Optional[str] = None
+    state: Optional[str] = None
+    city: Optional[str] = None
+    address: Optional[str] = None
+    postal_code: Optional[str] = None
+    timezone: Optional[str] = "Asia/Kolkata"
+    currency: Optional[str] = "INR"
+    language: Optional[str] = "en"
+    logo_url: Optional[str] = None
+    tax_number: Optional[str] = None
+    registration_number: Optional[str] = None
+    status: Optional[str] = "active"
     domain: Optional[str] = None
-    plan: str = "Enterprise"
-    max_users: int = 100
+    plan: Optional[str] = "Enterprise"
+    max_users: Optional[int] = 100
 
 class OrganizationCreate(OrganizationBase):
     pass
 
 class OrganizationUpdate(BaseModel):
     name: Optional[str] = None
+    slug: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    website: Optional[str] = None
+    industry: Optional[str] = None
+    company_size: Optional[str] = None
+    country: Optional[str] = None
+    state: Optional[str] = None
+    city: Optional[str] = None
+    address: Optional[str] = None
+    postal_code: Optional[str] = None
+    timezone: Optional[str] = None
+    currency: Optional[str] = None
+    language: Optional[str] = None
+    logo_url: Optional[str] = None
+    tax_number: Optional[str] = None
+    registration_number: Optional[str] = None
+    status: Optional[str] = None
     domain: Optional[str] = None
 
 class OrganizationResponse(OrganizationBase):
     id: str
     created_at: str
-    members_count: int
+    members_count: int = 1
 
 # 5. Lead Schemas
 class LeadBase(BaseModel):

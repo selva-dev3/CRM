@@ -9,26 +9,65 @@ from app.services.s3_service import s3_service
 
 router = APIRouter()
 
+def org_to_dict(org: Organization) -> dict:
+    return {
+        "id": org.id,
+        "name": org.name,
+        "slug": getattr(org, "slug", None),
+        "email": getattr(org, "email", None),
+        "phone": getattr(org, "phone", None),
+        "website": getattr(org, "website", None),
+        "industry": getattr(org, "industry", None),
+        "company_size": getattr(org, "company_size", None),
+        "country": getattr(org, "country", None),
+        "state": getattr(org, "state", None),
+        "city": getattr(org, "city", None),
+        "address": getattr(org, "address", None),
+        "postal_code": getattr(org, "postal_code", None),
+        "timezone": getattr(org, "timezone", "Asia/Kolkata"),
+        "currency": getattr(org, "currency", "INR"),
+        "language": getattr(org, "language", "en"),
+        "logo_url": getattr(org, "logo_url", None),
+        "tax_number": getattr(org, "tax_number", None),
+        "registration_number": getattr(org, "registration_number", None),
+        "status": getattr(org, "status", "active"),
+        "domain": org.domain,
+        "plan": org.plan,
+        "max_users": org.max_users,
+        "created_at": str(org.created_at),
+        "members_count": 1
+    }
+
 @router.post("", response_model=OrganizationResponse, status_code=status.HTTP_201_CREATED, summary="Create a new organization")
 async def create_organization(payload: OrganizationCreate, db: AsyncSession = Depends(get_db)):
     try:
         org = Organization(
             name=payload.name,
+            slug=payload.slug,
+            email=payload.email,
+            phone=payload.phone,
+            website=payload.website,
+            industry=payload.industry,
+            company_size=payload.company_size,
+            country=payload.country,
+            state=payload.state,
+            city=payload.city,
+            address=payload.address,
+            postal_code=payload.postal_code,
+            timezone=payload.timezone or "Asia/Kolkata",
+            currency=payload.currency or "INR",
+            language=payload.language or "en",
+            logo_url=payload.logo_url,
+            tax_number=payload.tax_number,
+            registration_number=payload.registration_number,
+            status=payload.status or "active",
             domain=payload.domain,
-            plan=payload.plan,
-            max_users=payload.max_users
+            plan=payload.plan or "Enterprise",
+            max_users=payload.max_users or 100
         )
         db.add(org)
         await db.commit()
-        return {
-            "id": org.id,
-            "name": org.name,
-            "domain": org.domain,
-            "plan": org.plan,
-            "max_users": org.max_users,
-            "created_at": str(org.created_at),
-            "members_count": 1
-        }
+        return org_to_dict(org)
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to create organization: {str(e)}")
@@ -39,15 +78,41 @@ async def get_organization(db: AsyncSession = Depends(get_db)):
     org = res.scalars().first()
     if not org:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No organization found")
-    return {"id": org.id, "name": org.name, "domain": org.domain, "plan": org.plan, "max_users": org.max_users, "created_at": str(org.created_at), "members_count": 1}
+    return org_to_dict(org)
 
 @router.get("/all", response_model=List[OrganizationResponse], summary="List all organizations")
 async def list_all_organizations(db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Organization))
     orgs = res.scalars().all()
     if not orgs:
-        return [{"id": "org-1", "name": "Default Enterprise Organization", "domain": "enterprise.crm.com", "plan": "Enterprise", "max_users": 100, "created_at": "2026-01-01", "members_count": 1}]
-    return [{"id": o.id, "name": o.name, "domain": o.domain, "plan": o.plan, "max_users": o.max_users, "created_at": str(o.created_at), "members_count": 1} for o in orgs]
+        return [{
+            "id": "org-1",
+            "name": "Default Enterprise Organization",
+            "slug": "default-enterprise",
+            "email": "info@enterprise.com",
+            "phone": "+91 9876543210",
+            "website": "https://enterprise.com",
+            "industry": "Information Technology",
+            "company_size": "51-200",
+            "country": "India",
+            "state": "Tamil Nadu",
+            "city": "Thoothukudi",
+            "address": "123 Main Road",
+            "postal_code": "628001",
+            "timezone": "Asia/Kolkata",
+            "currency": "INR",
+            "language": "en",
+            "logo_url": "",
+            "tax_number": "GSTIN123456789",
+            "registration_number": "CIN123456789",
+            "status": "active",
+            "domain": "enterprise.crm.com",
+            "plan": "Enterprise",
+            "max_users": 100,
+            "created_at": "2026-01-01",
+            "members_count": 1
+        }]
+    return [org_to_dict(o) for o in orgs]
 
 @router.get("/{org_id}", response_model=OrganizationResponse, summary="Get organization details by ID")
 async def get_organization_by_id(org_id: str, db: AsyncSession = Depends(get_db)):
@@ -55,9 +120,35 @@ async def get_organization_by_id(org_id: str, db: AsyncSession = Depends(get_db)
     org = res.scalars().first()
     if not org:
         if org_id == "org-1":
-            return {"id": "org-1", "name": "Default Enterprise Organization", "domain": "enterprise.crm.com", "plan": "Enterprise", "max_users": 100, "created_at": "2026-01-01", "members_count": 1}
+            return {
+                "id": "org-1",
+                "name": "Default Enterprise Organization",
+                "slug": "default-enterprise",
+                "email": "info@enterprise.com",
+                "phone": "+91 9876543210",
+                "website": "https://enterprise.com",
+                "industry": "Information Technology",
+                "company_size": "51-200",
+                "country": "India",
+                "state": "Tamil Nadu",
+                "city": "Thoothukudi",
+                "address": "123 Main Road",
+                "postal_code": "628001",
+                "timezone": "Asia/Kolkata",
+                "currency": "INR",
+                "language": "en",
+                "logo_url": "",
+                "tax_number": "GSTIN123456789",
+                "registration_number": "CIN123456789",
+                "status": "active",
+                "domain": "enterprise.crm.com",
+                "plan": "Enterprise",
+                "max_users": 100,
+                "created_at": "2026-01-01",
+                "members_count": 1
+            }
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Organization with ID '{org_id}' not found")
-    return {"id": org.id, "name": org.name, "domain": org.domain, "plan": org.plan, "max_users": org.max_users, "created_at": str(org.created_at), "members_count": 1}
+    return org_to_dict(org)
 
 @router.put("/{org_id}", response_model=OrganizationResponse, summary="Update organization settings by ID")
 async def update_organization_by_id(org_id: str, payload: OrganizationUpdate, db: AsyncSession = Depends(get_db)):
@@ -66,28 +157,15 @@ async def update_organization_by_id(org_id: str, payload: OrganizationUpdate, db
     if not org:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Organization with ID '{org_id}' not found to update")
     try:
-        if payload.name: org.name = payload.name
-        if payload.domain: org.domain = payload.domain
+        for field, value in payload.model_dump(exclude_unset=True).items():
+            if value is not None and hasattr(org, field):
+                setattr(org, field, value)
         await db.commit()
-        return {"id": org.id, "name": org.name, "domain": org.domain, "plan": org.plan, "max_users": org.max_users, "created_at": str(org.created_at), "members_count": 1}
+        return org_to_dict(org)
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-@router.put("", response_model=OrganizationResponse, summary="Update default organization settings")
-async def update_organization(payload: OrganizationUpdate, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(Organization).limit(1))
-    org = res.scalars().first()
-    if not org:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No organization found to update")
-    try:
-        if payload.name: org.name = payload.name
-        if payload.domain: org.domain = payload.domain
-        await db.commit()
-        return {"id": org.id, "name": org.name, "domain": org.domain, "plan": org.plan, "max_users": org.max_users, "created_at": str(org.created_at), "members_count": 1}
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 @router.get("/members", summary="List members in current organization")
 async def list_members(db: AsyncSession = Depends(get_db)):
