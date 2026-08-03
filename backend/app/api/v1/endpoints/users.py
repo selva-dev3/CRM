@@ -6,8 +6,8 @@ from app.database import get_db
 from app.models import User, UserInvitation, Organization
 from app.schemas.crm_schemas import (
     UserResponse, UserCreate, UserUpdate, UserProfileUpdate, UserInviteRequest,
-    AcceptInviteRequest, UserInvitationDetailsResponse, UserActionResponse, UserDeleteResponse,
-    MessageResponse, BulkDeleteRequest, BulkActionResponse
+    UserInviteBulkResponse, AcceptInviteRequest, UserInvitationDetailsResponse,
+    UserActionResponse, UserDeleteResponse, MessageResponse, BulkDeleteRequest, BulkActionResponse
 )
 from app.services.s3_service import s3_service
 from app.services.email_service import send_user_invite_email
@@ -80,9 +80,9 @@ async def upload_avatar(file: UploadFile = File(...), db: AsyncSession = Depends
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"S3 Avatar upload failed: {str(e)}")
 
-@router.post("/invite", response_model=MessageResponse, summary="Bulk invite users via email")
+@router.post("/invite", response_model=UserInviteBulkResponse, summary="Bulk invite users via email with name, email and 14-char random tokens")
 async def invite_users(payload: UserInviteRequest, db: AsyncSession = Depends(get_db)):
-    sent_count = 0
+    invitation_responses = []
     try:
         org_res = await db.execute(select(Organization).limit(1))
         org = org_res.scalars().first()
@@ -92,26 +92,45 @@ async def invite_users(payload: UserInviteRequest, db: AsyncSession = Depends(ge
             await db.flush()
         org_id = org.id
 
-        for email in payload.emails:
-            email_clean = email.strip()
-            if email_clean:
-                token = generate_random_code(14)
-                inv = UserInvitation(
-                    email=email_clean,
-                    token=token,
-                    role=payload.role or "Sales Executive",
-                    organization_id=org_id,
-                    status="pending"
-                )
-                db.add(inv)
-                await db.flush()
+        invite_targets = []
+        if payload.users:
+            for u in payload.users:
+                invite_targets.append({"name": u.name or u.email.split("@")[0], "email": u.email.strip()})
+        elif payload.emails:
+            for email in payload.emails:
+                email_clean = email.strip()
+                target_name = payload.name or email_clean.split("@")[0]
+                invite_targets.append({"name": target_name, "email": email_clean})
 
-                invite_url = f"http://localhost:3000/accept-invite?token={token}"
-                send_user_invite_email(email_to=email_clean, role=payload.role, invite_url=invite_url)
-                sent_count += 1
-        
+        for target in invite_targets:
+            token = generate_random_code(14)
+            inv = UserInvitation(
+                email=target["email"],
+                token=token,
+                role=payload.role or "Sales Executive",
+                organization_id=org_id,
+                status="pending"
+            )
+            db.add(inv)
+            await db.flush()
+
+            invite_url = f"http://localhost:3000/accept-invite?token={token}"
+            send_user_invite_email(email_to=target["email"], role=payload.role, invite_url=invite_url)
+
+            invitation_responses.append({
+                "name": target["name"],
+                "email": target["email"],
+                "token": token,
+                "role": payload.role or "Sales Executive",
+                "status": "pending"
+            })
+
         await db.commit()
-        return {"message": f"Invites sent to {sent_count} users", "status": "success"}
+        return {
+            "message": f"Invites sent to {len(invitation_responses)} users",
+            "invitations": invitation_responses,
+            "status": "success"
+        }
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invitation dispatch failed: {str(e)}")
@@ -176,12 +195,8 @@ async def accept_user_invitation(payload: AcceptInviteRequest, db: AsyncSession 
         
         inv.status = "accepted"
         await db.commit()
-
-        access_token = create_access_token(user.id)
         return {
             "message": "Invitation accepted successfully! Your account is active.",
-            "access_token": access_token,
-            "token_type": "bearer",
             "user_id": user.id,
             "email": user.email,
             "name": user.name,

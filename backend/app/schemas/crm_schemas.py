@@ -93,9 +93,27 @@ class UserProfileUpdate(BaseModel):
     avatar_url: Optional[str] = None
     timezone: Optional[str] = "UTC"
 
+class UserInviteItem(BaseModel):
+    name: Optional[str] = None
+    email: EmailStr
+
 class UserInviteRequest(BaseModel):
-    emails: List[EmailStr]
+    name: Optional[str] = None
+    emails: Optional[List[EmailStr]] = None
+    users: Optional[List[UserInviteItem]] = None
+    role: str = "Sales Executive"
+
+class UserInviteResponseItem(BaseModel):
+    name: str
+    email: str
+    token: str
     role: str
+    status: str = "pending"
+
+class UserInviteBulkResponse(BaseModel):
+    message: str
+    invitations: List[UserInviteResponseItem]
+    status: str = "success"
 
 class AcceptInviteRequest(BaseModel):
     token: str
