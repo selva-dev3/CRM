@@ -4,3 +4,7 @@ export * from "./card";
 export * from "./label";
 export * from "./badge";
 export * from "./alert";
+export * from "./dropdown-menu";
+export * from "./skeleton";
+export * from "./avatar";
+export * from "./table";
