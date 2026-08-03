@@ -1,17 +1,23 @@
-import smtplib
+import resend
 import logging
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+resend.api_key = settings.RESEND_API_KEY
+
+# Default sender for Resend sandbox mode (no custom domain verified yet).
+# In sandbox mode, Resend only lets you send emails using this address,
+# and only to the email address you signed up to Resend with.
+# Once you verify your own domain on resend.com/domains, replace this
+# with e.g. "Enterprise CRM Support <noreply@yourdomain.com>".
+RESEND_SANDBOX_FROM = "Enterprise CRM Support <onboarding@resend.dev>"
+
+
 def send_reset_password_email(email_to: str, token: str, user_name: str = "User") -> bool:
-    """Sends password reset HTML email via Gmail SMTP containing token and reset link."""
+    """Sends password reset HTML email via Resend API containing token and reset link."""
     reset_url = f"http://localhost:3000/reset-password?token={token}"
     subject = f"{settings.PROJECT_NAME} - Password Reset Request"
-    
-    sender_email = settings.SMTP_USER or settings.EMAILS_FROM_EMAIL or "selvakumar.dev3@gmail.com"
 
     html_content = f"""
     <!DOCTYPE html>
@@ -42,38 +48,28 @@ def send_reset_password_email(email_to: str, token: str, user_name: str = "User"
     </html>
     """
 
-    message = MIMEMultipart("alternative")
-    message["Subject"] = subject
-    message["From"] = f"{settings.EMAILS_FROM_NAME} <{sender_email}>"
-    message["To"] = email_to
-    message.attach(MIMEText(html_content, "html"))
-
     try:
-        smtp_host = settings.SMTP_HOST or "smtp.gmail.com"
-        smtp_port = int(settings.SMTP_PORT or 587)
-        smtp_user = settings.SMTP_USER or "selvakumar.dev3@gmail.com"
-        smtp_pass = settings.SMTP_PASSWORD or "cxwromupefrpeovz"
-
-        print(f"[SMTP SENDING] Connecting to {smtp_host}:{smtp_port} for recipient {email_to}...")
-        with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
-            server.starttls()
-            server.login(smtp_user, smtp_pass)
-            server.sendmail(sender_email, [email_to], message.as_string())
-        
-        logger.info(f"Password reset email sent successfully to {email_to}")
-        print(f"[SMTP SUCCESS] Real password reset email sent to {email_to} via Gmail SMTP!")
+        print(f"[RESEND SENDING] Sending password reset email to {email_to}...")
+        params: resend.Emails.SendParams = {
+            "from": RESEND_SANDBOX_FROM,
+            "to": [email_to],
+            "subject": subject,
+            "html": html_content,
+        }
+        result = resend.Emails.send(params)
+        logger.info(f"Password reset email sent successfully to {email_to} (id={result.get('id')})")
+        print(f"[RESEND SUCCESS] Password reset email sent to {email_to} via Resend! id={result.get('id')}")
         return True
     except Exception as e:
         logger.error(f"Failed to send email to {email_to}: {str(e)}")
-        print(f"[SMTP ERROR] Failed to send email to {email_to}: {str(e)}")
+        print(f"[RESEND ERROR] Failed to send email to {email_to}: {str(e)}")
         print(f"[FALLBACK RESET LINK] User: {email_to} -> Link: {reset_url}")
         return False
 
 
 def send_user_invite_email(email_to: str, role: str = "Member", invite_url: str = "http://localhost:3000/accept-invite") -> bool:
-    """Sends Organization User Invitation HTML email via Gmail SMTP."""
+    """Sends Organization User Invitation HTML email via Resend API."""
     subject = f"You're Invited to Join {settings.PROJECT_NAME}"
-    sender_email = settings.SMTP_USER or settings.EMAILS_FROM_EMAIL or "selvakumar.dev3@gmail.com"
 
     html_content = f"""
     <!DOCTYPE html>
@@ -102,38 +98,28 @@ def send_user_invite_email(email_to: str, role: str = "Member", invite_url: str 
     </html>
     """
 
-    message = MIMEMultipart("alternative")
-    message["Subject"] = subject
-    message["From"] = f"{settings.EMAILS_FROM_NAME} <{sender_email}>"
-    message["To"] = email_to
-    message.attach(MIMEText(html_content, "html"))
-
     try:
-        smtp_host = settings.SMTP_HOST or "smtp.gmail.com"
-        smtp_port = int(settings.SMTP_PORT or 587)
-        smtp_user = settings.SMTP_USER or "selvakumar.dev3@gmail.com"
-        smtp_pass = settings.SMTP_PASSWORD or "cxwromupefrpeovz"
-
-        print(f"[INVITE SMTP SENDING] Sending invitation email to {email_to}...")
-        with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
-            server.starttls()
-            server.login(smtp_user, smtp_pass)
-            server.sendmail(sender_email, [email_to], message.as_string())
-        
-        logger.info(f"User invitation email sent successfully to {email_to}")
-        print(f"[INVITE SMTP SUCCESS] Invitation email sent to {email_to} via Gmail SMTP!")
+        print(f"[INVITE RESEND SENDING] Sending invitation email to {email_to}...")
+        params: resend.Emails.SendParams = {
+            "from": RESEND_SANDBOX_FROM,
+            "to": [email_to],
+            "subject": subject,
+            "html": html_content,
+        }
+        result = resend.Emails.send(params)
+        logger.info(f"User invitation email sent successfully to {email_to} (id={result.get('id')})")
+        print(f"[INVITE RESEND SUCCESS] Invitation email sent to {email_to} via Resend! id={result.get('id')}")
         return True
     except Exception as e:
         logger.error(f"Failed to send invite email to {email_to}: {str(e)}")
-        print(f"[INVITE SMTP ERROR] Failed to send email to {email_to}: {str(e)}")
+        print(f"[INVITE RESEND ERROR] Failed to send email to {email_to}: {str(e)}")
         return False
 
 
 def send_magic_link_email(email_to: str, token: str, user_name: str = "User") -> bool:
-    """Sends Passwordless Magic Link HTML email via Gmail SMTP."""
+    """Sends Passwordless Magic Link HTML email via Resend API."""
     magic_url = f"http://localhost:3000/magic-link?token={token}"
     subject = f"{settings.PROJECT_NAME} - Your Passwordless Login Link"
-    sender_email = settings.SMTP_USER or settings.EMAILS_FROM_EMAIL or "selvakumar.dev3@gmail.com"
 
     html_content = f"""
     <!DOCTYPE html>
@@ -163,28 +149,19 @@ def send_magic_link_email(email_to: str, token: str, user_name: str = "User") ->
     </html>
     """
 
-    message = MIMEMultipart("alternative")
-    message["Subject"] = subject
-    message["From"] = f"{settings.EMAILS_FROM_NAME} <{sender_email}>"
-    message["To"] = email_to
-    message.attach(MIMEText(html_content, "html"))
-
     try:
-        smtp_host = settings.SMTP_HOST or "smtp.gmail.com"
-        smtp_port = int(settings.SMTP_PORT or 587)
-        smtp_user = settings.SMTP_USER or "selvakumar.dev3@gmail.com"
-        smtp_pass = settings.SMTP_PASSWORD or "cxwromupefrpeovz"
-
-        print(f"[MAGIC LINK SMTP SENDING] Sending magic link email to {email_to}...")
-        with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
-            server.starttls()
-            server.login(smtp_user, smtp_pass)
-            server.sendmail(sender_email, [email_to], message.as_string())
-        
-        logger.info(f"Magic link email sent successfully to {email_to}")
-        print(f"[MAGIC LINK SMTP SUCCESS] Magic link email sent to {email_to} via Gmail SMTP!")
+        print(f"[MAGIC LINK RESEND SENDING] Sending magic link email to {email_to}...")
+        params: resend.Emails.SendParams = {
+            "from": RESEND_SANDBOX_FROM,
+            "to": [email_to],
+            "subject": subject,
+            "html": html_content,
+        }
+        result = resend.Emails.send(params)
+        logger.info(f"Magic link email sent successfully to {email_to} (id={result.get('id')})")
+        print(f"[MAGIC LINK RESEND SUCCESS] Magic link email sent to {email_to} via Resend! id={result.get('id')}")
         return True
     except Exception as e:
         logger.error(f"Failed to send magic link email to {email_to}: {str(e)}")
-        print(f"[MAGIC LINK SMTP ERROR] Failed to send email to {email_to}: {str(e)}")
+        print(f"[MAGIC LINK RESEND ERROR] Failed to send email to {email_to}: {str(e)}")
         return False

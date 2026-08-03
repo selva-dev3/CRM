@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     EMAILS_FROM_NAME: str = "Enterprise CRM Support"
     RESET_TOKEN_EXPIRE_MINUTES: int = 60
 
+    # Resend Email API (primary — HTTPS based email delivery)
+    RESEND_API_KEY: Optional[str] = None
+
     # AI API Keys
     OPENAI_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None
