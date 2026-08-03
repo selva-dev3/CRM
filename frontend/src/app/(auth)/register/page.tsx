@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useRegisterMutation } from '@/lib/api';
+import { Button, Input, Label, Alert, AlertTitle, AlertDescription } from '@/components/ui';
 import {
   ArrowRight,
   CheckCircle2,
@@ -83,116 +84,115 @@ export default function RegisterPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="space-y-2 text-center lg:text-left">
-        <h2 className="text-3xl font-bold tracking-tight text-white">
+        <h2 className="text-2xl font-bold tracking-tight text-slate-900">
           Create your account
         </h2>
-        <p className="text-sm text-slate-400">
+        <p className="text-xs text-slate-500">
           Start your 14-day free trial. No credit card required.
         </p>
       </div>
 
-      {/* Error Alert */}
+      {/* Shadcn Error Alert */}
       {error && (
-        <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-sm flex items-start space-x-3 animate-in fade-in slide-in-from-top-2 duration-200">
-          <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <span className="font-semibold block mb-0.5">Registration Error</span>
-            <span>{error}</span>
+        <Alert variant="destructive" className="animate-in fade-in slide-in-from-top-2 duration-200">
+          <AlertCircle className="w-5 h-5 text-rose-600" />
+          <div>
+            <AlertTitle>Registration Error</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
           </div>
-        </div>
+        </Alert>
       )}
 
-      {/* Success Alert */}
+      {/* Shadcn Success Alert */}
       {success && (
-        <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-sm flex items-center space-x-3 animate-in fade-in slide-in-from-top-2 duration-200">
-          <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-          <span>{success}</span>
-        </div>
+        <Alert variant="success" className="animate-in fade-in slide-in-from-top-2 duration-200">
+          <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+          <div>
+            <AlertTitle>Success</AlertTitle>
+            <AlertDescription>{success}</AlertDescription>
+          </div>
+        </Alert>
       )}
 
       {/* Form */}
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Full Name */}
         <div>
-          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">
-            Full Name
-          </label>
+          <Label htmlFor="fullName">Full Name</Label>
           <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
               <User className="w-4 h-4" />
             </div>
-            <input
+            <Input
+              id="fullName"
               type="text"
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Selvakumar Dev"
-              className="w-full pl-10 pr-4 py-3 bg-slate-900/90 border border-slate-800 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition duration-200 text-sm"
+              className="pl-10"
             />
           </div>
         </div>
 
         {/* Work Email */}
         <div>
-          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">
-            Work Email
-          </label>
+          <Label htmlFor="email">Work Email</Label>
           <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
               <Mail className="w-4 h-4" />
             </div>
-            <input
+            <Input
+              id="email"
               type="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="name@company.com"
-              className="w-full pl-10 pr-4 py-3 bg-slate-900/90 border border-slate-800 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition duration-200 text-sm"
+              className="pl-10"
             />
           </div>
         </div>
 
         {/* Organization / Company Name */}
         <div>
-          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">
-            Organization Name
-          </label>
+          <Label htmlFor="orgName">Organization Name</Label>
           <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
               <Building2 className="w-4 h-4" />
             </div>
-            <input
+            <Input
+              id="orgName"
               type="text"
               required
               value={organizationName}
               onChange={(e) => setOrganizationName(e.target.value)}
               placeholder="Acme Enterprise Corp"
-              className="w-full pl-10 pr-4 py-3 bg-slate-900/90 border border-slate-800 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition duration-200 text-sm"
+              className="pl-10"
             />
           </div>
         </div>
 
         {/* Password Field */}
         <div>
-          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">
-            Password
-          </label>
+          <Label htmlFor="password">Password</Label>
           <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
               <Lock className="w-4 h-4" />
             </div>
-            <input
+            <Input
+              id="password"
               type={showPassword ? 'text' : 'password'}
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Create a password"
-              className="w-full pl-10 pr-10 py-3 bg-slate-900/90 border border-slate-800 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition duration-200 text-sm"
+              className="pl-10 pr-10"
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-500 hover:text-slate-300 transition cursor-pointer"
+              className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600 transition cursor-pointer"
             >
               {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
@@ -202,9 +202,9 @@ export default function RegisterPage() {
           {password.length > 0 && (
             <div className="mt-2.5 space-y-1.5">
               <div className="flex items-center justify-between text-[11px]">
-                <span className="text-slate-400">Password Strength:</span>
+                <span className="text-slate-500">Password Strength:</span>
                 <span className={`font-semibold ${
-                  pwdStrength <= 1 ? 'text-rose-400' : pwdStrength <= 3 ? 'text-amber-400' : 'text-emerald-400'
+                  pwdStrength <= 1 ? 'text-rose-600' : pwdStrength <= 3 ? 'text-amber-600' : 'text-emerald-600'
                 }`}>
                   {pwdStrength <= 1 ? 'Weak' : pwdStrength <= 3 ? 'Medium' : 'Strong'}
                 </span>
@@ -220,7 +220,7 @@ export default function RegisterPage() {
                           : pwdStrength <= 3
                           ? 'bg-amber-500'
                           : 'bg-emerald-500'
-                        : 'bg-slate-800'
+                        : 'bg-slate-200'
                     }`}
                   />
                 ))}
@@ -236,51 +236,51 @@ export default function RegisterPage() {
               type="checkbox"
               checked={agreeTerms}
               onChange={(e) => setAgreeTerms(e.target.checked)}
-              className="w-4 h-4 mt-0.5 rounded border-slate-800 bg-slate-900 text-indigo-600 focus:ring-indigo-500/20 focus:ring-offset-slate-950 accent-indigo-600 shrink-0"
+              className="w-4 h-4 mt-0.5 rounded border-slate-300 bg-white text-indigo-600 focus:ring-indigo-500/20 accent-indigo-600 shrink-0"
             />
-            <span className="text-xs text-slate-400 leading-normal">
+            <span className="text-xs text-slate-500 leading-normal">
               I agree to the{' '}
-              <a href="#" className="text-indigo-400 hover:underline">Terms of Service</a>
+              <a href="#" className="text-indigo-600 font-semibold hover:underline">Terms of Service</a>
               {' '}and{' '}
-              <a href="#" className="text-indigo-400 hover:underline">Privacy Policy</a>
+              <a href="#" className="text-indigo-600 font-semibold hover:underline">Privacy Policy</a>
             </span>
           </label>
         </div>
 
         {/* Submit Button */}
-        <button
+        <Button
           type="submit"
           disabled={registerMutation.isPending}
-          className="w-full py-3.5 px-4 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 hover:from-indigo-500 hover:via-purple-500 hover:to-indigo-500 text-white font-semibold text-sm rounded-xl shadow-lg shadow-indigo-600/25 transition duration-200 flex items-center justify-center space-x-2 disabled:opacity-60 cursor-pointer active:scale-[0.99]"
+          className="w-full py-3.5"
         >
           {registerMutation.isPending ? (
             <>
-              <Loader2 className="w-4 h-4 animate-spin text-white" />
-              <span>Creating Account with TanStack Query...</span>
+              <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              <span>Creating Account...</span>
             </>
           ) : (
             <>
               <span>Create Account</span>
-              <ArrowRight className="w-4 h-4" />
+              <ArrowRight className="w-4 h-4 ml-2" />
             </>
           )}
-        </button>
+        </Button>
       </form>
 
       {/* Backend API Indicator */}
       <div className="pt-2 text-center">
         <span className="inline-flex items-center space-x-1.5 text-[11px] text-slate-500">
-          <Globe className="w-3 h-3 text-emerald-400 animate-pulse" />
-          <span>TanStack Module <code className="text-indigo-400 font-mono">@/lib/api/auth.ts</code> + Railway API</span>
+          <Globe className="w-3 h-3 text-emerald-600 animate-pulse" />
+          <span>Connected to Railway Production API: <code className="text-slate-700 font-mono">crm-dev3.up.railway.app</code></span>
         </span>
       </div>
 
       {/* Login Redirect Footer */}
-      <div className="text-center text-xs text-slate-400 pt-4 border-t border-slate-800/80">
+      <div className="text-center text-xs text-slate-500 pt-4 border-t border-slate-100">
         Already have an account?{' '}
         <Link
           href="/login"
-          className="font-semibold text-indigo-400 hover:text-indigo-300 underline underline-offset-4 transition"
+          className="font-bold text-indigo-600 hover:text-indigo-700 underline underline-offset-4 transition"
         >
           Sign In instead
         </Link>
