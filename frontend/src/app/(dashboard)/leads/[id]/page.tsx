@@ -33,7 +33,9 @@ import {
   Archive,
   RefreshCw,
   Award,
-  ArrowRightLeft
+  ArrowRightLeft,
+  Download,
+  Upload
 } from 'lucide-react';
 import { Button, Card, Label, Input, Badge, Alert, AlertDescription } from '@/components/ui';
 import {
@@ -50,6 +52,7 @@ import {
   createLeadTaskApi,
   sendLeadEmailApi,
   logLeadCallApi,
+  uploadLeadDocumentApi,
   recalculateLeadScoreApi,
   convertLeadApi,
   assignLeadApi,
@@ -68,7 +71,7 @@ export default function LeadDetailPage() {
   const queryClient = useQueryClient();
   const leadId = (params?.id as string) || '';
 
-  // Tab State
+  // Active Tab State
   const [activeTab, setActiveTab] = useState<'overview' | 'notes' | 'tasks' | 'emails' | 'calls' | 'documents' | 'actions'>('overview');
 
   // Queries
@@ -77,26 +80,33 @@ export default function LeadDetailPage() {
   const { data: companies = [], isLoading: isCompaniesLoading } = useCompaniesQuery();
   const { data: users = [], isLoading: isUsersLoading } = useUsersQuery(1, 100);
 
-  // Sub-resource queries
+  // Sub-resource Queries
   const { data: notes = [], refetch: refetchNotes, isLoading: isNotesLoading } = useLeadNotesQuery(leadId);
   const { data: tasks = [], refetch: refetchTasks, isLoading: isTasksLoading } = useLeadTasksQuery(leadId);
   const { data: emails = [], refetch: refetchEmails, isLoading: isEmailsLoading } = useLeadEmailsQuery(leadId);
   const { data: calls = [], refetch: refetchCalls, isLoading: isCallsLoading } = useLeadCallsQuery(leadId);
   const { data: documents = [], refetch: refetchDocuments, isLoading: isDocsLoading } = useLeadDocumentsQuery(leadId);
 
-  // Mutations
+  // Lead Mutations
   const createLeadMutation = useCreateLeadMutation();
   const updateLeadMutation = useUpdateLeadMutation();
   const deleteLeadMutation = useDeleteLeadMutation();
 
-  // Modals & Banners State
+  // Banners & Modals State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Sub-resource Tab Form States
+  // Sub-resource Modal Trigger States
+  const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+  const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
+  const [isCallModalOpen, setIsCallModalOpen] = useState(false);
+  const [isDocModalOpen, setIsDocModalOpen] = useState(false);
+
+  // Form Inputs
   const [newNote, setNewNote] = useState('');
   const [isAddingNote, setIsAddingNote] = useState(false);
 
@@ -115,13 +125,16 @@ export default function LeadDetailPage() {
   const [callNotes, setCallNotes] = useState('');
   const [isLoggingCall, setIsLoggingCall] = useState(false);
 
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isUploadingDoc, setIsUploadingDoc] = useState(false);
+
   const [isRecalculatingScore, setIsRecalculatingScore] = useState(false);
   const [isConverting, setIsConverting] = useState(false);
   const [selectedAssignUser, setSelectedAssignUser] = useState('');
   const [isAssigning, setIsAssigning] = useState(false);
   const [isArchiving, setIsArchiving] = useState(false);
 
-  // Form State for Create/Edit Modal
+  // Lead Create/Edit Form State
   const [contactName, setContactName] = useState('');
   const [company, setCompany] = useState('');
   const [customCompany, setCustomCompany] = useState('');
@@ -143,12 +156,19 @@ export default function LeadDetailPage() {
   const [assignedTo, setAssignedTo] = useState<string>('');
   const [isArchived, setIsArchived] = useState<boolean>(false);
 
-  // Helper to resolve org name if ID matches
   const orgName = useMemo(() => {
     if (!lead?.organization_id) return 'Enterprise Organization';
     const found = organizations.find((o) => o.id === lead.organization_id);
     return found ? found.name : 'Enterprise Organization';
   }, [lead, organizations]);
+
+  const formatFileSize = (bytes: number) => {
+    if (!bytes || bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  };
 
   const resetForm = () => {
     setContactName('');
@@ -209,23 +229,16 @@ export default function LeadDetailPage() {
     setIsModalOpen(true);
   };
 
-  const handleCloseModal = () => {
-    if (createLeadMutation.isPending || updateLeadMutation.isPending) return;
-    setIsModalOpen(false);
-  };
-
   const handleSubmitForm = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
     setSuccessMessage(null);
 
     const finalCompany = company === 'other' ? customCompany.trim() : company.trim();
-
     if (!contactName.trim() || !email.trim()) {
       setErrorMessage('Contact Name and Email are required.');
       return;
     }
-
     if (!finalCompany) {
       setErrorMessage('Company Name is required.');
       return;
@@ -268,10 +281,7 @@ export default function LeadDetailPage() {
       }
 
       setIsModalOpen(false);
-
-      setTimeout(() => {
-        setSuccessMessage(null);
-      }, 4000);
+      setTimeout(() => setSuccessMessage(null), 4000);
     } catch (err: any) {
       setErrorMessage(err?.message || 'Failed to save lead.');
     }
@@ -288,7 +298,7 @@ export default function LeadDetailPage() {
     }
   };
 
-  // Sub-resource Tab Handlers
+  // Sub-resource Modal Submissions
   const handleAddNote = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newNote.trim()) return;
@@ -296,11 +306,12 @@ export default function LeadDetailPage() {
       setIsAddingNote(true);
       await addLeadNoteApi(leadId, newNote.trim());
       setNewNote('');
+      setIsNoteModalOpen(false);
       await refetchNotes();
-      setSuccessMessage('Note added to lead!');
+      setSuccessMessage('Note added successfully!');
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err: any) {
-      setErrorMessage('Failed to add note.');
+      setErrorMessage(err?.message || 'Failed to add note.');
     } finally {
       setIsAddingNote(false);
     }
@@ -314,11 +325,12 @@ export default function LeadDetailPage() {
       await createLeadTaskApi(leadId, { title: taskTitle.trim(), description: taskDesc.trim(), priority: taskPriority });
       setTaskTitle('');
       setTaskDesc('');
+      setIsTaskModalOpen(false);
       await refetchTasks();
-      setSuccessMessage('Task created for lead!');
+      setSuccessMessage('Task created successfully!');
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err: any) {
-      setErrorMessage('Failed to create task.');
+      setErrorMessage(err?.message || 'Failed to create task.');
     } finally {
       setIsCreatingTask(false);
     }
@@ -332,11 +344,12 @@ export default function LeadDetailPage() {
       await sendLeadEmailApi(leadId, { to: [emailTo || lead?.email || 'lead@example.com'], subject: emailSubject.trim(), body: emailBody.trim() });
       setEmailSubject('');
       setEmailBody('');
+      setIsEmailModalOpen(false);
       await refetchEmails();
-      setSuccessMessage('Email sent to lead!');
+      setSuccessMessage('Email sent successfully!');
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err: any) {
-      setErrorMessage('Failed to send email.');
+      setErrorMessage(err?.message || 'Failed to send email.');
     } finally {
       setIsSendingEmail(false);
     }
@@ -348,13 +361,32 @@ export default function LeadDetailPage() {
       setIsLoggingCall(true);
       await logLeadCallApi(leadId, { call_type: callType, duration_seconds: Number(callDuration) || 180, notes: callNotes.trim() });
       setCallNotes('');
+      setIsCallModalOpen(false);
       await refetchCalls();
-      setSuccessMessage('Call logged successfully!');
+      setSuccessMessage('Call record logged successfully!');
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err: any) {
-      setErrorMessage('Failed to log call.');
+      setErrorMessage(err?.message || 'Failed to log call.');
     } finally {
       setIsLoggingCall(false);
+    }
+  };
+
+  const handleUploadDocument = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedFile) return;
+    try {
+      setIsUploadingDoc(true);
+      await uploadLeadDocumentApi(leadId, selectedFile);
+      setSelectedFile(null);
+      setIsDocModalOpen(false);
+      await refetchDocuments();
+      setSuccessMessage('Document attached successfully to MinIO S3!');
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Failed to upload document.');
+    } finally {
+      setIsUploadingDoc(false);
     }
   };
 
@@ -392,7 +424,7 @@ export default function LeadDetailPage() {
       setIsAssigning(true);
       await assignLeadApi(leadId, selectedAssignUser);
       await refetch();
-      setSuccessMessage(`Lead assigned to user ID ${selectedAssignUser}!`);
+      setSuccessMessage(`Lead assigned to user successfully!`);
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err: any) {
       setErrorMessage('Failed to assign lead.');
@@ -463,7 +495,7 @@ export default function LeadDetailPage() {
 
       {/* Success Banner */}
       {successMessage && (
-        <Alert variant="default" className="bg-emerald-50 border-emerald-300 text-emerald-950 font-bold">
+        <Alert variant="default" className="bg-emerald-50 border-emerald-300 text-emerald-950 font-bold animate-in fade-in-50">
           <CheckCircle2 className="h-4 w-4 text-emerald-600 mr-2" />
           <AlertDescription className="text-emerald-900 font-bold">
             {successMessage}
@@ -494,7 +526,7 @@ export default function LeadDetailPage() {
           </div>
         </div>
 
-        {/* Action Controls */}
+        {/* Header Actions */}
         <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
           <Button
             type="button"
@@ -563,9 +595,7 @@ export default function LeadDetailPage() {
       {/* 1. OVERVIEW & DETAILS TAB */}
       {activeTab === 'overview' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Card 1: Lead Overview & Contact Info */}
             <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-6">
               <div className="border-b border-slate-100 pb-4">
                 <h2 className="text-sm font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
@@ -603,7 +633,6 @@ export default function LeadDetailPage() {
               </div>
             </Card>
 
-            {/* Card 2: Company & Industry Information */}
             <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-6">
               <div className="border-b border-slate-100 pb-4">
                 <h2 className="text-sm font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
@@ -644,7 +673,6 @@ export default function LeadDetailPage() {
               </div>
             </Card>
 
-            {/* Card 3: Address & Location */}
             <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-6">
               <div className="border-b border-slate-100 pb-4">
                 <h2 className="text-sm font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
@@ -682,9 +710,7 @@ export default function LeadDetailPage() {
             </Card>
           </div>
 
-          {/* Right Column */}
           <div className="space-y-6">
-            {/* Card 4: Qualification & Engagement Score */}
             <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-5">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <span className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-1.5">
@@ -744,7 +770,6 @@ export default function LeadDetailPage() {
               </div>
             </Card>
 
-            {/* Card 5: System & Assignment Information */}
             <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-5">
               <h2 className="text-xs font-black uppercase tracking-wider text-slate-900 border-b border-slate-100 pb-3 flex items-center gap-1.5">
                 <ShieldCheck className="w-4 h-4 text-indigo-600" /> Account & Assignment
@@ -786,68 +811,457 @@ export default function LeadDetailPage() {
 
       {/* 2. NOTES TAB */}
       {activeTab === 'notes' && (
-        <div className="space-y-6">
-          <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-4">
-            <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
-              <FileText className="w-4 h-4 text-indigo-600" /> Add New Note (POST /api/v1/leads/{leadId}/notes)
-            </h3>
-            <form onSubmit={handleAddNote} className="space-y-3">
-              <textarea
-                required
-                rows={3}
-                placeholder="Type note regarding conversation, follow-up, or lead requirement..."
-                value={newNote}
-                onChange={(e) => setNewNote(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-              <Button type="submit" disabled={isAddingNote} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4">
-                {isAddingNote ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Plus className="w-3.5 h-3.5 mr-1.5" />}
-                Add Note
-              </Button>
-            </form>
-          </Card>
+        <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-5">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+            <div>
+              <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
+                <FileText className="w-4 h-4 text-indigo-600" /> Lead Notes ({notes.length})
+              </h3>
+              <p className="text-xs font-bold text-slate-500 mt-0.5">Notes attached to lead {lead.contact_name}</p>
+            </div>
+            <Button
+              type="button"
+              onClick={() => setIsNoteModalOpen(true)}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 h-9 shadow-xs cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5 mr-1.5" /> + Add Note
+            </Button>
+          </div>
 
-          <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-4">
-            <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 flex items-center justify-between border-b border-slate-100 pb-3">
-              <span>Attached Notes ({notes.length})</span>
-              <span className="text-[11px] text-indigo-600 font-bold">GET /api/v1/leads/{leadId}/notes</span>
-            </h3>
-            {isNotesLoading ? (
-              <p className="text-xs text-slate-500">Loading notes...</p>
-            ) : notes.length === 0 ? (
-              <p className="text-xs text-slate-400 italic">No notes attached yet. Use the form above to add one.</p>
-            ) : (
-              <div className="space-y-3">
-                {notes.map((n) => (
-                  <div key={n.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
-                    <p className="text-xs font-bold text-slate-900">{n.content}</p>
-                    <div className="flex items-center justify-between text-[10px] text-slate-500 font-bold pt-1">
-                      <span>By: {n.created_by}</span>
-                      <span>{n.created_at}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-        </div>
+          {isNotesLoading ? (
+            <div className="p-8 text-center text-slate-500 text-xs font-bold flex items-center justify-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin text-indigo-600" /> Loading notes...
+            </div>
+          ) : notes.length === 0 ? (
+            <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl space-y-2">
+              <FileText className="w-8 h-8 text-slate-300 mx-auto" />
+              <p className="text-xs font-bold text-slate-600">No notes attached yet.</p>
+              <p className="text-[11px] text-slate-400">Click "+ Add Note" above to attach a note.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-slate-200">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-black uppercase text-slate-700 tracking-wider">
+                    <th className="py-3 px-4">Note Content</th>
+                    <th className="py-3 px-4">Author / Created By</th>
+                    <th className="py-3 px-4">Created Date</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {notes.map((n) => (
+                    <tr key={n.id} className="hover:bg-slate-50 transition">
+                      <td className="py-3.5 px-4 font-bold text-slate-900 max-w-md">{n.content}</td>
+                      <td className="py-3.5 px-4 font-bold text-indigo-600">{n.created_by || 'System User'}</td>
+                      <td className="py-3.5 px-4 font-bold text-slate-600">{new Date(n.created_at).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
       )}
 
       {/* 3. TASKS TAB */}
       {activeTab === 'tasks' && (
+        <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-5">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+            <div>
+              <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
+                <CheckSquare className="w-4 h-4 text-indigo-600" /> Assigned Lead Tasks ({tasks.length})
+              </h3>
+              <p className="text-xs font-bold text-slate-500 mt-0.5">Tasks created for lead {lead.contact_name}</p>
+            </div>
+            <Button
+              type="button"
+              onClick={() => setIsTaskModalOpen(true)}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 h-9 shadow-xs cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5 mr-1.5" /> + Create Task
+            </Button>
+          </div>
+
+          {isTasksLoading ? (
+            <div className="p-8 text-center text-slate-500 text-xs font-bold flex items-center justify-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin text-indigo-600" /> Loading tasks...
+            </div>
+          ) : tasks.length === 0 ? (
+            <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl space-y-2">
+              <CheckSquare className="w-8 h-8 text-slate-300 mx-auto" />
+              <p className="text-xs font-bold text-slate-600">No tasks created for this lead yet.</p>
+              <p className="text-[11px] text-slate-400">Click "+ Create Task" above to assign a new task.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-slate-200">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-black uppercase text-slate-700 tracking-wider">
+                    <th className="py-3 px-4">Task Title & Description</th>
+                    <th className="py-3 px-4">Priority</th>
+                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4">Due Date</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {tasks.map((t) => (
+                    <tr key={t.id} className="hover:bg-slate-50 transition">
+                      <td className="py-3.5 px-4 space-y-0.5">
+                        <div className="font-black text-slate-900">{t.title}</div>
+                        {t.description && <div className="text-[11px] font-bold text-slate-500">{t.description}</div>}
+                      </td>
+                      <td className="py-3.5 px-4 font-bold">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                          t.priority === 'High' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
+                          t.priority === 'Medium' ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-slate-100 text-slate-700'
+                        }`}>
+                          {t.priority || 'Medium'}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 font-bold">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200">
+                          {t.status || 'Pending'}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 font-bold text-slate-600">{t.due_date ? new Date(t.due_date).toLocaleDateString() : 'N/A'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* 4. EMAILS TAB */}
+      {activeTab === 'emails' && (
+        <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-5">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+            <div>
+              <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
+                <Send className="w-4 h-4 text-indigo-600" /> Email History ({emails.length})
+              </h3>
+              <p className="text-xs font-bold text-slate-500 mt-0.5">Emails sent to lead {lead.contact_name}</p>
+            </div>
+            <Button
+              type="button"
+              onClick={() => {
+                setEmailTo(lead.email);
+                setIsEmailModalOpen(true);
+              }}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 h-9 shadow-xs cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5 mr-1.5" /> + Send Email
+            </Button>
+          </div>
+
+          {isEmailsLoading ? (
+            <div className="p-8 text-center text-slate-500 text-xs font-bold flex items-center justify-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin text-indigo-600" /> Loading emails...
+            </div>
+          ) : emails.length === 0 ? (
+            <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl space-y-2">
+              <Send className="w-8 h-8 text-slate-300 mx-auto" />
+              <p className="text-xs font-bold text-slate-600">No email communications logged yet.</p>
+              <p className="text-[11px] text-slate-400">Click "+ Send Email" above to send an email.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-slate-200">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-black uppercase text-slate-700 tracking-wider">
+                    <th className="py-3 px-4">Subject Line</th>
+                    <th className="py-3 px-4">Recipient (To)</th>
+                    <th className="py-3 px-4">Sender (From)</th>
+                    <th className="py-3 px-4">Sent Date</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {emails.map((e) => (
+                    <tr key={e.id} className="hover:bg-slate-50 transition">
+                      <td className="py-3.5 px-4 font-black text-slate-900">{e.subject}</td>
+                      <td className="py-3.5 px-4 font-bold text-indigo-600">{e.to.join(', ')}</td>
+                      <td className="py-3.5 px-4 font-bold text-slate-600">{e.from_email}</td>
+                      <td className="py-3.5 px-4 font-bold text-slate-600">{new Date(e.sent_at).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* 5. CALLS TAB */}
+      {activeTab === 'calls' && (
+        <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-5">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+            <div>
+              <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
+                <PhoneCall className="w-4 h-4 text-indigo-600" /> Phone Call Logs ({calls.length})
+              </h3>
+              <p className="text-xs font-bold text-slate-500 mt-0.5">Call history logged for lead {lead.contact_name}</p>
+            </div>
+            <Button
+              type="button"
+              onClick={() => setIsCallModalOpen(true)}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 h-9 shadow-xs cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5 mr-1.5" /> + Log Call
+            </Button>
+          </div>
+
+          {isCallsLoading ? (
+            <div className="p-8 text-center text-slate-500 text-xs font-bold flex items-center justify-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin text-indigo-600" /> Loading call logs...
+            </div>
+          ) : calls.length === 0 ? (
+            <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl space-y-2">
+              <PhoneCall className="w-8 h-8 text-slate-300 mx-auto" />
+              <p className="text-xs font-bold text-slate-600">No call logs recorded yet.</p>
+              <p className="text-[11px] text-slate-400">Click "+ Log Call" above to record a phone conversation.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-slate-200">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-black uppercase text-slate-700 tracking-wider">
+                    <th className="py-3 px-4">Direction</th>
+                    <th className="py-3 px-4">Duration</th>
+                    <th className="py-3 px-4">Call Notes</th>
+                    <th className="py-3 px-4">Date & Time</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {calls.map((c) => (
+                    <tr key={c.id} className="hover:bg-slate-50 transition">
+                      <td className="py-3.5 px-4 font-bold">
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${
+                          c.call_type === 'Outbound' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        }`}>
+                          {c.call_type} Call
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 font-black text-slate-900">{Math.floor(c.duration_seconds / 60)}m {c.duration_seconds % 60}s</td>
+                      <td className="py-3.5 px-4 font-bold text-slate-700">{c.notes || 'N/A'}</td>
+                      <td className="py-3.5 px-4 font-bold text-slate-600">{new Date(c.timestamp).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* 6. DOCUMENTS TAB */}
+      {activeTab === 'documents' && (
+        <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-5">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+            <div>
+              <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
+                <Paperclip className="w-4 h-4 text-indigo-600" /> Attached Documents ({documents.length})
+              </h3>
+              <p className="text-xs font-bold text-slate-500 mt-0.5">Files uploaded to S3 storage for lead {lead.contact_name}</p>
+            </div>
+            <Button
+              type="button"
+              onClick={() => setIsDocModalOpen(true)}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 h-9 shadow-xs cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5 mr-1.5" /> + Upload Document
+            </Button>
+          </div>
+
+          {isDocsLoading ? (
+            <div className="p-8 text-center text-slate-500 text-xs font-bold flex items-center justify-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin text-indigo-600" /> Loading documents...
+            </div>
+          ) : documents.length === 0 ? (
+            <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl space-y-2">
+              <Paperclip className="w-8 h-8 text-slate-300 mx-auto" />
+              <p className="text-xs font-bold text-slate-600">No documents uploaded yet.</p>
+              <p className="text-[11px] text-slate-400">Click "+ Upload Document" above to attach a file.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-slate-200">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-black uppercase text-slate-700 tracking-wider">
+                    <th className="py-3 px-4">Filename</th>
+                    <th className="py-3 px-4">File Size</th>
+                    <th className="py-3 px-4">MIME Type</th>
+                    <th className="py-3 px-4">Uploaded Date</th>
+                    <th className="py-3 px-4 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {documents.map((d) => (
+                    <tr key={d.id} className="hover:bg-slate-50 transition">
+                      <td className="py-3.5 px-4 font-black text-slate-900 flex items-center gap-2">
+                        <Paperclip className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                        <span className="truncate max-w-[200px]">{d.filename}</span>
+                      </td>
+                      <td className="py-3.5 px-4 font-bold text-slate-700">{formatFileSize(d.file_size)}</td>
+                      <td className="py-3.5 px-4 font-bold text-slate-600">{d.mime_type || 'application/pdf'}</td>
+                      <td className="py-3.5 px-4 font-bold text-slate-600">{new Date(d.uploaded_at).toLocaleString()}</td>
+                      <td className="py-3.5 px-4 text-right">
+                        {d.download_url && (
+                          <a
+                            href={d.download_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center text-xs font-black text-indigo-600 hover:text-indigo-800 hover:underline"
+                          >
+                            <Download className="w-3 h-3 mr-1" /> Download
+                          </a>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* 7. ACTIONS & CONVERT TAB */}
+      {activeTab === 'actions' && (
         <div className="space-y-6">
           <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-4">
-            <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
-              <CheckSquare className="w-4 h-4 text-indigo-600" /> Create Task (POST /api/v1/leads/{leadId}/tasks)
-            </h3>
-            <form onSubmit={handleCreateTask} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5 sm:col-span-2">
-                <Label className="text-xs font-black text-black">Task Title *</Label>
-                <Input required placeholder="Follow up with product demo" value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} className="bg-slate-50 border-slate-300 text-xs font-bold text-black" />
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-sm font-black text-slate-950 flex items-center gap-2">
+                  <Award className="w-4 h-4 text-indigo-600" /> Recalculate AI Qualification Score
+                </h3>
+                <p className="text-xs font-bold text-slate-600">Re-evaluates lead metrics and updates engagement score</p>
               </div>
-              <div className="space-y-1.5 sm:col-span-2">
+              <Button type="button" onClick={handleRecalculateScore} disabled={isRecalculatingScore} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 cursor-pointer">
+                {isRecalculatingScore ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 mr-1.5" />}
+                Recalculate AI Score
+              </Button>
+            </div>
+          </Card>
+
+          <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-sm font-black text-slate-950 flex items-center gap-2">
+                  <ArrowRightLeft className="w-4 h-4 text-emerald-600" /> Convert Lead to Deal, Contact & Company
+                </h3>
+                <p className="text-xs font-bold text-slate-600">Converts qualified sales lead into deal pipeline</p>
+              </div>
+              <Button type="button" onClick={handleConvertLead} disabled={isConverting} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 cursor-pointer">
+                {isConverting ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <ArrowRightLeft className="w-3.5 h-3.5 mr-1.5" />}
+                Convert Lead
+              </Button>
+            </div>
+          </Card>
+
+          <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-4">
+            <h3 className="text-sm font-black text-slate-950 flex items-center gap-2 border-b border-slate-100 pb-3">
+              <UserCheck className="w-4 h-4 text-indigo-600" /> Assign Lead to Sales Representative
+            </h3>
+            <div className="flex items-center gap-3 flex-wrap">
+              <select value={selectedAssignUser} onChange={(e) => setSelectedAssignUser(e.target.value)} className="w-full sm:w-72 px-3 py-2 border border-slate-300 rounded-lg bg-slate-50 text-xs font-bold text-black">
+                <option value="">Select Sales Rep User...</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                ))}
+              </select>
+              <Button type="button" onClick={handleAssignLead} disabled={isAssigning || !selectedAssignUser} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 cursor-pointer">
+                {isAssigning ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : 'Assign Lead'}
+              </Button>
+            </div>
+          </Card>
+
+          <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-sm font-black text-slate-950 flex items-center gap-2">
+                  <Archive className="w-4 h-4 text-amber-600" /> Archive / Unarchive Lead
+                </h3>
+                <p className="text-xs font-bold text-slate-600">Toggle lead record active or archived state</p>
+              </div>
+              <Button type="button" onClick={handleToggleArchive} disabled={isArchiving} className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs px-4 cursor-pointer">
+                {isArchiving ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Archive className="w-3.5 h-3.5 mr-1.5" />}
+                {lead.is_archived ? 'Unarchive Lead' : 'Archive Lead'}
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* MODAL 1: ADD NOTE MODAL */}
+      {isNoteModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
+          <div className="relative w-full max-w-lg bg-white rounded-2xl border border-slate-300 shadow-2xl overflow-hidden text-black">
+            <div className="p-5 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white shrink-0">
+                  <FileText className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-black">Add Lead Note</h3>
+                  <p className="text-xs font-bold text-slate-600">Attach a note for {lead.contact_name}</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setIsNoteModalOpen(false)} className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleAddNote} className="p-6 space-y-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-black text-black">Note Content *</Label>
+                <textarea
+                  required
+                  rows={4}
+                  placeholder="Type note regarding conversation, follow-up, or lead requirement..."
+                  value={newNote}
+                  onChange={(e) => setNewNote(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div className="pt-2 flex items-center justify-end gap-3 border-t border-slate-100">
+                <Button type="button" variant="outline" onClick={() => setIsNoteModalOpen(false)} className="border-slate-300 text-black font-bold text-xs">
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isAddingNote} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 cursor-pointer">
+                  {isAddingNote ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : 'Save Note'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2: CREATE TASK MODAL */}
+      {isTaskModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
+          <div className="relative w-full max-w-lg bg-white rounded-2xl border border-slate-300 shadow-2xl overflow-hidden text-black">
+            <div className="p-5 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white shrink-0">
+                  <CheckSquare className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-black">Create Lead Task</h3>
+                  <p className="text-xs font-bold text-slate-600">Assign a task for {lead.contact_name}</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setIsTaskModalOpen(false)} className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleCreateTask} className="p-6 space-y-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-black text-black">Task Title *</Label>
+                <Input required placeholder="Schedule follow-up call" value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} className="bg-slate-50 border-slate-300 text-xs font-bold text-black" />
+              </div>
+              <div className="space-y-1.5">
                 <Label className="text-xs font-black text-black">Description</Label>
-                <Input placeholder="Prepare pricing quotation and slide deck" value={taskDesc} onChange={(e) => setTaskDesc(e.target.value)} className="bg-slate-50 border-slate-300 text-xs font-bold text-black" />
+                <Input placeholder="Prepare pricing quotation and proposal deck" value={taskDesc} onChange={(e) => setTaskDesc(e.target.value)} className="bg-slate-50 border-slate-300 text-xs font-bold text-black" />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs font-black text-black">Priority</Label>
@@ -857,97 +1271,82 @@ export default function LeadDetailPage() {
                   <option value="Low">Low</option>
                 </select>
               </div>
-              <div className="flex items-end">
-                <Button type="submit" disabled={isCreatingTask} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 h-9 w-full">
-                  {isCreatingTask ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Plus className="w-3.5 h-3.5 mr-1.5" />}
-                  Create Task
+              <div className="pt-2 flex items-center justify-end gap-3 border-t border-slate-100">
+                <Button type="button" variant="outline" onClick={() => setIsTaskModalOpen(false)} className="border-slate-300 text-black font-bold text-xs">
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isCreatingTask} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 cursor-pointer">
+                  {isCreatingTask ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : 'Create Task'}
                 </Button>
               </div>
             </form>
-          </Card>
-
-          <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-4">
-            <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 border-b border-slate-100 pb-3">
-              Assigned Tasks ({tasks.length})
-            </h3>
-            {isTasksLoading ? (
-              <p className="text-xs text-slate-500">Loading tasks...</p>
-            ) : tasks.length === 0 ? (
-              <p className="text-xs text-slate-400 italic">No tasks created for this lead yet.</p>
-            ) : (
-              <div className="space-y-3">
-                {tasks.map((t) => (
-                  <div key={t.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
-                    <div>
-                      <h4 className="text-xs font-black text-slate-900">{t.title}</h4>
-                      <p className="text-[11px] text-slate-600 font-bold">{t.description}</p>
-                    </div>
-                    <Badge className="bg-indigo-50 text-indigo-700 font-bold text-xs">{t.priority}</Badge>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
+          </div>
         </div>
       )}
 
-      {/* 4. EMAILS TAB */}
-      {activeTab === 'emails' && (
-        <div className="space-y-6">
-          <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-4">
-            <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
-              <Send className="w-4 h-4 text-indigo-600" /> Send Email (POST /api/v1/leads/{leadId}/emails/send)
-            </h3>
-            <form onSubmit={handleSendEmail} className="space-y-3">
+      {/* MODAL 3: SEND EMAIL MODAL */}
+      {isEmailModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
+          <div className="relative w-full max-w-lg bg-white rounded-2xl border border-slate-300 shadow-2xl overflow-hidden text-black">
+            <div className="p-5 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white shrink-0">
+                  <Send className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-black">Send Email</h3>
+                  <p className="text-xs font-bold text-slate-600">Send email to {lead.contact_name}</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setIsEmailModalOpen(false)} className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSendEmail} className="p-6 space-y-4">
               <div className="space-y-1.5">
                 <Label className="text-xs font-black text-black">Recipient Email</Label>
-                <Input type="email" value={emailTo || lead.email} onChange={(e) => setEmailTo(e.target.value)} className="bg-slate-50 border-slate-300 text-xs font-bold text-black" />
+                <Input type="email" value={emailTo} onChange={(e) => setEmailTo(e.target.value)} className="bg-slate-50 border-slate-300 text-xs font-bold text-black" />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs font-black text-black">Subject Line *</Label>
-                <Input required placeholder="CRM Solution Proposal & Next Steps" value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} className="bg-slate-50 border-slate-300 text-xs font-bold text-black" />
+                <Input required placeholder="Enterprise CRM Proposal & Next Steps" value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} className="bg-slate-50 border-slate-300 text-xs font-bold text-black" />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs font-black text-black">Email Body</Label>
-                <textarea rows={4} placeholder="Hi Selva, following up on our recent demo..." value={emailBody} onChange={(e) => setEmailBody(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                <textarea rows={4} placeholder="Hi, following up on our recent demo..." value={emailBody} onChange={(e) => setEmailBody(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500" />
               </div>
-              <Button type="submit" disabled={isSendingEmail} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5">
-                {isSendingEmail ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Send className="w-3.5 h-3.5 mr-1.5" />}
-                Send Email Now
-              </Button>
+              <div className="pt-2 flex items-center justify-end gap-3 border-t border-slate-100">
+                <Button type="button" variant="outline" onClick={() => setIsEmailModalOpen(false)} className="border-slate-300 text-black font-bold text-xs">
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isSendingEmail} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 cursor-pointer">
+                  {isSendingEmail ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : 'Send Email'}
+                </Button>
+              </div>
             </form>
-          </Card>
-
-          <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-4">
-            <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 border-b border-slate-100 pb-3">
-              Email History ({emails.length})
-            </h3>
-            {isEmailsLoading ? (
-              <p className="text-xs text-slate-500">Loading email history...</p>
-            ) : emails.length === 0 ? (
-              <p className="text-xs text-slate-400 italic">No email communications logged yet.</p>
-            ) : (
-              <div className="space-y-3">
-                {emails.map((e) => (
-                  <div key={e.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
-                    <h4 className="text-xs font-black text-slate-900">{e.subject}</h4>
-                    <p className="text-[11px] text-indigo-600 font-bold">To: {e.to.join(', ')}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
+          </div>
         </div>
       )}
 
-      {/* 5. CALLS TAB */}
-      {activeTab === 'calls' && (
-        <div className="space-y-6">
-          <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-4">
-            <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
-              <PhoneCall className="w-4 h-4 text-indigo-600" /> Log Phone Call (POST /api/v1/leads/{leadId}/calls)
-            </h3>
-            <form onSubmit={handleLogCall} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {/* MODAL 4: LOG CALL MODAL */}
+      {isCallModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
+          <div className="relative w-full max-w-lg bg-white rounded-2xl border border-slate-300 shadow-2xl overflow-hidden text-black">
+            <div className="p-5 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white shrink-0">
+                  <PhoneCall className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-black">Log Phone Call</h3>
+                  <p className="text-xs font-bold text-slate-600">Record call with {lead.contact_name}</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setIsCallModalOpen(false)} className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleLogCall} className="p-6 space-y-4">
               <div className="space-y-1.5">
                 <Label className="text-xs font-black text-black">Call Direction</Label>
                 <select value={callType} onChange={(e) => setCallType(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-slate-50 text-xs font-bold text-black">
@@ -959,141 +1358,61 @@ export default function LeadDetailPage() {
                 <Label className="text-xs font-black text-black">Duration (seconds)</Label>
                 <Input type="number" value={callDuration} onChange={(e) => setCallDuration(e.target.value)} className="bg-slate-50 border-slate-300 text-xs font-bold text-black" />
               </div>
-              <div className="space-y-1.5 sm:col-span-2">
+              <div className="space-y-1.5">
                 <Label className="text-xs font-black text-black">Call Notes</Label>
-                <Input placeholder="Discussed pricing structure and enterprise license requirements..." value={callNotes} onChange={(e) => setCallNotes(e.target.value)} className="bg-slate-50 border-slate-300 text-xs font-bold text-black" />
+                <Input placeholder="Discussed pricing model and integration timeline..." value={callNotes} onChange={(e) => setCallNotes(e.target.value)} className="bg-slate-50 border-slate-300 text-xs font-bold text-black" />
               </div>
-              <div className="sm:col-span-2">
-                <Button type="submit" disabled={isLoggingCall} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5">
-                  {isLoggingCall ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <PhoneCall className="w-3.5 h-3.5 mr-1.5" />}
-                  Log Call Record
+              <div className="pt-2 flex items-center justify-end gap-3 border-t border-slate-100">
+                <Button type="button" variant="outline" onClick={() => setIsCallModalOpen(false)} className="border-slate-300 text-black font-bold text-xs">
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isLoggingCall} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 cursor-pointer">
+                  {isLoggingCall ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : 'Log Call'}
                 </Button>
               </div>
             </form>
-          </Card>
-
-          <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-4">
-            <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 border-b border-slate-100 pb-3">
-              Call Logs ({calls.length})
-            </h3>
-            {isCallsLoading ? (
-              <p className="text-xs text-slate-500">Loading call logs...</p>
-            ) : calls.length === 0 ? (
-              <p className="text-xs text-slate-400 italic">No phone calls logged yet.</p>
-            ) : (
-              <div className="space-y-3">
-                {calls.map((c) => (
-                  <div key={c.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
-                    <h4 className="text-xs font-black text-slate-900">{c.call_type} Call ({c.duration_seconds} sec)</h4>
-                    <p className="text-[11px] text-slate-600 font-bold">{c.notes}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
+          </div>
         </div>
       )}
 
-      {/* 6. DOCUMENTS TAB */}
-      {activeTab === 'documents' && (
-        <div className="space-y-6">
-          <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-4">
-            <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
-              <Paperclip className="w-4 h-4 text-indigo-600" /> Attached Documents ({documents.length}) (GET & POST /api/v1/leads/{leadId}/documents)
-            </h3>
-            {isDocsLoading ? (
-              <p className="text-xs text-slate-500">Loading documents...</p>
-            ) : documents.length === 0 ? (
-              <p className="text-xs text-slate-400 italic">No attachments uploaded to S3 bucket yet.</p>
-            ) : (
-              <div className="space-y-3">
-                {documents.map((d) => (
-                  <div key={d.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
-                    <div>
-                      <h4 className="text-xs font-black text-slate-900">{d.filename}</h4>
-                      <p className="text-[10px] text-slate-500 font-bold">{d.mime_type} • {d.file_size} bytes</p>
-                    </div>
-                    {d.download_url && (
-                      <a href={d.download_url} target="_blank" rel="noreferrer" className="text-xs font-black text-indigo-600 hover:underline">
-                        Download File
-                      </a>
-                    )}
-                  </div>
-                ))}
+      {/* MODAL 5: UPLOAD DOCUMENT MODAL */}
+      {isDocModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
+          <div className="relative w-full max-w-lg bg-white rounded-2xl border border-slate-300 shadow-2xl overflow-hidden text-black">
+            <div className="p-5 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white shrink-0">
+                  <Upload className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-black">Upload Lead Document</h3>
+                  <p className="text-xs font-bold text-slate-600">Attach file to MinIO S3 for {lead.contact_name}</p>
+                </div>
               </div>
-            )}
-          </Card>
-        </div>
-      )}
-
-      {/* 7. ACTIONS & CONVERT TAB */}
-      {activeTab === 'actions' && (
-        <div className="space-y-6">
-          {/* Action 1: Recalculate AI Score */}
-          <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <h3 className="text-sm font-black text-slate-950 flex items-center gap-2">
-                  <Award className="w-4 h-4 text-indigo-600" /> Recalculate AI Score
-                </h3>
-                <p className="text-xs font-bold text-slate-600">POST /api/v1/leads/{leadId}/score</p>
+              <button type="button" onClick={() => setIsDocModalOpen(false)} className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleUploadDocument} className="p-6 space-y-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-black text-black">Choose File *</Label>
+                <input
+                  type="file"
+                  required
+                  onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                />
               </div>
-              <Button type="button" onClick={handleRecalculateScore} disabled={isRecalculatingScore} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4">
-                {isRecalculatingScore ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 mr-1.5" />}
-                Recalculate AI Score
-              </Button>
-            </div>
-          </Card>
-
-          {/* Action 2: Convert Lead */}
-          <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <h3 className="text-sm font-black text-slate-950 flex items-center gap-2">
-                  <ArrowRightLeft className="w-4 h-4 text-emerald-600" /> Convert Lead to Deal & Contact
-                </h3>
-                <p className="text-xs font-bold text-slate-600">POST /api/v1/leads/{leadId}/convert</p>
+              <div className="pt-2 flex items-center justify-end gap-3 border-t border-slate-100">
+                <Button type="button" variant="outline" onClick={() => setIsDocModalOpen(false)} className="border-slate-300 text-black font-bold text-xs">
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isUploadingDoc || !selectedFile} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 cursor-pointer">
+                  {isUploadingDoc ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : 'Upload File'}
+                </Button>
               </div>
-              <Button type="button" onClick={handleConvertLead} disabled={isConverting} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4">
-                {isConverting ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <ArrowRightLeft className="w-3.5 h-3.5 mr-1.5" />}
-                Convert Lead
-              </Button>
-            </div>
-          </Card>
-
-          {/* Action 3: Assign Lead */}
-          <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-4">
-            <h3 className="text-sm font-black text-slate-950 flex items-center gap-2 border-b border-slate-100 pb-3">
-              <UserCheck className="w-4 h-4 text-indigo-600" /> Assign Lead to Sales Representative
-            </h3>
-            <div className="flex items-center gap-3">
-              <select value={selectedAssignUser} onChange={(e) => setSelectedAssignUser(e.target.value)} className="w-full sm:w-72 px-3 py-2 border border-slate-300 rounded-lg bg-slate-50 text-xs font-bold text-black">
-                <option value="">Select User...</option>
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
-                ))}
-              </select>
-              <Button type="button" onClick={handleAssignLead} disabled={isAssigning || !selectedAssignUser} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4">
-                {isAssigning ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : 'Assign Lead'}
-              </Button>
-            </div>
-          </Card>
-
-          {/* Action 4: Archive / Unarchive */}
-          <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <h3 className="text-sm font-black text-slate-950 flex items-center gap-2">
-                  <Archive className="w-4 h-4 text-amber-600" /> Archive / Unarchive Lead
-                </h3>
-                <p className="text-xs font-bold text-slate-600">POST /api/v1/leads/{leadId}/archive</p>
-              </div>
-              <Button type="button" onClick={handleToggleArchive} disabled={isArchiving} className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs px-4">
-                {isArchiving ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Archive className="w-3.5 h-3.5 mr-1.5" />}
-                {lead.is_archived ? 'Unarchive Lead' : 'Archive Lead'}
-              </Button>
-            </div>
-          </Card>
+            </form>
+          </div>
         </div>
       )}
 
@@ -1101,7 +1420,6 @@ export default function LeadDetailPage() {
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
           <div className="relative w-full max-w-3xl max-h-[90vh] bg-white rounded-2xl border border-slate-300 shadow-2xl overflow-hidden flex flex-col text-black">
-            {/* Modal Header */}
             <div className="p-5 border-b border-slate-200 bg-slate-50 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white shrink-0">
@@ -1118,15 +1436,14 @@ export default function LeadDetailPage() {
               </div>
               <button
                 type="button"
-                onClick={handleCloseModal}
+                onClick={() => setIsModalOpen(false)}
                 disabled={createLeadMutation.isPending || updateLeadMutation.isPending}
-                className="p-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-200 transition cursor-pointer"
+                className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Error Banner inside Modal */}
             {errorMessage && (
               <div className="px-6 pt-4 shrink-0">
                 <Alert variant="destructive" className="bg-rose-50 border-rose-300 text-rose-950 font-bold">
@@ -1136,9 +1453,7 @@ export default function LeadDetailPage() {
               </div>
             )}
 
-            {/* Modal Form Body */}
             <form onSubmit={handleSubmitForm} className="p-6 space-y-6 overflow-y-auto flex-1">
-              {/* 1. Contact Information */}
               <div className="space-y-3">
                 <h4 className="text-xs font-black uppercase tracking-wider text-indigo-700 pb-1 border-b border-slate-200">
                   1. Contact Information
@@ -1186,7 +1501,6 @@ export default function LeadDetailPage() {
                 </div>
               </div>
 
-              {/* 2. Company & Industry Details */}
               <div className="space-y-3 pt-2">
                 <h4 className="text-xs font-black uppercase tracking-wider text-indigo-700 pb-1 border-b border-slate-200">
                   2. Company & Industry Details
@@ -1256,7 +1570,6 @@ export default function LeadDetailPage() {
                 </div>
               </div>
 
-              {/* 3. Address & Location */}
               <div className="space-y-3 pt-2">
                 <h4 className="text-xs font-black uppercase tracking-wider text-indigo-700 pb-1 border-b border-slate-200">
                   3. Address & Location
@@ -1313,7 +1626,6 @@ export default function LeadDetailPage() {
                 </div>
               </div>
 
-              {/* 4. Classification & Organization */}
               <div className="space-y-3 pt-2">
                 <h4 className="text-xs font-black uppercase tracking-wider text-indigo-700 pb-1 border-b border-slate-200">
                   4. Status, Source, Score & Organization
@@ -1419,12 +1731,11 @@ export default function LeadDetailPage() {
                 </div>
               </div>
 
-              {/* Modal Actions */}
               <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-3 shrink-0">
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={handleCloseModal}
+                  onClick={() => setIsModalOpen(false)}
                   disabled={createLeadMutation.isPending || updateLeadMutation.isPending}
                   className="border-slate-300 text-black font-bold hover:bg-slate-100 text-xs"
                 >
@@ -1454,7 +1765,6 @@ export default function LeadDetailPage() {
       {isDeleteModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
           <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl overflow-hidden text-black">
-            {/* Modal Header */}
             <div className="p-5 border-b border-slate-200 bg-rose-50 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-rose-600 flex items-center justify-center text-white shrink-0">
@@ -1475,7 +1785,6 @@ export default function LeadDetailPage() {
               </button>
             </div>
 
-            {/* Modal Content */}
             <div className="p-6 space-y-4">
               <p className="text-xs font-bold text-slate-700 leading-relaxed">
                 Are you sure you want to delete sales lead <span className="font-black text-slate-950">"{lead.contact_name}"</span> ({lead.company})?
@@ -1484,7 +1793,6 @@ export default function LeadDetailPage() {
                 ⚠️ Warning: This action cannot be undone and will permanently remove this lead from the database.
               </div>
 
-              {/* Modal Actions */}
               <div className="pt-2 flex items-center justify-end gap-3">
                 <Button
                   type="button"

@@ -331,7 +331,24 @@ async def get_lead_timeline(lead_id: str, db: AsyncSession = Depends(get_db)):
 async def get_lead_notes(lead_id: str, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(LeadNote).where(LeadNote.lead_id == lead_id))
     notes = res.scalars().all()
-    return [{"id": n.id, "entity_type": "lead", "entity_id": lead_id, "content": n.content, "created_by": n.created_by, "created_at": str(n.created_at)} for n in notes]
+    
+    users_res = await db.execute(select(User))
+    users_map = {}
+    for u in users_res.scalars().all():
+        name = f"{u.first_name or ''} {u.last_name or ''}".strip()
+        users_map[u.id] = name if name else (u.email or "System User")
+
+    return [
+        {
+            "id": n.id,
+            "entity_type": "lead",
+            "entity_id": lead_id,
+            "content": n.content,
+            "created_by": users_map.get(n.created_by, "System User"),
+            "created_at": str(n.created_at)
+        }
+        for n in notes
+    ]
 
 @router.post("/{lead_id}/notes", response_model=NoteResponse, summary="Add note to lead")
 async def add_lead_note(lead_id: str, content: str, db: AsyncSession = Depends(get_db)):

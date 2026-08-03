@@ -191,6 +191,12 @@ export async function fetchLeadDocumentsApi(leadId: string): Promise<LeadDocumen
   return apiClient.get<LeadDocumentItem[]>(`/leads/${leadId}/documents`);
 }
 
+export async function uploadLeadDocumentApi(leadId: string, file: File): Promise<LeadDocumentItem> {
+  const formData = new FormData();
+  formData.append('file', file);
+  return apiClient.post<LeadDocumentItem>(`/leads/${leadId}/documents`, formData);
+}
+
 export async function recalculateLeadScoreApi(leadId: string): Promise<{ old_score: number; new_score: number; factors: string[] }> {
   return apiClient.post<{ old_score: number; new_score: number; factors: string[] }>(`/leads/${leadId}/score`);
 }
