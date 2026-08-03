@@ -127,3 +127,64 @@ def send_user_invite_email(email_to: str, role: str = "Member", invite_url: str 
         logger.error(f"Failed to send invite email to {email_to}: {str(e)}")
         print(f"[INVITE SMTP ERROR] Failed to send email to {email_to}: {str(e)}")
         return False
+
+
+def send_magic_link_email(email_to: str, token: str, user_name: str = "User") -> bool:
+    """Sends Passwordless Magic Link HTML email via Gmail SMTP."""
+    magic_url = f"http://localhost:3000/magic-link?token={token}"
+    subject = f"{settings.PROJECT_NAME} - Your Passwordless Login Link"
+    sender_email = settings.SMTP_USER or settings.EMAILS_FROM_EMAIL or "selvakumar.dev3@gmail.com"
+
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            body {{ font-family: Arial, sans-serif; background-color: #f4f6f9; margin: 0; padding: 20px; }}
+            .container {{ max-width: 600px; background: #ffffff; padding: 30px; border-radius: 8px; margin: 0 auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
+            .btn {{ display: inline-block; padding: 12px 24px; background-color: #8b5cf6; color: #ffffff !important; text-decoration: none; border-radius: 6px; font-weight: bold; margin-top: 20px; }}
+            .footer {{ font-size: 12px; color: #6b7280; margin-top: 30px; border-top: 1px solid #e5e7eb; padding-top: 15px; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h2>Passwordless Magic Link Login</h2>
+            <p>Hello {user_name},</p>
+            <p>Click the button below to log in to your <strong>{settings.PROJECT_NAME}</strong> account instantly without entering a password:</p>
+            <a href="{magic_url}" class="btn">Log In to CRM</a>
+            <p style="margin-top: 25px;">Or copy and paste this magic login token:</p>
+            <code style="background: #f3f4f6; padding: 6px 12px; border-radius: 4px; font-size: 16px;">{token}</code>
+            <div class="footer">
+                <p>If you did not request this magic login link, please ignore this email.</p>
+                <p>&copy; 2026 {settings.PROJECT_NAME}. All rights reserved.</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+
+    message = MIMEMultipart("alternative")
+    message["Subject"] = subject
+    message["From"] = f"{settings.EMAILS_FROM_NAME} <{sender_email}>"
+    message["To"] = email_to
+    message.attach(MIMEText(html_content, "html"))
+
+    try:
+        smtp_host = settings.SMTP_HOST or "smtp.gmail.com"
+        smtp_port = int(settings.SMTP_PORT or 587)
+        smtp_user = settings.SMTP_USER or "selvakumar.dev3@gmail.com"
+        smtp_pass = settings.SMTP_PASSWORD or "cxwromupefrpeovz"
+
+        print(f"[MAGIC LINK SMTP SENDING] Sending magic link email to {email_to}...")
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_pass)
+            server.sendmail(sender_email, [email_to], message.as_string())
+        
+        logger.info(f"Magic link email sent successfully to {email_to}")
+        print(f"[MAGIC LINK SMTP SUCCESS] Magic link email sent to {email_to} via Gmail SMTP!")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send magic link email to {email_to}: {str(e)}")
+        print(f"[MAGIC LINK SMTP ERROR] Failed to send email to {email_to}: {str(e)}")
+        return False

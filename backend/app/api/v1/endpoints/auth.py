@@ -10,7 +10,7 @@ from app.schemas.crm_schemas import (
     AcceptInviteRequest, UserInvitationDetailsResponse, MessageResponse
 )
 from app.core.security import create_access_token, verify_password, get_password_hash, generate_random_code
-from app.services.email_service import send_reset_password_email
+from app.services.email_service import send_reset_password_email, send_magic_link_email
 
 router = APIRouter()
 
@@ -234,10 +234,15 @@ async def revoke_session(session_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.post("/magic-link/request", response_model=MessageResponse, summary="Request passwordless login link")
 async def request_magic_link(email: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(User).where(User.email == email))
-    if not res.scalars().first():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User with email '{email}' not found")
-    return {"message": f"Magic link sent to {email}", "status": "success"}
+    email_clean = email.strip()
+    res = await db.execute(select(User).where(User.email.ilike(email_clean)))
+    user = res.scalars().first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User with email '{email_clean}' not found")
+    
+    magic_token = generate_random_code(14)
+    send_magic_link_email(email_to=user.email, token=magic_token, user_name=user.name)
+    return {"message": f"Magic link sent to {email_clean}", "status": "success"}
 
 @router.post("/magic-link/verify", response_model=Token, summary="Verify passwordless magic link token")
 async def verify_magic_link(token: str, db: AsyncSession = Depends(get_db)):
