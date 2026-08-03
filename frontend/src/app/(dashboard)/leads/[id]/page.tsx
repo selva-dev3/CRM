@@ -530,14 +530,6 @@ export default function LeadDetailPage() {
         <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
           <Button
             type="button"
-            onClick={handleOpenCreateModal}
-            size="sm"
-            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 h-9 shadow-xs cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5 mr-1.5" /> + Add New Lead
-          </Button>
-          <Button
-            type="button"
             variant="outline"
             size="sm"
             onClick={handleOpenEditModal}

@@ -38,10 +38,14 @@ const mainClient = async function <T>(
 ): Promise<T> {
   const token = getSessionToken();
 
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     ...(options.headers as Record<string, string>),
   };
+
+  if (!isFormData && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
 
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
@@ -71,18 +75,20 @@ mainClient.get = function <T>(endpoint: string, options: RequestInit = {}): Prom
 };
 
 mainClient.post = function <T>(endpoint: string, data?: any, options: RequestInit = {}): Promise<T> {
+  const isFormData = typeof FormData !== 'undefined' && data instanceof FormData;
   return mainClient<T>(endpoint, {
     ...options,
     method: 'POST',
-    body: data ? JSON.stringify(data) : undefined,
+    body: isFormData ? data : data ? JSON.stringify(data) : undefined,
   });
 };
 
 mainClient.put = function <T>(endpoint: string, data?: any, options: RequestInit = {}): Promise<T> {
+  const isFormData = typeof FormData !== 'undefined' && data instanceof FormData;
   return mainClient<T>(endpoint, {
     ...options,
     method: 'PUT',
-    body: data ? JSON.stringify(data) : undefined,
+    body: isFormData ? data : data ? JSON.stringify(data) : undefined,
   });
 };
 
