@@ -1,6 +1,7 @@
 // Central API Client for CRM Backend Integration (FastAPI)
+const DEFAULT_API_URL = 'https://crm-dev3.up.railway.app/api/v1';
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+export const BASE_URL = process.env.NEXT_PUBLIC_API_URL || DEFAULT_API_URL;
 
 export async function apiClient<T>(
   endpoint: string,
@@ -24,7 +25,7 @@ export async function apiClient<T>(
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'An unexpected error occurred');
+    throw new Error(errorData.detail || errorData.message || 'An unexpected error occurred');
   }
 
   return response.json();
