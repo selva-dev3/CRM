@@ -58,7 +58,6 @@ class OAuthLoginRequest(BaseModel):
 
 class ApiKeyCreate(BaseModel):
     name: str
-    scopes: List[str]
 
 class ApiKeyResponse(BaseModel):
     id: str
@@ -71,7 +70,7 @@ class ApiKeyResponse(BaseModel):
 class UserBase(BaseModel):
     name: str
     email: EmailStr
-    role: str = "Sales Executive"
+    role: str
     organization_id: str
     is_active: bool = True
 
@@ -98,7 +97,43 @@ class UserInviteRequest(BaseModel):
     emails: List[EmailStr]
     role: str
 
+class AcceptInviteRequest(BaseModel):
+    token: str
+    name: str
+    password: str
+
+class UserInvitationDetailsResponse(BaseModel):
+    id: str
+    email: str
+    token: str
+    role: str
+    status: str
+    organization_id: str
+    created_at: str
+
+class UserActionResponse(BaseModel):
+    message: str
+    user_id: str
+    name: str
+    email: EmailStr
+    is_active: bool
+    status: str = "success"
+
+class UserDeleteResponse(BaseModel):
+    message: str
+    user_id: str
+    name: str
+    email: EmailStr
+    status: str = "success"
+
 # 3. Roles & Permissions Schemas
+class PermissionItem(BaseModel):
+    id: str
+    key: str
+    name: str
+    category: str
+    description: Optional[str] = None
+
 class RoleBase(BaseModel):
     name: str
     description: Optional[str] = None
@@ -114,41 +149,28 @@ class RoleUpdate(BaseModel):
 
 class RoleResponse(RoleBase):
     id: str
-    is_system_role: bool = False
-
-class PermissionItem(BaseModel):
-    id: str
-    module: str
-    action: str
-    description: str
+    created_at: str
 
 # 4. Organization Schemas
 class OrganizationBase(BaseModel):
     name: str
     domain: Optional[str] = None
     plan: str = "Enterprise"
-    max_users: int = 50
+    max_users: int = 100
+
+class OrganizationCreate(OrganizationBase):
+    pass
 
 class OrganizationUpdate(BaseModel):
     name: Optional[str] = None
     domain: Optional[str] = None
-    logo_url: Optional[str] = None
-    primary_color: Optional[str] = None
 
 class OrganizationResponse(OrganizationBase):
     id: str
     created_at: str
-    members_count: int = 1
+    members_count: int
 
-# 5. Dashboard Schemas
-class DashboardKPIs(BaseModel):
-    total_leads: int
-    deals_won_amount: float
-    win_rate_percentage: float
-    ai_lead_score_avg: float
-    recent_activity: List[Dict[str, Any]]
-
-# 6. Lead Schemas
+# 5. Lead Schemas
 class LeadBase(BaseModel):
     title: str
     company: str
@@ -156,7 +178,8 @@ class LeadBase(BaseModel):
     email: EmailStr
     phone: Optional[str] = None
     status: str = "New"
-    source: Optional[str] = "Website"
+    source: str = "Website"
+    assigned_to: Optional[str] = None
 
 class LeadCreate(LeadBase):
     pass
@@ -164,50 +187,49 @@ class LeadCreate(LeadBase):
 class LeadUpdate(BaseModel):
     title: Optional[str] = None
     company: Optional[str] = None
-    contact_name: Optional[str] = None
-    email: Optional[EmailStr] = None
     status: Optional[str] = None
     score: Optional[float] = None
 
 class LeadResponse(LeadBase):
     id: str
-    score: float = 85.0
-    assigned_to: Optional[str] = None
-    organization_id: str = "org-1"
-    created_at: str = "2026-08-02"
+    score: float = 75.0
+    organization_id: str
+    created_at: str
 
 class LeadConvertRequest(BaseModel):
     create_deal: bool = True
     deal_title: Optional[str] = None
-    deal_amount: Optional[float] = None
+    deal_amount: Optional[float] = 0.0
 
-# 7. Contact Schemas
+# 6. Contact Schemas
 class ContactBase(BaseModel):
-    name: str
+    first_name: str
+    last_name: str
     email: EmailStr
     phone: Optional[str] = None
-    position: Optional[str] = None
     company_id: Optional[str] = None
+    job_title: Optional[str] = None
 
 class ContactCreate(ContactBase):
     pass
 
 class ContactUpdate(BaseModel):
-    name: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
-    position: Optional[str] = None
 
 class ContactResponse(ContactBase):
     id: str
-    created_at: str = "2026-08-02"
+    organization_id: str
+    created_at: str
 
-# 8. Company Schemas
+# 7. Company Schemas
 class CompanyBase(BaseModel):
     name: str
+    domain: Optional[str] = None
     industry: Optional[str] = None
-    website: Optional[str] = None
-    employee_count: Optional[int] = None
+    size: Optional[str] = None
 
 class CompanyCreate(CompanyBase):
     pass
@@ -215,94 +237,82 @@ class CompanyCreate(CompanyBase):
 class CompanyUpdate(BaseModel):
     name: Optional[str] = None
     industry: Optional[str] = None
-    website: Optional[str] = None
-    employee_count: Optional[int] = None
 
 class CompanyResponse(CompanyBase):
     id: str
-    created_at: str = "2026-08-02"
+    organization_id: str
+    created_at: str
 
-# 9. Deal Schemas
+# 8. Deal Schemas
 class DealBase(BaseModel):
     title: str
     amount: float
-    stage: str = "Prospecting"
-    probability: float = 50.0
+    stage: str = "Qualification"
+    probability: float = 20.0
     expected_close_date: Optional[str] = None
+    company_id: Optional[str] = None
+    contact_id: Optional[str] = None
 
 class DealCreate(DealBase):
-    assigned_to: str
-    contact_id: Optional[str] = None
-    company_id: Optional[str] = None
+    pass
 
 class DealUpdate(BaseModel):
-    title: Optional[str] = None
-    amount: Optional[float] = None
     stage: Optional[str] = None
+    amount: Optional[float] = None
     probability: Optional[float] = None
 
 class DealResponse(DealBase):
     id: str
-    assigned_to: str
-    organization_id: str = "org-1"
-    created_at: str = "2026-08-02"
+    organization_id: str
+    created_at: str
 
-# 10. Task Schemas
+# 9. Task Schemas
 class TaskBase(BaseModel):
     title: str
     description: Optional[str] = None
     priority: str = "Medium"
-    due_date: str
+    due_date: Optional[str] = None
     status: str = "Pending"
+    assigned_to: Optional[str] = None
 
 class TaskCreate(TaskBase):
-    assigned_to: str
+    pass
 
 class TaskUpdate(BaseModel):
-    title: Optional[str] = None
     status: Optional[str] = None
     priority: Optional[str] = None
 
 class TaskResponse(TaskBase):
     id: str
-    assigned_to: str
-    created_at: str = "2026-08-02"
+    created_at: str
 
-# 11. Meeting Schemas
+# 10. Meeting Schemas
 class MeetingBase(BaseModel):
     title: str
     start_time: str
     end_time: str
-    attendees: List[str]
+    location: Optional[str] = None
     meeting_link: Optional[str] = None
 
 class MeetingCreate(MeetingBase):
-    pass
+    attendee_emails: List[EmailStr]
 
 class MeetingResponse(MeetingBase):
     id: str
-    ai_summary: Optional[str] = None
+    created_at: str
 
-# 12. Call Log Schemas
+# 11. Call Log Schemas
 class CallLogBase(BaseModel):
     contact_id: str
-    call_type: str = "Outbound"
-    duration_seconds: int
+    call_type: str = "Outbound"  # Outbound, Inbound
+    duration_seconds: int = 0
     notes: Optional[str] = None
 
 class CallLogResponse(CallLogBase):
     id: str
-    timestamp: str = "2026-08-02"
+    timestamp: str
 
-# 13. Calendar Schemas
-class CalendarEvent(BaseModel):
-    id: str
-    title: str
-    start: str
-    end: str
-    event_type: str = "Meeting"
-
-# 14. Email Schemas
+# 12. Email & Inbox Schemas
 class EmailSendRequest(BaseModel):
     to: List[EmailStr]
     subject: str
@@ -315,93 +325,120 @@ class EmailResponse(BaseModel):
     subject: str
     sent_at: str
 
-# 15. Note Schemas
+# 13. Note Schemas
 class NoteBase(BaseModel):
-    entity_type: str
+    entity_type: str  # lead, contact, deal, company
     entity_id: str
     content: str
 
 class NoteResponse(NoteBase):
     id: str
     created_by: str
-    created_at: str = "2026-08-02"
+    created_at: str
 
-# 16. Document Schemas
+# 14. Document Storage Schemas
 class DocumentResponse(BaseModel):
     id: str
     filename: str
     file_size: int
     mime_type: str
     download_url: str
-    uploaded_at: str = "2026-08-02"
+    uploaded_at: str
 
-# 17. Product Schemas
+# 15. Product Catalog Schemas
 class ProductBase(BaseModel):
     name: str
-    sku: str
-    price: float
-    category: str
+    code: str
+    unit_price: float
+    category: Optional[str] = None
+
+class ProductCreate(ProductBase):
+    pass
 
 class ProductResponse(ProductBase):
     id: str
 
-# 18. Quote Schemas
-class QuoteItem(BaseModel):
+# 16. Quote Schemas
+class QuoteBase(BaseModel):
+    deal_id: str
+    quote_number: str
+    total_amount: float
+    status: str = "Draft"
+
+class QuoteItemSchema(BaseModel):
     product_id: str
     quantity: int
     unit_price: float
 
-class QuoteBase(BaseModel):
-    quote_number: str
-    items: List[QuoteItem]
-    total_amount: float
-    status: str = "Draft"
+class QuoteCreate(BaseModel):
+    deal_id: str
+    items: List[QuoteItemSchema]
 
-class QuoteResponse(QuoteBase):
+class QuoteResponse(BaseModel):
     id: str
-    created_at: str = "2026-08-02"
+    quote_number: str
+    total_amount: float
+    status: str
+    created_at: str
 
-# 19. Invoice Schemas
+# 17. Invoice Schemas
 class InvoiceBase(BaseModel):
+    deal_id: str
     invoice_number: str
     amount: float
-    status: str = "Draft"
+    status: str = "Unpaid"
     due_date: str
 
-class InvoiceResponse(InvoiceBase):
-    id: str
-    stripe_checkout_url: Optional[str] = None
-    created_at: str = "2026-08-02"
+class InvoiceCreate(BaseModel):
+    deal_id: str
+    amount: float
+    due_date: str
 
-# 20. Notification Schemas
+class InvoiceResponse(BaseModel):
+    id: str
+    invoice_number: str
+    amount: float
+    status: str
+    due_date: str
+
+# 18. Notification Schemas
 class NotificationItem(BaseModel):
     id: str
     title: str
     message: str
-    is_read: bool = False
-    created_at: str = "2026-08-02"
+    is_read: bool
+    created_at: str
 
-# 21. Report Schemas
-class ReportData(BaseModel):
-    report_type: str
-    metrics: Dict[str, Any]
-    generated_at: str = "2026-08-02"
+class NotificationResponse(BaseModel):
+    id: str
+    title: str
+    message: str
+    is_read: bool
+    created_at: str
 
-# 22. Settings Schemas
-class SystemSettings(BaseModel):
-    organization_name: str = "Enterprise Organization"
-    currency: str = "USD"
-    timezone: str = "UTC"
-    smtp_enabled: bool = True
-    ai_features_enabled: bool = True
+# 19. Calendar Schemas
+class CalendarEvent(BaseModel):
+    id: str
+    title: str
+    start: str
+    end: str
+    event_type: Optional[str] = "Meeting"
 
-# 23. Integration Schemas
+# 20. Dashboard KPI Schemas
+class DashboardKPIs(BaseModel):
+    total_leads: int
+    deals_won_amount: float
+    win_rate_percentage: float
+    ai_lead_score_avg: float
+    recent_activity: List[Dict[str, Any]]
+
+# 21. Integration Schemas
 class IntegrationStatus(BaseModel):
     name: str
     is_connected: bool
     last_synced: Optional[str] = None
 
-# 24. AI Features Schemas
+# 22. AI Suite Schemas
 class AIScoreResponse(BaseModel):
     score: float
     reasons: List[str]
@@ -418,3 +455,17 @@ class AISalesForecastResponse(BaseModel):
     predicted_revenue: float
     confidence_percentage: float
     factors: List[str]
+
+# 23. Report Schemas
+class ReportData(BaseModel):
+    report_type: str
+    metrics: Dict[str, Any]
+    generated_at: str
+
+# 24. System Settings Schemas
+class SystemSettings(BaseModel):
+    organization_name: str
+    currency: str = "USD"
+    timezone: str = "UTC"
+    smtp_enabled: bool = True
+    ai_features_enabled: bool = True

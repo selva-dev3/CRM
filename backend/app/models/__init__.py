@@ -1,6 +1,7 @@
 from app.database import Base
 from app.models.organization import Organization, OrganizationSetting, OrganizationSubscription
-from app.models.auth import User, UserProfile, UserSession, RefreshToken, PasswordReset, EmailVerification, OTPVerification
+from app.models.user import User, UserInvitation
+from app.models.auth import UserProfile, UserSession, RefreshToken, PasswordReset, EmailVerification, OTPVerification
 from app.models.rbac import Role, Permission, RolePermission, UserRole
 from app.models.lead import Lead, LeadSource, LeadStatus, LeadScore, LeadTag, LeadActivity, LeadNote, LeadAttachment
 from app.models.contact import Contact, ContactAddress, ContactTag
@@ -26,7 +27,7 @@ from app.models.system import SystemSetting, FileUpload, Country, State, City, C
 __all__ = [
     "Base",
     "Organization", "OrganizationSetting", "OrganizationSubscription",
-    "User", "UserProfile", "UserSession", "RefreshToken", "PasswordReset", "EmailVerification", "OTPVerification",
+    "User", "UserInvitation", "UserProfile", "UserSession", "RefreshToken", "PasswordReset", "EmailVerification", "OTPVerification",
     "Role", "Permission", "RolePermission", "UserRole",
     "Lead", "LeadSource", "LeadStatus", "LeadScore", "LeadTag", "LeadActivity", "LeadNote", "LeadAttachment",
     "Contact", "ContactAddress", "ContactTag",

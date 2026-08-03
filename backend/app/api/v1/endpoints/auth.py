@@ -3,11 +3,11 @@ from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
-from app.models import User, UserSession, ApiKey, Organization
+from app.models import User, UserSession, ApiKey, Organization, UserInvitation
 from app.schemas.crm_schemas import (
     Token, LoginRequest, RegisterRequest, PasswordResetRequest, PasswordChangeRequest,
     TwoFactorSetupResponse, TwoFactorVerifyRequest, OAuthLoginRequest, ApiKeyCreate, ApiKeyResponse,
-    MessageResponse
+    AcceptInviteRequest, UserInvitationDetailsResponse, MessageResponse
 )
 from app.core.security import create_access_token, verify_password, get_password_hash, generate_random_code
 from app.services.email_service import send_reset_password_email
@@ -90,7 +90,6 @@ async def forgot_password(payload: PasswordResetRequest, db: AsyncSession = Depe
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User with specified email not found")
     
-    # Generate random 14-character alphanumeric token code
     reset_token = generate_random_code(14)
     send_reset_password_email(email_to=user.email, token=reset_token, user_name=user.name)
     return {"message": f"Password reset email sent to {payload.email}", "status": "success"}
@@ -136,6 +135,82 @@ async def microsoft_oauth(payload: OAuthLoginRequest, db: AsyncSession = Depends
     u = res.scalars().first()
     access_token = create_access_token(u.id if u else "usr-1")
     return {"access_token": access_token, "refresh_token": "ms_refresh", "token_type": "bearer", "expires_in": 86400}
+
+@router.get("/invitations/{token}", response_model=UserInvitationDetailsResponse, summary="Get user invitation details by token")
+async def get_auth_invitation_details(token: str, db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(UserInvitation).where(UserInvitation.token == token.strip()))
+    inv = res.scalars().first()
+    if not inv:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invitation not found or token invalid")
+    return {
+        "id": inv.id,
+        "email": inv.email,
+        "token": inv.token,
+        "role": inv.role,
+        "status": inv.status,
+        "organization_id": inv.organization_id,
+        "created_at": str(inv.created_at)
+    }
+
+@router.post("/accept-invite", summary="Accept user invitation, set password, and activate account (Public endpoint)")
+async def accept_auth_user_invitation(payload: AcceptInviteRequest, db: AsyncSession = Depends(get_db)):
+    token_clean = payload.token.strip()
+    res = await db.execute(select(UserInvitation).where(UserInvitation.token == token_clean))
+    inv = res.scalars().first()
+    if not inv:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid or expired invitation token")
+    if inv.status == "accepted":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invitation has already been accepted")
+    
+    try:
+        org_res = await db.execute(select(Organization).limit(1))
+        org = org_res.scalars().first()
+        if not org:
+            org = Organization(name="Default Enterprise CRM")
+            db.add(org)
+            await db.flush()
+        target_org_id = inv.organization_id if inv.organization_id and len(inv.organization_id) > 5 else org.id
+
+        user_res = await db.execute(select(User).where(User.email.ilike(inv.email)))
+        user = user_res.scalars().first()
+        
+        hashed_pwd = get_password_hash(payload.password)
+
+        if user:
+            user.name = payload.name
+            user.hashed_password = hashed_pwd
+            user.role = inv.role
+            user.organization_id = target_org_id
+            user.is_active = True
+        else:
+            user = User(
+                name=payload.name,
+                email=inv.email,
+                hashed_password=hashed_pwd,
+                role=inv.role,
+                organization_id=target_org_id,
+                is_active=True
+            )
+            db.add(user)
+            await db.flush()
+        
+        inv.status = "accepted"
+        await db.commit()
+
+        access_token = create_access_token(user.id)
+        return {
+            "message": "Invitation accepted successfully! Your account is active.",
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user_id": user.id,
+            "email": user.email,
+            "name": user.name,
+            "role": user.role,
+            "status": "success"
+        }
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to accept invitation: {str(e)}")
 
 @router.get("/sessions", summary="List active user sessions")
 async def list_sessions(db: AsyncSession = Depends(get_db)):
