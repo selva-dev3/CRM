@@ -24,7 +24,15 @@ export function clearSessionToken(): void {
   document.cookie = 'token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
 }
 
-export async function apiClient<T>(
+export interface ApiClient {
+  <T>(endpoint: string, options?: RequestInit): Promise<T>;
+  get<T>(endpoint: string, options?: RequestInit): Promise<T>;
+  post<T>(endpoint: string, data?: any, options?: RequestInit): Promise<T>;
+  put<T>(endpoint: string, data?: any, options?: RequestInit): Promise<T>;
+  delete<T>(endpoint: string, options?: RequestInit): Promise<T>;
+}
+
+const mainClient = async function <T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
@@ -56,4 +64,30 @@ export async function apiClient<T>(
   }
 
   return response.json();
-}
+} as ApiClient;
+
+mainClient.get = function <T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  return mainClient<T>(endpoint, { ...options, method: 'GET' });
+};
+
+mainClient.post = function <T>(endpoint: string, data?: any, options: RequestInit = {}): Promise<T> {
+  return mainClient<T>(endpoint, {
+    ...options,
+    method: 'POST',
+    body: data ? JSON.stringify(data) : undefined,
+  });
+};
+
+mainClient.put = function <T>(endpoint: string, data?: any, options: RequestInit = {}): Promise<T> {
+  return mainClient<T>(endpoint, {
+    ...options,
+    method: 'PUT',
+    body: data ? JSON.stringify(data) : undefined,
+  });
+};
+
+mainClient.delete = function <T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  return mainClient<T>(endpoint, { ...options, method: 'DELETE' });
+};
+
+export const apiClient = mainClient;

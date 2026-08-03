@@ -198,7 +198,7 @@ class LeadBase(BaseModel):
     phone: Optional[str] = None
     status: str = "New"
     source: str = "Website"
-    assigned_to: Optional[str] = None
+    organization_id: Optional[str] = "org-1"
 
 class LeadCreate(LeadBase):
     pass
