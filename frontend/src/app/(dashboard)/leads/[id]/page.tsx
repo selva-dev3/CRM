@@ -64,6 +64,7 @@ import { useOrganizationsQuery } from '@/lib/api/organizations';
 import { useCompaniesQuery } from '@/lib/api/companies';
 import { useUsersQuery } from '@/lib/api/users';
 import { useQueryClient } from '@tanstack/react-query';
+import { getSessionToken } from '@/lib/api-client';
 
 export default function LeadDetailPage() {
   const params = useParams();
@@ -1101,14 +1102,10 @@ export default function LeadDetailPage() {
                         {d.download_url && (
                           <a
                             href={
-                              d.download_url.startsWith('http') && !d.download_url.includes('minio.railway.internal')
+                              d.download_url.startsWith('http') && !d.download_url.includes('.internal')
                                 ? d.download_url
-                                : `${(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1').replace(/\/$/, '')}${
-                                    d.download_url.startsWith('/api/v1')
-                                      ? d.download_url.replace('/api/v1', '')
-                                      : d.download_url.startsWith('/')
-                                      ? d.download_url
-                                      : `/${d.download_url}`
+                                : `${(process.env.NEXT_PUBLIC_API_URL || 'https://crm-dev3.up.railway.app/api/v1').replace(/\/$/, '')}/leads/${leadId}/documents/${d.id}/download${
+                                    getSessionToken() ? `?token=${encodeURIComponent(getSessionToken() || '')}` : ''
                                   }`
                             }
                             target="_blank"

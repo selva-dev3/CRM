@@ -1,5 +1,5 @@
 from typing import Optional
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,19 +15,26 @@ security_scheme = HTTPBearer(auto_error=False)
 
 async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme),
+    token: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db)
 ) -> User:
-    """Dependency that validates JWT Bearer access token in Authorization header.
+    """Dependency that validates JWT Bearer access token in Authorization header or ?token= query parameter.
     Supports standard JWT tokens as well as dev/mock token strings.
     """
-    if not credentials or not credentials.credentials:
+    raw_token = None
+    if credentials and credentials.credentials:
+        raw_token = credentials.credentials.strip()
+    elif token:
+        raw_token = token.strip()
+
+    if not raw_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Session token missing: Authorization Bearer header is required to access this endpoint",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    token = credentials.credentials.strip()
+    token = raw_token
     user_id = None
 
     # 1. Try decoding standard JWT token
