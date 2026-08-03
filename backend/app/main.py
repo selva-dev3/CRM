@@ -25,9 +25,14 @@ app = FastAPI(
 )
 
 # CORS Middleware for Next.js Frontend
+# Allowed origins are read from the CORS_ORIGINS env var (comma-separated).
+# Additionally, any *.vercel.app preview/production deployment URL matching
+# our project pattern is allowed via regex, so new Vercel deployments don't
+# require a code change.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=settings.cors_origins_list,
+    allow_origin_regex=r"https://crm.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
