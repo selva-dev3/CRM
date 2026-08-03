@@ -12,11 +12,12 @@ import {
   AlertCircle,
   Sparkles,
   RefreshCw,
-  Pencil
+  Pencil,
+  Trash2
 } from 'lucide-react';
 import { Button, Card, Label, Input, Badge, Alert, AlertDescription } from '@/components/ui';
 import { DataTable, DataTableColumn, TableActionOption } from '@/components/shared/data-table';
-import { useLeadsQuery, useCreateLeadMutation, useUpdateLeadMutation, Lead } from '@/lib/api/leads';
+import { useLeadsQuery, useCreateLeadMutation, useUpdateLeadMutation, useDeleteLeadMutation, Lead } from '@/lib/api/leads';
 import { useOrganizationsQuery } from '@/lib/api/organizations';
 import { useCompaniesQuery } from '@/lib/api/companies';
 import { useUsersQuery } from '@/lib/api/users';
@@ -24,6 +25,7 @@ import { useUsersQuery } from '@/lib/api/users';
 export default function LeadsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
+  const [leadToDelete, setLeadToDelete] = useState<Lead | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   
@@ -72,6 +74,21 @@ export default function LeadsPage() {
 
   const createLeadMutation = useCreateLeadMutation();
   const updateLeadMutation = useUpdateLeadMutation();
+  const deleteLeadMutation = useDeleteLeadMutation();
+
+  const handleConfirmDelete = async () => {
+    if (!leadToDelete) return;
+    try {
+      await deleteLeadMutation.mutateAsync(leadToDelete.id);
+      setSuccessMessage(`Lead "${leadToDelete.contact_name}" deleted successfully!`);
+      setLeadToDelete(null);
+      setTimeout(() => {
+        setSuccessMessage(null);
+      }, 4000);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Failed to delete lead. Please try again.');
+    }
+  };
 
   const resetForm = () => {
     setEditingLead(null);
@@ -285,7 +302,7 @@ export default function LeadsPage() {
     {
       label: 'Delete Lead',
       variant: 'destructive',
-      onClick: (lead) => alert(`Delete lead: ${lead.contact_name}`),
+      onClick: (lead) => setLeadToDelete(lead),
     },
   ];
 
@@ -721,6 +738,72 @@ export default function LeadsPage() {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE CONFIRMATION MODAL DIALOG */}
+      {leadToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
+          <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl overflow-hidden text-black">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-200 bg-rose-50 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-rose-600 flex items-center justify-center text-white shrink-0">
+                  <Trash2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-rose-950">Delete Sales Lead</h3>
+                  <p className="text-xs font-bold text-rose-700">Confirm permanent lead removal</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLeadToDelete(null)}
+                disabled={deleteLeadMutation.isPending}
+                className="p-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-200 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 space-y-4">
+              <p className="text-xs font-bold text-slate-700 leading-relaxed">
+                Are you sure you want to delete sales lead <span className="font-black text-slate-950">"{leadToDelete.contact_name}"</span> ({leadToDelete.company})?
+              </p>
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-[11px] font-bold">
+                ⚠️ Warning: This action cannot be undone and will permanently remove this lead from the database.
+              </div>
+
+              {/* Modal Actions */}
+              <div className="pt-2 flex items-center justify-end gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setLeadToDelete(null)}
+                  disabled={deleteLeadMutation.isPending}
+                  className="border-slate-300 text-black font-bold hover:bg-slate-100 text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleConfirmDelete}
+                  disabled={deleteLeadMutation.isPending}
+                  className="bg-rose-600 hover:bg-rose-700 text-white font-bold shadow-sm text-xs px-5"
+                >
+                  {deleteLeadMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                      Deleting Lead...
+                    </>
+                  ) : (
+                    'Delete Lead'
+                  )}
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       )}

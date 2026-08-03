@@ -100,6 +100,10 @@ export async function updateLeadApi(id: string, payload: UpdateLeadPayload): Pro
   return apiClient.put<Lead>(`/leads/${id}`, payload);
 }
 
+export async function deleteLeadApi(id: string): Promise<{ message: string; status: string }> {
+  return apiClient.delete<{ message: string; status: string }>(`/leads/${id}`);
+}
+
 // ---------------------------------------------------------------------------
 // TanStack Query Hooks
 // ---------------------------------------------------------------------------
@@ -128,6 +132,17 @@ export function useUpdateLeadMutation() {
 
   return useMutation({
     mutationFn: ({ id, payload }: { id: string; payload: UpdateLeadPayload }) => updateLeadApi(id, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+    },
+  });
+}
+
+export function useDeleteLeadMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => deleteLeadApi(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['leads'] });
     },
