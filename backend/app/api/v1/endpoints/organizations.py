@@ -17,6 +17,14 @@ async def get_organization(db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No organization found")
     return {"id": org.id, "name": org.name, "domain": org.domain, "plan": org.plan, "max_users": org.max_users, "created_at": str(org.created_at), "members_count": 1}
 
+@router.get("/all", response_model=List[OrganizationResponse], summary="List all organizations")
+async def list_all_organizations(db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(Organization))
+    orgs = res.scalars().all()
+    if not orgs:
+        return {message: "No organization found"}
+    return [{"id": o.id, "name": o.name, "domain": o.domain, "plan": o.plan, "max_users": o.max_users, "created_at": str(o.created_at), "members_count": 1} for o in orgs]
+
 @router.put("", response_model=OrganizationResponse, summary="Update organization settings")
 async def update_organization(payload: OrganizationUpdate, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Organization).limit(1))

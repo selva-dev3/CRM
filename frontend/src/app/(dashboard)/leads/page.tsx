@@ -13,10 +13,13 @@ import {
   CheckCircle2, 
   AlertCircle,
   Sparkles,
-  RefreshCw
+  RefreshCw,
+  Globe
 } from 'lucide-react';
 import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent, Input, Label, Badge, Alert, AlertDescription } from '@/components/ui';
 import { useLeadsQuery, useCreateLeadMutation } from '@/lib/api/leads';
+import { useOrganizationsQuery } from '@/lib/api/organizations';
+import { useCompaniesQuery } from '@/lib/api/companies';
 
 export default function LeadsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -26,39 +29,50 @@ export default function LeadsPage() {
   // Form State
   const [contactName, setContactName] = useState('');
   const [company, setCompany] = useState('');
+  const [customCompany, setCustomCompany] = useState('');
   const [title, setTitle] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [status, setStatus] = useState('New');
   const [source, setSource] = useState('Website');
-  const [organizationId, setOrganizationId] = useState('org-1');
+  const [organizationId, setOrganizationId] = useState('');
 
   // Feedback Banner State
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // TanStack Query Hooks
+  // TanStack Query Hooks for Leads, Organizations, & Companies API
   const { data: leads = [], isLoading, isError, refetch } = useLeadsQuery({
     search: searchTerm || undefined,
     status: statusFilter || undefined,
   });
 
+  const { data: organizations = [], isLoading: isOrgsLoading } = useOrganizationsQuery();
+  const { data: companies = [], isLoading: isCompaniesLoading } = useCompaniesQuery();
+
   const createLeadMutation = useCreateLeadMutation();
 
   const resetForm = () => {
     setContactName('');
-    setCompany('');
+    setCompany(companies.length > 0 ? companies[0].name : '');
+    setCustomCompany('');
     setTitle('');
     setEmail('');
     setPhone('');
     setStatus('New');
     setSource('Website');
-    setOrganizationId('org-1');
+    setOrganizationId(organizations.length > 0 ? organizations[0].id : 'org-1');
     setErrorMessage(null);
   };
 
   const handleOpenModal = () => {
     resetForm();
+    if (organizations.length > 0) {
+      setOrganizationId(organizations[0].id);
+    }
+    if (companies.length > 0) {
+      setCompany(companies[0].name);
+    }
     setIsModalOpen(true);
   };
 
@@ -73,21 +87,28 @@ export default function LeadsPage() {
     setErrorMessage(null);
     setSuccessMessage(null);
 
+    const finalCompany = company === 'other' ? customCompany.trim() : company.trim();
+
     if (!contactName.trim() || !email.trim()) {
       setErrorMessage('Contact Name and Email are required.');
+      return;
+    }
+
+    if (!finalCompany) {
+      setErrorMessage('Company Name is required.');
       return;
     }
 
     try {
       const payload = {
         contact_name: contactName.trim(),
-        company: company.trim() || contactName.trim(),
+        company: finalCompany,
         title: title.trim() || `${contactName.trim()} Opportunity`,
         email: email.trim(),
         phone: phone.trim() || undefined,
         status,
         source,
-        organization_id: organizationId.trim() || 'org-1',
+        organization_id: organizationId || (organizations[0]?.id ?? 'org-1'),
       };
 
       await createLeadMutation.mutateAsync(payload);
@@ -296,7 +317,7 @@ export default function LeadsPage() {
         </CardContent>
       </Card>
 
-      {/* CREATE LEAD MODAL DIALOG */}
+      {/* CREATE LEAD MODAL DIALOG WITH API-CONNECTED SELECT LISTS */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
           <div className="relative w-full max-w-lg bg-white rounded-2xl border border-slate-300 shadow-2xl overflow-hidden text-black">
@@ -308,7 +329,7 @@ export default function LeadsPage() {
                 </div>
                 <div>
                   <h3 className="text-lg font-black text-black">Create New Sales Lead</h3>
-                  <p className="text-xs font-bold text-slate-700">Add lead details to trigger backend API mutation</p>
+                  <p className="text-xs font-bold text-slate-700">Select company & organization from live API lists</p>
                 </div>
               </div>
               <button
@@ -344,17 +365,39 @@ export default function LeadsPage() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-black text-black">Company Name *</Label>
+                  <Label className="text-xs font-black text-black">Select Company *</Label>
+                  <select
+                    value={company}
+                    onChange={(e) => setCompany(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    {isCompaniesLoading ? (
+                      <option value="">Loading companies...</option>
+                    ) : (
+                      companies.map((c) => (
+                        <option key={c.id} value={c.name}>
+                          {c.name}
+                        </option>
+                      ))
+                    )}
+                    <option value="other">+ Enter Custom Company...</option>
+                  </select>
+                </div>
+              </div>
+
+              {company === 'other' && (
+                <div className="space-y-1.5 animate-in fade-in-50">
+                  <Label className="text-xs font-black text-black">Custom Company Name *</Label>
                   <Input
                     type="text"
                     required
-                    placeholder="e.g. Acme Corp"
-                    value={company}
-                    onChange={(e) => setCompany(e.target.value)}
+                    placeholder="Enter new company name..."
+                    value={customCompany}
+                    onChange={(e) => setCustomCompany(e.target.value)}
                     className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
                   />
                 </div>
-              </div>
+              )}
 
               <div className="space-y-1.5">
                 <Label className="text-xs font-black text-black">Opportunity / Lead Title</Label>
@@ -424,15 +467,24 @@ export default function LeadsPage() {
                 </div>
               </div>
 
+              {/* Dynamic API-connected Organization Dropdown List */}
               <div className="space-y-1.5">
-                <Label className="text-xs font-black text-black">Organization ID</Label>
-                <Input
-                  type="text"
-                  placeholder="org-1"
+                <Label className="text-xs font-black text-black">Select Organization *</Label>
+                <select
                   value={organizationId}
                   onChange={(e) => setOrganizationId(e.target.value)}
-                  className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
-                />
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  {isOrgsLoading ? (
+                    <option value="">Loading organizations...</option>
+                  ) : (
+                    organizations.map((org) => (
+                      <option key={org.id} value={org.id}>
+                        {org.name} ({org.id})
+                      </option>
+                    ))
+                  )}
+                </select>
               </div>
 
               {/* Modal Actions */}
