@@ -64,22 +64,44 @@ export function DropdownMenuContent({
   children,
   className,
   align = "end",
+  side = "auto",
 }: {
   children: React.ReactNode;
   className?: string;
   align?: "start" | "end" | "center";
+  side?: "top" | "bottom" | "auto";
 }) {
   const { open } = React.useContext(DropdownContext);
+  const contentRef = React.useRef<HTMLDivElement>(null);
+  const [positionSide, setPositionSide] = React.useState<"top" | "bottom">(
+    side === "top" ? "top" : "bottom"
+  );
+
+  React.useLayoutEffect(() => {
+    if (!open || !contentRef.current || side !== "auto") return;
+    const rect = contentRef.current.getBoundingClientRect();
+    const viewportHeight = window.innerHeight;
+    if (rect.bottom > viewportHeight - 10) {
+      setPositionSide("top");
+    } else {
+      setPositionSide("bottom");
+    }
+  }, [open, side]);
+
   if (!open) return null;
 
   const alignClass =
     align === "start" ? "left-0" : align === "center" ? "left-1/2 -translate-x-1/2" : "right-0";
+  const sideClass =
+    positionSide === "top" ? "bottom-full mb-1" : "top-full mt-1";
 
   return (
     <div
+      ref={contentRef}
       className={cn(
-        "absolute z-50 mt-1 min-w-[8rem] overflow-hidden rounded-xl border border-slate-200 bg-white p-1 text-slate-900 shadow-lg animate-in fade-in-50",
+        "absolute z-[100] min-w-[8rem] rounded-xl border border-slate-200 bg-white p-1 text-slate-900 shadow-xl animate-in fade-in-50",
         alignClass,
+        sideClass,
         className
       )}
     >

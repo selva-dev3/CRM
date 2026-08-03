@@ -383,7 +383,7 @@ export function DataTable<TItem>({
 
       <div
         className={cn(
-          'overflow-x-auto',
+          'overflow-x-auto min-h-[260px] pb-12',
           maxHeight ? 'overflow-y-auto' : undefined,
           '[&>[data-slot=table-container]]:contents',
         )}
