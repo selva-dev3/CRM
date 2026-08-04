@@ -336,7 +336,7 @@ async def get_lead_notes(lead_id: str, db: AsyncSession = Depends(get_db)):
     users_res = await db.execute(select(User))
     users_map = {}
     for u in users_res.scalars().all():
-        name = f"{u.first_name or ''} {u.last_name or ''}".strip()
+        name = (u.name or "").strip()
         users_map[u.id] = name if name else (u.email or "System User")
 
     return [
@@ -360,7 +360,7 @@ async def add_lead_note(lead_id: str, content: str, db: AsyncSession = Depends(g
         u_res = await db.execute(select(User).limit(1))
         u = u_res.scalars().first()
         if not u:
-            u = User(email="system@crm.com", hashed_password="hashed_password_placeholder", first_name="System", last_name="User")
+            u = User(email="system@crm.com", hashed_password="hashed_password_placeholder", name="System User")
             db.add(u)
             await db.flush()
 
@@ -415,7 +415,7 @@ async def create_lead_task(lead_id: str, payload: TaskCreate, db: AsyncSession =
             u_res = await db.execute(select(User.id).limit(1))
             assigned_user_id = u_res.scalars().first()
             if not assigned_user_id:
-                u = User(email="system@crm.com", hashed_password="hashed_password_placeholder", first_name="System", last_name="User")
+                u = User(email="system@crm.com", hashed_password="hashed_password_placeholder", name="System User")
                 db.add(u)
                 await db.flush()
                 assigned_user_id = u.id
