@@ -37,6 +37,7 @@ import {
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import { DataTable, type DataTableColumn, type TableActionOption } from '@/components/shared/data-table';
+import { ConfirmModal } from '@/components/shared/confirm-modal';
 import { 
   useUsersQuery, 
   useUserInvitationsQuery,
@@ -1052,32 +1053,23 @@ export default function UsersPage() {
       )}
 
       {/* DELETE USER CONFIRMATION MODAL */}
-      {userToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#111827]/60 backdrop-blur-xs animate-in fade-in-50">
-          <div className="relative w-full max-w-md bg-white rounded-modal border border-[#E5E7EB] shadow-saas-lg p-6 space-y-4">
-            <div className="flex items-center gap-3 text-[#DC2626]">
-              <div className="w-10 h-10 rounded-full bg-[#DC2626]/10 flex items-center justify-center shrink-0">
-                <Trash2 className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-subheading font-semibold text-[#111827]">Delete User Account</h3>
-                <p className="text-caption text-[#6B7280]">This action cannot be undone.</p>
-              </div>
-            </div>
-            <p className="text-body font-medium text-[#374151]">
-              Are you sure you want to delete user account <strong className="text-[#111827]">{userToDelete.name || userToDelete.email}</strong>?
+      <ConfirmModal
+        isOpen={!!userToDelete}
+        onClose={() => setUserToDelete(null)}
+        onConfirm={handleConfirmDelete}
+        title="Delete User Account"
+        description="This action cannot be undone."
+        confirmText="Delete User"
+        variant="danger"
+        isLoading={deleteUserMutation.isPending}
+        message={
+          userToDelete && (
+            <p>
+              Are you sure you want to delete user account <strong className="text-slate-900">{userToDelete.name || userToDelete.email}</strong>?
             </p>
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <Button type="button" variant="outline" onClick={() => setUserToDelete(null)}>
-                Cancel
-              </Button>
-              <Button type="button" variant="danger" onClick={handleConfirmDelete}>
-                Delete User
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+          )
+        }
+      />
     </div>
   );
 }

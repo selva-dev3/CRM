@@ -35,6 +35,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { ConfirmModal } from '@/components/shared/confirm-modal';
 import {
   useUserQuery,
   useUserQuotaQuery,
@@ -61,10 +62,14 @@ export default function UserDetailPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Team Create Modal State
+  // Modal States
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
   const [newTeamName, setNewTeamName] = useState('');
   const [newTeamRole, setNewTeamRole] = useState('Member');
+
+  // Confirmation Modal States for Deleting Team / Deleting User
+  const [teamToDelete, setTeamToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [isDeleteUserModalOpen, setIsDeleteUserModalOpen] = useState(false);
 
   // Queries
   const { data: user, isLoading, isError, refetch } = useUserQuery(userId);
@@ -75,7 +80,7 @@ export default function UserDetailPage() {
   const { data: teamsData = [], refetch: refetchTeams } = useUserTeamsQuery(userId);
   const { data: organizations = [] } = useOrganizationsQuery();
 
-  // Local teams state for instant interactive create/delete feedback
+  // Local teams state for instant interactive feedback
   const [localTeams, setLocalTeams] = useState<UserTeamItem[] | null>(null);
   const teams = localTeams ?? teamsData;
 
@@ -133,7 +138,6 @@ export default function UserDetailPage() {
         role: newTeamRole,
       });
 
-      // Update local team list instantly
       const updatedList = [
         ...teams,
         { id: newTeamId, name: newTeamName.trim(), role: newTeamRole }
@@ -150,33 +154,33 @@ export default function UserDetailPage() {
     }
   };
 
-  const handleRemoveTeam = async (teamId: string, teamName: string) => {
-    if (confirm(`Are you sure you want to remove ${user?.name} from team '${teamName}'?`)) {
-      try {
-        setErrorMessage(null);
-        const res = await removeTeamMutation.mutateAsync({ userId, teamId });
+  const handleConfirmRemoveTeam = async () => {
+    if (!teamToDelete) return;
+    try {
+      setErrorMessage(null);
+      const res = await removeTeamMutation.mutateAsync({ userId, teamId: teamToDelete.id });
 
-        // Remove from local teams state
-        const updatedList = teams.filter((t) => t.id !== teamId);
-        setLocalTeams(updatedList);
+      const updatedList = teams.filter((t) => t.id !== teamToDelete.id);
+      setLocalTeams(updatedList);
 
-        setSuccessMessage(res.message || `Removed from team '${teamName}' successfully.`);
-        refetchTeams();
-      } catch {
-        setErrorMessage('Failed to remove team.');
-      }
+      setSuccessMessage(res.message || `Removed from team '${teamToDelete.name}' successfully.`);
+      setTeamToDelete(null);
+      refetchTeams();
+    } catch {
+      setErrorMessage('Failed to remove team.');
+      setTeamToDelete(null);
     }
   };
 
-  const handleDelete = async () => {
+  const handleConfirmDeleteUser = async () => {
     if (!user) return;
-    if (confirm(`Are you sure you want to delete user ${user.name}?`)) {
-      try {
-        await deleteUserMutation.mutateAsync(user.id);
-        router.push('/users');
-      } catch {
-        setErrorMessage('Failed to delete user.');
-      }
+    try {
+      setErrorMessage(null);
+      await deleteUserMutation.mutateAsync(user.id);
+      router.push('/users');
+    } catch {
+      setErrorMessage('Failed to delete user account.');
+      setIsDeleteUserModalOpen(false);
     }
   };
 
@@ -248,7 +252,7 @@ export default function UserDetailPage() {
             size="sm"
             onClick={handleResetPassword}
             disabled={resetPasswordMutation.isPending}
-            className="border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold text-xs"
+            className="border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold text-xs cursor-pointer"
           >
             <RotateCcw className={`w-3.5 h-3.5 mr-1.5 text-blue-600 ${resetPasswordMutation.isPending ? 'animate-spin' : ''}`} />
             Reset Password
@@ -258,7 +262,7 @@ export default function UserDetailPage() {
             variant="outline"
             size="sm"
             onClick={handleToggleStatus}
-            className="border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold text-xs"
+            className="border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold text-xs cursor-pointer"
           >
             {user.is_active ? (
               <>
@@ -276,8 +280,8 @@ export default function UserDetailPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={handleDelete}
-            className="border-rose-300 text-rose-600 hover:bg-rose-50 font-semibold text-xs"
+            onClick={() => setIsDeleteUserModalOpen(true)}
+            className="border-rose-300 text-rose-600 hover:bg-rose-50 font-semibold text-xs cursor-pointer"
           >
             <Trash2 className="w-3.5 h-3.5 mr-1.5" />
             Delete User
@@ -287,13 +291,13 @@ export default function UserDetailPage() {
 
       {/* Feedback Banners */}
       {successMessage && (
-        <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-sm font-medium flex items-center gap-2">
+        <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-sm font-medium flex items-center gap-2 animate-in fade-in-50">
           <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
           <span>{successMessage}</span>
         </div>
       )}
       {errorMessage && (
-        <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-sm font-medium flex items-center gap-2">
+        <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-sm font-medium flex items-center gap-2 animate-in fade-in-50">
           <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
           <span>{errorMessage}</span>
         </div>
@@ -459,7 +463,7 @@ export default function UserDetailPage() {
                 size="sm"
                 variant="outline"
                 onClick={() => setIsTeamModalOpen(true)}
-                className="h-8 gap-1 border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-semibold"
+                className="h-8 gap-1 border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-semibold cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Add Team</span>
@@ -480,7 +484,7 @@ export default function UserDetailPage() {
                       </Badge>
                       <button
                         type="button"
-                        onClick={() => handleRemoveTeam(t.id, t.name)}
+                        onClick={() => setTeamToDelete({ id: t.id, name: t.name })}
                         className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
                         title="Remove team membership"
                       >
@@ -559,8 +563,8 @@ export default function UserDetailPage() {
 
       {/* CREATE TEAM MODAL */}
       {isTeamModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl overflow-hidden p-6 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
+          <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl p-6 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
                 <Users className="w-5 h-5 text-blue-600" />
@@ -569,7 +573,7 @@ export default function UserDetailPage() {
               <button
                 type="button"
                 onClick={() => setIsTeamModalOpen(false)}
-                className="p-1 rounded text-slate-400 hover:text-slate-700"
+                className="p-1 rounded text-slate-400 hover:text-slate-700 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -606,7 +610,7 @@ export default function UserDetailPage() {
                   variant="outline"
                   size="sm"
                   onClick={() => setIsTeamModalOpen(false)}
-                  className="text-xs"
+                  className="text-xs cursor-pointer"
                 >
                   Cancel
                 </Button>
@@ -614,7 +618,7 @@ export default function UserDetailPage() {
                   type="submit"
                   size="sm"
                   disabled={assignTeamMutation.isPending}
-                  className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold"
+                  className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer"
                 >
                   {assignTeamMutation.isPending ? 'Assigning...' : 'Assign Team'}
                 </Button>
@@ -623,6 +627,43 @@ export default function UserDetailPage() {
           </div>
         </div>
       )}
+
+      {/* REMOVE TEAM CONFIRMATION MODAL */}
+      <ConfirmModal
+        isOpen={!!teamToDelete}
+        onClose={() => setTeamToDelete(null)}
+        onConfirm={handleConfirmRemoveTeam}
+        title="Remove Team Membership"
+        description="This action cannot be undone."
+        confirmText="Remove Team"
+        variant="danger"
+        isLoading={removeTeamMutation.isPending}
+        message={
+          teamToDelete && (
+            <p>
+              Are you sure you want to remove <strong className="text-slate-900">{user.name}</strong> from team{' '}
+              <strong className="text-slate-900">{teamToDelete.name}</strong>?
+            </p>
+          )
+        }
+      />
+
+      {/* DELETE USER CONFIRMATION MODAL */}
+      <ConfirmModal
+        isOpen={isDeleteUserModalOpen}
+        onClose={() => setIsDeleteUserModalOpen(false)}
+        onConfirm={handleConfirmDeleteUser}
+        title="Delete User Account"
+        description="This action cannot be undone."
+        confirmText="Delete User Account"
+        variant="danger"
+        isLoading={deleteUserMutation.isPending}
+        message={
+          <p>
+            Are you sure you want to delete user account <strong className="text-slate-900">{user.name || user.email}</strong>?
+          </p>
+        }
+      />
     </div>
   );
 }
