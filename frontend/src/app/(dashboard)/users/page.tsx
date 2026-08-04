@@ -332,42 +332,6 @@ export default function UsersPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {/* Bulk Actions Dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger className="h-10 px-4 border border-[#E5E7EB] bg-white hover:bg-[#F9FAFB] text-[#374151] font-medium rounded-btn text-button inline-flex items-center gap-2 cursor-pointer shadow-saas-sm">
-              <Sliders className="w-4 h-4 text-[#2563EB]" />
-              <span>Bulk Actions</span>
-              {selectedIds.size > 0 && (
-                <span className="ml-1 px-2 py-0.5 rounded-full bg-[#2563EB] text-white text-badge font-semibold">
-                  {selectedIds.size}
-                </span>
-              )}
-              <ChevronDown className="w-4 h-4 text-[#9CA3AF]" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-52">
-              <DropdownMenuLabel className="text-badge font-semibold text-[#111827]">
-                {selectedIds.size > 0 ? `Bulk Actions (${selectedIds.size} selected)` : 'Select users below to apply'}
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                disabled={selectedIds.size === 0}
-                onClick={handleBulkDeactivate}
-                className={`cursor-pointer text-button font-medium ${selectedIds.size === 0 ? 'opacity-50 cursor-not-allowed' : 'text-[#374151] hover:bg-[#F3F4F6]'}`}
-              >
-                <Ban className="w-4 h-4 mr-2 text-[#F59E0B]" />
-                <span>Bulk Deactivate ({selectedIds.size})</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                disabled={selectedIds.size === 0}
-                onClick={handleBulkDelete}
-                className={`cursor-pointer text-button font-medium ${selectedIds.size === 0 ? 'opacity-50 cursor-not-allowed' : 'text-[#DC2626] hover:bg-[#DC2626]/10'}`}
-              >
-                <Trash2 className="w-4 h-4 mr-2 text-[#DC2626]" />
-                <span>Bulk Delete ({selectedIds.size})</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
           <Button
             type="button"
             onClick={handleOpenModal}
@@ -416,16 +380,54 @@ export default function UsersPage() {
         searchPlaceholder="Search team member name or email..."
         isLoading={isLoading}
         toolbarActions={
-          <Button
-            type="button"
-            variant="outline"
-            size="default"
-            onClick={() => refetch()}
-            className="text-button font-medium cursor-pointer"
-          >
-            <RefreshCw className={`w-4 h-4 mr-2 text-[#6B7280] ${isLoading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            {/* Bulk Actions Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger className="h-10 px-4 border border-[#E5E7EB] bg-white hover:bg-[#F9FAFB] text-[#374151] font-medium rounded-btn text-button inline-flex items-center gap-2 cursor-pointer shadow-saas-sm">
+                <Sliders className="w-4 h-4 text-[#2563EB]" />
+                <span>Bulk Actions</span>
+                {selectedIds.size > 0 && (
+                  <span className="ml-1 px-2 py-0.5 rounded-full bg-[#2563EB] text-white text-badge font-semibold">
+                    {selectedIds.size}
+                  </span>
+                )}
+                <ChevronDown className="w-4 h-4 text-[#9CA3AF]" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuLabel className="text-badge font-semibold text-[#111827]">
+                  {selectedIds.size > 0 ? `Bulk Actions (${selectedIds.size} selected)` : 'Select users below to apply'}
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  disabled={selectedIds.size === 0}
+                  onClick={handleBulkDeactivate}
+                  className={`cursor-pointer text-button font-medium ${selectedIds.size === 0 ? 'opacity-50 cursor-not-allowed' : 'text-[#374151] hover:bg-[#F3F4F6]'}`}
+                >
+                  <Ban className="w-4 h-4 mr-2 text-[#F59E0B]" />
+                  <span>Bulk Deactivate ({selectedIds.size})</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={selectedIds.size === 0}
+                  onClick={handleBulkDelete}
+                  className={`cursor-pointer text-button font-medium ${selectedIds.size === 0 ? 'opacity-50 cursor-not-allowed' : 'text-[#DC2626] hover:bg-[#DC2626]/10'}`}
+                >
+                  <Trash2 className="w-4 h-4 mr-2 text-[#DC2626]" />
+                  <span>Bulk Delete ({selectedIds.size})</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="default"
+              onClick={() => refetch()}
+              className="text-button font-medium cursor-pointer"
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 text-[#6B7280] ${isLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+          </div>
         }
       />
 
