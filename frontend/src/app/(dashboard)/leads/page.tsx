@@ -34,7 +34,16 @@ export default function LeadsPage() {
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [leadToDelete, setLeadToDelete] = useState<Lead | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+
+  // Debounce search input to avoid refetching API on every single character typed
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
   
   // Modal Category Tab State
   const [activeModalTab, setActiveModalTab] = useState<'contact' | 'company' | 'location' | 'organization'>('contact');
@@ -67,7 +76,7 @@ export default function LeadsPage() {
 
   // TanStack Query Hooks for Leads, Organizations, Companies & Users API
   const { data: leads = [], isLoading, isError, refetch } = useLeadsQuery({
-    search: searchTerm || undefined,
+    search: debouncedSearchTerm || undefined,
     status: statusFilter || undefined,
   });
 

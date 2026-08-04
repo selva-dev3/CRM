@@ -288,8 +288,25 @@ export function DataTable<TItem>({
   if (isLoading) {
     return (
       <div className={cn(!transparent && 'rounded-xl border border-slate-200 bg-white shadow-xs', className)}>
-        {hasToolbar && <DataTableToolbarSkeleton />}
-        <div className={cn(padding && 'p-2')}>
+        {hasToolbar && (
+          <DataTableToolbar
+            searchValue={searchValue}
+            onSearchChange={onSearchChange}
+            searchPlaceholder={searchPlaceholder}
+            filters={filters}
+            statusFilter={statusFilter}
+            sortOptions={sortOptions}
+            hasActiveFilters={hasActiveFilters}
+            onClearFilters={onClearFilters}
+            leftActions={leftActions}
+            toolbarActions={toolbarActions}
+            hasHideableColumns={hasHideableColumns}
+            columns={columns}
+            hiddenColumns={hiddenColumns}
+            onToggleColumn={toggleColumn}
+          />
+        )}
+        <div className={cn(padding && 'p-2 overflow-x-auto')}>
           <Table>
             <TableHeader>
               <TableRow>
@@ -361,7 +378,7 @@ export function DataTable<TItem>({
   }
 
   return (
-    <div className={cn(!transparent && 'rounded-xl border border-slate-200 bg-white shadow-xs', className)}>
+    <div className={cn(!transparent && 'rounded-xl border border-slate-200 bg-white shadow-xs overflow-hidden', className)}>
       {hasToolbar && (
         <DataTableToolbar
           searchValue={searchValue}
@@ -383,7 +400,7 @@ export function DataTable<TItem>({
 
       <div
         className={cn(
-          'overflow-x-auto min-h-[260px] pb-12',
+          'w-full overflow-x-auto border-t border-slate-200',
           maxHeight ? 'overflow-y-auto' : undefined,
           '[&>[data-slot=table-container]]:contents',
         )}

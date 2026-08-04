@@ -225,6 +225,7 @@ export function useLeadsQuery(params: FetchLeadsParams = {}) {
   return useQuery({
     queryKey: ['leads', params],
     queryFn: () => fetchLeadsApi(params),
+    placeholderData: (previousData) => previousData,
   });
 }
 
