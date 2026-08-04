@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, status, Query, Depends, UploadFile
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from app.config import settings
 from app.database import get_db
 from app.models import User, UserInvitation, Organization
 from app.schemas.crm_schemas import (

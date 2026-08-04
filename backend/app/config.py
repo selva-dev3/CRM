@@ -55,8 +55,8 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: Optional[str] = None
 
     # CORS - comma-separated list of allowed frontend origins
-    CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
-
+    CORS_ORIGINS: str = "https://crm-one-sable.vercel.app,http://localhost:3000,http://127.0.0.1:3000"
+    FRONTEND_URL: str ="https://crm-one-sable.vercel.app,http://localhost:3000,http://127.0.0.1:3000"
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]

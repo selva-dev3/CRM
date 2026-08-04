@@ -67,8 +67,10 @@ def send_reset_password_email(email_to: str, token: str, user_name: str = "User"
         return False
 
 
-def send_user_invite_email(email_to: str, role: str = "Member", invite_url: str = "{settings.FRONTEND_URL}/accept-invite") -> bool:
+def send_user_invite_email(email_to: str, role: str = "Member", invite_url: str = None) -> bool:
     """Sends Organization User Invitation HTML email via Resend API."""
+    if not invite_url:
+        invite_url = f"{settings.FRONTEND_URL}/accept-invite"
     subject = f"You're Invited to Join {settings.PROJECT_NAME}"
 
     html_content = f"""
