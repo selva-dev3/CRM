@@ -126,8 +126,12 @@ async def invite_users(payload: UserInviteRequest, db: AsyncSession = Depends(ge
             db.add(inv)
             await db.flush()
 
-            invite_url = f"http://localhost:3000/accept-invite?token={token}"
-            send_user_invite_email(email_to=target["email"], role=payload.role, invite_url=invite_url)
+            invite_url = f"{settings.FRONTEND_URL}/accept-invite?token={token}"
+            send_user_invite_email(
+    email_to=target["email"],
+    role=payload.role,
+    invite_url=invite_url
+)
 
             invitation_responses.append({
                 "name": target["name"],
