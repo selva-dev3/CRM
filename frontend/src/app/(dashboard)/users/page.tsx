@@ -22,6 +22,7 @@ import {
   User,
   Building
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -53,6 +54,7 @@ import { useOrganizationsQuery } from '@/lib/api/organizations';
 import { useQueryClient } from '@tanstack/react-query';
 
 export default function UsersPage() {
+  const router = useRouter();
   const queryClient = useQueryClient();
 
   // Active Tab State ('all' | 'invites')
@@ -614,6 +616,7 @@ export default function UsersPage() {
           columns={columns}
           data={users}
           getRowKey={(item) => item.id}
+          onRowClick={(user) => router.push(`/users/${user.id}`)}
           emptyTitle="No team members found"
           emptyDescription="Get started by inviting your team members or clearing your search filter."
           showCheckbox

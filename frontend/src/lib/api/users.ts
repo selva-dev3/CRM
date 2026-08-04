@@ -79,6 +79,10 @@ export async function fetchUsersApi(page = 1, limit = 15, search?: string): Prom
   return apiClient<UserItem[]>(`/users?${query.toString()}`);
 }
 
+export async function getUserByIdApi(id: string): Promise<UserItem> {
+  return apiClient<UserItem>(`/users/${id}`);
+}
+
 export async function fetchUserInvitationsApi(statusFilter?: string): Promise<UserInvitationItem[]> {
   const query = new URLSearchParams();
   if (statusFilter) query.append('status', statusFilter);
@@ -129,6 +133,15 @@ export function useUsersQuery(page = 1, limit = 15, search?: string, options?: O
     queryKey: ['users', page, limit, search],
     queryFn: () => fetchUsersApi(page, limit, search),
     placeholderData: (previousData) => previousData,
+    ...options,
+  });
+}
+
+export function useUserQuery(id: string, options?: Omit<UseQueryOptions<UserItem, Error>, 'queryKey' | 'queryFn'>) {
+  return useQuery<UserItem, Error>({
+    queryKey: ['user', id],
+    queryFn: () => getUserByIdApi(id),
+    enabled: !!id,
     ...options,
   });
 }
