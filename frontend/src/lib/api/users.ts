@@ -224,6 +224,10 @@ export async function removeUserTeamApi(payload: { userId: string; teamId: strin
   return apiClient.delete<{ message: string; status: string }>(`/users/${payload.userId}/teams/${payload.teamId}`);
 }
 
+export async function setUserQuotaApi(payload: { userId: string; targetAmount: number; achievedAmount?: number }): Promise<{ message: string; status: string }> {
+  return apiClient.post<{ message: string; status: string }>(`/users/${payload.userId}/quota?target_amount=${payload.targetAmount}`);
+}
+
 // TanStack Queries & Mutations
 export function useUsersQuery(page = 1, limit = 15, search?: string, options?: Omit<UseQueryOptions<UserItem[], Error>, 'queryKey' | 'queryFn'>) {
   return useQuery<UserItem[], Error>({
@@ -343,6 +347,13 @@ export function useAssignUserTeamMutation(options?: UseMutationOptions<{ message
 export function useRemoveUserTeamMutation(options?: UseMutationOptions<{ message: string; status: string }, Error, { userId: string; teamId: string }>) {
   return useMutation({
     mutationFn: removeUserTeamApi,
+    ...options,
+  });
+}
+
+export function useSetUserQuotaMutation(options?: UseMutationOptions<{ message: string; status: string }, Error, { userId: string; targetAmount: number; achievedAmount?: number }>) {
+  return useMutation({
+    mutationFn: setUserQuotaApi,
     ...options,
   });
 }

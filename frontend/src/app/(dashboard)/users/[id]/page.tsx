@@ -28,7 +28,8 @@ import {
   Lock,
   RotateCcw,
   Plus,
-  X
+  X,
+  Pencil
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -49,7 +50,9 @@ import {
   useResetUserPasswordAdminMutation,
   useAssignUserTeamMutation,
   useRemoveUserTeamMutation,
-  UserTeamItem
+  useSetUserQuotaMutation,
+  UserTeamItem,
+  UserQuotaResponse
 } from '@/lib/api/users';
 import { useOrganizationsQuery } from '@/lib/api/organizations';
 
@@ -62,10 +65,15 @@ export default function UserDetailPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Modal States
+  // Team Create Modal State
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
   const [newTeamName, setNewTeamName] = useState('');
   const [newTeamRole, setNewTeamRole] = useState('Member');
+
+  // Quota Create/Edit Modal State
+  const [isQuotaModalOpen, setIsQuotaModalOpen] = useState(false);
+  const [quotaTargetInput, setQuotaTargetInput] = useState('125000');
+  const [quotaAchievedInput, setQuotaAchievedInput] = useState('87500');
 
   // Confirmation Modal States for Deleting Team / Deleting User
   const [teamToDelete, setTeamToDelete] = useState<{ id: string; name: string } | null>(null);
@@ -73,14 +81,17 @@ export default function UserDetailPage() {
 
   // Queries
   const { data: user, isLoading, isError, refetch } = useUserQuery(userId);
-  const { data: quota } = useUserQuotaQuery(userId);
+  const { data: quotaData, refetch: refetchQuota } = useUserQuotaQuery(userId);
   const { data: performance } = useUserPerformanceQuery(userId);
   const { data: permissionsData } = useUserPermissionsQuery(userId);
   const { data: activities = [] } = useUserActivitiesQuery(userId);
   const { data: teamsData = [], refetch: refetchTeams } = useUserTeamsQuery(userId);
   const { data: organizations = [] } = useOrganizationsQuery();
 
-  // Local teams state for instant interactive feedback
+  // Local quota & teams state for instant interactive feedback
+  const [localQuota, setLocalQuota] = useState<UserQuotaResponse | null>(null);
+  const quota = localQuota ?? quotaData;
+
   const [localTeams, setLocalTeams] = useState<UserTeamItem[] | null>(null);
   const teams = localTeams ?? teamsData;
 
@@ -91,6 +102,7 @@ export default function UserDetailPage() {
   const resetPasswordMutation = useResetUserPasswordAdminMutation();
   const assignTeamMutation = useAssignUserTeamMutation();
   const removeTeamMutation = useRemoveUserTeamMutation();
+  const setQuotaMutation = useSetUserQuotaMutation();
 
   const orgName = organizations.find((o) => o.id === user?.organization_id)?.name || user?.organization_id || 'Primary Org';
 
@@ -151,6 +163,37 @@ export default function UserDetailPage() {
       refetchTeams();
     } catch {
       setErrorMessage('Failed to assign user to team.');
+    }
+  };
+
+  const handleSetQuotaSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const target = parseFloat(quotaTargetInput);
+    const achieved = parseFloat(quotaAchievedInput) || 0;
+    if (isNaN(target) || target <= 0) {
+      setErrorMessage('Please enter a valid sales quota target amount.');
+      return;
+    }
+
+    try {
+      setErrorMessage(null);
+      const res = await setQuotaMutation.mutateAsync({
+        userId,
+        targetAmount: target,
+        achievedAmount: achieved,
+      });
+
+      setLocalQuota({
+        user_id: userId,
+        target_amount: target,
+        achieved_amount: achieved,
+      });
+
+      setSuccessMessage(`Sales quota target $${target.toLocaleString()} assigned successfully.`);
+      setIsQuotaModalOpen(false);
+      refetchQuota();
+    } catch {
+      setErrorMessage('Failed to set sales quota.');
     }
   };
 
@@ -247,6 +290,20 @@ export default function UserDetailPage() {
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setQuotaTargetInput(String(quota?.target_amount || 125000));
+              setQuotaAchievedInput(String(quota?.achieved_amount || 87500));
+              setIsQuotaModalOpen(true);
+            }}
+            className="border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 font-semibold text-xs cursor-pointer"
+          >
+            <Target className="w-3.5 h-3.5 mr-1.5" />
+            Set Quota
+          </Button>
+
           <Button
             variant="outline"
             size="sm"
@@ -348,9 +405,18 @@ export default function UserDetailPage() {
               ${(quota?.achieved_amount || 87500).toLocaleString()} achieved ({quotaPercent}%)
             </div>
           </div>
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+          <button
+            type="button"
+            onClick={() => {
+              setQuotaTargetInput(String(quota?.target_amount || 125000));
+              setQuotaAchievedInput(String(quota?.achieved_amount || 87500));
+              setIsQuotaModalOpen(true);
+            }}
+            className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 transition cursor-pointer"
+            title="Edit Sales Quota Target"
+          >
             <Target className="w-5 h-5" />
-          </div>
+          </button>
         </Card>
 
         <Card className="p-4 border border-slate-200 bg-white shadow-sm rounded-xl flex items-center justify-between">
@@ -446,10 +512,6 @@ export default function UserDetailPage() {
                 <span className="text-slate-500 font-medium block">Email Address</span>
                 <span className="font-semibold text-slate-900 text-sm">{user.email}</span>
               </div>
-              <div>
-                <span className="text-slate-500 font-medium block">User ID</span>
-                <span className="font-mono text-slate-700 bg-slate-100 px-2 py-0.5 rounded text-[11px]">{user.id}</span>
-              </div>
             </div>
           </Card>
 
@@ -503,10 +565,25 @@ export default function UserDetailPage() {
 
       {activeTab === 'performance' && (
         <Card className="p-6 border border-slate-200 bg-white shadow-sm rounded-xl space-y-6">
-          <h3 className="font-bold text-slate-900 text-base flex items-center gap-2 border-b border-slate-100 pb-3">
-            <Target className="w-4 h-4 text-blue-600" />
-            <span>Sales Quota Progress Bar</span>
-          </h3>
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+              <Target className="w-4 h-4 text-blue-600" />
+              <span>Sales Quota Progress Bar</span>
+            </h3>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setQuotaTargetInput(String(quota?.target_amount || 125000));
+                setQuotaAchievedInput(String(quota?.achieved_amount || 87500));
+                setIsQuotaModalOpen(true);
+              }}
+              className="h-8 gap-1 border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-semibold cursor-pointer"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+              <span>Update Quota Target</span>
+            </Button>
+          </div>
 
           <div className="space-y-2">
             <div className="flex justify-between text-xs font-semibold">
@@ -621,6 +698,71 @@ export default function UserDetailPage() {
                   className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer"
                 >
                   {assignTeamMutation.isPending ? 'Assigning...' : 'Assign Team'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* SET SALES QUOTA MODAL */}
+      {isQuotaModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
+          <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                <Target className="w-5 h-5 text-blue-600" />
+                <span>Set / Update Sales Quota Target</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsQuotaModalOpen(false)}
+                className="p-1 rounded text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSetQuotaSubmit} className="space-y-4 text-xs">
+              <div className="space-y-1">
+                <Label className="text-slate-700 font-semibold">Target Sales Quota ($)</Label>
+                <Input
+                  type="number"
+                  placeholder="e.g. 150000"
+                  value={quotaTargetInput}
+                  onChange={(e) => setQuotaTargetInput(e.target.value)}
+                  className="h-9 text-xs"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-slate-700 font-semibold">Current Achieved Amount ($)</Label>
+                <Input
+                  type="number"
+                  placeholder="e.g. 87500"
+                  value={quotaAchievedInput}
+                  onChange={(e) => setQuotaAchievedInput(e.target.value)}
+                  className="h-9 text-xs"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsQuotaModalOpen(false)}
+                  className="text-xs cursor-pointer"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={setQuotaMutation.isPending}
+                  className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer"
+                >
+                  {setQuotaMutation.isPending ? 'Saving...' : 'Save Sales Quota'}
                 </Button>
               </div>
             </form>
