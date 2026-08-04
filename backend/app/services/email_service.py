@@ -28,8 +28,10 @@ def send_email(
     smtp_port = int(settings.SMTP_PORT)
 
     try:
+        print("Testing SMTP connection...")
         context = ssl.create_default_context()
         with smtplib.SMTP(smtp_server, smtp_port, timeout=30) as server:
+            print("SMTP connection OK")
             server.ehlo()
             server.starttls(context=context)
             server.ehlo()
@@ -52,6 +54,7 @@ def send_email(
 
     except Exception as e:
         logger.exception(f"SMTP send failed: {e}")
+        print("SMTP connection FAILED:", repr(e))
         raise
 
 
