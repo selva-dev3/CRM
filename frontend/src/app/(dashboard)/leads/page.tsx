@@ -21,7 +21,9 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  Archive
+  Archive,
+  UserCheck,
+  RotateCcw
 } from 'lucide-react';
 import { 
   Button, 
@@ -46,6 +48,9 @@ import {
   useDeleteLeadMutation, 
   useBulkDeleteLeadsMutation,
   useBulkArchiveLeadsMutation,
+  useArchiveLeadMutation,
+  useUnarchiveLeadMutation,
+  useAssignLeadMutation,
   Lead 
 } from '@/lib/api/leads';
 import { useOrganizationsQuery } from '@/lib/api/organizations';
@@ -116,11 +121,17 @@ export default function LeadsPage() {
     }
   }, [organizations, organizationId]);
 
+  const [assigningLead, setAssigningLead] = useState<Lead | null>(null);
+  const [selectedUserId, setSelectedUserId] = useState<string>('');
+
   const createLeadMutation = useCreateLeadMutation();
   const updateLeadMutation = useUpdateLeadMutation();
   const deleteLeadMutation = useDeleteLeadMutation();
   const bulkDeleteMutation = useBulkDeleteLeadsMutation();
   const bulkArchiveMutation = useBulkArchiveLeadsMutation();
+  const archiveLeadMutation = useArchiveLeadMutation();
+  const unarchiveLeadMutation = useUnarchiveLeadMutation();
+  const assignLeadMutation = useAssignLeadMutation();
 
   const handleToggleRow = (item: Lead, checked: boolean) => {
     setSelectedIds((prev) => {
@@ -201,6 +212,29 @@ export default function LeadsPage() {
     setOrganizationId(organizations.length > 0 ? organizations[0].id : 'org-1');
     setScore(75);
     setAssignedTo('');
+    setIsArchived(false);
+    setErrorMessage(null);
+  };
+
+  const handleAutofill = () => {
+    setContactName("Alex Morgan");
+    setCompany(companies.length > 0 ? companies[0].name : "Nexus Tech Solutions");
+    setTitle("Vice President of Enterprise Sales");
+    setEmail("alex.morgan@nexustech.com");
+    setPhone("+1 (555) 234-5678");
+    setWebsite("https://nexustech.com");
+    setIndustry("Software & Cloud Services");
+    setCompanySize("51-200");
+    setCountry("United States");
+    setStateName("CA");
+    setCity("San Francisco");
+    setAddress("100 Technology Way, Suite 400");
+    setPostalCode("94107");
+    setStatus("Qualified");
+    setSource("LinkedIn");
+    if (organizations.length > 0) setOrganizationId(organizations[0].id);
+    setScore(88);
+    if (users.length > 0) setAssignedTo(users[0].id);
     setIsArchived(false);
     setErrorMessage(null);
   };
@@ -392,16 +426,73 @@ export default function LeadsPage() {
     []
   );
 
-  // Define Row Actions for DataTable
-  const actions: TableActionOption<Lead>[] = [
+  const handleArchiveLead = async (lead: Lead) => {
+    try {
+      await archiveLeadMutation.mutateAsync(lead.id);
+      setSuccessMessage(`Lead "${lead.contact_name}" archived successfully!`);
+      setTimeout(() => setSuccessMessage(null), 4000);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Failed to archive lead.');
+    }
+  };
+
+  const handleUnarchiveLead = async (lead: Lead) => {
+    try {
+      await unarchiveLeadMutation.mutateAsync(lead.id);
+      setSuccessMessage(`Lead "${lead.contact_name}" unarchived/restored successfully!`);
+      setTimeout(() => setSuccessMessage(null), 4000);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Failed to unarchive lead.');
+    }
+  };
+
+  const handleConfirmAssign = async () => {
+    if (!assigningLead) return;
+    try {
+      await assignLeadMutation.mutateAsync({ leadId: assigningLead.id, userId: selectedUserId });
+      setSuccessMessage(`Lead "${assigningLead.contact_name}" assigned successfully!`);
+      setAssigningLead(null);
+      setTimeout(() => setSuccessMessage(null), 4000);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Failed to assign lead.');
+    }
+  };
+
+  // Define Row Actions for DataTable dynamically based on Lead state
+  const actions = (lead: Lead): TableActionOption<Lead>[] => [
     {
       label: 'Edit Lead',
-      onClick: (lead) => handleOpenEditModal(lead),
+      icon: <Pencil className="w-3.5 h-3.5 mr-2 text-slate-500" />,
+      onClick: (item) => handleOpenEditModal(item),
     },
+    {
+      label: 'Assign Lead',
+      icon: <UserCheck className="w-3.5 h-3.5 mr-2 text-indigo-600" />,
+      onClick: (item) => {
+        setAssigningLead(item);
+        setSelectedUserId(item.assigned_to || (users[0]?.id ?? ''));
+      },
+    },
+    ...(lead.is_archived
+      ? [
+          {
+            label: 'Unarchive Lead',
+            icon: <RotateCcw className="w-3.5 h-3.5 mr-2 text-emerald-600" />,
+            onClick: (item: Lead) => handleUnarchiveLead(item),
+          },
+        ]
+      : [
+          {
+            label: 'Archive Lead',
+            icon: <Archive className="w-3.5 h-3.5 mr-2 text-amber-600" />,
+            onClick: (item: Lead) => handleArchiveLead(item),
+          },
+        ]),
     {
       label: 'Delete Lead',
       variant: 'destructive',
-      onClick: (lead) => setLeadToDelete(lead),
+      icon: <Trash2 className="w-3.5 h-3.5 mr-2 text-rose-600" />,
+      onClick: (item) => setLeadToDelete(item),
     },
   ];
 
@@ -529,13 +620,25 @@ export default function LeadsPage() {
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={handleCloseModal}
-                className="p-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-200 transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAutofill}
+                  className="border-indigo-200 bg-indigo-50/90 hover:bg-indigo-100 text-indigo-700 font-black text-xs shadow-2xs gap-1.5 cursor-pointer px-3 py-1.5"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-600 animate-pulse" />
+                  <span>Auto-fill Sample Data</span>
+                </Button>
+                <button
+                  type="button"
+                  onClick={handleCloseModal}
+                  className="p-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-200 transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Category Navigation Tabs */}
@@ -1042,6 +1145,85 @@ export default function LeadsPage() {
                     </>
                   ) : (
                     'Delete Lead'
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ASSIGN LEAD MODAL DIALOG */}
+      {assigningLead && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
+          <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl overflow-hidden text-black">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-200 bg-indigo-50 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white shrink-0">
+                  <UserCheck className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-indigo-950">Assign Sales Lead</h3>
+                  <p className="text-xs font-bold text-indigo-700">Assign to team member / sales rep</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAssigningLead(null)}
+                disabled={assignLeadMutation.isPending}
+                className="p-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-200 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 space-y-4">
+              <p className="text-xs font-bold text-slate-700 leading-relaxed">
+                Assign sales lead <span className="font-black text-slate-950">"{assigningLead.contact_name}"</span> ({assigningLead.company}) to a team member:
+              </p>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-black text-black">Select Sales Rep / User</Label>
+                <select
+                  value={selectedUserId}
+                  onChange={(e) => setSelectedUserId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">Unassigned (No Owner)</option>
+                  {users.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name} ({u.role || 'Sales Rep'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Modal Actions */}
+              <div className="pt-2 flex items-center justify-end gap-3 border-t border-slate-200">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setAssigningLead(null)}
+                  disabled={assignLeadMutation.isPending}
+                  className="border-slate-300 text-black font-bold hover:bg-slate-100 text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleConfirmAssign}
+                  disabled={assignLeadMutation.isPending}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-sm text-xs px-5"
+                >
+                  {assignLeadMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                      Assigning...
+                    </>
+                  ) : (
+                    'Assign Lead'
                   )}
                 </Button>
               </div>
