@@ -38,12 +38,14 @@ import {
 import { DataTable, type DataTableColumn, type TableActionOption } from '@/components/shared/data-table';
 import { 
   useUsersQuery, 
+  useUserInvitationsQuery,
   useCreateUserMutation,
   useInviteUsersMutation, 
   useActivateUserMutation, 
   useDeactivateUserMutation, 
   useDeleteUserMutation, 
   UserItem,
+  UserInvitationItem,
   deactivateUserApi,
   deleteUserApi
 } from '@/lib/api/users';
@@ -52,6 +54,9 @@ import { useQueryClient } from '@tanstack/react-query';
 
 export default function UsersPage() {
   const queryClient = useQueryClient();
+
+  // Active Tab State ('all' | 'invites')
+  const [activeTab, setActiveTab] = useState<'all' | 'invites'>('all');
 
   // Search & Pagination State
   const [searchTerm, setSearchTerm] = useState('');
@@ -73,6 +78,16 @@ export default function UsersPage() {
 
   // Queries
   const { data: users = [], isLoading, refetch } = useUsersQuery(page, limit, debouncedSearchTerm);
+
+  // Lazy Invitation Query - ONLY executes when activeTab === 'invites'
+  const {
+    data: invitations = [],
+    isLoading: isInvitationsLoading,
+    refetch: refetchInvitations,
+  } = useUserInvitationsQuery(undefined, {
+    enabled: activeTab === 'invites',
+  });
+
   const { data: organizations = [] } = useOrganizationsQuery();
 
   // Mutations
@@ -409,6 +424,86 @@ export default function UsersPage() {
     [orgMap]
   );
 
+  // DataTable Columns Definition for Invitations
+  const inviteColumns: DataTableColumn<UserInvitationItem>[] = useMemo(
+    () => [
+      {
+        id: 'email',
+        header: 'Invited Email & Token',
+        className: 'min-w-[220px]',
+        cell: (item: UserInvitationItem) => (
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center font-semibold text-caption shrink-0">
+              {item.email.charAt(0).toUpperCase()}
+            </div>
+            <div className="space-y-0.5">
+              <span className="block text-body font-medium text-[#111827]">{item.email}</span>
+              <div className="flex items-center gap-1.5 text-caption text-[#9CA3AF]">
+                <Mail className="w-3.5 h-3.5 shrink-0" />
+                <span>Token: {item.token}</span>
+              </div>
+            </div>
+          </div>
+        ),
+      },
+      {
+        id: 'role',
+        header: 'Assigned Role',
+        className: 'min-w-[140px]',
+        cell: (item: UserInvitationItem) => (
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-badge font-semibold border bg-purple-50 text-purple-700 border-purple-200">
+            <ShieldCheck className="w-3.5 h-3.5 mr-1 shrink-0" />
+            {item.role}
+          </span>
+        ),
+      },
+      {
+        id: 'organization',
+        header: 'Organization',
+        className: 'min-w-[160px]',
+        cell: (item: UserInvitationItem) => {
+          const orgName = orgMap.get(item.organization_id) || (item.organization_id ? `Org (${item.organization_id.substring(0, 8)})` : 'Default Organization');
+          return (
+            <div className="flex items-center gap-1.5 text-body font-medium text-[#374151]">
+              <Building className="w-3.5 h-3.5 text-[#2563EB] shrink-0" />
+              <span className="truncate">{orgName}</span>
+            </div>
+          );
+        },
+      },
+      {
+        id: 'status',
+        header: 'Invitation Status',
+        className: 'min-w-[130px]',
+        cell: (item: UserInvitationItem) => (
+          <span
+            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-badge font-semibold border ${
+              item.status === 'accepted'
+                ? 'bg-[#16A34A]/10 text-[#16A34A] border-[#16A34A]/20'
+                : item.status === 'pending'
+                ? 'bg-[#F59E0B]/10 text-[#D97706] border-[#F59E0B]/20'
+                : 'bg-gray-100 text-gray-600 border-gray-200'
+            }`}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${item.status === 'accepted' ? 'bg-[#16A34A]' : 'bg-[#D97706]'} mr-1.5`} />
+            {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
+          </span>
+        ),
+      },
+      {
+        id: 'created_at',
+        header: 'Invited Date',
+        className: 'min-w-[120px]',
+        cell: (item: UserInvitationItem) => (
+          <span className="text-body font-medium text-[#6B7280]">
+            {item.created_at ? new Date(item.created_at).toLocaleDateString() : 'N/A'}
+          </span>
+        ),
+      },
+    ],
+    [orgMap]
+  );
+
   // Row Actions Definition
   const actions = (user: UserItem): TableActionOption<UserItem>[] => [
     {
@@ -461,6 +556,43 @@ export default function UsersPage() {
         </div>
       </div>
 
+      {/* Tabs Navigation Bar */}
+      <div className="flex items-center gap-2 border-b border-[#E5E7EB] pb-3">
+        <button
+          type="button"
+          onClick={() => setActiveTab('all')}
+          className={`px-4 py-2 text-button font-medium rounded-btn transition-colors cursor-pointer flex items-center gap-2 ${
+            activeTab === 'all'
+              ? 'bg-[#2563EB]/10 text-[#2563EB] font-semibold border border-[#2563EB]/20 shadow-saas-sm'
+              : 'text-[#6B7280] hover:text-[#111827] hover:bg-[#F3F4F6]'
+          }`}
+        >
+          <User className="w-4 h-4" />
+          <span>All Users</span>
+          <span className="px-2 py-0.5 rounded-full bg-[#E5E7EB] text-[#374151] text-badge font-semibold">
+            {users.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('invites')}
+          className={`px-4 py-2 text-button font-medium rounded-btn transition-colors cursor-pointer flex items-center gap-2 ${
+            activeTab === 'invites'
+              ? 'bg-[#2563EB]/10 text-[#2563EB] font-semibold border border-[#2563EB]/20 shadow-saas-sm'
+              : 'text-[#6B7280] hover:text-[#111827] hover:bg-[#F3F4F6]'
+          }`}
+        >
+          <Mail className="w-4 h-4" />
+          <span>Pending Invites</span>
+          {invitations.length > 0 && (
+            <span className="px-2 py-0.5 rounded-full bg-[#F59E0B]/20 text-[#D97706] text-badge font-semibold">
+              {invitations.length}
+            </span>
+          )}
+        </button>
+      </div>
+
       {/* Notifications */}
       {successMessage && (
         <div className="p-4 rounded-btn bg-[#16A34A]/10 border border-[#16A34A]/20 text-[#16A34A] text-body font-medium flex items-center gap-2 animate-in fade-in-50">
@@ -476,76 +608,102 @@ export default function UsersPage() {
         </div>
       )}
 
-      {/* Enterprise Reusable DataTable */}
-      <DataTable
-        columns={columns}
-        data={users}
-        getRowKey={(item) => item.id}
-        emptyTitle="No team members found"
-        emptyDescription="Get started by inviting your team members or clearing your search filter."
-        showCheckbox
-        selectedIds={selectedIds}
-        onToggleRow={handleToggleRow}
-        onToggleAllRows={handleToggleAllRows}
-        showAvatar
-        getAvatarData={(item) => ({ name: item.name || item.email, color: '#2563eb' })}
-        actionVariant="menu"
-        actions={actions}
-        searchValue={searchTerm}
-        onSearchChange={setSearchTerm}
-        searchPlaceholder="Search team member name or email..."
-        isLoading={isLoading}
-        toolbarActions={
-          <div className="flex items-center gap-2">
-            {/* Bulk Actions Dropdown */}
-            <DropdownMenu>
-              <DropdownMenuTrigger className="h-10 px-4 border border-[#E5E7EB] bg-white hover:bg-[#F9FAFB] text-[#374151] font-medium rounded-btn text-button inline-flex items-center gap-2 cursor-pointer shadow-saas-sm">
-                <Sliders className="w-4 h-4 text-[#2563EB]" />
-                <span>Bulk Actions</span>
-                {selectedIds.size > 0 && (
-                  <span className="ml-1 px-2 py-0.5 rounded-full bg-[#2563EB] text-white text-badge font-semibold">
-                    {selectedIds.size}
-                  </span>
-                )}
-                <ChevronDown className="w-4 h-4 text-[#9CA3AF]" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
-                <DropdownMenuLabel className="text-badge font-semibold text-[#111827]">
-                  {selectedIds.size > 0 ? `Bulk Actions (${selectedIds.size} selected)` : 'Select users below to apply'}
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  disabled={selectedIds.size === 0}
-                  onClick={handleBulkDeactivate}
-                  className={`cursor-pointer text-button font-medium ${selectedIds.size === 0 ? 'opacity-50 cursor-not-allowed' : 'text-[#374151] hover:bg-[#F3F4F6]'}`}
-                >
-                  <Ban className="w-4 h-4 mr-2 text-[#F59E0B]" />
-                  <span>Bulk Deactivate ({selectedIds.size})</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  disabled={selectedIds.size === 0}
-                  onClick={handleBulkDelete}
-                  className={`cursor-pointer text-button font-medium ${selectedIds.size === 0 ? 'opacity-50 cursor-not-allowed' : 'text-[#DC2626] hover:bg-[#DC2626]/10'}`}
-                >
-                  <Trash2 className="w-4 h-4 mr-2 text-[#DC2626]" />
-                  <span>Bulk Delete ({selectedIds.size})</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+      {/* Conditional Enterprise DataTable (All Users vs Pending Invites) */}
+      {activeTab === 'all' ? (
+        <DataTable
+          columns={columns}
+          data={users}
+          getRowKey={(item) => item.id}
+          emptyTitle="No team members found"
+          emptyDescription="Get started by inviting your team members or clearing your search filter."
+          showCheckbox
+          selectedIds={selectedIds}
+          onToggleRow={handleToggleRow}
+          onToggleAllRows={handleToggleAllRows}
+          showAvatar
+          getAvatarData={(item) => ({ name: item.name || item.email, color: '#2563eb' })}
+          actionVariant="menu"
+          actions={actions}
+          searchValue={searchTerm}
+          onSearchChange={setSearchTerm}
+          searchPlaceholder="Search team member name or email..."
+          isLoading={isLoading}
+          toolbarActions={
+            <div className="flex items-center gap-2">
+              {/* Bulk Actions Dropdown */}
+              <DropdownMenu>
+                <DropdownMenuTrigger className="h-10 px-4 border border-[#E5E7EB] bg-white hover:bg-[#F9FAFB] text-[#374151] font-medium rounded-btn text-button inline-flex items-center gap-2 cursor-pointer shadow-saas-sm">
+                  <Sliders className="w-4 h-4 text-[#2563EB]" />
+                  <span>Bulk Actions</span>
+                  {selectedIds.size > 0 && (
+                    <span className="ml-1 px-2 py-0.5 rounded-full bg-[#2563EB] text-white text-badge font-semibold">
+                      {selectedIds.size}
+                    </span>
+                  )}
+                  <ChevronDown className="w-4 h-4 text-[#9CA3AF]" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52">
+                  <DropdownMenuLabel className="text-badge font-semibold text-[#111827]">
+                    {selectedIds.size > 0 ? `Bulk Actions (${selectedIds.size} selected)` : 'Select users below to apply'}
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    disabled={selectedIds.size === 0}
+                    onClick={handleBulkDeactivate}
+                    className={`cursor-pointer text-button font-medium ${selectedIds.size === 0 ? 'opacity-50 cursor-not-allowed' : 'text-[#374151] hover:bg-[#F3F4F6]'}`}
+                  >
+                    <Ban className="w-4 h-4 mr-2 text-[#F59E0B]" />
+                    <span>Bulk Deactivate ({selectedIds.size})</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={selectedIds.size === 0}
+                    onClick={handleBulkDelete}
+                    className={`cursor-pointer text-button font-medium ${selectedIds.size === 0 ? 'opacity-50 cursor-not-allowed' : 'text-[#DC2626] hover:bg-[#DC2626]/10'}`}
+                  >
+                    <Trash2 className="w-4 h-4 mr-2 text-[#DC2626]" />
+                    <span>Bulk Delete ({selectedIds.size})</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
 
+              <Button
+                type="button"
+                variant="outline"
+                size="default"
+                onClick={() => refetch()}
+                className="text-button font-medium cursor-pointer"
+              >
+                <RefreshCw className={`w-4 h-4 mr-2 text-[#6B7280] ${isLoading ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </div>
+          }
+        />
+      ) : (
+        <DataTable
+          columns={inviteColumns}
+          data={invitations.filter(inv => !searchTerm || inv.email.toLowerCase().includes(searchTerm.toLowerCase()))}
+          getRowKey={(item) => item.id}
+          emptyTitle="No sent invitations found"
+          emptyDescription="Send your first team invitation using the '+ Invite User' button above."
+          searchValue={searchTerm}
+          onSearchChange={setSearchTerm}
+          searchPlaceholder="Search invited email..."
+          isLoading={isInvitationsLoading}
+          toolbarActions={
             <Button
               type="button"
               variant="outline"
               size="default"
-              onClick={() => refetch()}
+              onClick={() => refetchInvitations()}
               className="text-button font-medium cursor-pointer"
             >
-              <RefreshCw className={`w-4 h-4 mr-2 text-[#6B7280] ${isLoading ? 'animate-spin' : ''}`} />
-              Refresh
+              <RefreshCw className={`w-4 h-4 mr-2 text-[#6B7280] ${isInvitationsLoading ? 'animate-spin' : ''}`} />
+              Refresh Invites
             </Button>
-          </div>
-        }
-      />
+          }
+        />
+      )}
 
       {/* INVITE USER MODAL DIALOG */}
       {isModalOpen && (
