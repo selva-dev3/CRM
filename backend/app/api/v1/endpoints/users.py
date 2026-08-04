@@ -388,11 +388,12 @@ async def get_user_teams(user_id: str, db: AsyncSession = Depends(get_db)):
     return []
 
 @router.post("/{user_id}/teams", response_model=MessageResponse, summary="Assign user to team")
-async def assign_user_team(user_id: str, team_id: str, db: AsyncSession = Depends(get_db)):
+async def assign_user_team(user_id: str, team_id: str, team_name: Optional[str] = Query(None), db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(User).where(User.id == user_id))
     if not res.scalars().first():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User '{user_id}' not found")
-    return {"message": f"User {user_id} assigned to team {team_id}", "status": "success"}
+    name = team_name if team_name else team_id
+    return {"message": f"User assigned to team '{name}' successfully", "status": "success"}
 
 @router.delete("/{user_id}/teams/{team_id}", response_model=MessageResponse, summary="Remove user from team")
 async def remove_user_team(user_id: str, team_id: str, db: AsyncSession = Depends(get_db)):
