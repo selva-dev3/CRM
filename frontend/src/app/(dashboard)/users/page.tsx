@@ -38,6 +38,7 @@ import {
 import { DataTable, type DataTableColumn, type TableActionOption } from '@/components/shared/data-table';
 import { 
   useUsersQuery, 
+  useCreateUserMutation,
   useInviteUsersMutation, 
   useActivateUserMutation, 
   useDeactivateUserMutation, 
@@ -75,6 +76,7 @@ export default function UsersPage() {
   const { data: organizations = [] } = useOrganizationsQuery();
 
   // Mutations
+  const createUserMutation = useCreateUserMutation();
   const inviteUsersMutation = useInviteUsersMutation();
   const activateUserMutation = useActivateUserMutation();
   const deactivateUserMutation = useDeactivateUserMutation();
@@ -82,6 +84,7 @@ export default function UsersPage() {
 
   // Modal & Notification States
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<UserItem | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -92,11 +95,51 @@ export default function UsersPage() {
   const [userRole, setUserRole] = useState('Representative');
   const [userOrgId, setUserOrgId] = useState('');
 
+  // Create User Direct Form State
+  const [createName, setCreateName] = useState('');
+  const [createEmail, setCreateEmail] = useState('');
+  const [createPassword, setCreatePassword] = useState('');
+  const [createRole, setCreateRole] = useState('Representative');
+  const [createOrgId, setCreateOrgId] = useState('');
+
+  // Searchable Organization Dropdown States
+  const [createOrgSearch, setCreateOrgSearch] = useState('');
+  const [isCreateOrgOpen, setIsCreateOrgOpen] = useState(false);
+  const [inviteOrgSearch, setInviteOrgSearch] = useState('');
+  const [isInviteOrgOpen, setIsInviteOrgOpen] = useState(false);
+
+  // Organization lookup map for DataTable rendering
+  const orgMap = useMemo(() => {
+    const map = new Map<string, string>();
+    organizations.forEach((org) => map.set(org.id, org.name));
+    return map;
+  }, [organizations]);
+
+  useEffect(() => {
+    if (organizations.length > 0) {
+      if (!createOrgId) setCreateOrgId(organizations[0].id);
+      if (!userOrgId) setUserOrgId(organizations[0].id);
+    }
+  }, [organizations]);
+
   const resetForm = () => {
     setUserName('');
     setUserEmail('');
     setUserRole('Representative');
     setUserOrgId(organizations[0]?.id || '');
+    setInviteOrgSearch('');
+    setIsInviteOrgOpen(false);
+    setErrorMessage(null);
+  };
+
+  const resetCreateForm = () => {
+    setCreateName('');
+    setCreateEmail('');
+    setCreatePassword('');
+    setCreateRole('Representative');
+    setCreateOrgId(organizations[0]?.id || '');
+    setCreateOrgSearch('');
+    setIsCreateOrgOpen(false);
     setErrorMessage(null);
   };
 
@@ -110,12 +153,60 @@ export default function UsersPage() {
     resetForm();
   };
 
+  const handleOpenCreateModal = () => {
+    resetCreateForm();
+    setIsCreateModalOpen(true);
+  };
+
+  const handleCloseCreateModal = () => {
+    setIsCreateModalOpen(false);
+    resetCreateForm();
+  };
+
+  const handleAutofillCreate = () => {
+    const randomSuffix = Math.floor(100 + Math.random() * 900);
+    setCreateName(`User ${randomSuffix}`);
+    setCreateEmail(`user${randomSuffix}@crmcompany.com`);
+    setCreatePassword('Password123!');
+    setCreateRole('Representative');
+    setCreateOrgId(organizations[0]?.id || '');
+  };
+
+  const handleCreateUserSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!createEmail.trim() || !createName.trim()) {
+      setErrorMessage('Please fill in both name and email.');
+      return;
+    }
+
+    try {
+      const newUser = await createUserMutation.mutateAsync({
+        name: createName.trim(),
+        email: createEmail.trim(),
+        password: createPassword || 'Password123!',
+        role: createRole,
+        organization_id: createOrgId || organizations[0]?.id || 'org-1',
+      });
+
+      await queryClient.invalidateQueries({ queryKey: ['users'] });
+      await refetch();
+
+      setSuccessMessage(`User account "${newUser.name || newUser.email}" created successfully!`);
+      setIsCreateModalOpen(false);
+      resetCreateForm();
+
+      setTimeout(() => setSuccessMessage(null), 4000);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Failed to create user account.');
+    }
+  };
+
   const handleAutofill = () => {
     const randomSuffix = Math.floor(100 + Math.random() * 900);
     setUserName(`Demo User ${randomSuffix}`);
     setUserEmail(`user${randomSuffix}@example.com`);
     setUserRole('Representative');
-    setUserOrgId(organizations[0]?.id || 'org-1');
+    setUserOrgId(organizations[0]?.id || '');
   };
 
   const handleInviteUser = async (e: React.FormEvent) => {
@@ -274,6 +365,20 @@ export default function UsersPage() {
         ),
       },
       {
+        id: 'organization',
+        header: 'Organization',
+        className: 'min-w-[160px]',
+        cell: (item: UserItem) => {
+          const orgName = orgMap.get(item.organization_id) || (item.organization_id ? `Org (${item.organization_id.substring(0, 8)})` : 'Default Organization');
+          return (
+            <div className="flex items-center gap-1.5 text-body font-medium text-[#374151]">
+              <Building className="w-3.5 h-3.5 text-[#2563EB] shrink-0" />
+              <span className="truncate">{orgName}</span>
+            </div>
+          );
+        },
+      },
+      {
         id: 'status',
         header: 'Account Status',
         className: 'min-w-[120px]',
@@ -301,7 +406,7 @@ export default function UsersPage() {
         ),
       },
     ],
-    []
+    [orgMap]
   );
 
   // Row Actions Definition
@@ -332,6 +437,17 @@ export default function UsersPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            onClick={handleOpenCreateModal}
+            size="default"
+            variant="outline"
+            className="shadow-saas-sm px-4 text-button cursor-pointer"
+          >
+            <Plus className="w-4 h-4 mr-2 text-[#2563EB]" />
+            + Create User
+          </Button>
+
           <Button
             type="button"
             onClick={handleOpenModal}
@@ -510,6 +626,66 @@ export default function UsersPage() {
                 </select>
               </div>
 
+              {/* Organization Selection with Search */}
+              <div className="relative">
+                <Label htmlFor="invite-org">Organization <span className="text-[#DC2626]">*</span></Label>
+                <div
+                  onClick={() => setIsInviteOrgOpen(!isInviteOrgOpen)}
+                  className="mt-1 flex items-center justify-between h-10 w-full rounded-input border border-[#E5E7EB] bg-white px-3 py-2 text-input text-[#111827] focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 shadow-saas-sm cursor-pointer"
+                >
+                  <div className="flex items-center gap-2 truncate">
+                    <Building className="w-4 h-4 text-[#2563EB] shrink-0" />
+                    <span className="font-medium text-[#111827]">
+                      {organizations.find((o) => o.id === userOrgId)?.name || 'Select Organization...'}
+                    </span>
+                  </div>
+                  <ChevronDown className="w-4 h-4 text-[#9CA3AF]" />
+                </div>
+
+                {isInviteOrgOpen && (
+                  <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-[#E5E7EB] rounded-btn shadow-saas-lg p-2 space-y-2 max-h-56 overflow-y-auto animate-in fade-in-50">
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-[#9CA3AF]" />
+                      <Input
+                        type="text"
+                        placeholder="Search organization by name..."
+                        value={inviteOrgSearch}
+                        onChange={(e) => setInviteOrgSearch(e.target.value)}
+                        className="pl-8 text-caption h-8"
+                        autoFocus
+                      />
+                    </div>
+                    <div className="space-y-0.5 max-h-36 overflow-y-auto">
+                      {organizations
+                        .filter((org) => org.name.toLowerCase().includes(inviteOrgSearch.toLowerCase()))
+                        .map((org) => (
+                          <div
+                            key={org.id}
+                            onClick={() => {
+                              setUserOrgId(org.id);
+                              setIsInviteOrgOpen(false);
+                            }}
+                            className={`flex items-center justify-between p-2 rounded-btn text-body font-medium cursor-pointer hover:bg-[#F3F4F6] ${
+                              userOrgId === org.id ? 'bg-[#2563EB]/10 text-[#2563EB]' : 'text-[#374151]'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 truncate">
+                              <Building className="w-4 h-4 text-[#6B7280]" />
+                              <span>{org.name}</span>
+                            </div>
+                            {userOrgId === org.id && <CheckCircle2 className="w-4 h-4 text-[#2563EB]" />}
+                          </div>
+                        ))}
+                      {organizations.length === 0 && (
+                        <div className="p-3 text-caption text-center text-[#6B7280]">
+                          No organizations found
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Modal Footer */}
               <div className="pt-4 border-t border-[#E5E7EB] flex items-center justify-end gap-3">
                 <Button
@@ -526,6 +702,180 @@ export default function UsersPage() {
                   className="shadow-saas-sm text-button font-medium cursor-pointer"
                 >
                   Send Invitation
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* CREATE USER DIRECT MODAL DIALOG */}
+      {isCreateModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-[#111827]/60 backdrop-blur-xs animate-in fade-in-50">
+          <div className="relative w-full max-w-lg bg-white rounded-modal border border-[#E5E7EB] shadow-saas-lg overflow-hidden text-[#111827] flex flex-col">
+            {/* Modal Header */}
+            <div className="p-5 sm:p-6 border-b border-[#E5E7EB] bg-[#F9FAFB] flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-btn bg-[#2563EB] flex items-center justify-center text-white shadow-saas-sm">
+                  <Plus className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-subheading font-semibold text-[#111827]">
+                    Create New User Account
+                  </h3>
+                  <p className="text-caption text-[#6B7280]">
+                    Directly provision a new team member account
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAutofillCreate}
+                  className="text-caption font-medium gap-1.5 cursor-pointer px-3"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-[#2563EB] animate-pulse" />
+                  <span>Auto-fill Demo</span>
+                </Button>
+                <button
+                  type="button"
+                  onClick={handleCloseCreateModal}
+                  className="p-1.5 rounded-btn text-[#6B7280] hover:text-[#111827] hover:bg-[#F3F4F6] transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <form onSubmit={handleCreateUserSubmit} className="p-5 sm:p-6 space-y-4">
+              <div>
+                <Label htmlFor="create-name">Full Name <span className="text-[#DC2626]">*</span></Label>
+                <Input
+                  id="create-name"
+                  type="text"
+                  required
+                  placeholder="e.g. Alex Rivera"
+                  value={createName}
+                  onChange={(e) => setCreateName(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="create-email">Email Address <span className="text-[#DC2626]">*</span></Label>
+                <Input
+                  id="create-email"
+                  type="email"
+                  required
+                  placeholder="e.g. alex@company.com"
+                  value={createEmail}
+                  onChange={(e) => setCreateEmail(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="create-password">Password</Label>
+                <Input
+                  id="create-password"
+                  type="password"
+                  placeholder="Defaults to Password123!"
+                  value={createPassword}
+                  onChange={(e) => setCreatePassword(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="create-role">User Role</Label>
+                <select
+                  id="create-role"
+                  value={createRole}
+                  onChange={(e) => setCreateRole(e.target.value)}
+                  className="flex h-10 w-full rounded-input border border-[#E5E7EB] bg-white px-3 py-2 text-input text-[#111827] focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 shadow-saas-sm cursor-pointer"
+                >
+                  <option value="Representative">Representative / Member</option>
+                  <option value="Manager">Manager</option>
+                  <option value="Admin">Administrator</option>
+                </select>
+              </div>
+
+              {/* Organization Selection with Search */}
+              <div className="relative">
+                <Label htmlFor="create-org">Organization <span className="text-[#DC2626]">*</span></Label>
+                <div
+                  onClick={() => setIsCreateOrgOpen(!isCreateOrgOpen)}
+                  className="mt-1 flex items-center justify-between h-10 w-full rounded-input border border-[#E5E7EB] bg-white px-3 py-2 text-input text-[#111827] focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 shadow-saas-sm cursor-pointer"
+                >
+                  <div className="flex items-center gap-2 truncate">
+                    <Building className="w-4 h-4 text-[#2563EB] shrink-0" />
+                    <span className="font-medium text-[#111827]">
+                      {organizations.find((o) => o.id === createOrgId)?.name || 'Select Organization...'}
+                    </span>
+                  </div>
+                  <ChevronDown className="w-4 h-4 text-[#9CA3AF]" />
+                </div>
+
+                {isCreateOrgOpen && (
+                  <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-[#E5E7EB] rounded-btn shadow-saas-lg p-2 space-y-2 max-h-56 overflow-y-auto animate-in fade-in-50">
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-[#9CA3AF]" />
+                      <Input
+                        type="text"
+                        placeholder="Search organization by name..."
+                        value={createOrgSearch}
+                        onChange={(e) => setCreateOrgSearch(e.target.value)}
+                        className="pl-8 text-caption h-8"
+                        autoFocus
+                      />
+                    </div>
+                    <div className="space-y-0.5 max-h-36 overflow-y-auto">
+                      {organizations
+                        .filter((org) => org.name.toLowerCase().includes(createOrgSearch.toLowerCase()))
+                        .map((org) => (
+                          <div
+                            key={org.id}
+                            onClick={() => {
+                              setCreateOrgId(org.id);
+                              setIsCreateOrgOpen(false);
+                            }}
+                            className={`flex items-center justify-between p-2 rounded-btn text-body font-medium cursor-pointer hover:bg-[#F3F4F6] ${
+                              createOrgId === org.id ? 'bg-[#2563EB]/10 text-[#2563EB]' : 'text-[#374151]'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 truncate">
+                              <Building className="w-4 h-4 text-[#6B7280]" />
+                              <span>{org.name}</span>
+                            </div>
+                            {createOrgId === org.id && <CheckCircle2 className="w-4 h-4 text-[#2563EB]" />}
+                          </div>
+                        ))}
+                      {organizations.length === 0 && (
+                        <div className="p-3 text-caption text-center text-[#6B7280]">
+                          No organizations found
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="pt-4 border-t border-[#E5E7EB] flex items-center justify-end gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleCloseCreateModal}
+                  className="text-button font-medium cursor-pointer"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  className="shadow-saas-sm text-button font-medium cursor-pointer"
+                >
+                  Create User Account
                 </Button>
               </div>
             </form>

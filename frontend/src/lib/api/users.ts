@@ -54,11 +54,32 @@ export interface UserDeleteResponse {
   status: string;
 }
 
+export interface UserCreatePayload {
+  name: string;
+  email: string;
+  password?: string;
+  role?: string;
+  organization_id?: string;
+}
+
 // API Functions
 export async function fetchUsersApi(page = 1, limit = 20, search?: string): Promise<UserItem[]> {
   const query = new URLSearchParams({ page: String(page), limit: String(limit) });
   if (search) query.append('search', search);
   return apiClient<UserItem[]>(`/users?${query.toString()}`);
+}
+
+export async function createUserApi(payload: UserCreatePayload): Promise<UserItem> {
+  return apiClient<UserItem>('/users', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: payload.name,
+      email: payload.email,
+      password: payload.password || 'Password123!',
+      role: payload.role || 'Representative',
+      organization_id: payload.organization_id || 'org-1',
+    }),
+  });
 }
 
 export async function inviteUsersApi(payload: UserInviteRequestPayload): Promise<UserInviteBulkResponse> {
@@ -92,6 +113,13 @@ export function useUsersQuery(page = 1, limit = 20, search?: string, options?: O
     queryKey: ['users', page, limit, search],
     queryFn: () => fetchUsersApi(page, limit, search),
     placeholderData: (previousData) => previousData,
+    ...options,
+  });
+}
+
+export function useCreateUserMutation(options?: UseMutationOptions<UserItem, Error, UserCreatePayload>) {
+  return useMutation<UserItem, Error, UserCreatePayload>({
+    mutationFn: createUserApi,
     ...options,
   });
 }
