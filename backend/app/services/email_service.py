@@ -1,10 +1,6 @@
-import resend
 import logging
 from app.config import settings
-import smtplib
-import ssl
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -21,46 +17,66 @@ def send_email(
     subject: str,
     html_content: str
 ) -> bool:
-    sender_email = settings.EMAILS_FROM_EMAIL
-    smtp_user = settings.SMTP_USER
-    password = settings.SMTP_PASSWORD
-    smtp_server = settings.SMTP_HOST
-    smtp_port = int(settings.SMTP_PORT)
+
+    url = "https://api.brevo.com/v3/smtp/email"
+
+    headers = {
+        "accept": "application/json",
+        "api-key": settings.BREVO_API_KEY,
+        "content-type": "application/json",
+    }
+
+    payload = {
+        "sender": {
+            "name": settings.EMAILS_FROM_NAME,
+            "email": settings.EMAILS_FROM_EMAIL,
+        },
+        "to": [
+            {
+                "email": to_email,
+            }
+        ],
+        "subject": subject,
+        "htmlContent": html_content,
+    }
 
     try:
-        print("Testing SMTP connection...")
-        context = ssl.create_default_context()
-        with smtplib.SMTP(smtp_server, smtp_port, timeout=30) as server:
-            print("SMTP connection OK")
-            server.ehlo()
-            server.starttls(context=context)
-            server.ehlo()
-            server.login(smtp_user, password)
+        response = requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            timeout=30,
+        )
 
-            message = MIMEMultipart("alternative")
-            message["From"] = f"{settings.EMAILS_FROM_NAME} <{sender_email}>"
-            message["To"] = to_email
-            message["Subject"] = subject
+        if response.status_code in (200, 201):
+            logger.info(f"Email sent successfully to {to_email}")
+            print(f"[BREVO SUCCESS] Email sent to {to_email}")
+            return True
 
-            message.attach(MIMEText(html_content, "html"))
+        logger.error(
+            f"Brevo Error {response.status_code}: {response.text}"
+        )
 
-            server.sendmail(
-                sender_email,
-                [to_email],
-                message.as_string()
-            )
+        print(
+            f"[BREVO ERROR] {response.status_code}: {response.text}"
+        )
 
-        return True
+        return False
 
     except Exception as e:
-        logger.exception(f"SMTP send failed: {e}")
-        print("SMTP connection FAILED:", repr(e))
-        raise
+        logger.exception(f"Brevo API failed: {e}")
+        print(f"[BREVO ERROR] {e}")
+        return False
 
 
-def send_reset_password_email(email_to: str, token: str, user_name: str = "User") -> bool:
-    """Sends password reset HTML email via SMTP containing token and reset link."""
-    reset_url = f"{settings.frontend_base_url}/reset-password?token={token}"
+def send_reset_password_email(
+    email_to: str,
+    token: str,
+    user_name: str = "User"
+) -> bool:
+    """Sends password reset HTML email via Brevo API."""
+
+    reset_url = f"{settings.FRONTEND_URL}/reset-password?token={token}"
     subject = f"{settings.PROJECT_NAME} - Password Reset Request"
 
     html_content = f"""
@@ -77,48 +93,73 @@ def send_reset_password_email(email_to: str, token: str, user_name: str = "User"
     <body>
         <div class="container">
             <h2>Password Reset Request</h2>
+
             <p>Hello {user_name},</p>
-            <p>We received a request to reset your password for your <strong>{settings.PROJECT_NAME}</strong> account.</p>
-            <p>Click the button below to set a new password. This link is valid for {settings.RESET_TOKEN_EXPIRE_MINUTES} minutes:</p>
-            <a href="{reset_url}" class="btn">Reset My Password</a>
-            <p style="margin-top: 25px;">Or copy and paste this reset token into the application:</p>
-            <code style="background: #f3f4f6; padding: 6px 12px; border-radius: 4px; font-size: 16px;">{token}</code>
+
+            <p>
+                We received a request to reset your password for
+                <strong>{settings.PROJECT_NAME}</strong>.
+            </p>
+
+            <p>
+                This link is valid for
+                {settings.RESET_TOKEN_EXPIRE_MINUTES} minutes.
+            </p>
+
+            <a href="{reset_url}" class="btn">
+                Reset My Password
+            </a>
+
+            <br><br>
+
+            <p>Reset Token:</p>
+
+            <code style="background:#f3f4f6;padding:6px 12px;border-radius:4px;">
+                {token}
+            </code>
+
             <div class="footer">
-                <p>If you did not request a password reset, please ignore this email.</p>
-                <p>&copy; 2026 {settings.PROJECT_NAME}. All rights reserved.</p>
+                <p>If you didn't request this reset, ignore this email.</p>
+                <p>&copy; 2026 {settings.PROJECT_NAME}</p>
             </div>
+
         </div>
     </body>
     </html>
     """
 
     try:
-        print(f"[SMTP SENDING] Sending password reset email to {email_to}...")
+        print(f"[BREVO RESET] Sending password reset email to {email_to}...")
 
-        send_email(
+        success = send_email(
             to_email=email_to,
             subject=subject,
-            html_content=html_content
+            html_content=html_content,
         )
 
-        logger.info(f"Password reset email sent successfully to {email_to}")
-        print(f"[SMTP SUCCESS] Password reset email sent to {email_to}")
+        if success:
+            logger.info(f"Password reset email sent successfully to {email_to}")
+            print(f"[BREVO SUCCESS] Password reset email sent to {email_to}")
+        else:
+            logger.error(f"Password reset email failed for {email_to}")
+            print(f"[BREVO FAILED] Password reset email failed for {email_to}")
 
-        return True
+        return success
 
     except Exception as e:
-        logger.error(f"Failed to send email to {email_to}: {str(e)}")
-        print(f"[SMTP ERROR] Failed to send email to {email_to}: {str(e)}")
-        print(f"[FALLBACK RESET LINK] User: {email_to} -> Link: {reset_url}")
-
+        logger.exception(f"Password reset email error: {e}")
+        print(f"[BREVO ERROR] {e}")
         return False
 
-
-def send_user_invite_email(email_to: str, role: str = "Member", invite_url: str = None) -> bool:
-    """Sends Organization User Invitation HTML email via SMTP."""
+def send_user_invite_email(
+    email_to: str,
+    role: str = "Member",
+    invite_url: str = None
+) -> bool:
+    """Sends Organization User Invitation HTML email via Brevo API."""
 
     if not invite_url:
-        invite_url = f"{settings.frontend_base_url}/accept-invite"
+        invite_url = f"{settings.FRONTEND_URL}/accept-invite"
 
     subject = f"You're Invited to Join {settings.PROJECT_NAME}"
 
@@ -179,29 +220,34 @@ def send_user_invite_email(email_to: str, role: str = "Member", invite_url: str 
     """
 
     try:
-        print(f"[SMTP INVITE SENDING] Sending invitation email to {email_to}...")
+        print(f"[BREVO INVITE] Sending invitation email to {email_to}...")
 
-        send_email(
+        success = send_email(
             to_email=email_to,
             subject=subject,
             html_content=html_content
         )
 
-        logger.info(f"Invitation email sent successfully to {email_to}")
+        if success:
+            logger.info(f"Invitation email sent successfully to {email_to}")
+            print(f"[BREVO SUCCESS] Invitation email sent to {email_to}")
+        else:
+            logger.error(f"Invitation email failed for {email_to}")
+            print(f"[BREVO FAILED] Invitation email failed for {email_to}")
 
-        print(f"[SMTP INVITE SUCCESS] Invitation email sent to {email_to}")
-
-        return True
+        return success
 
     except Exception as e:
-        logger.error(f"Failed to send invitation email to {email_to}: {str(e)}")
-
-        print(f"[SMTP INVITE ERROR] Failed to send invitation email to {email_to}: {str(e)}")
-
+        logger.exception(f"Invitation email error: {e}")
+        print(f"[BREVO ERROR] {e}")
         return False
 
-def send_magic_link_email(email_to: str, token: str, user_name: str = "User") -> bool:
-    """Sends Passwordless Magic Link HTML email via SMTP."""
+def send_magic_link_email(
+    email_to: str,
+    token: str,
+    user_name: str = "User"
+) -> bool:
+    """Sends Passwordless Magic Link HTML email via Brevo API."""
 
     magic_url = f"{settings.FRONTEND_URL}/magic-link?token={token}"
     subject = f"{settings.PROJECT_NAME} - Your Passwordless Login Link"
@@ -267,23 +313,24 @@ def send_magic_link_email(email_to: str, token: str, user_name: str = "User") ->
     """
 
     try:
-        print(f"[SMTP MAGIC LINK SENDING] Sending magic link email to {email_to}...")
+        print(f"[BREVO MAGIC LINK] Sending magic link email to {email_to}...")
 
-        send_email(
+        success = send_email(
             to_email=email_to,
             subject=subject,
             html_content=html_content
         )
 
-        logger.info(f"Magic link email sent successfully to {email_to}")
+        if success:
+            logger.info(f"Magic link email sent successfully to {email_to}")
+            print(f"[BREVO SUCCESS] Magic link email sent to {email_to}")
+        else:
+            logger.error(f"Magic link email failed for {email_to}")
+            print(f"[BREVO FAILED] Magic link email failed for {email_to}")
 
-        print(f"[SMTP MAGIC LINK SUCCESS] Magic link email sent to {email_to}")
-
-        return True
+        return success
 
     except Exception as e:
-        logger.error(f"Failed to send magic link email to {email_to}: {str(e)}")
-
-        print(f"[SMTP MAGIC LINK ERROR] Failed to send email to {email_to}: {str(e)}")
-
+        logger.exception(f"Magic link email error: {e}")
+        print(f"[BREVO ERROR] {e}")
         return False
