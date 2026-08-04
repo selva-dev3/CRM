@@ -73,7 +73,7 @@ export interface UserCreatePayload {
 }
 
 // API Functions
-export async function fetchUsersApi(page = 1, limit = 20, search?: string): Promise<UserItem[]> {
+export async function fetchUsersApi(page = 1, limit = 15, search?: string): Promise<UserItem[]> {
   const query = new URLSearchParams({ page: String(page), limit: String(limit) });
   if (search) query.append('search', search);
   return apiClient<UserItem[]>(`/users?${query.toString()}`);
@@ -124,7 +124,7 @@ export async function deleteUserApi(userId: string): Promise<UserDeleteResponse>
 }
 
 // TanStack Queries & Mutations
-export function useUsersQuery(page = 1, limit = 20, search?: string, options?: Omit<UseQueryOptions<UserItem[], Error>, 'queryKey' | 'queryFn'>) {
+export function useUsersQuery(page = 1, limit = 15, search?: string, options?: Omit<UseQueryOptions<UserItem[], Error>, 'queryKey' | 'queryFn'>) {
   return useQuery<UserItem[], Error>({
     queryKey: ['users', page, limit, search],
     queryFn: () => fetchUsersApi(page, limit, search),

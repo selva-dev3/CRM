@@ -199,7 +199,7 @@ export function DataTable<TItem>({
   // --- Controlled vs uncontrolled pagination ---
   const [internalPageIndex, setInternalPageIndex] = useState(0);
   const [internalPageSize] = useState<number>(
-    pagination && !isControlledPagination(pagination) ? pagination.pageSize ?? 20 : 20,
+    pagination && !isControlledPagination(pagination) ? pagination.pageSize ?? 15 : 15,
   );
 
   const pageIndex = isControlledPagination(pagination) ? pagination.pageIndex : internalPageIndex;

@@ -128,8 +128,10 @@ export interface LeadDocumentItem {
 
 export async function fetchLeadsApi(params: FetchLeadsParams = {}): Promise<Lead[]> {
   const query = new URLSearchParams();
-  if (params.page) query.append('page', String(params.page));
-  if (params.limit) query.append('limit', String(params.limit));
+  const page = params.page ?? 1;
+  const limit = params.limit ?? 15;
+  query.append('page', String(page));
+  query.append('limit', String(limit));
   if (params.search) query.append('search', params.search);
   if (params.status) query.append('status', params.status);
 

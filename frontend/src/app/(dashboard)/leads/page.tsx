@@ -65,6 +65,8 @@ export default function LeadsPage() {
   const [leadToDelete, setLeadToDelete] = useState<Lead | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+  const [page, setPage] = useState(1);
+  const limit = 15;
   const [statusFilter, setStatusFilter] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -72,10 +74,11 @@ export default function LeadsPage() {
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearchTerm(searchTerm);
+      setPage(1);
     }, 250);
     return () => clearTimeout(timer);
   }, [searchTerm]);
-  
+
   // Modal Category Tab State
   const [activeModalTab, setActiveModalTab] = useState<'contact' | 'company' | 'location' | 'organization'>('contact');
   
@@ -107,6 +110,8 @@ export default function LeadsPage() {
 
   // TanStack Query Hooks for Leads, Organizations, Companies & Users API
   const { data: leads = [], isLoading, isError, refetch } = useLeadsQuery({
+    page,
+    limit,
     search: debouncedSearchTerm || undefined,
     status: statusFilter || undefined,
   });
@@ -599,6 +604,12 @@ export default function LeadsPage() {
         onSearchChange={setSearchTerm}
         searchPlaceholder="Search lead, company..."
         isLoading={isLoading}
+        pagination={{
+          pageIndex: page - 1,
+          pageCount: leads.length >= limit ? page + 1 : page,
+          onPageChange: (p) => setPage(p + 1),
+          totalRecords: (page - 1) * limit + leads.length,
+        }}
         toolbarActions={
           <Button
             type="button"

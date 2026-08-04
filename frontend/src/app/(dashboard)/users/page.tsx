@@ -62,7 +62,7 @@ export default function UsersPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [page, setPage] = useState(1);
-  const limit = 20;
+  const limit = 15;
 
   // Debounce search input to prevent focus loss & flickering
   useEffect(() => {
@@ -628,6 +628,12 @@ export default function UsersPage() {
           onSearchChange={setSearchTerm}
           searchPlaceholder="Search team member name or email..."
           isLoading={isLoading}
+          pagination={{
+            pageIndex: page - 1,
+            pageCount: users.length >= limit ? page + 1 : page,
+            onPageChange: (p) => setPage(p + 1),
+            totalRecords: (page - 1) * limit + users.length,
+          }}
           toolbarActions={
             <div className="flex items-center gap-2">
               {/* Bulk Actions Dropdown */}
@@ -690,6 +696,7 @@ export default function UsersPage() {
           onSearchChange={setSearchTerm}
           searchPlaceholder="Search invited email..."
           isLoading={isInvitationsLoading}
+          pagination={{ pageSize: 15 }}
           toolbarActions={
             <Button
               type="button"
