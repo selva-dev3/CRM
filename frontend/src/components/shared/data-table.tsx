@@ -406,7 +406,7 @@ export function DataTable<TItem>({
         )}
         style={maxHeight ? { maxHeight } : undefined}
       >
-        <Table>
+        <Table className="w-full min-w-[720px]">
           <TableHeader className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200">
             <TableRow>
               {showCheckbox && (

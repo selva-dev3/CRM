@@ -243,6 +243,7 @@ export default function LeadsPage() {
       {
         id: 'name',
         header: 'Name & Title',
+        className: 'min-w-[180px]',
         cell: (item: Lead) => (
           <div>
             <span className="block text-xs font-black text-slate-900">{item.contact_name}</span>
@@ -253,21 +254,23 @@ export default function LeadsPage() {
       {
         id: 'company',
         header: 'Company',
+        className: 'min-w-[150px]',
         cell: (item: Lead) => (
           <div className="flex items-center gap-1.5 font-bold text-xs text-slate-900">
             <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-            <span>{item.company}</span>
+            <span className="truncate">{item.company}</span>
           </div>
         ),
       },
       {
         id: 'contact',
         header: 'Email / Phone',
+        className: 'min-w-[180px]',
         cell: (item: Lead) => (
           <div className="text-xs font-bold text-slate-900 space-y-0.5">
             <div className="flex items-center gap-1.5">
               <Mail className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-              <span>{item.email}</span>
+              <span className="truncate">{item.email}</span>
             </div>
             {item.phone && (
               <div className="flex items-center gap-1.5 text-slate-500 text-[11px]">
@@ -281,6 +284,7 @@ export default function LeadsPage() {
       {
         id: 'source',
         header: 'Source',
+        className: 'min-w-[100px]',
         cell: (item: Lead) => (
           <span className="text-xs font-bold text-slate-800">{item.source}</span>
         ),
@@ -288,6 +292,7 @@ export default function LeadsPage() {
       {
         id: 'status',
         header: 'Status',
+        className: 'min-w-[110px]',
         cell: (item: Lead) => (
           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-black border ${
             item.status === 'New' ? 'bg-blue-50 text-blue-800 border-blue-200' :
@@ -303,7 +308,7 @@ export default function LeadsPage() {
       {
         id: 'score',
         header: 'AI Score',
-        className: 'text-right',
+        className: 'min-w-[100px] text-right',
         cell: (item: Lead) => (
           <div className="text-right">
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-purple-50 text-purple-800 border border-purple-200 text-[11px] font-black">

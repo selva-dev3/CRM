@@ -1,4 +1,3 @@
-import io
 from fastapi import APIRouter, HTTPException, status, Query, Depends, UploadFile, File
 from fastapi.responses import StreamingResponse
 from typing import List, Optional
@@ -40,13 +39,36 @@ def lead_to_dict(l: Lead) -> dict:
     }
 
 @router.get("", response_model=List[LeadResponse], summary="List all leads with pagination & search")
-async def list_leads(page: int = 1, limit: int = 20, search: Optional[str] = None, status: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+async def list_leads(
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    search: Optional[str] = Query(None),
+    lead_status: Optional[str] = Query(None, alias="status"),
+    db: AsyncSession = Depends(get_db)
+):
     try:
-        stmt = select(Lead).offset((page - 1) * limit).limit(limit)
-        if search:
-            stmt = stmt.where(Lead.title.ilike(f"%{search}%") | Lead.company.ilike(f"%{search}%"))
-        if status:
-            stmt = stmt.where(Lead.status == status)
+        stmt = select(Lead)
+
+        # 1. Search filter: only applied when a non-empty search string is provided
+        if isinstance(search, str) and search.strip():
+            pattern = f"%{search.strip()}%"
+            stmt = stmt.where(
+                Lead.contact_name.ilike(pattern) |
+                Lead.company.ilike(pattern) |
+                Lead.title.ilike(pattern) |
+                Lead.email.ilike(pattern) |
+                Lead.phone.ilike(pattern)
+            )
+
+        # 2. Status filter: only applied when a non-empty status is provided
+        if isinstance(lead_status, str) and lead_status.strip():
+            stmt = stmt.where(Lead.status == lead_status.strip())
+
+        actual_page = page if isinstance(page, int) else 1
+        actual_limit = limit if isinstance(limit, int) else 20
+
+        stmt = stmt.offset((actual_page - 1) * actual_limit).limit(actual_limit)
+
         res = await db.execute(stmt)
         leads = res.scalars().all()
         return [lead_to_dict(l) for l in leads]

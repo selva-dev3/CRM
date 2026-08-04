@@ -1,11 +1,13 @@
 'use client';
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
 interface DropdownContextType {
   open: boolean;
   setOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  triggerRef: React.RefObject<HTMLButtonElement | null>;
   value?: string;
   onValueChange?: (val: string) => void;
 }
@@ -13,15 +15,22 @@ interface DropdownContextType {
 const DropdownContext = React.createContext<DropdownContextType>({
   open: false,
   setOpen: () => {},
+  triggerRef: { current: null },
 });
 
 export function DropdownMenu({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
+  const triggerRef = React.useRef<HTMLButtonElement | null>(null);
 
   React.useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(target) &&
+        !(target instanceof Element && target.closest('[data-dropdown-content]'))
+      ) {
         setOpen(false);
       }
     }
@@ -30,7 +39,7 @@ export function DropdownMenu({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <DropdownContext.Provider value={{ open, setOpen }}>
+    <DropdownContext.Provider value={{ open, setOpen, triggerRef }}>
       <div ref={containerRef} className="relative inline-block text-left">
         {children}
       </div>
@@ -44,9 +53,10 @@ export function DropdownMenuTrigger({
   onClick,
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  const { open, setOpen } = React.useContext(DropdownContext);
+  const { open, setOpen, triggerRef } = React.useContext(DropdownContext);
   return (
     <button
+      ref={triggerRef}
       type="button"
       onClick={(e) => {
         setOpen(!open);
@@ -71,42 +81,71 @@ export function DropdownMenuContent({
   align?: "start" | "end" | "center";
   side?: "top" | "bottom" | "auto";
 }) {
-  const { open } = React.useContext(DropdownContext);
+  const { open, triggerRef } = React.useContext(DropdownContext);
   const contentRef = React.useRef<HTMLDivElement>(null);
-  const [positionSide, setPositionSide] = React.useState<"top" | "bottom">(
-    side === "top" ? "top" : "bottom"
-  );
+  const [coords, setCoords] = React.useState<{ top: number; left?: number; right?: number } | null>(null);
+  const [mounted, setMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
 
   React.useLayoutEffect(() => {
-    if (!open || !contentRef.current || side !== "auto") return;
-    const rect = contentRef.current.getBoundingClientRect();
-    const viewportHeight = window.innerHeight;
-    if (rect.bottom > viewportHeight - 10) {
-      setPositionSide("top");
-    } else {
-      setPositionSide("bottom");
-    }
-  }, [open, side]);
+    if (!open || !triggerRef.current) return;
 
-  if (!open) return null;
+    const updatePosition = () => {
+      if (!triggerRef.current) return;
+      const rect = triggerRef.current.getBoundingClientRect();
+      const viewportHeight = window.innerHeight;
+      const viewportWidth = window.innerWidth;
 
-  const alignClass =
-    align === "start" ? "left-0" : align === "center" ? "left-1/2 -translate-x-1/2" : "right-0";
-  const sideClass =
-    positionSide === "top" ? "bottom-full mb-1" : "top-full mt-1";
+      const spaceBelow = viewportHeight - rect.bottom;
+      const isTop = side === "top" || (side === "auto" && spaceBelow < 180 && rect.top > spaceBelow);
+      const top = isTop ? Math.max(10, rect.top - 8) : rect.bottom + 4;
 
-  return (
+      if (align === "end") {
+        const right = Math.max(10, viewportWidth - rect.right);
+        setCoords({ top, right });
+      } else if (align === "center") {
+        const left = Math.max(10, rect.left + rect.width / 2);
+        setCoords({ top, left });
+      } else {
+        const left = Math.max(10, rect.left);
+        setCoords({ top, left });
+      }
+    };
+
+    updatePosition();
+    window.addEventListener("scroll", updatePosition, true);
+    window.addEventListener("resize", updatePosition);
+    return () => {
+      window.removeEventListener("scroll", updatePosition, true);
+      window.removeEventListener("resize", updatePosition);
+    };
+  }, [open, align, side, triggerRef]);
+
+  if (!open || !mounted || !coords) return null;
+
+  return createPortal(
     <div
       ref={contentRef}
+      data-dropdown-content="true"
+      style={{
+        position: "fixed",
+        top: `${coords.top}px`,
+        ...(coords.right !== undefined ? { right: `${coords.right}px` } : {}),
+        ...(coords.left !== undefined ? { left: `${coords.left}px` } : {}),
+        zIndex: 99999,
+      }}
       className={cn(
-        "absolute z-[100] min-w-[8rem] rounded-xl border border-slate-200 bg-white p-1 text-slate-900 shadow-xl animate-in fade-in-50",
-        alignClass,
-        sideClass,
+        "min-w-[8.5rem] rounded-xl border border-slate-200 bg-white p-1 text-slate-900 shadow-2xl animate-in fade-in-50",
+        align === "center" ? "-translate-x-1/2" : undefined,
         className
       )}
     >
       {children}
-    </div>
+    </div>,
+    document.body
   );
 }
 
