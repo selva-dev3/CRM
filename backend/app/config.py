@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 
@@ -13,7 +14,16 @@ class Settings(BaseSettings):
     POSTGRES_PASSWORD: Optional[str] = None
     POSTGRES_DB: Optional[str] = None
     POSTGRES_PORT: Optional[str] = None
-    DATABASE_URL: str = None
+    DATABASE_URL: Optional[str] = None
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def sanitize_database_url(cls, v: Optional[str]) -> Optional[str]:
+        if v and isinstance(v, str):
+            v = v.strip().strip('"').strip("'")
+            while v.startswith("DATABASE_URL="):
+                v = v[len("DATABASE_URL="):].strip()
+        return v
 
     # Redis & Celery
     REDIS_HOST: str = "localhost"
