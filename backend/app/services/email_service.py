@@ -21,27 +21,38 @@ def send_email(
     subject: str,
     html_content: str
 ) -> bool:
-    sender_email = settings.EMAILS_FROM_EMAIL or "noreply@crm.com"
-    password = getattr(settings, "EMAILS_FROM_PASSWORD", None) or settings.SMTP_PASSWORD
-    smtp_server = settings.SMTP_HOST or "smtp.gmail.com"
-    smtp_port = int(settings.SMTP_PORT or 587)
+    sender_email = settings.EMAILS_FROM_EMAIL
+    smtp_user = settings.SMTP_USER
+    password = settings.SMTP_PASSWORD
+    smtp_server = settings.SMTP_HOST
+    smtp_port = int(settings.SMTP_PORT)
 
-    if not password:
-        logger.warning(f"SMTP password not set. Cannot send email to {to_email}.")
-        print(f"[SMTP WARNING] SMTP password missing. Email to {to_email} skipped.")
-        return False
+    try:
+        context = ssl.create_default_context()
+        with smtplib.SMTP(smtp_server, smtp_port, timeout=30) as server:
+            server.ehlo()
+            server.starttls(context=context)
+            server.ehlo()
+            server.login(smtp_user, password)
 
-    context = ssl.create_default_context()
-    with smtplib.SMTP(smtp_server, smtp_port) as server:
-        server.starttls(context=context)
-        server.login(sender_email, password)
-        message = MIMEMultipart("alternative")
-        message["From"] = f"{settings.EMAILS_FROM_NAME} <{sender_email}>"
-        message["To"] = to_email
-        message["Subject"] = subject
-        message.attach(MIMEText(html_content, "html"))
-        server.sendmail(sender_email, [to_email], message.as_string())
-    return True
+            message = MIMEMultipart("alternative")
+            message["From"] = f"{settings.EMAILS_FROM_NAME} <{sender_email}>"
+            message["To"] = to_email
+            message["Subject"] = subject
+
+            message.attach(MIMEText(html_content, "html"))
+
+            server.sendmail(
+                sender_email,
+                [to_email],
+                message.as_string()
+            )
+
+        return True
+
+    except Exception as e:
+        logger.exception(f"SMTP send failed: {e}")
+        raise
 
 
 def send_reset_password_email(email_to: str, token: str, user_name: str = "User") -> bool:
