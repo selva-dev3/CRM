@@ -74,22 +74,22 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-[#E5E7EB]">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+          <h1 className="text-page-title">
             Sales & CRM Overview
           </h1>
-          <p className="text-sm text-slate-500 mt-1">
+          <p className="text-caption mt-1">
             Real-time revenue pipeline, lead performance & AI insights
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="hidden sm:inline-flex">
-            <Filter className="w-4 h-4 mr-1.5 text-slate-500" />
+          <Button variant="outline" size="default" className="hidden sm:inline-flex">
+            <Filter className="w-4 h-4 mr-2 text-[#6B7280]" />
             Filter Period
           </Button>
-          <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm">
-            <Plus className="w-4 h-4 mr-1.5" />
+          <Button size="default" variant="primary" className="shadow-saas-sm">
+            <Plus className="w-4 h-4 mr-2" />
             New Deal
           </Button>
         </div>
@@ -100,25 +100,25 @@ export default function DashboardPage() {
         {stats.map((stat, idx) => {
           const Icon = stat.icon;
           return (
-            <Card key={idx} className="relative overflow-hidden border border-slate-200/80 bg-white hover:border-indigo-200 transition-all duration-200 shadow-xs">
+            <Card key={idx} className="relative overflow-hidden border border-[#E5E7EB] bg-white rounded-card shadow-saas-sm transition-all duration-200">
               <div className="p-5">
                 <div className="flex items-center justify-between">
-                  <div className={`w-10 h-10 rounded-xl ${stat.iconBg} flex items-center justify-center ${stat.iconColor}`}>
+                  <div className={`w-10 h-10 rounded-btn ${stat.iconBg} flex items-center justify-center ${stat.iconColor}`}>
                     <Icon className="w-5 h-5" />
                   </div>
-                  <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                  <span className="text-badge font-semibold px-2.5 py-0.5 rounded-full bg-[#F3F4F6] text-[#374151] border border-[#E5E7EB]">
                     {stat.badge}
                   </span>
                 </div>
                 <div className="mt-4">
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  <p className="text-caption font-semibold uppercase tracking-wider text-[#6B7280]">
                     {stat.title}
                   </p>
                   <div className="flex items-baseline justify-between mt-1">
-                    <h3 className="text-2xl font-black text-slate-900 tracking-tight">
+                    <h3 className="text-section-title">
                       {stat.value}
                     </h3>
-                    <span className="inline-flex items-center text-xs font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">
+                    <span className="inline-flex items-center text-badge font-semibold text-[#16A34A] bg-[#16A34A]/10 px-2 py-0.5 rounded-btn">
                       <ArrowUpRight className="w-3.5 h-3.5 mr-0.5" />
                       {stat.change}
                     </span>

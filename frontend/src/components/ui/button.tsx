@@ -3,26 +3,32 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center whitespace-nowrap rounded-xl text-sm font-semibold transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/20 disabled:pointer-events-none disabled:opacity-50 cursor-pointer active:scale-[0.99]",
+  "inline-flex items-center justify-center whitespace-nowrap rounded-btn text-button transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]/30 disabled:pointer-events-none disabled:opacity-50 cursor-pointer active:scale-[0.99]",
   {
     variants: {
       variant: {
         default:
-          "bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm shadow-indigo-600/20",
-        destructive:
-          "bg-rose-600 text-white hover:bg-rose-700 shadow-xs",
-        outline:
-          "border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 shadow-xs",
+          "bg-[#2563EB] hover:bg-[#1D4ED8] text-white shadow-saas-sm",
+        primary:
+          "bg-[#2563EB] hover:bg-[#1D4ED8] text-white shadow-saas-sm",
         secondary:
-          "bg-slate-100 text-slate-800 hover:bg-slate-200",
-        ghost: "hover:bg-slate-100 text-slate-600 hover:text-slate-900",
-        link: "text-indigo-600 underline-offset-4 hover:underline",
+          "bg-[#F3F4F6] text-[#374151] hover:bg-[#E5E7EB]",
+        outline:
+          "border border-[#E5E7EB] bg-white hover:bg-[#F9FAFB] text-[#374151] shadow-saas-sm",
+        ghost:
+          "hover:bg-[#F3F4F6] text-[#6B7280] hover:text-[#111827]",
+        danger:
+          "bg-[#DC2626] text-white hover:bg-[#B91C1C] shadow-saas-sm",
+        destructive:
+          "bg-[#DC2626] text-white hover:bg-[#B91C1C] shadow-saas-sm",
+        link:
+          "text-[#2563EB] underline-offset-4 hover:underline",
       },
       size: {
-        default: "h-11 px-5 py-2.5",
-        sm: "h-9 rounded-lg px-3.5 text-xs",
-        lg: "h-12 rounded-xl px-8 text-base",
-        icon: "h-10 w-10",
+        default: "h-10 px-4 py-2 text-button",
+        sm: "h-8 rounded-btn px-3 text-caption font-medium",
+        lg: "h-12 rounded-btn px-6 text-subheading font-medium",
+        icon: "h-9 w-9 text-button",
       },
     },
     defaultVariants: {

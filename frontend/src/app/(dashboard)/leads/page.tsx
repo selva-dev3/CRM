@@ -510,47 +510,47 @@ export default function LeadsPage() {
   return (
     <div className="space-y-6 text-black">
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-200">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-[#E5E7EB]">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-black text-black tracking-tight">
+          <h1 className="text-page-title">
             Lead Management
           </h1>
-          <p className="text-sm font-bold text-slate-800 mt-1">
+          <p className="text-caption mt-1">
             Capture, track, and score sales leads with AI
           </p>
         </div>
         <div className="flex items-center gap-2">
           {/* Bulk Actions Dropdown */}
           <DropdownMenu>
-            <DropdownMenuTrigger className="h-9 px-3.5 border border-slate-300 bg-white hover:bg-slate-50 text-slate-900 font-bold rounded-lg text-xs inline-flex items-center gap-1.5 cursor-pointer shadow-2xs">
-              <Sliders className="w-3.5 h-3.5 text-indigo-600" />
+            <DropdownMenuTrigger className="h-10 px-4 border border-[#E5E7EB] bg-white hover:bg-[#F9FAFB] text-[#374151] font-medium rounded-btn text-button inline-flex items-center gap-2 cursor-pointer shadow-saas-sm">
+              <Sliders className="w-4 h-4 text-[#2563EB]" />
               <span>Bulk Actions</span>
               {selectedIds.size > 0 && (
-                <span className="ml-1 px-1.5 py-0.5 rounded-full bg-indigo-600 text-white text-[10px] font-black">
+                <span className="ml-1 px-2 py-0.5 rounded-full bg-[#2563EB] text-white text-badge font-semibold">
                   {selectedIds.size}
                 </span>
               )}
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+              <ChevronDown className="w-4 h-4 text-[#9CA3AF]" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-52">
-              <DropdownMenuLabel className="text-xs font-bold text-slate-900">
+              <DropdownMenuLabel className="text-badge font-semibold text-[#111827]">
                 {selectedIds.size > 0 ? `Bulk Actions (${selectedIds.size} selected)` : 'Select leads below to apply'}
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 disabled={selectedIds.size === 0}
                 onClick={handleBulkArchive}
-                className={`cursor-pointer text-xs font-bold ${selectedIds.size === 0 ? 'opacity-50 cursor-not-allowed' : 'text-slate-700 hover:bg-slate-100'}`}
+                className={`cursor-pointer text-button font-medium ${selectedIds.size === 0 ? 'opacity-50 cursor-not-allowed' : 'text-[#374151] hover:bg-[#F3F4F6]'}`}
               >
-                <Archive className="w-3.5 h-3.5 mr-2 text-amber-600" />
+                <Archive className="w-4 h-4 mr-2 text-[#F59E0B]" />
                 <span>Bulk Archive ({selectedIds.size})</span>
               </DropdownMenuItem>
               <DropdownMenuItem
                 disabled={selectedIds.size === 0}
                 onClick={handleBulkDelete}
-                className={`cursor-pointer text-xs font-bold ${selectedIds.size === 0 ? 'opacity-50 cursor-not-allowed' : 'text-rose-600 hover:bg-rose-50'}`}
+                className={`cursor-pointer text-button font-medium ${selectedIds.size === 0 ? 'opacity-50 cursor-not-allowed' : 'text-[#DC2626] hover:bg-[#DC2626]/10'}`}
               >
-                <Trash2 className="w-3.5 h-3.5 mr-2 text-rose-600" />
+                <Trash2 className="w-4 h-4 mr-2 text-[#DC2626]" />
                 <span>Bulk Delete ({selectedIds.size})</span>
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -559,10 +559,11 @@ export default function LeadsPage() {
           <Button
             type="button"
             onClick={handleOpenModal}
-            size="sm"
-            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-sm cursor-pointer px-4 py-2 text-sm"
+            size="default"
+            variant="primary"
+            className="shadow-saas-sm px-4 text-button cursor-pointer"
           >
-            <Plus className="w-4 h-4 mr-1.5" />
+            <Plus className="w-4 h-4 mr-2" />
             + Add New Lead
           </Button>
         </div>

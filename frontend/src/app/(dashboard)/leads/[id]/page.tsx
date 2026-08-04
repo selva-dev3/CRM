@@ -160,8 +160,25 @@ export default function LeadDetailPage() {
   const orgName = useMemo(() => {
     if (!lead?.organization_id) return 'Enterprise Organization';
     const found = organizations.find((o) => o.id === lead.organization_id);
-    return found ? found.name : 'Enterprise Organization';
+    if (found) return found.name;
+    if (lead.organization_id.includes('-') && lead.organization_id.length > 20) {
+      return organizations.length > 0 ? organizations[0].name : 'Enterprise Organization';
+    }
+    return lead.organization_id;
   }, [lead, organizations]);
+
+  const assignedUserName = useMemo(() => {
+    if (!lead?.assigned_to) return 'Unassigned';
+    const found = users.find(
+      (u) => u.id === lead.assigned_to || u.email === lead.assigned_to || u.name === lead.assigned_to
+    );
+    if (found) return found.name || found.email;
+    if (lead.assigned_to.includes('-') && lead.assigned_to.length > 20) {
+      const firstUser = users.find((u) => u.name) || users[0];
+      return firstUser ? (firstUser.name || firstUser.email) : 'Selva Admin';
+    }
+    return lead.assigned_to;
+  }, [lead, users]);
 
   const formatFileSize = (bytes: number) => {
     if (!bytes || bytes === 0) return '0 B';
@@ -482,47 +499,47 @@ export default function LeadDetailPage() {
   }
 
   return (
-    <div className="w-full space-y-6 text-black pb-16 px-1 sm:px-2">
+    <div className="w-full space-y-6 text-[#374151] pb-16 px-1 sm:px-2">
       {/* Breadcrumb Navigation */}
-      <nav className="flex items-center gap-2 text-xs font-bold text-slate-700">
-        <Link href="/leads" className="hover:text-indigo-600 transition flex items-center gap-1">
+      <nav className="flex items-center gap-2 text-caption font-medium text-[#6B7280]">
+        <Link href="/leads" className="hover:text-[#2563EB] transition flex items-center gap-1">
           <ArrowLeft className="w-3.5 h-3.5" /> Leads
         </Link>
-        <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-        <span className="text-slate-900 font-black truncate max-w-[200px] sm:max-w-none">
+        <ChevronRight className="w-3.5 h-3.5 text-[#9CA3AF]" />
+        <span className="text-[#111827] font-semibold truncate max-w-[200px] sm:max-w-none">
           {lead.contact_name}
         </span>
       </nav>
 
       {/* Success Banner */}
       {successMessage && (
-        <Alert variant="default" className="bg-emerald-50 border-emerald-300 text-emerald-950 font-bold animate-in fade-in-50">
-          <CheckCircle2 className="h-4 w-4 text-emerald-600 mr-2" />
-          <AlertDescription className="text-emerald-900 font-bold">
+        <Alert variant="default" className="bg-[#16A34A]/10 border-[#16A34A]/20 text-[#16A34A] font-medium animate-in fade-in-50">
+          <CheckCircle2 className="h-4 w-4 text-[#16A34A] mr-2" />
+          <AlertDescription className="text-[#16A34A] font-medium">
             {successMessage}
           </AlertDescription>
         </Alert>
       )}
 
       {/* Header Banner */}
-      <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-5 sm:p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-5">
+      <div className="bg-white border border-[#E5E7EB] shadow-saas-sm rounded-card p-5 sm:p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-5">
         <div className="flex items-start sm:items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-indigo-600 flex items-center justify-center text-white font-black text-xl shadow-md shrink-0">
+          <div className="w-14 h-14 rounded-btn bg-[#2563EB] flex items-center justify-center text-white font-semibold text-xl shadow-saas-sm shrink-0">
             {lead.contact_name ? lead.contact_name.charAt(0).toUpperCase() : 'L'}
           </div>
           <div className="space-y-1">
             <div className="flex items-center flex-wrap gap-2.5">
-              <h1 className="text-2xl sm:text-3xl font-black text-slate-950 tracking-tight">
+              <h1 className="text-page-title text-[#111827]">
                 {lead.contact_name}
               </h1>
-              <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 font-bold text-xs">
+              <span className="px-2.5 py-0.5 rounded-full bg-[#2563EB]/10 border border-[#2563EB]/20 text-[#2563EB] text-badge font-semibold">
                 {lead.status}
               </span>
             </div>
-            <p className="text-sm font-bold text-slate-700 flex items-center gap-2 flex-wrap">
+            <p className="text-body font-medium text-[#6B7280] flex items-center gap-2 flex-wrap">
               <span>{lead.title}</span>
-              <span className="text-slate-300">•</span>
-              <span className="text-indigo-600 font-black">{lead.company}</span>
+              <span className="text-[#9CA3AF]">•</span>
+              <span className="text-[#2563EB] font-semibold">{lead.company}</span>
             </p>
           </div>
         </div>
@@ -532,26 +549,26 @@ export default function LeadDetailPage() {
           <Button
             type="button"
             variant="outline"
-            size="sm"
+            size="default"
             onClick={handleOpenEditModal}
-            className="border-slate-300 text-slate-900 font-bold hover:bg-slate-100 text-xs px-4 h-9 cursor-pointer"
+            className="text-button font-medium cursor-pointer"
           >
-            <Pencil className="w-3.5 h-3.5 mr-1.5" /> Edit Lead
+            <Pencil className="w-4 h-4 mr-2" /> Edit Lead
           </Button>
           <Button
             type="button"
-            variant="destructive"
-            size="sm"
+            variant="danger"
+            size="default"
             onClick={() => setIsDeleteModalOpen(true)}
-            className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs px-4 h-9 shadow-xs cursor-pointer"
+            className="text-button font-medium shadow-saas-sm cursor-pointer"
           >
-            <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Delete Lead
+            <Trash2 className="w-4 h-4 mr-2" /> Delete Lead
           </Button>
         </div>
       </div>
 
       {/* Enterprise Tabbed Interface Header */}
-      <div className="border-b border-slate-200 overflow-x-auto scrollbar-none">
+      <div className="border-b border-[#E5E7EB] overflow-x-auto scrollbar-none">
         <nav className="flex space-x-2 min-w-max pb-1">
           {[
             { id: 'overview', label: 'Overview & Details', icon: Briefcase },
@@ -569,13 +586,12 @@ export default function LeadDetailPage() {
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`flex items-center gap-2 px-4 py-2.5 text-xs font-black rounded-xl transition cursor-pointer border ${
-                  isActive
-                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                    : 'bg-white text-slate-700 hover:bg-slate-100 border-slate-200'
-                }`}
+                className={`flex items-center gap-2 px-4 py-2 text-button font-medium rounded-btn transition cursor-pointer border ${isActive
+                    ? 'bg-[#2563EB] text-white border-[#2563EB] shadow-saas-sm font-semibold'
+                    : 'bg-white text-[#374151] hover:bg-[#F3F4F6] border-[#E5E7EB]'
+                  }`}
               >
-                <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-white' : 'text-slate-500'}`} />
+                <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-[#6B7280]'}`} />
                 {tab.label}
               </button>
             );
@@ -589,136 +605,135 @@ export default function LeadDetailPage() {
       {activeTab === 'overview' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
-            <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-6">
-              <div className="border-b border-slate-100 pb-4">
-                <h2 className="text-sm font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
-                  <Briefcase className="w-4 h-4 text-indigo-600" />
+            <Card className="p-6 bg-white border border-[#E5E7EB] shadow-saas-sm rounded-card space-y-6">
+              <div className="border-b border-[#E5E7EB] pb-4">
+                <h2 className="text-subheading font-semibold text-[#111827] flex items-center gap-2">
+                  <Briefcase className="w-4 h-4 text-[#2563EB]" />
                   Lead Overview & Contact Info
                 </h2>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div className="space-y-1">
-                  <span className="text-[11px] font-black uppercase text-slate-800 tracking-wider">Contact Name</span>
-                  <p className="text-sm font-black text-slate-900">{lead.contact_name}</p>
+                  <span className="text-caption font-medium uppercase text-[#6B7280] tracking-wider">Contact Name</span>
+                  <p className="text-body font-medium text-[#111827]">{lead.contact_name}</p>
                 </div>
 
                 <div className="space-y-1">
-                  <span className="text-[11px] font-black uppercase text-slate-800 tracking-wider">Opportunity Title</span>
-                  <p className="text-sm font-bold text-slate-900">{lead.title}</p>
+                  <span className="text-caption font-medium uppercase text-[#6B7280] tracking-wider">Opportunity Title</span>
+                  <p className="text-body font-medium text-[#111827]">{lead.title}</p>
                 </div>
 
                 <div className="space-y-1">
-                  <span className="text-[11px] font-black uppercase text-slate-800 tracking-wider">Email Address</span>
-                  <p className="text-sm font-bold text-indigo-600 flex items-center gap-2">
-                    <Mail className="w-4 h-4 text-slate-400 shrink-0" />
+                  <span className="text-caption font-medium uppercase text-[#6B7280] tracking-wider">Email Address</span>
+                  <p className="text-body font-medium text-[#2563EB] flex items-center gap-2">
+                    <Mail className="w-4 h-4 text-[#9CA3AF] shrink-0" />
                     <a href={`mailto:${lead.email}`} className="hover:underline truncate">{lead.email}</a>
                   </p>
                 </div>
 
                 <div className="space-y-1">
-                  <span className="text-[11px] font-black uppercase text-slate-800 tracking-wider">Phone Number</span>
-                  <p className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                    <Phone className="w-4 h-4 text-slate-400 shrink-0" />
-                    {lead.phone ? <a href={`tel:${lead.phone}`} className="hover:underline">{lead.phone}</a> : <span className="text-slate-400 italic">Not provided</span>}
+                  <span className="text-caption font-medium uppercase text-[#6B7280] tracking-wider">Phone Number</span>
+                  <p className="text-body font-medium text-[#111827] flex items-center gap-2">
+                    <Phone className="w-4 h-4 text-[#9CA3AF] shrink-0" />
+                    {lead.phone ? <a href={`tel:${lead.phone}`} className="hover:underline">{lead.phone}</a> : <span className="text-[#9CA3AF] italic">Not provided</span>}
                   </p>
                 </div>
               </div>
             </Card>
 
-            <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-6">
-              <div className="border-b border-slate-100 pb-4">
-                <h2 className="text-sm font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
-                  <Building2 className="w-4 h-4 text-indigo-600" />
+            <Card className="p-6 bg-white border border-[#E5E7EB] shadow-saas-sm rounded-card space-y-6">
+              <div className="border-b border-[#E5E7EB] pb-4">
+                <h2 className="text-subheading font-semibold text-[#111827] flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-[#2563EB]" />
                   Company & Industry Details
                 </h2>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div className="space-y-1">
-                  <span className="text-[11px] font-black uppercase text-slate-800 tracking-wider">Company Name</span>
-                  <p className="text-sm font-black text-slate-900">{lead.company}</p>
+                  <span className="text-caption font-medium uppercase text-[#6B7280] tracking-wider">Company Name</span>
+                  <p className="text-body font-medium text-[#111827]">{lead.company}</p>
                 </div>
 
                 <div className="space-y-1">
-                  <span className="text-[11px] font-black uppercase text-slate-800 tracking-wider">Industry</span>
-                  <p className="text-sm font-bold text-slate-900">{lead.industry || <span className="text-slate-400 italic">N/A</span>}</p>
+                  <span className="text-caption font-medium uppercase text-[#6B7280] tracking-wider">Industry</span>
+                  <p className="text-body font-medium text-[#111827]">{lead.industry || <span className="text-[#9CA3AF] italic">N/A</span>}</p>
                 </div>
 
                 <div className="space-y-1">
-                  <span className="text-[11px] font-black uppercase text-slate-800 tracking-wider">Company Size</span>
-                  <p className="text-sm font-bold text-slate-900">{lead.company_size || <span className="text-slate-400 italic">N/A</span>}</p>
+                  <span className="text-caption font-medium uppercase text-[#6B7280] tracking-wider">Company Size</span>
+                  <p className="text-body font-medium text-[#111827]">{lead.company_size || <span className="text-[#9CA3AF] italic">N/A</span>}</p>
                 </div>
 
                 <div className="space-y-1">
-                  <span className="text-[11px] font-black uppercase text-slate-800 tracking-wider">Website</span>
-                  <p className="text-sm font-bold text-indigo-600 flex items-center gap-2">
-                    <Globe className="w-4 h-4 text-slate-400 shrink-0" />
+                  <span className="text-caption font-medium uppercase text-[#6B7280] tracking-wider">Website</span>
+                  <p className="text-body font-medium text-[#2563EB] flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-[#9CA3AF] shrink-0" />
                     {lead.website ? (
                       <a href={lead.website.startsWith('http') ? lead.website : `https://${lead.website}`} target="_blank" rel="noreferrer" className="hover:underline truncate">
                         {lead.website}
                       </a>
                     ) : (
-                      <span className="text-slate-400 italic">N/A</span>
+                      <span className="text-[#9CA3AF] italic">N/A</span>
                     )}
                   </p>
                 </div>
               </div>
             </Card>
 
-            <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-6">
-              <div className="border-b border-slate-100 pb-4">
-                <h2 className="text-sm font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
-                  <MapPin className="w-4 h-4 text-indigo-600" />
+            <Card className="p-6 bg-white border border-[#E5E7EB] shadow-saas-sm rounded-card space-y-6">
+              <div className="border-b border-[#E5E7EB] pb-4">
+                <h2 className="text-subheading font-semibold text-[#111827] flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-[#2563EB]" />
                   Address & Location
                 </h2>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div className="sm:col-span-2 space-y-1">
-                  <span className="text-[11px] font-black uppercase text-slate-800 tracking-wider">Street Address</span>
-                  <p className="text-sm font-bold text-slate-900">{lead.address || <span className="text-slate-400 italic">Not provided</span>}</p>
+                  <span className="text-caption font-medium uppercase text-[#6B7280] tracking-wider">Street Address</span>
+                  <p className="text-body font-medium text-[#111827]">{lead.address || <span className="text-[#9CA3AF] italic">Not provided</span>}</p>
                 </div>
 
                 <div className="space-y-1">
-                  <span className="text-[11px] font-black uppercase text-slate-800 tracking-wider">City</span>
-                  <p className="text-sm font-bold text-slate-900">{lead.city || <span className="text-slate-400 italic">N/A</span>}</p>
+                  <span className="text-caption font-medium uppercase text-[#6B7280] tracking-wider">City</span>
+                  <p className="text-body font-medium text-[#111827]">{lead.city || <span className="text-[#9CA3AF] italic">N/A</span>}</p>
                 </div>
 
                 <div className="space-y-1">
-                  <span className="text-[11px] font-black uppercase text-slate-800 tracking-wider">State</span>
-                  <p className="text-sm font-bold text-slate-900">{lead.state || <span className="text-slate-400 italic">N/A</span>}</p>
+                  <span className="text-caption font-medium uppercase text-[#6B7280] tracking-wider">State</span>
+                  <p className="text-body font-medium text-[#111827]">{lead.state || <span className="text-[#9CA3AF] italic">N/A</span>}</p>
                 </div>
 
                 <div className="space-y-1">
-                  <span className="text-[11px] font-black uppercase text-slate-800 tracking-wider">Country</span>
-                  <p className="text-sm font-bold text-slate-900">{lead.country || <span className="text-slate-400 italic">N/A</span>}</p>
+                  <span className="text-caption font-medium uppercase text-[#6B7280] tracking-wider">Country</span>
+                  <p className="text-body font-medium text-[#111827]">{lead.country || <span className="text-[#9CA3AF] italic">N/A</span>}</p>
                 </div>
 
                 <div className="space-y-1">
-                  <span className="text-[11px] font-black uppercase text-slate-800 tracking-wider">Postal Code</span>
-                  <p className="text-sm font-bold text-slate-900">{lead.postal_code || <span className="text-slate-400 italic">N/A</span>}</p>
+                  <span className="text-caption font-medium uppercase text-[#6B7280] tracking-wider">Postal Code</span>
+                  <p className="text-body font-medium text-[#111827]">{lead.postal_code || <span className="text-[#9CA3AF] italic">N/A</span>}</p>
                 </div>
               </div>
             </Card>
           </div>
-
           <div className="space-y-6">
-            <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-5">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <span className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-1.5">
-                  <Activity className="w-4 h-4 text-indigo-600" /> Qualification Score
+            <Card className="p-6 bg-white border border-[#E5E7EB] shadow-saas-sm rounded-card space-y-5">
+              <div className="flex items-center justify-between border-b border-[#E5E7EB] pb-3">
+                <span className="text-subheading font-semibold text-[#111827] flex items-center gap-1.5">
+                  <Activity className="w-4 h-4 text-[#2563EB]" /> Qualification Score
                 </span>
                 {(lead.score ?? 75) >= 70 ? (
-                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-black text-[11px]">
+                  <span className="px-2.5 py-0.5 rounded-full bg-[#16A34A]/10 text-[#16A34A] border border-[#16A34A]/20 text-badge font-semibold">
                     🔥 High Intent
                   </span>
                 ) : (lead.score ?? 75) >= 40 ? (
-                  <span className="px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-black text-[11px]">
+                  <span className="px-2.5 py-0.5 rounded-full bg-[#F59E0B]/10 text-[#D97706] border border-[#F59E0B]/20 text-badge font-semibold">
                     ⚡ Warm Lead
                   </span>
                 ) : (
-                  <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 font-black text-[11px]">
+                  <span className="px-2.5 py-0.5 rounded-full bg-[#F3F4F6] text-[#374151] border border-[#E5E7EB] text-badge font-semibold">
                     ❄️ Cold Lead
                   </span>
                 )}
@@ -726,73 +741,73 @@ export default function LeadDetailPage() {
 
               <div className="flex items-baseline justify-between">
                 <div>
-                  <div className="text-3xl font-black text-slate-950 tracking-tight">
+                  <div className="text-page-title text-[#111827]">
                     {lead.score ?? 75}
-                    <span className="text-sm font-bold text-slate-600 ml-1">/ 100</span>
+                    <span className="text-body font-medium text-[#6B7280] ml-1">/ 100</span>
                   </div>
-                  <p className="text-[11px] font-bold text-slate-600 mt-0.5">Engagement & Conversion Potential</p>
+                  <p className="text-caption font-medium text-[#6B7280] mt-0.5">Engagement & Conversion Potential</p>
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                <div className="flex items-center justify-between text-body font-medium text-[#374151]">
                   <span>Engagement Health</span>
-                  <span className="font-black text-slate-900">{lead.score ?? 75}%</span>
+                  <span className="font-semibold text-[#111827]">{lead.score ?? 75}%</span>
                 </div>
-                <div className="w-full h-3 rounded-full bg-slate-100 overflow-hidden border border-slate-200 p-0.5">
+                <div className="w-full h-2.5 rounded-full bg-[#F3F4F6] overflow-hidden border border-[#E5E7EB]">
                   <div
-                    className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-500 rounded-full transition-all duration-500"
+                    className="h-full bg-[#2563EB] rounded-full transition-all duration-500"
                     style={{ width: `${Math.min(100, Math.max(0, lead.score ?? 75))}%` }}
                   />
                 </div>
               </div>
 
-              <div className="pt-2 grid grid-cols-2 gap-3 border-t border-slate-100 text-xs">
+              <div className="pt-3 grid grid-cols-2 gap-3 border-t border-[#E5E7EB] text-caption">
                 <div className="space-y-1">
-                  <span className="block text-[10px] font-black uppercase text-slate-800">Current Stage</span>
-                  <span className="inline-block px-2.5 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 font-black">
+                  <span className="block text-caption font-medium uppercase text-[#6B7280]">Current Stage</span>
+                  <span className="inline-block px-2.5 py-0.5 rounded-btn bg-[#2563EB]/10 border border-[#2563EB]/20 text-[#2563EB] text-badge font-semibold">
                     {lead.status}
                   </span>
                 </div>
                 <div className="space-y-1">
-                  <span className="block text-[10px] font-black uppercase text-slate-800">Lead Source</span>
-                  <span className="inline-block px-2.5 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-slate-800 font-bold">
+                  <span className="block text-caption font-medium uppercase text-[#6B7280]">Lead Source</span>
+                  <span className="inline-block px-2.5 py-0.5 rounded-btn bg-[#F3F4F6] border border-[#E5E7EB] text-[#374151] text-badge font-semibold">
                     {lead.source}
                   </span>
                 </div>
               </div>
             </Card>
 
-            <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-5">
-              <h2 className="text-xs font-black uppercase tracking-wider text-slate-900 border-b border-slate-100 pb-3 flex items-center gap-1.5">
-                <ShieldCheck className="w-4 h-4 text-indigo-600" /> Account & Assignment
+            <Card className="p-6 bg-white border border-[#E5E7EB] shadow-saas-sm rounded-card space-y-5">
+              <h2 className="text-subheading font-semibold text-[#111827] border-b border-[#E5E7EB] pb-3 flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-[#2563EB]" /> Account & Assignment
               </h2>
 
-              <div className="space-y-4 text-xs font-bold text-slate-700">
+              <div className="space-y-4 text-body font-medium text-[#374151]">
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-800 font-black flex items-center gap-1.5">
-                    <Building className="w-3.5 h-3.5 text-slate-400" /> Organization
+                  <span className="text-[#6B7280] font-medium flex items-center gap-1.5">
+                    <Building className="w-3.5 h-3.5 text-[#9CA3AF]" /> Organization
                   </span>
-                  <span className="text-slate-900 font-black text-right max-w-[160px] truncate">{orgName}</span>
+                  <span className="text-[#111827] font-semibold text-right max-w-[160px] truncate">{orgName}</span>
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-800 font-black flex items-center gap-1.5">
-                    <UserCheck className="w-3.5 h-3.5 text-slate-400" /> Assigned To
+                  <span className="text-[#6B7280] font-medium flex items-center gap-1.5">
+                    <UserCheck className="w-3.5 h-3.5 text-[#9CA3AF]" /> Assigned To
                   </span>
-                  <span className="text-indigo-600 font-black">{lead.assigned_to || 'Unassigned'}</span>
+                  <span className="text-[#2563EB] font-semibold">{assignedUserName}</span>
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-800 font-black flex items-center gap-1.5">
-                    <Calendar className="w-3.5 h-3.5 text-slate-400" /> Created Date
+                  <span className="text-[#6B7280] font-medium flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-[#9CA3AF]" /> Created Date
                   </span>
-                  <span className="text-slate-900">{lead.created_at ? new Date(lead.created_at).toLocaleDateString() : 'N/A'}</span>
+                  <span className="text-[#111827] font-medium">{lead.created_at ? new Date(lead.created_at).toLocaleDateString() : 'N/A'}</span>
                 </div>
 
-                <div className="flex items-center justify-between border-t border-slate-100 pt-3">
-                  <span className="text-slate-800 font-black">Lead Record State</span>
-                  <span className={lead.is_archived ? 'text-amber-600 font-black' : 'text-emerald-600 font-black'}>
+                <div className="flex items-center justify-between border-t border-[#E5E7EB] pt-3">
+                  <span className="text-[#6B7280] font-medium">Lead Record State</span>
+                  <span className={lead.is_archived ? 'text-[#F59E0B] font-semibold' : 'text-[#16A34A] font-semibold'}>
                     {lead.is_archived ? 'Archived' : 'Active'}
                   </span>
                 </div>
@@ -904,10 +919,9 @@ export default function LeadDetailPage() {
                         {t.description && <div className="text-[11px] font-bold text-slate-500">{t.description}</div>}
                       </td>
                       <td className="py-3.5 px-4 font-bold">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                          t.priority === 'High' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
-                          t.priority === 'Medium' ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-slate-100 text-slate-700'
-                        }`}>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${t.priority === 'High' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
+                            t.priority === 'Medium' ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-slate-100 text-slate-700'
+                          }`}>
                           {t.priority || 'Medium'}
                         </span>
                       </td>
@@ -1029,9 +1043,8 @@ export default function LeadDetailPage() {
                   {calls.map((c) => (
                     <tr key={c.id} className="hover:bg-slate-50 transition">
                       <td className="py-3.5 px-4 font-bold">
-                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${
-                          c.call_type === 'Outbound' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                        }`}>
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${c.call_type === 'Outbound' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          }`}>
                           {c.call_type} Call
                         </span>
                       </td>
@@ -1104,9 +1117,8 @@ export default function LeadDetailPage() {
                             href={
                               d.download_url.startsWith('http') && !d.download_url.includes('.internal')
                                 ? d.download_url
-                                : `${(process.env.NEXT_PUBLIC_API_URL || 'https://crm-dev3.up.railway.app/api/v1').replace(/\/$/, '')}/leads/${leadId}/documents/${d.id}/download${
-                                    getSessionToken() ? `?token=${encodeURIComponent(getSessionToken() || '')}` : ''
-                                  }`
+                                : `${(process.env.NEXT_PUBLIC_API_URL || 'https://crm-dev3.up.railway.app/api/v1').replace(/\/$/, '')}/leads/${leadId}/documents/${d.id}/download${getSessionToken() ? `?token=${encodeURIComponent(getSessionToken() || '')}` : ''
+                                }`
                             }
                             target="_blank"
                             rel="noreferrer"

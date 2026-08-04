@@ -14,6 +14,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
+  const pageTitle = React.useMemo(() => {
+    if (!pathname || pathname === '/') return 'Dashboard';
+    const segments = pathname.split('/').filter(Boolean);
+    if (segments.length === 0) return 'Dashboard';
+
+    const formattedSegments = segments.map((seg) => {
+      // If segment is a UUID / ID format, replace with Details
+      if (seg.length >= 20 || (seg.includes('-') && seg.length > 15) || /^[0-9a-fA-F-]+$/.test(seg)) {
+        return 'Details';
+      }
+      return seg.charAt(0).toUpperCase() + seg.slice(1);
+    });
+
+    return formattedSegments.join(' / ');
+  }, [pathname]);
+
   useEffect(() => {
     const token = getSessionToken();
     if (!token) {
@@ -49,32 +65,32 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden font-sans relative">
+    <div className="flex h-screen bg-[#F9FAFB] text-[#111827] overflow-hidden font-sans relative">
       {/* Mobile Backdrop Overlay */}
       {isMobileMenuOpen && (
         <div
           onClick={() => setIsMobileMenuOpen(false)}
-          className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-xs lg:hidden transition-opacity"
+          className="fixed inset-0 z-40 bg-[#111827]/40 backdrop-blur-xs lg:hidden transition-opacity"
         />
       )}
 
-      {/* Sidebar (Desktop Fixed & Mobile Drawer - Matching Table Dark Slate Text Color #0f172a) */}
+      {/* Sidebar */}
       <aside
-        className={`fixed lg:static inset-y-0 left-0 z-50 w-64 border-r border-slate-200 bg-white flex flex-col shadow-xl lg:shadow-sm transform transition-transform duration-200 ease-in-out ${
+        className={`fixed lg:static inset-y-0 left-0 z-50 w-64 border-r border-[#E5E7EB] bg-white flex flex-col shadow-saas-sm transform transition-transform duration-200 ease-in-out ${
           isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
       >
         {/* Brand Header */}
-        <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+        <div className="p-5 border-b border-[#E5E7EB] flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center font-bold text-white shadow-md shadow-indigo-600/20">
+            <div className="w-9 h-9 rounded-btn bg-[#2563EB] flex items-center justify-center font-bold text-white shadow-saas-sm">
               <Zap className="w-5 h-5 fill-white/20 text-white" />
             </div>
             <div className="flex flex-col">
-              <span className="font-extrabold text-base text-slate-900 tracking-tight leading-none">
+              <span className="font-bold text-base text-[#111827] tracking-tight leading-none">
                 Enterprise CRM
               </span>
-              <span className="text-[10px] text-indigo-600 font-bold tracking-wider uppercase mt-1">
+              <span className="text-[10px] text-[#2563EB] font-semibold tracking-wider uppercase mt-1">
                 Salesforce & HubSpot Style
               </span>
             </div>
@@ -82,13 +98,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <button
             type="button"
             onClick={() => setIsMobileMenuOpen(false)}
-            className="lg:hidden p-1.5 rounded-lg text-slate-900 hover:bg-slate-100 transition"
+            className="lg:hidden p-1.5 rounded-btn text-[#111827] hover:bg-[#F3F4F6] transition"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Nav Items (Matching Table Dark Slate #0f172a Text Color) */}
+        {/* Nav Items */}
         <nav className="flex-1 overflow-y-auto p-3 space-y-1">
           {navigationConfig.map((item) => {
             const isActive = pathname === item.href;
@@ -96,10 +112,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm  font-bold transition duration-150 ${
+                className={`flex items-center gap-3 px-3.5 py-2 rounded-btn text-button font-medium transition duration-150 ${
                   isActive
-                    ? 'bg-indigo-50 text-indigo-700 font-extrabold border-l-4 border-indigo-600 shadow-xs'
-                    : 'text-slate-900 hover:text-indigo-600 hover:bg-slate-100'
+                    ? 'bg-[#2563EB]/10 text-[#2563EB] font-semibold border-l-4 border-[#2563EB]'
+                    : 'text-[#374151] hover:text-[#2563EB] hover:bg-[#F3F4F6]'
                 }`}
               >
                 <span>{item.title}</span>
@@ -109,9 +125,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </nav>
 
         {/* Footer Org Badge */}
-        <div className="p-4 border-t border-slate-100 bg-slate-50/50">
-          <div className="flex items-center space-x-2 text-xs text-slate-900 font-bold">
-            <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+        <div className="p-4 border-t border-[#E5E7EB] bg-[#F9FAFB]">
+          <div className="flex items-center space-x-2 text-caption text-[#374151] font-medium">
+            <ShieldCheck className="w-4 h-4 text-[#16A34A] shrink-0" />
             <span className="truncate">Acme Enterprise Corp</span>
           </div>
         </div>
@@ -120,17 +136,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Header */}
-        <header className="h-16 border-b border-slate-200 bg-white/90 backdrop-blur px-4 sm:px-6 flex items-center justify-between shadow-xs">
+        <header className="h-16 border-b border-[#E5E7EB] bg-white/90 backdrop-blur px-4 sm:px-6 flex items-center justify-between shadow-saas-sm">
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={() => setIsMobileMenuOpen(true)}
-              className="p-2 rounded-xl text-slate-900 hover:bg-slate-100 lg:hidden transition cursor-pointer"
+              className="p-2 rounded-btn text-[#111827] hover:bg-[#F3F4F6] lg:hidden transition cursor-pointer"
             >
               <Menu className="w-5 h-5" />
             </button>
-            <h2 className="text-base sm:text-lg font-bold text-slate-900 capitalize tracking-tight truncate">
-              {pathname.replace('/', '') || 'Dashboard'}
+            <h2 className="text-subheading font-semibold text-[#111827] tracking-tight truncate">
+              {pageTitle}
             </h2>
           </div>
 

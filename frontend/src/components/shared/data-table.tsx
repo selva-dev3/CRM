@@ -378,7 +378,7 @@ export function DataTable<TItem>({
   }
 
   return (
-    <div className={cn(!transparent && 'rounded-xl border border-slate-200 bg-white shadow-xs overflow-hidden', className)}>
+    <div className={cn(!transparent && 'rounded-card border border-[#E5E7EB] bg-white shadow-saas-sm overflow-hidden', className)}>
       {hasToolbar && (
         <DataTableToolbar
           searchValue={searchValue}
@@ -400,17 +400,17 @@ export function DataTable<TItem>({
 
       <div
         className={cn(
-          'w-full overflow-x-auto border-t border-slate-200',
+          'w-full overflow-x-auto border-t border-[#E5E7EB]',
           maxHeight ? 'overflow-y-auto' : undefined,
           '[&>[data-slot=table-container]]:contents',
         )}
         style={maxHeight ? { maxHeight } : undefined}
       >
         <Table className="w-full min-w-[720px]">
-          <TableHeader className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200">
-            <TableRow>
+          <TableHeader className="sticky top-0 z-10 bg-[#F9FAFB] border-b border-[#E5E7EB]">
+            <TableRow className="border-b border-[#E5E7EB] hover:bg-transparent">
               {showCheckbox && (
-                <TableHead className="w-10 px-4">
+                <TableHead className="w-10 px-4 text-table font-semibold text-[#111827]">
                   <input
                     type="checkbox"
                     checked={allVisibleSelected}
@@ -421,17 +421,18 @@ export function DataTable<TItem>({
                     }}
                     onChange={(event: React.ChangeEvent<HTMLInputElement>) => onToggleAllRows?.(event.target.checked)}
                     aria-label="Select all rows"
+                    className="rounded border-[#E5E7EB] text-[#2563EB] focus:ring-[#2563EB]/20 cursor-pointer"
                   />
                 </TableHead>
               )}
               {expandableRow && <TableHead className="w-10 px-4" aria-label="Expand row" />}
               {visibleColumns.map((column) => (
-                <TableHead key={column.id} className={column.className}>
+                <TableHead key={column.id} className={cn("text-table font-semibold text-[#111827] py-3", column.className)}>
                   {column.header}
                 </TableHead>
               ))}
               {actions && (
-                <TableHead className={cn('px-4', actionVariant === 'inline' ? 'w-[100px] text-right' : 'w-[80px] text-center')}>
+                <TableHead className={cn('px-4 text-table font-semibold text-[#111827] py-3', actionVariant === 'inline' ? 'w-[100px] text-right' : 'w-[80px] text-center')}>
                   {actionVariant === 'menu' ? 'Actions' : ''}
                 </TableHead>
               )}
@@ -447,7 +448,8 @@ export function DataTable<TItem>({
                   <TableRow
                     tabIndex={onRowClick ? 0 : undefined}
                     className={cn(
-                      onRowClick ? 'cursor-pointer hover:bg-slate-50' : undefined,
+                      'border-b border-[#E5E7EB] text-table transition-colors duration-150',
+                      onRowClick ? 'cursor-pointer hover:bg-[#F9FAFB]' : 'hover:bg-[#F9FAFB]/50',
                     )}
                     onClick={() => onRowClick?.(item)}
                     onKeyDown={(event: React.KeyboardEvent<HTMLTableRowElement>) => {
