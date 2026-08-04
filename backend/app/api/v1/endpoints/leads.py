@@ -559,7 +559,11 @@ async def log_lead_call(lead_id: str, payload: CallLogBase, db: AsyncSession = D
         c_res = await db.execute(select(Contact.id).where(Contact.email == l.email).limit(1))
         c_id = c_res.scalars().first()
         if not c_id:
-            c = Contact(first_name=l.contact_name, last_name="", email=l.email, organization_id=l.organization_id)
+            c = Contact(
+                name=l.contact_name or "Unknown Lead",
+                email=l.email or f"lead-{l.id}@placeholder.com",
+                organization_id=l.organization_id
+            )
             db.add(c)
             await db.flush()
             c_id = c.id
