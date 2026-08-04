@@ -114,6 +114,7 @@ async def invite_users(payload: UserInviteRequest, db: AsyncSession = Depends(ge
                 email_clean = email.strip()
                 target_name = payload.name or email_clean.split("@")[0]
                 invite_targets.append({"name": target_name, "email": email_clean})
+                
 
         for target in invite_targets:
             token = generate_random_code(14)
@@ -152,12 +153,51 @@ async def invite_users(payload: UserInviteRequest, db: AsyncSession = Depends(ge
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invitation dispatch failed: {str(e)}")
 
+@router.get("/invitations", response_model=List[UserInvitationDetailsResponse], summary="List all user invitations")
+async def list_user_invitations(
+    status_filter: Optional[str] = Query(None, alias="status"),
+    db: AsyncSession = Depends(get_db)
+):
+    """Retrieves list of all organization user invitations (pending, accepted, expired)."""
+    try:
+        stmt = select(UserInvitation)
+        if status_filter and status_filter.strip():
+            stmt = stmt.where(UserInvitation.status == status_filter.strip())
+        stmt = stmt.order_by(UserInvitation.created_at.desc())
+        res = await db.execute(stmt)
+        invitations = res.scalars().all()
+        return [
+            {
+                "id": inv.id,
+                "email": inv.email,
+                "token": inv.token,
+                "role": inv.role,
+                "status": inv.status,
+                "organization_id": inv.organization_id,
+                "created_at": str(inv.created_at) if inv.created_at else ""
+            }
+            for inv in invitations
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
 @router.get("/invitations/{token}", response_model=UserInvitationDetailsResponse, summary="Get user invitation details by token")
 async def get_invitation_details(token: str, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(UserInvitation).where(UserInvitation.token == token.strip()))
     inv = res.scalars().first()
     if not inv:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invitation not found or token invalid")
+    
+    # Check if any invitation for this email has already been accepted
+    accepted_any = await db.execute(
+        select(UserInvitation).where(
+            UserInvitation.email.ilike(inv.email),
+            UserInvitation.status == "accepted"
+        )
+    )
+    if accepted_any.scalars().first():
+        inv.status = "accepted"
+
     return {
         "id": inv.id,
         "email": inv.email,
@@ -175,7 +215,17 @@ async def accept_user_invitation(payload: AcceptInviteRequest, db: AsyncSession 
     inv = res.scalars().first()
     if not inv:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid or expired invitation token")
-    if inv.status == "accepted":
+    
+    # Check if this invitation or any other invitation for the same email has already been accepted
+    accepted_any = await db.execute(
+        select(UserInvitation).where(
+            UserInvitation.email.ilike(inv.email),
+            UserInvitation.status == "accepted"
+        )
+    )
+    if inv.status == "accepted" or accepted_any.scalars().first():
+        inv.status = "accepted"
+        await db.commit()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invitation has already been accepted")
     
     try:
@@ -210,7 +260,17 @@ async def accept_user_invitation(payload: AcceptInviteRequest, db: AsyncSession 
             db.add(user)
             await db.flush()
         
+        # Mark current and all other invitations for this email address as accepted
         inv.status = "accepted"
+        other_invs = await db.execute(
+            select(UserInvitation).where(
+                UserInvitation.email.ilike(inv.email),
+                UserInvitation.id != inv.id
+            )
+        )
+        for other in other_invs.scalars().all():
+            other.status = "accepted"
+
         await db.commit()
         return {
             "message": "Invitation accepted successfully! Your account is active.",

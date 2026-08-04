@@ -136,12 +136,23 @@ async def microsoft_oauth(payload: OAuthLoginRequest, db: AsyncSession = Depends
     access_token = create_access_token(u.id if u else "usr-1")
     return {"access_token": access_token, "refresh_token": "ms_refresh", "token_type": "bearer", "expires_in": 86400}
 
-@router.get("/invitations/{token}", response_model=UserInvitationDetailsResponse, summary="Get user invitation details by token")
+@router.get("/invitations/{token}", response_model=UserInvitationDetailsResponse, summary="Get user invitation details by token (Public endpoint)")
 async def get_auth_invitation_details(token: str, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(UserInvitation).where(UserInvitation.token == token.strip()))
     inv = res.scalars().first()
     if not inv:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invitation not found or token invalid")
+    
+    # Check if any invitation for this email has already been accepted
+    accepted_any = await db.execute(
+        select(UserInvitation).where(
+            UserInvitation.email.ilike(inv.email),
+            UserInvitation.status == "accepted"
+        )
+    )
+    if accepted_any.scalars().first():
+        inv.status = "accepted"
+
     return {
         "id": inv.id,
         "email": inv.email,
@@ -159,7 +170,17 @@ async def accept_auth_user_invitation(payload: AcceptInviteRequest, db: AsyncSes
     inv = res.scalars().first()
     if not inv:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid or expired invitation token")
-    if inv.status == "accepted":
+
+    # Check if this invitation or any other invitation for the same email has already been accepted
+    accepted_any = await db.execute(
+        select(UserInvitation).where(
+            UserInvitation.email.ilike(inv.email),
+            UserInvitation.status == "accepted"
+        )
+    )
+    if inv.status == "accepted" or accepted_any.scalars().first():
+        inv.status = "accepted"
+        await db.commit()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invitation has already been accepted")
     
     try:
@@ -194,7 +215,17 @@ async def accept_auth_user_invitation(payload: AcceptInviteRequest, db: AsyncSes
             db.add(user)
             await db.flush()
         
+        # Mark current and all other invitations for this email address as accepted
         inv.status = "accepted"
+        other_invs = await db.execute(
+            select(UserInvitation).where(
+                UserInvitation.email.ilike(inv.email),
+                UserInvitation.id != inv.id
+            )
+        )
+        for other in other_invs.scalars().all():
+            other.status = "accepted"
+
         await db.commit()
 
         access_token = create_access_token(user.id)

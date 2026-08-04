@@ -54,6 +54,16 @@ export interface UserDeleteResponse {
   status: string;
 }
 
+export interface UserInvitationItem {
+  id: string;
+  email: string;
+  token: string;
+  role: string;
+  status: string;
+  organization_id: string;
+  created_at: string;
+}
+
 export interface UserCreatePayload {
   name: string;
   email: string;
@@ -67,6 +77,12 @@ export async function fetchUsersApi(page = 1, limit = 20, search?: string): Prom
   const query = new URLSearchParams({ page: String(page), limit: String(limit) });
   if (search) query.append('search', search);
   return apiClient<UserItem[]>(`/users?${query.toString()}`);
+}
+
+export async function fetchUserInvitationsApi(statusFilter?: string): Promise<UserInvitationItem[]> {
+  const query = new URLSearchParams();
+  if (statusFilter) query.append('status', statusFilter);
+  return apiClient<UserInvitationItem[]>(`/users/invitations?${query.toString()}`);
 }
 
 export async function createUserApi(payload: UserCreatePayload): Promise<UserItem> {
@@ -113,6 +129,14 @@ export function useUsersQuery(page = 1, limit = 20, search?: string, options?: O
     queryKey: ['users', page, limit, search],
     queryFn: () => fetchUsersApi(page, limit, search),
     placeholderData: (previousData) => previousData,
+    ...options,
+  });
+}
+
+export function useUserInvitationsQuery(statusFilter?: string, options?: Omit<UseQueryOptions<UserInvitationItem[], Error>, 'queryKey' | 'queryFn'>) {
+  return useQuery<UserInvitationItem[], Error>({
+    queryKey: ['user-invitations', statusFilter],
+    queryFn: () => fetchUserInvitationsApi(statusFilter),
     ...options,
   });
 }
