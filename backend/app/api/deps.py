@@ -15,7 +15,7 @@ security_scheme = HTTPBearer(auto_error=False)
 
 async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme),
-    token: Optional[str] = Query(None),
+    token_query: Optional[str] = Query(None, alias="token"),
     db: AsyncSession = Depends(get_db)
 ) -> User:
     """Dependency that validates JWT Bearer access token in Authorization header or ?token= query parameter.
@@ -24,8 +24,8 @@ async def get_current_user(
     raw_token = None
     if credentials and credentials.credentials:
         raw_token = credentials.credentials.strip()
-    elif token:
-        raw_token = token.strip()
+    elif token_query:
+        raw_token = token_query.strip()
 
     if not raw_token:
         raise HTTPException(
