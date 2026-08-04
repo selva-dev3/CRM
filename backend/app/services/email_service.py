@@ -16,41 +16,37 @@ logger = logging.getLogger(__name__)
 # with e.g. "Enterprise CRM Support <noreply@yourdomain.com>".
 
 
-sender_email = settings.EMAILS_FROM_EMAIL
-password = settings.EMAILS_FROM_PASSWORD
-smtp_server = settings.SMTP_HOST
-smtp_port = settings.SMTP_PORT
-
 def send_email(
     to_email: str,
     subject: str,
     html_content: str
-):
-    context = ssl.create_default_context()
+) -> bool:
+    sender_email = settings.EMAILS_FROM_EMAIL or "noreply@crm.com"
+    password = getattr(settings, "EMAILS_FROM_PASSWORD", None) or settings.SMTP_PASSWORD
+    smtp_server = settings.SMTP_HOST or "smtp.gmail.com"
+    smtp_port = int(settings.SMTP_PORT or 587)
 
+    if not password:
+        logger.warning(f"SMTP password not set. Cannot send email to {to_email}.")
+        print(f"[SMTP WARNING] SMTP password missing. Email to {to_email} skipped.")
+        return False
+
+    context = ssl.create_default_context()
     with smtplib.SMTP(smtp_server, smtp_port) as server:
         server.starttls(context=context)
-
         server.login(sender_email, password)
-
         message = MIMEMultipart("alternative")
-
         message["From"] = f"{settings.EMAILS_FROM_NAME} <{sender_email}>"
         message["To"] = to_email
         message["Subject"] = subject
-
         message.attach(MIMEText(html_content, "html"))
-
-        server.sendmail(
-            sender_email,
-            [to_email],
-            message.as_string()
-        )
+        server.sendmail(sender_email, [to_email], message.as_string())
+    return True
 
 
 def send_reset_password_email(email_to: str, token: str, user_name: str = "User") -> bool:
-    """Sends password reset HTML email via Resend API containing token and reset link."""
-    reset_url = f"http://localhost:3000/reset-password?token={token}"
+    """Sends password reset HTML email via SMTP containing token and reset link."""
+    reset_url = f"{settings.frontend_base_url}/reset-password?token={token}"
     subject = f"{settings.PROJECT_NAME} - Password Reset Request"
 
     html_content = f"""
@@ -108,7 +104,7 @@ def send_user_invite_email(email_to: str, role: str = "Member", invite_url: str 
     """Sends Organization User Invitation HTML email via SMTP."""
 
     if not invite_url:
-        invite_url = f"{settings.FRONTEND_URL}/accept-invite"
+        invite_url = f"{settings.frontend_base_url}/accept-invite"
 
     subject = f"You're Invited to Join {settings.PROJECT_NAME}"
 

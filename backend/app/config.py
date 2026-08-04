@@ -39,11 +39,12 @@ class Settings(BaseSettings):
     AWS_REGION: str = "us-east-1"
 
     # SMTP Gmail Email Configuration
-    SMTP_HOST: str = None
-    SMTP_PORT: int = None
+    SMTP_HOST: Optional[str] = "smtp-relay.brevo.com"
+    SMTP_PORT: Optional[int] = 587
     SMTP_USER: Optional[str] = None
     SMTP_PASSWORD: Optional[str] = None
     EMAILS_FROM_EMAIL: str = "selvakumar.dev3@gmail.com"
+    EMAILS_FROM_PASSWORD: Optional[str] = None
     EMAILS_FROM_NAME: str = "Enterprise CRM Support"
     RESET_TOKEN_EXPIRE_MINUTES: int = 60
 
@@ -54,9 +55,17 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None
 
-    # CORS - comma-separated list of allowed frontend origins
+    # CORS & Frontend URLs
     CORS_ORIGINS: str = "https://crm-one-sable.vercel.app,http://localhost:3000,http://127.0.0.1:3000"
-    FRONTEND_URL: str ="https://crm-one-sable.vercel.app,http://localhost:3000,http://127.0.0.1:3000"
+    FRONTEND_URL: str = "https://crm-one-sable.vercel.app"
+
+    @property
+    def frontend_base_url(self) -> str:
+        if self.FRONTEND_URL:
+            urls = [u.strip() for u in self.FRONTEND_URL.split(",") if u.strip()]
+            if urls:
+                return urls[0].rstrip("/")
+        return "http://localhost:3000"
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
