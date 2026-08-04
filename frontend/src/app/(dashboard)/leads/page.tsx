@@ -23,7 +23,8 @@ import {
   ChevronDown,
   Archive,
   UserCheck,
-  RotateCcw
+  RotateCcw,
+  Search
 } from 'lucide-react';
 import { 
   Button, 
@@ -110,9 +111,19 @@ export default function LeadsPage() {
     status: statusFilter || undefined,
   });
 
+  const [userSearchTerm, setUserSearchTerm] = useState<string>('');
+  const [debouncedUserSearchTerm, setDebouncedUserSearchTerm] = useState<string>('');
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedUserSearchTerm(userSearchTerm);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [userSearchTerm]);
+
   const { data: organizations = [], isLoading: isOrgsLoading } = useOrganizationsQuery();
   const { data: companies = [], isLoading: isCompaniesLoading } = useCompaniesQuery();
-  const { data: users = [], isLoading: isUsersLoading } = useUsersQuery(1, 100);
+  const { data: users = [], isLoading: isUsersLoading } = useUsersQuery(1, 100, debouncedUserSearchTerm || undefined);
 
   // Auto-set initial organization ID when organizations data is loaded from API
   useEffect(() => {
@@ -1184,20 +1195,110 @@ export default function LeadsPage() {
                 Assign sales lead <span className="font-black text-slate-950">"{assigningLead.contact_name}"</span> ({assigningLead.company}) to a team member:
               </p>
 
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <Label className="text-xs font-black text-black">Select Sales Rep / User</Label>
-                <select
-                  value={selectedUserId}
-                  onChange={(e) => setSelectedUserId(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="">Unassigned (No Owner)</option>
-                  {users.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name} ({u.role || 'Sales Rep'})
-                    </option>
-                  ))}
-                </select>
+
+                {/* Quick Search Input */}
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <Input
+                    type="text"
+                    placeholder="Search user by name, email, or role..."
+                    value={userSearchTerm}
+                    onChange={(e) => setUserSearchTerm(e.target.value)}
+                    className="pl-9 text-xs h-9 bg-slate-50 border-slate-300 font-bold text-black focus:bg-white"
+                  />
+                  {userSearchTerm && (
+                    <button
+                      type="button"
+                      onClick={() => setUserSearchTerm('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-0.5 cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Searchable User Selection List */}
+                <div className="max-h-44 overflow-y-auto border border-slate-200 rounded-xl bg-slate-50 p-1.5 space-y-1">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedUserId('')}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                      selectedUserId === ''
+                        ? 'bg-indigo-600 text-white font-black shadow-xs'
+                        : 'text-slate-700 hover:bg-slate-200/70'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${selectedUserId === '' ? 'bg-white/20 text-white' : 'bg-slate-300 text-slate-700'}`}>
+                        🚫
+                      </div>
+                      <span>Unassigned (No Owner)</span>
+                    </div>
+                    {selectedUserId === '' && <CheckCircle2 className="w-4 h-4 text-white" />}
+                  </button>
+
+                  {users.length === 0 ? (
+                    <div className="p-3 text-center text-xs font-bold text-slate-500">
+                      No team members match "{userSearchTerm}"
+                    </div>
+                  ) : (
+                    users.map((u) => {
+                      const isSelected = selectedUserId === u.id;
+                      return (
+                        <button
+                          key={u.id}
+                          type="button"
+                          onClick={() => setSelectedUserId(u.id)}
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs transition-all text-left cursor-pointer ${
+                            isSelected
+                              ? 'bg-indigo-600 text-white font-black shadow-xs'
+                              : 'text-slate-900 hover:bg-slate-200/70 font-bold'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black shrink-0 ${isSelected ? 'bg-white text-indigo-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                              {u.name ? u.name.charAt(0).toUpperCase() : 'U'}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="font-black truncate">{u.name}</div>
+                              <div className={`text-[10px] truncate ${isSelected ? 'text-indigo-100 font-bold' : 'text-slate-700'}`}>
+                                {u.email}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-black ${
+                              isSelected 
+                                ? 'bg-white/20 text-white' 
+                                : 'bg-slate-200 text-slate-800'
+                            }`}>
+                              {u.role || 'Sales Rep'}
+                            </span>
+                            {isSelected && <CheckCircle2 className="w-4 h-4 text-white" />}
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* Dropdown Select Menu */}
+                <div className="pt-1">
+                  <select
+                    value={selectedUserId}
+                    onChange={(e) => setSelectedUserId(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    <option value="">Unassigned (No Owner)</option>
+                    {users.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name} ({u.role || 'Sales Rep'}) - {u.email}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               {/* Modal Actions */}

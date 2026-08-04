@@ -18,11 +18,23 @@ router = APIRouter()
 PROTECTED_SUPERADMIN_EMAIL = "superadmin@gmail.com"
 
 @router.get("", response_model=List[UserResponse], summary="List all users with pagination and search")
-async def list_users(page: int = 1, limit: int = 20, search: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+async def list_users(
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    search: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db)
+):
     try:
-        stmt = select(User).offset((page - 1) * limit).limit(limit)
-        if search:
-            stmt = stmt.where(User.name.ilike(f"%{search}%") | User.email.ilike(f"%{search}%"))
+        stmt = select(User)
+        cleaned_search = search.strip() if search and isinstance(search, str) and search.strip() else None
+        if cleaned_search:
+            pattern = f"%{cleaned_search}%"
+            stmt = stmt.where(User.name.ilike(pattern) | User.email.ilike(pattern))
+        
+        actual_page = page if isinstance(page, int) else 1
+        actual_limit = limit if isinstance(limit, int) else 20
+        
+        stmt = stmt.offset((actual_page - 1) * actual_limit).limit(actual_limit)
         res = await db.execute(stmt)
         users = res.scalars().all()
         return [{"id": u.id, "name": u.name, "email": u.email, "role": u.role, "organization_id": u.organization_id, "is_active": u.is_active, "created_at": str(u.created_at)} for u in users]

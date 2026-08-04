@@ -91,6 +91,7 @@ export function useUsersQuery(page = 1, limit = 20, search?: string, options?: O
   return useQuery<UserItem[], Error>({
     queryKey: ['users', page, limit, search],
     queryFn: () => fetchUsersApi(page, limit, search),
+    placeholderData: (previousData) => previousData,
     ...options,
   });
 }
