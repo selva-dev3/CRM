@@ -217,6 +217,14 @@ export async function unarchiveLeadApi(leadId: string): Promise<{ message: strin
   return apiClient.post(`/leads/${leadId}/unarchive`);
 }
 
+export async function bulkDeleteLeadsApi(ids: string[]): Promise<{ affected_count: number; message: string }> {
+  return apiClient.post('/leads/bulk/delete', { ids });
+}
+
+export async function bulkArchiveLeadsApi(ids: string[]): Promise<{ affected_count: number; message: string }> {
+  return apiClient.post('/leads/bulk/archive', { ids });
+}
+
 // ---------------------------------------------------------------------------
 // TanStack Query Hooks
 // ---------------------------------------------------------------------------
@@ -304,6 +312,28 @@ export function useDeleteLeadMutation() {
 
   return useMutation({
     mutationFn: (id: string) => deleteLeadApi(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+    },
+  });
+}
+
+export function useBulkDeleteLeadsMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (ids: string[]) => bulkDeleteLeadsApi(ids),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+    },
+  });
+}
+
+export function useBulkArchiveLeadsMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (ids: string[]) => bulkArchiveLeadsApi(ids),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['leads'] });
     },

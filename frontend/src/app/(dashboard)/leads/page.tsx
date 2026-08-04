@@ -19,11 +19,35 @@ import {
   MapPin,
   Sliders,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  ChevronDown,
+  Archive
 } from 'lucide-react';
-import { Button, Card, Label, Input, Badge, Alert, AlertDescription } from '@/components/ui';
+import { 
+  Button, 
+  Card, 
+  Label, 
+  Input, 
+  Badge, 
+  Alert, 
+  AlertDescription,
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator
+} from '@/components/ui';
 import { DataTable, DataTableColumn, TableActionOption } from '@/components/shared/data-table';
-import { useLeadsQuery, useCreateLeadMutation, useUpdateLeadMutation, useDeleteLeadMutation, Lead } from '@/lib/api/leads';
+import { 
+  useLeadsQuery, 
+  useCreateLeadMutation, 
+  useUpdateLeadMutation, 
+  useDeleteLeadMutation, 
+  useBulkDeleteLeadsMutation,
+  useBulkArchiveLeadsMutation,
+  Lead 
+} from '@/lib/api/leads';
 import { useOrganizationsQuery } from '@/lib/api/organizations';
 import { useCompaniesQuery } from '@/lib/api/companies';
 import { useUsersQuery } from '@/lib/api/users';
@@ -36,6 +60,7 @@ export default function LeadsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // Debounce search input to avoid refetching API on every single character typed
   useEffect(() => {
@@ -94,6 +119,51 @@ export default function LeadsPage() {
   const createLeadMutation = useCreateLeadMutation();
   const updateLeadMutation = useUpdateLeadMutation();
   const deleteLeadMutation = useDeleteLeadMutation();
+  const bulkDeleteMutation = useBulkDeleteLeadsMutation();
+  const bulkArchiveMutation = useBulkArchiveLeadsMutation();
+
+  const handleToggleRow = (item: Lead, checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(item.id);
+      else next.delete(item.id);
+      return next;
+    });
+  };
+
+  const handleToggleAllRows = (checked: boolean) => {
+    if (checked) {
+      setSelectedIds(new Set(leads.map((l) => l.id)));
+    } else {
+      setSelectedIds(new Set());
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    try {
+      const ids = Array.from(selectedIds);
+      await bulkDeleteMutation.mutateAsync(ids);
+      setSuccessMessage(`Successfully deleted ${ids.length} selected lead(s)!`);
+      setSelectedIds(new Set());
+      setTimeout(() => setSuccessMessage(null), 4000);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Bulk delete failed. Please try again.');
+    }
+  };
+
+  const handleBulkArchive = async () => {
+    if (selectedIds.size === 0) return;
+    try {
+      const ids = Array.from(selectedIds);
+      await bulkArchiveMutation.mutateAsync(ids);
+      setSuccessMessage(`Successfully archived ${ids.length} selected lead(s)!`);
+      setSelectedIds(new Set());
+      setTimeout(() => setSuccessMessage(null), 4000);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Bulk archive failed. Please try again.');
+    }
+  };
 
   const handleConfirmDelete = async () => {
     if (!leadToDelete) return;
@@ -348,6 +418,42 @@ export default function LeadsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {/* Bulk Actions Dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger className="h-9 px-3.5 border border-slate-300 bg-white hover:bg-slate-50 text-slate-900 font-bold rounded-lg text-xs inline-flex items-center gap-1.5 cursor-pointer shadow-2xs">
+              <Sliders className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Bulk Actions</span>
+              {selectedIds.size > 0 && (
+                <span className="ml-1 px-1.5 py-0.5 rounded-full bg-indigo-600 text-white text-[10px] font-black">
+                  {selectedIds.size}
+                </span>
+              )}
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuLabel className="text-xs font-bold text-slate-900">
+                {selectedIds.size > 0 ? `Bulk Actions (${selectedIds.size} selected)` : 'Select leads below to apply'}
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                disabled={selectedIds.size === 0}
+                onClick={handleBulkArchive}
+                className={`cursor-pointer text-xs font-bold ${selectedIds.size === 0 ? 'opacity-50 cursor-not-allowed' : 'text-slate-700 hover:bg-slate-100'}`}
+              >
+                <Archive className="w-3.5 h-3.5 mr-2 text-amber-600" />
+                <span>Bulk Archive ({selectedIds.size})</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={selectedIds.size === 0}
+                onClick={handleBulkDelete}
+                className={`cursor-pointer text-xs font-bold ${selectedIds.size === 0 ? 'opacity-50 cursor-not-allowed' : 'text-rose-600 hover:bg-rose-50'}`}
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-2 text-rose-600" />
+                <span>Bulk Delete ({selectedIds.size})</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
           <Button
             type="button"
             onClick={handleOpenModal}
@@ -378,6 +484,10 @@ export default function LeadsPage() {
         emptyTitle="No leads found"
         emptyDescription="Click '+ Add New Lead' above to create your first sales lead."
         onRowClick={(lead) => router.push(`/leads/${lead.id}`)}
+        showCheckbox
+        selectedIds={selectedIds}
+        onToggleRow={handleToggleRow}
+        onToggleAllRows={handleToggleAllRows}
         showAvatar
         getAvatarData={(item) => ({ name: item.contact_name, color: '#4f46e5' })}
         actionVariant="menu"

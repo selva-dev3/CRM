@@ -75,6 +75,38 @@ async def list_leads(
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
+@router.post("/bulk/delete", response_model=BulkActionResponse, summary="Bulk delete leads")
+async def bulk_delete_leads(payload: BulkDeleteRequest, db: AsyncSession = Depends(get_db)):
+    if not payload.ids:
+        return {"affected_count": 0, "message": "No lead IDs provided"}
+    try:
+        res = await db.execute(select(Lead).where(Lead.id.in_(payload.ids)))
+        leads = res.scalars().all()
+        count = len(leads)
+        for l in leads:
+            await db.delete(l)
+        await db.commit()
+        return {"affected_count": count, "message": f"Successfully deleted {count} lead(s)"}
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Bulk delete failed: {str(e)}")
+
+@router.post("/bulk/archive", response_model=BulkActionResponse, summary="Bulk archive leads")
+async def bulk_archive_leads(payload: BulkDeleteRequest, db: AsyncSession = Depends(get_db)):
+    if not payload.ids:
+        return {"affected_count": 0, "message": "No lead IDs provided"}
+    try:
+        res = await db.execute(select(Lead).where(Lead.id.in_(payload.ids)))
+        leads = res.scalars().all()
+        count = len(leads)
+        for l in leads:
+            l.is_archived = True
+        await db.commit()
+        return {"affected_count": count, "message": f"Successfully archived {count} lead(s)"}
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Bulk archive failed: {str(e)}")
+
 @router.post("", response_model=LeadResponse, status_code=status.HTTP_201_CREATED, summary="Create a new lead")
 async def create_lead(payload: LeadCreate, db: AsyncSession = Depends(get_db)):
     try:
@@ -139,34 +171,6 @@ async def export_leads_csv(db: AsyncSession = Depends(get_db)):
 @router.post("/import/csv", response_model=MessageResponse, summary="Import leads from CSV file")
 async def import_leads_csv(db: AsyncSession = Depends(get_db)):
     return {"message": "Import completed successfully", "status": "success"}
-
-@router.post("/bulk-delete", response_model=BulkActionResponse, summary="Bulk delete leads")
-async def bulk_delete_leads(payload: BulkDeleteRequest, db: AsyncSession = Depends(get_db)):
-    try:
-        stmt = select(Lead).where(Lead.id.in_(payload.ids))
-        res = await db.execute(stmt)
-        items = res.scalars().all()
-        for item in items:
-            await db.delete(item)
-        await db.commit()
-        return {"affected_count": len(items), "message": "Leads deleted successfully"}
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-
-@router.post("/bulk-assign", response_model=BulkActionResponse, summary="Bulk assign leads to sales rep")
-async def bulk_assign_leads(payload: BulkDeleteRequest, user_id: str, db: AsyncSession = Depends(get_db)):
-    try:
-        stmt = select(Lead).where(Lead.id.in_(payload.ids))
-        res = await db.execute(stmt)
-        items = res.scalars().all()
-        for item in items:
-            item.assigned_to = user_id
-        await db.commit()
-        return {"affected_count": len(items), "message": f"Leads assigned to {user_id}"}
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 @router.post("/bulk-update-status", response_model=BulkActionResponse, summary="Bulk update lead status")
 async def bulk_update_lead_status(payload: BulkDeleteRequest, status: str, db: AsyncSession = Depends(get_db)):
