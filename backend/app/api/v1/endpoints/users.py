@@ -154,14 +154,18 @@ async def invite_users(payload: UserInviteRequest, db: AsyncSession = Depends(ge
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invitation dispatch failed: {str(e)}")
 
 @router.get("/invitations", response_model=List[UserInvitationDetailsResponse], summary="List all user invitations")
+@router.get("/invitations/all", response_model=List[UserInvitationDetailsResponse], summary="List all user invitations (alias)")
 async def list_user_invitations(
+    token: Optional[str] = Query(None),
     status_filter: Optional[str] = Query(None, alias="status"),
     db: AsyncSession = Depends(get_db)
 ):
     """Retrieves list of all organization user invitations (pending, accepted, expired)."""
     try:
         stmt = select(UserInvitation)
-        if status_filter and status_filter.strip():
+        if token and token.strip():
+            stmt = stmt.where(UserInvitation.token == token.strip())
+        elif status_filter and status_filter.strip():
             stmt = stmt.where(UserInvitation.status == status_filter.strip())
         stmt = stmt.order_by(UserInvitation.created_at.desc())
         res = await db.execute(stmt)
