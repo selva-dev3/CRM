@@ -7,6 +7,7 @@ export interface RoleItem {
   description?: string;
   permissions?: string[];
   is_system_role?: boolean;
+  created_at?: string;
 }
 
 export interface PermissionItem {
