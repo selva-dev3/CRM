@@ -3,45 +3,112 @@ from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
-from app.models import Note
+from app.models import Note, User
+from app.api.deps import get_valid_org_id
 from app.schemas.crm_schemas import NoteResponse, NoteBase, MessageResponse, BulkDeleteRequest, BulkActionResponse
 
 router = APIRouter()
 
-@router.get("", response_model=List[NoteResponse], summary="List all notes across entities")
-async def list_notes(page: int = 1, limit: int = 20, entity_type: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+async def resolve_user_id(db: AsyncSession) -> str:
+    first_user_res = await db.execute(select(User).limit(1))
+    first_user = first_user_res.scalars().first()
+    if first_user:
+        return first_user.id
+    return "user-default-1"
+
+@router.get("", summary="List all notes across entities")
+async def list_notes(
+    page: int = 1,
+    limit: int = 20,
+    entity_type: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db)
+):
     try:
-        stmt = select(Note).offset((page - 1) * limit).limit(limit)
-        if entity_type:
-            stmt = stmt.where(Note.entity_type == entity_type)
+        stmt = select(Note)
+        if entity_type and entity_type.strip():
+            stmt = stmt.where(Note.entity_type == entity_type.strip())
+        if search and search.strip():
+            stmt = stmt.where(Note.content.ilike(f"%{search.strip()}%"))
+        stmt = stmt.order_by(Note.created_at.desc()).offset((page - 1) * limit).limit(limit)
         res = await db.execute(stmt)
         notes = res.scalars().all()
-        return [{"id": n.id, "entity_type": n.entity_type, "entity_id": n.entity_id, "content": n.content, "created_by": n.created_by, "created_at": str(n.created_at)} for n in notes]
+        return [
+            {
+                "id": n.id,
+                "entity_type": n.entity_type or "General",
+                "entity_id": n.entity_id or "General",
+                "content": n.content,
+                "is_pinned": getattr(n, "is_pinned", False),
+                "created_by": n.created_by or "Sales Admin",
+                "created_at": str(n.created_at)
+            } for n in notes
+        ]
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
-@router.post("", response_model=NoteResponse, status_code=status.HTTP_201_CREATED, summary="Create new note")
+@router.post("", summary="Create new note")
 async def create_note(payload: NoteBase, db: AsyncSession = Depends(get_db)):
     try:
-        n = Note(organization_id="org-1", entity_type=payload.entity_type, entity_id=payload.entity_id, content=payload.content, created_by="usr-1")
+        org_id = await get_valid_org_id(db)
+        uid = await resolve_user_id(db)
+        n = Note(
+            organization_id=org_id,
+            entity_type=payload.entity_type or "General",
+            entity_id=payload.entity_id or "General",
+            content=payload.content,
+            created_by=uid
+        )
         db.add(n)
         await db.commit()
-        return {"id": n.id, "entity_type": n.entity_type, "entity_id": n.entity_id, "content": n.content, "created_by": n.created_by, "created_at": str(n.created_at)}
+        await db.refresh(n)
+        return {
+            "id": n.id,
+            "entity_type": n.entity_type,
+            "entity_id": n.entity_id,
+            "content": n.content,
+            "is_pinned": getattr(n, "is_pinned", False),
+            "created_by": n.created_by,
+            "created_at": str(n.created_at)
+        }
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to create note: {str(e)}")
 
-@router.get("/pinned", response_model=List[NoteResponse], summary="Get list of pinned notes")
+@router.get("/pinned", summary="Get list of pinned notes")
 async def get_pinned_notes(db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(Note).where(Note.is_pinned == True))
-    notes = res.scalars().all()
-    return [{"id": n.id, "entity_type": n.entity_type, "entity_id": n.entity_id, "content": n.content, "created_by": n.created_by, "created_at": str(n.created_at)} for n in notes]
+    try:
+        res = await db.execute(select(Note).where(Note.is_pinned == True))
+        notes = res.scalars().all()
+        return [
+            {
+                "id": n.id,
+                "entity_type": n.entity_type,
+                "entity_id": n.entity_id,
+                "content": n.content,
+                "is_pinned": True,
+                "created_by": n.created_by,
+                "created_at": str(n.created_at)
+            } for n in notes
+        ]
+    except Exception:
+        return []
 
-@router.get("/entity/{entity_type}/{entity_id}", response_model=List[NoteResponse], summary="Get notes filtered by entity type and ID")
+@router.get("/entity/{entity_type}/{entity_id}", summary="Get notes filtered by entity type and ID")
 async def get_notes_by_entity(entity_type: str, entity_id: str, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Note).where(Note.entity_type == entity_type, Note.entity_id == entity_id))
     notes = res.scalars().all()
-    return [{"id": n.id, "entity_type": n.entity_type, "entity_id": n.entity_id, "content": n.content, "created_by": n.created_by, "created_at": str(n.created_at)} for n in notes]
+    return [
+        {
+            "id": n.id,
+            "entity_type": n.entity_type,
+            "entity_id": n.entity_id,
+            "content": n.content,
+            "is_pinned": getattr(n, "is_pinned", False),
+            "created_by": n.created_by,
+            "created_at": str(n.created_at)
+        } for n in notes
+    ]
 
 @router.post("/bulk-delete", response_model=BulkActionResponse, summary="Bulk delete notes")
 async def bulk_delete_notes(payload: BulkDeleteRequest, db: AsyncSession = Depends(get_db)):
@@ -57,15 +124,23 @@ async def bulk_delete_notes(payload: BulkDeleteRequest, db: AsyncSession = Depen
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-@router.get("/{note_id}", response_model=NoteResponse, summary="Get note details by ID")
+@router.get("/{note_id}", summary="Get note details by ID")
 async def get_note(note_id: str, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Note).where(Note.id == note_id))
     n = res.scalars().first()
     if not n:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Note '{note_id}' not found")
-    return {"id": n.id, "entity_type": n.entity_type, "entity_id": n.entity_id, "content": n.content, "created_by": n.created_by, "created_at": str(n.created_at)}
+    return {
+        "id": n.id,
+        "entity_type": n.entity_type,
+        "entity_id": n.entity_id,
+        "content": n.content,
+        "is_pinned": getattr(n, "is_pinned", False),
+        "created_by": n.created_by,
+        "created_at": str(n.created_at)
+    }
 
-@router.put("/{note_id}", response_model=NoteResponse, summary="Update note content")
+@router.put("/{note_id}", summary="Update note content")
 async def update_note(note_id: str, content: str, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Note).where(Note.id == note_id))
     n = res.scalars().first()
@@ -74,7 +149,16 @@ async def update_note(note_id: str, content: str, db: AsyncSession = Depends(get
     try:
         n.content = content
         await db.commit()
-        return {"id": n.id, "entity_type": n.entity_type, "entity_id": n.entity_id, "content": n.content, "created_by": n.created_by, "created_at": str(n.created_at)}
+        await db.refresh(n)
+        return {
+            "id": n.id,
+            "entity_type": n.entity_type,
+            "entity_id": n.entity_id,
+            "content": n.content,
+            "is_pinned": getattr(n, "is_pinned", False),
+            "created_by": n.created_by,
+            "created_at": str(n.created_at)
+        }
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
