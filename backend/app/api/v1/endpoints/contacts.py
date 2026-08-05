@@ -13,6 +13,63 @@ from app.schemas.crm_schemas import (
 
 router = APIRouter()
 
+@router.get(
+    "",
+    response_model=List[ContactResponse],
+    summary="List all contacts",
+)
+async def list_contacts(
+    page: int = Query(1, ge=1),
+    limit: int = Query(15, ge=1, le=100),
+    search: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        org_id = await get_valid_org_id(db, current_user)
+        query = select(Contact).where(Contact.organization_id == org_id)
+
+        if search:
+            query = query.where(
+                (Contact.name.ilike(f"%{search}%")) |
+                (Contact.email.ilike(f"%{search}%")) |
+                (Contact.phone.ilike(f"%{search}%")) |
+                (Contact.position.ilike(f"%{search}%"))
+            )
+
+        offset = (page - 1) * limit
+        query = query.offset(offset).limit(limit).order_by(Contact.created_at.desc())
+
+        result = await db.execute(query)
+        contacts = result.scalars().all()
+
+        response_list = []
+        for c in contacts:
+            parts = c.name.split() if c.name else []
+            f_name = parts[0] if parts else ""
+            l_name = " ".join(parts[1:]) if len(parts) > 1 else ""
+
+            response_list.append(
+                ContactResponse(
+                    id=c.id,
+                    name=c.name or "",
+                    first_name=f_name,
+                    last_name=l_name,
+                    email=c.email or "",
+                    phone=c.phone,
+                    position=c.position,
+                    company_id=c.company_id,
+                    created_at=str(c.created_at) if c.created_at else None,
+                )
+            )
+
+        return response_list
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch contacts: {str(e)}",
+        )
+
 @router.post(
     "",
     response_model=ContactResponse,
