@@ -2,6 +2,8 @@ from fastapi import APIRouter, HTTPException, status, Query, Depends
 from typing import List, Optional
 from datetime import datetime, date
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import get_valid_org_id, get_current_user
 from sqlalchemy import select
 from app.database import get_db
 from app.models import Task, User
@@ -84,9 +86,10 @@ async def create_task(payload: TaskCreate, db: AsyncSession = Depends(get_db)):
     try:
         due_dt = parse_datetime(payload.due_date)
         assigned_user = await resolve_valid_user_id(db, payload.assigned_to)
+        org_id = await get_valid_org_id(db, current_user)
 
         t = Task(
-            organization_id="org-1",
+            organization_id=org_id,
             title=payload.title,
             description=payload.description,
             priority=payload.priority or "Medium",
