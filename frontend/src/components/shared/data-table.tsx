@@ -378,7 +378,7 @@ export function DataTable<TItem>({
   }
 
   return (
-    <div className={cn(!transparent && 'rounded-card border border-[#E5E7EB] bg-white shadow-saas-sm overflow-hidden', className)}>
+    <div className={cn(!transparent && 'rounded-card border border-[#E5E7EB] bg-white shadow-saas-sm relative', className)}>
       {hasToolbar && (
         <DataTableToolbar
           searchValue={searchValue}

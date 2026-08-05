@@ -1,31 +1,26 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   CheckSquare,
   Calendar,
   AlertCircle,
   UserCheck,
   Plus,
-  Search,
   Filter,
+  RotateCcw,
   Download,
   Upload,
   Clock,
   CheckCircle2,
   Trash2,
   Edit,
-  MoreVertical,
-  LayoutGrid,
-  List,
-  Bell,
   ListTodo,
   X,
   Loader2,
-  UserPlus,
   CornerDownRight,
-  Sparkles,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Bell
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/shared/data-table';
 import { ConfirmModal } from '@/components/shared/confirm-modal';
@@ -33,7 +28,6 @@ import {
   useTasksQuery,
   useOverdueTasksQuery,
   useTodayTasksQuery,
-  useBoardTasksQuery,
   useCreateTaskMutation,
   useUpdateTaskMutation,
   useDeleteTaskMutation,
@@ -52,16 +46,16 @@ import {
   TaskUpdatePayload
 } from '@/lib/api/tasks';
 
-type ViewMode = 'table' | 'board' | 'overdue' | 'today';
-
 export default function TasksPage() {
-  const [viewMode, setViewMode] = useState<ViewMode>('table');
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [priorityFilter, setPriorityFilter] = useState<string>('');
   const [page, setPage] = useState(1);
   const limit = 15;
+
+  // Filter Popover State
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
 
   // Selection for bulk actions
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -94,7 +88,7 @@ export default function TasksPage() {
   const [importFile, setImportFile] = useState<File | null>(null);
   const [isImporting, setIsImporting] = useState(false);
 
-  // Debounce search
+  // Debounce search input
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedSearchTerm(searchTerm);
@@ -103,7 +97,12 @@ export default function TasksPage() {
     return () => clearTimeout(handler);
   }, [searchTerm]);
 
-  // Query Hooks
+  // Reset page when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [statusFilter, priorityFilter]);
+
+  // Query Hooks - connected to API with search, status, and priority query params
   const { data: tasks = [], isLoading: isTasksLoading, refetch: refetchTasks } = useTasksQuery({
     page,
     limit,
@@ -112,9 +111,8 @@ export default function TasksPage() {
     priority: priorityFilter || undefined,
   });
 
-  const { data: overdueTasks = [], isLoading: isOverdueLoading } = useOverdueTasksQuery();
-  const { data: todayTasks = [], isLoading: isTodayLoading } = useTodayTasksQuery();
-  const { data: boardData = {}, isLoading: isBoardLoading, refetch: refetchBoard } = useBoardTasksQuery();
+  const { data: overdueTasks = [] } = useOverdueTasksQuery();
+  const { data: todayTasks = [] } = useTodayTasksQuery();
   const { data: subtasks = [], refetch: refetchSubtasks } = useSubtasksQuery(detailTask?.id || '');
 
   // Mutation Hooks
@@ -311,18 +309,13 @@ export default function TasksPage() {
     }
   };
 
-  // Displayed tasks according to active view tab
-  const displayedTasks = useMemo(() => {
-    if (viewMode === 'overdue') return overdueTasks;
-    if (viewMode === 'today') return todayTasks;
-    return tasks;
-  }, [viewMode, tasks, overdueTasks, todayTasks]);
+  const activeFilterCount = (statusFilter ? 1 : 0) + (priorityFilter ? 1 : 0);
 
   // Table Columns Definition
   const columns: DataTableColumn<TaskItem>[] = [
     {
       id: 'title',
-      header: 'Task Title',
+      header: 'TASK TITLE',
       cell: (item) => (
         <div className="flex items-center gap-3">
           <button
@@ -360,7 +353,7 @@ export default function TasksPage() {
     },
     {
       id: 'status',
-      header: 'Status',
+      header: 'STATUS',
       cell: (item) => {
         const s = item.status || 'Pending';
         const badgeStyle =
@@ -370,7 +363,7 @@ export default function TasksPage() {
             ? 'bg-amber-100 text-amber-800 border-amber-200'
             : 'bg-indigo-50 text-indigo-700 border-indigo-200';
         return (
-          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border ${badgeStyle}`}>
+          <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${badgeStyle}`}>
             <span className={`w-1.5 h-1.5 rounded-full ${s === 'Completed' ? 'bg-emerald-500' : s === 'In Progress' ? 'bg-amber-500' : 'bg-indigo-500'}`}></span>
             {s}
           </span>
@@ -379,7 +372,7 @@ export default function TasksPage() {
     },
     {
       id: 'priority',
-      header: 'Priority',
+      header: 'PRIORITY',
       cell: (item) => {
         const p = item.priority || 'Low';
         const badgeColor =
@@ -389,7 +382,7 @@ export default function TasksPage() {
             ? 'bg-amber-100 text-amber-700 border-amber-200'
             : 'bg-slate-100 text-slate-700 border-slate-200';
         return (
-          <span className={`px-2 py-0.5 rounded-md text-xs font-semibold border ${badgeColor}`}>
+          <span className={`px-2.5 py-0.5 rounded-md text-xs font-semibold border ${badgeColor}`}>
             {p}
           </span>
         );
@@ -397,7 +390,7 @@ export default function TasksPage() {
     },
     {
       id: 'due_date',
-      header: 'Due Date',
+      header: 'DUE DATE',
       cell: (item) => (
         <div className="flex items-center gap-1.5 text-slate-700 text-xs font-medium">
           <Calendar className="w-3.5 h-3.5 text-slate-400" />
@@ -407,17 +400,17 @@ export default function TasksPage() {
     },
     {
       id: 'assigned_to',
-      header: 'Assigned To',
+      header: 'ASSIGNED TO',
       cell: (item) => (
         <div className="flex items-center gap-1.5 text-slate-700 text-xs font-medium">
           <UserCheck className="w-3.5 h-3.5 text-slate-400" />
-          <span>{item.assigned_to || 'Unassigned'}</span>
+          <span className="truncate max-w-[160px]">{item.assigned_to || 'Unassigned'}</span>
         </div>
       ),
     },
     {
       id: 'actions',
-      header: 'Actions',
+      header: 'ACTIONS',
       cell: (item) => (
         <div className="flex items-center gap-2">
           <button
@@ -448,6 +441,81 @@ export default function TasksPage() {
       ),
     },
   ];
+
+  // Combined Single Filter Popover Button Element inside DataTable Header Toolbar (Right Side)
+  const singleFilterPopover = (
+    <div className="relative inline-block">
+      <button
+        type="button"
+        onClick={() => setIsFilterOpen(!isFilterOpen)}
+        className={`h-9 px-3 py-1 rounded-lg border text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer transition-colors ${
+          activeFilterCount > 0
+            ? 'bg-indigo-50 border-indigo-300 text-indigo-700 font-semibold'
+            : 'bg-slate-50 hover:bg-slate-100 border-slate-300 text-slate-900'
+        }`}
+      >
+        <Filter className="h-3.5 w-3.5 text-slate-500" />
+        <span>Filter</span>
+        {activeFilterCount > 0 && (
+          <span className="w-4.5 h-4.5 rounded-full bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center">
+            {activeFilterCount}
+          </span>
+        )}
+      </button>
+
+      {/* Popover Dropdown Menu Right-aligned over the table */}
+      {isFilterOpen && (
+        <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-2xl border border-slate-200 p-4 z-50 space-y-4 animate-in fade-in zoom-in-95 duration-100">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600">Filter Tasks</h4>
+            {activeFilterCount > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusFilter('');
+                  setPriorityFilter('');
+                }}
+                className="text-xs text-indigo-600 hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+              >
+                <RotateCcw className="w-3 h-3" />
+                Reset
+              </button>
+            )}
+          </div>
+
+          {/* Status Dropdown */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">Status</label>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-300 text-slate-800 text-xs rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="">All Statuses</option>
+              <option value="Pending">Pending</option>
+              <option value="In Progress">In Progress</option>
+              <option value="Completed">Completed</option>
+            </select>
+          </div>
+
+          {/* Priority Dropdown */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">Priority</label>
+            <select
+              value={priorityFilter}
+              onChange={(e) => setPriorityFilter(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-300 text-slate-800 text-xs rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="">All Priorities</option>
+              <option value="High">High Priority</option>
+              <option value="Medium">Medium Priority</option>
+              <option value="Low">Low Priority</option>
+            </select>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="space-y-6">
@@ -517,120 +585,64 @@ export default function TasksPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Tasks</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">TOTAL TASKS</p>
             <h3 className="text-2xl font-bold text-slate-900 mt-1">{tasks.length}</h3>
           </div>
-          <div className="h-10 w-10 rounded-lg bg-indigo-50 flex items-center justify-between p-2.5 text-indigo-600">
-            <CheckSquare className="w-full h-full" />
+          <div className="h-10 w-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600">
+            <CheckSquare className="w-5 h-5" />
           </div>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Due Today</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">DUE TODAY</p>
             <h3 className="text-2xl font-bold text-amber-600 mt-1">{todayTasks.length}</h3>
           </div>
-          <div className="h-10 w-10 rounded-lg bg-amber-50 flex items-center justify-between p-2.5 text-amber-600">
-            <Clock className="w-full h-full" />
+          <div className="h-10 w-10 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600">
+            <Clock className="w-5 h-5" />
           </div>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Overdue Tasks</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">OVERDUE TASKS</p>
             <h3 className="text-2xl font-bold text-rose-600 mt-1">{overdueTasks.length}</h3>
           </div>
-          <div className="h-10 w-10 rounded-lg bg-rose-50 flex items-center justify-between p-2.5 text-rose-600">
-            <AlertCircle className="w-full h-full" />
+          <div className="h-10 w-10 rounded-lg bg-rose-50 flex items-center justify-center text-rose-600">
+            <AlertCircle className="w-5 h-5" />
           </div>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Completed</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">COMPLETED</p>
             <h3 className="text-2xl font-bold text-emerald-600 mt-1">
               {tasks.filter((t) => t.status === 'Completed').length}
             </h3>
           </div>
-          <div className="h-10 w-10 rounded-lg bg-emerald-50 flex items-center justify-between p-2.5 text-emerald-600">
-            <CheckCircle2 className="w-full h-full" />
+          <div className="h-10 w-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
+            <CheckCircle2 className="w-5 h-5" />
           </div>
         </div>
       </div>
 
-      {/* Filter and View Toggles */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-4">
-        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-          {/* Navigation View Tabs */}
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
-            <button
-              onClick={() => setViewMode('table')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
-                viewMode === 'table' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <List className="w-3.5 h-3.5" />
-              All Tasks Table
-            </button>
-
-            <button
-              onClick={() => setViewMode('board')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
-                viewMode === 'board' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <LayoutGrid className="w-3.5 h-3.5" />
-              Kanban Board
-            </button>
-
-            <button
-              onClick={() => setViewMode('today')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
-                viewMode === 'today' ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Clock className="w-3.5 h-3.5 text-amber-500" />
-              Due Today ({todayTasks.length})
-            </button>
-
-            <button
-              onClick={() => setViewMode('overdue')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
-                viewMode === 'overdue' ? 'bg-white text-rose-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <AlertCircle className="w-3.5 h-3.5 text-rose-500" />
-              Overdue ({overdueTasks.length})
-            </button>
-          </div>
-
-          {/* Filters & Actions */}
-          <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
-            {/* Status Filter */}
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="bg-slate-50 border border-slate-300 text-slate-700 text-xs rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 outline-none"
-            >
-              <option value="">All Statuses</option>
-              <option value="Pending">Pending</option>
-              <option value="In Progress">In Progress</option>
-              <option value="Completed">Completed</option>
-            </select>
-
-            {/* Priority Filter */}
-            <select
-              value={priorityFilter}
-              onChange={(e) => setPriorityFilter(e.target.value)}
-              className="bg-slate-50 border border-slate-300 text-slate-700 text-xs rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 outline-none"
-            >
-              <option value="">All Priorities</option>
-              <option value="High">High Priority</option>
-              <option value="Medium">Medium Priority</option>
-              <option value="Low">Low Priority</option>
-            </select>
-
-            {/* Bulk Actions */}
+      {/* Main Data Table with Filter Button on the Right Side */}
+      <DataTable<TaskItem>
+        columns={columns}
+        data={tasks}
+        getRowKey={(item) => item.id}
+        emptyTitle="No tasks found"
+        emptyDescription="Try clearing search or filter parameters to view tasks."
+        searchValue={searchTerm}
+        onSearchChange={setSearchTerm}
+        searchPlaceholder="Search task title..."
+        hasActiveFilters={activeFilterCount > 0}
+        onClearFilters={() => {
+          setStatusFilter('');
+          setPriorityFilter('');
+        }}
+        toolbarActions={
+          <div className="flex items-center gap-2">
             {selectedIds.size > 0 && (
               <div className="flex items-center gap-2 bg-indigo-50 px-3 py-1 rounded-lg border border-indigo-200">
                 <span className="text-xs font-semibold text-indigo-700">{selectedIds.size} selected</span>
@@ -648,131 +660,17 @@ export default function TasksPage() {
                 </button>
               </div>
             )}
+            {singleFilterPopover}
           </div>
-        </div>
-      </div>
-
-      {/* Main View Area */}
-      {viewMode === 'board' ? (
-        /* Kanban Board View */
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {(['Pending', 'In Progress', 'Completed'] as const).map((colStatus) => {
-            const colItems =
-              boardData[colStatus] ||
-              displayedTasks.filter((t) => (t.status || 'Pending') === colStatus);
-
-            const colBg =
-              colStatus === 'Completed'
-                ? 'bg-emerald-50/50 border-emerald-200'
-                : colStatus === 'In Progress'
-                ? 'bg-amber-50/50 border-amber-200'
-                : 'bg-slate-50/80 border-slate-200';
-
-            const headerColor =
-              colStatus === 'Completed'
-                ? 'text-emerald-700'
-                : colStatus === 'In Progress'
-                ? 'text-amber-700'
-                : 'text-slate-700';
-
-            return (
-              <div key={colStatus} className={`rounded-xl border p-4 ${colBg} space-y-3`}>
-                <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-                  <h3 className={`font-bold text-sm flex items-center gap-2 ${headerColor}`}>
-                    <span>{colStatus}</span>
-                    <span className="bg-white px-2 py-0.5 rounded-full text-xs font-semibold shadow-xs">
-                      {colItems.length}
-                    </span>
-                  </h3>
-                </div>
-
-                <div className="space-y-3">
-                  {colItems.length === 0 ? (
-                    <div className="text-center py-8 text-slate-400 text-xs">No tasks in {colStatus}</div>
-                  ) : (
-                    colItems.map((item: any) => (
-                      <div
-                        key={item.id}
-                        onClick={() => {
-                          const fullTask = tasks.find((t) => t.id === item.id) || item;
-                          setDetailTask(fullTask);
-                          setAssignUserInput(fullTask.assigned_to || '');
-                        }}
-                        className="bg-white p-3.5 rounded-lg border border-slate-200 shadow-xs hover:shadow-md transition-shadow cursor-pointer space-y-2.5"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <h4 className="font-semibold text-sm text-slate-900">{item.title}</h4>
-                          {item.priority && (
-                            <span
-                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                item.priority === 'High'
-                                  ? 'bg-rose-100 text-rose-700'
-                                  : item.priority === 'Medium'
-                                  ? 'bg-amber-100 text-amber-700'
-                                  : 'bg-slate-100 text-slate-700'
-                              }`}
-                            >
-                              {item.priority}
-                            </span>
-                          )}
-                        </div>
-
-                        {item.due_date && (
-                          <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                            <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                            <span>{item.due_date.substring(0, 10)}</span>
-                          </div>
-                        )}
-
-                        <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs text-slate-500">
-                          <div className="flex items-center gap-1">
-                            <UserCheck className="w-3 h-3 text-slate-400" />
-                            <span className="truncate max-w-[120px]">{item.assigned_to || 'Unassigned'}</span>
-                          </div>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleToggleComplete(item);
-                            }}
-                            className="text-xs text-indigo-600 hover:underline font-medium"
-                          >
-                            {colStatus === 'Completed' ? 'Reopen' : 'Complete'}
-                          </button>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        /* Data Table View */
-        <DataTable<TaskItem>
-          columns={columns}
-          data={displayedTasks}
-          getRowKey={(item) => item.id}
-          emptyTitle={
-            viewMode === 'overdue'
-              ? 'No overdue tasks!'
-              : viewMode === 'today'
-              ? 'No tasks due today!'
-              : 'No tasks found'
-          }
-          emptyDescription="Try clearing search filters or create a new task."
-          searchValue={searchTerm}
-          onSearchChange={setSearchTerm}
-          searchPlaceholder="Search task title..."
-          isLoading={isTasksLoading || isOverdueLoading || isTodayLoading}
-          pagination={{
-            pageIndex: page - 1,
-            pageCount: displayedTasks.length >= limit ? page + 1 : page,
-            onPageChange: (p) => setPage(p + 1),
-            totalRecords: (page - 1) * limit + displayedTasks.length,
-          }}
-        />
-      )}
+        }
+        isLoading={isTasksLoading}
+        pagination={{
+          pageIndex: page - 1,
+          pageCount: tasks.length >= limit ? page + 1 : page,
+          onPageChange: (p) => setPage(p + 1),
+          totalRecords: (page - 1) * limit + tasks.length,
+        }}
+      />
 
       {/* Create / Edit Task Modal */}
       {isCreateModalOpen && (
@@ -888,7 +786,7 @@ export default function TasksPage() {
                     setIsCreateModalOpen(false);
                     resetForm();
                   }}
-                  className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800"
+                  className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -908,7 +806,7 @@ export default function TasksPage() {
         </div>
       )}
 
-      {/* Task Details, Subtasks & Reminders Slide-over / Modal */}
+      {/* Task Details & Subtasks Slide-over / Modal */}
       {detailTask && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-6 max-h-[90vh] overflow-y-auto">
@@ -922,7 +820,6 @@ export default function TasksPage() {
               </button>
             </div>
 
-            {/* Task Info Summary */}
             <div className="grid grid-cols-3 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs">
               <div>
                 <span className="text-slate-400 font-medium block">Status</span>
@@ -984,7 +881,6 @@ export default function TasksPage() {
 
             {/* Assign User & Reminder Controls */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-slate-100">
-              {/* Assignee Form */}
               <form onSubmit={handleAssignTaskSubmit} className="space-y-2">
                 <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider">
                   Assign User
@@ -1006,7 +902,6 @@ export default function TasksPage() {
                 </div>
               </form>
 
-              {/* Set Reminder Form */}
               <form onSubmit={handleSetReminderSubmit} className="space-y-2">
                 <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1">
                   <Bell className="w-3.5 h-3.5 text-amber-500" />
@@ -1062,7 +957,7 @@ export default function TasksPage() {
                 <button
                   type="button"
                   onClick={() => setIsImportModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600"
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 cursor-pointer"
                 >
                   Cancel
                 </button>
