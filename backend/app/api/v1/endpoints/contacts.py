@@ -228,10 +228,29 @@ async def update_contact(contact_id: str, payload: ContactUpdate, db: AsyncSessi
     if not c:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Contact '{contact_id}' not found")
     try:
-        if payload.name: c.name = payload.name
-        if payload.email: c.email = payload.email
-        if payload.phone: c.phone = payload.phone
+        raw_name = getattr(payload, "name", None)
+        f_name = getattr(payload, "first_name", None)
+        l_name = getattr(payload, "last_name", None)
+
+        if raw_name:
+            c.name = raw_name.strip()
+        elif f_name or l_name:
+            c.name = f"{f_name or ''} {l_name or ''}".strip()
+
+        if payload.email:
+            c.email = payload.email
+        if payload.phone is not None:
+            c.phone = payload.phone
+        if payload.company_id is not None:
+            c.company_id = payload.company_id
+
+        pos = getattr(payload, "position", None) or getattr(payload, "job_title", None)
+        if pos is not None:
+            c.position = pos
+
         await db.commit()
+        await db.refresh(c)
+
         parts = c.name.split() if c.name else []
         is_starred = bool(getattr(c, 'is_starred', False))
         return {

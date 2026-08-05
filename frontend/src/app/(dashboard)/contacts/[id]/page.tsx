@@ -55,10 +55,14 @@ export default function ContactDetailsPage() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
+  const [formFirstName, setFormFirstName] = useState('');
+  const [formLastName, setFormLastName] = useState('');
   const [formName, setFormName] = useState('');
   const [formEmail, setFormEmail] = useState('');
   const [formPhone, setFormPhone] = useState('');
+  const [formCompanyId, setFormCompanyId] = useState('');
   const [formPosition, setFormPosition] = useState('');
+  const [formJobTitle, setFormJobTitle] = useState('');
 
   // Add Note Form State
   const [newNoteContent, setNewNoteContent] = useState('');
@@ -118,10 +122,15 @@ export default function ContactDetailsPage() {
 
   const openEditModal = () => {
     if (contact) {
+      const parts = contact.name ? contact.name.split(' ') : [];
+      setFormFirstName(parts[0] || '');
+      setFormLastName(parts.slice(1).join(' ') || '');
       setFormName(contact.name || '');
       setFormEmail(contact.email || '');
       setFormPhone(contact.phone || '');
+      setFormCompanyId(contact.company_id || '');
       setFormPosition(contact.position || '');
+      setFormJobTitle(contact.position || '');
       setIsEditModalOpen(true);
     }
   };
@@ -130,13 +139,18 @@ export default function ContactDetailsPage() {
     e.preventDefault();
     try {
       setErrorMessage(null);
+      const displayName = formName || `${formFirstName} ${formLastName}`.trim() || 'Contact';
       await updateContactMutation.mutateAsync({
         id: contactId,
         data: {
-          name: formName,
+          first_name: formFirstName || undefined,
+          last_name: formLastName || undefined,
+          name: displayName,
           email: formEmail,
           phone: formPhone || undefined,
+          company_id: formCompanyId || undefined,
           position: formPosition || undefined,
+          job_title: formJobTitle || formPosition || undefined,
         },
       });
       setSuccessMessage('Contact updated successfully.');
@@ -500,6 +514,27 @@ export default function ContactDetailsPage() {
             </div>
 
             <form onSubmit={handleEditSubmit} className="space-y-4 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="font-semibold text-slate-700">First Name</Label>
+                  <Input
+                    type="text"
+                    value={formFirstName}
+                    onChange={(e) => setFormFirstName(e.target.value)}
+                    className="h-9 text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="font-semibold text-slate-700">Last Name</Label>
+                  <Input
+                    type="text"
+                    value={formLastName}
+                    onChange={(e) => setFormLastName(e.target.value)}
+                    className="h-9 text-xs"
+                  />
+                </div>
+              </div>
+
               <div className="space-y-1">
                 <Label className="font-semibold text-slate-700">Full Name</Label>
                 <Input
@@ -510,34 +545,76 @@ export default function ContactDetailsPage() {
                 />
               </div>
 
-              <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Email Address</Label>
-                <Input
-                  type="text"
-                  value={formEmail}
-                  onChange={(e) => setFormEmail(e.target.value)}
-                  className="h-9 text-xs"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="font-semibold text-slate-700">Email Address</Label>
+                  <Input
+                    type="text"
+                    value={formEmail}
+                    onChange={(e) => setFormEmail(e.target.value)}
+                    className="h-9 text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="font-semibold text-slate-700">Phone Number</Label>
+                  <Input
+                    type="text"
+                    value={formPhone}
+                    onChange={(e) => setFormPhone(e.target.value)}
+                    className="h-9 text-xs"
+                  />
+                </div>
               </div>
 
-              <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Phone Number</Label>
-                <Input
-                  type="text"
-                  value={formPhone}
-                  onChange={(e) => setFormPhone(e.target.value)}
-                  className="h-9 text-xs"
-                />
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label className="font-semibold text-slate-700">Company (API Dropdown)</Label>
+                  <span className="text-[10px] text-slate-400 font-normal">Select from DB or type ID</span>
+                </div>
+
+                <div className="space-y-1.5">
+                  <select
+                    value={formCompanyId}
+                    onChange={(e) => setFormCompanyId(e.target.value)}
+                    className="w-full h-9 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                  >
+                    <option value="">-- Select Company from API --</option>
+                    {companiesList.map((comp) => (
+                      <option key={comp.id} value={comp.id}>
+                        {comp.name} {comp.domain || comp.website ? `(${comp.domain || comp.website})` : ''} - ID: {comp.id}
+                      </option>
+                    ))}
+                  </select>
+
+                  <Input
+                    type="text"
+                    placeholder="e.g. a7fadfb4-3743-43f7-b8ce-05bde3f7552"
+                    value={formCompanyId}
+                    onChange={(e) => setFormCompanyId(e.target.value)}
+                    className="h-8 text-[11px] bg-slate-50"
+                  />
+                </div>
               </div>
 
-              <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Position / Job Title</Label>
-                <Input
-                  type="text"
-                  value={formPosition}
-                  onChange={(e) => setFormPosition(e.target.value)}
-                  className="h-9 text-xs"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="font-semibold text-slate-700">Position</Label>
+                  <Input
+                    type="text"
+                    value={formPosition}
+                    onChange={(e) => setFormPosition(e.target.value)}
+                    className="h-9 text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="font-semibold text-slate-700">Job Title</Label>
+                  <Input
+                    type="text"
+                    value={formJobTitle}
+                    onChange={(e) => setFormJobTitle(e.target.value)}
+                    className="h-9 text-xs"
+                  />
+                </div>
               </div>
 
               <div className="flex justify-end gap-2 pt-2">

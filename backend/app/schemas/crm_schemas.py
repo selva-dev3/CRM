@@ -289,7 +289,7 @@ class ContactBase(BaseModel):
     first_name: Optional[str] = ""
     last_name: Optional[str] = ""
     name: Optional[str] = ""
-    email: EmailStr
+    email: Optional[str] = ""
     phone: Optional[str] = None
     company_id: Optional[str] = None
     position: Optional[str] = None
@@ -298,13 +298,8 @@ class ContactBase(BaseModel):
 class ContactCreate(ContactBase):
     pass
 
-class ContactUpdate(BaseModel):
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
-    name: Optional[str] = None
-    email: Optional[EmailStr] = None
-    phone: Optional[str] = None
-    position: Optional[str] = None
+class ContactUpdate(ContactBase):
+    pass
 
 class ContactResponse(BaseModel):
     id: str
