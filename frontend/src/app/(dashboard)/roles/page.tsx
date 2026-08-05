@@ -42,7 +42,8 @@ import {
   useCreatePermissionMutation,
   useBatchImportPermissionsMutation,
   exportRolesApi,
-  RoleItem
+  RoleItem,
+  PermissionItem
 } from '@/lib/api/roles';
 
 export default function RolesPage() {
@@ -273,13 +274,59 @@ export default function RolesPage() {
     }
   };
 
-  const togglePermissionSelection = (permId: string) => {
+  const togglePermissionSelection = (perm: PermissionItem) => {
     const next = new Set(selectedPerms);
-    if (next.has(permId)) {
-      next.delete(permId);
+    const isSelected = next.has(perm.id) || (perm.key ? next.has(perm.key) : false);
+    if (isSelected) {
+      if (perm.id) next.delete(perm.id);
+      if (perm.key) next.delete(perm.key);
     } else {
-      next.add(permId);
+      if (perm.key) next.add(perm.key);
+      else if (perm.id) next.add(perm.id);
     }
+    setSelectedPerms(next);
+  };
+
+  const groupedPermissions = React.useMemo(() => {
+    const map: Record<string, PermissionItem[]> = {};
+    permissionMatrix.forEach((p) => {
+      const cat = p.category || p.module || 'General';
+      if (!map[cat]) map[cat] = [];
+      map[cat].push(p);
+    });
+    return map;
+  }, [permissionMatrix]);
+
+  const toggleModulePermissions = (category: string) => {
+    const items = groupedPermissions[category] || [];
+    const next = new Set(selectedPerms);
+    const allSelected = items.every((item) => next.has(item.id) || (item.key && next.has(item.key)));
+
+    items.forEach((item) => {
+      if (allSelected) {
+        if (item.id) next.delete(item.id);
+        if (item.key) next.delete(item.key);
+      } else {
+        if (item.key) next.add(item.key);
+        else if (item.id) next.add(item.id);
+      }
+    });
+    setSelectedPerms(next);
+  };
+
+  const toggleAllMatrixPermissions = () => {
+    const next = new Set(selectedPerms);
+    const allSelected = permissionMatrix.length > 0 && permissionMatrix.every((p) => next.has(p.id) || (p.key && next.has(p.key)));
+
+    permissionMatrix.forEach((p) => {
+      if (allSelected) {
+        if (p.id) next.delete(p.id);
+        if (p.key) next.delete(p.key);
+      } else {
+        if (p.key) next.add(p.key);
+        else if (p.id) next.add(p.id);
+      }
+    });
     setSelectedPerms(next);
   };
 
@@ -618,24 +665,94 @@ export default function RolesPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">
-                  System Permissions Matrix
-                </label>
-                <div className="max-h-48 overflow-y-auto space-y-2 pr-1 border border-slate-200 rounded-xl p-3 bg-slate-50/50">
-                  {permissionMatrix.map((p) => (
-                    <label key={p.id} className="flex items-center justify-between p-2 bg-white rounded-lg border border-slate-200 cursor-pointer">
-                      <div>
-                        <span className="text-xs font-bold text-slate-900 block">{p.module}: {p.action}</span>
-                        <span className="text-[11px] text-slate-500 block">{p.description}</span>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={selectedPerms.has(p.id)}
-                        onChange={() => togglePermissionSelection(p.id)}
-                        className="h-4 w-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
-                      />
-                    </label>
-                  ))}
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600">
+                    System Permissions Matrix ({permissionMatrix.length} Actions)
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[11px] text-indigo-600 font-semibold">{selectedPerms.size} Selected</span>
+                    <button
+                      type="button"
+                      onClick={toggleAllMatrixPermissions}
+                      className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer underline"
+                    >
+                      {permissionMatrix.length > 0 && permissionMatrix.every((p) => selectedPerms.has(p.id) || (p.key && selectedPerms.has(p.key)))
+                        ? 'Deselect All Actions'
+                        : 'Select All Actions'}
+                    </button>
+                  </div>
+                </div>
+                <div className="max-h-72 overflow-y-auto space-y-4 pr-1 border border-slate-200 rounded-xl p-3 bg-slate-50/50">
+                  {Object.keys(groupedPermissions).length === 0 ? (
+                    <div className="text-center text-xs text-slate-400 py-4">No permissions available</div>
+                  ) : (
+                    Object.entries(groupedPermissions).map(([category, items]) => {
+                      const allSelected = items.every((i) => selectedPerms.has(i.id) || (i.key && selectedPerms.has(i.key)));
+                      const someSelected = items.some((i) => selectedPerms.has(i.id) || (i.key && selectedPerms.has(i.key)));
+
+                      return (
+                        <div key={category} className="space-y-2 bg-white p-3 rounded-xl border border-slate-200">
+                          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                            <label className="flex items-center gap-2 cursor-pointer select-none">
+                              <input
+                                type="checkbox"
+                                checked={allSelected}
+                                ref={(el) => {
+                                  if (el) el.indeterminate = someSelected && !allSelected;
+                                }}
+                                onChange={() => toggleModulePermissions(category)}
+                                className="h-4 w-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
+                              />
+                              <span className="px-2.5 py-0.5 bg-indigo-50 text-indigo-700 font-bold rounded-md text-xs border border-indigo-100">
+                                {category}
+                              </span>
+                              <span className="text-[11px] font-semibold text-slate-400">({items.length} permissions)</span>
+                            </label>
+
+                            <button
+                              type="button"
+                              onClick={() => toggleModulePermissions(category)}
+                              className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer"
+                            >
+                              {allSelected ? 'Deselect All' : 'Select All'}
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                            {items.map((p) => {
+                              const isChecked = selectedPerms.has(p.id) || (p.key ? selectedPerms.has(p.key) : false);
+                              return (
+                                <label
+                                  key={p.id}
+                                  className={`flex items-start justify-between p-2 rounded-lg border cursor-pointer transition-colors ${
+                                    isChecked ? 'bg-indigo-50/50 border-indigo-200' : 'bg-slate-50/50 border-slate-200 hover:bg-slate-100/50'
+                                  }`}
+                                >
+                                  <div className="space-y-0.5 pr-2">
+                                    <span className="text-xs font-bold text-slate-900 block leading-tight">
+                                      {p.name || p.key || 'Permission'}
+                                    </span>
+                                    {p.key && <span className="text-[10px] font-mono text-slate-500 block">{p.key}</span>}
+                                    {p.description && (
+                                      <span className="text-[10px] text-slate-400 block truncate max-w-[180px]">
+                                        {p.description}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => togglePermissionSelection(p)}
+                                    className="h-4 w-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 mt-0.5 shrink-0"
+                                  />
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               </div>
 

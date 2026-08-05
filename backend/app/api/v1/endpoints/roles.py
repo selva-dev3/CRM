@@ -57,9 +57,9 @@ async def get_permission_matrix(db: AsyncSession = Depends(get_db)):
             return [
                 {
                     "id": p.id,
-                    "key": getattr(p, "key", "perm:read"),
-                    "name": getattr(p, "name", "Permission"),
-                    "category": getattr(p, "category", "General"),
+                    "key": getattr(p, "key", None) or f"perm:{p.id}",
+                    "name": getattr(p, "name", None) or p.description or "Permission",
+                    "category": getattr(p, "category", None) or getattr(p, "module", None) or "General",
                     "description": p.description or ""
                 } for p in perms
             ]

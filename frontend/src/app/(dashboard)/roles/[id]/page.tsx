@@ -272,24 +272,45 @@ export default function RoleDetailPage() {
             <div className="space-y-4 pt-4 border-t border-slate-100">
               <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
                 <KeyRound className="w-4 h-4 text-indigo-600" />
-                Assigned Permissions Scope
+                Assigned Permissions Scope ({permissionMatrix.length} Total System Actions)
               </h3>
 
-              <div className="space-y-2">
-                {permissionMatrix.map((perm) => (
-                  <div key={perm.id} className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
-                    <div>
-                      <span className="text-xs font-bold text-slate-900 block">{perm.module}: {perm.action}</span>
-                      <span className="text-[11px] text-slate-500 block">{perm.description}</span>
+              <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1">
+                {Object.entries(
+                  permissionMatrix.reduce<Record<string, typeof permissionMatrix>>((acc, perm) => {
+                    const cat = perm.category || perm.module || 'General';
+                    if (!acc[cat]) acc[cat] = [];
+                    acc[cat].push(perm);
+                    return acc;
+                  }, {})
+                ).map(([category, items]) => (
+                  <div key={category} className="space-y-2 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                    <div className="flex items-center gap-2 pb-1 border-b border-slate-200/60">
+                      <span className="px-2.5 py-0.5 bg-indigo-100 text-indigo-800 font-bold rounded-md text-xs border border-indigo-200">
+                        {category}
+                      </span>
+                      <span className="text-[11px] font-semibold text-slate-400">({items.length})</span>
                     </div>
 
-                    <button
-                      onClick={() => handleRemovePermission(perm.id)}
-                      title="Remove permission from role"
-                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
-                    >
-                      <MinusCircle className="w-4 h-4" />
-                    </button>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                      {items.map((perm) => (
+                        <div key={perm.id} className="p-2.5 bg-white border border-slate-200 rounded-xl flex items-start justify-between gap-2 shadow-2xs">
+                          <div className="space-y-0.5">
+                            <span className="text-xs font-bold text-slate-900 block leading-tight">{perm.name || perm.key}</span>
+                            {perm.key && <span className="text-[10px] font-mono text-slate-500 block">{perm.key}</span>}
+                            {perm.description && <span className="text-[10px] text-slate-400 block truncate max-w-[170px]">{perm.description}</span>}
+                          </div>
+
+                          <button
+                            onClick={() => handleRemovePermission(perm.id)}
+                            title="Remove permission from role"
+                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md cursor-pointer shrink-0 mt-0.5"
+                          >
+                            <MinusCircle className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ))}
               </div>
