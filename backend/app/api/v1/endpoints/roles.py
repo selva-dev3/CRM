@@ -1,23 +1,41 @@
 from fastapi import APIRouter, HTTPException, status, Query, Depends
 from typing import List, Optional
 from datetime import datetime
+import json
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
 from app.models import Role, Permission, User, RolePermission, UserRole, SystemSetting
 from app.schemas.crm_schemas import (
-    RoleResponse, RoleCreate, RoleUpdate, PermissionItem, PermissionCreate, MessageResponse, BulkDeleteRequest, BulkActionResponse
+    RoleResponse, RoleCreate, RoleUpdate, PermissionItem, PermissionCreate, MessageResponse, BulkDeleteRequest, BulkActionResponse, SetDefaultRolesRequest
 )
 
 router = APIRouter()
 
+async def get_default_role_ids(db: AsyncSession) -> set:
+    try:
+        s_res = await db.execute(select(SystemSetting).where(SystemSetting.key == "default_registration_roles"))
+        setting = s_res.scalars().first()
+        if setting and setting.value:
+            try:
+                val = json.loads(setting.value)
+                if isinstance(val, list):
+                    return set(val)
+            except Exception:
+                return set([s.strip() for s in setting.value.split(",") if s.strip()])
+
+        s_legacy = await db.execute(select(SystemSetting).where(SystemSetting.key == "default_registration_role"))
+        legacy = s_legacy.scalars().first()
+        if legacy and legacy.value:
+            return {legacy.value}
+    except Exception:
+        pass
+    return set()
+
 @router.get("", response_model=List[RoleResponse], summary="List all organization roles")
 async def list_roles(db: AsyncSession = Depends(get_db)):
     try:
-        # Check SystemSetting for current default registration role
-        s_res = await db.execute(select(SystemSetting).where(SystemSetting.key == "default_registration_role"))
-        setting = s_res.scalars().first()
-        default_role_id = setting.value if setting else None
+        default_ids = await get_default_role_ids(db)
 
         res = await db.execute(select(Role).limit(50))
         roles = res.scalars().all()
@@ -40,7 +58,7 @@ async def list_roles(db: AsyncSession = Depends(get_db)):
                 perm_keys = getattr(r, "permissions", []) if hasattr(r, "permissions") else ["dashboard:read", "users:read", "leads:read"]
 
             # Determine type: "default" | "system" | "custom"
-            if default_role_id and (r.id == default_role_id or r.name == default_role_id):
+            if r.id in default_ids or r.name in default_ids:
                 role_type = "default"
             elif getattr(r, "is_system_role", False):
                 role_type = "system"
@@ -215,6 +233,32 @@ async def list_system_roles(db: AsyncSession = Depends(get_db)):
     return [
         {"id": "sys-manager", "name": "manager", "description": "Registration Default Role", "permissions": ["dashboard:read", "users:read", "leads:read"], "is_system_role": True, "created_at": "2026-08-05"}
     ]
+
+@router.post("/set-defaults", response_model=MessageResponse, summary="Set multiple roles as default for new registrations")
+async def set_multiple_default_roles(payload: SetDefaultRolesRequest, db: AsyncSession = Depends(get_db)):
+    try:
+        new_val = json.dumps(payload.role_ids)
+
+        s_res = await db.execute(select(SystemSetting).where(SystemSetting.key == "default_registration_roles"))
+        setting = s_res.scalars().first()
+        if setting:
+            setting.value = new_val
+        else:
+            db.add(SystemSetting(key="default_registration_roles", value=new_val, description="Default registration roles JSON array"))
+
+        if payload.role_ids:
+            legacy_res = await db.execute(select(SystemSetting).where(SystemSetting.key == "default_registration_role"))
+            legacy = legacy_res.scalars().first()
+            if legacy:
+                legacy.value = payload.role_ids[0]
+            else:
+                db.add(SystemSetting(key="default_registration_role", value=payload.role_ids[0], description="Legacy default role"))
+
+        await db.commit()
+        return {"message": f"Successfully updated default registration roles ({len(payload.role_ids)} selected)", "status": "success"}
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 @router.get("/default", response_model=RoleResponse, summary="Get default role assigned to new registrations")
 async def get_default_role(db: AsyncSession = Depends(get_db)):
@@ -668,7 +712,7 @@ async def get_role_users(role_id: str, db: AsyncSession = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
-@router.post("/{role_id}/set-default", response_model=MessageResponse, summary="Set role as default for new registrations")
+@router.post("/{role_id}/set-default", response_model=MessageResponse, summary="Toggle role as default for new registrations")
 async def set_default_role(role_id: str, db: AsyncSession = Depends(get_db)):
     try:
         res = await db.execute(select(Role).where((Role.id == role_id) | (Role.name == role_id)))
@@ -676,16 +720,45 @@ async def set_default_role(role_id: str, db: AsyncSession = Depends(get_db)):
         if not r:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Role '{role_id}' not found")
 
-        # Save default role setting in SystemSetting table
-        setting_res = await db.execute(select(SystemSetting).where(SystemSetting.key == "default_registration_role"))
+        # Save multiple default role settings in SystemSetting table as JSON list
+        setting_res = await db.execute(select(SystemSetting).where(SystemSetting.key == "default_registration_roles"))
         setting = setting_res.scalars().first()
-        if setting:
-            setting.value = r.id
+
+        current_defaults = []
+        if setting and setting.value:
+            try:
+                current_defaults = json.loads(setting.value)
+                if not isinstance(current_defaults, list):
+                    current_defaults = [str(current_defaults)]
+            except Exception:
+                current_defaults = [s.strip() for s in setting.value.split(",") if s.strip()]
+
+        target_id = r.id
+        if target_id in current_defaults:
+            current_defaults.remove(target_id)
+            msg = f"Role '{r.name}' removed from default registration roles"
         else:
-            db.add(SystemSetting(key="default_registration_role", value=r.id, description="Default registration role for new accounts"))
+            current_defaults.append(target_id)
+            msg = f"Role '{r.name}' added as default for new registrations"
+
+        new_val = json.dumps(current_defaults)
+
+        if setting:
+            setting.value = new_val
+        else:
+            db.add(SystemSetting(key="default_registration_roles", value=new_val, description="Default registration roles JSON array"))
+
+        # Sync legacy key for backwards compatibility
+        legacy_res = await db.execute(select(SystemSetting).where(SystemSetting.key == "default_registration_role"))
+        legacy_setting = legacy_res.scalars().first()
+        if current_defaults:
+            if legacy_setting:
+                legacy_setting.value = current_defaults[0]
+            else:
+                db.add(SystemSetting(key="default_registration_role", value=current_defaults[0], description="Legacy single default role"))
 
         await db.commit()
-        return {"message": f"Role '{r.name}' set as default for new registrations", "status": "success"}
+        return {"message": msg, "status": "success"}
     except HTTPException:
         raise
     except Exception as e:

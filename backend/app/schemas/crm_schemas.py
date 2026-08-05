@@ -17,6 +17,9 @@ class MessageResponse(BaseModel):
 class BulkDeleteRequest(BaseModel):
     ids: List[str]
 
+class SetDefaultRolesRequest(BaseModel):
+    role_ids: List[str]
+
 class BulkActionResponse(BaseModel):
     affected_count: int
     message: str

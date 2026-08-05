@@ -487,7 +487,7 @@ export default function RolesPage() {
               : 'bg-blue-50 text-blue-700 border-blue-200'
             }`}
         >
-          {item.is_system_role ? 'Built-in System' : 'Custom'}
+          {item.type}
         </span>
       ),
     },

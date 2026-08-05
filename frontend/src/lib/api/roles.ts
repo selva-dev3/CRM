@@ -328,6 +328,22 @@ export function useSetDefaultRoleMutation(options?: UseMutationOptions<MessageRe
   });
 }
 
+export async function setMultipleDefaultRolesApi(roleIds: string[]): Promise<MessageResponse> {
+  return apiClient.post<MessageResponse>('/roles/set-defaults', { role_ids: roleIds });
+}
+
+export function useSetMultipleDefaultRolesMutation(options?: UseMutationOptions<MessageResponse, Error, string[]>) {
+  const queryClient = useQueryClient();
+  return useMutation<MessageResponse, Error, string[]>({
+    mutationFn: setMultipleDefaultRolesApi,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['roles', 'default'] });
+      queryClient.invalidateQueries({ queryKey: ['roles'] });
+    },
+    ...options,
+  });
+}
+
 export function useImportRolesMutation(options?: UseMutationOptions<MessageResponse, Error, void>) {
   const queryClient = useQueryClient();
   return useMutation<MessageResponse, Error, void>({
