@@ -269,13 +269,18 @@ async def get_deal_products(deal_id: str, db: AsyncSession = Depends(get_db)):
     for dp in deal_prods:
         prod_res = await db.execute(select(Product).where(Product.id == dp.product_id))
         p = prod_res.scalars().first()
+        sku_code = p.sku if p else "N/A"
+        name_val = p.name if p else f"Product #{dp.product_id}"
+        price_val = dp.unit_price or (p.price if p else 0.0)
         result.append({
             "id": dp.product_id,
-            "name": p.name if p else f"Product #{dp.product_id}",
-            "sku": p.sku if p else "N/A",
-            "price": dp.unit_price or (p.price if p else 0.0),
-            "unit_price": dp.unit_price or (p.price if p else 0.0),
+            "name": name_val,
+            "code": sku_code,
+            "sku": sku_code,
+            "price": price_val,
+            "unit_price": price_val,
             "quantity": dp.quantity,
+            "category": "General",
             "in_stock_quantity": p.in_stock_quantity if p else 100,
             "is_active": p.is_active if p else True
         })
@@ -287,11 +292,30 @@ async def add_deal_product(
     product_id: str,
     quantity: int = 1,
     unit_price: Optional[float] = None,
+    custom_name: Optional[str] = None,
     db: AsyncSession = Depends(get_db)
 ):
     prod_res = await db.execute(select(Product).where(Product.id == product_id))
     p = prod_res.scalars().first()
     
+    if not p and custom_name:
+        p_by_name = await db.execute(select(Product).where(Product.name.ilike(custom_name)))
+        p = p_by_name.scalars().first()
+        if not p:
+            sku_gen = f"SKU-{custom_name.replace(' ', '-').upper()[:10]}"
+            p = Product(
+                organization_id="org-1",
+                name=custom_name,
+                sku=sku_gen,
+                price=unit_price or 0.0
+            )
+            db.add(p)
+            await db.commit()
+            await db.refresh(p)
+            product_id = p.id
+        else:
+            product_id = p.id
+
     price = unit_price if unit_price is not None else (p.price if p else 0.0)
 
     dp_res = await db.execute(
@@ -324,7 +348,7 @@ async def add_deal_product(
         d.amount = total_deal_amount
         await db.commit()
 
-    return {"message": f"Added product {product_id} (x{quantity}) to deal {deal_id}", "status": "success"}
+    return {"message": f"Added product item to deal {deal_id}", "status": "success"}
 
 @router.delete("/{deal_id}/products/{product_id}", response_model=MessageResponse, summary="Remove product item from deal")
 async def remove_deal_product(deal_id: str, product_id: str, db: AsyncSession = Depends(get_db)):

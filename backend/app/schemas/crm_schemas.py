@@ -455,9 +455,14 @@ class DocumentResponse(BaseModel):
 # 15. Product Catalog Schemas
 class ProductBase(BaseModel):
     name: str
-    code: str
-    unit_price: float
+    code: Optional[str] = "N/A"
+    sku: Optional[str] = "N/A"
+    unit_price: float = 0.0
+    price: Optional[float] = 0.0
+    quantity: Optional[int] = 1
     category: Optional[str] = None
+    in_stock_quantity: Optional[int] = 100
+    is_active: Optional[bool] = True
 
 class ProductCreate(ProductBase):
     pass

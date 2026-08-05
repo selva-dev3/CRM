@@ -22,6 +22,7 @@ import {
   CheckCircle2,
   AlertCircle,
   Calendar,
+  Search,
   X
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -72,6 +73,8 @@ export default function DealDetailsPage() {
 
   // Add Product Form State
   const [selectedProductId, setSelectedProductId] = useState('');
+  const [customProductName, setCustomProductName] = useState('');
+  const [productSearchQuery, setProductSearchQuery] = useState('');
   const [productQuantity, setProductQuantity] = useState(1);
   const [productUnitPrice, setProductUnitPrice] = useState<number | ''>(0);
 
@@ -125,7 +128,7 @@ export default function DealDetailsPage() {
   const markLostMutation = useMarkDealLostMutation();
 
   const addProductMutation = useMutation({
-    mutationFn: (payload: { product_id: string; quantity: number; unit_price?: number }) =>
+    mutationFn: (payload: { product_id: string; quantity: number; unit_price?: number; custom_name?: string }) =>
       addDealProductApi({ id: dealId, ...payload }),
     onSuccess: () => {
       setSuccessMessage('Product item added to deal successfully.');
@@ -806,28 +809,92 @@ export default function DealDetailsPage() {
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                if (!selectedProductId) return;
+                const prodName = customProductName.trim() || productSearchQuery.trim();
+                if (!selectedProductId && !prodName) {
+                  setErrorMessage('Please search, select, or type a product name.');
+                  return;
+                }
                 addProductMutation.mutate({
-                  product_id: selectedProductId,
+                  product_id: selectedProductId || `custom-${Date.now()}`,
+                  custom_name: prodName,
                   quantity: Number(productQuantity) || 1,
-                  unit_price: productUnitPrice !== '' ? Number(productUnitPrice) : undefined,
+                  unit_price: productUnitPrice !== '' ? Number(productUnitPrice) : 0,
                 });
               }}
               className="space-y-4 text-xs"
             >
+              {/* Type / Search Product Combobox */}
+              <div className="space-y-1 relative">
+                <Label className="font-semibold text-slate-700">Search Catalog or Type Custom Product</Label>
+                <div className="relative">
+                  <Input
+                    type="text"
+                    placeholder="Type product name or search catalog..."
+                    value={productSearchQuery}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setProductSearchQuery(val);
+                      setCustomProductName(val);
+                      const match = catalogProducts.find((p) => p.name.toLowerCase() === val.toLowerCase());
+                      if (match) {
+                        setSelectedProductId(match.id);
+                        setProductUnitPrice(match.price);
+                      } else {
+                        setSelectedProductId('');
+                      }
+                    }}
+                    className="h-9 text-xs pl-8"
+                  />
+                  <Search className="w-4 h-4 text-slate-400 absolute left-2.5 top-2.5 pointer-events-none" />
+                </div>
+
+                {/* Filtered Dropdown Suggestions */}
+                {productSearchQuery.trim().length > 0 && (
+                  <div className="max-h-40 overflow-y-auto border border-slate-200 rounded-lg bg-white shadow-md divide-y divide-slate-100 z-10 relative mt-1">
+                    {catalogProducts
+                      .filter((p) => p.name.toLowerCase().includes(productSearchQuery.toLowerCase()) || p.sku?.toLowerCase().includes(productSearchQuery.toLowerCase()))
+                      .map((p) => (
+                        <div
+                          key={p.id}
+                          onClick={() => {
+                            setSelectedProductId(p.id);
+                            setCustomProductName(p.name);
+                            setProductSearchQuery(p.name);
+                            setProductUnitPrice(p.price);
+                          }}
+                          className={`p-2 hover:bg-blue-50 cursor-pointer flex items-center justify-between transition ${
+                            selectedProductId === p.id ? 'bg-blue-50/80 font-bold text-blue-700' : 'text-slate-700'
+                          }`}
+                        >
+                          <div>
+                            <div className="font-medium text-xs text-slate-900">{p.name}</div>
+                            <div className="text-[10px] text-slate-400">SKU: {p.sku || 'N/A'}</div>
+                          </div>
+                          <span className="font-bold text-blue-600 text-xs">${p.price?.toLocaleString()}</span>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Select from dropdown as alternative */}
               <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Select Product Catalog Item</Label>
+                <Label className="font-semibold text-slate-500 text-[11px]">Or select directly from full catalog</Label>
                 <select
                   value={selectedProductId}
                   onChange={(e) => {
                     const pid = e.target.value;
                     setSelectedProductId(pid);
                     const found = catalogProducts.find((p) => p.id === pid);
-                    if (found) setProductUnitPrice(found.price);
+                    if (found) {
+                      setProductUnitPrice(found.price);
+                      setCustomProductName(found.name);
+                      setProductSearchQuery(found.name);
+                    }
                   }}
                   className="w-full h-9 rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
                 >
-                  <option value="">-- Select Product --</option>
+                  <option value="">-- Or Choose Catalog Product --</option>
                   {catalogProducts.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name} ({p.sku}) - ${p.price?.toLocaleString()}
