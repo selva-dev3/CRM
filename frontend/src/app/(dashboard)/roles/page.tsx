@@ -568,7 +568,7 @@ export default function RolesPage() {
                   <Edit className="w-3.5 h-3.5 text-slate-500" />
                   Edit Role & Permissions
                 </DropdownMenuItem>
-                {!item.is_system_role && (
+                {!item.is_system_role && !isDefault && item.type !== 'default' && (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem

@@ -334,13 +334,22 @@ async def import_roles(db: AsyncSession = Depends(get_db)):
 @router.post("/bulk-delete", response_model=BulkActionResponse, summary="Bulk delete custom roles")
 async def bulk_delete_roles(payload: BulkDeleteRequest, db: AsyncSession = Depends(get_db)):
     try:
+        default_ids = await get_default_role_ids(db)
+
         stmt = select(Role).where(Role.id.in_(payload.ids))
         res = await db.execute(stmt)
         items = res.scalars().all()
+        
+        deleted_count = 0
         for item in items:
+            # Block deleting default or system roles
+            if item.id in default_ids or item.name in default_ids or getattr(item, "is_system_role", False):
+                continue
             await db.delete(item)
+            deleted_count += 1
+
         await db.commit()
-        return {"affected_count": len(items), "message": "Roles deleted successfully"}
+        return {"affected_count": deleted_count, "message": f"Successfully deleted {deleted_count} non-default role(s)"}
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -574,14 +583,22 @@ async def update_role(role_id: str, payload: RoleUpdate, db: AsyncSession = Depe
 
 @router.delete("/{role_id}", response_model=MessageResponse, summary="Delete custom role by ID")
 async def delete_role(role_id: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(Role).where(Role.id == role_id))
+    res = await db.execute(select(Role).where((Role.id == role_id) | (Role.name == role_id)))
     r = res.scalars().first()
     if not r:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Role '{role_id}' not found")
+
+    default_ids = await get_default_role_ids(db)
+    if r.id in default_ids or r.name in default_ids:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Cannot delete default registration role '{r.name}'. Remove default status first.")
+
+    if getattr(r, "is_system_role", False):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Cannot delete system role '{r.name}'.")
+
     try:
         await db.delete(r)
         await db.commit()
-        return {"message": f"Role {role_id} deleted successfully", "status": "success"}
+        return {"message": f"Role '{r.name}' deleted successfully", "status": "success"}
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

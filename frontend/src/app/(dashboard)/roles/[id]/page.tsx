@@ -454,7 +454,7 @@ export default function RoleDetailPage() {
             Assign to User
           </button>
 
-          {!role.is_system_role && (
+          {!role.is_system_role && !isDefault && role.type !== 'default' && (
             <button
               onClick={() => setIsDeleteModalOpen(true)}
               className="flex items-center gap-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3 py-2 rounded-lg text-xs font-semibold shadow-xs cursor-pointer"
