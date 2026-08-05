@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 
 export interface ProductItem {
@@ -7,41 +7,260 @@ export interface ProductItem {
   sku: string;
   price: number;
   category?: string;
+  in_stock_quantity?: number;
 }
 
-export async function fetchProductsApi(page = 1, limit = 15, search?: string): Promise<ProductItem[]> {
-  try {
-    const query = new URLSearchParams({ page: String(page), limit: String(limit) });
-    if (search) query.append('search', search);
-    const data = await apiClient.get<ProductItem[]>(`/products?${query.toString()}`);
-    if (Array.isArray(data) && data.length > 0) return data;
-  } catch {
-    // Return fallback list
-  }
-  return [
-    { id: 'prod-1', name: 'CRM Enterprise SaaS Annual', sku: 'SKU-CRM-ENT-01', price: 12000, category: 'Software' },
-    { id: 'prod-2', name: 'Sales Pipeline Automation Addon', sku: 'SKU-AUT-PIPE-02', price: 3500, category: 'Software' },
-    { id: 'prod-3', name: 'AI Lead Scoring Engine API', sku: 'SKU-AI-LEAD-03', price: 5000, category: 'AI Services' },
-    { id: 'prod-4', name: 'Custom Integration Setup', sku: 'SKU-INT-SRV-04', price: 2500, category: 'Professional Services' },
-    { id: 'prod-5', name: '24/7 Dedicated Support Tier', sku: 'SKU-SUP-247-05', price: 1800, category: 'Support' },
-    { id: 'prod-6', name: 'Marketing Automation Suite', sku: 'SKU-MKT-AUT-06', price: 4200, category: 'Software' },
-    { id: 'prod-7', name: 'Data Migration Toolkit', sku: 'SKU-DAT-MIG-07', price: 1500, category: 'Services' },
-    { id: 'prod-8', name: 'Executive Dashboard Analytics', sku: 'SKU-ANL-EXEC-08', price: 2900, category: 'Software' },
-    { id: 'prod-9', name: 'Email Campaign Blast Tool', sku: 'SKU-EML-BLST-09', price: 950, category: 'Marketing' },
-    { id: 'prod-10', name: 'Customer Success Onboarding Pack', sku: 'SKU-CS-ONB-10', price: 3000, category: 'Services' },
-    { id: 'prod-11', name: 'Multi-Tenant Security Shield', sku: 'SKU-SEC-SHLD-11', price: 6000, category: 'Security' },
-    { id: 'prod-12', name: 'VoIP Telephony Gateway Connector', sku: 'SKU-VOIP-CON-12', price: 1200, category: 'Software' },
-    { id: 'prod-13', name: 'Document E-Sign Expansion', sku: 'SKU-DOC-SIGN-13', price: 800, category: 'Addons' },
-    { id: 'prod-14', name: 'ERP Sync Connector', sku: 'SKU-ERP-SYNC-14', price: 4500, category: 'Integration' },
-    { id: 'prod-15', name: 'Territory Management Plugin', sku: 'SKU-TER-PLG-15', price: 2100, category: 'Software' },
-    { id: 'prod-16', name: 'Custom Workflow Architect Engine', sku: 'SKU-WFL-ENG-16', price: 5500, category: 'Enterprise' },
-  ];
+export interface ProductCreatePayload {
+  name: string;
+  sku?: string;
+  price: number;
+  category?: string;
 }
 
-export function useProductsQuery(page = 1, limit = 15, search?: string) {
-  return useQuery({
-    queryKey: ['products', page, limit, search],
-    queryFn: () => fetchProductsApi(page, limit, search),
-    placeholderData: (previousData) => previousData,
+export interface PriceBookItem {
+  id: string;
+  name: string;
+  currency: string;
+  is_default: boolean;
+}
+
+export interface TaxRateItem {
+  id: string;
+  name: string;
+  rate_percentage: number;
+}
+
+export interface InventoryResponse {
+  product_id: string;
+  in_stock_quantity: number;
+  reorder_level: number;
+  warehouse_location?: string;
+}
+
+export interface BulkActionResponse {
+  affected_count: number;
+  message: string;
+}
+
+export interface MessageResponse {
+  message: string;
+  status: string;
+}
+
+// ---------------------------------------------------------------------------
+// API Client Functions
+// ---------------------------------------------------------------------------
+
+export async function fetchProductsApi(params?: { page?: number; limit?: number; category?: string; search?: string }): Promise<ProductItem[]> {
+  const query = new URLSearchParams();
+  if (params?.page) query.append('page', String(params.page));
+  if (params?.limit) query.append('limit', String(params.limit));
+  if (params?.category) query.append('category', params.category);
+  if (params?.search) query.append('search', params.search);
+  const endpoint = `/products${query.toString() ? `?${query.toString()}` : ''}`;
+  return apiClient.get<ProductItem[]>(endpoint);
+}
+
+export async function createProductApi(payload: ProductCreatePayload): Promise<ProductItem> {
+  return apiClient.post<ProductItem>('/products', payload);
+}
+
+export async function fetchProductCategoriesApi(): Promise<string[]> {
+  return apiClient.get<string[]>('/products/categories');
+}
+
+export async function createProductCategoryApi(name: string): Promise<MessageResponse> {
+  return apiClient.post<MessageResponse>(`/products/categories?name=${encodeURIComponent(name)}`);
+}
+
+export async function fetchPriceBooksApi(): Promise<PriceBookItem[]> {
+  return apiClient.get<PriceBookItem[]>('/products/price-books');
+}
+
+export async function createPriceBookApi(name: string, currency: string = 'USD'): Promise<MessageResponse> {
+  return apiClient.post<MessageResponse>(`/products/price-books?name=${encodeURIComponent(name)}&currency=${encodeURIComponent(currency)}`);
+}
+
+export async function fetchTaxRatesApi(): Promise<TaxRateItem[]> {
+  return apiClient.get<TaxRateItem[]>('/products/tax-rates');
+}
+
+export async function exportProductsCsvApi(): Promise<{ download_url: string }> {
+  return apiClient.get<{ download_url: string }>('/products/export/csv');
+}
+
+export async function importProductsCsvApi(): Promise<MessageResponse> {
+  return apiClient.post<MessageResponse>('/products/import/csv');
+}
+
+export async function bulkDeleteProductsApi(ids: string[]): Promise<BulkActionResponse> {
+  return apiClient.post<BulkActionResponse>('/products/bulk-delete', { ids });
+}
+
+export async function fetchProductApi(productId: string): Promise<ProductItem> {
+  return apiClient.get<ProductItem>(`/products/${productId}`);
+}
+
+export async function updateProductApi(productId: string, payload: ProductCreatePayload): Promise<ProductItem> {
+  return apiClient.put<ProductItem>(`/products/${productId}`, payload);
+}
+
+export async function deleteProductApi(productId: string): Promise<MessageResponse> {
+  return apiClient.delete<MessageResponse>(`/products/${productId}`);
+}
+
+export async function fetchProductInventoryApi(productId: string): Promise<InventoryResponse> {
+  return apiClient.get<InventoryResponse>(`/products/${productId}/inventory`);
+}
+
+export async function updateProductInventoryApi(productId: string, quantityDelta: number): Promise<MessageResponse> {
+  return apiClient.post<MessageResponse>(`/products/${productId}/inventory?quantity_delta=${quantityDelta}`);
+}
+
+// ---------------------------------------------------------------------------
+// TanStack Query Hooks
+// ---------------------------------------------------------------------------
+
+export function useProductsQuery(params?: { page?: number; limit?: number; category?: string; search?: string }, options?: Omit<UseQueryOptions<ProductItem[]>, 'queryKey' | 'queryFn'>) {
+  return useQuery<ProductItem[]>({
+    queryKey: ['products', params],
+    queryFn: () => fetchProductsApi(params),
+    staleTime: 1000 * 60 * 2,
+    ...options,
+  });
+}
+
+export function useProductQuery(productId: string, options?: Omit<UseQueryOptions<ProductItem>, 'queryKey' | 'queryFn'>) {
+  return useQuery<ProductItem>({
+    queryKey: ['products', productId],
+    queryFn: () => fetchProductApi(productId),
+    enabled: !!productId,
+    ...options,
+  });
+}
+
+export function useProductCategoriesQuery(options?: Omit<UseQueryOptions<string[]>, 'queryKey' | 'queryFn'>) {
+  return useQuery<string[]>({
+    queryKey: ['products', 'categories'],
+    queryFn: fetchProductCategoriesApi,
+    staleTime: 1000 * 60 * 5,
+    ...options,
+  });
+}
+
+export function usePriceBooksQuery(options?: Omit<UseQueryOptions<PriceBookItem[]>, 'queryKey' | 'queryFn'>) {
+  return useQuery<PriceBookItem[]>({
+    queryKey: ['products', 'price-books'],
+    queryFn: fetchPriceBooksApi,
+    staleTime: 1000 * 60 * 5,
+    ...options,
+  });
+}
+
+export function useTaxRatesQuery(options?: Omit<UseQueryOptions<TaxRateItem[]>, 'queryKey' | 'queryFn'>) {
+  return useQuery<TaxRateItem[]>({
+    queryKey: ['products', 'tax-rates'],
+    queryFn: fetchTaxRatesApi,
+    staleTime: 1000 * 60 * 5,
+    ...options,
+  });
+}
+
+export function useProductInventoryQuery(productId: string, options?: Omit<UseQueryOptions<InventoryResponse>, 'queryKey' | 'queryFn'>) {
+  return useQuery<InventoryResponse>({
+    queryKey: ['products', productId, 'inventory'],
+    queryFn: () => fetchProductInventoryApi(productId),
+    enabled: !!productId,
+    ...options,
+  });
+}
+
+export function useCreateProductMutation(options?: UseMutationOptions<ProductItem, Error, ProductCreatePayload>) {
+  const queryClient = useQueryClient();
+  return useMutation<ProductItem, Error, ProductCreatePayload>({
+    mutationFn: createProductApi,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
+    ...options,
+  });
+}
+
+export function useUpdateProductMutation(options?: UseMutationOptions<ProductItem, Error, { id: string; payload: ProductCreatePayload }>) {
+  const queryClient = useQueryClient();
+  return useMutation<ProductItem, Error, { id: string; payload: ProductCreatePayload }>({
+    mutationFn: ({ id, payload }) => updateProductApi(id, payload),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['products', variables.id] });
+    },
+    ...options,
+  });
+}
+
+export function useDeleteProductMutation(options?: UseMutationOptions<MessageResponse, Error, string>) {
+  const queryClient = useQueryClient();
+  return useMutation<MessageResponse, Error, string>({
+    mutationFn: deleteProductApi,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
+    ...options,
+  });
+}
+
+export function useBulkDeleteProductsMutation(options?: UseMutationOptions<BulkActionResponse, Error, string[]>) {
+  const queryClient = useQueryClient();
+  return useMutation<BulkActionResponse, Error, string[]>({
+    mutationFn: bulkDeleteProductsApi,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
+    ...options,
+  });
+}
+
+export function useCreateCategoryMutation(options?: UseMutationOptions<MessageResponse, Error, string>) {
+  const queryClient = useQueryClient();
+  return useMutation<MessageResponse, Error, string>({
+    mutationFn: createProductCategoryApi,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products', 'categories'] });
+    },
+    ...options,
+  });
+}
+
+export function useCreatePriceBookMutation(options?: UseMutationOptions<MessageResponse, Error, { name: string; currency?: string }>) {
+  const queryClient = useQueryClient();
+  return useMutation<MessageResponse, Error, { name: string; currency?: string }>({
+    mutationFn: ({ name, currency }) => createPriceBookApi(name, currency),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products', 'price-books'] });
+    },
+    ...options,
+  });
+}
+
+export function useImportProductsCsvMutation(options?: UseMutationOptions<MessageResponse, Error, void>) {
+  const queryClient = useQueryClient();
+  return useMutation<MessageResponse, Error, void>({
+    mutationFn: importProductsCsvApi,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
+    ...options,
+  });
+}
+
+export function useUpdateProductInventoryMutation(options?: UseMutationOptions<MessageResponse, Error, { id: string; delta: number }>) {
+  const queryClient = useQueryClient();
+  return useMutation<MessageResponse, Error, { id: string; delta: number }>({
+    mutationFn: ({ id, delta }) => updateProductInventoryApi(id, delta),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['products', variables.id, 'inventory'] });
+    },
+    ...options,
   });
 }
