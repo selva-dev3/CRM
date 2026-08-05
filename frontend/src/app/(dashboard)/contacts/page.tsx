@@ -428,31 +428,6 @@ export default function ContactsPage() {
         );
       },
     },
-    {
-      id: 'actions',
-      header: 'Actions',
-      cell: (item) => (
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => openEditModal(item)}
-            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition cursor-pointer"
-            title="Edit contact"
-          >
-            <Edit className="w-3.5 h-3.5" />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setContactToDelete(item)}
-            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
-            title="Delete contact"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      ),
-    },
   ];
 
   return (
@@ -594,6 +569,20 @@ export default function ContactsPage() {
         data={contacts as any}
         getRowKey={(item: any) => item.id}
         onRowClick={(item: any) => router.push(`/contacts/${item.id}`)}
+        actionVariant="menu"
+        actions={(item: any) => [
+          {
+            label: 'Edit',
+            icon: <Edit className="w-4 h-4 text-blue-600 mr-2" />,
+            onClick: () => openEditModal(item),
+          },
+          {
+            label: 'Delete',
+            variant: 'destructive',
+            icon: <Trash2 className="w-4 h-4 text-rose-600 mr-2" />,
+            onClick: () => setContactToDelete(item),
+          },
+        ]}
         emptyTitle="No contacts found"
         emptyDescription="Create your first contact profile or import CSV data."
         showCheckbox
