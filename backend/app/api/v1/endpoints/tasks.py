@@ -86,7 +86,7 @@ async def create_task(payload: TaskCreate, db: AsyncSession = Depends(get_db)):
     try:
         due_dt = parse_datetime(payload.due_date)
         assigned_user = await resolve_valid_user_id(db, payload.assigned_to)
-        org_id = await get_valid_org_id(db, current_user)
+        org_id = await get_valid_org_id(db)
 
         t = Task(
             organization_id=org_id,
