@@ -49,6 +49,7 @@ async def list_contacts(
             f_name = parts[0] if parts else ""
             l_name = " ".join(parts[1:]) if len(parts) > 1 else ""
 
+            is_starred = bool(getattr(c, 'is_starred', False))
             response_list.append(
                 ContactResponse(
                     id=c.id,
@@ -59,6 +60,8 @@ async def list_contacts(
                     phone=c.phone,
                     position=c.position,
                     company_id=c.company_id,
+                    is_starred=is_starred,
+                    status="Star Contact" if is_starred else None,
                     created_at=str(c.created_at) if c.created_at else None,
                 )
             )
@@ -148,7 +151,23 @@ async def create_contact(
 async def get_starred_contacts(db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Contact).where(Contact.is_starred == True))
     contacts = res.scalars().all()
-    return [{"id": c.id, "name": c.name, "email": c.email, "phone": c.phone, "position": c.position, "company_id": c.company_id, "created_at": str(c.created_at)} for c in contacts]
+    resp = []
+    for c in contacts:
+        parts = c.name.split() if c.name else []
+        resp.append({
+            "id": c.id,
+            "name": c.name,
+            "first_name": parts[0] if parts else "",
+            "last_name": " ".join(parts[1:]) if len(parts) > 1 else "",
+            "email": c.email,
+            "phone": c.phone,
+            "position": c.position,
+            "company_id": c.company_id,
+            "is_starred": True,
+            "status": "Star Contact",
+            "created_at": str(c.created_at) if c.created_at else None
+        })
+    return resp
 
 @router.post("/merge", response_model=MessageResponse, summary="Merge two contact profiles")
 async def merge_contacts(primary_id: str, secondary_id: str, db: AsyncSession = Depends(get_db)):
@@ -186,7 +205,21 @@ async def get_contact(contact_id: str, db: AsyncSession = Depends(get_db)):
     c = res.scalars().first()
     if not c:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Contact '{contact_id}' not found")
-    return {"id": c.id, "name": c.name, "email": c.email, "phone": c.phone, "position": c.position, "company_id": c.company_id, "created_at": str(c.created_at)}
+    parts = c.name.split() if c.name else []
+    is_starred = bool(getattr(c, 'is_starred', False))
+    return {
+        "id": c.id,
+        "name": c.name,
+        "first_name": parts[0] if parts else "",
+        "last_name": " ".join(parts[1:]) if len(parts) > 1 else "",
+        "email": c.email,
+        "phone": c.phone,
+        "position": c.position,
+        "company_id": c.company_id,
+        "is_starred": is_starred,
+        "status": "Star Contact" if is_starred else None,
+        "created_at": str(c.created_at) if c.created_at else None
+    }
 
 @router.put("/{contact_id}", response_model=ContactResponse, summary="Update contact by ID")
 async def update_contact(contact_id: str, payload: ContactUpdate, db: AsyncSession = Depends(get_db)):
@@ -199,7 +232,21 @@ async def update_contact(contact_id: str, payload: ContactUpdate, db: AsyncSessi
         if payload.email: c.email = payload.email
         if payload.phone: c.phone = payload.phone
         await db.commit()
-        return {"id": c.id, "name": c.name, "email": c.email, "phone": c.phone, "position": c.position, "company_id": c.company_id, "created_at": str(c.created_at)}
+        parts = c.name.split() if c.name else []
+        is_starred = bool(getattr(c, 'is_starred', False))
+        return {
+            "id": c.id,
+            "name": c.name,
+            "first_name": parts[0] if parts else "",
+            "last_name": " ".join(parts[1:]) if len(parts) > 1 else "",
+            "email": c.email,
+            "phone": c.phone,
+            "position": c.position,
+            "company_id": c.company_id,
+            "is_starred": is_starred,
+            "status": "Star Contact" if is_starred else None,
+            "created_at": str(c.created_at) if c.created_at else None
+        }
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

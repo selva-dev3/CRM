@@ -9,6 +9,7 @@ export interface ContactItem {
   position?: string;
   company_id?: string;
   is_starred?: boolean;
+  status?: string;
   created_at?: string;
 }
 

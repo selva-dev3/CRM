@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   Mail,
   Phone,
@@ -44,6 +46,7 @@ import { useOrganizationsQuery } from '@/lib/api/organizations';
 import { useCompaniesQuery } from '@/lib/api/companies';
 
 export default function ContactsPage() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<'all' | 'starred'>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
@@ -267,7 +270,10 @@ export default function ContactsPage() {
       cell: (item) => (
         <button
           type="button"
-          onClick={() => handleToggleStar(item)}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleToggleStar(item);
+          }}
           className="p-1 rounded text-amber-400 hover:text-amber-500 hover:bg-amber-50 transition cursor-pointer"
           title={item.is_starred ? 'Unstar Contact' : 'Star Contact'}
         >
@@ -284,7 +290,9 @@ export default function ContactsPage() {
             {item.name ? item.name.charAt(0).toUpperCase() : 'C'}
           </div>
           <div>
-            <div className="font-bold text-slate-900 text-xs">{item.name}</div>
+            <Link href={`/contacts/${item.id}`} className="font-bold text-slate-900 text-xs hover:text-blue-600 hover:underline">
+              {item.name}
+            </Link>
             <div className="text-[11px] text-slate-500">{item.position || 'Representative'}</div>
           </div>
         </div>
@@ -313,14 +321,17 @@ export default function ContactsPage() {
     {
       id: 'company',
       header: 'Company / Org',
-      cell: (item) => (
-        <div className="flex items-center gap-1.5 text-slate-700 text-xs font-semibold">
-          <Building className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-          <span>
-            {organizations.find((o) => o.id === item.company_id)?.name || item.company_id || 'Primary Org'}
-          </span>
-        </div>
-      ),
+      cell: (item) => {
+        const foundCompany = companiesList.find((c) => c.id === item.company_id);
+        const foundOrg = organizations.find((o) => o.id === item.company_id);
+        const companyLabel = foundCompany?.name || foundOrg?.name || (item.company_id ? 'Enterprise Partner' : 'Primary Org');
+        return (
+          <div className="flex items-center gap-1.5 text-slate-700 text-xs font-semibold">
+            <Building className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <span>{companyLabel}</span>
+          </div>
+        );
+      },
     },
     {
       id: 'actions',
@@ -487,6 +498,7 @@ export default function ContactsPage() {
         columns={columns as any}
         data={contacts as any}
         getRowKey={(item: any) => item.id}
+        onRowClick={(item: any) => router.push(`/contacts/${item.id}`)}
         emptyTitle="No contacts found"
         emptyDescription="Create your first contact profile or import CSV data."
         showCheckbox

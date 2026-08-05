@@ -315,6 +315,8 @@ class ContactResponse(BaseModel):
     phone: Optional[str] = None
     position: Optional[str] = None
     company_id: Optional[str] = None
+    is_starred: Optional[bool] = False
+    status: Optional[str] = None
     created_at: Optional[str] = None
 
 # 7. Company Schemas
