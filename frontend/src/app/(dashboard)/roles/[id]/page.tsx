@@ -22,6 +22,7 @@ import {
   MinusCircle
 } from 'lucide-react';
 import { ConfirmModal } from '@/components/shared/confirm-modal';
+import { DataTable, type DataTableColumn } from '@/components/shared/data-table';
 import {
   useRoleQuery,
   useDefaultRoleQuery,
@@ -94,6 +95,73 @@ export default function RoleDetailPage() {
     });
     return map;
   }, [assignedPermissions]);
+
+  // DataTable state for assigned permissions
+  const [permSearchTerm, setPermSearchTerm] = useState('');
+  const [permSelectedIds, setPermSelectedIds] = useState<Set<string>>(new Set());
+
+  const handleBulkRemovePermissions = async () => {
+    if (permSelectedIds.size === 0) return;
+    try {
+      const remaining = (role?.permissions || []).filter((p) => !permSelectedIds.has(p));
+      const res = await assignPermsMutation.mutateAsync({
+        roleId,
+        permissions: remaining,
+      });
+      setSuccessMessage(res.message || `${permSelectedIds.size} permission(s) removed.`);
+      setPermSelectedIds(new Set());
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to remove selected permissions.');
+    }
+  };
+
+  const permissionColumns: DataTableColumn<PermissionItem>[] = [
+    {
+      id: 'name',
+      header: 'ACTION PERMISSION',
+      cell: (item) => (
+        <div className="space-y-0.5">
+          <span className="text-xs font-bold text-slate-900 block">{item.name || item.key}</span>
+          {item.key && <span className="text-[10px] font-mono text-slate-500 block">{item.key}</span>}
+        </div>
+      ),
+    },
+    {
+      id: 'category',
+      header: 'MODULE / CATEGORY',
+      cell: (item) => (
+        <span className="px-2.5 py-0.5 bg-indigo-50 text-indigo-700 font-bold rounded-md text-xs border border-indigo-100">
+          {item.category || item.module || 'General'}
+        </span>
+      ),
+    },
+    {
+      id: 'description',
+      header: 'DESCRIPTION',
+      cell: (item) => (
+        <span className="text-xs text-slate-600 font-medium truncate max-w-xs block">
+          {item.description || 'System permission action'}
+        </span>
+      ),
+    },
+    {
+      id: 'actions',
+      header: 'ACTIONS',
+      cell: (item) => (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            handleRemovePermission(item.key || item.id);
+          }}
+          title="Remove permission from role"
+          className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer border border-rose-200"
+        >
+          <MinusCircle className="w-3.5 h-3.5" />
+          Remove
+        </button>
+      ),
+    },
+  ];
 
   const handleOpenAddPermModal = () => {
     setSelectedAddPerms(new Set(role?.permissions || []));
@@ -331,61 +399,54 @@ export default function RoleDetailPage() {
                   <KeyRound className="w-4 h-4 text-indigo-600" />
                   Assigned Permissions Scope ({assignedPermissions.length} Assigned Actions)
                 </h3>
-                <button
-                  onClick={handleOpenAddPermModal}
-                  className="flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Assign Permissions
-                </button>
               </div>
 
-              <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1">
-                {Object.keys(groupedAssignedPermissions).length === 0 ? (
-                  <div className="p-8 text-center bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
-                    <Shield className="w-8 h-8 text-slate-300 mx-auto" />
-                    <p className="text-xs font-medium text-slate-500">No permissions currently assigned to this role.</p>
+              <DataTable<PermissionItem>
+                columns={permissionColumns}
+                data={assignedPermissions}
+                getRowKey={(item) => item.key || item.id}
+                emptyTitle="No assigned permissions"
+                emptyDescription="No action permissions are currently assigned to this role configuration."
+                searchValue={permSearchTerm}
+                onSearchChange={setPermSearchTerm}
+                searchPlaceholder="Search assigned permissions..."
+                maxHeight="500px"
+                showCheckbox={true}
+                selectedIds={permSelectedIds}
+                onToggleRow={(item, checked) => {
+                  const key = item.key || item.id;
+                  const next = new Set(permSelectedIds);
+                  if (checked) next.add(key);
+                  else next.delete(key);
+                  setPermSelectedIds(next);
+                }}
+                onToggleAllRows={(checked) => {
+                  if (checked) {
+                    setPermSelectedIds(new Set(assignedPermissions.map((p) => p.key || p.id)));
+                  } else {
+                    setPermSelectedIds(new Set());
+                  }
+                }}
+                toolbarActions={
+                  <div className="flex items-center gap-2">
+                    {permSelectedIds.size > 0 && (
+                      <button
+                        onClick={handleBulkRemovePermissions}
+                        className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold cursor-pointer transition-colors"
+                      >
+                        Remove Selected ({permSelectedIds.size})
+                      </button>
+                    )}
                     <button
                       onClick={handleOpenAddPermModal}
-                      className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-semibold shadow-xs cursor-pointer"
+                      className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer shadow-xs"
                     >
                       <Plus className="w-3.5 h-3.5" />
                       Assign Permissions
                     </button>
                   </div>
-                ) : (
-                  Object.entries(groupedAssignedPermissions).map(([category, items]) => (
-                    <div key={category} className="space-y-2 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-                      <div className="flex items-center gap-2 pb-1 border-b border-slate-200/60">
-                        <span className="px-2.5 py-0.5 bg-indigo-100 text-indigo-800 font-bold rounded-md text-xs border border-indigo-200">
-                          {category}
-                        </span>
-                        <span className="text-[11px] font-semibold text-slate-400">({items.length})</span>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                        {items.map((perm) => (
-                          <div key={perm.id} className="p-2.5 bg-white border border-slate-200 rounded-xl flex items-start justify-between gap-2 shadow-2xs">
-                            <div className="space-y-0.5">
-                              <span className="text-xs font-bold text-slate-900 block leading-tight">{perm.name || perm.key}</span>
-                              {perm.key && <span className="text-[10px] font-mono text-slate-500 block">{perm.key}</span>}
-                              {perm.description && <span className="text-[10px] text-slate-400 block truncate max-w-[170px]">{perm.description}</span>}
-                            </div>
-
-                            <button
-                              onClick={() => handleRemovePermission(perm.key || perm.id)}
-                              title="Remove permission from role"
-                              className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md cursor-pointer shrink-0 mt-0.5"
-                            >
-                              <MinusCircle className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
+                }
+              />
             </div>
           </div>
         </div>
