@@ -409,52 +409,7 @@ export default function MeetingsPage() {
         </div>
       </div>
 
-      {/* Overview Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">TOTAL MEETINGS</p>
-            <h3 className="text-2xl font-bold text-slate-900 mt-1">{meetings.length}</h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600">
-            <Video className="w-5 h-5" />
-          </div>
-        </div>
 
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">UPCOMING FEED</p>
-            <h3 className="text-2xl font-bold text-indigo-600 mt-1">{upcomingMeetings.length}</h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600">
-            <Clock className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">ZOOM ROOMS</p>
-            <h3 className="text-2xl font-bold text-blue-600 mt-1">
-              {meetings.filter((m) => m.meeting_link?.includes('zoom')).length}
-            </h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
-            <Video className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">AI SUMMARIZED</p>
-            <h3 className="text-2xl font-bold text-emerald-600 mt-1">
-              {meetings.filter((m) => !!m.ai_summary).length}
-            </h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
-            <Sparkles className="w-5 h-5" />
-          </div>
-        </div>
-      </div>
 
       {/* Main Data Table */}
       <DataTable<MeetingItem>

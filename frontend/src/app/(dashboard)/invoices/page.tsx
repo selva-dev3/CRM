@@ -446,53 +446,7 @@ export default function InvoicesPage() {
         </div>
       </div>
 
-      {/* Overview Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">TOTAL INVOICES</p>
-            <h3 className="text-2xl font-bold text-slate-900 mt-1">{invoices.length}</h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600">
-            <Receipt className="w-5 h-5" />
-          </div>
-        </div>
 
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">OVERDUE UNPAID</p>
-            <h3 className="text-2xl font-bold text-rose-600 mt-1">
-              {overdueInvoices.length || invoices.filter((i) => i.status === 'Overdue').length}
-            </h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-rose-50 flex items-center justify-center text-rose-600">
-            <BellRing className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">RECURRING SCHEDULES</p>
-            <h3 className="text-2xl font-bold text-amber-600 mt-1">{recurringSchedules.length} Active</h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600">
-            <Repeat className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">STRIPE CHECKOUT</p>
-            <h3 className="text-sm font-extrabold text-purple-600 mt-1 flex items-center gap-1.5">
-              <Zap className="w-4 h-4 text-purple-500" />
-              Live Online Payments
-            </h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-purple-50 flex items-center justify-center text-purple-600">
-            <CreditCard className="w-5 h-5" />
-          </div>
-        </div>
-      </div>
 
       {/* Main Data Table */}
       <DataTable<InvoiceItem>

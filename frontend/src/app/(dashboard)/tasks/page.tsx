@@ -593,50 +593,7 @@ export default function TasksPage() {
         </div>
       </div>
 
-      {/* Overview Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">TOTAL TASKS</p>
-            <h3 className="text-2xl font-bold text-slate-900 mt-1">{tasks.length}</h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600">
-            <CheckSquare className="w-5 h-5" />
-          </div>
-        </div>
 
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">DUE TODAY</p>
-            <h3 className="text-2xl font-bold text-amber-600 mt-1">{todayTasks.length}</h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600">
-            <Clock className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">OVERDUE TASKS</p>
-            <h3 className="text-2xl font-bold text-rose-600 mt-1">{overdueTasks.length}</h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-rose-50 flex items-center justify-center text-rose-600">
-            <AlertCircle className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">COMPLETED</p>
-            <h3 className="text-2xl font-bold text-emerald-600 mt-1">
-              {tasks.filter((t) => t.status === 'Completed').length}
-            </h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
-            <CheckCircle2 className="w-5 h-5" />
-          </div>
-        </div>
-      </div>
 
       {/* Main Data Table with Filter Button on the Right Side & Row Click Detail Navigation */}
       <DataTable<TaskItem>

@@ -402,52 +402,7 @@ export default function QuotesPage() {
         </div>
       </div>
 
-      {/* Overview Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">TOTAL QUOTES</p>
-            <h3 className="text-2xl font-bold text-slate-900 mt-1">{quotes.length}</h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600">
-            <FileCode className="w-5 h-5" />
-          </div>
-        </div>
 
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">ACCEPTED QUOTES</p>
-            <h3 className="text-2xl font-bold text-emerald-600 mt-1">
-              {quotes.filter((q) => q.status === 'Accepted').length}
-            </h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
-            <FileCheck className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">SENT / PENDING</p>
-            <h3 className="text-2xl font-bold text-blue-600 mt-1">
-              {quotes.filter((q) => q.status === 'Sent').length}
-            </h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
-            <Send className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">CONVERSION RATE</p>
-            <h3 className="text-2xl font-bold text-purple-600 mt-1">78%</h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-purple-50 flex items-center justify-center text-purple-600">
-            <TrendingUp className="w-5 h-5" />
-          </div>
-        </div>
-      </div>
 
       {/* Main Data Table */}
       <DataTable<QuoteItem>

@@ -253,53 +253,7 @@ export default function NotificationsPage() {
         </div>
       </div>
 
-      {/* Overview Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">TOTAL ALERTS</p>
-            <h3 className="text-2xl font-bold text-slate-900 mt-1">{notifications.length}</h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600">
-            <Inbox className="w-5 h-5" />
-          </div>
-        </div>
 
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">UNREAD ALERTS</p>
-            <h3 className="text-2xl font-bold text-rose-600 mt-1">
-              {unreadData?.unread_count ?? notifications.filter((n) => !n.is_read).length}
-            </h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-rose-50 flex items-center justify-center text-rose-600">
-            <Bell className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">WEBPUSH STATUS</p>
-            <h3 className="text-sm font-extrabold text-purple-600 mt-1 flex items-center gap-1.5">
-              <Radio className="w-4 h-4 text-purple-500" />
-              Push Enabled
-            </h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-purple-50 flex items-center justify-center text-purple-600">
-            <Smartphone className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">EMAIL DIGEST</p>
-            <h3 className="text-sm font-bold text-slate-800 mt-1">{preferences?.digest_frequency || 'Daily Summary'}</h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
-            <Mail className="w-5 h-5" />
-          </div>
-        </div>
-      </div>
 
       {/* Notifications Feed Container */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden space-y-4 p-6">

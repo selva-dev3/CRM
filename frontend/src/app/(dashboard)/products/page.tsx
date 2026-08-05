@@ -403,48 +403,7 @@ export default function ProductsPage() {
         </div>
       </div>
 
-      {/* Overview Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">CATALOG PRODUCTS</p>
-            <h3 className="text-2xl font-bold text-slate-900 mt-1">{products.length}</h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600">
-            <Package className="w-5 h-5" />
-          </div>
-        </div>
 
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">CATEGORIES</p>
-            <h3 className="text-2xl font-bold text-purple-600 mt-1">{categories.length}</h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-purple-50 flex items-center justify-center text-purple-600">
-            <Layers className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">CUSTOM PRICE BOOKS</p>
-            <h3 className="text-2xl font-bold text-amber-600 mt-1">{priceBooks.length} Books</h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600">
-            <BookOpen className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">TAX TIERS</p>
-            <h3 className="text-2xl font-bold text-emerald-600 mt-1">{taxRates.length} Tiers</h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
-            <Percent className="w-5 h-5" />
-          </div>
-        </div>
-      </div>
 
       {/* Main Data Table */}
       <DataTable<ProductItem>

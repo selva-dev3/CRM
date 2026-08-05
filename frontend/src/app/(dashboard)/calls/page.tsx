@@ -368,52 +368,7 @@ export default function CallsPage() {
         </div>
       </div>
 
-      {/* Overview Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">TOTAL CALL LOGS</p>
-            <h3 className="text-2xl font-bold text-slate-900 mt-1">{calls.length}</h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600">
-            <PhoneCall className="w-5 h-5" />
-          </div>
-        </div>
 
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">OUTBOUND CALLS</p>
-            <h3 className="text-2xl font-bold text-indigo-600 mt-1">
-              {calls.filter((c) => c.call_type !== 'Inbound').length}
-            </h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600">
-            <PhoneOutgoing className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">INBOUND CALLS</p>
-            <h3 className="text-2xl font-bold text-emerald-600 mt-1">
-              {calls.filter((c) => c.call_type === 'Inbound').length}
-            </h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
-            <PhoneIncoming className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">ACTIVE REPS</p>
-            <h3 className="text-2xl font-bold text-amber-600 mt-1">{repStats.length || 2} Reps</h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600">
-            <TrendingUp className="w-5 h-5" />
-          </div>
-        </div>
-      </div>
 
       {/* Main Data Table */}
       <DataTable<CallLogItem>

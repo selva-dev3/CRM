@@ -391,48 +391,7 @@ export default function EmailPage() {
         </div>
       </div>
 
-      {/* Overview Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">INBOX MESSAGES</p>
-            <h3 className="text-2xl font-bold text-slate-900 mt-1">{inboxMessages.length}</h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600">
-            <InboxIcon className="w-5 h-5" />
-          </div>
-        </div>
 
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">SAVED DRAFTS</p>
-            <h3 className="text-2xl font-bold text-amber-600 mt-1">{drafts.length}</h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600">
-            <FileText className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">TEMPLATES</p>
-            <h3 className="text-2xl font-bold text-purple-600 mt-1">{templates.length}</h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-purple-50 flex items-center justify-center text-purple-600">
-            <Layers className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">SIGNATURES</p>
-            <h3 className="text-2xl font-bold text-emerald-600 mt-1">{signatures.length || 1}</h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
-            <SignatureIcon className="w-5 h-5" />
-          </div>
-        </div>
-      </div>
 
       {/* Folder Switcher Tabs */}
       <div className="flex items-center gap-2 border-b border-slate-200 pb-2">

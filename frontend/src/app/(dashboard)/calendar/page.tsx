@@ -341,53 +341,7 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      {/* Overview Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">SCHEDULED EVENTS</p>
-            <h3 className="text-2xl font-bold text-slate-900 mt-1">{events.length}</h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600">
-            <CalendarCheck className="w-5 h-5" />
-          </div>
-        </div>
 
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">AVAILABLE SLOTS TODAY</p>
-            <h3 className="text-2xl font-bold text-emerald-600 mt-1">
-              {availability?.available_slots ? availability.available_slots.length : 4} Slots
-            </h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
-            <Clock className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">RECURRING RULES</p>
-            <h3 className="text-2xl font-bold text-amber-600 mt-1">{recurringRules.length}</h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600">
-            <Repeat className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">CALENDAR SYNC</p>
-            <h3 className="text-sm font-extrabold text-indigo-600 mt-1 flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              2-Way Active
-            </h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600">
-            <Zap className="w-5 h-5" />
-          </div>
-        </div>
-      </div>
 
       {/* View Switcher Tabs */}
       <div className="flex items-center gap-2 border-b border-slate-200 pb-2">

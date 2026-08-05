@@ -274,51 +274,7 @@ export default function DocumentsPage() {
         </div>
       </div>
 
-      {/* Overview Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">TOTAL DOCUMENTS</p>
-            <h3 className="text-2xl font-bold text-slate-900 mt-1">{documents.length}</h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600">
-            <Folder className="w-5 h-5" />
-          </div>
-        </div>
 
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">STORAGE USED</p>
-            <h3 className="text-2xl font-bold text-emerald-600 mt-1">{formatFileSize(totalBytes)}</h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
-            <HardDrive className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">S3 PROVIDER</p>
-            <h3 className="text-sm font-extrabold text-blue-600 mt-1 flex items-center gap-1.5">
-              <ShieldCheck className="w-4 h-4 text-blue-500" />
-              MinIO Cloud S3
-            </h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
-            <ShieldCheck className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">PRESIGNED URLS</p>
-            <h3 className="text-2xl font-bold text-purple-600 mt-1">100% Encrypted</h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-purple-50 flex items-center justify-center text-purple-600">
-            <Download className="w-5 h-5" />
-          </div>
-        </div>
-      </div>
 
       {/* Main Data Table */}
       <DataTable<DocumentItem>
