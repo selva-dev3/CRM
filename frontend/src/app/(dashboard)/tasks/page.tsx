@@ -1,16 +1,100 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { CheckSquare, Calendar, AlertCircle, UserCheck } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  CheckSquare,
+  Calendar,
+  AlertCircle,
+  UserCheck,
+  Plus,
+  Search,
+  Filter,
+  Download,
+  Upload,
+  Clock,
+  CheckCircle2,
+  Trash2,
+  Edit,
+  MoreVertical,
+  LayoutGrid,
+  List,
+  Bell,
+  ListTodo,
+  X,
+  Loader2,
+  UserPlus,
+  CornerDownRight,
+  Sparkles,
+  FileSpreadsheet
+} from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/shared/data-table';
-import { useTasksQuery, TaskItem } from '@/lib/api/tasks';
+import { ConfirmModal } from '@/components/shared/confirm-modal';
+import {
+  useTasksQuery,
+  useOverdueTasksQuery,
+  useTodayTasksQuery,
+  useBoardTasksQuery,
+  useCreateTaskMutation,
+  useUpdateTaskMutation,
+  useDeleteTaskMutation,
+  useCompleteTaskMutation,
+  useReopenTaskMutation,
+  useBulkDeleteTasksMutation,
+  useBulkCompleteTasksMutation,
+  useSubtasksQuery,
+  useAddSubtaskMutation,
+  useAssignTaskMutation,
+  useSetTaskReminderMutation,
+  exportTasksCsvApi,
+  importTasksCsvApi,
+  TaskItem,
+  TaskCreatePayload,
+  TaskUpdatePayload
+} from '@/lib/api/tasks';
+
+type ViewMode = 'table' | 'board' | 'overdue' | 'today';
 
 export default function TasksPage() {
+  const [viewMode, setViewMode] = useState<ViewMode>('table');
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('');
+  const [priorityFilter, setPriorityFilter] = useState<string>('');
   const [page, setPage] = useState(1);
   const limit = 15;
 
+  // Selection for bulk actions
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Modal states
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<TaskItem | null>(null);
+  const [taskToDelete, setTaskToDelete] = useState<TaskItem | null>(null);
+  const [detailTask, setDetailTask] = useState<TaskItem | null>(null);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+
+  // Form states for Create/Edit
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [priority, setPriority] = useState('Medium');
+  const [status, setStatus] = useState('Pending');
+  const [dueDate, setDueDate] = useState('');
+  const [assignedTo, setAssignedTo] = useState('');
+
+  // Form states for Subtask & Reminder
+  const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
+  const [reminderTime, setReminderTime] = useState('');
+  const [assignUserInput, setAssignUserInput] = useState('');
+
+  // Toast / Alert message state
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // CSV Import file state
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+
+  // Debounce search
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedSearchTerm(searchTerm);
@@ -19,23 +103,297 @@ export default function TasksPage() {
     return () => clearTimeout(handler);
   }, [searchTerm]);
 
-  const { data: tasks = [], isLoading } = useTasksQuery(page, limit, debouncedSearchTerm);
+  // Query Hooks
+  const { data: tasks = [], isLoading: isTasksLoading, refetch: refetchTasks } = useTasksQuery({
+    page,
+    limit,
+    search: debouncedSearchTerm || undefined,
+    status: statusFilter || undefined,
+    priority: priorityFilter || undefined,
+  });
 
+  const { data: overdueTasks = [], isLoading: isOverdueLoading } = useOverdueTasksQuery();
+  const { data: todayTasks = [], isLoading: isTodayLoading } = useTodayTasksQuery();
+  const { data: boardData = {}, isLoading: isBoardLoading, refetch: refetchBoard } = useBoardTasksQuery();
+  const { data: subtasks = [], refetch: refetchSubtasks } = useSubtasksQuery(detailTask?.id || '');
+
+  // Mutation Hooks
+  const createTaskMutation = useCreateTaskMutation();
+  const updateTaskMutation = useUpdateTaskMutation();
+  const deleteTaskMutation = useDeleteTaskMutation();
+  const completeTaskMutation = useCompleteTaskMutation();
+  const reopenTaskMutation = useReopenTaskMutation();
+  const bulkDeleteMutation = useBulkDeleteTasksMutation();
+  const bulkCompleteMutation = useBulkCompleteTasksMutation();
+  const addSubtaskMutation = useAddSubtaskMutation();
+  const assignTaskMutation = useAssignTaskMutation();
+  const setReminderMutation = useSetTaskReminderMutation();
+
+  // Reset modal form
+  const resetForm = () => {
+    setTitle('');
+    setDescription('');
+    setPriority('Medium');
+    setStatus('Pending');
+    setDueDate('');
+    setAssignedTo('');
+    setEditingTask(null);
+  };
+
+  const handleOpenCreateModal = () => {
+    resetForm();
+    setIsCreateModalOpen(true);
+  };
+
+  const handleOpenEditModal = (task: TaskItem) => {
+    setEditingTask(task);
+    setTitle(task.title || '');
+    setDescription(task.description || '');
+    setPriority(task.priority || 'Medium');
+    setStatus(task.status || 'Pending');
+    setDueDate(task.due_date ? task.due_date.substring(0, 10) : '');
+    setAssignedTo(task.assigned_to || '');
+    setIsCreateModalOpen(true);
+  };
+
+  const handleSaveTask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim()) {
+      setErrorMessage('Task title is required.');
+      return;
+    }
+    setErrorMessage(null);
+
+    const payload: TaskCreatePayload = {
+      title: title.trim(),
+      description: description.trim() || undefined,
+      priority,
+      status,
+      due_date: dueDate || undefined,
+      assigned_to: assignedTo.trim() || undefined,
+    };
+
+    try {
+      if (editingTask) {
+        await updateTaskMutation.mutateAsync({ id: editingTask.id, payload });
+        setSuccessMessage(`Task "${title}" updated successfully.`);
+      } else {
+        await createTaskMutation.mutateAsync(payload);
+        setSuccessMessage(`Task "${title}" created successfully.`);
+      }
+      setIsCreateModalOpen(false);
+      resetForm();
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to save task.');
+    }
+  };
+
+  const handleDeleteTask = async () => {
+    if (!taskToDelete) return;
+    try {
+      await deleteTaskMutation.mutateAsync(taskToDelete.id);
+      setSuccessMessage(`Task deleted successfully.`);
+      setTaskToDelete(null);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to delete task.');
+    }
+  };
+
+  const handleToggleComplete = async (task: TaskItem) => {
+    try {
+      if (task.status === 'Completed') {
+        await reopenTaskMutation.mutateAsync(task.id);
+        setSuccessMessage(`Task "${task.title}" reopened.`);
+      } else {
+        await completeTaskMutation.mutateAsync(task.id);
+        setSuccessMessage(`Task "${task.title}" marked as Completed.`);
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to update task status.');
+    }
+  };
+
+  // Bulk Actions
+  const handleBulkComplete = async () => {
+    if (selectedIds.size === 0) return;
+    try {
+      const res = await bulkCompleteMutation.mutateAsync(Array.from(selectedIds));
+      setSuccessMessage(`${res.affected_count || selectedIds.size} task(s) marked complete.`);
+      setSelectedIds(new Set());
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to complete selected tasks.');
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    try {
+      const res = await bulkDeleteMutation.mutateAsync(Array.from(selectedIds));
+      setSuccessMessage(`${res.affected_count || selectedIds.size} task(s) deleted.`);
+      setSelectedIds(new Set());
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to delete selected tasks.');
+    }
+  };
+
+  // Export CSV
+  const handleExportCsv = async () => {
+    try {
+      const res = await exportTasksCsvApi();
+      if (res.download_url) {
+        window.open(res.download_url, '_blank');
+      }
+      setSuccessMessage('Tasks exported to CSV successfully.');
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to export tasks.');
+    }
+  };
+
+  // Import CSV
+  const handleImportCsvSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!importFile) {
+      setErrorMessage('Please select a CSV file to import.');
+      return;
+    }
+    setIsImporting(true);
+    try {
+      await importTasksCsvApi(importFile);
+      setSuccessMessage('CSV import completed successfully.');
+      setIsImportModalOpen(false);
+      setImportFile(null);
+      refetchTasks();
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to import CSV.');
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  // Subtask submission
+  const handleAddSubtask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!detailTask || !newSubtaskTitle.trim()) return;
+    try {
+      await addSubtaskMutation.mutateAsync({ taskId: detailTask.id, title: newSubtaskTitle.trim() });
+      setSuccessMessage(`Subtask added to "${detailTask.title}".`);
+      setNewSubtaskTitle('');
+      refetchSubtasks();
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to add subtask.');
+    }
+  };
+
+  // Assign task submit
+  const handleAssignTaskSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!detailTask || !assignUserInput.trim()) return;
+    try {
+      await assignTaskMutation.mutateAsync({ taskId: detailTask.id, userId: assignUserInput.trim() });
+      setSuccessMessage(`Task assigned to ${assignUserInput}.`);
+      setAssignUserInput('');
+      setDetailTask({ ...detailTask, assigned_to: assignUserInput.trim() });
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to assign task.');
+    }
+  };
+
+  // Set Reminder submit
+  const handleSetReminderSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!detailTask || !reminderTime) return;
+    try {
+      await setReminderMutation.mutateAsync({ taskId: detailTask.id, reminderTime });
+      setSuccessMessage(`Reminder scheduled for ${reminderTime}.`);
+      setReminderTime('');
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to set reminder.');
+    }
+  };
+
+  // Displayed tasks according to active view tab
+  const displayedTasks = useMemo(() => {
+    if (viewMode === 'overdue') return overdueTasks;
+    if (viewMode === 'today') return todayTasks;
+    return tasks;
+  }, [viewMode, tasks, overdueTasks, todayTasks]);
+
+  // Table Columns Definition
   const columns: DataTableColumn<TaskItem>[] = [
     {
       id: 'title',
       header: 'Task Title',
       cell: (item) => (
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-100 text-indigo-700 font-bold text-xs">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleToggleComplete(item);
+            }}
+            title={item.status === 'Completed' ? 'Reopen task' : 'Mark as Completed'}
+            className={`flex h-7 w-7 items-center justify-center rounded-lg border transition-colors cursor-pointer ${
+              item.status === 'Completed'
+                ? 'bg-emerald-500 text-white border-emerald-500 hover:bg-emerald-600'
+                : 'border-slate-300 text-slate-400 hover:border-indigo-500 hover:text-indigo-600 bg-white'
+            }`}
+          >
             <CheckSquare className="w-4 h-4" />
-          </div>
+          </button>
           <div>
-            <div className="font-semibold text-slate-900">{item.title}</div>
-            <div className="text-xs text-slate-500">{item.status || 'Pending'}</div>
+            <div
+              onClick={() => {
+                setDetailTask(item);
+                setAssignUserInput(item.assigned_to || '');
+              }}
+              className={`font-semibold text-slate-900 hover:text-indigo-600 cursor-pointer transition-colors ${
+                item.status === 'Completed' ? 'line-through text-slate-400' : ''
+              }`}
+            >
+              {item.title}
+            </div>
+            {item.description && (
+              <div className="text-xs text-slate-500 truncate max-w-xs">{item.description}</div>
+            )}
           </div>
         </div>
       ),
+    },
+    {
+      id: 'status',
+      header: 'Status',
+      cell: (item) => {
+        const s = item.status || 'Pending';
+        const badgeStyle =
+          s === 'Completed'
+            ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+            : s === 'In Progress'
+            ? 'bg-amber-100 text-amber-800 border-amber-200'
+            : 'bg-indigo-50 text-indigo-700 border-indigo-200';
+        return (
+          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border ${badgeStyle}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${s === 'Completed' ? 'bg-emerald-500' : s === 'In Progress' ? 'bg-amber-500' : 'bg-indigo-500'}`}></span>
+            {s}
+          </span>
+        );
+      },
+    },
+    {
+      id: 'priority',
+      header: 'Priority',
+      cell: (item) => {
+        const p = item.priority || 'Low';
+        const badgeColor =
+          p === 'High'
+            ? 'bg-rose-100 text-rose-700 border-rose-200'
+            : p === 'Medium'
+            ? 'bg-amber-100 text-amber-700 border-amber-200'
+            : 'bg-slate-100 text-slate-700 border-slate-200';
+        return (
+          <span className={`px-2 py-0.5 rounded-md text-xs font-semibold border ${badgeColor}`}>
+            {p}
+          </span>
+        );
+      },
     },
     {
       id: 'due_date',
@@ -43,27 +401,13 @@ export default function TasksPage() {
       cell: (item) => (
         <div className="flex items-center gap-1.5 text-slate-700 text-xs font-medium">
           <Calendar className="w-3.5 h-3.5 text-slate-400" />
-          <span>{item.due_date || 'No due date'}</span>
+          <span>{item.due_date ? item.due_date.substring(0, 10) : 'No due date'}</span>
         </div>
       ),
     },
     {
-      id: 'priority',
-      header: 'Priority Level',
-      cell: (item) => {
-        const p = item.priority || 'Low';
-        const badgeColor =
-          p === 'High' ? 'bg-rose-100 text-rose-700' : p === 'Medium' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-700';
-        return (
-          <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${badgeColor}`}>
-            {p}
-          </span>
-        );
-      },
-    },
-    {
       id: 'assigned_to',
-      header: 'Assigned Representative',
+      header: 'Assigned To',
       cell: (item) => (
         <div className="flex items-center gap-1.5 text-slate-700 text-xs font-medium">
           <UserCheck className="w-3.5 h-3.5 text-slate-400" />
@@ -71,37 +415,683 @@ export default function TasksPage() {
         </div>
       ),
     },
+    {
+      id: 'actions',
+      header: 'Actions',
+      cell: (item) => (
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              setDetailTask(item);
+              setAssignUserInput(item.assigned_to || '');
+            }}
+            title="View Details & Subtasks"
+            className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-md transition-colors cursor-pointer"
+          >
+            <ListTodo className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => handleOpenEditModal(item)}
+            title="Edit Task"
+            className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-md transition-colors cursor-pointer"
+          >
+            <Edit className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => setTaskToDelete(item)}
+            title="Delete Task"
+            className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      ),
+    },
   ];
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Task Management</h1>
-          <p className="text-slate-500 text-sm">Assign, prioritize, and track sales team tasks</p>
+      {/* Toast Notifications */}
+      {successMessage && (
+        <div className="flex items-center justify-between p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl shadow-sm">
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+            <span>{successMessage}</span>
+          </div>
+          <button onClick={() => setSuccessMessage(null)} className="text-emerald-600 hover:text-emerald-800">
+            <X className="w-4 h-4" />
+          </button>
         </div>
-        <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium text-sm cursor-pointer shadow-sm">
-          + Create Task
-        </button>
+      )}
+
+      {errorMessage && (
+        <div className="flex items-center justify-between p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl shadow-sm">
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <AlertCircle className="w-5 h-5 text-rose-600" />
+            <span>{errorMessage}</span>
+          </div>
+          <button onClick={() => setErrorMessage(null)} className="text-rose-600 hover:text-rose-800">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Page Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2.5">
+            <CheckSquare className="w-7 h-7 text-indigo-600" />
+            Task Management
+          </h1>
+          <p className="text-slate-500 text-sm mt-0.5">Assign, prioritize, schedule, and track sales representative tasks</p>
+        </div>
+
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <button
+            onClick={() => setIsImportModalOpen(true)}
+            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg font-medium text-sm transition-colors shadow-sm cursor-pointer"
+          >
+            <Upload className="w-4 h-4 text-slate-500" />
+            Import CSV
+          </button>
+
+          <button
+            onClick={handleExportCsv}
+            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg font-medium text-sm transition-colors shadow-sm cursor-pointer"
+          >
+            <Download className="w-4 h-4 text-slate-500" />
+            Export CSV
+          </button>
+
+          <button
+            onClick={handleOpenCreateModal}
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors shadow-sm cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            Create Task
+          </button>
+        </div>
       </div>
 
-      <DataTable<TaskItem>
-        columns={columns}
-        data={tasks}
-        getRowKey={(item) => item.id}
-        emptyTitle="No tasks found"
-        emptyDescription="Create a task or change search parameters."
-        searchValue={searchTerm}
-        onSearchChange={setSearchTerm}
-        searchPlaceholder="Search task title..."
-        isLoading={isLoading}
-        pagination={{
-          pageIndex: page - 1,
-          pageCount: tasks.length >= limit ? page + 1 : page,
-          onPageChange: (p) => setPage(p + 1),
-          totalRecords: (page - 1) * limit + tasks.length,
-        }}
-      />
+      {/* Overview Stat Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Tasks</p>
+            <h3 className="text-2xl font-bold text-slate-900 mt-1">{tasks.length}</h3>
+          </div>
+          <div className="h-10 w-10 rounded-lg bg-indigo-50 flex items-center justify-between p-2.5 text-indigo-600">
+            <CheckSquare className="w-full h-full" />
+          </div>
+        </div>
+
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Due Today</p>
+            <h3 className="text-2xl font-bold text-amber-600 mt-1">{todayTasks.length}</h3>
+          </div>
+          <div className="h-10 w-10 rounded-lg bg-amber-50 flex items-center justify-between p-2.5 text-amber-600">
+            <Clock className="w-full h-full" />
+          </div>
+        </div>
+
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Overdue Tasks</p>
+            <h3 className="text-2xl font-bold text-rose-600 mt-1">{overdueTasks.length}</h3>
+          </div>
+          <div className="h-10 w-10 rounded-lg bg-rose-50 flex items-center justify-between p-2.5 text-rose-600">
+            <AlertCircle className="w-full h-full" />
+          </div>
+        </div>
+
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Completed</p>
+            <h3 className="text-2xl font-bold text-emerald-600 mt-1">
+              {tasks.filter((t) => t.status === 'Completed').length}
+            </h3>
+          </div>
+          <div className="h-10 w-10 rounded-lg bg-emerald-50 flex items-center justify-between p-2.5 text-emerald-600">
+            <CheckCircle2 className="w-full h-full" />
+          </div>
+        </div>
+      </div>
+
+      {/* Filter and View Toggles */}
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-4">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+          {/* Navigation View Tabs */}
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
+            <button
+              onClick={() => setViewMode('table')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                viewMode === 'table' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <List className="w-3.5 h-3.5" />
+              All Tasks Table
+            </button>
+
+            <button
+              onClick={() => setViewMode('board')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                viewMode === 'board' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              Kanban Board
+            </button>
+
+            <button
+              onClick={() => setViewMode('today')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                viewMode === 'today' ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Clock className="w-3.5 h-3.5 text-amber-500" />
+              Due Today ({todayTasks.length})
+            </button>
+
+            <button
+              onClick={() => setViewMode('overdue')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                viewMode === 'overdue' ? 'bg-white text-rose-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <AlertCircle className="w-3.5 h-3.5 text-rose-500" />
+              Overdue ({overdueTasks.length})
+            </button>
+          </div>
+
+          {/* Filters & Actions */}
+          <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
+            {/* Status Filter */}
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="bg-slate-50 border border-slate-300 text-slate-700 text-xs rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 outline-none"
+            >
+              <option value="">All Statuses</option>
+              <option value="Pending">Pending</option>
+              <option value="In Progress">In Progress</option>
+              <option value="Completed">Completed</option>
+            </select>
+
+            {/* Priority Filter */}
+            <select
+              value={priorityFilter}
+              onChange={(e) => setPriorityFilter(e.target.value)}
+              className="bg-slate-50 border border-slate-300 text-slate-700 text-xs rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 outline-none"
+            >
+              <option value="">All Priorities</option>
+              <option value="High">High Priority</option>
+              <option value="Medium">Medium Priority</option>
+              <option value="Low">Low Priority</option>
+            </select>
+
+            {/* Bulk Actions */}
+            {selectedIds.size > 0 && (
+              <div className="flex items-center gap-2 bg-indigo-50 px-3 py-1 rounded-lg border border-indigo-200">
+                <span className="text-xs font-semibold text-indigo-700">{selectedIds.size} selected</span>
+                <button
+                  onClick={handleBulkComplete}
+                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-semibold cursor-pointer"
+                >
+                  Bulk Complete
+                </button>
+                <button
+                  onClick={handleBulkDelete}
+                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-semibold cursor-pointer"
+                >
+                  Bulk Delete
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Main View Area */}
+      {viewMode === 'board' ? (
+        /* Kanban Board View */
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {(['Pending', 'In Progress', 'Completed'] as const).map((colStatus) => {
+            const colItems =
+              boardData[colStatus] ||
+              displayedTasks.filter((t) => (t.status || 'Pending') === colStatus);
+
+            const colBg =
+              colStatus === 'Completed'
+                ? 'bg-emerald-50/50 border-emerald-200'
+                : colStatus === 'In Progress'
+                ? 'bg-amber-50/50 border-amber-200'
+                : 'bg-slate-50/80 border-slate-200';
+
+            const headerColor =
+              colStatus === 'Completed'
+                ? 'text-emerald-700'
+                : colStatus === 'In Progress'
+                ? 'text-amber-700'
+                : 'text-slate-700';
+
+            return (
+              <div key={colStatus} className={`rounded-xl border p-4 ${colBg} space-y-3`}>
+                <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                  <h3 className={`font-bold text-sm flex items-center gap-2 ${headerColor}`}>
+                    <span>{colStatus}</span>
+                    <span className="bg-white px-2 py-0.5 rounded-full text-xs font-semibold shadow-xs">
+                      {colItems.length}
+                    </span>
+                  </h3>
+                </div>
+
+                <div className="space-y-3">
+                  {colItems.length === 0 ? (
+                    <div className="text-center py-8 text-slate-400 text-xs">No tasks in {colStatus}</div>
+                  ) : (
+                    colItems.map((item: any) => (
+                      <div
+                        key={item.id}
+                        onClick={() => {
+                          const fullTask = tasks.find((t) => t.id === item.id) || item;
+                          setDetailTask(fullTask);
+                          setAssignUserInput(fullTask.assigned_to || '');
+                        }}
+                        className="bg-white p-3.5 rounded-lg border border-slate-200 shadow-xs hover:shadow-md transition-shadow cursor-pointer space-y-2.5"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <h4 className="font-semibold text-sm text-slate-900">{item.title}</h4>
+                          {item.priority && (
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                item.priority === 'High'
+                                  ? 'bg-rose-100 text-rose-700'
+                                  : item.priority === 'Medium'
+                                  ? 'bg-amber-100 text-amber-700'
+                                  : 'bg-slate-100 text-slate-700'
+                              }`}
+                            >
+                              {item.priority}
+                            </span>
+                          )}
+                        </div>
+
+                        {item.due_date && (
+                          <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                            <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                            <span>{item.due_date.substring(0, 10)}</span>
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs text-slate-500">
+                          <div className="flex items-center gap-1">
+                            <UserCheck className="w-3 h-3 text-slate-400" />
+                            <span className="truncate max-w-[120px]">{item.assigned_to || 'Unassigned'}</span>
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleToggleComplete(item);
+                            }}
+                            className="text-xs text-indigo-600 hover:underline font-medium"
+                          >
+                            {colStatus === 'Completed' ? 'Reopen' : 'Complete'}
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        /* Data Table View */
+        <DataTable<TaskItem>
+          columns={columns}
+          data={displayedTasks}
+          getRowKey={(item) => item.id}
+          emptyTitle={
+            viewMode === 'overdue'
+              ? 'No overdue tasks!'
+              : viewMode === 'today'
+              ? 'No tasks due today!'
+              : 'No tasks found'
+          }
+          emptyDescription="Try clearing search filters or create a new task."
+          searchValue={searchTerm}
+          onSearchChange={setSearchTerm}
+          searchPlaceholder="Search task title..."
+          isLoading={isTasksLoading || isOverdueLoading || isTodayLoading}
+          pagination={{
+            pageIndex: page - 1,
+            pageCount: displayedTasks.length >= limit ? page + 1 : page,
+            onPageChange: (p) => setPage(p + 1),
+            totalRecords: (page - 1) * limit + displayedTasks.length,
+          }}
+        />
+      )}
+
+      {/* Create / Edit Task Modal */}
+      {isCreateModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-5 animate-in fade-in zoom-in duration-150">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <CheckSquare className="w-5 h-5 text-indigo-600" />
+                {editingTask ? 'Edit Task' : 'Create New Task'}
+              </h2>
+              <button
+                onClick={() => {
+                  setIsCreateModalOpen(false);
+                  resetForm();
+                }}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveTask} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                  Task Title *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="e.g. Schedule Product Demo with Client"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                  Description
+                </label>
+                <textarea
+                  rows={3}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Detailed notes or specific outcome requirements..."
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                    Priority Level
+                  </label>
+                  <select
+                    value={priority}
+                    onChange={(e) => setPriority(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+                  >
+                    <option value="Low">Low</option>
+                    <option value="Medium">Medium</option>
+                    <option value="High">High</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                    Status
+                  </label>
+                  <select
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+                  >
+                    <option value="Pending">Pending</option>
+                    <option value="In Progress">In Progress</option>
+                    <option value="Completed">Completed</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                    Due Date
+                  </label>
+                  <input
+                    type="date"
+                    value={dueDate}
+                    onChange={(e) => setDueDate(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                    Assigned Representative
+                  </label>
+                  <input
+                    type="text"
+                    value={assignedTo}
+                    onChange={(e) => setAssignedTo(e.target.value)}
+                    placeholder="e.g. Representative"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCreateModalOpen(false);
+                    resetForm();
+                  }}
+                  className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={createTaskMutation.isPending || updateTaskMutation.isPending}
+                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg font-medium text-sm cursor-pointer shadow-sm disabled:opacity-50"
+                >
+                  {(createTaskMutation.isPending || updateTaskMutation.isPending) && (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  )}
+                  {editingTask ? 'Save Changes' : 'Create Task'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Task Details, Subtasks & Reminders Slide-over / Modal */}
+      {detailTask && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-start pb-4 border-b border-slate-100">
+              <div>
+                <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider">Task Details</span>
+                <h2 className="text-xl font-bold text-slate-900">{detailTask.title}</h2>
+              </div>
+              <button onClick={() => setDetailTask(null)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Task Info Summary */}
+            <div className="grid grid-cols-3 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs">
+              <div>
+                <span className="text-slate-400 font-medium block">Status</span>
+                <span className="font-bold text-slate-800">{detailTask.status || 'Pending'}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 font-medium block">Priority</span>
+                <span className="font-bold text-slate-800">{detailTask.priority || 'Low'}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 font-medium block">Due Date</span>
+                <span className="font-bold text-slate-800">{detailTask.due_date?.substring(0, 10) || 'N/A'}</span>
+              </div>
+            </div>
+
+            {detailTask.description && (
+              <div>
+                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Description</h4>
+                <p className="text-sm text-slate-700 bg-slate-50/50 p-3 rounded-lg border border-slate-100">{detailTask.description}</p>
+              </div>
+            )}
+
+            {/* Subtasks Section */}
+            <div className="space-y-3 pt-2">
+              <h4 className="text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center justify-between">
+                <span>Sub-tasks ({subtasks.length})</span>
+              </h4>
+
+              <form onSubmit={handleAddSubtask} className="flex gap-2">
+                <input
+                  type="text"
+                  value={newSubtaskTitle}
+                  onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                  placeholder="Add a new subtask..."
+                  className="flex-1 bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <button
+                  type="submit"
+                  disabled={addSubtaskMutation.isPending}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
+                >
+                  Add Subtask
+                </button>
+              </form>
+
+              <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                {subtasks.length === 0 ? (
+                  <p className="text-xs text-slate-400 italic">No subtasks added yet.</p>
+                ) : (
+                  subtasks.map((st) => (
+                    <div key={st.id} className="flex items-center gap-2 text-xs text-slate-700 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                      <CornerDownRight className="w-3.5 h-3.5 text-indigo-500" />
+                      <span>{st.title}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Assign User & Reminder Controls */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-slate-100">
+              {/* Assignee Form */}
+              <form onSubmit={handleAssignTaskSubmit} className="space-y-2">
+                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider">
+                  Assign User
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={assignUserInput}
+                    onChange={(e) => setAssignUserInput(e.target.value)}
+                    placeholder="User ID or Name"
+                    className="flex-1 bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <button
+                    type="submit"
+                    className="bg-slate-800 hover:bg-slate-900 text-white px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer"
+                  >
+                    Assign
+                  </button>
+                </div>
+              </form>
+
+              {/* Set Reminder Form */}
+              <form onSubmit={handleSetReminderSubmit} className="space-y-2">
+                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1">
+                  <Bell className="w-3.5 h-3.5 text-amber-500" />
+                  Set Reminder
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="datetime-local"
+                    value={reminderTime}
+                    onChange={(e) => setReminderTime(e.target.value)}
+                    className="flex-1 bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <button
+                    type="submit"
+                    className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer"
+                  >
+                    Notify
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CSV Import Modal */}
+      {isImportModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <FileSpreadsheet className="w-5 h-5 text-indigo-600" />
+                Import Tasks from CSV
+              </h3>
+              <button onClick={() => setIsImportModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleImportCsvSubmit} className="space-y-4">
+              <div className="border-2 border-dashed border-slate-300 rounded-xl p-6 text-center space-y-2 hover:border-indigo-400 transition-colors">
+                <Upload className="w-8 h-8 text-slate-400 mx-auto" />
+                <p className="text-xs text-slate-600 font-medium">Select a CSV file containing task headers (title, priority, due_date, status)</p>
+                <input
+                  type="file"
+                  accept=".csv"
+                  onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                  className="block w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsImportModalOpen(false)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isImporting || !importFile}
+                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
+                >
+                  {isImporting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  Upload & Import
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Task Delete Modal */}
+      {taskToDelete && (
+        <ConfirmModal
+          isOpen={!!taskToDelete}
+          title="Delete Task"
+          description={`Are you sure you want to delete "${taskToDelete.title}"? This action cannot be undone.`}
+          confirmText="Delete"
+          variant="danger"
+          onConfirm={handleDeleteTask}
+          onClose={() => setTaskToDelete(null)}
+        />
+      )}
     </div>
   );
 }

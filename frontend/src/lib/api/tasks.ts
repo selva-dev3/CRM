@@ -1,48 +1,295 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 
 export interface TaskItem {
   id: string;
   title: string;
+  description?: string;
+  priority?: string; // 'Low' | 'Medium' | 'High'
   due_date?: string;
+  status?: string; // 'Pending' | 'In Progress' | 'Completed'
+  assigned_to?: string;
+  created_at?: string;
+}
+
+export interface TaskCreatePayload {
+  title: string;
+  description?: string;
   priority?: string;
+  due_date?: string;
   status?: string;
   assigned_to?: string;
 }
 
-export async function fetchTasksApi(page = 1, limit = 15, search?: string): Promise<TaskItem[]> {
-  try {
-    const query = new URLSearchParams({ page: String(page), limit: String(limit) });
-    if (search) query.append('search', search);
-    const data = await apiClient.get<TaskItem[]>(`/tasks?${query.toString()}`);
-    if (Array.isArray(data) && data.length > 0) return data;
-  } catch {
-    // Fallback data
-  }
-  return [
-    { id: 'tsk-1', title: 'Schedule Technical Demo with Acme Corp', due_date: '2026-08-10', priority: 'High', status: 'In Progress', assigned_to: 'Manager' },
-    { id: 'tsk-2', title: 'Send Contract Proposal to Nexus Tech', due_date: '2026-08-12', priority: 'Medium', status: 'Pending', assigned_to: 'Representative' },
-    { id: 'tsk-3', title: 'Follow up on Inactive Leads', due_date: '2026-08-15', priority: 'Low', status: 'Pending', assigned_to: 'Sales Lead' },
-    { id: 'tsk-4', title: 'Prepare Q3 Sales Forecast Presentation', due_date: '2026-08-18', priority: 'High', status: 'Completed', assigned_to: 'Director' },
-    { id: 'tsk-5', title: 'Review Security Questionnaire for Hyperion', due_date: '2026-08-20', priority: 'High', status: 'In Progress', assigned_to: 'Security Lead' },
-    { id: 'tsk-6', title: 'Audit Partner Integration Webhooks', due_date: '2026-08-22', priority: 'Medium', status: 'Pending', assigned_to: 'DevOps' },
-    { id: 'tsk-7', title: 'Conduct Customer Renewal Call with Starlight', due_date: '2026-08-25', priority: 'High', status: 'Pending', assigned_to: 'Account Manager' },
-    { id: 'tsk-8', title: 'Update Pricing Sheet for 2027 Services', due_date: '2026-08-28', priority: 'Low', status: 'In Progress', assigned_to: 'Product Admin' },
-    { id: 'tsk-9', title: 'Draft Executive Summary for Apex Fin', due_date: '2026-08-30', priority: 'Medium', status: 'Completed', assigned_to: 'Manager' },
-    { id: 'tsk-10', title: 'Sync with Engineering on Feature Request #402', due_date: '2026-09-01', priority: 'Low', status: 'Pending', assigned_to: 'Representative' },
-    { id: 'tsk-11', title: 'Finalize SLA Agreement for Titan Robotics', due_date: '2026-09-03', priority: 'High', status: 'In Progress', assigned_to: 'Legal Lead' },
-    { id: 'tsk-12', title: 'Verify Data Import Script CSV Export', due_date: '2026-09-05', priority: 'Medium', status: 'Completed', assigned_to: 'Data Ops' },
-    { id: 'tsk-13', title: 'Setup Automated Lead Nurturing Email Sequence', due_date: '2026-09-08', priority: 'High', status: 'Pending', assigned_to: 'Marketing' },
-    { id: 'tsk-14', title: 'Schedule Onboarding Kickoff Call for Zion Bio', due_date: '2026-09-10', priority: 'Medium', status: 'In Progress', assigned_to: 'CS Specialist' },
-    { id: 'tsk-15', title: 'Perform Quarterly Account Health Check', due_date: '2026-09-12', priority: 'Low', status: 'Pending', assigned_to: 'Representative' },
-    { id: 'tsk-16', title: 'Review Pipeline Metrics with Vice President', due_date: '2026-09-15', priority: 'High', status: 'Pending', assigned_to: 'Manager' },
-  ];
+export interface TaskUpdatePayload {
+  title?: string;
+  description?: string;
+  priority?: string;
+  due_date?: string;
+  status?: string;
+  assigned_to?: string;
 }
 
-export function useTasksQuery(page = 1, limit = 15, search?: string) {
+export interface FetchTasksParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+  status?: string;
+  priority?: string;
+}
+
+export interface SubtaskItem {
+  id: string;
+  task_id?: string;
+  title: string;
+  completed?: boolean;
+  created_at?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Raw API Functions
+// ---------------------------------------------------------------------------
+
+export async function fetchTasksApi(params: FetchTasksParams = {}): Promise<TaskItem[]> {
+  const query = new URLSearchParams();
+  const page = params.page ?? 1;
+  const limit = params.limit ?? 20;
+  query.append('page', String(page));
+  query.append('limit', String(limit));
+  if (params.search) query.append('search', params.search);
+  if (params.status) query.append('status', params.status);
+  if (params.priority) query.append('priority', params.priority);
+
+  const queryString = query.toString();
+  return apiClient.get<TaskItem[]>(`/tasks${queryString ? `?${queryString}` : ''}`);
+}
+
+export async function getTaskByIdApi(id: string): Promise<TaskItem> {
+  return apiClient.get<TaskItem>(`/tasks/${id}`);
+}
+
+export async function createTaskApi(payload: TaskCreatePayload): Promise<TaskItem> {
+  return apiClient.post<TaskItem>('/tasks', payload);
+}
+
+export async function updateTaskApi(id: string, payload: TaskUpdatePayload): Promise<TaskItem> {
+  return apiClient.put<TaskItem>(`/tasks/${id}`, payload);
+}
+
+export async function deleteTaskApi(id: string): Promise<{ message: string; status: string }> {
+  return apiClient.delete<{ message: string; status: string }>(`/tasks/${id}`);
+}
+
+export async function completeTaskApi(id: string): Promise<{ message: string; status: string }> {
+  return apiClient.post<{ message: string; status: string }>(`/tasks/${id}/complete`);
+}
+
+export async function reopenTaskApi(id: string): Promise<{ message: string; status: string }> {
+  return apiClient.post<{ message: string; status: string }>(`/tasks/${id}/reopen`);
+}
+
+export async function fetchOverdueTasksApi(): Promise<TaskItem[]> {
+  return apiClient.get<TaskItem[]>('/tasks/overdue');
+}
+
+export async function fetchTodayTasksApi(): Promise<TaskItem[]> {
+  return apiClient.get<TaskItem[]>('/tasks/today');
+}
+
+export async function fetchBoardTasksApi(): Promise<Record<string, Array<{ id: string; title: string; priority?: string; due_date?: string; assigned_to?: string }>>> {
+  return apiClient.get<Record<string, Array<{ id: string; title: string; priority?: string; due_date?: string; assigned_to?: string }>>>('/tasks/board-view');
+}
+
+export async function exportTasksCsvApi(): Promise<{ download_url: string }> {
+  return apiClient.get<{ download_url: string }>('/tasks/export/csv');
+}
+
+export async function importTasksCsvApi(file: File): Promise<{ message: string; status: string }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  return apiClient.post<{ message: string; status: string }>('/tasks/import/csv', formData);
+}
+
+export async function bulkDeleteTasksApi(ids: string[]): Promise<{ affected_count: number; message: string }> {
+  return apiClient.post<{ affected_count: number; message: string }>('/tasks/bulk-delete', { ids });
+}
+
+export async function bulkCompleteTasksApi(ids: string[]): Promise<{ affected_count: number; message: string }> {
+  return apiClient.post<{ affected_count: number; message: string }>('/tasks/bulk-complete', { ids });
+}
+
+export async function fetchSubtasksApi(taskId: string): Promise<SubtaskItem[]> {
+  return apiClient.get<SubtaskItem[]>(`/tasks/${taskId}/subtasks`);
+}
+
+export async function addSubtaskApi(taskId: string, title: string): Promise<{ message: string; status: string }> {
+  return apiClient.post<{ message: string; status: string }>(`/tasks/${taskId}/subtasks?title=${encodeURIComponent(title)}`);
+}
+
+export async function assignTaskApi(taskId: string, userId: string): Promise<{ message: string; status: string }> {
+  return apiClient.post<{ message: string; status: string }>(`/tasks/${taskId}/assign?user_id=${encodeURIComponent(userId)}`);
+}
+
+export async function setTaskReminderApi(taskId: string, reminderTime: string): Promise<{ message: string; status: string }> {
+  return apiClient.post<{ message: string; status: string }>(`/tasks/${taskId}/reminder?reminder_time=${encodeURIComponent(reminderTime)}`);
+}
+
+// ---------------------------------------------------------------------------
+// TanStack Query Hooks
+// ---------------------------------------------------------------------------
+
+export function useTasksQuery(params: FetchTasksParams = {}) {
   return useQuery({
-    queryKey: ['tasks', page, limit, search],
-    queryFn: () => fetchTasksApi(page, limit, search),
+    queryKey: ['tasks', params],
+    queryFn: () => fetchTasksApi(params),
     placeholderData: (previousData) => previousData,
+  });
+}
+
+export function useTaskQuery(id: string) {
+  return useQuery({
+    queryKey: ['task', id],
+    queryFn: () => getTaskByIdApi(id),
+    enabled: !!id,
+  });
+}
+
+export function useOverdueTasksQuery() {
+  return useQuery({
+    queryKey: ['tasks', 'overdue'],
+    queryFn: () => fetchOverdueTasksApi(),
+  });
+}
+
+export function useTodayTasksQuery() {
+  return useQuery({
+    queryKey: ['tasks', 'today'],
+    queryFn: () => fetchTodayTasksApi(),
+  });
+}
+
+export function useBoardTasksQuery() {
+  return useQuery({
+    queryKey: ['tasks', 'board-view'],
+    queryFn: () => fetchBoardTasksApi(),
+  });
+}
+
+export function useSubtasksQuery(taskId: string) {
+  return useQuery({
+    queryKey: ['tasks', taskId, 'subtasks'],
+    queryFn: () => fetchSubtasksApi(taskId),
+    enabled: !!taskId,
+  });
+}
+
+export function useCreateTaskMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: TaskCreatePayload) => createTaskApi(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+    },
+  });
+}
+
+export function useUpdateTaskMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: TaskUpdatePayload }) => updateTaskApi(id, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+    },
+  });
+}
+
+export function useDeleteTaskMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => deleteTaskApi(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+    },
+  });
+}
+
+export function useCompleteTaskMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => completeTaskApi(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+    },
+  });
+}
+
+export function useReopenTaskMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => reopenTaskApi(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+    },
+  });
+}
+
+export function useBulkDeleteTasksMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (ids: string[]) => bulkDeleteTasksApi(ids),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+    },
+  });
+}
+
+export function useBulkCompleteTasksMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (ids: string[]) => bulkCompleteTasksApi(ids),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+    },
+  });
+}
+
+export function useAddSubtaskMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ taskId, title }: { taskId: string; title: string }) => addSubtaskApi(taskId, title),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['tasks', variables.taskId, 'subtasks'] });
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+    },
+  });
+}
+
+export function useAssignTaskMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ taskId, userId }: { taskId: string; userId: string }) => assignTaskApi(taskId, userId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+    },
+  });
+}
+
+export function useSetTaskReminderMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ taskId, reminderTime }: { taskId: string; reminderTime: string }) => setTaskReminderApi(taskId, reminderTime),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+    },
   });
 }
