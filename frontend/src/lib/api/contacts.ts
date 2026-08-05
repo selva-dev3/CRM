@@ -14,6 +14,8 @@ export interface ContactItem {
 
 export interface ContactCreatePayload {
   name: string;
+  first_name?: string;
+  last_name?: string;
   email: string;
   phone?: string;
   position?: string;
@@ -22,6 +24,8 @@ export interface ContactCreatePayload {
 
 export interface ContactUpdatePayload {
   name?: string;
+  first_name?: string;
+  last_name?: string;
   email?: string;
   phone?: string;
   position?: string;
@@ -43,8 +47,8 @@ export async function fetchContactsApi(page = 1, limit = 15, search?: string): P
 
 export async function createContactApi(payload: ContactCreatePayload): Promise<ContactItem> {
   const parts = payload.name.trim().split(' ');
-  const firstName = parts[0] || payload.name;
-  const lastName = parts.slice(1).join(' ') || parts[0] || 'Contact';
+  const firstName = payload.first_name || parts[0] || payload.name;
+  const lastName = payload.last_name || parts.slice(1).join(' ') || parts[0] || 'Contact';
 
   return apiClient.post<ContactItem>('/contacts', {
     name: payload.name,

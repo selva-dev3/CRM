@@ -107,12 +107,18 @@ export default function ContactsPage() {
     }
     try {
       setErrorMessage(null);
+      const parts = formName.trim().split(' ');
+      const firstName = parts[0] || formName;
+      const lastName = parts.slice(1).join(' ') || parts[0] || 'Contact';
+
       await createContactMutation.mutateAsync({
         name: formName,
+        first_name: firstName,
+        last_name: lastName,
         email: formEmail,
-        phone: formPhone,
+        phone: formPhone || undefined,
         position: formPosition || 'Representative',
-        company_id: formCompanyId || 'comp-1',
+        company_id: formCompanyId || undefined,
       });
       setSuccessMessage(`Contact '${formName}' created successfully.`);
       setIsCreateModalOpen(false);
