@@ -1,48 +1,273 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
+
+export interface QuoteLineItem {
+  name: string;
+  quantity: number;
+  unit_price: number;
+  total: number;
+}
 
 export interface QuoteItem {
   id: string;
   quote_number: string;
-  client: string;
+  client?: string;
+  items?: QuoteLineItem[];
   total_amount: number;
   status: string;
   created_at: string;
 }
 
-export async function fetchQuotesApi(page = 1, limit = 15, search?: string): Promise<QuoteItem[]> {
-  try {
-    const query = new URLSearchParams({ page: String(page), limit: String(limit) });
-    if (search) query.append('search', search);
-    const data = await apiClient.get<QuoteItem[]>(`/quotes?${query.toString()}`);
-    if (Array.isArray(data) && data.length > 0) return data;
-  } catch {
-    // Fallback data
-  }
-  return [
-    { id: 'q-201', quote_number: 'Q-2026-0801', client: 'Acme Global Corp', total_amount: 18500, status: 'Accepted', created_at: '2026-08-01' },
-    { id: 'q-202', quote_number: 'Q-2026-0802', client: 'Nexus Tech Solutions', total_amount: 9200, status: 'Sent', created_at: '2026-08-02' },
-    { id: 'q-203', quote_number: 'Q-2026-0803', client: 'Starlight Logistics', total_amount: 34000, status: 'Under Review', created_at: '2026-08-02' },
-    { id: 'q-204', quote_number: 'Q-2026-0804', client: 'Hyperion Cloud Inc', total_amount: 25000, status: 'Accepted', created_at: '2026-08-03' },
-    { id: 'q-205', quote_number: 'Q-2026-0805', client: 'Apex Financial', total_amount: 14000, status: 'Draft', created_at: '2026-08-03' },
-    { id: 'q-206', quote_number: 'Q-2026-0806', client: 'Vanguard Bio Tech', total_amount: 42000, status: 'Accepted', created_at: '2026-08-04' },
-    { id: 'q-207', quote_number: 'Q-2026-0807', client: 'Quantum Analytics', total_amount: 7800, status: 'Sent', created_at: '2026-08-04' },
-    { id: 'q-208', quote_number: 'Q-2026-0808', client: 'Solaris Energy', total_amount: 19500, status: 'Expired', created_at: '2026-07-25' },
-    { id: 'q-209', quote_number: 'Q-2026-0809', client: 'Titan Robotics', total_amount: 60000, status: 'Under Review', created_at: '2026-08-04' },
-    { id: 'q-210', quote_number: 'Q-2026-0810', client: 'Aero Dynamics', total_amount: 31000, status: 'Sent', created_at: '2026-08-04' },
-    { id: 'q-211', quote_number: 'Q-2026-0811', client: 'BlueWave Media', total_amount: 4800, status: 'Accepted', created_at: '2026-08-04' },
-    { id: 'q-212', quote_number: 'Q-2026-0812', client: 'CyberShield Systems', total_amount: 15600, status: 'Draft', created_at: '2026-08-04' },
-    { id: 'q-213', quote_number: 'Q-2026-0813', client: 'Horizon Telecom', total_amount: 85000, status: 'Accepted', created_at: '2026-08-01' },
-    { id: 'q-214', quote_number: 'Q-2026-0814', client: 'Omni Retail Tech', total_amount: 22400, status: 'Sent', created_at: '2026-08-04' },
-    { id: 'q-215', quote_number: 'Q-2026-0815', client: 'Zion BioPharma', total_amount: 28000, status: 'Draft', created_at: '2026-08-04' },
-    { id: 'q-216', quote_number: 'Q-2026-0816', client: 'Atlas Construction', total_amount: 68000, status: 'Sent', created_at: '2026-08-04' },
-  ];
+export interface QuoteCreatePayload {
+  quote_number?: string;
+  items?: QuoteLineItem[];
+  total_amount: number;
+  status?: string;
 }
 
-export function useQuotesQuery(page = 1, limit = 15, search?: string) {
-  return useQuery({
-    queryKey: ['quotes', page, limit, search],
-    queryFn: () => fetchQuotesApi(page, limit, search),
-    placeholderData: (previousData) => previousData,
+export interface QuoteRevisionItem {
+  id: string;
+  quote_number: string;
+  total_amount: number;
+  version: string;
+  created_at: string;
+}
+
+export interface BulkActionResponse {
+  affected_count: number;
+  message: string;
+}
+
+export interface MessageResponse {
+  message: string;
+  status: string;
+}
+
+export interface InvoiceConversionResponse {
+  id: string;
+  invoice_number: string;
+  amount: number;
+  status: string;
+  due_date: string;
+  created_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// API Client Functions
+// ---------------------------------------------------------------------------
+
+export async function fetchQuotesApi(params?: { page?: number; limit?: number; status?: string; search?: string }): Promise<QuoteItem[]> {
+  const query = new URLSearchParams();
+  if (params?.page) query.append('page', String(params.page));
+  if (params?.limit) query.append('limit', String(params.limit));
+  if (params?.status) query.append('status', params.status);
+  if (params?.search) query.append('search', params.search);
+  const endpoint = `/quotes${query.toString() ? `?${query.toString()}` : ''}`;
+  return apiClient.get<QuoteItem[]>(endpoint);
+}
+
+export async function createQuoteApi(payload: QuoteCreatePayload): Promise<QuoteItem> {
+  return apiClient.post<QuoteItem>('/quotes', payload);
+}
+
+export async function exportQuotesCsvApi(): Promise<{ download_url: string }> {
+  return apiClient.get<{ download_url: string }>('/quotes/export/csv');
+}
+
+export async function importQuotesCsvApi(): Promise<MessageResponse> {
+  return apiClient.post<MessageResponse>('/quotes/import/csv');
+}
+
+export async function bulkDeleteQuotesApi(ids: string[]): Promise<BulkActionResponse> {
+  return apiClient.post<BulkActionResponse>('/quotes/bulk-delete', { ids });
+}
+
+export async function fetchQuoteApi(quoteId: string): Promise<QuoteItem> {
+  return apiClient.get<QuoteItem>(`/quotes/${quoteId}`);
+}
+
+export async function updateQuoteApi(quoteId: string, payload: QuoteCreatePayload): Promise<QuoteItem> {
+  return apiClient.put<QuoteItem>(`/quotes/${quoteId}`, payload);
+}
+
+export async function deleteQuoteApi(quoteId: string): Promise<MessageResponse> {
+  return apiClient.delete<MessageResponse>(`/quotes/${quoteId}`);
+}
+
+export async function sendQuoteEmailApi(quoteId: string, recipient_email: string): Promise<MessageResponse> {
+  return apiClient.post<MessageResponse>(`/quotes/${quoteId}/send?recipient_email=${encodeURIComponent(recipient_email)}`);
+}
+
+export async function acceptQuoteApi(quoteId: string): Promise<MessageResponse> {
+  return apiClient.post<MessageResponse>(`/quotes/${quoteId}/accept`);
+}
+
+export async function rejectQuoteApi(quoteId: string, reason?: string): Promise<MessageResponse> {
+  return apiClient.post<MessageResponse>(`/quotes/${quoteId}/reject?reason=${encodeURIComponent(reason || 'Budget constraints')}`);
+}
+
+export async function fetchQuotePdfApi(quoteId: string): Promise<{ pdf_url: string }> {
+  return apiClient.get<{ pdf_url: string }>(`/quotes/${quoteId}/pdf`);
+}
+
+export async function convertQuoteToInvoiceApi(quoteId: string): Promise<InvoiceConversionResponse> {
+  return apiClient.post<InvoiceConversionResponse>(`/quotes/${quoteId}/convert-to-invoice`);
+}
+
+export async function createQuoteRevisionApi(quoteId: string): Promise<QuoteItem> {
+  return apiClient.post<QuoteItem>(`/quotes/${quoteId}/revisions`);
+}
+
+export async function fetchQuoteRevisionsApi(quoteId: string): Promise<QuoteRevisionItem[]> {
+  return apiClient.get<QuoteRevisionItem[]>(`/quotes/${quoteId}/revisions`);
+}
+
+// ---------------------------------------------------------------------------
+// TanStack Query Hooks
+// ---------------------------------------------------------------------------
+
+export function useQuotesQuery(params?: { page?: number; limit?: number; status?: string; search?: string }, options?: Omit<UseQueryOptions<QuoteItem[]>, 'queryKey' | 'queryFn'>) {
+  return useQuery<QuoteItem[]>({
+    queryKey: ['quotes', params],
+    queryFn: () => fetchQuotesApi(params),
+    staleTime: 1000 * 60 * 2,
+    ...options,
+  });
+}
+
+export function useQuoteQuery(quoteId: string, options?: Omit<UseQueryOptions<QuoteItem>, 'queryKey' | 'queryFn'>) {
+  return useQuery<QuoteItem>({
+    queryKey: ['quotes', quoteId],
+    queryFn: () => fetchQuoteApi(quoteId),
+    enabled: !!quoteId,
+    ...options,
+  });
+}
+
+export function useQuotePdfQuery(quoteId: string, options?: Omit<UseQueryOptions<{ pdf_url: string }>, 'queryKey' | 'queryFn'>) {
+  return useQuery<{ pdf_url: string }>({
+    queryKey: ['quotes', quoteId, 'pdf'],
+    queryFn: () => fetchQuotePdfApi(quoteId),
+    enabled: !!quoteId,
+    ...options,
+  });
+}
+
+export function useQuoteRevisionsQuery(quoteId: string, options?: Omit<UseQueryOptions<QuoteRevisionItem[]>, 'queryKey' | 'queryFn'>) {
+  return useQuery<QuoteRevisionItem[]>({
+    queryKey: ['quotes', quoteId, 'revisions'],
+    queryFn: () => fetchQuoteRevisionsApi(quoteId),
+    enabled: !!quoteId,
+    ...options,
+  });
+}
+
+export function useCreateQuoteMutation(options?: UseMutationOptions<QuoteItem, Error, QuoteCreatePayload>) {
+  const queryClient = useQueryClient();
+  return useMutation<QuoteItem, Error, QuoteCreatePayload>({
+    mutationFn: createQuoteApi,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['quotes'] });
+    },
+    ...options,
+  });
+}
+
+export function useUpdateQuoteMutation(options?: UseMutationOptions<QuoteItem, Error, { id: string; payload: QuoteCreatePayload }>) {
+  const queryClient = useQueryClient();
+  return useMutation<QuoteItem, Error, { id: string; payload: QuoteCreatePayload }>({
+    mutationFn: ({ id, payload }) => updateQuoteApi(id, payload),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['quotes'] });
+      queryClient.invalidateQueries({ queryKey: ['quotes', variables.id] });
+    },
+    ...options,
+  });
+}
+
+export function useDeleteQuoteMutation(options?: UseMutationOptions<MessageResponse, Error, string>) {
+  const queryClient = useQueryClient();
+  return useMutation<MessageResponse, Error, string>({
+    mutationFn: deleteQuoteApi,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['quotes'] });
+    },
+    ...options,
+  });
+}
+
+export function useBulkDeleteQuotesMutation(options?: UseMutationOptions<BulkActionResponse, Error, string[]>) {
+  const queryClient = useQueryClient();
+  return useMutation<BulkActionResponse, Error, string[]>({
+    mutationFn: bulkDeleteQuotesApi,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['quotes'] });
+    },
+    ...options,
+  });
+}
+
+export function useSendQuoteEmailMutation(options?: UseMutationOptions<MessageResponse, Error, { id: string; recipient_email: string }>) {
+  return useMutation<MessageResponse, Error, { id: string; recipient_email: string }>({
+    mutationFn: ({ id, recipient_email }) => sendQuoteEmailApi(id, recipient_email),
+    ...options,
+  });
+}
+
+export function useAcceptQuoteMutation(options?: UseMutationOptions<MessageResponse, Error, string>) {
+  const queryClient = useQueryClient();
+  return useMutation<MessageResponse, Error, string>({
+    mutationFn: acceptQuoteApi,
+    onSuccess: (_, quoteId) => {
+      queryClient.invalidateQueries({ queryKey: ['quotes'] });
+      queryClient.invalidateQueries({ queryKey: ['quotes', quoteId] });
+    },
+    ...options,
+  });
+}
+
+export function useRejectQuoteMutation(options?: UseMutationOptions<MessageResponse, Error, { id: string; reason?: string }>) {
+  const queryClient = useQueryClient();
+  return useMutation<MessageResponse, Error, { id: string; reason?: string }>({
+    mutationFn: ({ id, reason }) => rejectQuoteApi(id, reason),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['quotes'] });
+      queryClient.invalidateQueries({ queryKey: ['quotes', variables.id] });
+    },
+    ...options,
+  });
+}
+
+export function useConvertQuoteToInvoiceMutation(options?: UseMutationOptions<InvoiceConversionResponse, Error, string>) {
+  const queryClient = useQueryClient();
+  return useMutation<InvoiceConversionResponse, Error, string>({
+    mutationFn: convertQuoteToInvoiceApi,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+    },
+    ...options,
+  });
+}
+
+export function useCreateQuoteRevisionMutation(options?: UseMutationOptions<QuoteItem, Error, string>) {
+  const queryClient = useQueryClient();
+  return useMutation<QuoteItem, Error, string>({
+    mutationFn: createQuoteRevisionApi,
+    onSuccess: (_, quoteId) => {
+      queryClient.invalidateQueries({ queryKey: ['quotes'] });
+      queryClient.invalidateQueries({ queryKey: ['quotes', quoteId, 'revisions'] });
+    },
+    ...options,
+  });
+}
+
+export function useImportQuotesCsvMutation(options?: UseMutationOptions<MessageResponse, Error, void>) {
+  const queryClient = useQueryClient();
+  return useMutation<MessageResponse, Error, void>({
+    mutationFn: importQuotesCsvApi,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['quotes'] });
+    },
+    ...options,
   });
 }
