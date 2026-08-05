@@ -13,23 +13,25 @@ export interface ContactItem {
 }
 
 export interface ContactCreatePayload {
-  name: string;
   first_name?: string;
   last_name?: string;
+  name: string;
   email: string;
   phone?: string;
-  position?: string;
   company_id?: string;
+  position?: string;
+  job_title?: string;
 }
 
 export interface ContactUpdatePayload {
-  name?: string;
   first_name?: string;
   last_name?: string;
+  name?: string;
   email?: string;
   phone?: string;
-  position?: string;
   company_id?: string;
+  position?: string;
+  job_title?: string;
 }
 
 // API Functions
@@ -51,14 +53,14 @@ export async function createContactApi(payload: ContactCreatePayload): Promise<C
   const lastName = payload.last_name || parts.slice(1).join(' ') || parts[0] || 'Contact';
 
   return apiClient.post<ContactItem>('/contacts', {
-    name: payload.name,
     first_name: firstName,
     last_name: lastName,
+    name: payload.name,
     email: payload.email,
     phone: payload.phone || null,
-    position: payload.position || 'Representative',
-    job_title: payload.position || 'Representative',
     company_id: payload.company_id || null,
+    position: payload.position || 'Representative',
+    job_title: payload.job_title || payload.position || 'Representative',
   });
 }
 

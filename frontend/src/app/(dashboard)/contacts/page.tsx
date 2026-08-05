@@ -41,6 +41,7 @@ import {
   ContactItem
 } from '@/lib/api/contacts';
 import { useOrganizationsQuery } from '@/lib/api/organizations';
+import { useCompaniesQuery } from '@/lib/api/companies';
 
 export default function ContactsPage() {
   const [activeTab, setActiveTab] = useState<'all' | 'starred'>('all');
@@ -60,16 +61,30 @@ export default function ContactsPage() {
   const [contactToEdit, setContactToEdit] = useState<ContactItem | null>(null);
   const [contactToDelete, setContactToDelete] = useState<ContactItem | null>(null);
 
-  // Form State
+  // Form State matching exact payload: first_name, last_name, name, email, phone, company_id, position, job_title
+  const [formFirstName, setFormFirstName] = useState('');
+  const [formLastName, setFormLastName] = useState('');
   const [formName, setFormName] = useState('');
   const [formEmail, setFormEmail] = useState('');
   const [formPhone, setFormPhone] = useState('');
   const [formPosition, setFormPosition] = useState('');
+  const [formJobTitle, setFormJobTitle] = useState('');
   const [formCompanyId, setFormCompanyId] = useState('');
 
   // Merge Form State
   const [primaryContactId, setPrimaryContactId] = useState('');
   const [secondaryContactId, setSecondaryContactId] = useState('');
+
+  const resetForm = () => {
+    setFormFirstName('');
+    setFormLastName('');
+    setFormName('');
+    setFormEmail('');
+    setFormPhone('');
+    setFormPosition('');
+    setFormJobTitle('');
+    setFormCompanyId('');
+  };
 
   // Search Debounce
   useEffect(() => {
@@ -84,6 +99,7 @@ export default function ContactsPage() {
   const { data: allContacts = [], isLoading: isAllLoading, refetch: refetchAll } = useContactsQuery(page, limit, debouncedSearchTerm);
   const { data: starredContacts = [], isLoading: isStarredLoading, refetch: refetchStarred } = useStarredContactsQuery();
   const { data: organizations = [] } = useOrganizationsQuery();
+  const { data: companiesList = [] } = useCompaniesQuery(1, 100);
 
   const contacts = activeTab === 'starred' ? starredContacts : allContacts;
   const isLoading = activeTab === 'starred' ? isStarredLoading : isAllLoading;
@@ -101,26 +117,21 @@ export default function ContactsPage() {
   // Handlers
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formName || !formEmail) {
-      setErrorMessage('Please provide contact name and email address.');
-      return;
-    }
+    const displayName = formName || `${formFirstName} ${formLastName}`.trim() || 'Contact';
+    const emailVal = formEmail || 'user@example.com';
     try {
       setErrorMessage(null);
-      const parts = formName.trim().split(' ');
-      const firstName = parts[0] || formName;
-      const lastName = parts.slice(1).join(' ') || parts[0] || 'Contact';
-
       await createContactMutation.mutateAsync({
-        name: formName,
-        first_name: firstName,
-        last_name: lastName,
-        email: formEmail,
+        first_name: formFirstName || undefined,
+        last_name: formLastName || undefined,
+        name: displayName,
+        email: emailVal,
         phone: formPhone || undefined,
-        position: formPosition || 'Representative',
         company_id: formCompanyId || undefined,
+        position: formPosition || undefined,
+        job_title: formJobTitle || formPosition || undefined,
       });
-      setSuccessMessage(`Contact '${formName}' created successfully.`);
+      setSuccessMessage(`Contact '${displayName}' created successfully.`);
       setIsCreateModalOpen(false);
       resetForm();
       refetchAll();
@@ -160,14 +171,6 @@ export default function ContactsPage() {
     setFormPhone(item.phone || '');
     setFormPosition(item.position || '');
     setIsEditModalOpen(true);
-  };
-
-  const resetForm = () => {
-    setFormName('');
-    setFormEmail('');
-    setFormPhone('');
-    setFormPosition('');
-    setFormCompanyId('');
   };
 
   const handleToggleStar = async (item: ContactItem) => {
@@ -524,48 +527,114 @@ export default function ContactsPage() {
             </div>
 
             <form onSubmit={handleCreateSubmit} className="space-y-4 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="font-semibold text-slate-700">First Name</Label>
+                  <Input
+                    type="text"
+                    placeholder="e.g. selva"
+                    value={formFirstName}
+                    onChange={(e) => setFormFirstName(e.target.value)}
+                    className="h-9 text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="font-semibold text-slate-700">Last Name</Label>
+                  <Input
+                    type="text"
+                    placeholder="e.g. kumar"
+                    value={formLastName}
+                    onChange={(e) => setFormLastName(e.target.value)}
+                    className="h-9 text-xs"
+                  />
+                </div>
+              </div>
+
               <div className="space-y-1">
                 <Label className="font-semibold text-slate-700">Full Name</Label>
                 <Input
                   type="text"
-                  placeholder="e.g. Sarah Jenkins"
+                  placeholder="e.g. selvakumar"
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
                   className="h-9 text-xs"
                 />
               </div>
 
-              <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Email Address</Label>
-                <Input
-                  type="email"
-                  placeholder="sarah.j@acme.com"
-                  value={formEmail}
-                  onChange={(e) => setFormEmail(e.target.value)}
-                  className="h-9 text-xs"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="font-semibold text-slate-700">Email Address</Label>
+                  <Input
+                    type="text"
+                    placeholder="user@example.com"
+                    value={formEmail}
+                    onChange={(e) => setFormEmail(e.target.value)}
+                    className="h-9 text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="font-semibold text-slate-700">Phone Number</Label>
+                  <Input
+                    type="text"
+                    placeholder="7374837284"
+                    value={formPhone}
+                    onChange={(e) => setFormPhone(e.target.value)}
+                    className="h-9 text-xs"
+                  />
+                </div>
               </div>
 
-              <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Phone Number</Label>
-                <Input
-                  type="text"
-                  placeholder="+1 555-0199"
-                  value={formPhone}
-                  onChange={(e) => setFormPhone(e.target.value)}
-                  className="h-9 text-xs"
-                />
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label className="font-semibold text-slate-700">Company (API Dropdown)</Label>
+                  <span className="text-[10px] text-slate-400 font-normal">Select from DB or type ID</span>
+                </div>
+
+                <div className="space-y-1.5">
+                  <select
+                    value={formCompanyId}
+                    onChange={(e) => setFormCompanyId(e.target.value)}
+                    className="w-full h-9 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                  >
+                    <option value="">-- Select Company from API --</option>
+                    {companiesList.map((comp) => (
+                      <option key={comp.id} value={comp.id}>
+                        {comp.name} {comp.domain || comp.website ? `(${comp.domain || comp.website})` : ''} - ID: {comp.id}
+                      </option>
+                    ))}
+                  </select>
+
+                  <Input
+                    type="text"
+                    placeholder="e.g. a7fadfb4-3743-43f7-b8ce-05bde3f7552"
+                    value={formCompanyId}
+                    onChange={(e) => setFormCompanyId(e.target.value)}
+                    className="h-8 text-[11px] bg-slate-50"
+                  />
+                </div>
               </div>
 
-              <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Position / Job Title</Label>
-                <Input
-                  type="text"
-                  placeholder="e.g. VP of Sales"
-                  value={formPosition}
-                  onChange={(e) => setFormPosition(e.target.value)}
-                  className="h-9 text-xs"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="font-semibold text-slate-700">Position</Label>
+                  <Input
+                    type="text"
+                    placeholder="e.g. frontend"
+                    value={formPosition}
+                    onChange={(e) => setFormPosition(e.target.value)}
+                    className="h-9 text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="font-semibold text-slate-700">Job Title</Label>
+                  <Input
+                    type="text"
+                    placeholder="e.g. software"
+                    value={formJobTitle}
+                    onChange={(e) => setFormJobTitle(e.target.value)}
+                    className="h-9 text-xs"
+                  />
+                </div>
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
