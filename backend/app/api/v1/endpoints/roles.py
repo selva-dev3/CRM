@@ -33,11 +33,17 @@ async def get_default_role_ids(db: AsyncSession) -> set:
     return set()
 
 @router.get("", response_model=List[RoleResponse], summary="List all organization roles")
-async def list_roles(db: AsyncSession = Depends(get_db)):
+async def list_roles(search: Optional[str] = Query(None), db: AsyncSession = Depends(get_db)):
     try:
         default_ids = await get_default_role_ids(db)
 
-        res = await db.execute(select(Role).limit(50))
+        stmt = select(Role)
+        cleaned_search = search.strip() if search and isinstance(search, str) and search.strip() else None
+        if cleaned_search:
+            pattern = f"%{cleaned_search}%"
+            stmt = stmt.where(Role.name.ilike(pattern) | Role.description.ilike(pattern))
+
+        res = await db.execute(stmt.limit(50))
         roles = res.scalars().all()
         
         result = []

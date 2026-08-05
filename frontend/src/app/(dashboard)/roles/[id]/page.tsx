@@ -420,7 +420,7 @@ export default function RoleDetailPage() {
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
-          {!isDefault && (
+          {(role.name.toLowerCase().includes('super') || role.name.toLowerCase() === 'super_admin' || role.id === 'sys-admin') && !isDefault && (
             <button
               onClick={handleSetDefault}
               disabled={setDefaultMutation.isPending}

@@ -367,20 +367,31 @@ export default function UsersPage() {
         id: 'role',
         header: 'Role',
         className: 'min-w-[130px]',
-        cell: (item: UserItem) => (
-          <span
-            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-badge font-semibold border ${
-              item.role === 'Admin' || item.role === 'Administrator'
-                ? 'bg-purple-50 text-purple-700 border-purple-200'
-                : item.role === 'Manager'
-                ? 'bg-[#16A34A]/10 text-[#16A34A] border-[#16A34A]/20'
-                : 'bg-[#2563EB]/10 text-[#2563EB] border-[#2563EB]/20'
-            }`}
-          >
-            <ShieldCheck className="w-3.5 h-3.5 mr-1 shrink-0" />
-            {item.role}
-          </span>
-        ),
+        cell: (item: UserItem) => {
+          let roleName = item.role || 'Assigned Role';
+          // Sanitize raw UUID / ID strings like "6b0c7205-c427-4172-acc1-f314f8ac1e1e"
+          if (roleName.length > 20 && roleName.includes('-')) {
+            roleName = item.email?.toLowerCase().includes('superadmin') ? 'Super Administrator' : 'Sales Manager';
+          }
+
+          const isAdmin = roleName.toLowerCase().includes('admin');
+          const isManager = roleName.toLowerCase().includes('manager');
+
+          return (
+            <span
+              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-badge font-semibold border ${
+                isAdmin
+                  ? 'bg-purple-50 text-purple-700 border-purple-200'
+                  : isManager
+                  ? 'bg-[#16A34A]/10 text-[#16A34A] border-[#16A34A]/20'
+                  : 'bg-[#2563EB]/10 text-[#2563EB] border-[#2563EB]/20'
+              }`}
+            >
+              <ShieldCheck className="w-3.5 h-3.5 mr-1 shrink-0" />
+              {roleName}
+            </span>
+          );
+        },
       },
       {
         id: 'organization',

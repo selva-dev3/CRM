@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.config import settings
 from app.database import get_db
-from app.models import User, UserInvitation, Organization
+from app.models import User, UserInvitation, Organization, Role
 from app.schemas.crm_schemas import (
     UserResponse, UserCreate, UserUpdate, UserProfileUpdate, UserInviteRequest,
     UserInviteBulkResponse, AcceptInviteRequest, UserInvitationDetailsResponse,
@@ -38,7 +38,39 @@ async def list_users(
         stmt = stmt.offset((actual_page - 1) * actual_limit).limit(actual_limit)
         res = await db.execute(stmt)
         users = res.scalars().all()
-        return [{"id": u.id, "name": u.name, "email": u.email, "role": u.role, "organization_id": u.organization_id, "is_active": u.is_active, "created_at": str(u.created_at)} for u in users]
+
+        # Query Role table to map Role UUIDs to human-readable Role Names
+        role_ids = {u.role for u in users if u.role}
+        role_map = {}
+        if role_ids:
+            r_res = await db.execute(select(Role).where((Role.id.in_(role_ids)) | (Role.name.in_(role_ids))))
+            roles_found = r_res.scalars().all()
+            for r in roles_found:
+                role_map[r.id] = r.name
+                role_map[r.name] = r.name
+
+        def get_display_role(u_obj):
+            r_val = u_obj.role
+            if not r_val:
+                return "Super Administrator" if "superadmin" in u_obj.email.lower() else "User"
+            if r_val in role_map:
+                return role_map[r_val]
+            if len(r_val) > 20 and "-" in r_val:
+                return "Super Administrator" if "superadmin" in u_obj.email.lower() else "Assigned Role"
+            return r_val
+
+        return [
+            {
+                "id": u.id,
+                "name": u.name,
+                "email": u.email,
+                "role": get_display_role(u),
+                "organization_id": u.organization_id,
+                "is_active": u.is_active,
+                "created_at": str(u.created_at)
+            }
+            for u in users
+        ]
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 

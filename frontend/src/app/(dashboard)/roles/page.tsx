@@ -161,9 +161,17 @@ function UserSelect({
 export default function RolesPage() {
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
   const limit = 15;
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
   // Modal states
   const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
@@ -196,8 +204,8 @@ export default function RolesPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Queries
-  const { data: roles = [], isLoading: isRolesLoading } = useRolesQuery();
+  // Queries - live GET /api/v1/roles?search=... API call on typing search input!
+  const { data: roles = [], isLoading: isRolesLoading } = useRolesQuery(debouncedSearch.trim() || undefined);
   const { data: systemRoles = [] } = useSystemRolesQuery();
   const { data: defaultRole } = useDefaultRoleQuery();
   const { data: permissionMatrix = [] } = usePermissionMatrixQuery();
@@ -464,7 +472,7 @@ export default function RolesPage() {
                 className="font-bold text-slate-900 hover:text-indigo-600 cursor-pointer transition-colors text-xs flex items-center gap-2"
               >
                 {item.name}
-                {isDefault && (
+                {isDefault && !item.name.toLowerCase().includes('super') && item.name.toLowerCase() !== 'super_admin' && (
                   <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded text-[10px] font-bold uppercase flex items-center gap-1">
                     <Star className="w-3 h-3 text-amber-600" />
                     Default
@@ -480,16 +488,33 @@ export default function RolesPage() {
     {
       id: 'is_system_role',
       header: 'TYPE',
-      cell: (item) => (
-        <span
-          className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${item.is_system_role
-              ? 'bg-purple-50 text-purple-700 border-purple-200'
-              : 'bg-blue-50 text-blue-700 border-blue-200'
-            }`}
-        >
-          {item.type}
-        </span>
-      ),
+      cell: (item) => {
+        const isSuper = item.name.toLowerCase().includes('super') || item.name.toLowerCase() === 'super_admin';
+        const displayType = isSuper
+          ? item.is_system_role
+            ? 'Built-in System'
+            : 'System'
+          : item.type === 'default'
+          ? 'Default'
+          : item.is_system_role
+          ? 'Built-in System'
+          : 'Custom';
+        const isDefaultType = !isSuper && item.type === 'default';
+        const isSystem = item.is_system_role || isSuper;
+
+        return (
+          <span
+            className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${isDefaultType
+              ? 'bg-amber-50 text-amber-700 border-amber-200'
+              : isSystem
+                ? 'bg-purple-50 text-purple-700 border-purple-200'
+                : 'bg-blue-50 text-blue-700 border-blue-200'
+              }`}
+          >
+            {displayType}
+          </span>
+        );
+      },
     },
     {
       id: 'permissions',
@@ -516,6 +541,7 @@ export default function RolesPage() {
       header: 'ACTIONS',
       cell: (item) => {
         const isDefault = defaultRole?.id === item.id;
+        const isSuperAdminRole = item.name.toLowerCase().includes('super') || item.name.toLowerCase() === 'super_admin' || item.id === 'sys-admin';
         return (
           <div onClick={(e) => e.stopPropagation()}>
             <DropdownMenu>
@@ -523,7 +549,7 @@ export default function RolesPage() {
                 <MoreHorizontal className="w-4 h-4" />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-52">
-                {!isDefault && (
+                {isSuperAdminRole && !isDefault && (
                   <DropdownMenuItem
                     onClick={(e) => {
                       e.stopPropagation();
@@ -672,51 +698,7 @@ export default function RolesPage() {
         </div>
       </div>
 
-      {/* Overview Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">TOTAL ROLES</p>
-            <h3 className="text-2xl font-bold text-slate-900 mt-1">{roles.length} Configured</h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600">
-            <ShieldCheck className="w-5 h-5" />
-          </div>
-        </div>
 
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">SYSTEM ROLES</p>
-            <h3 className="text-2xl font-bold text-purple-600 mt-1">{systemRoles.length} Built-in</h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-purple-50 flex items-center justify-center text-purple-600">
-            <Lock className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">PERMISSION MATRIX</p>
-            <h3 className="text-2xl font-bold text-emerald-600 mt-1">{permissionMatrix.length} Actions</h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
-            <KeyRound className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">REGISTRATION DEFAULT</p>
-            <h3 className="text-xs font-bold text-slate-900 mt-1 flex items-center gap-1.5">
-              <Star className="w-4 h-4 text-amber-500" />
-              {defaultRole?.name || 'Sales Rep'}
-            </h3>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600">
-            <UserCheck className="w-5 h-5" />
-          </div>
-        </div>
-      </div>
 
       {/* Main DataTable */}
       <DataTable<RoleItem>

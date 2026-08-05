@@ -50,8 +50,9 @@ export interface MessageResponse {
 // API Client Functions
 // ---------------------------------------------------------------------------
 
-export async function fetchRolesApi(): Promise<RoleItem[]> {
-  return apiClient.get<RoleItem[]>('/roles');
+export async function fetchRolesApi(search?: string): Promise<RoleItem[]> {
+  const query = search ? `?search=${encodeURIComponent(search)}` : '';
+  return apiClient.get<RoleItem[]>(`/roles${query}`);
 }
 
 export async function createRoleApi(payload: { name: string; description?: string; permissions?: string[] }): Promise<RoleItem> {
@@ -142,10 +143,10 @@ export async function setDefaultRoleApi(roleId: string): Promise<MessageResponse
 // TanStack Query Hooks
 // ---------------------------------------------------------------------------
 
-export function useRolesQuery(options?: Omit<UseQueryOptions<RoleItem[]>, 'queryKey' | 'queryFn'>) {
+export function useRolesQuery(search?: string, options?: Omit<UseQueryOptions<RoleItem[]>, 'queryKey' | 'queryFn'>) {
   return useQuery<RoleItem[]>({
-    queryKey: ['roles'],
-    queryFn: fetchRolesApi,
+    queryKey: ['roles', search],
+    queryFn: () => fetchRolesApi(search),
     staleTime: 1000 * 60 * 5,
     ...options,
   });
