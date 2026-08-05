@@ -264,31 +264,6 @@ export default function CompaniesPage() {
         </div>
       ),
     },
-    {
-      id: 'actions',
-      header: 'Actions',
-      cell: (item) => (
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => openEditModal(item)}
-            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition cursor-pointer"
-            title="Edit company"
-          >
-            <Edit className="w-3.5 h-3.5" />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setCompanyToDelete(item)}
-            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
-            title="Delete company"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      ),
-    },
   ];
 
   return (
@@ -368,23 +343,28 @@ export default function CompaniesPage() {
         </div>
       )}
 
-      {/* Search Input Bar */}
-      <div className="relative max-w-md">
-        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-        <Input
-          type="text"
-          placeholder="Search companies by name or domain..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-9 h-9 text-xs"
-        />
-      </div>
-
       {/* Companies DataTable */}
       <DataTable
         columns={columns as any}
         data={companies as any}
         getRowKey={(item: any) => item.id}
+        searchValue={searchTerm}
+        onSearchChange={setSearchTerm}
+        searchPlaceholder="Search companies by name or domain..."
+        actionVariant="menu"
+        actions={(item: any) => [
+          {
+            label: 'Edit',
+            icon: <Edit className="w-4 h-4 text-blue-600 mr-2" />,
+            onClick: () => openEditModal(item),
+          },
+          {
+            label: 'Delete',
+            variant: 'destructive',
+            icon: <Trash2 className="w-4 h-4 text-rose-600 mr-2" />,
+            onClick: () => setCompanyToDelete(item),
+          },
+        ]}
         emptyTitle="No companies found"
         emptyDescription="Create your first company profile or import CSV data."
         showCheckbox

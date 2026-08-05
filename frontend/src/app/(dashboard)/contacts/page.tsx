@@ -551,24 +551,15 @@ export default function ContactsPage() {
         </button>
       </div>
 
-      {/* Search Input Bar */}
-      <div className="relative max-w-md">
-        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-        <Input
-          type="text"
-          placeholder="Search contacts by name or email..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-9 h-9 text-xs"
-        />
-      </div>
-
       {/* Contacts DataTable */}
       <DataTable
         columns={columns as any}
         data={contacts as any}
         getRowKey={(item: any) => item.id}
         onRowClick={(item: any) => router.push(`/contacts/${item.id}`)}
+        searchValue={searchTerm}
+        onSearchChange={setSearchTerm}
+        searchPlaceholder="Search contacts by name or email..."
         actionVariant="menu"
         actions={(item: any) => [
           {
