@@ -86,12 +86,40 @@ async def create_role(payload: RoleCreate, db: AsyncSession = Depends(get_db)):
         db.add(r)
         await db.commit()
         await db.refresh(r)
+
+        saved_permissions = []
+        if payload.permissions:
+            # Query Permission table for all keys or IDs passed in payload.permissions
+            p_stmt = select(Permission).where((Permission.key.in_(payload.permissions)) | (Permission.id.in_(payload.permissions)))
+            found_perms = (await db.execute(p_stmt)).scalars().all()
+
+            found_keys_set = {p.key for p in found_perms if p.key} | {p.id for p in found_perms if p.id}
+
+            # Insert into RolePermission mapping table
+            for p in found_perms:
+                db.add(RolePermission(role_id=r.id, permission_id=p.id))
+
+            # Auto-create any permission keys passed that don't exist in Permission table yet
+            missing_keys = set(payload.permissions) - found_keys_set
+            for key_str in missing_keys:
+                if key_str and isinstance(key_str, str):
+                    category = key_str.split(":")[0].capitalize() if ":" in key_str else "General"
+                    name = key_str.replace(":", " ").capitalize()
+                    new_perm = Permission(key=key_str, name=name, category=category, description=name)
+                    db.add(new_perm)
+                    await db.flush()
+                    db.add(RolePermission(role_id=r.id, permission_id=new_perm.id))
+
+            await db.commit()
+            saved_permissions = payload.permissions
+
         return {
             "id": r.id,
             "name": r.name,
-            "description": r.description,
-            "permissions": payload.permissions or [],
+            "description": r.description or "",
+            "permissions": saved_permissions,
             "is_system_role": False,
+            "type": "custom",
             "created_at": str(getattr(r, "created_at", datetime.now().isoformat()))
         }
     except Exception as e:
