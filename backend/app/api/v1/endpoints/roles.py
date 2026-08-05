@@ -51,15 +51,15 @@ async def create_role(payload: RoleCreate, db: AsyncSession = Depends(get_db)):
 @router.get("/permissions/matrix", response_model=List[PermissionItem], summary="Get full system permission matrix")
 async def get_permission_matrix(db: AsyncSession = Depends(get_db)):
     try:
-        res = await db.execute(select(Permission).limit(50))
+        res = await db.execute(select(Permission).limit(500))
         perms = res.scalars().all()
         if perms:
             return [
                 {
                     "id": p.id,
-                    "key": getattr(p, "key", f"{p.module.lower()}:{p.action.lower()}"),
-                    "name": getattr(p, "name", f"{p.module} {p.action}"),
-                    "category": getattr(p, "module", "General"),
+                    "key": getattr(p, "key", "perm:read"),
+                    "name": getattr(p, "name", "Permission"),
+                    "category": getattr(p, "category", "General"),
                     "description": p.description or ""
                 } for p in perms
             ]
@@ -77,8 +77,9 @@ async def get_permission_matrix(db: AsyncSession = Depends(get_db)):
 async def create_permission(payload: PermissionCreate, db: AsyncSession = Depends(get_db)):
     try:
         p = Permission(
-            module=payload.category or "General",
-            action=payload.key,
+            key=payload.key,
+            name=payload.name,
+            category=payload.category or "General",
             description=payload.description or payload.name
         )
         db.add(p)
@@ -86,9 +87,9 @@ async def create_permission(payload: PermissionCreate, db: AsyncSession = Depend
         await db.refresh(p)
         return {
             "id": p.id,
-            "key": payload.key,
-            "name": payload.name,
-            "category": payload.category or "General",
+            "key": p.key,
+            "name": p.name,
+            "category": p.category,
             "description": p.description or ""
         }
     except Exception:
@@ -107,8 +108,9 @@ async def import_permissions_batch(payload: List[PermissionCreate], db: AsyncSes
         count = 0
         for item in payload:
             p = Permission(
-                module=item.category or "General",
-                action=item.key,
+                key=item.key,
+                name=item.name,
+                category=item.category or "General",
                 description=item.description or item.name
             )
             db.add(p)
