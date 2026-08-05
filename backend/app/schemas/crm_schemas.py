@@ -174,6 +174,8 @@ class RoleUpdate(BaseModel):
 
 class RoleResponse(RoleBase):
     id: str
+    is_system_role: Optional[bool] = False
+    type: Optional[str] = "custom"
     created_at: str
 
 # 4. Organization Schemas

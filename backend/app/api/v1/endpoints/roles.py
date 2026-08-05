@@ -14,6 +14,11 @@ router = APIRouter()
 @router.get("", response_model=List[RoleResponse], summary="List all organization roles")
 async def list_roles(db: AsyncSession = Depends(get_db)):
     try:
+        # Check SystemSetting for current default registration role
+        s_res = await db.execute(select(SystemSetting).where(SystemSetting.key == "default_registration_role"))
+        setting = s_res.scalars().first()
+        default_role_id = setting.value if setting else None
+
         res = await db.execute(select(Role).limit(50))
         roles = res.scalars().all()
         
@@ -34,12 +39,21 @@ async def list_roles(db: AsyncSession = Depends(get_db)):
             else:
                 perm_keys = getattr(r, "permissions", []) if hasattr(r, "permissions") else ["dashboard:read", "users:read", "leads:read"]
 
+            # Determine type: "default" | "system" | "custom"
+            if default_role_id and (r.id == default_role_id or r.name == default_role_id):
+                role_type = "default"
+            elif getattr(r, "is_system_role", False):
+                role_type = "system"
+            else:
+                role_type = "custom"
+
             result.append({
                 "id": r.id,
                 "name": r.name,
                 "description": r.description or "Custom Role",
                 "permissions": perm_keys,
                 "is_system_role": getattr(r, "is_system_role", False),
+                "type": role_type,
                 "created_at": str(getattr(r, "created_at", "2026-08-05"))
             })
 
@@ -142,49 +156,121 @@ async def import_permissions_batch(payload: List[PermissionCreate], db: AsyncSes
 @router.get("/system-roles", response_model=List[RoleResponse], summary="Get system built-in default roles")
 async def list_system_roles(db: AsyncSession = Depends(get_db)):
     try:
+        # Fetch default role setting from SystemSetting
+        s_res = await db.execute(select(SystemSetting).where(SystemSetting.key == "default_registration_role"))
+        setting = s_res.scalars().first()
+
+        default_role_id = setting.value if setting else None
+
+        if default_role_id:
+            r_res = await db.execute(select(Role).where((Role.id == default_role_id) | (Role.name == default_role_id)))
+            r = r_res.scalars().first()
+            if r:
+                perm_stmt = (
+                    select(Permission)
+                    .join(RolePermission, RolePermission.permission_id == Permission.id)
+                    .where(RolePermission.role_id == r.id)
+                )
+                perm_res = await db.execute(perm_stmt)
+                assigned_perms = perm_res.scalars().all()
+                perm_keys = [p.key for p in assigned_perms if p.key] if assigned_perms else (["all"] if getattr(r, "is_system_role", False) else ["dashboard:read", "users:read", "leads:read"])
+
+                return [
+                    {
+                        "id": r.id,
+                        "name": r.name,
+                        "description": r.description or "Registration Default Role",
+                        "permissions": perm_keys,
+                        "is_system_role": getattr(r, "is_system_role", True),
+                        "created_at": str(getattr(r, "created_at", "2026-08-05"))
+                    }
+                ]
+
         res = await db.execute(select(Role).where(Role.is_system_role == True))
         roles = res.scalars().all()
         if roles:
-            return [
-                {
+            result = []
+            for r in roles:
+                perm_stmt = (
+                    select(Permission)
+                    .join(RolePermission, RolePermission.permission_id == Permission.id)
+                    .where(RolePermission.role_id == r.id)
+                )
+                perm_res = await db.execute(perm_stmt)
+                assigned_perms = perm_res.scalars().all()
+                perm_keys = [p.key for p in assigned_perms if p.key] if assigned_perms else ["all"]
+
+                result.append({
                     "id": r.id,
                     "name": r.name,
                     "description": r.description or "System Role",
-                    "permissions": ["all"],
+                    "permissions": perm_keys,
                     "is_system_role": True,
                     "created_at": str(getattr(r, "created_at", "2026-08-05"))
-                } for r in roles
-            ]
+                })
+            return result
     except Exception:
         pass
 
     return [
-        {"id": "sys-admin", "name": "Super Administrator", "description": "Unrestricted full platform access", "permissions": ["all"], "is_system_role": True, "created_at": "2026-08-05"},
-        {"id": "sys-manager", "name": "Sales Manager", "description": "Manage pipeline, reps, and analytics", "permissions": ["deals:all", "leads:all"], "is_system_role": True, "created_at": "2026-08-05"},
-        {"id": "sys-rep", "name": "Sales Representative", "description": "Standard lead & deal execution", "permissions": ["leads:read", "deals:read"], "is_system_role": True, "created_at": "2026-08-05"}
+        {"id": "sys-manager", "name": "manager", "description": "Registration Default Role", "permissions": ["dashboard:read", "users:read", "leads:read"], "is_system_role": True, "created_at": "2026-08-05"}
     ]
 
 @router.get("/default", response_model=RoleResponse, summary="Get default role assigned to new registrations")
 async def get_default_role(db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(Role).limit(1))
-    r = res.scalars().first()
-    if r:
+    try:
+        s_res = await db.execute(select(SystemSetting).where(SystemSetting.key == "default_registration_role"))
+        setting = s_res.scalars().first()
+
+        role_obj = None
+        if setting and setting.value:
+            r_res = await db.execute(select(Role).where((Role.id == setting.value) | (Role.name == setting.value)))
+            role_obj = r_res.scalars().first()
+
+        if not role_obj:
+            r_res = await db.execute(select(Role).where(Role.is_system_role == True).limit(1))
+            role_obj = r_res.scalars().first()
+
+        if not role_obj:
+            r_res = await db.execute(select(Role).limit(1))
+            role_obj = r_res.scalars().first()
+
+        if role_obj:
+            perm_stmt = (
+                select(Permission)
+                .join(RolePermission, RolePermission.permission_id == Permission.id)
+                .where(RolePermission.role_id == role_obj.id)
+            )
+            perm_res = await db.execute(perm_stmt)
+            assigned_perms = perm_res.scalars().all()
+            perm_keys = [p.key for p in assigned_perms if p.key] if assigned_perms else ["dashboard:read", "users:read"]
+
+            return {
+                "id": role_obj.id,
+                "name": role_obj.name,
+                "description": role_obj.description or "Default Registration Role",
+                "permissions": perm_keys,
+                "is_system_role": getattr(role_obj, "is_system_role", False),
+                "created_at": str(getattr(role_obj, "created_at", "2026-08-05"))
+            }
+
         return {
-            "id": r.id,
-            "name": r.name,
-            "description": r.description or "Default Role",
-            "permissions": ["leads:read"],
-            "is_system_role": getattr(r, "is_system_role", False),
-            "created_at": str(getattr(r, "created_at", "2026-08-05"))
+            "id": "sys-manager",
+            "name": "manager",
+            "description": "Default role",
+            "permissions": ["dashboard:read", "users:read"],
+            "is_system_role": True,
+            "created_at": "2026-08-05"
         }
-    return {
-        "id": "sys-rep",
-        "name": "Sales Representative",
-        "description": "Default role",
-        "permissions": ["leads:read"],
-        "is_system_role": True,
-        "created_at": "2026-08-05"
-    }
+    except Exception:
+        return {
+            "id": "sys-manager",
+            "name": "manager",
+            "description": "Default role",
+            "permissions": ["dashboard:read", "users:read"],
+            "is_system_role": True,
+            "created_at": "2026-08-05"
+        }
 
 @router.get("/audit-logs", summary="Get audit history of role modifications")
 async def role_audit_logs(db: AsyncSession = Depends(get_db)):
