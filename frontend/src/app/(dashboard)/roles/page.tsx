@@ -21,10 +21,18 @@ import {
   Shield,
   Star,
   Calendar,
-  Layers
+  Layers,
+  MoreHorizontal
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/shared/data-table';
 import { ConfirmModal } from '@/components/shared/confirm-modal';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator
+} from '@/components/ui/dropdown-menu';
 import {
   useRolesQuery,
   useSystemRolesQuery,
@@ -369,11 +377,10 @@ export default function RolesPage() {
       header: 'TYPE',
       cell: (item) => (
         <span
-          className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
-            item.is_system_role
+          className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${item.is_system_role
               ? 'bg-purple-50 text-purple-700 border-purple-200'
               : 'bg-blue-50 text-blue-700 border-blue-200'
-          }`}
+            }`}
         >
           {item.is_system_role ? 'Built-in System' : 'Custom'}
         </span>
@@ -405,57 +412,74 @@ export default function RolesPage() {
       cell: (item) => {
         const isDefault = defaultRole?.id === item.id;
         return (
-          <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-            {!isDefault && (
-              <button
-                onClick={() => handleSetDefault(item)}
-                title="Set as Default"
-                className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-md transition-colors cursor-pointer"
-              >
-                <Star className="w-4 h-4" />
-              </button>
-            )}
-
-            <button
-              onClick={() => {
-                setCloningRole(item);
-                setCloneNewName(`${item.name} Copy`);
-                setIsCloneModalOpen(true);
-              }}
-              title="Clone Role"
-              className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors cursor-pointer"
-            >
-              <Copy className="w-4 h-4" />
-            </button>
-
-            <button
-              onClick={() => {
-                setAssignRoleId(item.id);
-                setIsAssignModalOpen(true);
-              }}
-              title="Assign User"
-              className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md transition-colors cursor-pointer"
-            >
-              <UserCheck className="w-4 h-4" />
-            </button>
-
-            <button
-              onClick={() => handleOpenEditModal(item)}
-              title="Edit Role"
-              className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-md transition-colors cursor-pointer"
-            >
-              <Edit className="w-4 h-4" />
-            </button>
-
-            {!item.is_system_role && (
-              <button
-                onClick={() => setRoleToDelete(item)}
-                title="Delete Role"
-                className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            )}
+          <div onClick={(e) => e.stopPropagation()}>
+            <DropdownMenu>
+              <DropdownMenuTrigger className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer text-slate-500 hover:text-slate-900 border border-transparent hover:border-slate-200 outline-none">
+                <MoreHorizontal className="w-4 h-4" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                {!isDefault && (
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSetDefault(item);
+                    }}
+                    className="flex items-center gap-2 text-xs font-semibold cursor-pointer text-amber-700 hover:bg-amber-50"
+                  >
+                    <Star className="w-3.5 h-3.5 text-amber-500" />
+                    Set Registration Default
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setCloningRole(item);
+                    setCloneNewName(`${item.name} Copy`);
+                    setIsCloneModalOpen(true);
+                  }}
+                  className="flex items-center gap-2 text-xs font-semibold cursor-pointer text-slate-700 hover:bg-slate-50"
+                >
+                  <Copy className="w-3.5 h-3.5 text-indigo-600" />
+                  Clone Role Configuration
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setAssignRoleId(item.id);
+                    setIsAssignModalOpen(true);
+                  }}
+                  className="flex items-center gap-2 text-xs font-semibold cursor-pointer text-slate-700 hover:bg-slate-50"
+                >
+                  <UserCheck className="w-3.5 h-3.5 text-blue-600" />
+                  Assign Role to User
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleOpenEditModal(item);
+                  }}
+                  className="flex items-center gap-2 text-xs font-semibold cursor-pointer text-slate-700 hover:bg-slate-50"
+                >
+                  <Edit className="w-3.5 h-3.5 text-slate-500" />
+                  Edit Role & Permissions
+                </DropdownMenuItem>
+                {!item.is_system_role && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setRoleToDelete(item);
+                      }}
+                      className="flex items-center gap-2 text-xs font-semibold cursor-pointer text-rose-600 hover:bg-rose-50"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                      Delete Custom Role
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         );
       },
@@ -724,9 +748,8 @@ export default function RolesPage() {
                               return (
                                 <label
                                   key={p.id}
-                                  className={`flex items-start justify-between p-2 rounded-lg border cursor-pointer transition-colors ${
-                                    isChecked ? 'bg-indigo-50/50 border-indigo-200' : 'bg-slate-50/50 border-slate-200 hover:bg-slate-100/50'
-                                  }`}
+                                  className={`flex items-start justify-between p-2 rounded-lg border cursor-pointer transition-colors ${isChecked ? 'bg-indigo-50/50 border-indigo-200' : 'bg-slate-50/50 border-slate-200 hover:bg-slate-100/50'
+                                    }`}
                                 >
                                   <div className="space-y-0.5 pr-2">
                                     <span className="text-xs font-bold text-slate-900 block leading-tight">
@@ -928,18 +951,16 @@ export default function RolesPage() {
               <button
                 type="button"
                 onClick={() => setPermMode('single')}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
-                  permMode === 'single' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-900'
-                }`}
+                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer ${permMode === 'single' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-900'
+                  }`}
               >
                 Single Entry
               </button>
               <button
                 type="button"
                 onClick={() => setPermMode('json')}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
-                  permMode === 'json' ? 'bg-white text-emerald-700 shadow-xs' : 'text-slate-500 hover:text-slate-900'
-                }`}
+                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer ${permMode === 'json' ? 'bg-white text-emerald-700 shadow-xs' : 'text-slate-500 hover:text-slate-900'
+                  }`}
               >
                 Upload JSON File
               </button>

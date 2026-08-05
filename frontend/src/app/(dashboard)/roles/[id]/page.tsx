@@ -636,9 +636,8 @@ export default function RoleDetailPage() {
                         return (
                           <label
                             key={p.id}
-                            className={`flex items-start justify-between p-2 rounded-lg border cursor-pointer transition-colors ${
-                              isChecked ? 'bg-indigo-50/50 border-indigo-200' : 'bg-slate-50/50 border-slate-200 hover:bg-slate-100/50'
-                            }`}
+                            className={`flex items-start justify-between p-2 rounded-lg border cursor-pointer transition-colors ${isChecked ? 'bg-indigo-50/50 border-indigo-200' : 'bg-slate-50/50 border-slate-200 hover:bg-slate-100/50'
+                              }`}
                           >
                             <div className="space-y-0.5 pr-2">
                               <span className="text-xs font-bold text-slate-900 block leading-tight">
