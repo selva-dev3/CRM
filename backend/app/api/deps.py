@@ -8,7 +8,7 @@ from sqlalchemy import select
 from app.config import settings
 from app.core.security import ALGORITHM
 from app.database import get_db
-from app.models import User
+from app.models import User, Organization
 
 # HTTP Bearer scheme auto-configured for FastAPI Swagger UI authentication
 security_scheme = HTTPBearer(auto_error=False)
@@ -80,3 +80,26 @@ async def get_current_user(
         )
     
     return user
+
+async def get_valid_org_id(db: AsyncSession, current_user: Optional[User] = None) -> str:
+    """Helper function that guarantees a valid Organization foreign key exists in database."""
+    if current_user and getattr(current_user, 'organization_id', None):
+        user_org_id = current_user.organization_id
+        res = await db.execute(select(Organization).where(Organization.id == user_org_id))
+        if res.scalars().first():
+            return user_org_id
+
+    res = await db.execute(select(Organization).limit(1))
+    existing_org = res.scalars().first()
+    if existing_org:
+        return existing_org.id
+
+    default_org = Organization(
+        id="org-1",
+        name="Default Organization",
+        slug="default-org",
+        status="active"
+    )
+    db.add(default_org)
+    await db.commit()
+    return default_org.id

@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     # AI API Keys
     OPENAI_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None
-
+    ENVIRONMENT: str = "development"
     # CORS & Frontend URLs
     CORS_ORIGINS: str = "https://crm-one-sable.vercel.app,http://localhost:3000,http://127.0.0.1:3000"
     FRONTEND_URL: str = "https://crm-one-sable.vercel.app"

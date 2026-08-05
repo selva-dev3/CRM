@@ -3,6 +3,7 @@ from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
+from app.api.deps import get_valid_org_id
 from app.models import Company
 from app.schemas.crm_schemas import (
     CompanyResponse, CompanyCreate, CompanyUpdate, MessageResponse, BulkDeleteRequest, BulkActionResponse,
@@ -19,17 +20,54 @@ async def list_companies(page: int = 1, limit: int = 20, search: Optional[str] =
             stmt = stmt.where(Company.name.ilike(f"%{search}%"))
         res = await db.execute(stmt)
         companies = res.scalars().all()
-        return [{"id": c.id, "name": c.name, "industry": c.industry, "website": c.website, "employee_count": c.employee_count, "created_at": str(c.created_at)} for c in companies]
+        return [
+            {
+                "id": c.id,
+                "name": c.name,
+                "domain": c.website,
+                "website": c.website,
+                "industry": c.industry,
+                "size": str(c.employee_count) if c.employee_count else None,
+                "employee_count": c.employee_count,
+                "created_at": str(c.created_at)
+            }
+            for c in companies
+        ]
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 @router.post("", response_model=CompanyResponse, status_code=status.HTTP_201_CREATED, summary="Create new company")
 async def create_company(payload: CompanyCreate, db: AsyncSession = Depends(get_db)):
     try:
-        c = Company(organization_id="org-1", name=payload.name, industry=payload.industry, website=payload.website, employee_count=payload.employee_count)
+        org_id = await get_valid_org_id(db)
+        website = getattr(payload, 'website', None) or getattr(payload, 'domain', None)
+        emp_raw = getattr(payload, 'employee_count', None) or getattr(payload, 'size', None)
+        emp_count = None
+        if emp_raw is not None:
+            try:
+                emp_count = int(emp_raw)
+            except (ValueError, TypeError):
+                emp_count = None
+
+        c = Company(
+            organization_id=org_id,
+            name=payload.name,
+            industry=getattr(payload, 'industry', None),
+            website=website,
+            employee_count=emp_count
+        )
         db.add(c)
         await db.commit()
-        return {"id": c.id, "name": c.name, "industry": c.industry, "website": c.website, "employee_count": c.employee_count, "created_at": str(c.created_at)}
+        return {
+            "id": c.id,
+            "name": c.name,
+            "domain": c.website,
+            "website": c.website,
+            "industry": c.industry,
+            "size": str(c.employee_count) if c.employee_count else None,
+            "employee_count": c.employee_count,
+            "created_at": str(c.created_at)
+        }
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to create company: {str(e)}")
@@ -66,7 +104,16 @@ async def get_company(company_id: str, db: AsyncSession = Depends(get_db)):
     c = res.scalars().first()
     if not c:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Company '{company_id}' not found")
-    return {"id": c.id, "name": c.name, "industry": c.industry, "website": c.website, "employee_count": c.employee_count, "created_at": str(c.created_at)}
+    return {
+        "id": c.id,
+        "name": c.name,
+        "domain": c.website,
+        "website": c.website,
+        "industry": c.industry,
+        "size": str(c.employee_count) if c.employee_count else None,
+        "employee_count": c.employee_count,
+        "created_at": str(c.created_at)
+    }
 
 @router.put("/{company_id}", response_model=CompanyResponse, summary="Update company details")
 async def update_company(company_id: str, payload: CompanyUpdate, db: AsyncSession = Depends(get_db)):
@@ -75,10 +122,29 @@ async def update_company(company_id: str, payload: CompanyUpdate, db: AsyncSessi
     if not c:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Company '{company_id}' not found")
     try:
-        if payload.name: c.name = payload.name
-        if payload.industry: c.industry = payload.industry
+        name = getattr(payload, 'name', None)
+        if name: c.name = name
+        industry = getattr(payload, 'industry', None)
+        if industry: c.industry = industry
+        website = getattr(payload, 'website', None) or getattr(payload, 'domain', None)
+        if website: c.website = website
+        emp_raw = getattr(payload, 'employee_count', None) or getattr(payload, 'size', None)
+        if emp_raw is not None:
+            try:
+                c.employee_count = int(emp_raw)
+            except (ValueError, TypeError):
+                pass
         await db.commit()
-        return {"id": c.id, "name": c.name, "industry": c.industry, "website": c.website, "employee_count": c.employee_count, "created_at": str(c.created_at)}
+        return {
+            "id": c.id,
+            "name": c.name,
+            "domain": c.website,
+            "website": c.website,
+            "industry": c.industry,
+            "size": str(c.employee_count) if c.employee_count else None,
+            "employee_count": c.employee_count,
+            "created_at": str(c.created_at)
+        }
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

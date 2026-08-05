@@ -3,6 +3,8 @@ from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
+from app.models.user import User
+from app.api.deps import get_current_user, get_valid_org_id
 from app.models import Contact
 from app.schemas.crm_schemas import (
     ContactResponse, ContactCreate, ContactUpdate, MessageResponse, BulkDeleteRequest, BulkActionResponse,
@@ -11,29 +13,80 @@ from app.schemas.crm_schemas import (
 
 router = APIRouter()
 
-@router.get("", response_model=List[ContactResponse], summary="List all contacts with pagination & search")
-async def list_contacts(page: int = 1, limit: int = 20, search: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+@router.post(
+    "",
+    response_model=ContactResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create new contact",
+)
+async def create_contact(
+    payload: ContactCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     try:
-        stmt = select(Contact).offset((page - 1) * limit).limit(limit)
-        if search:
-            stmt = stmt.where(Contact.name.ilike(f"%{search}%") | Contact.email.ilike(f"%{search}%"))
-        res = await db.execute(stmt)
-        contacts = res.scalars().all()
-        return [{"id": c.id, "name": c.name, "email": c.email, "phone": c.phone, "position": c.position, "company_id": c.company_id, "created_at": str(c.created_at)} for c in contacts]
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        raw_name = getattr(payload, "name", None) or ""
+        f_name = getattr(payload, "first_name", None) or ""
+        l_name = getattr(payload, "last_name", None) or ""
 
-@router.post("", response_model=ContactResponse, status_code=status.HTTP_201_CREATED, summary="Create new contact")
-async def create_contact(payload: ContactCreate, db: AsyncSession = Depends(get_db)):
-    try:
-        c = Contact(organization_id="org-1", name=payload.name, email=payload.email, phone=payload.phone, position=payload.position, company_id=payload.company_id)
-        db.add(c)
+        full_name = raw_name.strip()
+
+        if not full_name and (f_name or l_name):
+            full_name = f"{f_name} {l_name}".strip()
+
+        if not full_name:
+            full_name = payload.email.split("@")[0]
+
+        parts = full_name.split()
+
+        if not f_name:
+            f_name = parts[0]
+
+        if not l_name:
+            l_name = " ".join(parts[1:]) if len(parts) > 1 else "Contact"
+
+        pos = (
+            getattr(payload, "position", None)
+            or getattr(payload, "job_title", None)
+            or "Representative"
+        )
+
+        company_id = getattr(payload, "company_id", None)
+        phone = getattr(payload, "phone", None)
+
+        org_id = await get_valid_org_id(db, current_user)
+
+        contact = Contact(
+            organization_id=org_id,
+            name=full_name,
+            email=payload.email,
+            phone=phone,
+            position=pos,
+            company_id=company_id,
+        )
+
+        db.add(contact)
         await db.commit()
-        return {"id": c.id, "name": c.name, "email": c.email, "phone": c.phone, "position": c.position, "company_id": c.company_id, "created_at": str(c.created_at)}
+        await db.refresh(contact)
+
+        return ContactResponse(
+            id=contact.id,
+            name=contact.name,
+            first_name=f_name,
+            last_name=l_name,
+            email=contact.email,
+            phone=contact.phone,
+            position=contact.position,
+            company_id=contact.company_id,
+            created_at=str(contact.created_at),
+        )
+
     except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to create contact: {str(e)}")
-
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to create contact: {str(e)}",
+        )
 @router.get("/starred", response_model=List[ContactResponse], summary="Get starred contacts list")
 async def get_starred_contacts(db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Contact).where(Contact.is_starred == True))

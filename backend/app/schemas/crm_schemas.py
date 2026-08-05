@@ -286,11 +286,13 @@ class LeadConvertRequest(BaseModel):
 
 # 6. Contact Schemas
 class ContactBase(BaseModel):
-    first_name: str
-    last_name: str
+    first_name: Optional[str] = ""
+    last_name: Optional[str] = ""
+    name: Optional[str] = ""
     email: EmailStr
     phone: Optional[str] = None
     company_id: Optional[str] = None
+    position: Optional[str] = None
     job_title: Optional[str] = None
 
 class ContactCreate(ContactBase):
@@ -299,32 +301,51 @@ class ContactCreate(ContactBase):
 class ContactUpdate(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
+    name: Optional[str] = None
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
+    position: Optional[str] = None
 
-class ContactResponse(ContactBase):
+class ContactResponse(BaseModel):
     id: str
-    organization_id: str
-    created_at: str
+    name: Optional[str] = ""
+    first_name: Optional[str] = ""
+    last_name: Optional[str] = ""
+    email: str
+    phone: Optional[str] = None
+    position: Optional[str] = None
+    company_id: Optional[str] = None
+    created_at: Optional[str] = None
 
 # 7. Company Schemas
 class CompanyBase(BaseModel):
     name: str
     domain: Optional[str] = None
+    website: Optional[str] = None
     industry: Optional[str] = None
     size: Optional[str] = None
+    employee_count: Optional[int] = None
 
 class CompanyCreate(CompanyBase):
     pass
 
 class CompanyUpdate(BaseModel):
     name: Optional[str] = None
+    domain: Optional[str] = None
+    website: Optional[str] = None
     industry: Optional[str] = None
+    size: Optional[str] = None
+    employee_count: Optional[int] = None
 
-class CompanyResponse(CompanyBase):
+class CompanyResponse(BaseModel):
     id: str
-    organization_id: str
-    created_at: str
+    name: str
+    domain: Optional[str] = None
+    website: Optional[str] = None
+    industry: Optional[str] = None
+    size: Optional[str] = None
+    employee_count: Optional[int] = None
+    created_at: Optional[str] = None
 
 # 8. Deal Schemas
 class DealBase(BaseModel):
