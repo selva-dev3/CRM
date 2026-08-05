@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
 from app.api.deps import get_valid_org_id, get_current_user
-from app.models import Deal, DealStage
+from app.models import Deal, DealStage, Company, Contact
 from app.models.note import Note
 from app.models.user import User
 from app.schemas.crm_schemas import (
@@ -29,12 +29,64 @@ async def list_deals(page: int = 1, limit: int = 20, stage: Optional[str] = None
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 @router.post("", response_model=DealResponse, status_code=status.HTTP_201_CREATED, summary="Create new deal")
-async def create_deal(payload: DealCreate, db: AsyncSession = Depends(get_db)):
+async def create_deal(
+    payload: DealCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user)
+):
     try:
-        d = Deal(organization_id="org-1", title=payload.title, amount=payload.amount, stage=payload.stage, probability=payload.probability, assigned_to=payload.assigned_to)
+        org_id = await get_valid_org_id(db, current_user)
+        
+        assigned_user_id = payload.assigned_to
+        if assigned_user_id:
+            u_check = await db.execute(select(User).where(User.id == assigned_user_id))
+            if not u_check.scalars().first():
+                assigned_user_id = current_user.id if current_user else None
+        else:
+            assigned_user_id = current_user.id if current_user else None
+
+        if not assigned_user_id:
+            first_user = (await db.execute(select(User).limit(1))).scalars().first()
+            assigned_user_id = first_user.id if first_user else None
+
+        comp_id = payload.company_id
+        if comp_id:
+            comp_check = await db.execute(select(Company).where(Company.id == comp_id))
+            if not comp_check.scalars().first():
+                comp_id = None
+
+        cont_id = payload.contact_id
+        if cont_id:
+            cont_check = await db.execute(select(Contact).where(Contact.id == cont_id))
+            if not cont_check.scalars().first():
+                cont_id = None
+
+        d = Deal(
+            organization_id=org_id,
+            title=payload.title,
+            amount=payload.amount,
+            stage=payload.stage or "Qualification",
+            probability=payload.probability if payload.probability is not None else 20.0,
+            assigned_to=assigned_user_id,
+            company_id=comp_id,
+            contact_id=cont_id
+        )
         db.add(d)
         await db.commit()
-        return {"id": d.id, "title": d.title, "amount": d.amount, "stage": d.stage, "probability": d.probability, "expected_close_date": str(d.expected_close_date), "assigned_to": d.assigned_to, "organization_id": d.organization_id, "created_at": str(d.created_at)}
+        await db.refresh(d)
+        return {
+            "id": d.id,
+            "title": d.title,
+            "amount": d.amount,
+            "stage": d.stage,
+            "probability": d.probability,
+            "expected_close_date": str(d.expected_close_date) if d.expected_close_date else None,
+            "assigned_to": d.assigned_to,
+            "company_id": d.company_id,
+            "contact_id": d.contact_id,
+            "organization_id": d.organization_id,
+            "created_at": str(d.created_at) if d.created_at else None
+        }
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to create deal: {str(e)}")

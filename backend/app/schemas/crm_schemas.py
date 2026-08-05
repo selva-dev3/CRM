@@ -347,20 +347,26 @@ class CompanyResponse(BaseModel):
 # 8. Deal Schemas
 class DealBase(BaseModel):
     title: str
-    amount: float
+    amount: float = 0.0
     stage: str = "Qualification"
-    probability: float = 20.0
+    probability: Optional[float] = 20.0
     expected_close_date: Optional[str] = None
     company_id: Optional[str] = None
     contact_id: Optional[str] = None
+    assigned_to: Optional[str] = None
 
 class DealCreate(DealBase):
     pass
 
 class DealUpdate(BaseModel):
+    title: Optional[str] = None
     stage: Optional[str] = None
     amount: Optional[float] = None
     probability: Optional[float] = None
+    expected_close_date: Optional[str] = None
+    company_id: Optional[str] = None
+    contact_id: Optional[str] = None
+    assigned_to: Optional[str] = None
 
 class DealResponse(DealBase):
     id: str
