@@ -29,8 +29,22 @@ async def list_deals(page: int = 1, limit: int = 20, stage: Optional[str] = None
         if stage:
             stmt = stmt.where(Deal.stage == stage)
         res = await db.execute(stmt)
-        deals = res.scalars().all()
-        return [{"id": d.id, "title": d.title, "amount": d.amount, "stage": d.stage, "probability": d.probability, "expected_close_date": str(d.expected_close_date), "assigned_to": d.assigned_to, "organization_id": d.organization_id, "created_at": str(d.created_at)} for d in deals]
+        return [
+            {
+                "id": d.id,
+                "title": d.title,
+                "amount": d.amount,
+                "stage": d.stage,
+                "probability": d.probability,
+                "expected_close_date": str(d.expected_close_date) if d.expected_close_date else None,
+                "assigned_to": d.assigned_to,
+                "company_id": d.company_id,
+                "contact_id": d.contact_id,
+                "organization_id": d.organization_id,
+                "created_at": str(d.created_at) if d.created_at else None
+            }
+            for d in deals
+        ]
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
@@ -169,7 +183,19 @@ async def get_deal(deal_id: str, db: AsyncSession = Depends(get_db)):
     d = res.scalars().first()
     if not d:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Deal '{deal_id}' not found")
-    return {"id": d.id, "title": d.title, "amount": d.amount, "stage": d.stage, "probability": d.probability, "expected_close_date": str(d.expected_close_date), "assigned_to": d.assigned_to, "organization_id": d.organization_id, "created_at": str(d.created_at)}
+    return {
+        "id": d.id,
+        "title": d.title,
+        "amount": d.amount,
+        "stage": d.stage,
+        "probability": d.probability,
+        "expected_close_date": str(d.expected_close_date) if d.expected_close_date else None,
+        "assigned_to": d.assigned_to,
+        "company_id": d.company_id,
+        "contact_id": d.contact_id,
+        "organization_id": d.organization_id,
+        "created_at": str(d.created_at) if d.created_at else None
+    }
 
 @router.put("/{deal_id}", response_model=DealResponse, summary="Update deal details by ID")
 async def update_deal(deal_id: str, payload: DealUpdate, db: AsyncSession = Depends(get_db)):
@@ -178,14 +204,51 @@ async def update_deal(deal_id: str, payload: DealUpdate, db: AsyncSession = Depe
     if not d:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Deal '{deal_id}' not found")
     try:
-        if payload.title: d.title = payload.title
-        if payload.amount: d.amount = payload.amount
-        if payload.stage: d.stage = payload.stage
+        if payload.title is not None: d.title = payload.title
+        if payload.amount is not None: d.amount = payload.amount
+        if payload.stage is not None: d.stage = payload.stage
+        if payload.probability is not None: d.probability = payload.probability
+
+        if payload.assigned_to is not None and payload.assigned_to not in ["null", "None", ""]:
+            u_check = await db.execute(select(User).where(User.id == payload.assigned_to))
+            if u_check.scalars().first():
+                d.assigned_to = payload.assigned_to
+
+        if payload.company_id is not None:
+            if payload.company_id in ["null", "None", ""]:
+                d.company_id = None
+            else:
+                c_check = await db.execute(select(Company).where(Company.id == payload.company_id))
+                if c_check.scalars().first():
+                    d.company_id = payload.company_id
+
+        if payload.contact_id is not None:
+            if payload.contact_id in ["null", "None", ""]:
+                d.contact_id = None
+            else:
+                cnt_check = await db.execute(select(Contact).where(Contact.id == payload.contact_id))
+                if cnt_check.scalars().first():
+                    d.contact_id = payload.contact_id
+
         await db.commit()
-        return {"id": d.id, "title": d.title, "amount": d.amount, "stage": d.stage, "probability": d.probability, "expected_close_date": str(d.expected_close_date), "assigned_to": d.assigned_to, "organization_id": d.organization_id, "created_at": str(d.created_at)}
+        await db.refresh(d)
+
+        return {
+            "id": d.id,
+            "title": d.title,
+            "amount": d.amount,
+            "stage": d.stage,
+            "probability": d.probability,
+            "expected_close_date": str(d.expected_close_date) if d.expected_close_date else None,
+            "assigned_to": d.assigned_to,
+            "company_id": d.company_id,
+            "contact_id": d.contact_id,
+            "organization_id": d.organization_id,
+            "created_at": str(d.created_at) if d.created_at else None
+        }
     except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to update deal: {str(e)}")
 
 @router.delete("/{deal_id}", response_model=MessageResponse, summary="Delete deal by ID")
 async def delete_deal(deal_id: str, db: AsyncSession = Depends(get_db)):
