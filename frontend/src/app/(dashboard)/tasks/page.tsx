@@ -169,7 +169,7 @@ export default function TasksPage() {
       description: description.trim() || undefined,
       priority,
       status,
-      due_date: dueDate || undefined,
+      due_date: dueDate ? (dueDate.includes('T') ? dueDate : `${dueDate}T00:00:00Z`) : undefined,
       assigned_to: assignedTo.trim() || undefined,
     };
 

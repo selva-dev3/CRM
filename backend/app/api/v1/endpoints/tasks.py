@@ -1,14 +1,40 @@
 from fastapi import APIRouter, HTTPException, status, Query, Depends
 from typing import List, Optional
+from datetime import datetime, date
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
-from app.models import Task
+from app.models import Task, User
 from app.schemas.crm_schemas import (
     TaskResponse, TaskCreate, TaskUpdate, MessageResponse, BulkDeleteRequest, BulkActionResponse
 )
 
 router = APIRouter()
+
+def parse_datetime(val: Optional[str]) -> Optional[datetime]:
+    if not val or not str(val).strip():
+        return None
+    val_str = str(val).strip()
+    try:
+        return datetime.fromisoformat(val_str.replace("Z", "+00:00"))
+    except Exception:
+        try:
+            d = date.fromisoformat(val_str)
+            return datetime(d.year, d.month, d.day)
+        except Exception:
+            return None
+
+def format_task_response(t: Task) -> dict:
+    return {
+        "id": t.id,
+        "title": t.title,
+        "description": t.description,
+        "priority": t.priority,
+        "due_date": str(t.due_date) if t.due_date else None,
+        "status": t.status,
+        "assigned_to": t.assigned_to,
+        "created_at": str(t.created_at) if t.created_at else None
+    }
 
 @router.get("", response_model=List[TaskResponse], summary="List tasks with pagination, filters & search")
 async def list_tasks(page: int = 1, limit: int = 20, status: Optional[str] = None, priority: Optional[str] = None, db: AsyncSession = Depends(get_db)):
@@ -20,17 +46,33 @@ async def list_tasks(page: int = 1, limit: int = 20, status: Optional[str] = Non
             stmt = stmt.where(Task.priority == priority)
         res = await db.execute(stmt)
         tasks = res.scalars().all()
-        return [{"id": t.id, "title": t.title, "description": t.description, "priority": t.priority, "due_date": str(t.due_date), "status": t.status, "assigned_to": t.assigned_to, "created_at": str(t.created_at)} for t in tasks]
+        return [format_task_response(t) for t in tasks]
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 @router.post("", response_model=TaskResponse, status_code=status.HTTP_201_CREATED, summary="Create new task")
 async def create_task(payload: TaskCreate, db: AsyncSession = Depends(get_db)):
     try:
-        t = Task(organization_id="org-1", title=payload.title, description=payload.description, priority=payload.priority, status=payload.status, due_date=payload.due_date, assigned_to=payload.assigned_to)
+        due_dt = parse_datetime(payload.due_date)
+        assigned_user = payload.assigned_to
+        if assigned_user:
+            user_res = await db.execute(select(User).where((User.id == assigned_user) | (User.name == assigned_user)))
+            user_obj = user_res.scalars().first()
+            assigned_user = user_obj.id if user_obj else None
+
+        t = Task(
+            organization_id="org-1",
+            title=payload.title,
+            description=payload.description,
+            priority=payload.priority or "Medium",
+            status=payload.status or "Pending",
+            due_date=due_dt,
+            assigned_to=assigned_user
+        )
         db.add(t)
         await db.commit()
-        return {"id": t.id, "title": t.title, "description": t.description, "priority": t.priority, "due_date": str(t.due_date), "status": t.status, "assigned_to": t.assigned_to, "created_at": str(t.created_at)}
+        await db.refresh(t)
+        return format_task_response(t)
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to create task: {str(e)}")
@@ -39,13 +81,13 @@ async def create_task(payload: TaskCreate, db: AsyncSession = Depends(get_db)):
 async def get_overdue_tasks(db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Task).where(Task.status == "Pending"))
     tasks = res.scalars().all()
-    return [{"id": t.id, "title": t.title, "description": t.description, "priority": t.priority, "due_date": str(t.due_date), "status": t.status, "assigned_to": t.assigned_to, "created_at": str(t.created_at)} for t in tasks]
+    return [format_task_response(t) for t in tasks]
 
 @router.get("/today", response_model=List[TaskResponse], summary="Get list of tasks due today")
 async def get_today_tasks(db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Task).where(Task.status == "Pending"))
     tasks = res.scalars().all()
-    return [{"id": t.id, "title": t.title, "description": t.description, "priority": t.priority, "due_date": str(t.due_date), "status": t.status, "assigned_to": t.assigned_to, "created_at": str(t.created_at)} for t in tasks]
+    return [format_task_response(t) for t in tasks]
 
 @router.get("/board-view", summary="Get tasks grouped by status for Board view")
 async def get_tasks_board_view(db: AsyncSession = Depends(get_db)):
@@ -53,7 +95,13 @@ async def get_tasks_board_view(db: AsyncSession = Depends(get_db)):
     tasks = res.scalars().all()
     board = {}
     for t in tasks:
-        board.setdefault(t.status, []).append({"id": t.id, "title": t.title})
+        board.setdefault(t.status, []).append({
+            "id": t.id,
+            "title": t.title,
+            "priority": t.priority,
+            "due_date": str(t.due_date) if t.due_date else None,
+            "assigned_to": t.assigned_to
+        })
     return board
 
 @router.get("/export/csv", summary="Export tasks as CSV file")
@@ -98,7 +146,7 @@ async def get_task(task_id: str, db: AsyncSession = Depends(get_db)):
     t = res.scalars().first()
     if not t:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Task '{task_id}' not found")
-    return {"id": t.id, "title": t.title, "description": t.description, "priority": t.priority, "due_date": str(t.due_date), "status": t.status, "assigned_to": t.assigned_to, "created_at": str(t.created_at)}
+    return format_task_response(t)
 
 @router.put("/{task_id}", response_model=TaskResponse, summary="Update task by ID")
 async def update_task(task_id: str, payload: TaskUpdate, db: AsyncSession = Depends(get_db)):
@@ -107,10 +155,28 @@ async def update_task(task_id: str, payload: TaskUpdate, db: AsyncSession = Depe
     if not t:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Task '{task_id}' not found")
     try:
-        if payload.title: t.title = payload.title
-        if payload.status: t.status = payload.status
+        if payload.title is not None:
+            t.title = payload.title
+        if payload.status is not None:
+            t.status = payload.status
+        if getattr(payload, 'priority', None) is not None:
+            t.priority = payload.priority
+        if getattr(payload, 'description', None) is not None:
+            t.description = payload.description
+        if getattr(payload, 'due_date', None) is not None:
+            t.due_date = parse_datetime(payload.due_date)
+        if getattr(payload, 'assigned_to', None) is not None:
+            assigned_user = payload.assigned_to
+            if assigned_user:
+                user_res = await db.execute(select(User).where((User.id == assigned_user) | (User.name == assigned_user)))
+                user_obj = user_res.scalars().first()
+                t.assigned_to = user_obj.id if user_obj else None
+            else:
+                t.assigned_to = None
+
         await db.commit()
-        return {"id": t.id, "title": t.title, "description": t.description, "priority": t.priority, "due_date": str(t.due_date), "status": t.status, "assigned_to": t.assigned_to, "created_at": str(t.created_at)}
+        await db.refresh(t)
+        return format_task_response(t)
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -178,7 +244,9 @@ async def assign_task(task_id: str, user_id: str, db: AsyncSession = Depends(get
     if not t:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Task '{task_id}' not found")
     try:
-        t.assigned_to = user_id
+        user_res = await db.execute(select(User).where((User.id == user_id) | (User.name == user_id)))
+        user_obj = user_res.scalars().first()
+        t.assigned_to = user_obj.id if user_obj else None
         await db.commit()
         return {"message": f"Task {task_id} assigned to user {user_id}", "status": "success"}
     except Exception as e:
