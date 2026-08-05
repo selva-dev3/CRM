@@ -3,8 +3,10 @@ from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
-from app.api.deps import get_valid_org_id
-from app.models import Company
+from app.api.deps import get_valid_org_id, get_current_user
+from app.models import Company, Contact
+from app.models.note import Note
+from app.models.user import User
 from app.schemas.crm_schemas import (
     CompanyResponse, CompanyCreate, CompanyUpdate, MessageResponse, BulkDeleteRequest, BulkActionResponse,
     ContactResponse, DealResponse, QuoteResponse, InvoiceResponse, NoteResponse, DocumentResponse
@@ -165,10 +167,9 @@ async def delete_company(company_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.get("/{company_id}/contacts", response_model=List[ContactResponse], summary="List contacts working at company")
 async def get_company_contacts(company_id: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(Company).where(Company.id == company_id))
-    if not res.scalars().first():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Company '{company_id}' not found")
-    return []
+    contacts_res = await db.execute(select(Contact).where(Contact.company_id == company_id))
+    contacts = contacts_res.scalars().all()
+    return contacts
 
 @router.get("/{company_id}/deals", response_model=List[DealResponse], summary="List deals linked to company")
 async def get_company_deals(company_id: str, db: AsyncSession = Depends(get_db)):
@@ -207,17 +208,58 @@ async def get_company_invoices(company_id: str, db: AsyncSession = Depends(get_d
 
 @router.get("/{company_id}/notes", response_model=List[NoteResponse], summary="List notes for company")
 async def get_company_notes(company_id: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(Company).where(Company.id == company_id))
-    if not res.scalars().first():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Company '{company_id}' not found")
-    return []
+    notes_res = await db.execute(
+        select(Note).where(Note.entity_type == "company", Note.entity_id == company_id).order_by(Note.created_at.desc())
+    )
+    notes = notes_res.scalars().all()
+    return [
+        {
+            "id": n.id,
+            "entity_type": n.entity_type,
+            "entity_id": n.entity_id,
+            "content": n.content,
+            "created_by": n.created_by,
+            "created_at": str(n.created_at) if n.created_at else None
+        }
+        for n in notes
+    ]
 
 @router.post("/{company_id}/notes", response_model=NoteResponse, summary="Add note to company")
-async def add_company_note(company_id: str, content: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(Company).where(Company.id == company_id))
-    if not res.scalars().first():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Company '{company_id}' not found")
-    return {"id": "nt-new", "entity_type": "company", "entity_id": company_id, "content": content, "created_by": "usr-1", "created_at": "2026-08-02"}
+async def add_company_note(
+    company_id: str,
+    content: Optional[str] = Query(None),
+    payload: Optional[dict] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    note_content = content
+    if not note_content and isinstance(payload, dict):
+        note_content = payload.get("content")
+    if not note_content:
+        note_content = "Note"
+
+    org_id = await get_valid_org_id(db, current_user)
+    user_id = current_user.id
+
+    new_note = Note(
+        organization_id=org_id,
+        entity_type="company",
+        entity_id=company_id,
+        content=note_content,
+        created_by=user_id
+    )
+    db.add(new_note)
+    await db.commit()
+    await db.refresh(new_note)
+
+    return {
+        "id": new_note.id,
+        "entity_type": new_note.entity_type,
+        "entity_id": new_note.entity_id,
+        "content": new_note.content,
+        "created_by": new_note.created_by,
+        "created_at": str(new_note.created_at) if new_note.created_at else None
+    }
 
 @router.get("/{company_id}/documents", response_model=List[DocumentResponse], summary="List documents attached to company")
 async def get_company_documents(company_id: str, db: AsyncSession = Depends(get_db)):

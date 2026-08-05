@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   Building2,
   Globe,
@@ -34,6 +36,7 @@ import {
 } from '@/lib/api/companies';
 
 export default function CompaniesPage() {
+  const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [page, setPage] = useState(1);
@@ -222,7 +225,9 @@ export default function CompaniesPage() {
             <Building2 className="w-4 h-4" />
           </div>
           <div>
-            <div className="font-bold text-slate-900 text-xs">{item.name}</div>
+            <Link href={`/companies/${item.id}`} className="font-bold text-slate-900 text-xs hover:text-blue-600 hover:underline">
+              {item.name}
+            </Link>
             <div className="text-[11px] text-slate-500">{item.domain || item.website || 'N/A'}</div>
           </div>
         </div>
@@ -348,6 +353,7 @@ export default function CompaniesPage() {
         columns={columns as any}
         data={companies as any}
         getRowKey={(item: any) => item.id}
+        onRowClick={(item: any) => router.push(`/companies/${item.id}`)}
         searchValue={searchTerm}
         onSearchChange={setSearchTerm}
         searchPlaceholder="Search companies by name or domain..."

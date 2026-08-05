@@ -83,12 +83,86 @@ export async function lookupCompanyDomainApi(domain: string): Promise<any> {
   return apiClient.post(`/companies/lookup-domain?domain=${encodeURIComponent(domain)}`);
 }
 
+export async function getCompanyApi(id: string): Promise<CompanyItem> {
+  return apiClient.get<CompanyItem>(`/companies/${id}`);
+}
+
+export async function getCompanyContactsApi(id: string): Promise<any[]> {
+  try {
+    return await apiClient.get<any[]>(`/companies/${id}/contacts`);
+  } catch {
+    return [];
+  }
+}
+
+export async function getCompanyDealsApi(id: string): Promise<any[]> {
+  try {
+    return await apiClient.get<any[]>(`/companies/${id}/deals`);
+  } catch {
+    return [];
+  }
+}
+
+export async function getCompanyNotesApi(id: string): Promise<any[]> {
+  try {
+    return await apiClient.get<any[]>(`/companies/${id}/notes`);
+  } catch {
+    return [];
+  }
+}
+
+export async function addCompanyNoteApi(payload: { id: string; content: string }): Promise<any> {
+  return apiClient.post(`/companies/${payload.id}/notes?content=${encodeURIComponent(payload.content)}`, {
+    content: payload.content,
+  });
+}
+
+export async function getCompanyQuotesApi(id: string): Promise<any[]> {
+  try {
+    return await apiClient.get<any[]>(`/companies/${id}/quotes`);
+  } catch {
+    return [];
+  }
+}
+
+export async function getCompanyInvoicesApi(id: string): Promise<any[]> {
+  try {
+    return await apiClient.get<any[]>(`/companies/${id}/invoices`);
+  } catch {
+    return [];
+  }
+}
+
+export async function getCompanyDocumentsApi(id: string): Promise<any[]> {
+  try {
+    return await apiClient.get<any[]>(`/companies/${id}/documents`);
+  } catch {
+    return [];
+  }
+}
+
+export async function getCompanyHierarchyApi(id: string): Promise<any> {
+  try {
+    return await apiClient.get<any>(`/companies/${id}/hierarchy`);
+  } catch {
+    return null;
+  }
+}
+
 // TanStack Query & Mutation Hooks
 export function useCompaniesQuery(page = 1, limit = 15, search?: string) {
   return useQuery({
     queryKey: ['companies', page, limit, search],
     queryFn: () => fetchCompaniesApi(page, limit, search),
     placeholderData: (previousData) => previousData,
+  });
+}
+
+export function useCompanyQuery(id: string) {
+  return useQuery({
+    queryKey: ['company', id],
+    queryFn: () => getCompanyApi(id),
+    enabled: !!id,
   });
 }
 
