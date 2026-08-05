@@ -423,9 +423,14 @@ export default function RoleDetailPage() {
           {!isDefault && (
             <button
               onClick={handleSetDefault}
-              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg text-xs font-semibold shadow-xs cursor-pointer"
+              disabled={setDefaultMutation.isPending}
+              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs cursor-pointer transition-colors disabled:opacity-50"
             >
-              <Star className="w-4 h-4 text-amber-500" />
+              {setDefaultMutation.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin text-amber-500" />
+              ) : (
+                <Star className="w-4 h-4 text-amber-500 fill-amber-400/20" />
+              )}
               Set Registration Default
             </button>
           )}

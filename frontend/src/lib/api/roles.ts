@@ -321,6 +321,7 @@ export function useSetDefaultRoleMutation(options?: UseMutationOptions<MessageRe
     mutationFn: setDefaultRoleApi,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['roles', 'default'] });
+      queryClient.invalidateQueries({ queryKey: ['roles'] });
     },
     ...options,
   });
