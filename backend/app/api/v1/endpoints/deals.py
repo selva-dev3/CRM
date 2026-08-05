@@ -1,8 +1,12 @@
+import json
+import os
+import httpx
 from fastapi import APIRouter, HTTPException, status, Query, Depends
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
+from app.config import settings
 from app.api.deps import get_valid_org_id, get_current_user
 from app.models import Deal, DealStage, Company, Contact
 from app.models.note import Note
@@ -344,13 +348,103 @@ async def get_deal_quotes(deal_id: str, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Deal '{deal_id}' not found")
     return []
 
-@router.post("/{deal_id}/predict-win-rate", summary="AI prediction for deal win probability")
+@router.post("/{deal_id}/predict-win-rate", summary="AI prediction for deal win probability using OpenAI")
 async def predict_deal_win_rate(deal_id: str, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Deal).where(Deal.id == deal_id))
     d = res.scalars().first()
     if not d:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Deal '{deal_id}' not found")
-    return {"deal_id": deal_id, "predicted_probability": d.probability, "key_drivers": ["Decision maker engaged", "Proposal submitted fast"]}
+    
+    # Fetch deal notes for rich LLM prompt context
+    notes_res = await db.execute(
+        select(Note).where(Note.entity_type == "deal", Note.entity_id == deal_id).order_by(Note.created_at.desc())
+    )
+    notes = notes_res.scalars().all()
+    notes_summary = "\n".join([f"- {n.content}" for n in notes]) if notes else "No notes logged."
+
+    api_key = settings.OPENAI_API_KEY or os.environ.get("OPENAI_API_KEY")
+
+    if api_key and api_key.startswith("sk-"):
+        try:
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+            prompt_text = f"""
+            Analyze the following B2B sales deal profile in Enterprise CRM and calculate the AI predicted win probability:
+            - Deal Title: {d.title}
+            - Deal Amount: ${d.amount:,.2f}
+            - Current Pipeline Stage: {d.stage}
+            - Current Win Probability: {d.probability}%
+            - Related Notes / Log:
+            {notes_summary}
+
+            Respond ONLY with a JSON object in this exact schema:
+            {{
+              "predicted_probability": 75.0,
+              "key_drivers": ["Driver 1", "Driver 2", "Driver 3"],
+              "ai_recommendation": "Strategic advice...",
+              "risk_factors": ["Risk 1", "Risk 2"]
+            }}
+            """
+
+            payload = {
+                "model": "gpt-4o-mini",
+                "messages": [
+                    {"role": "system", "content": "You are an expert Enterprise CRM Sales Analyst AI. Output ONLY valid JSON."},
+                    {"role": "user", "content": prompt_text}
+                ],
+                "temperature": 0.3,
+                "response_format": {"type": "json_object"}
+            }
+
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
+                if resp.status_code == 200:
+                    result_data = resp.json()
+                    content_json = json.loads(result_data["choices"][0]["message"]["content"])
+                    return {
+                        "deal_id": deal_id,
+                        "predicted_probability": float(content_json.get("predicted_probability", d.probability or 50.0)),
+                        "key_drivers": content_json.get("key_drivers", ["Decision maker engaged", "Proposal submitted fast"]),
+                        "ai_recommendation": content_json.get("ai_recommendation", "Maintain weekly executive check-ins."),
+                        "risk_factors": content_json.get("risk_factors", ["Pending procurement review"]),
+                        "model": "gpt-4o-mini"
+                    }
+        except Exception as err:
+            print(f"OpenAI API call error: {err}")
+
+    # Fallback intelligent sales rule engine if OPENAI_API_KEY is not set or call failed
+    prob = d.probability or 50.0
+    drivers = ["Decision maker engaged", "Proposal submitted fast", "Budget aligned with scope"]
+    rec = "Maintain executive check-ins and offer flexible contract terms."
+    risks = ["Competitor evaluation", "Procurement timeline"]
+
+    if d.stage == "Closed Won":
+        prob = 100.0
+        drivers = ["Contract signed", "Payment processed"]
+        rec = "Hand over to Customer Success team for onboarding."
+        risks = []
+    elif d.stage == "Closed Lost":
+        prob = 0.0
+        drivers = ["Competitor chosen", "Budget cut"]
+        rec = "Schedule re-engagement check-in in 6 months."
+        risks = ["Loss reason logged"]
+    elif d.stage == "Negotiation":
+        prob = max(prob, 85.0)
+        drivers = ["Legal review in progress", "Final pricing agreed"]
+    elif d.stage == "Proposal":
+        prob = max(prob, 65.0)
+        drivers = ["Proposal submitted", "Technical validation completed"]
+
+    return {
+        "deal_id": deal_id,
+        "predicted_probability": round(prob, 1),
+        "key_drivers": drivers,
+        "ai_recommendation": rec,
+        "risk_factors": risks,
+        "model": "crm-sales-analytics-engine"
+    }
 
 @router.post("/{deal_id}/clone", response_model=DealResponse, summary="Clone an existing deal")
 async def clone_deal(deal_id: str, new_title: str, db: AsyncSession = Depends(get_db)):
