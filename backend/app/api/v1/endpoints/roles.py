@@ -4,7 +4,7 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
-from app.models import Role, Permission, User
+from app.models import Role, Permission, User, RolePermission
 from app.schemas.crm_schemas import (
     RoleResponse, RoleCreate, RoleUpdate, PermissionItem, PermissionCreate, MessageResponse, BulkDeleteRequest, BulkActionResponse
 )
@@ -222,11 +222,28 @@ async def get_role(role_id: str, db: AsyncSession = Depends(get_db)):
     r = res.scalars().first()
     if not r:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Role '{role_id}' not found")
+    
+    perm_stmt = (
+        select(Permission)
+        .join(RolePermission, RolePermission.permission_id == Permission.id)
+        .where(RolePermission.role_id == role_id)
+    )
+    perm_res = await db.execute(perm_stmt)
+    assigned_perms = perm_res.scalars().all()
+
+    if assigned_perms:
+        perm_keys = [p.key for p in assigned_perms if p.key]
+    elif getattr(r, "is_system_role", False):
+        perm_keys = ["all"]
+    else:
+        # Default assigned permission keys for demo custom roles if not explicitly saved in DB yet
+        perm_keys = ["dashboard:read", "users:read", "users:create", "users:update", "users:delete", "users:export", "users:import"]
+
     return {
         "id": r.id,
         "name": r.name,
         "description": r.description or "",
-        "permissions": ["leads:all", "deals:all"],
+        "permissions": perm_keys,
         "is_system_role": getattr(r, "is_system_role", False),
         "created_at": str(getattr(r, "created_at", "2026-08-05"))
     }
@@ -242,11 +259,26 @@ async def update_role(role_id: str, payload: RoleUpdate, db: AsyncSession = Depe
         if payload.description: r.description = payload.description
         await db.commit()
         await db.refresh(r)
+
+        if payload.permissions is not None:
+            # Sync RolePermission table
+            await db.execute(select(RolePermission).where(RolePermission.role_id == role_id))
+            del_stmt = select(RolePermission).where(RolePermission.role_id == role_id)
+            existing = (await db.execute(del_stmt)).scalars().all()
+            for item in existing:
+                await db.delete(item)
+            
+            p_stmt = select(Permission).where((Permission.key.in_(payload.permissions)) | (Permission.id.in_(payload.permissions)))
+            found_perms = (await db.execute(p_stmt)).scalars().all()
+            for p in found_perms:
+                db.add(RolePermission(role_id=role_id, permission_id=p.id))
+            await db.commit()
+
         return {
             "id": r.id,
             "name": r.name,
             "description": r.description or "",
-            "permissions": payload.permissions or [],
+            "permissions": payload.permissions if payload.permissions is not None else [],
             "is_system_role": getattr(r, "is_system_role", False),
             "created_at": str(getattr(r, "created_at", "2026-08-05"))
         }
@@ -279,11 +311,23 @@ async def clone_role(role_id: str, new_name: str = Query("Cloned Role"), db: Asy
         db.add(r)
         await db.commit()
         await db.refresh(r)
+
+        # Copy existing permissions
+        p_stmt = (
+            select(Permission)
+            .join(RolePermission, RolePermission.permission_id == Permission.id)
+            .where(RolePermission.role_id == role_id)
+        )
+        orig_perms = (await db.execute(p_stmt)).scalars().all()
+        for op in orig_perms:
+            db.add(RolePermission(role_id=r.id, permission_id=op.id))
+        await db.commit()
+
         return {
             "id": r.id,
             "name": r.name,
             "description": r.description or "",
-            "permissions": ["leads:read"],
+            "permissions": [op.key for op in orig_perms] if orig_perms else ["dashboard:read"],
             "is_system_role": False,
             "created_at": str(getattr(r, "created_at", datetime.now().isoformat()))
         }
@@ -296,14 +340,48 @@ async def assign_permissions(role_id: str, permissions: List[str], db: AsyncSess
     res = await db.execute(select(Role).where(Role.id == role_id))
     if not res.scalars().first():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Role '{role_id}' not found")
-    return {"message": f"Updated permissions for role {role_id}", "status": "success"}
+    try:
+        # Clear existing role permissions
+        del_stmt = select(RolePermission).where(RolePermission.role_id == role_id)
+        existing = (await db.execute(del_stmt)).scalars().all()
+        for item in existing:
+            await db.delete(item)
+
+        # Add new role permissions
+        if permissions:
+            p_stmt = select(Permission).where((Permission.key.in_(permissions)) | (Permission.id.in_(permissions)))
+            found_perms = (await db.execute(p_stmt)).scalars().all()
+            for p in found_perms:
+                db.add(RolePermission(role_id=role_id, permission_id=p.id))
+        
+        await db.commit()
+        return {"message": f"Updated permissions for role {role_id}", "status": "success"}
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 @router.delete("/{role_id}/permissions/{perm_id}", response_model=MessageResponse, summary="Remove single permission from role")
 async def remove_permission(role_id: str, perm_id: str, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Role).where(Role.id == role_id))
     if not res.scalars().first():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Role '{role_id}' not found")
-    return {"message": f"Permission {perm_id} removed from {role_id}", "status": "success"}
+    try:
+        p_stmt = select(Permission).where((Permission.id == perm_id) | (Permission.key == perm_id))
+        target_perm = (await db.execute(p_stmt)).scalars().first()
+        target_id = target_perm.id if target_perm else perm_id
+
+        rp_stmt = select(RolePermission).where(
+            (RolePermission.role_id == role_id) & (RolePermission.permission_id == target_id)
+        )
+        rp_items = (await db.execute(rp_stmt)).scalars().all()
+        for rp in rp_items:
+            await db.delete(rp)
+
+        await db.commit()
+        return {"message": f"Permission '{perm_id}' removed from role", "status": "success"}
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 @router.get("/{role_id}/users", summary="List users belonging to specific role")
 async def get_role_users(role_id: str, db: AsyncSession = Depends(get_db)):

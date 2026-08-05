@@ -33,7 +33,8 @@ import {
   useAssignRoleToUserMutation,
   useSetDefaultRoleMutation,
   useDeleteRoleMutation,
-  checkPermissionApi
+  checkPermissionApi,
+  PermissionItem
 } from '@/lib/api/roles';
 
 export default function RoleDetailPage() {
@@ -59,8 +60,10 @@ export default function RoleDetailPage() {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isCloneModalOpen, setIsCloneModalOpen] = useState(false);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const [isAddPermModalOpen, setIsAddPermModalOpen] = useState(false);
   const [cloneNewName, setCloneNewName] = useState('');
   const [assignUserId, setAssignUserId] = useState('usr-101');
+  const [selectedAddPerms, setSelectedAddPerms] = useState<Set<string>>(new Set());
 
   // Permission Simulator
   const [testPerm, setTestPerm] = useState('leads:create');
@@ -69,6 +72,59 @@ export default function RoleDetailPage() {
   // Toast / Alert notifications
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Filter permissions assigned to this role
+  const assignedPermissions = React.useMemo(() => {
+    if (!role || !permissionMatrix.length) return [];
+    if (role.is_system_role || role.permissions?.includes('all')) {
+      return permissionMatrix;
+    }
+    const permSet = new Set(role.permissions || []);
+    return permissionMatrix.filter(
+      (p) => permSet.has(p.id) || (p.key && permSet.has(p.key))
+    );
+  }, [role, permissionMatrix]);
+
+  const groupedAssignedPermissions = React.useMemo(() => {
+    const map: Record<string, PermissionItem[]> = {};
+    assignedPermissions.forEach((perm) => {
+      const cat = perm.category || perm.module || 'General';
+      if (!map[cat]) map[cat] = [];
+      map[cat].push(perm);
+    });
+    return map;
+  }, [assignedPermissions]);
+
+  const handleOpenAddPermModal = () => {
+    setSelectedAddPerms(new Set(role?.permissions || []));
+    setIsAddPermModalOpen(true);
+  };
+
+  const handleSaveAssignedPermissionsSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await assignPermsMutation.mutateAsync({
+        roleId,
+        permissions: Array.from(selectedAddPerms),
+      });
+      setSuccessMessage(res.message || 'Permissions updated successfully.');
+      setIsAddPermModalOpen(false);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to update permissions.');
+    }
+  };
+
+  const toggleAddPermissionSelection = (perm: PermissionItem) => {
+    const next = new Set(selectedAddPerms);
+    const key = perm.key || perm.id;
+    if (next.has(key) || next.has(perm.id)) {
+      next.delete(key);
+      next.delete(perm.id);
+    } else {
+      next.add(key);
+    }
+    setSelectedAddPerms(next);
+  };
 
   const handleSetDefault = async () => {
     try {
@@ -104,9 +160,9 @@ export default function RoleDetailPage() {
     }
   };
 
-  const handleRemovePermission = async (permId: string) => {
+  const handleRemovePermission = async (permIdentifier: string) => {
     try {
-      const res = await removePermMutation.mutateAsync({ roleId, permId });
+      const res = await removePermMutation.mutateAsync({ roleId, permId: permIdentifier });
       setSuccessMessage(res.message || 'Permission removed.');
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to remove permission.');
@@ -270,49 +326,65 @@ export default function RoleDetailPage() {
             </div>
 
             <div className="space-y-4 pt-4 border-t border-slate-100">
-              <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                <KeyRound className="w-4 h-4 text-indigo-600" />
-                Assigned Permissions Scope ({permissionMatrix.length} Total System Actions)
-              </h3>
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                  <KeyRound className="w-4 h-4 text-indigo-600" />
+                  Assigned Permissions Scope ({assignedPermissions.length} Assigned Actions)
+                </h3>
+                <button
+                  onClick={handleOpenAddPermModal}
+                  className="flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Assign Permissions
+                </button>
+              </div>
 
               <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1">
-                {Object.entries(
-                  permissionMatrix.reduce<Record<string, typeof permissionMatrix>>((acc, perm) => {
-                    const cat = perm.category || perm.module || 'General';
-                    if (!acc[cat]) acc[cat] = [];
-                    acc[cat].push(perm);
-                    return acc;
-                  }, {})
-                ).map(([category, items]) => (
-                  <div key={category} className="space-y-2 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-                    <div className="flex items-center gap-2 pb-1 border-b border-slate-200/60">
-                      <span className="px-2.5 py-0.5 bg-indigo-100 text-indigo-800 font-bold rounded-md text-xs border border-indigo-200">
-                        {category}
-                      </span>
-                      <span className="text-[11px] font-semibold text-slate-400">({items.length})</span>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                      {items.map((perm) => (
-                        <div key={perm.id} className="p-2.5 bg-white border border-slate-200 rounded-xl flex items-start justify-between gap-2 shadow-2xs">
-                          <div className="space-y-0.5">
-                            <span className="text-xs font-bold text-slate-900 block leading-tight">{perm.name || perm.key}</span>
-                            {perm.key && <span className="text-[10px] font-mono text-slate-500 block">{perm.key}</span>}
-                            {perm.description && <span className="text-[10px] text-slate-400 block truncate max-w-[170px]">{perm.description}</span>}
-                          </div>
-
-                          <button
-                            onClick={() => handleRemovePermission(perm.id)}
-                            title="Remove permission from role"
-                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md cursor-pointer shrink-0 mt-0.5"
-                          >
-                            <MinusCircle className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
+                {Object.keys(groupedAssignedPermissions).length === 0 ? (
+                  <div className="p-8 text-center bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                    <Shield className="w-8 h-8 text-slate-300 mx-auto" />
+                    <p className="text-xs font-medium text-slate-500">No permissions currently assigned to this role.</p>
+                    <button
+                      onClick={handleOpenAddPermModal}
+                      className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-semibold shadow-xs cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Assign Permissions
+                    </button>
                   </div>
-                ))}
+                ) : (
+                  Object.entries(groupedAssignedPermissions).map(([category, items]) => (
+                    <div key={category} className="space-y-2 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                      <div className="flex items-center gap-2 pb-1 border-b border-slate-200/60">
+                        <span className="px-2.5 py-0.5 bg-indigo-100 text-indigo-800 font-bold rounded-md text-xs border border-indigo-200">
+                          {category}
+                        </span>
+                        <span className="text-[11px] font-semibold text-slate-400">({items.length})</span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                        {items.map((perm) => (
+                          <div key={perm.id} className="p-2.5 bg-white border border-slate-200 rounded-xl flex items-start justify-between gap-2 shadow-2xs">
+                            <div className="space-y-0.5">
+                              <span className="text-xs font-bold text-slate-900 block leading-tight">{perm.name || perm.key}</span>
+                              {perm.key && <span className="text-[10px] font-mono text-slate-500 block">{perm.key}</span>}
+                              {perm.description && <span className="text-[10px] text-slate-400 block truncate max-w-[170px]">{perm.description}</span>}
+                            </div>
+
+                            <button
+                              onClick={() => handleRemovePermission(perm.key || perm.id)}
+                              title="Remove permission from role"
+                              className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md cursor-pointer shrink-0 mt-0.5"
+                            >
+                              <MinusCircle className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>
@@ -458,6 +530,86 @@ export default function RoleDetailPage() {
                 >
                   {assignUserMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   Assign Role
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Permissions Modal */}
+      {isAddPermModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <KeyRound className="w-5 h-5 text-indigo-600" />
+                Assign Permissions to Role ({selectedAddPerms.size} Selected)
+              </h3>
+              <button onClick={() => setIsAddPermModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveAssignedPermissionsSubmit} className="space-y-4">
+              <div className="max-h-80 overflow-y-auto space-y-3 pr-1 border border-slate-200 rounded-xl p-3 bg-slate-50/50">
+                {Object.entries(
+                  permissionMatrix.reduce<Record<string, typeof permissionMatrix>>((acc, p) => {
+                    const cat = p.category || p.module || 'General';
+                    if (!acc[cat]) acc[cat] = [];
+                    acc[cat].push(p);
+                    return acc;
+                  }, {})
+                ).map(([category, items]) => (
+                  <div key={category} className="space-y-2 bg-white p-3 rounded-xl border border-slate-200">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                      <span className="px-2.5 py-0.5 bg-indigo-50 text-indigo-700 font-bold rounded-md text-xs border border-indigo-100">
+                        {category}
+                      </span>
+                      <span className="text-[11px] font-semibold text-slate-400">({items.length} permissions)</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                      {items.map((p) => {
+                        const isChecked = selectedAddPerms.has(p.key || p.id) || selectedAddPerms.has(p.id);
+                        return (
+                          <label
+                            key={p.id}
+                            className={`flex items-start justify-between p-2 rounded-lg border cursor-pointer transition-colors ${
+                              isChecked ? 'bg-indigo-50/50 border-indigo-200' : 'bg-slate-50/50 border-slate-200 hover:bg-slate-100/50'
+                            }`}
+                          >
+                            <div className="space-y-0.5 pr-2">
+                              <span className="text-xs font-bold text-slate-900 block leading-tight">
+                                {p.name || p.key}
+                              </span>
+                              {p.key && <span className="text-[10px] font-mono text-slate-500 block">{p.key}</span>}
+                            </div>
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => toggleAddPermissionSelection(p)}
+                              className="h-4 w-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 mt-0.5 shrink-0"
+                            />
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2 border-t border-slate-100">
+                <button type="button" onClick={() => setIsAddPermModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={assignPermsMutation.isPending}
+                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
+                >
+                  {assignPermsMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  Save Permissions
                 </button>
               </div>
             </form>
