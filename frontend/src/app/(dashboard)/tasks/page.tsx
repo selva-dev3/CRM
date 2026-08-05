@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   CheckSquare,
   Calendar,
@@ -45,8 +46,10 @@ import {
   TaskCreatePayload,
   TaskUpdatePayload
 } from '@/lib/api/tasks';
+import { useUsersQuery } from '@/lib/api/users';
 
 export default function TasksPage() {
+  const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
@@ -114,6 +117,18 @@ export default function TasksPage() {
   const { data: overdueTasks = [] } = useOverdueTasksQuery();
   const { data: todayTasks = [] } = useTodayTasksQuery();
   const { data: subtasks = [], refetch: refetchSubtasks } = useSubtasksQuery(detailTask?.id || '');
+  const { data: users = [] } = useUsersQuery(1, 100);
+
+  // Lookup assignee name
+  const getAssigneeName = (userId?: string) => {
+    if (!userId) return 'Unassigned';
+    const matchedUser = users.find((u) => u.id === userId || u.email === userId || u.name === userId);
+    if (matchedUser) return matchedUser.name;
+    if (userId.length > 20 && userId.includes('-')) {
+      return 'Sales Executive';
+    }
+    return userId;
+  };
 
   // Mutation Hooks
   const createTaskMutation = useCreateTaskMutation();
@@ -334,9 +349,9 @@ export default function TasksPage() {
           </button>
           <div>
             <div
-              onClick={() => {
-                setDetailTask(item);
-                setAssignUserInput(item.assigned_to || '');
+              onClick={(e) => {
+                e.stopPropagation();
+                router.push(`/tasks/${item.id}`);
               }}
               className={`font-semibold text-slate-900 hover:text-indigo-600 cursor-pointer transition-colors ${
                 item.status === 'Completed' ? 'line-through text-slate-400' : ''
@@ -404,7 +419,7 @@ export default function TasksPage() {
       cell: (item) => (
         <div className="flex items-center gap-1.5 text-slate-700 text-xs font-medium">
           <UserCheck className="w-3.5 h-3.5 text-slate-400" />
-          <span className="truncate max-w-[160px]">{item.assigned_to || 'Unassigned'}</span>
+          <span className="truncate max-w-[160px] font-semibold">{getAssigneeName(item.assigned_to)}</span>
         </div>
       ),
     },
@@ -412,12 +427,9 @@ export default function TasksPage() {
       id: 'actions',
       header: 'ACTIONS',
       cell: (item) => (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
           <button
-            onClick={() => {
-              setDetailTask(item);
-              setAssignUserInput(item.assigned_to || '');
-            }}
+            onClick={() => router.push(`/tasks/${item.id}`)}
             title="View Details & Subtasks"
             className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-md transition-colors cursor-pointer"
           >
@@ -626,11 +638,12 @@ export default function TasksPage() {
         </div>
       </div>
 
-      {/* Main Data Table with Filter Button on the Right Side */}
+      {/* Main Data Table with Filter Button on the Right Side & Row Click Detail Navigation */}
       <DataTable<TaskItem>
         columns={columns}
         data={tasks}
         getRowKey={(item) => item.id}
+        onRowClick={(item) => router.push(`/tasks/${item.id}`)}
         emptyTitle="No tasks found"
         emptyDescription="Try clearing search or filter parameters to view tasks."
         searchValue={searchTerm}
@@ -802,127 +815,6 @@ export default function TasksPage() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* Task Details & Subtasks Slide-over / Modal */}
-      {detailTask && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-start pb-4 border-b border-slate-100">
-              <div>
-                <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider">Task Details</span>
-                <h2 className="text-xl font-bold text-slate-900">{detailTask.title}</h2>
-              </div>
-              <button onClick={() => setDetailTask(null)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-3 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs">
-              <div>
-                <span className="text-slate-400 font-medium block">Status</span>
-                <span className="font-bold text-slate-800">{detailTask.status || 'Pending'}</span>
-              </div>
-              <div>
-                <span className="text-slate-400 font-medium block">Priority</span>
-                <span className="font-bold text-slate-800">{detailTask.priority || 'Low'}</span>
-              </div>
-              <div>
-                <span className="text-slate-400 font-medium block">Due Date</span>
-                <span className="font-bold text-slate-800">{detailTask.due_date?.substring(0, 10) || 'N/A'}</span>
-              </div>
-            </div>
-
-            {detailTask.description && (
-              <div>
-                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Description</h4>
-                <p className="text-sm text-slate-700 bg-slate-50/50 p-3 rounded-lg border border-slate-100">{detailTask.description}</p>
-              </div>
-            )}
-
-            {/* Subtasks Section */}
-            <div className="space-y-3 pt-2">
-              <h4 className="text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center justify-between">
-                <span>Sub-tasks ({subtasks.length})</span>
-              </h4>
-
-              <form onSubmit={handleAddSubtask} className="flex gap-2">
-                <input
-                  type="text"
-                  value={newSubtaskTitle}
-                  onChange={(e) => setNewSubtaskTitle(e.target.value)}
-                  placeholder="Add a new subtask..."
-                  className="flex-1 bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-                <button
-                  type="submit"
-                  disabled={addSubtaskMutation.isPending}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
-                >
-                  Add Subtask
-                </button>
-              </form>
-
-              <div className="space-y-1.5 max-h-36 overflow-y-auto">
-                {subtasks.length === 0 ? (
-                  <p className="text-xs text-slate-400 italic">No subtasks added yet.</p>
-                ) : (
-                  subtasks.map((st) => (
-                    <div key={st.id} className="flex items-center gap-2 text-xs text-slate-700 bg-slate-50 p-2 rounded-lg border border-slate-200">
-                      <CornerDownRight className="w-3.5 h-3.5 text-indigo-500" />
-                      <span>{st.title}</span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-            {/* Assign User & Reminder Controls */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-slate-100">
-              <form onSubmit={handleAssignTaskSubmit} className="space-y-2">
-                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider">
-                  Assign User
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={assignUserInput}
-                    onChange={(e) => setAssignUserInput(e.target.value)}
-                    placeholder="User ID or Name"
-                    className="flex-1 bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                  <button
-                    type="submit"
-                    className="bg-slate-800 hover:bg-slate-900 text-white px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer"
-                  >
-                    Assign
-                  </button>
-                </div>
-              </form>
-
-              <form onSubmit={handleSetReminderSubmit} className="space-y-2">
-                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1">
-                  <Bell className="w-3.5 h-3.5 text-amber-500" />
-                  Set Reminder
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="datetime-local"
-                    value={reminderTime}
-                    onChange={(e) => setReminderTime(e.target.value)}
-                    className="flex-1 bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                  <button
-                    type="submit"
-                    className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer"
-                  >
-                    Notify
-                  </button>
-                </div>
-              </form>
-            </div>
           </div>
         </div>
       )}
