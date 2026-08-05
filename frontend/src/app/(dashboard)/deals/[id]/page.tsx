@@ -47,6 +47,7 @@ import {
   getDealCommissionApi
 } from '@/lib/api/deals';
 import { useUsersQuery } from '@/lib/api/users';
+import { useProductsQuery } from '@/lib/api/products';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 const STAGES = ['Prospecting', 'Qualification', 'Proposal', 'Negotiation', 'Closed Won', 'Closed Lost'];
@@ -66,7 +67,13 @@ export default function DealDetailsPage() {
   // Modals
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isAddProductModalOpen, setIsAddProductModalOpen] = useState(false);
   const [aiPrediction, setAiPrediction] = useState<any>(null);
+
+  // Add Product Form State
+  const [selectedProductId, setSelectedProductId] = useState('');
+  const [productQuantity, setProductQuantity] = useState(1);
+  const [productUnitPrice, setProductUnitPrice] = useState<number | ''>(0);
 
   // Edit Form State
   const [formTitle, setFormTitle] = useState('');
@@ -78,6 +85,7 @@ export default function DealDetailsPage() {
   // Main Deal Query
   const { data: deal, isLoading, isError, refetch } = useDealQuery(dealId);
   const { data: users = [] } = useUsersQuery();
+  const { data: catalogProducts = [] } = useProductsQuery();
 
   // Sub-resource queries
   const { data: products = [], refetch: refetchProducts } = useQuery({
@@ -115,6 +123,32 @@ export default function DealDetailsPage() {
   const deleteDealMutation = useDeleteDealMutation();
   const markWonMutation = useMarkDealWonMutation();
   const markLostMutation = useMarkDealLostMutation();
+
+  const addProductMutation = useMutation({
+    mutationFn: (payload: { product_id: string; quantity: number; unit_price?: number }) =>
+      addDealProductApi({ id: dealId, ...payload }),
+    onSuccess: () => {
+      setSuccessMessage('Product item added to deal successfully.');
+      setIsAddProductModalOpen(false);
+      refetchProducts();
+      refetch();
+    },
+    onError: () => {
+      setErrorMessage('Failed to add product to deal.');
+    },
+  });
+
+  const removeProductMutation = useMutation({
+    mutationFn: (product_id: string) => removeDealProductApi({ id: dealId, product_id }),
+    onSuccess: () => {
+      setSuccessMessage('Product item removed from deal.');
+      refetchProducts();
+      refetch();
+    },
+    onError: () => {
+      setErrorMessage('Failed to remove product item.');
+    },
+  });
 
   const addNoteMutation = useMutation({
     mutationFn: (content: string) => addDealNoteApi({ id: dealId, content }),
@@ -455,24 +489,81 @@ export default function DealDetailsPage() {
       {/* TAB CONTENT: Products */}
       {activeTab === 'products' && (
         <div className="space-y-4">
-          <h2 className="text-sm font-bold text-slate-900">Line Items & Products</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-bold text-slate-900">Line Items & Products</h2>
+            <Button
+              size="sm"
+              onClick={() => {
+                const firstProd = catalogProducts[0];
+                setSelectedProductId(firstProd?.id || '');
+                setProductQuantity(1);
+                setProductUnitPrice(firstProd?.price || 0);
+                setIsAddProductModalOpen(true);
+              }}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs gap-1.5 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Product</span>
+            </Button>
+          </div>
+
           {products.length === 0 ? (
-            <div className="p-6 bg-white rounded-xl border border-slate-200 text-xs text-slate-500">
-              No product items added to this deal yet.
+            <div className="p-6 bg-white rounded-xl border border-slate-200 text-xs text-slate-500 flex flex-col items-center justify-center gap-2">
+              <Package className="w-8 h-8 text-slate-300" />
+              <span>No product items added to this deal yet.</span>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  const firstProd = catalogProducts[0];
+                  setSelectedProductId(firstProd?.id || '');
+                  setProductQuantity(1);
+                  setProductUnitPrice(firstProd?.price || 0);
+                  setIsAddProductModalOpen(true);
+                }}
+                className="mt-1 border-blue-200 text-blue-600 font-semibold text-xs gap-1 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add First Product</span>
+              </Button>
             </div>
           ) : (
             <div className="space-y-2">
               {products.map((prod: any, idx: number) => (
-                <div key={idx} className="p-4 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <Package className="w-4 h-4 text-blue-600" />
+                <div key={idx} className="p-4 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between hover:border-slate-300 transition">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm shrink-0">
+                      <Package className="w-5 h-5" />
+                    </div>
                     <div>
-                      <div className="font-bold text-slate-900">{prod.name || `Product #${prod.id}`}</div>
-                      <div className="text-slate-500 text-[11px]">SKU: {prod.sku || 'N/A'}</div>
+                      <div className="font-bold text-slate-900 text-sm">{prod.name || `Product #${prod.id}`}</div>
+                      <div className="text-slate-500 text-[11px] flex items-center gap-2 mt-0.5">
+                        <span>SKU: {prod.sku || 'N/A'}</span>
+                        <span>&bull;</span>
+                        <span>Qty: {prod.quantity || 1}</span>
+                        <span>&bull;</span>
+                        <span>Unit: ${prod.unit_price ? prod.unit_price.toLocaleString() : '0'}</span>
+                      </div>
                     </div>
                   </div>
-                  <div className="text-right font-bold text-blue-700 text-sm">
-                    ${prod.unit_price ? prod.unit_price.toLocaleString() : '0'}
+
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <span className="text-[10px] text-slate-400 font-medium block">Total</span>
+                      <span className="font-extrabold text-blue-700 text-sm">
+                        ${((prod.quantity || 1) * (prod.unit_price || 0)).toLocaleString()}
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => removeProductMutation.mutate(prod.id)}
+                      disabled={removeProductMutation.isPending}
+                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                      title="Remove Product"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
               ))}
@@ -691,6 +782,89 @@ export default function DealDetailsPage() {
                 </Button>
                 <Button type="submit" size="sm" disabled={updateDealMutation.isPending} className="bg-blue-600 text-white font-semibold cursor-pointer">
                   {updateDealMutation.isPending ? 'Saving...' : 'Save Changes'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ADD PRODUCT MODAL */}
+      {isAddProductModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
+          <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                <Package className="w-5 h-5 text-blue-600" />
+                <span>Add Product Item to Deal</span>
+              </h3>
+              <button type="button" onClick={() => setIsAddProductModalOpen(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!selectedProductId) return;
+                addProductMutation.mutate({
+                  product_id: selectedProductId,
+                  quantity: Number(productQuantity) || 1,
+                  unit_price: productUnitPrice !== '' ? Number(productUnitPrice) : undefined,
+                });
+              }}
+              className="space-y-4 text-xs"
+            >
+              <div className="space-y-1">
+                <Label className="font-semibold text-slate-700">Select Product Catalog Item</Label>
+                <select
+                  value={selectedProductId}
+                  onChange={(e) => {
+                    const pid = e.target.value;
+                    setSelectedProductId(pid);
+                    const found = catalogProducts.find((p) => p.id === pid);
+                    if (found) setProductUnitPrice(found.price);
+                  }}
+                  className="w-full h-9 rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                >
+                  <option value="">-- Select Product --</option>
+                  {catalogProducts.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.sku}) - ${p.price?.toLocaleString()}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="font-semibold text-slate-700">Quantity</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={productQuantity}
+                    onChange={(e) => setProductQuantity(Number(e.target.value) || 1)}
+                    className="h-9 text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="font-semibold text-slate-700">Unit Price ($)</Label>
+                  <Input
+                    type="number"
+                    value={productUnitPrice}
+                    onChange={(e) => setProductUnitPrice(e.target.value !== '' ? Number(e.target.value) : '')}
+                    className="h-9 text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => setIsAddProductModalOpen(false)} className="cursor-pointer">
+                  Cancel
+                </Button>
+                <Button type="submit" size="sm" disabled={addProductMutation.isPending} className="bg-blue-600 text-white font-semibold cursor-pointer">
+                  {addProductMutation.isPending ? 'Adding...' : 'Add to Deal'}
                 </Button>
               </div>
             </form>

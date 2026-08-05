@@ -9,6 +9,8 @@ from app.database import get_db
 from app.config import settings
 from app.api.deps import get_valid_org_id, get_current_user
 from app.models import Deal, DealStage, Company, Contact
+from app.models.deal import DealProduct
+from app.models.product import Product
 from app.models.note import Note
 from app.models.user import User
 from app.schemas.crm_schemas import (
@@ -260,23 +262,91 @@ async def assign_deal(deal_id: str, user_id: str, db: AsyncSession = Depends(get
 
 @router.get("/{deal_id}/products", response_model=List[ProductResponse], summary="List products attached to deal")
 async def get_deal_products(deal_id: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(Deal).where(Deal.id == deal_id))
-    if not res.scalars().first():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Deal '{deal_id}' not found")
-    return []
+    res = await db.execute(select(DealProduct).where(DealProduct.deal_id == deal_id))
+    deal_prods = res.scalars().all()
+    
+    result = []
+    for dp in deal_prods:
+        prod_res = await db.execute(select(Product).where(Product.id == dp.product_id))
+        p = prod_res.scalars().first()
+        result.append({
+            "id": dp.product_id,
+            "name": p.name if p else f"Product #{dp.product_id}",
+            "sku": p.sku if p else "N/A",
+            "price": dp.unit_price or (p.price if p else 0.0),
+            "unit_price": dp.unit_price or (p.price if p else 0.0),
+            "quantity": dp.quantity,
+            "in_stock_quantity": p.in_stock_quantity if p else 100,
+            "is_active": p.is_active if p else True
+        })
+    return result
 
 @router.post("/{deal_id}/products", response_model=MessageResponse, summary="Add product item to deal")
-async def add_deal_product(deal_id: str, product_id: str, quantity: int = 1, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(Deal).where(Deal.id == deal_id))
-    if not res.scalars().first():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Deal '{deal_id}' not found")
+async def add_deal_product(
+    deal_id: str,
+    product_id: str,
+    quantity: int = 1,
+    unit_price: Optional[float] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    prod_res = await db.execute(select(Product).where(Product.id == product_id))
+    p = prod_res.scalars().first()
+    
+    price = unit_price if unit_price is not None else (p.price if p else 0.0)
+
+    dp_res = await db.execute(
+        select(DealProduct).where(DealProduct.deal_id == deal_id, DealProduct.product_id == product_id)
+    )
+    existing_dp = dp_res.scalars().first()
+    if existing_dp:
+        existing_dp.quantity += quantity
+        if unit_price is not None:
+            existing_dp.unit_price = unit_price
+    else:
+        new_dp = DealProduct(
+            deal_id=deal_id,
+            product_id=product_id,
+            quantity=quantity,
+            unit_price=price
+        )
+        db.add(new_dp)
+
+    await db.commit()
+
+    # Recalculate total deal amount
+    all_prods_res = await db.execute(select(DealProduct).where(DealProduct.deal_id == deal_id))
+    all_dps = all_prods_res.scalars().all()
+    total_deal_amount = sum(item.quantity * item.unit_price for item in all_dps)
+
+    deal_res = await db.execute(select(Deal).where(Deal.id == deal_id))
+    d = deal_res.scalars().first()
+    if d and total_deal_amount > 0:
+        d.amount = total_deal_amount
+        await db.commit()
+
     return {"message": f"Added product {product_id} (x{quantity}) to deal {deal_id}", "status": "success"}
 
 @router.delete("/{deal_id}/products/{product_id}", response_model=MessageResponse, summary="Remove product item from deal")
 async def remove_deal_product(deal_id: str, product_id: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(Deal).where(Deal.id == deal_id))
-    if not res.scalars().first():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Deal '{deal_id}' not found")
+    dp_res = await db.execute(
+        select(DealProduct).where(DealProduct.deal_id == deal_id, DealProduct.product_id == product_id)
+    )
+    dp = dp_res.scalars().first()
+    if dp:
+        await db.delete(dp)
+        await db.commit()
+
+    # Recalculate total deal amount
+    all_prods_res = await db.execute(select(DealProduct).where(DealProduct.deal_id == deal_id))
+    all_dps = all_prods_res.scalars().all()
+    total_deal_amount = sum(item.quantity * item.unit_price for item in all_dps)
+
+    deal_res = await db.execute(select(Deal).where(Deal.id == deal_id))
+    d = deal_res.scalars().first()
+    if d:
+        d.amount = total_deal_amount
+        await db.commit()
+
     return {"message": f"Removed product {product_id} from deal {deal_id}", "status": "success"}
 
 @router.get("/{deal_id}/timeline", summary="Get deal stage history timeline")
