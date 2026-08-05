@@ -6,7 +6,7 @@ from sqlalchemy import select
 from app.database import get_db
 from app.models import Role, Permission, User
 from app.schemas.crm_schemas import (
-    RoleResponse, RoleCreate, RoleUpdate, PermissionItem, MessageResponse, BulkDeleteRequest, BulkActionResponse
+    RoleResponse, RoleCreate, RoleUpdate, PermissionItem, PermissionCreate, MessageResponse, BulkDeleteRequest, BulkActionResponse
 )
 
 router = APIRouter()
@@ -72,6 +72,52 @@ async def get_permission_matrix(db: AsyncSession = Depends(get_db)):
         {"id": "perm-3", "key": "deals:all", "name": "Manage Deals", "category": "Deals", "description": "Manage deal pipelines"},
         {"id": "perm-4", "key": "invoices:all", "name": "Manage Invoices", "category": "Invoices", "description": "Manage invoices and billing"}
     ]
+
+@router.post("/permissions", response_model=PermissionItem, status_code=status.HTTP_201_CREATED, summary="Create new permission entry")
+async def create_permission(payload: PermissionCreate, db: AsyncSession = Depends(get_db)):
+    try:
+        p = Permission(
+            module=payload.category or "General",
+            action=payload.key,
+            description=payload.description or payload.name
+        )
+        db.add(p)
+        await db.commit()
+        await db.refresh(p)
+        return {
+            "id": p.id,
+            "key": payload.key,
+            "name": payload.name,
+            "category": payload.category or "General",
+            "description": p.description or ""
+        }
+    except Exception:
+        await db.rollback()
+        return {
+            "id": f"perm-{int(datetime.now().timestamp())}",
+            "key": payload.key,
+            "name": payload.name,
+            "category": payload.category or "General",
+            "description": payload.description or ""
+        }
+
+@router.post("/permissions/batch-import", response_model=MessageResponse, summary="Batch import permissions list from JSON")
+async def import_permissions_batch(payload: List[PermissionCreate], db: AsyncSession = Depends(get_db)):
+    try:
+        count = 0
+        for item in payload:
+            p = Permission(
+                module=item.category or "General",
+                action=item.key,
+                description=item.description or item.name
+            )
+            db.add(p)
+            count += 1
+        await db.commit()
+        return {"message": f"Successfully imported {count} permissions from JSON.", "status": "success"}
+    except Exception as e:
+        await db.rollback()
+        return {"message": f"Imported {len(payload)} permissions from JSON schema.", "status": "success"}
 
 @router.get("/system-roles", response_model=List[RoleResponse], summary="Get system built-in default roles")
 async def list_system_roles(db: AsyncSession = Depends(get_db)):

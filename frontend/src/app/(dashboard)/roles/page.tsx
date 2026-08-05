@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   ShieldCheck,
   Lock,
@@ -17,11 +18,12 @@ import {
   X,
   Loader2,
   KeyRound,
-  Users,
   Shield,
-  Layers,
-  Star
+  Star,
+  Calendar,
+  Layers
 } from 'lucide-react';
+import { DataTable, type DataTableColumn } from '@/components/shared/data-table';
 import { ConfirmModal } from '@/components/shared/confirm-modal';
 import {
   useRolesQuery,
@@ -37,20 +39,25 @@ import {
   useSetDefaultRoleMutation,
   useBulkDeleteRolesMutation,
   useImportRolesMutation,
+  useCreatePermissionMutation,
+  useBatchImportPermissionsMutation,
   exportRolesApi,
-  RoleItem,
-  PermissionItem
+  RoleItem
 } from '@/lib/api/roles';
 
 export default function RolesPage() {
+  const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [page, setPage] = useState(1);
+  const limit = 15;
 
   // Modal states
   const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
   const [isCloneModalOpen, setIsCloneModalOpen] = useState(false);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
+  const [isPermModalOpen, setIsPermModalOpen] = useState(false);
   const [editingRole, setEditingRole] = useState<RoleItem | null>(null);
   const [cloningRole, setCloningRole] = useState<RoleItem | null>(null);
   const [roleToDelete, setRoleToDelete] = useState<RoleItem | null>(null);
@@ -61,9 +68,16 @@ export default function RolesPage() {
   const [cloneNewName, setCloneNewName] = useState('');
   const [assignUserId, setAssignUserId] = useState('usr-101');
   const [assignRoleId, setAssignRoleId] = useState('');
-
-  // Permission Matrix selection state
   const [selectedPerms, setSelectedPerms] = useState<Set<string>>(new Set());
+
+  // Create Permission form states
+  const [permMode, setPermMode] = useState<'single' | 'json'>('single');
+  const [permName, setPermName] = useState('');
+  const [permKey, setPermKey] = useState('');
+  const [permCategory, setPermCategory] = useState('Leads');
+  const [permDesc, setPermDesc] = useState('');
+  const [jsonText, setJsonText] = useState('');
+  const [jsonFileName, setJsonFileName] = useState<string | null>(null);
 
   // Toast / Alert notifications
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -85,6 +99,59 @@ export default function RolesPage() {
   const setDefaultMutation = useSetDefaultRoleMutation();
   const bulkDeleteMutation = useBulkDeleteRolesMutation();
   const importRolesMutation = useImportRolesMutation();
+  const createPermMutation = useCreatePermissionMutation();
+  const batchImportPermMutation = useBatchImportPermissionsMutation();
+
+  const handleCreatePermSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!permName.trim() || !permKey.trim()) return;
+    try {
+      const res = await createPermMutation.mutateAsync({
+        name: permName.trim(),
+        key: permKey.trim(),
+        category: permCategory,
+        description: permDesc.trim(),
+      });
+      setSuccessMessage(`Permission '${res.name || res.key}' created successfully.`);
+      setIsPermModalOpen(false);
+      setPermName('');
+      setPermKey('');
+      setPermDesc('');
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to create permission.');
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setJsonFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const content = evt.target?.result as string;
+      setJsonText(content);
+    };
+    reader.readAsText(file);
+  };
+
+  const handleBatchImportSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!jsonText.trim()) return;
+    try {
+      const parsed = JSON.parse(jsonText);
+      if (!Array.isArray(parsed)) {
+        setErrorMessage('Invalid JSON format: Expected an array of permission objects.');
+        return;
+      }
+      const res = await batchImportPermMutation.mutateAsync(parsed);
+      setSuccessMessage(res.message || `Imported ${parsed.length} permissions successfully.`);
+      setIsPermModalOpen(false);
+      setJsonText('');
+      setJsonFileName(null);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to parse JSON file.');
+    }
+  };
 
   const resetRoleForm = () => {
     setRoleName('');
@@ -195,6 +262,17 @@ export default function RolesPage() {
     }
   };
 
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    try {
+      const res = await bulkDeleteMutation.mutateAsync(Array.from(selectedIds));
+      setSuccessMessage(`${res.affected_count || selectedIds.size} role(s) deleted.`);
+      setSelectedIds(new Set());
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to delete selected roles.');
+    }
+  };
+
   const togglePermissionSelection = (permId: string) => {
     const next = new Set(selectedPerms);
     if (next.has(permId)) {
@@ -205,11 +283,137 @@ export default function RolesPage() {
     setSelectedPerms(next);
   };
 
-  const filteredRoles = roles.filter(
-    (r) =>
-      r.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (r.description && r.description.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  // DataTable Columns definition
+  const columns: DataTableColumn<RoleItem>[] = [
+    {
+      id: 'name',
+      header: 'ROLE NAME',
+      cell: (item) => {
+        const isDefault = defaultRole?.id === item.id;
+        return (
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 font-bold shrink-0">
+              <Shield className="w-4 h-4" />
+            </div>
+            <div>
+              <div
+                onClick={(e) => {
+                  e.stopPropagation();
+                  router.push(`/roles/${item.id}`);
+                }}
+                className="font-bold text-slate-900 hover:text-indigo-600 cursor-pointer transition-colors text-xs flex items-center gap-2"
+              >
+                {item.name}
+                {isDefault && (
+                  <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded text-[10px] font-bold uppercase flex items-center gap-1">
+                    <Star className="w-3 h-3 text-amber-600" />
+                    Default
+                  </span>
+                )}
+              </div>
+              <div className="text-[11px] text-slate-400 truncate max-w-xs">{item.description || 'Custom organization role'}</div>
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      id: 'is_system_role',
+      header: 'TYPE',
+      cell: (item) => (
+        <span
+          className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
+            item.is_system_role
+              ? 'bg-purple-50 text-purple-700 border-purple-200'
+              : 'bg-blue-50 text-blue-700 border-blue-200'
+          }`}
+        >
+          {item.is_system_role ? 'Built-in System' : 'Custom'}
+        </span>
+      ),
+    },
+    {
+      id: 'permissions',
+      header: 'PERMISSIONS SCOPE',
+      cell: (item) => (
+        <div className="flex items-center gap-1.5 text-xs text-slate-700 font-medium">
+          <KeyRound className="w-3.5 h-3.5 text-slate-400" />
+          <span>{item.permissions ? `${item.permissions.length} Action(s)` : 'Full Access'}</span>
+        </div>
+      ),
+    },
+    {
+      id: 'created_at',
+      header: 'CREATED DATE',
+      cell: (item) => (
+        <div className="flex items-center gap-1.5 text-slate-700 text-xs font-medium">
+          <Calendar className="w-3.5 h-3.5 text-slate-400" />
+          <span>{item.created_at ? item.created_at.substring(0, 10) : '2026-08-05'}</span>
+        </div>
+      ),
+    },
+    {
+      id: 'actions',
+      header: 'ACTIONS',
+      cell: (item) => {
+        const isDefault = defaultRole?.id === item.id;
+        return (
+          <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+            {!isDefault && (
+              <button
+                onClick={() => handleSetDefault(item)}
+                title="Set as Default"
+                className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-md transition-colors cursor-pointer"
+              >
+                <Star className="w-4 h-4" />
+              </button>
+            )}
+
+            <button
+              onClick={() => {
+                setCloningRole(item);
+                setCloneNewName(`${item.name} Copy`);
+                setIsCloneModalOpen(true);
+              }}
+              title="Clone Role"
+              className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors cursor-pointer"
+            >
+              <Copy className="w-4 h-4" />
+            </button>
+
+            <button
+              onClick={() => {
+                setAssignRoleId(item.id);
+                setIsAssignModalOpen(true);
+              }}
+              title="Assign User"
+              className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md transition-colors cursor-pointer"
+            >
+              <UserCheck className="w-4 h-4" />
+            </button>
+
+            <button
+              onClick={() => handleOpenEditModal(item)}
+              title="Edit Role"
+              className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-md transition-colors cursor-pointer"
+            >
+              <Edit className="w-4 h-4" />
+            </button>
+
+            {!item.is_system_role && (
+              <button
+                onClick={() => setRoleToDelete(item)}
+                title="Delete Role"
+                className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        );
+      },
+    },
+  ];
 
   return (
     <div className="space-y-6 w-full pb-12">
@@ -275,6 +479,14 @@ export default function RolesPage() {
           </button>
 
           <button
+            onClick={() => setIsPermModalOpen(true)}
+            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer"
+          >
+            <KeyRound className="w-4 h-4 text-emerald-600" />
+            + New Permission
+          </button>
+
+          <button
             onClick={handleOpenCreateModal}
             className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors shadow-sm cursor-pointer"
           >
@@ -330,113 +542,38 @@ export default function RolesPage() {
         </div>
       </div>
 
-      {/* Main Roles Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {isRolesLoading ? (
-          <div className="col-span-full py-12 flex justify-center items-center gap-2 text-slate-500">
-            <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
-            <span className="text-xs font-medium">Loading organization roles...</span>
-          </div>
-        ) : filteredRoles.length === 0 ? (
-          <div className="col-span-full py-12 text-center text-slate-400 text-xs italic">
-            No organization roles found matching your filter.
-          </div>
-        ) : (
-          filteredRoles.map((role) => {
-            const isDefault = defaultRole?.id === role.id;
-            return (
-              <div
-                key={role.id}
-                className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4 flex flex-col justify-between"
+      {/* Main DataTable */}
+      <DataTable<RoleItem>
+        columns={columns}
+        data={roles}
+        getRowKey={(item) => item.id}
+        onRowClick={(item) => router.push(`/roles/${item.id}`)}
+        emptyTitle="No roles found"
+        emptyDescription="Create a new custom role or clear your search term."
+        searchValue={searchTerm}
+        onSearchChange={setSearchTerm}
+        searchPlaceholder="Search role name or description..."
+        toolbarActions={
+          selectedIds.size > 0 ? (
+            <div className="flex items-center gap-2 bg-indigo-50 px-3 py-1 rounded-lg border border-indigo-200">
+              <span className="text-xs font-semibold text-indigo-700">{selectedIds.size} selected</span>
+              <button
+                onClick={handleBulkDelete}
+                className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-semibold cursor-pointer"
               >
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Shield className="w-5 h-5 text-indigo-600" />
-                      <h3 className="text-base font-bold text-slate-900">{role.name}</h3>
-                    </div>
-
-                    <div className="flex items-center gap-1">
-                      {role.is_system_role && (
-                        <span className="px-2 py-0.5 bg-purple-100 text-purple-800 rounded text-[10px] font-bold uppercase">
-                          System
-                        </span>
-                      )}
-                      {isDefault && (
-                        <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded text-[10px] font-bold uppercase flex items-center gap-1">
-                          <Star className="w-3 h-3 text-amber-600" />
-                          Default
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <p className="text-xs text-slate-500 leading-relaxed">
-                    {role.description || 'Custom role configured with assigned action permissions.'}
-                  </p>
-                </div>
-
-                <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1">
-                    {!isDefault && (
-                      <button
-                        onClick={() => handleSetDefault(role)}
-                        title="Set as registration default"
-                        className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
-                      >
-                        <Star className="w-4 h-4" />
-                      </button>
-                    )}
-
-                    <button
-                      onClick={() => {
-                        setCloningRole(role);
-                        setCloneNewName(`${role.name} Copy`);
-                        setIsCloneModalOpen(true);
-                      }}
-                      title="Clone role"
-                      className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
-                    >
-                      <Copy className="w-4 h-4" />
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        setAssignRoleId(role.id);
-                        setIsAssignModalOpen(true);
-                      }}
-                      title="Assign role to user"
-                      className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
-                    >
-                      <UserCheck className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => handleOpenEditModal(role)}
-                      title="Edit role permissions"
-                      className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </button>
-
-                    {!role.is_system_role && (
-                      <button
-                        onClick={() => setRoleToDelete(role)}
-                        title="Delete role"
-                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })
-        )}
-      </div>
+                Bulk Delete
+              </button>
+            </div>
+          ) : null
+        }
+        isLoading={isRolesLoading}
+        pagination={{
+          pageIndex: page - 1,
+          pageCount: roles.length >= limit ? page + 1 : page,
+          onPageChange: (p) => setPage(p + 1),
+          totalRecords: (page - 1) * limit + roles.length,
+        }}
+      />
 
       {/* Create / Edit Role Modal */}
       {isRoleModalOpen && (
@@ -651,6 +788,160 @@ export default function RolesPage() {
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create New Permission Modal */}
+      {isPermModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <KeyRound className="w-5 h-5 text-emerald-600" />
+                System Permissions Manager
+              </h3>
+              <button onClick={() => setIsPermModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Mode Switcher Tabs */}
+            <div className="flex bg-slate-100 p-1 rounded-xl gap-1">
+              <button
+                type="button"
+                onClick={() => setPermMode('single')}
+                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
+                  permMode === 'single' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                Single Entry
+              </button>
+              <button
+                type="button"
+                onClick={() => setPermMode('json')}
+                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
+                  permMode === 'json' ? 'bg-white text-emerald-700 shadow-xs' : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                Upload JSON File
+              </button>
+            </div>
+
+            {permMode === 'single' ? (
+              <form onSubmit={handleCreatePermSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Permission Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={permName}
+                    onChange={(e) => setPermName(e.target.value)}
+                    placeholder="e.g. Export Financial Reports"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Permission Action Key *</label>
+                  <input
+                    type="text"
+                    required
+                    value={permKey}
+                    onChange={(e) => setPermKey(e.target.value)}
+                    placeholder="e.g. reports:export"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Category / Module</label>
+                    <select
+                      value={permCategory}
+                      onChange={(e) => setPermCategory(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="Leads">Leads</option>
+                      <option value="Deals">Deals</option>
+                      <option value="Contacts">Contacts</option>
+                      <option value="Invoices">Invoices</option>
+                      <option value="Reports">Reports</option>
+                      <option value="Settings">Settings</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Description</label>
+                    <input
+                      type="text"
+                      value={permDesc}
+                      onChange={(e) => setPermDesc(e.target.value)}
+                      placeholder="e.g. Allow downloading PDF/CSV"
+                      className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-2">
+                  <button type="button" onClick={() => setIsPermModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={createPermMutation.isPending}
+                    className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
+                  >
+                    {createPermMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    Create Permission
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <form onSubmit={handleBatchImportSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Upload permissions.json File</label>
+                  <div className="border-2 border-dashed border-slate-300 hover:border-emerald-500 rounded-xl p-4 text-center bg-slate-50 transition-colors relative cursor-pointer">
+                    <Upload className="w-6 h-6 text-emerald-600 mx-auto mb-1" />
+                    <span className="text-xs font-semibold text-slate-700 block">
+                      {jsonFileName ? `File selected: ${jsonFileName}` : 'Click or drop permissions.json here'}
+                    </span>
+                    <span className="text-[10px] text-slate-400 block">Supports standard permissions JSON array</span>
+                    <input
+                      type="file"
+                      accept=".json,application/json"
+                      onChange={handleFileUpload}
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Or Paste Permissions JSON Content</label>
+                  <textarea
+                    rows={6}
+                    value={jsonText}
+                    onChange={(e) => setJsonText(e.target.value)}
+                    placeholder='[{"key": "users:read", "name": "View Users", "category": "Users", "description": "View users"}]'
+                    className="w-full bg-slate-50 border border-slate-300 rounded-lg p-3 text-xs text-slate-900 font-mono outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-3 pt-2">
+                  <button type="button" onClick={() => setIsPermModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={batchImportPermMutation.isPending || !jsonText.trim()}
+                    className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
+                  >
+                    {batchImportPermMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    Import JSON Permissions
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

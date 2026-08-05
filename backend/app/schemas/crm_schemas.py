@@ -153,6 +153,12 @@ class PermissionItem(BaseModel):
     category: str
     description: Optional[str] = None
 
+class PermissionCreate(BaseModel):
+    name: str
+    key: str
+    category: Optional[str] = "General"
+    description: Optional[str] = None
+
 class RoleBase(BaseModel):
     name: str
     description: Optional[str] = None

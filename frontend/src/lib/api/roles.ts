@@ -15,6 +15,9 @@ export interface PermissionItem {
   module: string;
   action: string;
   description: string;
+  name?: string;
+  key?: string;
+  category?: string;
 }
 
 export interface UserRoleAssignment {
@@ -56,6 +59,14 @@ export async function createRoleApi(payload: { name: string; description?: strin
 
 export async function fetchPermissionMatrixApi(): Promise<PermissionItem[]> {
   return apiClient.get<PermissionItem[]>('/roles/permissions/matrix');
+}
+
+export async function createPermissionApi(payload: { name: string; key: string; category?: string; description?: string }): Promise<PermissionItem> {
+  return apiClient.post<PermissionItem>('/roles/permissions', payload);
+}
+
+export async function batchImportPermissionsApi(payload: Array<{ name: string; key: string; category?: string; description?: string }>): Promise<MessageResponse> {
+  return apiClient.post<MessageResponse>('/roles/permissions/batch-import', payload);
 }
 
 export async function fetchSystemRolesApi(): Promise<RoleItem[]> {
@@ -153,6 +164,28 @@ export function usePermissionMatrixQuery(options?: Omit<UseQueryOptions<Permissi
     queryKey: ['roles', 'permissions', 'matrix'],
     queryFn: fetchPermissionMatrixApi,
     staleTime: 1000 * 60 * 10,
+    ...options,
+  });
+}
+
+export function useCreatePermissionMutation(options?: UseMutationOptions<PermissionItem, Error, { name: string; key: string; category?: string; description?: string }>) {
+  const queryClient = useQueryClient();
+  return useMutation<PermissionItem, Error, { name: string; key: string; category?: string; description?: string }>({
+    mutationFn: createPermissionApi,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['roles', 'permissions', 'matrix'] });
+    },
+    ...options,
+  });
+}
+
+export function useBatchImportPermissionsMutation(options?: UseMutationOptions<MessageResponse, Error, Array<{ name: string; key: string; category?: string; description?: string }>>) {
+  const queryClient = useQueryClient();
+  return useMutation<MessageResponse, Error, Array<{ name: string; key: string; category?: string; description?: string }>>({
+    mutationFn: batchImportPermissionsApi,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['roles', 'permissions', 'matrix'] });
+    },
     ...options,
   });
 }
@@ -255,6 +288,17 @@ export function useAssignRoleToUserMutation(options?: UseMutationOptions<Message
     mutationFn: ({ userId, roleId }) => assignRoleToUserApi(userId, roleId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['roles'] });
+    },
+    ...options,
+  });
+}
+
+export function useRemovePermissionMutation(options?: UseMutationOptions<MessageResponse, Error, { roleId: string; permId: string }>) {
+  const queryClient = useQueryClient();
+  return useMutation<MessageResponse, Error, { roleId: string; permId: string }>({
+    mutationFn: ({ roleId, permId }) => removePermissionApi(roleId, permId),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['roles', variables.roleId] });
     },
     ...options,
   });
