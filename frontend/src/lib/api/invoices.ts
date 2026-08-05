@@ -1,48 +1,287 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 
 export interface InvoiceItem {
   id: string;
-  number: string;
-  client: string;
+  invoice_number: string;
   amount: number;
   status: string;
   due_date: string;
+  stripe_checkout_url?: string;
+  created_at: string;
 }
 
-export async function fetchInvoicesApi(page = 1, limit = 15, search?: string): Promise<InvoiceItem[]> {
-  try {
-    const query = new URLSearchParams({ page: String(page), limit: String(limit) });
-    if (search) query.append('search', search);
-    const data = await apiClient.get<InvoiceItem[]>(`/invoices?${query.toString()}`);
-    if (Array.isArray(data) && data.length > 0) return data;
-  } catch {
-    // Fallback data
-  }
-  return [
-    { id: 'inv-101', number: 'INV-2026-001', client: 'Acme Global Corp', amount: 14500, status: 'Paid', due_date: '2026-08-01' },
-    { id: 'inv-102', number: 'INV-2026-002', client: 'Nexus Tech Solutions', amount: 8200, status: 'Overdue', due_date: '2026-07-28' },
-    { id: 'inv-103', number: 'INV-2026-003', client: 'Starlight Logistics', amount: 22000, status: 'Pending', due_date: '2026-08-15' },
-    { id: 'inv-104', number: 'INV-2026-004', client: 'Hyperion Cloud Inc', amount: 18900, status: 'Paid', due_date: '2026-08-02' },
-    { id: 'inv-105', number: 'INV-2026-005', client: 'Apex Financial', amount: 9600, status: 'Pending', due_date: '2026-08-20' },
-    { id: 'inv-106', number: 'INV-2026-006', client: 'Vanguard Bio Tech', amount: 31000, status: 'Paid', due_date: '2026-07-30' },
-    { id: 'inv-107', number: 'INV-2026-007', client: 'Quantum Analytics', amount: 5400, status: 'Draft', due_date: '2026-08-25' },
-    { id: 'inv-108', number: 'INV-2026-008', client: 'Solaris Energy', amount: 12800, status: 'Paid', due_date: '2026-08-03' },
-    { id: 'inv-109', number: 'INV-2026-009', client: 'Titan Robotics', amount: 45000, status: 'Pending', due_date: '2026-08-28' },
-    { id: 'inv-110', number: 'INV-2026-010', client: 'Aero Dynamics', amount: 27500, status: 'Overdue', due_date: '2026-07-25' },
-    { id: 'inv-111', number: 'INV-2026-011', client: 'BlueWave Media', amount: 3900, status: 'Paid', due_date: '2026-08-04' },
-    { id: 'inv-112', number: 'INV-2026-012', client: 'CyberShield Systems', amount: 11200, status: 'Pending', due_date: '2026-08-30' },
-    { id: 'inv-113', number: 'INV-2026-013', client: 'Horizon Telecom', amount: 68000, status: 'Paid', due_date: '2026-07-15' },
-    { id: 'inv-114', number: 'INV-2026-014', client: 'Omni Retail Tech', amount: 16400, status: 'Pending', due_date: '2026-09-02' },
-    { id: 'inv-115', number: 'INV-2026-015', client: 'Zion BioPharma', amount: 21000, status: 'Draft', due_date: '2026-09-05' },
-    { id: 'inv-116', number: 'INV-2026-016', client: 'Atlas Construction', amount: 52000, status: 'Pending', due_date: '2026-09-10' },
-  ];
+export interface InvoiceCreatePayload {
+  invoice_number?: string;
+  amount: number;
+  status?: string;
+  due_date?: string;
 }
 
-export function useInvoicesQuery(page = 1, limit = 15, search?: string) {
-  return useQuery({
-    queryKey: ['invoices', page, limit, search],
-    queryFn: () => fetchInvoicesApi(page, limit, search),
-    placeholderData: (previousData) => previousData,
+export interface RecurringInvoiceSchedule {
+  id: string;
+  customer_name: string;
+  amount: number;
+  interval: string;
+  next_billing_date: string;
+}
+
+export interface BulkActionResponse {
+  affected_count: number;
+  message: string;
+}
+
+export interface MessageResponse {
+  message: string;
+  status: string;
+}
+
+// ---------------------------------------------------------------------------
+// API Client Functions
+// ---------------------------------------------------------------------------
+
+export async function fetchInvoicesApi(params?: { page?: number; limit?: number; status?: string; search?: string }): Promise<InvoiceItem[]> {
+  const query = new URLSearchParams();
+  if (params?.page) query.append('page', String(params.page));
+  if (params?.limit) query.append('limit', String(params.limit));
+  if (params?.status) query.append('status', params.status);
+  if (params?.search) query.append('search', params.search);
+  const endpoint = `/invoices${query.toString() ? `?${query.toString()}` : ''}`;
+  return apiClient.get<InvoiceItem[]>(endpoint);
+}
+
+export async function createInvoiceApi(payload: InvoiceCreatePayload): Promise<InvoiceItem> {
+  return apiClient.post<InvoiceItem>('/invoices', payload);
+}
+
+export async function fetchOverdueInvoicesApi(): Promise<InvoiceItem[]> {
+  return apiClient.get<InvoiceItem[]>('/invoices/overdue');
+}
+
+export async function fetchRecurringInvoicesApi(): Promise<RecurringInvoiceSchedule[]> {
+  return apiClient.get<RecurringInvoiceSchedule[]>('/invoices/recurring');
+}
+
+export async function createRecurringInvoiceApi(customer_id: string, amount: number, interval: string = 'Monthly'): Promise<MessageResponse> {
+  return apiClient.post<MessageResponse>(`/invoices/recurring?customer_id=${encodeURIComponent(customer_id)}&amount=${amount}&interval=${encodeURIComponent(interval)}`);
+}
+
+export async function exportInvoicesCsvApi(): Promise<{ download_url: string }> {
+  return apiClient.get<{ download_url: string }>('/invoices/export/csv');
+}
+
+export async function importInvoicesCsvApi(): Promise<MessageResponse> {
+  return apiClient.post<MessageResponse>('/invoices/import/csv');
+}
+
+export async function bulkDeleteInvoicesApi(ids: string[]): Promise<BulkActionResponse> {
+  return apiClient.post<BulkActionResponse>('/invoices/bulk-delete', { ids });
+}
+
+export async function bulkRemindInvoicesApi(ids: string[]): Promise<BulkActionResponse> {
+  return apiClient.post<BulkActionResponse>('/invoices/bulk-remind', { ids });
+}
+
+export async function fetchInvoiceApi(invoiceId: string): Promise<InvoiceItem> {
+  return apiClient.get<InvoiceItem>(`/invoices/${invoiceId}`);
+}
+
+export async function updateInvoiceApi(invoiceId: string, payload: InvoiceCreatePayload): Promise<InvoiceItem> {
+  return apiClient.put<InvoiceItem>(`/invoices/${invoiceId}`, payload);
+}
+
+export async function deleteInvoiceApi(invoiceId: string): Promise<MessageResponse> {
+  return apiClient.delete<MessageResponse>(`/invoices/${invoiceId}`);
+}
+
+export async function sendInvoiceEmailApi(invoiceId: string, recipient_email: string): Promise<MessageResponse> {
+  return apiClient.post<MessageResponse>(`/invoices/${invoiceId}/send?recipient_email=${encodeURIComponent(recipient_email)}`);
+}
+
+export async function createStripeCheckoutApi(invoiceId: string): Promise<{ checkout_url: string }> {
+  return apiClient.post<{ checkout_url: string }>(`/invoices/${invoiceId}/stripe-checkout`);
+}
+
+export async function markInvoicePaidApi(invoiceId: string, payment_method: string = 'Bank Transfer'): Promise<MessageResponse> {
+  return apiClient.post<MessageResponse>(`/invoices/${invoiceId}/mark-paid?payment_method=${encodeURIComponent(payment_method)}`);
+}
+
+export async function sendPaymentReminderApi(invoiceId: string): Promise<MessageResponse> {
+  return apiClient.post<MessageResponse>(`/invoices/${invoiceId}/remind`);
+}
+
+export async function fetchInvoicePdfApi(invoiceId: string): Promise<{ pdf_url: string }> {
+  return apiClient.get<{ pdf_url: string }>(`/invoices/${invoiceId}/pdf`);
+}
+
+export async function issueCreditMemoApi(invoiceId: string, amount: number, reason: string): Promise<MessageResponse> {
+  return apiClient.post<MessageResponse>(`/invoices/${invoiceId}/credit-memo?amount=${amount}&reason=${encodeURIComponent(reason)}`);
+}
+
+// ---------------------------------------------------------------------------
+// TanStack Query Hooks
+// ---------------------------------------------------------------------------
+
+export function useInvoicesQuery(params?: { page?: number; limit?: number; status?: string; search?: string }, options?: Omit<UseQueryOptions<InvoiceItem[]>, 'queryKey' | 'queryFn'>) {
+  return useQuery<InvoiceItem[]>({
+    queryKey: ['invoices', params],
+    queryFn: () => fetchInvoicesApi(params),
+    staleTime: 1000 * 60 * 2,
+    ...options,
+  });
+}
+
+export function useInvoiceQuery(invoiceId: string, options?: Omit<UseQueryOptions<InvoiceItem>, 'queryKey' | 'queryFn'>) {
+  return useQuery<InvoiceItem>({
+    queryKey: ['invoices', invoiceId],
+    queryFn: () => fetchInvoiceApi(invoiceId),
+    enabled: !!invoiceId,
+    ...options,
+  });
+}
+
+export function useOverdueInvoicesQuery(options?: Omit<UseQueryOptions<InvoiceItem[]>, 'queryKey' | 'queryFn'>) {
+  return useQuery<InvoiceItem[]>({
+    queryKey: ['invoices', 'overdue'],
+    queryFn: fetchOverdueInvoicesApi,
+    staleTime: 1000 * 60 * 2,
+    ...options,
+  });
+}
+
+export function useRecurringInvoicesQuery(options?: Omit<UseQueryOptions<RecurringInvoiceSchedule[]>, 'queryKey' | 'queryFn'>) {
+  return useQuery<RecurringInvoiceSchedule[]>({
+    queryKey: ['invoices', 'recurring'],
+    queryFn: fetchRecurringInvoicesApi,
+    staleTime: 1000 * 60 * 5,
+    ...options,
+  });
+}
+
+export function useInvoicePdfQuery(invoiceId: string, options?: Omit<UseQueryOptions<{ pdf_url: string }>, 'queryKey' | 'queryFn'>) {
+  return useQuery<{ pdf_url: string }>({
+    queryKey: ['invoices', invoiceId, 'pdf'],
+    queryFn: () => fetchInvoicePdfApi(invoiceId),
+    enabled: !!invoiceId,
+    ...options,
+  });
+}
+
+export function useCreateInvoiceMutation(options?: UseMutationOptions<InvoiceItem, Error, InvoiceCreatePayload>) {
+  const queryClient = useQueryClient();
+  return useMutation<InvoiceItem, Error, InvoiceCreatePayload>({
+    mutationFn: createInvoiceApi,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+    },
+    ...options,
+  });
+}
+
+export function useUpdateInvoiceMutation(options?: UseMutationOptions<InvoiceItem, Error, { id: string; payload: InvoiceCreatePayload }>) {
+  const queryClient = useQueryClient();
+  return useMutation<InvoiceItem, Error, { id: string; payload: InvoiceCreatePayload }>({
+    mutationFn: ({ id, payload }) => updateInvoiceApi(id, payload),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['invoices', variables.id] });
+    },
+    ...options,
+  });
+}
+
+export function useDeleteInvoiceMutation(options?: UseMutationOptions<MessageResponse, Error, string>) {
+  const queryClient = useQueryClient();
+  return useMutation<MessageResponse, Error, string>({
+    mutationFn: deleteInvoiceApi,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+    },
+    ...options,
+  });
+}
+
+export function useBulkDeleteInvoicesMutation(options?: UseMutationOptions<BulkActionResponse, Error, string[]>) {
+  const queryClient = useQueryClient();
+  return useMutation<BulkActionResponse, Error, string[]>({
+    mutationFn: bulkDeleteInvoicesApi,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+    },
+    ...options,
+  });
+}
+
+export function useBulkRemindInvoicesMutation(options?: UseMutationOptions<BulkActionResponse, Error, string[]>) {
+  return useMutation<BulkActionResponse, Error, string[]>({
+    mutationFn: bulkRemindInvoicesApi,
+    ...options,
+  });
+}
+
+export function useSendInvoiceEmailMutation(options?: UseMutationOptions<MessageResponse, Error, { id: string; recipient_email: string }>) {
+  return useMutation<MessageResponse, Error, { id: string; recipient_email: string }>({
+    mutationFn: ({ id, recipient_email }) => sendInvoiceEmailApi(id, recipient_email),
+    ...options,
+  });
+}
+
+export function useCreateStripeCheckoutMutation(options?: UseMutationOptions<{ checkout_url: string }, Error, string>) {
+  return useMutation<{ checkout_url: string }, Error, string>({
+    mutationFn: createStripeCheckoutApi,
+    ...options,
+  });
+}
+
+export function useMarkInvoicePaidMutation(options?: UseMutationOptions<MessageResponse, Error, { id: string; payment_method?: string }>) {
+  const queryClient = useQueryClient();
+  return useMutation<MessageResponse, Error, { id: string; payment_method?: string }>({
+    mutationFn: ({ id, payment_method }) => markInvoicePaidApi(id, payment_method),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['invoices', variables.id] });
+    },
+    ...options,
+  });
+}
+
+export function useSendPaymentReminderMutation(options?: UseMutationOptions<MessageResponse, Error, string>) {
+  return useMutation<MessageResponse, Error, string>({
+    mutationFn: sendPaymentReminderApi,
+    ...options,
+  });
+}
+
+export function useIssueCreditMemoMutation(options?: UseMutationOptions<MessageResponse, Error, { id: string; amount: number; reason: string }>) {
+  const queryClient = useQueryClient();
+  return useMutation<MessageResponse, Error, { id: string; amount: number; reason: string }>({
+    mutationFn: ({ id, amount, reason }) => issueCreditMemoApi(id, amount, reason),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['invoices', variables.id] });
+    },
+    ...options,
+  });
+}
+
+export function useCreateRecurringInvoiceMutation(options?: UseMutationOptions<MessageResponse, Error, { customer_id: string; amount: number; interval?: string }>) {
+  const queryClient = useQueryClient();
+  return useMutation<MessageResponse, Error, { customer_id: string; amount: number; interval?: string }>({
+    mutationFn: ({ customer_id, amount, interval }) => createRecurringInvoiceApi(customer_id, amount, interval),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoices', 'recurring'] });
+    },
+    ...options,
+  });
+}
+
+export function useImportInvoicesCsvMutation(options?: UseMutationOptions<MessageResponse, Error, void>) {
+  const queryClient = useQueryClient();
+  return useMutation<MessageResponse, Error, void>({
+    mutationFn: importInvoicesCsvApi,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+    },
+    ...options,
   });
 }
