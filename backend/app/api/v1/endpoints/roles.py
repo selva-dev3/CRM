@@ -16,16 +16,34 @@ async def list_roles(db: AsyncSession = Depends(get_db)):
     try:
         res = await db.execute(select(Role).limit(50))
         roles = res.scalars().all()
-        return [
-            {
+        
+        result = []
+        for r in roles:
+            perm_stmt = (
+                select(Permission)
+                .join(RolePermission, RolePermission.permission_id == Permission.id)
+                .where(RolePermission.role_id == r.id)
+            )
+            perm_res = await db.execute(perm_stmt)
+            assigned_perms = perm_res.scalars().all()
+            
+            if assigned_perms:
+                perm_keys = [p.key for p in assigned_perms if p.key]
+            elif getattr(r, "is_system_role", False):
+                perm_keys = ["all"]
+            else:
+                perm_keys = getattr(r, "permissions", []) if hasattr(r, "permissions") else ["dashboard:read", "users:read", "leads:read"]
+
+            result.append({
                 "id": r.id,
                 "name": r.name,
                 "description": r.description or "Custom Role",
-                "permissions": r.permissions or [],
-                "is_system_role": r.is_system_role or False,
+                "permissions": perm_keys,
+                "is_system_role": getattr(r, "is_system_role", False),
                 "created_at": str(getattr(r, "created_at", "2026-08-05"))
-            } for r in roles
-        ]
+            })
+
+        return result
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
