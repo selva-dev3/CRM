@@ -1,33 +1,827 @@
-import React from 'react';
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import {
+  Briefcase,
+  Plus,
+  Kanban,
+  Table as TableIcon,
+  Search,
+  FileSpreadsheet,
+  Upload,
+  Trash2,
+  Edit,
+  CheckCircle2,
+  AlertCircle,
+  Trophy,
+  XCircle,
+  Sparkles,
+  Copy,
+  User,
+  DollarSign,
+  Layers,
+  ArrowRight,
+  TrendingUp,
+  X
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { DataTable, type DataTableColumn } from '@/components/shared/data-table';
+import { ConfirmModal } from '@/components/shared/confirm-modal';
+import {
+  useDealsQuery,
+  useKanbanBoardQuery,
+  useWinLossAnalyticsQuery,
+  useCreateDealMutation,
+  useUpdateDealMutation,
+  useDeleteDealMutation,
+  useUpdateDealStageMutation,
+  useMarkDealWonMutation,
+  useMarkDealLostMutation,
+  useBulkDeleteDealsMutation,
+  useBulkUpdateDealStageMutation,
+  useImportDealsCsvMutation,
+  exportDealsCsvApi,
+  importDealsCsvApi,
+  cloneDealApi,
+  DealItem
+} from '@/lib/api/deals';
+import { useUsersQuery } from '@/lib/api/users';
+
+const STAGES = ['Prospecting', 'Qualification', 'Proposal', 'Negotiation', 'Closed Won', 'Closed Lost'];
 
 export default function DealsPage() {
+  const router = useRouter();
+  const [viewMode, setViewMode] = useState<'kanban' | 'table'>('kanban');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+  const [page, setPage] = useState(1);
+  const limit = 20;
+
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Modals
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [dealToEdit, setDealToEdit] = useState<DealItem | null>(null);
+  const [dealToDelete, setDealToDelete] = useState<DealItem | null>(null);
+
+  // Form State
+  const [formTitle, setFormTitle] = useState('');
+  const [formAmount, setFormAmount] = useState<number | ''>('');
+  const [formStage, setFormStage] = useState('Prospecting');
+  const [formProbability, setFormProbability] = useState<number | ''>(10);
+  const [formAssignedTo, setFormAssignedTo] = useState('');
+
+  // Search Debounce
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+      setPage(1);
+    }, 250);
+    return () => clearTimeout(handler);
+  }, [searchTerm]);
+
+  // Queries
+  const { data: deals = [], isLoading: isDealsLoading, refetch: refetchDeals } = useDealsQuery(page, limit, undefined, debouncedSearchTerm);
+  const { data: kanbanBoard = {}, refetch: refetchKanban } = useKanbanBoardQuery();
+  const { data: winLoss = { win_rate: 0, won_count: 0, lost_count: 0 }, refetch: refetchAnalytics } = useWinLossAnalyticsQuery();
+  const { data: users = [] } = useUsersQuery();
+
+  // Mutations
+  const createDealMutation = useCreateDealMutation();
+  const updateDealMutation = useUpdateDealMutation();
+  const deleteDealMutation = useDeleteDealMutation();
+  const updateStageMutation = useUpdateDealStageMutation();
+  const markWonMutation = useMarkDealWonMutation();
+  const markLostMutation = useMarkDealLostMutation();
+  const bulkDeleteMutation = useBulkDeleteDealsMutation();
+  const bulkUpdateStageMutation = useBulkUpdateDealStageMutation();
+  const importCsvMutation = useImportDealsCsvMutation();
+
+  const refetchAll = () => {
+    refetchDeals();
+    refetchKanban();
+    refetchAnalytics();
+  };
+
+  const resetForm = () => {
+    setFormTitle('');
+    setFormAmount('');
+    setFormStage('Prospecting');
+    setFormProbability(10);
+    setFormAssignedTo(users[0]?.id || '');
+  };
+
+  const handleCreateSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formTitle) {
+      setErrorMessage('Please enter a deal title.');
+      return;
+    }
+    try {
+      setErrorMessage(null);
+      await createDealMutation.mutateAsync({
+        title: formTitle,
+        amount: Number(formAmount) || 0,
+        stage: formStage,
+        probability: formProbability !== '' ? Number(formProbability) : undefined,
+        assigned_to: formAssignedTo || undefined,
+      });
+      setSuccessMessage(`Deal '${formTitle}' created successfully.`);
+      setIsCreateModalOpen(false);
+      resetForm();
+      refetchAll();
+    } catch {
+      setErrorMessage('Failed to create sales deal.');
+    }
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!dealToEdit) return;
+    try {
+      setErrorMessage(null);
+      await updateDealMutation.mutateAsync({
+        id: dealToEdit.id,
+        data: {
+          title: formTitle,
+          amount: Number(formAmount) || 0,
+          stage: formStage,
+          probability: formProbability !== '' ? Number(formProbability) : undefined,
+          assigned_to: formAssignedTo || undefined,
+        },
+      });
+      setSuccessMessage(`Deal '${formTitle}' updated successfully.`);
+      setIsEditModalOpen(false);
+      setDealToEdit(null);
+      resetForm();
+      refetchAll();
+    } catch {
+      setErrorMessage('Failed to update deal.');
+    }
+  };
+
+  const openEditModal = (item: DealItem) => {
+    setDealToEdit(item);
+    setFormTitle(item.title);
+    setFormAmount(item.amount);
+    setFormStage(item.stage);
+    setFormProbability(item.probability ?? 10);
+    setFormAssignedTo(item.assigned_to || '');
+    setIsEditModalOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!dealToDelete) return;
+    try {
+      setErrorMessage(null);
+      await deleteDealMutation.mutateAsync(dealToDelete.id);
+      setSuccessMessage(`Deal '${dealToDelete.title}' deleted successfully.`);
+      setDealToDelete(null);
+      refetchAll();
+    } catch {
+      setErrorMessage('Failed to delete deal.');
+      setDealToDelete(null);
+    }
+  };
+
+  const handleMoveStage = async (dealId: string, newStage: string) => {
+    try {
+      await updateStageMutation.mutateAsync({ id: dealId, stage: newStage });
+      setSuccessMessage(`Deal moved to '${newStage}'.`);
+      refetchAll();
+    } catch {
+      setErrorMessage('Failed to update deal stage.');
+    }
+  };
+
+  const handleMarkWon = async (item: DealItem) => {
+    try {
+      await markWonMutation.mutateAsync({ id: item.id, final_amount: item.amount });
+      setSuccessMessage(`Deal '${item.title}' marked as Closed Won! 🎉`);
+      refetchAll();
+    } catch {
+      setErrorMessage('Failed to mark deal as won.');
+    }
+  };
+
+  const handleMarkLost = async (item: DealItem) => {
+    try {
+      await markLostMutation.mutateAsync({ id: item.id, reason: 'Budget constraints' });
+      setSuccessMessage(`Deal '${item.title}' marked as Closed Lost.`);
+      refetchAll();
+    } catch {
+      setErrorMessage('Failed to mark deal as lost.');
+    }
+  };
+
+  const handleCloneDeal = async (item: DealItem) => {
+    try {
+      const cloned = await cloneDealApi({ id: item.id, new_title: `${item.title} (Copy)` });
+      setSuccessMessage(`Cloned deal '${cloned.title}' successfully.`);
+      refetchAll();
+    } catch {
+      setErrorMessage('Failed to clone deal.');
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (confirm(`Delete ${selectedIds.size} selected deal(s)?`)) {
+      try {
+        setErrorMessage(null);
+        await bulkDeleteMutation.mutateAsync(Array.from(selectedIds));
+        setSuccessMessage(`${selectedIds.size} deal(s) deleted successfully.`);
+        setSelectedIds(new Set());
+        refetchAll();
+      } catch {
+        setErrorMessage('Failed to bulk delete deals.');
+      }
+    }
+  };
+
+  const handleExportCsv = async () => {
+    try {
+      const res = await exportDealsCsvApi();
+      setSuccessMessage(`Deals CSV exported. Download URL: ${res.download_url}`);
+    } catch {
+      setErrorMessage('Failed to export deals CSV.');
+    }
+  };
+
+  const handleImportCsv = async () => {
+    try {
+      const res = await importDealsCsvApi();
+      setSuccessMessage(res.message || 'Deals imported from CSV successfully.');
+      refetchAll();
+    } catch {
+      setErrorMessage('Failed to import deals CSV.');
+    }
+  };
+
+  const columns: DataTableColumn<DealItem>[] = [
+    {
+      id: 'title',
+      header: 'Deal Title',
+      cell: (item) => (
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100 text-blue-700 font-bold text-xs shrink-0">
+            <Briefcase className="w-4 h-4" />
+          </div>
+          <div>
+            <Link href={`/deals/${item.id}`} className="font-bold text-slate-900 text-xs hover:text-blue-600 hover:underline">
+              {item.title}
+            </Link>
+            <div className="text-[11px] text-slate-500">Close Date: {item.expected_close_date || 'TBD'}</div>
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: 'amount',
+      header: 'Deal Amount',
+      cell: (item) => (
+        <div className="font-bold text-blue-700 text-xs">
+          ${item.amount ? item.amount.toLocaleString() : '0'}
+        </div>
+      ),
+    },
+    {
+      id: 'stage',
+      header: 'Pipeline Stage',
+      cell: (item) => {
+        let badgeStyle = 'bg-slate-100 text-slate-700 border-slate-200';
+        if (item.stage === 'Closed Won') badgeStyle = 'bg-emerald-50 text-emerald-700 border-emerald-200 font-bold';
+        else if (item.stage === 'Closed Lost') badgeStyle = 'bg-rose-50 text-rose-700 border-rose-200';
+        else if (item.stage === 'Proposal' || item.stage === 'Negotiation') badgeStyle = 'bg-blue-50 text-blue-700 border-blue-200';
+
+        return (
+          <Badge variant="outline" className={`text-[11px] px-2 py-0.5 ${badgeStyle}`}>
+            {item.stage}
+          </Badge>
+        );
+      },
+    },
+    {
+      id: 'probability',
+      header: 'Win Rate %',
+      cell: (item) => (
+        <div className="text-xs font-semibold text-slate-700">
+          {item.probability ? `${item.probability}%` : 'N/A'}
+        </div>
+      ),
+    },
+    {
+      id: 'assigned_to',
+      header: 'Sales Rep',
+      cell: (item) => {
+        const assignedUser = users.find((u) => u.id === item.assigned_to);
+        return (
+          <div className="flex items-center gap-1.5 text-xs text-slate-600 font-medium">
+            <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <span>{assignedUser ? assignedUser.name || assignedUser.email : item.assigned_to || 'Unassigned'}</span>
+          </div>
+        );
+      },
+    },
+  ];
+
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      {/* Top Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Deal Management (Kanban)</h1>
-          <p className="text-gray-400 text-sm">Drag and drop deals across sales stages</p>
+          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2.5">
+            <Briefcase className="w-6 h-6 text-blue-600" />
+            <span>Sales Deals & Pipeline</span>
+          </h1>
+          <p className="text-xs font-medium text-slate-500 mt-1">
+            Manage interactive Kanban stages, win probability metrics, and closed sales deals.
+          </p>
         </div>
-        <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium text-sm">
-          + New Deal
-        </button>
+
+        {/* Action Buttons & View Toggle */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* View Mode Toggle */}
+          <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 mr-1">
+            <button
+              onClick={() => setViewMode('kanban')}
+              className={`px-2.5 py-1 text-xs font-bold rounded-lg transition flex items-center gap-1.5 cursor-pointer ${
+                viewMode === 'kanban' ? 'bg-white text-blue-600 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Kanban className="w-3.5 h-3.5" />
+              <span>Kanban</span>
+            </button>
+            <button
+              onClick={() => setViewMode('table')}
+              className={`px-2.5 py-1 text-xs font-bold rounded-lg transition flex items-center gap-1.5 cursor-pointer ${
+                viewMode === 'table' ? 'bg-white text-blue-600 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <TableIcon className="w-3.5 h-3.5" />
+              <span>Table</span>
+            </button>
+          </div>
+
+          <Button
+            size="sm"
+            onClick={() => {
+              resetForm();
+              setIsCreateModalOpen(true);
+            }}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs gap-1.5 cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Deal</span>
+          </Button>
+
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleExportCsv}
+            className="border-slate-300 font-semibold text-xs gap-1 cursor-pointer"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Export CSV</span>
+          </Button>
+
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleImportCsv}
+            disabled={importCsvMutation.isPending}
+            className="border-slate-300 font-semibold text-xs gap-1 cursor-pointer"
+          >
+            <Upload className="w-3.5 h-3.5 text-blue-600" />
+            <span>Import CSV</span>
+          </Button>
+
+          {selectedIds.size > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleBulkDelete}
+              className="border-rose-300 text-rose-600 hover:bg-rose-50 font-semibold text-xs gap-1 cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Delete Selected ({selectedIds.size})</span>
+            </Button>
+          )}
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 overflow-x-auto">
-        {['Prospecting', 'Qualification', 'Proposal', 'Negotiation', 'Closed Won'].map((stage, idx) => (
-          <div key={idx} className="bg-gray-900 border border-gray-800 rounded-xl p-4 min-w-[200px]">
-            <h3 className="font-semibold text-sm text-gray-300 border-b border-gray-800 pb-2 mb-3">
-              {stage}
-            </h3>
-            <div className="space-y-3">
-              <div className="p-3 bg-gray-800 rounded-lg text-sm border border-gray-700">
-                <p className="font-medium text-white">Acme Corp License</p>
-                <p className="text-xs text-indigo-400 mt-1">$45,000</p>
-              </div>
-            </div>
+      {/* Feedback Banners */}
+      {successMessage && (
+        <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-medium flex items-center gap-2 animate-in fade-in-50">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>{successMessage}</span>
+        </div>
+      )}
+      {errorMessage && (
+        <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs font-medium flex items-center gap-2 animate-in fade-in-50">
+          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+          <span>{errorMessage}</span>
+        </div>
+      )}
+
+      {/* Win / Loss Analytics Summary Card */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="p-4 bg-white rounded-2xl border border-slate-200 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+            <TrendingUp className="w-5 h-5" />
           </div>
-        ))}
+          <div>
+            <span className="text-slate-500 text-xs font-semibold">Win Rate Metric</span>
+            <div className="text-lg font-black text-slate-900">{winLoss.win_rate || 0}%</div>
+          </div>
+        </div>
+
+        <div className="p-4 bg-white rounded-2xl border border-slate-200 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+            <Trophy className="w-5 h-5" />
+          </div>
+          <div>
+            <span className="text-slate-500 text-xs font-semibold">Closed Won Deals</span>
+            <div className="text-lg font-black text-emerald-700">{winLoss.won_count || 0}</div>
+          </div>
+        </div>
+
+        <div className="p-4 bg-white rounded-2xl border border-slate-200 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+            <XCircle className="w-5 h-5" />
+          </div>
+          <div>
+            <span className="text-slate-500 text-xs font-semibold">Closed Lost Deals</span>
+            <div className="text-lg font-black text-rose-700">{winLoss.lost_count || 0}</div>
+          </div>
+        </div>
       </div>
+
+      {/* VIEW 1: KANBAN BOARD */}
+      {viewMode === 'kanban' && (
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 overflow-x-auto pb-4">
+          {STAGES.map((stage) => {
+            const stageDeals = deals.filter((d) => d.stage === stage);
+            const totalStageAmount = stageDeals.reduce((sum, d) => sum + (d.amount || 0), 0);
+
+            return (
+              <div key={stage} className="bg-slate-50 border border-slate-200 rounded-2xl p-3 min-w-[240px] space-y-3 flex flex-col">
+                {/* Column Header */}
+                <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                  <div className="flex items-center gap-1.5">
+                    <h3 className="font-bold text-xs text-slate-800">{stage}</h3>
+                    <Badge variant="outline" className="text-[10px] bg-white text-slate-600 px-1.5 py-0 border-slate-200">
+                      {stageDeals.length}
+                    </Badge>
+                  </div>
+                  <span className="text-[10px] font-bold text-blue-700">${totalStageAmount.toLocaleString()}</span>
+                </div>
+
+                {/* Deal Cards in Stage Column */}
+                <div className="space-y-2 flex-1 overflow-y-auto max-h-[600px]">
+                  {stageDeals.length === 0 ? (
+                    <div className="p-4 text-center text-[11px] text-slate-400 font-medium bg-white/50 rounded-xl border border-dashed border-slate-200">
+                      No deals in {stage}
+                    </div>
+                  ) : (
+                    stageDeals.map((deal) => (
+                      <div
+                        key={deal.id}
+                        onClick={() => router.push(`/deals/${deal.id}`)}
+                        className="p-3 bg-white rounded-xl border border-slate-200 shadow-xs hover:shadow-md hover:border-blue-300 transition cursor-pointer space-y-2 group"
+                      >
+                        <div className="flex items-start justify-between gap-1">
+                          <h4 className="font-bold text-xs text-slate-900 group-hover:text-blue-600 transition">
+                            {deal.title}
+                          </h4>
+                          <span className="font-extrabold text-xs text-blue-700 shrink-0">${deal.amount ? deal.amount.toLocaleString() : '0'}</span>
+                        </div>
+
+                        <div className="flex items-center justify-between text-[10px] text-slate-500 font-medium">
+                          <span>Prob: {deal.probability ?? 10}%</span>
+                          <span>{deal.assigned_to ? 'Assigned' : 'Unassigned'}</span>
+                        </div>
+
+                        {/* Stage Quick Change Actions */}
+                        <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-[10px]">
+                          <select
+                            value={deal.stage}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              handleMoveStage(deal.id, e.target.value);
+                            }}
+                            className="bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-[10px] text-slate-700 font-medium focus:outline-none cursor-pointer"
+                          >
+                            {STAGES.map((s) => (
+                              <option key={s} value={s}>
+                                {s}
+                              </option>
+                            ))}
+                          </select>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEditModal(deal);
+                            }}
+                            className="text-slate-400 hover:text-blue-600 p-0.5 rounded cursor-pointer"
+                            title="Edit Deal"
+                          >
+                            <Edit className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* VIEW 2: DATATABLE */}
+      {viewMode === 'table' && (
+        <DataTable
+          columns={columns as any}
+          data={deals as any}
+          getRowKey={(item: any) => item.id}
+          onRowClick={(item: any) => router.push(`/deals/${item.id}`)}
+          searchValue={searchTerm}
+          onSearchChange={setSearchTerm}
+          searchPlaceholder="Search deals by title..."
+          actionVariant="menu"
+          actions={(item: any) => [
+            {
+              label: 'Edit Deal',
+              icon: <Edit className="w-4 h-4 text-blue-600 mr-2" />,
+              onClick: () => openEditModal(item),
+            },
+            {
+              label: 'Mark as Won',
+              icon: <Trophy className="w-4 h-4 text-emerald-600 mr-2" />,
+              onClick: () => handleMarkWon(item),
+            },
+            {
+              label: 'Mark as Lost',
+              icon: <XCircle className="w-4 h-4 text-rose-600 mr-2" />,
+              onClick: () => handleMarkLost(item),
+            },
+            {
+              label: 'Clone Deal',
+              icon: <Copy className="w-4 h-4 text-indigo-600 mr-2" />,
+              onClick: () => handleCloneDeal(item),
+            },
+            {
+              label: 'Delete Deal',
+              variant: 'destructive',
+              icon: <Trash2 className="w-4 h-4 text-rose-600 mr-2" />,
+              onClick: () => setDealToDelete(item),
+            },
+          ]}
+          emptyTitle="No sales deals found"
+          emptyDescription="Create your first deal or import pipeline CSV data."
+          showCheckbox
+          selectedIds={selectedIds}
+          onToggleAllRows={(checked) => {
+            if (checked) {
+              setSelectedIds(new Set(deals.map((d) => d.id)));
+            } else {
+              setSelectedIds(new Set());
+            }
+          }}
+          onToggleRow={(item: any, checked) => {
+            const next = new Set(selectedIds);
+            if (checked) next.add(item.id);
+            else next.delete(item.id);
+            setSelectedIds(next);
+          }}
+          pagination={{
+            pageIndex: page - 1,
+            pageCount: Math.ceil((deals.length || 1) / limit) || 1,
+            onPageChange: (pIndex) => setPage(pIndex + 1),
+            totalRecords: deals.length,
+          }}
+        />
+      )}
+
+      {/* CREATE DEAL MODAL */}
+      {isCreateModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
+          <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                <Briefcase className="w-5 h-5 text-blue-600" />
+                <span>Create New Sales Deal</span>
+              </h3>
+              <button type="button" onClick={() => setIsCreateModalOpen(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateSubmit} className="space-y-4 text-xs">
+              <div className="space-y-1">
+                <Label className="font-semibold text-slate-700">Deal Title</Label>
+                <Input
+                  type="text"
+                  placeholder="e.g. Acme Corp Enterprise License"
+                  value={formTitle}
+                  onChange={(e) => setFormTitle(e.target.value)}
+                  className="h-9 text-xs"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="font-semibold text-slate-700">Amount ($)</Label>
+                  <Input
+                    type="number"
+                    placeholder="45000"
+                    value={formAmount}
+                    onChange={(e) => setFormAmount(e.target.value !== '' ? Number(e.target.value) : '')}
+                    className="h-9 text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="font-semibold text-slate-700">Pipeline Stage</Label>
+                  <select
+                    value={formStage}
+                    onChange={(e) => setFormStage(e.target.value)}
+                    className="w-full h-9 rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                  >
+                    {STAGES.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="font-semibold text-slate-700">Win Probability (%)</Label>
+                  <Input
+                    type="number"
+                    placeholder="50"
+                    value={formProbability}
+                    onChange={(e) => setFormProbability(e.target.value !== '' ? Number(e.target.value) : '')}
+                    className="h-9 text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="font-semibold text-slate-700">Assigned Sales Rep</Label>
+                  <select
+                    value={formAssignedTo}
+                    onChange={(e) => setFormAssignedTo(e.target.value)}
+                    className="w-full h-9 rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                  >
+                    <option value="">-- Select Sales Rep --</option>
+                    {users.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name || u.email} ({u.email})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => setIsCreateModalOpen(false)} className="cursor-pointer">
+                  Cancel
+                </Button>
+                <Button type="submit" size="sm" disabled={createDealMutation.isPending} className="bg-blue-600 text-white font-semibold cursor-pointer">
+                  {createDealMutation.isPending ? 'Creating...' : 'Create Deal'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT DEAL MODAL */}
+      {isEditModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
+          <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                <Edit className="w-5 h-5 text-blue-600" />
+                <span>Edit Sales Deal</span>
+              </h3>
+              <button type="button" onClick={() => setIsEditModalOpen(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleEditSubmit} className="space-y-4 text-xs">
+              <div className="space-y-1">
+                <Label className="font-semibold text-slate-700">Deal Title</Label>
+                <Input
+                  type="text"
+                  value={formTitle}
+                  onChange={(e) => setFormTitle(e.target.value)}
+                  className="h-9 text-xs"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="font-semibold text-slate-700">Amount ($)</Label>
+                  <Input
+                    type="number"
+                    value={formAmount}
+                    onChange={(e) => setFormAmount(e.target.value !== '' ? Number(e.target.value) : '')}
+                    className="h-9 text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="font-semibold text-slate-700">Pipeline Stage</Label>
+                  <select
+                    value={formStage}
+                    onChange={(e) => setFormStage(e.target.value)}
+                    className="w-full h-9 rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                  >
+                    {STAGES.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="font-semibold text-slate-700">Win Probability (%)</Label>
+                  <Input
+                    type="number"
+                    value={formProbability}
+                    onChange={(e) => setFormProbability(e.target.value !== '' ? Number(e.target.value) : '')}
+                    className="h-9 text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="font-semibold text-slate-700">Assigned Sales Rep</Label>
+                  <select
+                    value={formAssignedTo}
+                    onChange={(e) => setFormAssignedTo(e.target.value)}
+                    className="w-full h-9 rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                  >
+                    <option value="">-- Select Sales Rep --</option>
+                    {users.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name || u.email} ({u.email})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => setIsEditModalOpen(false)} className="cursor-pointer">
+                  Cancel
+                </Button>
+                <Button type="submit" size="sm" disabled={updateDealMutation.isPending} className="bg-blue-600 text-white font-semibold cursor-pointer">
+                  {updateDealMutation.isPending ? 'Saving...' : 'Save Changes'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE CONFIRM MODAL */}
+      <ConfirmModal
+        isOpen={!!dealToDelete}
+        onClose={() => setDealToDelete(null)}
+        onConfirm={handleConfirmDelete}
+        title="Delete Sales Deal"
+        description="This action cannot be undone."
+        confirmText="Delete Deal"
+        variant="danger"
+        isLoading={deleteDealMutation.isPending}
+        message={
+          dealToDelete && (
+            <p>
+              Are you sure you want to delete sales deal <strong className="text-slate-900">{dealToDelete.title}</strong> (${dealToDelete.amount?.toLocaleString()})?
+            </p>
+          )
+        }
+      />
     </div>
   );
 }

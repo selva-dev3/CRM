@@ -3,7 +3,10 @@ from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
+from app.api.deps import get_valid_org_id, get_current_user
 from app.models import Deal, DealStage
+from app.models.note import Note
+from app.models.user import User
 from app.schemas.crm_schemas import (
     DealResponse, DealCreate, DealUpdate, MessageResponse, BulkDeleteRequest, BulkActionResponse,
     ProductResponse, NoteResponse, QuoteResponse
@@ -229,17 +232,58 @@ async def get_deal_timeline(deal_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.get("/{deal_id}/notes", response_model=List[NoteResponse], summary="List notes for deal")
 async def get_deal_notes(deal_id: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(Deal).where(Deal.id == deal_id))
-    if not res.scalars().first():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Deal '{deal_id}' not found")
-    return []
+    notes_res = await db.execute(
+        select(Note).where(Note.entity_type == "deal", Note.entity_id == deal_id).order_by(Note.created_at.desc())
+    )
+    notes = notes_res.scalars().all()
+    return [
+        {
+            "id": n.id,
+            "entity_type": n.entity_type,
+            "entity_id": n.entity_id,
+            "content": n.content,
+            "created_by": n.created_by,
+            "created_at": str(n.created_at) if n.created_at else None
+        }
+        for n in notes
+    ]
 
 @router.post("/{deal_id}/notes", response_model=NoteResponse, summary="Add note to deal")
-async def add_deal_note(deal_id: str, content: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(Deal).where(Deal.id == deal_id))
-    if not res.scalars().first():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Deal '{deal_id}' not found")
-    return {"id": "nt-new", "entity_type": "deal", "entity_id": deal_id, "content": content, "created_by": "usr-1", "created_at": "2026-08-02"}
+async def add_deal_note(
+    deal_id: str,
+    content: Optional[str] = Query(None),
+    payload: Optional[dict] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    note_content = content
+    if not note_content and isinstance(payload, dict):
+        note_content = payload.get("content")
+    if not note_content:
+        note_content = "Note"
+
+    org_id = await get_valid_org_id(db, current_user)
+    user_id = current_user.id
+
+    new_note = Note(
+        organization_id=org_id,
+        entity_type="deal",
+        entity_id=deal_id,
+        content=note_content,
+        created_by=user_id
+    )
+    db.add(new_note)
+    await db.commit()
+    await db.refresh(new_note)
+
+    return {
+        "id": new_note.id,
+        "entity_type": new_note.entity_type,
+        "entity_id": new_note.entity_id,
+        "content": new_note.content,
+        "created_by": new_note.created_by,
+        "created_at": str(new_note.created_at) if new_note.created_at else None
+    }
 
 @router.get("/{deal_id}/quotes", response_model=List[QuoteResponse], summary="List quotes created for deal")
 async def get_deal_quotes(deal_id: str, db: AsyncSession = Depends(get_db)):

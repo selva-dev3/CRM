@@ -1,0 +1,283 @@
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { apiClient } from '@/lib/api-client';
+
+export interface DealItem {
+  id: string;
+  title: string;
+  amount: number;
+  stage: string;
+  probability?: number;
+  expected_close_date?: string;
+  assigned_to?: string;
+  organization_id?: string;
+  created_at?: string;
+}
+
+export interface DealCreatePayload {
+  title: string;
+  amount: number;
+  stage: string;
+  probability?: number;
+  assigned_to?: string;
+}
+
+export interface DealUpdatePayload {
+  title?: string;
+  amount?: number;
+  stage?: string;
+  probability?: number;
+  assigned_to?: string;
+}
+
+// API Functions
+export async function fetchDealsApi(page = 1, limit = 20, stage?: string, search?: string): Promise<DealItem[]> {
+  try {
+    const query = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (stage) query.append('stage', stage);
+    if (search) query.append('search', search);
+    const data = await apiClient.get<DealItem[]>(`/deals?${query.toString()}`);
+    if (Array.isArray(data)) return data;
+  } catch (error) {
+    console.error('Failed to fetch deals:', error);
+  }
+  return [];
+}
+
+export async function createDealApi(payload: DealCreatePayload): Promise<DealItem> {
+  return apiClient.post<DealItem>('/deals', payload);
+}
+
+export async function getDealStagesApi(): Promise<any[]> {
+  try {
+    return await apiClient.get<any[]>('/deals/stages');
+  } catch {
+    return [
+      { id: 'stg-1', name: 'Prospecting', probability: 10 },
+      { id: 'stg-2', name: 'Qualification', probability: 30 },
+      { id: 'stg-3', name: 'Proposal', probability: 60 },
+      { id: 'stg-4', name: 'Negotiation', probability: 80 },
+      { id: 'stg-5', name: 'Closed Won', probability: 100 },
+      { id: 'stg-6', name: 'Closed Lost', probability: 0 },
+    ];
+  }
+}
+
+export async function createDealStageApi(payload: { name: string; probability: number }): Promise<any> {
+  return apiClient.post(`/deals/stages?name=${encodeURIComponent(payload.name)}&probability=${payload.probability}`);
+}
+
+export async function getKanbanBoardApi(): Promise<Record<string, DealItem[]>> {
+  try {
+    return await apiClient.get<Record<string, DealItem[]>>('/deals/kanban');
+  } catch {
+    return {};
+  }
+}
+
+export async function getWinLossAnalyticsApi(): Promise<any> {
+  try {
+    return await apiClient.get('/deals/win-loss-analytics');
+  } catch {
+    return { win_rate: 0.0, won_count: 0, lost_count: 0, top_loss_reasons: [] };
+  }
+}
+
+export async function exportDealsCsvApi(): Promise<{ download_url: string }> {
+  return apiClient.get<{ download_url: string }>('/deals/export/csv');
+}
+
+export async function importDealsCsvApi(): Promise<{ message: string; status: string }> {
+  return apiClient.post<{ message: string; status: string }>('/deals/import/csv');
+}
+
+export async function bulkDeleteDealsApi(ids: string[]): Promise<{ affected_count: number; message: string }> {
+  return apiClient.post<{ affected_count: number; message: string }>('/deals/bulk-delete', { ids });
+}
+
+export async function bulkUpdateDealStageApi(payload: { ids: string[]; stage: string }): Promise<any> {
+  return apiClient.post(`/deals/bulk-update-stage?stage=${encodeURIComponent(payload.stage)}`, { ids: payload.ids });
+}
+
+export async function getDealApi(id: string): Promise<DealItem> {
+  return apiClient.get<DealItem>(`/deals/${id}`);
+}
+
+export async function updateDealApi(payload: { id: string; data: DealUpdatePayload }): Promise<DealItem> {
+  return apiClient.put<DealItem>(`/deals/${payload.id}`, payload.data);
+}
+
+export async function deleteDealApi(id: string): Promise<{ message: string; status: string }> {
+  return apiClient.delete<{ message: string; status: string }>(`/deals/${id}`);
+}
+
+export async function updateDealStageApi(payload: { id: string; stage: string }): Promise<any> {
+  return apiClient.post(`/deals/${payload.id}/stage?stage=${encodeURIComponent(payload.stage)}`);
+}
+
+export async function markDealWonApi(payload: { id: string; final_amount?: number }): Promise<any> {
+  const query = payload.final_amount ? `?final_amount=${payload.final_amount}` : '';
+  return apiClient.post(`/deals/${payload.id}/win${query}`);
+}
+
+export async function markDealLostApi(payload: { id: string; reason: string }): Promise<any> {
+  return apiClient.post(`/deals/${payload.id}/lose?reason=${encodeURIComponent(payload.reason)}`);
+}
+
+export async function assignDealApi(payload: { id: string; user_id: string }): Promise<any> {
+  return apiClient.post(`/deals/${payload.id}/assign?user_id=${encodeURIComponent(payload.user_id)}`);
+}
+
+export async function getDealProductsApi(id: string): Promise<any[]> {
+  try {
+    return await apiClient.get<any[]>(`/deals/${id}/products`);
+  } catch {
+    return [];
+  }
+}
+
+export async function addDealProductApi(payload: { id: string; product_id: string; quantity?: number }): Promise<any> {
+  const qty = payload.quantity || 1;
+  return apiClient.post(`/deals/${payload.id}/products?product_id=${encodeURIComponent(payload.product_id)}&quantity=${qty}`);
+}
+
+export async function removeDealProductApi(payload: { id: string; product_id: string }): Promise<any> {
+  return apiClient.delete(`/deals/${payload.id}/products/${payload.product_id}`);
+}
+
+export async function getDealTimelineApi(id: string): Promise<any[]> {
+  try {
+    return await apiClient.get<any[]>(`/deals/${id}/timeline`);
+  } catch {
+    return [];
+  }
+}
+
+export async function getDealNotesApi(id: string): Promise<any[]> {
+  try {
+    return await apiClient.get<any[]>(`/deals/${id}/notes`);
+  } catch {
+    return [];
+  }
+}
+
+export async function addDealNoteApi(payload: { id: string; content: string }): Promise<any> {
+  return apiClient.post(`/deals/${payload.id}/notes?content=${encodeURIComponent(payload.content)}`, {
+    content: payload.content,
+  });
+}
+
+export async function getDealQuotesApi(id: string): Promise<any[]> {
+  try {
+    return await apiClient.get<any[]>(`/deals/${id}/quotes`);
+  } catch {
+    return [];
+  }
+}
+
+export async function predictDealWinRateApi(id: string): Promise<any> {
+  return apiClient.post(`/deals/${id}/predict-win-rate`);
+}
+
+export async function cloneDealApi(payload: { id: string; new_title: string }): Promise<DealItem> {
+  return apiClient.post<DealItem>(`/deals/${payload.id}/clone?new_title=${encodeURIComponent(payload.new_title)}`);
+}
+
+export async function getDealCommissionApi(id: string): Promise<any> {
+  try {
+    return await apiClient.get(`/deals/${id}/commission`);
+  } catch {
+    return null;
+  }
+}
+
+// TanStack Query & Mutation Hooks
+export function useDealsQuery(page = 1, limit = 20, stage?: string, search?: string) {
+  return useQuery({
+    queryKey: ['deals', page, limit, stage, search],
+    queryFn: () => fetchDealsApi(page, limit, stage, search),
+    placeholderData: (previousData) => previousData,
+  });
+}
+
+export function useDealQuery(id: string) {
+  return useQuery({
+    queryKey: ['deal', id],
+    queryFn: () => getDealApi(id),
+    enabled: !!id,
+  });
+}
+
+export function useDealStagesQuery() {
+  return useQuery({
+    queryKey: ['deal-stages'],
+    queryFn: getDealStagesApi,
+  });
+}
+
+export function useKanbanBoardQuery() {
+  return useQuery({
+    queryKey: ['kanban-board'],
+    queryFn: getKanbanBoardApi,
+  });
+}
+
+export function useWinLossAnalyticsQuery() {
+  return useQuery({
+    queryKey: ['win-loss-analytics'],
+    queryFn: getWinLossAnalyticsApi,
+  });
+}
+
+export function useCreateDealMutation() {
+  return useMutation({
+    mutationFn: createDealApi,
+  });
+}
+
+export function useUpdateDealMutation() {
+  return useMutation({
+    mutationFn: updateDealApi,
+  });
+}
+
+export function useDeleteDealMutation() {
+  return useMutation({
+    mutationFn: deleteDealApi,
+  });
+}
+
+export function useUpdateDealStageMutation() {
+  return useMutation({
+    mutationFn: updateDealStageApi,
+  });
+}
+
+export function useMarkDealWonMutation() {
+  return useMutation({
+    mutationFn: markDealWonApi,
+  });
+}
+
+export function useMarkDealLostMutation() {
+  return useMutation({
+    mutationFn: markDealLostApi,
+  });
+}
+
+export function useBulkDeleteDealsMutation() {
+  return useMutation({
+    mutationFn: bulkDeleteDealsApi,
+  });
+}
+
+export function useBulkUpdateDealStageMutation() {
+  return useMutation({
+    mutationFn: bulkUpdateDealStageApi,
+  });
+}
+
+export function useImportDealsCsvMutation() {
+  return useMutation({
+    mutationFn: importDealsCsvApi,
+  });
+}
