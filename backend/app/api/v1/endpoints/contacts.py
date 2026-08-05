@@ -6,6 +6,7 @@ from app.database import get_db
 from app.models.user import User
 from app.api.deps import get_current_user, get_valid_org_id
 from app.models import Contact
+from app.models.note import Note
 from app.schemas.crm_schemas import (
     ContactResponse, ContactCreate, ContactUpdate, MessageResponse, BulkDeleteRequest, BulkActionResponse,
     DealResponse, NoteResponse, EmailResponse, CallLogResponse
@@ -320,17 +321,61 @@ async def unstar_contact(contact_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.get("/{contact_id}/notes", response_model=List[NoteResponse], summary="List notes for contact")
 async def get_contact_notes(contact_id: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(Contact).where(Contact.id == contact_id))
-    if not res.scalars().first():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Contact '{contact_id}' not found")
-    return []
+    notes_res = await db.execute(
+        select(Note).where(Note.entity_type == "contact", Note.entity_id == contact_id).order_by(Note.created_at.desc())
+    )
+    notes = notes_res.scalars().all()
+    return [
+        {
+            "id": n.id,
+            "entity_type": n.entity_type,
+            "entity_id": n.entity_id,
+            "content": n.content,
+            "created_by": n.created_by or "usr-1",
+            "created_at": str(n.created_at) if n.created_at else None
+        }
+        for n in notes
+    ]
 
 @router.post("/{contact_id}/notes", response_model=NoteResponse, summary="Add note to contact")
-async def add_contact_note(contact_id: str, content: str, db: AsyncSession = Depends(get_db)):
+async def add_contact_note(
+    contact_id: str,
+    content: Optional[str] = Query(None),
+    payload: Optional[dict] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     res = await db.execute(select(Contact).where(Contact.id == contact_id))
-    if not res.scalars().first():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Contact '{contact_id}' not found")
-    return {"id": "nt-new", "entity_type": "contact", "entity_id": contact_id, "content": content, "created_by": "usr-1", "created_at": "2026-08-02"}
+    c = res.scalars().first()
+    
+    note_content = content
+    if not note_content and isinstance(payload, dict):
+        note_content = payload.get("content")
+    if not note_content:
+        note_content = "Note"
+
+    org_id = await get_valid_org_id(db, current_user)
+    user_id = current_user.id
+
+    new_note = Note(
+        organization_id=org_id,
+        entity_type="contact",
+        entity_id=contact_id,
+        content=note_content,
+        created_by=user_id
+    )
+    db.add(new_note)
+    await db.commit()
+    await db.refresh(new_note)
+
+    return {
+        "id": new_note.id,
+        "entity_type": new_note.entity_type,
+        "entity_id": new_note.entity_id,
+        "content": new_note.content,
+        "created_by": new_note.created_by,
+        "created_at": str(new_note.created_at) if new_note.created_at else None
+    }
 
 @router.get("/{contact_id}/emails", response_model=List[EmailResponse], summary="List emails linked to contact")
 async def get_contact_emails(contact_id: str, db: AsyncSession = Depends(get_db)):

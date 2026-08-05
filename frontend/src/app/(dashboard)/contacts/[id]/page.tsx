@@ -201,6 +201,7 @@ export default function ContactDetailsPage() {
       setSuccessMessage('Note added successfully.');
       setNewNoteContent('');
       refetchNotes();
+      queryClient.invalidateQueries({ queryKey: ['contact-notes', contactId] });
     },
     onError: () => {
       setErrorMessage('Failed to add note.');

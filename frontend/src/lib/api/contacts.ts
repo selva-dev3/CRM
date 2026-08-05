@@ -138,7 +138,9 @@ export async function getContactNotesApi(id: string): Promise<any[]> {
 }
 
 export async function addContactNoteApi(payload: { id: string; content: string }): Promise<any> {
-  return apiClient.post(`/contacts/${payload.id}/notes?content=${encodeURIComponent(payload.content)}`);
+  return apiClient.post(`/contacts/${payload.id}/notes?content=${encodeURIComponent(payload.content)}`, {
+    content: payload.content,
+  });
 }
 
 export async function getContactEmailsApi(id: string): Promise<any[]> {
