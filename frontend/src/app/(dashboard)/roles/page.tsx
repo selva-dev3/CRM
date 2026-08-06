@@ -410,11 +410,13 @@ export default function RolesPage() {
 
   const groupedPermissions = React.useMemo(() => {
     const map: Record<string, PermissionItem[]> = {};
-    permissionMatrix.forEach((p) => {
-      const cat = p.category || p.module || 'General';
-      if (!map[cat]) map[cat] = [];
-      map[cat].push(p);
-    });
+    permissionMatrix
+      .filter((p) => p.key !== 'all' && p.id !== 'all' && p.category?.toLowerCase() !== 'all' && p.name !== 'All Permission')
+      .forEach((p) => {
+        const cat = p.category || p.module || 'General';
+        if (!map[cat]) map[cat] = [];
+        map[cat].push(p);
+      });
     return map;
   }, [permissionMatrix]);
 

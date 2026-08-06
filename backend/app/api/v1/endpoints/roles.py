@@ -156,7 +156,16 @@ async def create_role(payload: RoleCreate, db: AsyncSession = Depends(get_db)):
 @router.get("/permissions/matrix", response_model=List[PermissionItem], summary="Get full system permission matrix")
 async def get_permission_matrix(db: AsyncSession = Depends(get_db)):
     try:
-        res = await db.execute(select(Permission).limit(500))
+        res = await db.execute(
+            select(Permission)
+            .where(
+                Permission.key != "all",
+                func.lower(Permission.category) != "all",
+                Permission.name != "All Permission",
+                Permission.id != "all"
+            )
+            .limit(500)
+        )
         perms = res.scalars().all()
         if perms:
             return [
@@ -166,7 +175,7 @@ async def get_permission_matrix(db: AsyncSession = Depends(get_db)):
                     "name": getattr(p, "name", None) or p.description or "Permission",
                     "category": getattr(p, "category", None) or getattr(p, "module", None) or "General",
                     "description": p.description or ""
-                } for p in perms
+                } for p in perms if p.key != "all" and getattr(p, "category", "").lower() != "all"
             ]
     except Exception:
         pass
