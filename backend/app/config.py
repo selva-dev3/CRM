@@ -57,7 +57,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     # CORS & Frontend URLs
     CORS_ORIGINS: str = "https://crm-one-sable.vercel.app,http://localhost:3000,http://127.0.0.1:3000"
-    FRONTEND_URL: str = "https://crm-one-sable.vercel.app"
+    FRONTEND_URL: str = "https://crm-one-sable.vercel.app","http://localhost:3000"
 
     @property
     def frontend_base_url(self) -> str:
