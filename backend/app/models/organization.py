@@ -232,11 +232,11 @@ class OrganizationInvitation(Base):
         primary_key=True,
         default=lambda: str(uuid.uuid4())
     )
-    organization_id: Mapped[str] = mapped_column(
+    organization_id: Mapped[Optional[str]] = mapped_column(
         String,
         ForeignKey("organizations.id", ondelete="CASCADE"),
         index=True,
-        nullable=False
+        nullable=True
     )
     email: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
     full_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)

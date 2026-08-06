@@ -10,7 +10,8 @@ from app.schemas.organization_invitation_schemas import (
     AcceptInvitationRequest,
     InvitationResponse,
     InvitationStatusResponse,
-    InvitationListResponse
+    InvitationListResponse,
+    InviteUserResponse
 )
 from app.services.invitation_service import (
     create_organization_user_invitation,
@@ -52,7 +53,7 @@ async def list_invitations(
 # 2. POST /api/v1/organizations/invitations - Invite additional users (Protected)
 @router.post(
     "",
-    response_model=InvitationResponse,
+    response_model=InviteUserResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Invite Additional User to Organization"
 )

@@ -20,10 +20,21 @@ class OrganizationInviteRequest(BaseModel):
 class AcceptInvitationRequest(BaseModel):
     password: str = Field(..., min_length=6, example="Password123!")
     full_name: Optional[str] = Field(None, example="Jane Smith")
+    organization_name: Optional[str] = Field(None, example="Acme Corporation")
+    domain: Optional[str] = Field(None, example="acme.crm.com")
+    industry: Optional[str] = Field(None, example="Technology")
+    country: Optional[str] = Field(None, example="India")
+    city: Optional[str] = Field(None, example="Chennai")
+    phone: Optional[str] = Field(None, example="+91 9876543210")
+
+class InviteUserResponse(BaseModel):
+    token: str
+    invite_url: str
+    message: str
 
 class InvitationResponse(BaseModel):
     id: str
-    organization_id: str
+    organization_id: Optional[str] = None
     organization_name: Optional[str] = None
     email: str
     full_name: Optional[str] = None
@@ -40,7 +51,7 @@ class InvitationResponse(BaseModel):
         from_attributes = True
 
 class InvitationStatusResponse(BaseModel):
-    organization: dict
+    organization: Optional[dict] = None
     email: str
     full_name: Optional[str] = None
     role: Optional[str] = "Admin"

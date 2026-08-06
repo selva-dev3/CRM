@@ -24,7 +24,8 @@ from app.schemas.organization_invitation_schemas import (
     InvitationResponse,
     InvitationStatusResponse,
     InvitationListResponse,
-    SuperAdminOrgResponse
+    SuperAdminOrgResponse,
+    InviteUserResponse
 )
 from app.services.email_service import (
     send_organization_onboarding_invite_email,
@@ -240,71 +241,22 @@ async def create_organization_user_invitation(
     db: AsyncSession,
     payload: OrganizationInviteRequest,
     current_user: User
-) -> InvitationResponse:
-    """Invite additional users to an existing organization."""
+) -> InviteUserResponse:
+    """Invite new users via email returning only token, invite_url, and success message."""
     target_org_id = payload.organization_id if (payload.organization_id and payload.organization_id.strip()) else None
-    if not target_org_id and current_user and getattr(current_user, "organization_id", None):
-        target_org_id = current_user.organization_id
 
-    org = await db.scalar(select(Organization).where(Organization.id == target_org_id)) if target_org_id else None
+    org = None
+    sub = None
+    if target_org_id:
+        org = await db.scalar(select(Organization).where(Organization.id == target_org_id))
+        if org and (getattr(org, "status", "active") != "active" or not getattr(org, "is_active", True)):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Organization is inactive or disabled."
+            )
+        sub = await db.scalar(select(OrganizationSubscription).where(OrganizationSubscription.organization_id == target_org_id))
 
-    # Auto-generate Organization if not existing
-    if not org:
-        auto_org_id = f"org_{uuid.uuid4().hex[:12]}"
-        org_name = payload.email.split("@")[0].capitalize() + " Organization"
-        org = Organization(
-            id=auto_org_id,
-            name=org_name,
-            slug=f"org-{uuid.uuid4().hex[:6]}",
-            domain=f"{uuid.uuid4().hex[:6]}.crm.com",
-            email=payload.email,
-            status="active",
-            is_active=True,
-            plan="Free",
-            max_users=3
-        )
-        db.add(org)
-        await db.flush()
-
-        settings_obj = OrganizationSetting(
-            id=str(uuid.uuid4()),
-            organization_id=org.id,
-            timezone="Asia/Kolkata",
-            currency="INR",
-            language="en"
-        )
-        db.add(settings_obj)
-
-        sub = OrganizationSubscription(
-            id=str(uuid.uuid4()),
-            organization_id=org.id,
-            status="active",
-            billing_cycle="Monthly",
-            amount=0.0,
-            currency="INR",
-            max_users=3,
-            storage_limit_gb=5
-        )
-        db.add(sub)
-        await db.flush()
-
-        target_org_id = org.id
-
-    if getattr(org, "status", "active") != "active" or not getattr(org, "is_active", True):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Organization is inactive or disabled."
-        )
-
-    # Check Subscription Status
-    sub = await db.scalar(select(OrganizationSubscription).where(OrganizationSubscription.organization_id == target_org_id))
-    if sub and getattr(sub, "status", "active") not in ("active", "trial"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Organization subscription is inactive or expired."
-        )
-
-    # Check if user already registered & active
+    # Check if user is already registered & active
     email_clean = payload.email.strip().lower()
     existing_user = await db.scalar(select(User).where(User.email.ilike(email_clean)))
     if existing_user and existing_user.is_active:
@@ -313,10 +265,9 @@ async def create_organization_user_invitation(
             detail=f"User with email '{payload.email}' is already an active user."
         )
 
-    # Check for existing pending invitation for this org & email
+    # Check for existing pending invitation for this email
     existing_inv = await db.scalar(
         select(OrganizationInvitation).where(
-            OrganizationInvitation.organization_id == target_org_id,
             func.lower(OrganizationInvitation.email) == email_clean,
             OrganizationInvitation.status == "Pending"
         )
@@ -329,6 +280,7 @@ async def create_organization_user_invitation(
         existing_inv.expires_at = expires_at
         existing_inv.role_id = payload.role or "Admin"
         existing_inv.full_name = payload.full_name or existing_inv.full_name
+        existing_inv.organization_id = target_org_id or existing_inv.organization_id
         invitation = existing_inv
     else:
         invitation = OrganizationInvitation(
@@ -348,12 +300,11 @@ async def create_organization_user_invitation(
     audit = AuditLog(
         id=str(uuid.uuid4()),
         organization_id=target_org_id,
-        user_id=current_user.id,
+        user_id=current_user.id if current_user else None,
         action="CREATE_INVITATION",
         ip_address=None,
-        details=f"Invitation sent to '{payload.email}' by '{current_user.email}'"
+        details=f"Invitation sent to '{payload.email}'."
     )
-
     db.add(audit)
 
     await db.commit()
@@ -363,7 +314,11 @@ async def create_organization_user_invitation(
     invite_url = f"{settings.FRONTEND_URL}/accept-invite?token={token}"
     send_user_invite_email(email_to=email_clean, role=payload.role or "Admin", invite_url=invite_url)
 
-    return _build_invitation_response(invitation, org.name)
+    return InviteUserResponse(
+        token=token,
+        invite_url=invite_url,
+        message=f"Invitation sent successfully to {email_clean}"
+    )
 
 
 async def get_and_validate_invitation_by_token(
@@ -406,30 +361,24 @@ async def get_and_validate_invitation_by_token(
             detail="Invitation token has expired."
         )
 
-    # Organization Check
-    org = await db.scalar(select(Organization).where(Organization.id == inv.organization_id))
-    if not org or getattr(org, "status", "active") != "active" or not getattr(org, "is_active", True):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Organization is inactive."
-        )
-
-    # Subscription Check
-    sub = await db.scalar(select(OrganizationSubscription).where(OrganizationSubscription.organization_id == inv.organization_id))
-    if sub and getattr(sub, "status", "active") not in ("active", "trial"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Subscription is inactive."
-        )
-
-    org_dict = {
-        "id": org.id,
-        "name": org.name,
-        "slug": org.slug,
-        "domain": org.domain,
-        "plan": org.plan,
-        "status": org.status
-    }
+    # Organization Check if already assigned
+    org_dict = None
+    if inv.organization_id:
+        org = await db.scalar(select(Organization).where(Organization.id == inv.organization_id))
+        if org and (getattr(org, "status", "active") != "active" or not getattr(org, "is_active", True)):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Organization is inactive."
+            )
+        if org:
+            org_dict = {
+                "id": org.id,
+                "name": org.name,
+                "slug": org.slug,
+                "domain": org.domain,
+                "plan": org.plan,
+                "status": org.status
+            }
 
     return InvitationStatusResponse(
         organization=org_dict,
@@ -447,8 +396,8 @@ async def accept_organization_invitation(
     token: str,
     payload: AcceptInvitationRequest
 ) -> dict:
-    """Accept invitation, set password, activate user account, and return JWT token."""
-    # First validate invitation
+    """Accept invitation, collect organization details, auto-generate Organization & Org ID upon acceptance, hash password, activate user account, and return JWT token."""
+    # 1. Validate invitation token
     inv_status = await get_and_validate_invitation_by_token(db, token)
 
     inv = await db.scalar(
@@ -460,14 +409,88 @@ async def accept_organization_invitation(
     email_clean = inv.email.strip().lower()
     full_name = payload.full_name or inv.full_name or email_clean.split("@")[0].capitalize()
 
-    # Find or Create User
+    # 2. Check or Create Organization & Org ID upon Acceptance
+    org = None
+    if inv.organization_id:
+        org = await db.scalar(select(Organization).where(Organization.id == inv.organization_id))
+
+    requested_org_name = (payload.organization_name or "").strip()
+
+    if org:
+        # Update existing organization with user's provided onboarding details
+        if requested_org_name:
+            org.name = requested_org_name
+            slug_base = requested_org_name.lower().replace(" ", "-")
+            org.slug = f"{slug_base}-{uuid.uuid4().hex[:4]}"
+        if payload.domain and payload.domain.strip():
+            org.domain = payload.domain.strip()
+        if payload.phone and payload.phone.strip():
+            org.phone = payload.phone.strip()
+        if payload.industry and payload.industry.strip():
+            org.industry = payload.industry.strip()
+        if payload.country and payload.country.strip():
+            org.country = payload.country.strip()
+        if payload.city and payload.city.strip():
+            org.city = payload.city.strip()
+    else:
+        # Create brand new Organization with auto-generated ID
+        auto_org_id = f"org_{uuid.uuid4().hex[:12]}"
+        org_name = requested_org_name if requested_org_name else f"{full_name}'s Organization"
+        slug_base = org_name.lower().replace(" ", "-")
+        slug = f"{slug_base}-{uuid.uuid4().hex[:4]}"
+        domain = payload.domain.strip() if (payload.domain and payload.domain.strip()) else f"{slug}.crm.com"
+
+        org = Organization(
+            id=auto_org_id,
+            name=org_name,
+            slug=slug,
+            domain=domain,
+            email=email_clean,
+            phone=payload.phone.strip() if payload.phone else None,
+            industry=payload.industry.strip() if payload.industry else "Technology",
+            country=payload.country.strip() if payload.country else "India",
+            city=payload.city.strip() if payload.city else None,
+            status="active",
+            is_active=True,
+            plan="Free",
+            max_users=3
+        )
+        db.add(org)
+        await db.flush()
+
+        settings_obj = OrganizationSetting(
+            id=str(uuid.uuid4()),
+            organization_id=org.id,
+            timezone="Asia/Kolkata",
+            currency="INR",
+            language="en"
+        )
+        db.add(settings_obj)
+
+        sub = OrganizationSubscription(
+            id=str(uuid.uuid4()),
+            organization_id=org.id,
+            status="active",
+            billing_cycle="Monthly",
+            amount=0.0,
+            currency="INR",
+            max_users=3,
+            storage_limit_gb=5
+        )
+        db.add(sub)
+        await db.flush()
+
+        inv.organization_id = org.id
+        inv.subscription_id = sub.id
+
+    # 3. Find or Create User
     user = await db.scalar(select(User).where(User.email.ilike(email_clean)))
     hashed_pwd = get_password_hash(payload.password)
 
     if user:
         user.hashed_password = hashed_pwd
         user.name = full_name
-        user.organization_id = inv.organization_id
+        user.organization_id = org.id
         user.role = inv.role_id or "Admin"
         user.is_active = True
         user.is_verified = True
@@ -478,35 +501,32 @@ async def accept_organization_invitation(
             email=email_clean,
             hashed_password=hashed_pwd,
             role=inv.role_id or "Admin",
-            organization_id=inv.organization_id,
+            organization_id=org.id,
             is_active=True,
             is_verified=True
         )
         db.add(user)
         await db.flush()
 
-    # Update Invitation Record
+    # 4. Update Invitation Record
     inv.status = "Accepted"
     inv.accepted_at = datetime.now(timezone.utc)
 
-    # Audit Log
+    # 5. Audit Log
     audit = AuditLog(
         id=str(uuid.uuid4()),
-        organization_id=inv.organization_id,
+        organization_id=org.id,
         user_id=user.id,
         action="ACCEPT_INVITATION",
         ip_address=None,
-        details=(
-            f"Invitation accepted by '{user.email}'"
-        )
+        details=f"Invitation accepted by '{user.email}' and Organization '{org.name}' ({org.id}) activated."
     )
-
     db.add(audit)
 
     await db.commit()
     await db.refresh(user)
 
-    # Generate JWT Token
+    # 6. Generate JWT Token
     access_token = create_access_token(subject=user.id, expires_delta=timedelta(days=7))
 
     return {
@@ -520,7 +540,14 @@ async def accept_organization_invitation(
             "organization_id": user.organization_id,
             "is_active": user.is_active
         },
-        "message": "Invitation accepted and Organization Administrator account activated successfully."
+        "organization": {
+            "id": org.id,
+            "name": org.name,
+            "slug": org.slug,
+            "domain": org.domain,
+            "plan": org.plan
+        },
+        "message": f"Invitation accepted! Organization '{org.name}' created with ID '{org.id}' and account activated successfully."
     }
 
 
