@@ -42,7 +42,7 @@ DEFAULT_PLANS_FALLBACK = {
 
 
 def _build_invitation_response(inv: OrganizationInvitation, org_name: Optional[str] = None) -> InvitationResponse:
-    invite_url = f"{settings.FRONTEND_URL}/accept-invite?token={inv.token}"
+    invite_url = f"{settings.FRONTEND_URL}/accept-invite/organization/{inv.token}"
     expires_str = inv.expires_at.isoformat() if inv.expires_at else ""
     accepted_str = inv.accepted_at.isoformat() if inv.accepted_at else None
     created_str = inv.created_at.isoformat() if inv.created_at else ""
@@ -311,7 +311,7 @@ async def create_organization_user_invitation(
     await db.refresh(invitation)
 
     # Send Email
-    invite_url = f"{settings.FRONTEND_URL}/accept-invite/organization?token={token}"
+    invite_url = f"{settings.FRONTEND_URL}/accept-invite/organization/{token}"
     send_user_invite_email(email_to=email_clean, role=payload.role or "Admin", invite_url=invite_url)
 
     return InviteUserResponse(
