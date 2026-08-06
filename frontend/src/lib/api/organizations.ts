@@ -392,3 +392,85 @@ export function useDeleteOrganizationMutation() {
     },
   });
 }
+
+// Organization Invitations API
+export interface ValidateInvitationResponse {
+  organization?: {
+    id: string;
+    name: string;
+    slug?: string;
+    domain?: string;
+    plan?: string;
+    status?: string;
+  };
+  email: string;
+  full_name?: string;
+  role: string;
+  expires_at: string;
+  status: string;
+  is_valid: boolean;
+}
+
+export interface AcceptInvitationPayload {
+  password: string;
+  full_name?: string;
+  organization_name?: string;
+  domain?: string;
+  industry?: string;
+  country?: string;
+  city?: string;
+  phone?: string;
+}
+
+export interface AcceptInvitationResponse {
+  access_token: string;
+  token_type: string;
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+    organization_id: string;
+    is_active: boolean;
+  };
+  organization?: {
+    id: string;
+    name: string;
+    slug?: string;
+    domain?: string;
+    plan?: string;
+  };
+  message: string;
+}
+
+export async function validateInvitationApi(token: string): Promise<ValidateInvitationResponse> {
+  return apiClient.get<ValidateInvitationResponse>(`/organizations/invitations/${encodeURIComponent(token)}`);
+}
+
+export async function acceptInvitationApi({ token, payload }: { token: string; payload: AcceptInvitationPayload }): Promise<AcceptInvitationResponse> {
+  return apiClient.post<AcceptInvitationResponse>(`/organizations/invitations/${encodeURIComponent(token)}/accept`, payload);
+}
+
+export function useValidateInvitationQuery(token: string) {
+  return useQuery({
+    queryKey: ['validate-invitation', token],
+    queryFn: () => validateInvitationApi(token),
+    enabled: Boolean(token),
+    retry: false,
+  });
+}
+
+export function useAcceptInvitationMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: acceptInvitationApi,
+    onSuccess: (data) => {
+      if (data.access_token) {
+        localStorage.setItem('token', data.access_token);
+        localStorage.setItem('user', JSON.stringify(data.user));
+      }
+      queryClient.invalidateQueries({ queryKey: ['current-organization'] });
+    },
+  });
+}
+

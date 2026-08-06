@@ -311,7 +311,7 @@ async def create_organization_user_invitation(
     await db.refresh(invitation)
 
     # Send Email
-    invite_url = f"{settings.FRONTEND_URL}/accept-invite?token={token}"
+    invite_url = f"{settings.FRONTEND_URL}/organization/accept-invite?token={token}"
     send_user_invite_email(email_to=email_clean, role=payload.role or "Admin", invite_url=invite_url)
 
     return InviteUserResponse(
