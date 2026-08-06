@@ -10,8 +10,6 @@ import {
   Activity,
   Clock,
   DollarSign,
-  Users,
-  Calendar,
   Download,
   FileSpreadsheet,
   Mail,
@@ -24,8 +22,9 @@ import {
   Sparkles,
   Layers,
   Percent,
-  Clock3
+  Filter
 } from 'lucide-react';
+import { DataTable, DataTableColumn } from '@/components/shared/data-table';
 import { ConfirmModal } from '@/components/shared/confirm-modal';
 import {
   useSalesPerformanceReportQuery,
@@ -65,40 +64,39 @@ type ReportCategory =
 
 export default function ReportsPage() {
   const [activeCategory, setActiveCategory] = useState<ReportCategory>('performance');
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Modals
   const [isCustomModalOpen, setIsCustomModalOpen] = useState(false);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [reportToDelete, setReportToDelete] = useState<string | null>(null);
 
-  // Custom Report Form State
+  // Form States
   const [customReportName, setCustomReportName] = useState('');
-  const [customFilters, setCustomFilters] = useState('Enterprise Tier Only');
-
-  // Schedule Form State
+  const [customFilters, setCustomFilters] = useState('Enterprise Accounts Only');
   const [scheduleReportType, setScheduleReportType] = useState('sales-performance');
   const [scheduleEmail, setScheduleEmail] = useState('vp_sales@company.com');
   const [scheduleFrequency, setScheduleFrequency] = useState('Weekly');
 
-  // Toast / Alert notifications
+  // Notifications
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Queries
+  // API Queries
   const { data: salesData, isLoading: isSalesLoading } = useSalesPerformanceReportQuery();
-  const { data: velocityData } = usePipelineVelocityReportQuery();
-  const { data: winLossData } = useWinLossReportQuery();
-  const { data: leadAttrData } = useLeadAttributionReportQuery();
-  const { data: leaderboardData } = useRepLeaderboardReportQuery();
-  const { data: forecastData } = useRevenueForecastingReportQuery();
-  const { data: activityData } = useActivityMetricsReportQuery();
-  const { data: durationData } = useDealDurationReportQuery();
-  const { data: cacData } = useCacReportQuery();
+  const { data: velocityData, isLoading: isVelocityLoading } = usePipelineVelocityReportQuery();
+  const { data: winLossData, isLoading: isWinLossLoading } = useWinLossReportQuery();
+  const { data: leadAttrData, isLoading: isLeadAttrLoading } = useLeadAttributionReportQuery();
+  const { data: leaderboardData, isLoading: isLeaderboardLoading } = useRepLeaderboardReportQuery();
+  const { data: forecastData, isLoading: isForecastLoading } = useRevenueForecastingReportQuery();
+  const { data: activityData, isLoading: isActivityLoading } = useActivityMetricsReportQuery();
+  const { data: durationData, isLoading: isDurationLoading } = useDealDurationReportQuery();
+  const { data: cacData, isLoading: isCacLoading } = useCacReportQuery();
   const { data: ltvData } = useLtvReportQuery();
   const { data: churnData } = useChurnAnalysisReportQuery();
-  const { data: quotaData } = useQuotaAttainmentReportQuery();
-  const { data: customReports = [] } = useCustomReportsQuery();
-  const { data: scheduledReports = [] } = useScheduledReportsQuery();
+  const { data: quotaData, isLoading: isQuotaLoading } = useQuotaAttainmentReportQuery();
+  const { data: customReports = [], isLoading: isCustomLoading } = useCustomReportsQuery();
+  const { data: scheduledReports = [], isLoading: isScheduledLoading } = useScheduledReportsQuery();
 
   // Mutations
   const createCustomMutation = useCreateCustomReportMutation();
@@ -120,7 +118,7 @@ export default function ReportsPage() {
   const handleExportCsv = async () => {
     try {
       const res = await exportCsvMutation.mutateAsync(activeCategory);
-      setSuccessMessage(`CSV dataset uploaded to S3. Download started.`);
+      setSuccessMessage(`CSV dataset uploaded to S3 bucket. Download started.`);
       window.open(res.csv_url, '_blank');
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to export CSV dataset.');
@@ -160,21 +158,239 @@ export default function ReportsPage() {
     if (!reportToDelete) return;
     try {
       await deleteCustomMutation.mutateAsync(reportToDelete);
-      setSuccessMessage('Custom report deleted.');
+      setSuccessMessage('Custom report query deleted.');
       setReportToDelete(null);
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to delete custom report.');
     }
   };
 
+  // Helper search filter
+  const filterRows = (rows: any[], keys: string[]) => {
+    if (!searchQuery.trim()) return rows;
+    const query = searchQuery.toLowerCase().trim();
+    return rows.filter((r) => keys.some((k) => String(r[k] || '').toLowerCase().includes(query)));
+  };
+
+  // Column Definitions
+  const performanceColumns: DataTableColumn<any>[] = [
+    { id: 'rep_name', header: 'Sales Executive', cell: (row) => <span className="font-bold text-slate-900">{row.rep_name}</span> },
+    { id: 'role', header: 'Role', cell: (row) => <span className="text-slate-500">{row.role}</span> },
+    { id: 'deals_assigned', header: 'Assigned', className: 'text-center', cell: (row) => <span className="font-semibold">{row.deals_assigned}</span> },
+    { id: 'deals_closed', header: 'Closed', className: 'text-center', cell: (row) => <span className="font-bold text-emerald-700">{row.deals_closed}</span> },
+    { id: 'win_rate', header: 'Win Rate (%)', className: 'text-center', cell: (row) => <span className="font-bold">{row.win_rate}%</span> },
+    { id: 'revenue', header: 'Revenue ($)', className: 'text-right', cell: (row) => <span className="font-extrabold text-emerald-600">${row.revenue?.toLocaleString()}</span> },
+    { id: 'quota_target', header: 'Quota ($)', className: 'text-right', cell: (row) => <span className="font-mono text-slate-600">${row.quota_target?.toLocaleString()}</span> },
+    {
+      id: 'attainment_pct',
+      header: 'Attainment Progress',
+      className: 'text-center',
+      cell: (row) => (
+        <div className="flex items-center gap-2 justify-center">
+          <div className="w-20 bg-slate-200 h-2 rounded-full overflow-hidden">
+            <div className={`h-full ${row.attainment_pct >= 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`} style={{ width: `${Math.min(100, row.attainment_pct)}%` }} />
+          </div>
+          <span className="font-bold text-[11px]">{row.attainment_pct}%</span>
+        </div>
+      )
+    },
+    { id: 'avg_deal_size', header: 'Avg Deal Size ($)', className: 'text-right', cell: (row) => <span className="font-mono">${row.avg_deal_size?.toLocaleString()}</span> }
+  ];
+
+  const velocityColumns: DataTableColumn<any>[] = [
+    { id: 'stage', header: 'Pipeline Stage', cell: (row) => <span className="font-bold text-slate-900">{row.stage}</span> },
+    { id: 'deal_count', header: 'Active Deals', className: 'text-center', cell: (row) => <span className="font-semibold">{row.deal_count}</span> },
+    { id: 'total_value', header: 'Stage Value ($)', className: 'text-right', cell: (row) => <span className="font-extrabold text-emerald-600">${row.total_value?.toLocaleString()}</span> },
+    { id: 'avg_days_in_stage', header: 'Avg Days in Stage', className: 'text-center', cell: (row) => <span className="font-bold text-indigo-600">{row.avg_days_in_stage} Days</span> },
+    { id: 'conversion_rate', header: 'Conversion Rate (%)', className: 'text-center', cell: (row) => <span className="font-bold">{row.conversion_rate}%</span> },
+    {
+      id: 'bottleneck_risk',
+      header: 'Bottleneck Risk',
+      className: 'text-center',
+      cell: (row) => (
+        <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${row.bottleneck_risk === 'Low' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+          {row.bottleneck_risk}
+        </span>
+      )
+    }
+  ];
+
+  const winLossColumns: DataTableColumn<any>[] = [
+    { id: 'segment', header: 'Market Industry Segment', cell: (row) => <span className="font-bold text-slate-900">{row.segment}</span> },
+    { id: 'won_deals', header: 'Won Deals', className: 'text-center', cell: (row) => <span className="font-bold text-emerald-600">{row.won_deals}</span> },
+    { id: 'lost_deals', header: 'Lost Deals', className: 'text-center', cell: (row) => <span className="font-bold text-rose-600">{row.lost_deals}</span> },
+    { id: 'total_deals', header: 'Total Deals', className: 'text-center', cell: (row) => <span className="font-semibold">{row.total_deals}</span> },
+    { id: 'win_percentage', header: 'Win Rate (%)', className: 'text-center', cell: (row) => <span className="font-extrabold text-indigo-600">{row.win_percentage}%</span> },
+    { id: 'won_value', header: 'Won Revenue ($)', className: 'text-right', cell: (row) => <span className="font-extrabold text-emerald-600">${row.won_value?.toLocaleString()}</span> },
+    { id: 'lost_value', header: 'Lost Opportunity ($)', className: 'text-right', cell: (row) => <span className="font-mono text-rose-500">${row.lost_value?.toLocaleString()}</span> },
+    { id: 'primary_loss_reason', header: 'Primary Loss Reason', cell: (row) => <span className="text-slate-600">{row.primary_loss_reason}</span> }
+  ];
+
+  const leadAttrColumns: DataTableColumn<any>[] = [
+    { id: 'source', header: 'Lead Source Channel', cell: (row) => <span className="font-bold text-slate-900">{row.source}</span> },
+    { id: 'total_leads', header: 'Total Leads', className: 'text-center', cell: (row) => <span className="font-semibold">{row.total_leads}</span> },
+    { id: 'converted_leads', header: 'Converted Leads', className: 'text-center', cell: (row) => <span className="font-bold text-emerald-600">{row.converted_leads}</span> },
+    { id: 'conversion_rate', header: 'Conversion Rate (%)', className: 'text-center', cell: (row) => <span className="font-extrabold text-indigo-600">{row.conversion_rate}%</span> },
+    { id: 'revenue_generated', header: 'Revenue Generated ($)', className: 'text-right', cell: (row) => <span className="font-extrabold text-emerald-600">${row.revenue_generated?.toLocaleString()}</span> },
+    { id: 'avg_lead_score', header: 'Avg Lead Score', className: 'text-center', cell: (row) => <span className="font-semibold">{row.avg_lead_score}</span> },
+    { id: 'cac', header: 'CAC ($)', className: 'text-right', cell: (row) => <span className="font-mono text-slate-600">${row.cac}</span> },
+    { id: 'roi_ratio', header: 'ROI Ratio', className: 'text-center', cell: (row) => <span className="font-bold text-purple-600">{row.roi_ratio}x</span> }
+  ];
+
+  const leaderboardColumns: DataTableColumn<any>[] = [
+    {
+      id: 'rank',
+      header: 'Rank',
+      className: 'text-center',
+      cell: (row) => (
+        <span className="h-6 w-6 rounded-full bg-amber-100 text-amber-800 font-extrabold text-xs inline-flex items-center justify-center">
+          #{row.rank}
+        </span>
+      )
+    },
+    { id: 'name', header: 'Sales Executive', cell: (row) => <span className="font-bold text-slate-900">{row.name}</span> },
+    { id: 'role', header: 'Role', cell: (row) => <span className="text-slate-500">{row.role}</span> },
+    { id: 'deals_closed', header: 'Deals Closed', className: 'text-center', cell: (row) => <span className="font-bold text-emerald-600">{row.deals_closed}</span> },
+    { id: 'revenue', header: 'Revenue ($)', className: 'text-right', cell: (row) => <span className="font-extrabold text-emerald-600">${row.revenue?.toLocaleString()}</span> },
+    { id: 'quota_target', header: 'Quota ($)', className: 'text-right', cell: (row) => <span className="font-mono text-slate-600">${row.quota_target?.toLocaleString()}</span> },
+    { id: 'attainment_pct', header: 'Attainment (%)', className: 'text-center', cell: (row) => <span className="font-extrabold text-indigo-600">{row.attainment_pct}%</span> },
+    { id: 'calls_made', header: 'Calls', className: 'text-center', cell: (row) => <span className="font-semibold">{row.calls_made}</span> },
+    { id: 'meetings_held', header: 'Meetings', className: 'text-center', cell: (row) => <span className="font-semibold">{row.meetings_held}</span> },
+    {
+      id: 'badge',
+      header: 'Status',
+      className: 'text-center',
+      cell: (row) => (
+        <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${row.badge === 'Top Performer' ? 'bg-amber-100 text-amber-800' : (row.badge === 'Quota Met' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700')}`}>
+          {row.badge}
+        </span>
+      )
+    }
+  ];
+
+  const forecastColumns: DataTableColumn<any>[] = [
+    { id: 'period', header: 'Forecast Period', cell: (row) => <span className="font-bold text-slate-900">{row.period}</span> },
+    { id: 'committed_revenue', header: 'Committed ($)', className: 'text-right', cell: (row) => <span className="font-semibold text-slate-700">${row.committed_revenue?.toLocaleString()}</span> },
+    { id: 'best_case_forecast', header: 'Best Case ($)', className: 'text-right', cell: (row) => <span className="font-semibold text-indigo-600">${row.best_case_forecast?.toLocaleString()}</span> },
+    { id: 'pipeline_weighted', header: 'Weighted Pipeline ($)', className: 'text-right', cell: (row) => <span className="font-extrabold text-emerald-600">${row.pipeline_weighted?.toLocaleString()}</span> },
+    { id: 'target', header: 'Target Benchmark ($)', className: 'text-right', cell: (row) => <span className="font-mono text-slate-500">${row.target?.toLocaleString()}</span> },
+    { id: 'confidence_score', header: 'AI Confidence (%)', className: 'text-center', cell: (row) => <span className="font-bold text-purple-600">{row.confidence_score}%</span> },
+    {
+      id: 'forecast_status',
+      header: 'Status',
+      className: 'text-center',
+      cell: (row) => (
+        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-100 text-indigo-800">
+          {row.forecast_status}
+        </span>
+      )
+    }
+  ];
+
+  const activityColumns: DataTableColumn<any>[] = [
+    { id: 'rep_name', header: 'Sales Executive', cell: (row) => <span className="font-bold text-slate-900">{row.rep_name}</span> },
+    { id: 'total_calls', header: 'Calls Made', className: 'text-center', cell: (row) => <span className="font-bold text-slate-800">{row.total_calls}</span> },
+    { id: 'call_duration_mins', header: 'Duration (Mins)', className: 'text-center', cell: (row) => <span className="font-mono">{row.call_duration_mins} mins</span> },
+    { id: 'emails_sent', header: 'Emails Sent', className: 'text-center', cell: (row) => <span className="font-bold text-slate-800">{row.emails_sent}</span> },
+    { id: 'email_open_rate', header: 'Open Rate (%)', className: 'text-center', cell: (row) => <span className="font-bold text-emerald-600">{row.email_open_rate}%</span> },
+    { id: 'meetings_conducted', header: 'Meetings', className: 'text-center', cell: (row) => <span className="font-bold text-purple-600">{row.meetings_conducted}</span> },
+    { id: 'demos_given', header: 'Demos Given', className: 'text-center', cell: (row) => <span className="font-bold text-indigo-600">{row.demos_given}</span> },
+    { id: 'activity_score', header: 'Activity Score', className: 'text-center', cell: (row) => <span className="font-extrabold text-blue-600">{row.activity_score}</span> }
+  ];
+
+  const durationColumns: DataTableColumn<any>[] = [
+    { id: 'deal_tier', header: 'Deal Tier / Segment', cell: (row) => <span className="font-bold text-slate-900">{row.deal_tier}</span> },
+    { id: 'deal_count', header: 'Deal Count', className: 'text-center', cell: (row) => <span className="font-semibold">{row.deal_count}</span> },
+    { id: 'avg_cycle_days', header: 'Avg Cycle (Days)', className: 'text-center', cell: (row) => <span className="font-extrabold text-indigo-600">{row.avg_cycle_days} Days</span> },
+    { id: 'fastest_close_days', header: 'Fastest Close', className: 'text-center', cell: (row) => <span className="font-bold text-emerald-600">{row.fastest_close_days} Days</span> },
+    { id: 'longest_close_days', header: 'Longest Close', className: 'text-center', cell: (row) => <span className="font-bold text-amber-600">{row.longest_close_days} Days</span> },
+    { id: 'primary_bottleneck', header: 'Primary Lag Bottleneck', cell: (row) => <span className="text-slate-600">{row.primary_bottleneck}</span> }
+  ];
+
+  const unitEconomicsColumns: DataTableColumn<any>[] = [
+    { id: 'segment', header: 'Customer Segment', cell: (row) => <span className="font-bold text-slate-900">{row.segment}</span> },
+    { id: 'customer_count', header: 'Customers', className: 'text-center', cell: (row) => <span className="font-semibold">{row.customer_count}</span> },
+    { id: 'avg_ltv', header: 'Avg LTV ($)', className: 'text-right', cell: (row) => <span className="font-extrabold text-emerald-600">${row.avg_ltv?.toLocaleString()}</span> },
+    { id: 'blended_cac', header: 'Blended CAC ($)', className: 'text-right', cell: (row) => <span className="font-mono font-bold text-slate-800">${row.blended_cac?.toLocaleString()}</span> },
+    { id: 'paid_cac', header: 'Paid CAC ($)', className: 'text-right', cell: (row) => <span className="font-mono text-slate-600">${row.paid_cac?.toLocaleString()}</span> },
+    { id: 'organic_cac', header: 'Organic CAC ($)', className: 'text-right', cell: (row) => <span className="font-mono text-slate-600">${row.organic_cac?.toLocaleString()}</span> },
+    { id: 'ltv_cac_ratio', header: 'LTV : CAC Ratio', className: 'text-center', cell: (row) => <span className="font-extrabold text-purple-600">{row.ltv_cac_ratio}x</span> },
+    { id: 'annual_churn_rate', header: 'Annual Churn (%)', className: 'text-center', cell: (row) => <span className="font-bold text-rose-600">{row.annual_churn_rate ?? row.churn_rate}%</span> }
+  ];
+
+  const quotaColumns: DataTableColumn<any>[] = [
+    { id: 'rep_name', header: 'Sales Executive', cell: (row) => <span className="font-bold text-slate-900">{row.rep_name}</span> },
+    { id: 'role', header: 'Role', cell: (row) => <span className="text-slate-500">{row.role}</span> },
+    { id: 'assigned_quota', header: 'Assigned Quota ($)', className: 'text-right', cell: (row) => <span className="font-mono text-slate-600">${row.assigned_quota?.toLocaleString()}</span> },
+    { id: 'closed_revenue', header: 'Closed Revenue ($)', className: 'text-right', cell: (row) => <span className="font-extrabold text-emerald-600">${row.closed_revenue?.toLocaleString()}</span> },
+    { id: 'pipeline_coverage', header: 'Pipeline Coverage ($)', className: 'text-right', cell: (row) => <span className="font-mono font-semibold text-indigo-600">${row.pipeline_coverage?.toLocaleString()}</span> },
+    {
+      id: 'attainment_pct',
+      header: 'Attainment Progress',
+      className: 'text-center',
+      cell: (row) => (
+        <div className="flex items-center gap-2 justify-center">
+          <div className="w-20 bg-slate-200 h-2 rounded-full overflow-hidden">
+            <div className={`h-full ${row.attainment_pct >= 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`} style={{ width: `${Math.min(100, row.attainment_pct)}%` }} />
+          </div>
+          <span className="font-bold text-[11px]">{row.attainment_pct}%</span>
+        </div>
+      )
+    },
+    {
+      id: 'status',
+      header: 'Status',
+      className: 'text-center',
+      cell: (row) => (
+        <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${row.status === 'Target Met' ? 'bg-emerald-100 text-emerald-800' : (row.status === 'On Track' ? 'bg-indigo-100 text-indigo-800' : 'bg-rose-100 text-rose-800')}`}>
+          {row.status}
+        </span>
+      )
+    }
+  ];
+
+  const customColumns: DataTableColumn<any>[] = [
+    { id: 'name', header: 'Report Query Name', cell: (row) => <span className="font-bold text-slate-900">{row.name}</span> },
+    { id: 'filters', header: 'Applied Filter Query', cell: (row) => <span className="text-slate-600 font-mono">{row.filters || 'Enterprise Accounts'}</span> },
+    { id: 'metrics_included', header: 'Metrics Included', cell: (row) => <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded text-[11px]">{Array.isArray(row.metrics_included) ? row.metrics_included.join(', ') : 'sales-performance'}</span> },
+    { id: 'created_at', header: 'Created Date', cell: (row) => <span className="font-mono text-slate-500">{row.created_at}</span> },
+    {
+      id: 'actions',
+      header: 'Action',
+      className: 'text-center',
+      cell: (row) => (
+        <button onClick={() => setReportToDelete(row.id)} className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer transition-colors">
+          <Trash2 className="w-4 h-4" />
+        </button>
+      )
+    }
+  ];
+
+  const scheduledColumns: DataTableColumn<any>[] = [
+    { id: 'report_type', header: 'Report Target', cell: (row) => <span className="font-bold text-slate-900 uppercase">{row.report_type}</span> },
+    { id: 'email', header: 'Recipient Email', cell: (row) => <span className="text-slate-700 font-mono">{row.email}</span> },
+    { id: 'frequency', header: 'Delivery Frequency', className: 'text-center', cell: (row) => <span className="font-semibold text-purple-700">{row.frequency}</span> },
+    { id: 'next_run', header: 'Next Scheduled Run', className: 'text-center', cell: (row) => <span className="font-mono text-slate-600">{row.next_run}</span> },
+    {
+      id: 'status',
+      header: 'Job Status',
+      className: 'text-center',
+      cell: () => (
+        <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-full text-[11px] font-bold">
+          Active Cron
+        </span>
+      )
+    }
+  ];
+
   return (
     <div className="space-y-6 w-full pb-12">
       {/* Toast Feedback */}
       {successMessage && (
-        <div className="flex items-center justify-between p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl shadow-sm">
+        <div className="flex items-center justify-between p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl shadow-xs">
           <div className="flex items-center gap-2 text-sm font-medium">
             <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-            <span className="truncate max-w-2xl">{successMessage}</span>
+            <span>{successMessage}</span>
           </div>
           <button onClick={() => setSuccessMessage(null)} className="text-emerald-600 hover:text-emerald-800">
             <X className="w-4 h-4" />
@@ -183,7 +399,7 @@ export default function ReportsPage() {
       )}
 
       {errorMessage && (
-        <div className="flex items-center justify-between p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl shadow-sm">
+        <div className="flex items-center justify-between p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl shadow-xs">
           <div className="flex items-center gap-2 text-sm font-medium">
             <AlertCircle className="w-5 h-5 text-rose-600" />
             <span>{errorMessage}</span>
@@ -199,16 +415,16 @@ export default function ReportsPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2.5">
             <BarChart3 className="w-7 h-7 text-indigo-600" />
-            Reports & Executive Analytics
+            Executive Reports & Analytics Center
           </h1>
-          <p className="text-slate-500 text-sm mt-0.5">Sales performance, pipeline velocity, predictive AI revenue forecasting & automated email delivery</p>
+          <p className="text-slate-500 text-sm mt-0.5">High-density data tables, sales performance, pipeline velocity & AI revenue forecasting</p>
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
           <button
             onClick={handleExportCsv}
             disabled={exportCsvMutation.isPending}
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer disabled:opacity-50"
+            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg font-semibold text-xs transition-colors shadow-xs cursor-pointer disabled:opacity-50"
           >
             {exportCsvMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4 text-emerald-600" />}
             Export S3 CSV
@@ -217,7 +433,7 @@ export default function ReportsPage() {
           <button
             onClick={handleExportPdf}
             disabled={exportPdfMutation.isPending}
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer disabled:opacity-50"
+            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg font-semibold text-xs transition-colors shadow-xs cursor-pointer disabled:opacity-50"
           >
             {exportPdfMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4 text-indigo-600" />}
             Export PDF
@@ -225,7 +441,7 @@ export default function ReportsPage() {
 
           <button
             onClick={() => setIsScheduleModalOpen(true)}
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer"
+            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg font-semibold text-xs transition-colors shadow-xs cursor-pointer"
           >
             <Mail className="w-4 h-4 text-purple-600" />
             Schedule Delivery
@@ -233,10 +449,10 @@ export default function ReportsPage() {
 
           <button
             onClick={() => setIsCustomModalOpen(true)}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors shadow-sm cursor-pointer"
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors shadow-xs cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            Custom Query Builder
+            New Query Builder
           </button>
         </div>
       </div>
@@ -252,9 +468,9 @@ export default function ReportsPage() {
           { id: 'forecasting', label: 'Revenue Forecast', icon: Sparkles },
           { id: 'activity', label: 'Activity Output', icon: Activity },
           { id: 'duration', label: 'Deal Duration', icon: Clock },
-          { id: 'unit-economics', label: 'CAC / LTV / Churn', icon: Percent },
-          { id: 'quota', label: 'Quota Progress', icon: Layers },
-          { id: 'custom', label: 'Custom Reports', icon: Plus },
+          { id: 'unit-economics', label: 'Unit Economics', icon: Percent },
+          { id: 'quota', label: 'Quota Attainment', icon: Layers },
+          { id: 'custom', label: 'Custom Reports', icon: Filter },
           { id: 'scheduled', label: 'Automated Jobs', icon: Mail },
         ].map((tab) => {
           const Icon = tab.icon;
@@ -276,404 +492,274 @@ export default function ReportsPage() {
         })}
       </div>
 
-      {/* Dynamic Report View Panel */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6">
-        {/* Sales Performance */}
+      {/* Main DataTable Display Container */}
+      <div className="space-y-6">
+
+        {/* 1. SALES PERFORMANCE */}
         {activeCategory === 'performance' && (
           <div className="space-y-6">
-            <div className="flex justify-between items-center pb-4 border-b border-slate-100">
-              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <DollarSign className="w-5 h-5 text-emerald-600" />
-                Sales Rep Revenue Performance
-              </h3>
-              <span className="text-xs font-mono text-slate-400">Generated: {salesData?.generated_at || 'Today'}</span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div className="p-4 bg-emerald-50/60 border border-emerald-100 rounded-xl">
-                <span className="text-xs font-semibold text-emerald-800 uppercase tracking-wider block">Total Closed Revenue</span>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="p-4 bg-emerald-50/70 border border-emerald-100 rounded-xl">
+                <span className="text-xs font-semibold text-emerald-800 uppercase tracking-wider block">Total Team Revenue</span>
                 <h4 className="text-2xl font-extrabold text-emerald-950 mt-1">
                   ${salesData?.metrics?.total_revenue !== undefined ? salesData.metrics.total_revenue.toLocaleString() : '0'}
                 </h4>
               </div>
-
-              <div className="p-4 bg-indigo-50/60 border border-indigo-100 rounded-xl">
+              <div className="p-4 bg-indigo-50/70 border border-indigo-100 rounded-xl">
                 <span className="text-xs font-semibold text-indigo-800 uppercase tracking-wider block">Monthly Target</span>
                 <h4 className="text-2xl font-extrabold text-indigo-950 mt-1">
                   ${salesData?.metrics?.monthly_target !== undefined ? salesData.metrics.monthly_target.toLocaleString() : '250,000'}
                 </h4>
               </div>
+              <div className="p-4 bg-purple-50/70 border border-purple-100 rounded-xl">
+                <span className="text-xs font-semibold text-purple-800 uppercase tracking-wider block">Overall Target Attainment</span>
+                <h4 className="text-2xl font-extrabold text-purple-950 mt-1">
+                  {salesData?.metrics?.total_revenue && salesData?.metrics?.monthly_target
+                    ? ((salesData.metrics.total_revenue / salesData.metrics.monthly_target) * 100).toFixed(1)
+                    : '0.0'}%
+                </h4>
+              </div>
             </div>
 
-            {/* Reps Revenue Breakdown */}
-            {salesData?.metrics?.reps && salesData.metrics.reps.length > 0 && (
-              <div className="space-y-3 pt-2">
-                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Individual Sales Rep Output</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {salesData.metrics.reps.map((rep: any, idx: number) => (
-                    <div key={idx} className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex justify-between items-center">
-                      <div>
-                        <span className="font-bold text-xs text-slate-900 block">{rep.name}</span>
-                        <span className="text-[11px] text-slate-500">{rep.deals_closed} Deals Closed</span>
-                      </div>
-                      <span className="font-extrabold text-xs text-emerald-600">${rep.revenue?.toLocaleString() || 0}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            <DataTable
+              columns={performanceColumns}
+              data={filterRows(salesData?.metrics?.table_rows || [], ['rep_name', 'role'])}
+              getRowKey={(item) => item.rep_name}
+              isLoading={isSalesLoading}
+              emptyTitle="No Performance Data"
+              emptyDescription="No sales rep records found for this period."
+              searchValue={searchQuery}
+              onSearchChange={setSearchQuery}
+              searchPlaceholder="Search sales executives..."
+              pagination={{ pageSize: 10 }}
+            />
           </div>
         )}
 
-        {/* Pipeline Velocity */}
+        {/* 2. PIPELINE VELOCITY */}
         {activeCategory === 'velocity' && (
           <div className="space-y-6">
-            <div className="flex justify-between items-center pb-4 border-b border-slate-100">
-              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-indigo-600" />
-                Pipeline Velocity & Stage Durations
-              </h3>
-              <span className="text-xs font-mono text-slate-400">Generated: {velocityData?.generated_at || 'Today'}</span>
-            </div>
-
-            <div className="p-4 bg-indigo-50/60 border border-indigo-100 rounded-xl max-w-sm">
-              <span className="text-xs font-semibold text-indigo-800 uppercase tracking-wider block">Average Sales Cycle</span>
+            <div className="p-4 bg-indigo-50/70 border border-indigo-100 rounded-xl max-w-sm">
+              <span className="text-xs font-semibold text-indigo-800 uppercase tracking-wider block">Average Total Sales Cycle</span>
               <h4 className="text-2xl font-extrabold text-indigo-950 mt-1">
-                {velocityData?.metrics?.avg_days_to_close ?? 18.5} Days
+                {velocityData?.metrics?.avg_days_to_close || 0} Days
               </h4>
             </div>
 
-            {velocityData?.metrics?.stage_durations && (
-              <div className="space-y-3 pt-2">
-                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Stage-by-Stage Average Duration (Days)</h4>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {Object.entries(velocityData.metrics.stage_durations).map(([stage, duration]: [string, any]) => (
-                    <div key={stage} className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
-                      <span className="text-xs text-slate-500 font-semibold block">{stage}</span>
-                      <span className="text-lg font-bold text-slate-900">{duration} Days</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            <DataTable
+              columns={velocityColumns}
+              data={filterRows(velocityData?.metrics?.table_rows || [], ['stage', 'bottleneck_risk'])}
+              getRowKey={(item) => item.stage}
+              isLoading={isVelocityLoading}
+              emptyTitle="No Pipeline Stage Data"
+              emptyDescription="No deal stages found."
+              searchValue={searchQuery}
+              onSearchChange={setSearchQuery}
+              searchPlaceholder="Search stage name..."
+              pagination={{ pageSize: 10 }}
+            />
           </div>
         )}
 
-        {/* Win/Loss Ratio */}
+        {/* 3. WIN/LOSS RATIO */}
         {activeCategory === 'winloss' && (
           <div className="space-y-6">
-            <div className="flex justify-between items-center pb-4 border-b border-slate-100">
-              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <PieChart className="w-5 h-5 text-purple-600" />
-                Win vs Loss Ratio Breakdown
-              </h3>
-              <span className="text-xs font-mono text-slate-400">Generated: {winLossData?.generated_at || 'Today'}</span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="p-4 bg-emerald-50/60 border border-emerald-100 rounded-xl">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="p-4 bg-emerald-50/70 border border-emerald-100 rounded-xl">
                 <span className="text-xs font-semibold text-emerald-800 uppercase tracking-wider block">Win Percentage</span>
-                <h4 className="text-2xl font-extrabold text-emerald-950 mt-1">
-                  {winLossData?.metrics?.win_percentage ?? 68.4}%
-                </h4>
+                <h4 className="text-2xl font-extrabold text-emerald-950 mt-1">{winLossData?.metrics?.win_percentage ?? 0}%</h4>
               </div>
-
-              <div className="p-4 bg-rose-50/60 border border-rose-100 rounded-xl">
+              <div className="p-4 bg-rose-50/70 border border-rose-100 rounded-xl">
                 <span className="text-xs font-semibold text-rose-800 uppercase tracking-wider block">Loss Percentage</span>
-                <h4 className="text-2xl font-extrabold text-rose-950 mt-1">
-                  {winLossData?.metrics?.loss_percentage ?? 31.6}%
-                </h4>
+                <h4 className="text-2xl font-extrabold text-rose-950 mt-1">{winLossData?.metrics?.loss_percentage ?? 0}%</h4>
               </div>
-
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
                 <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider block">Total Won Deals</span>
-                <h4 className="text-2xl font-extrabold text-slate-900 mt-1">
-                  {winLossData?.metrics?.total_won_deals ?? 0}
-                </h4>
+                <h4 className="text-2xl font-extrabold text-slate-900 mt-1">{winLossData?.metrics?.total_won_deals ?? 0}</h4>
               </div>
-
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
                 <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider block">Total Lost Deals</span>
-                <h4 className="text-2xl font-extrabold text-slate-900 mt-1">
-                  {winLossData?.metrics?.total_lost_deals ?? 0}
-                </h4>
+                <h4 className="text-2xl font-extrabold text-slate-900 mt-1">{winLossData?.metrics?.total_lost_deals ?? 0}</h4>
               </div>
             </div>
+
+            <DataTable
+              columns={winLossColumns}
+              data={filterRows(winLossData?.metrics?.table_rows || [], ['segment', 'primary_loss_reason'])}
+              getRowKey={(item) => item.segment}
+              isLoading={isWinLossLoading}
+              emptyTitle="No Win/Loss Data"
+              emptyDescription="No segment data found."
+              searchValue={searchQuery}
+              onSearchChange={setSearchQuery}
+              searchPlaceholder="Search market segment or loss reason..."
+              pagination={{ pageSize: 10 }}
+            />
           </div>
         )}
 
-        {/* Lead Attribution */}
+        {/* 4. LEAD ATTRIBUTION */}
         {activeCategory === 'attribution' && (
           <div className="space-y-6">
-            <div className="flex justify-between items-center pb-4 border-b border-slate-100">
-              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Target className="w-5 h-5 text-blue-600" />
-                Lead Attribution & Source Distribution
-              </h3>
-              <span className="text-xs font-mono text-slate-400">Generated: {leadAttrData?.generated_at || 'Today'}</span>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              {Object.entries(leadAttrData?.metrics || { organic_search: 42.5, paid_google_ads: 28.0, referrals: 18.5, events_and_webinars: 11.0 }).map(([src, pct]: [string, any]) => (
-                <div key={src} className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
-                  <span className="text-xs text-slate-500 font-semibold block capitalize">{src.replace(/_/g, ' ')}</span>
-                  <span className="text-lg font-bold text-slate-900">{pct}%</span>
-                </div>
-              ))}
-            </div>
+            <DataTable
+              columns={leadAttrColumns}
+              data={filterRows(leadAttrData?.metrics?.table_rows || [], ['source'])}
+              getRowKey={(item) => item.source}
+              isLoading={isLeadAttrLoading}
+              emptyTitle="No Lead Attribution Data"
+              emptyDescription="No lead source data found."
+              searchValue={searchQuery}
+              onSearchChange={setSearchQuery}
+              searchPlaceholder="Search lead channel..."
+              pagination={{ pageSize: 10 }}
+            />
           </div>
         )}
 
-        {/* Rep Leaderboard */}
+        {/* 5. REP LEADERBOARD */}
         {activeCategory === 'leaderboard' && (
           <div className="space-y-6">
-            <div className="flex justify-between items-center pb-4 border-b border-slate-100">
-              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Trophy className="w-5 h-5 text-amber-500" />
-                Rep Conversion Ranking Leaderboard
-              </h3>
-              <span className="text-xs font-mono text-slate-400">Generated: {leaderboardData?.generated_at || 'Today'}</span>
-            </div>
-            <div className="space-y-2">
-              {(leaderboardData?.metrics?.top_reps || [
-                { rank: 1, name: 'Sarah Connor', quota_pct: 142.5, deals: 18 },
-                { rank: 2, name: 'Alex Mercer', quota_pct: 118.0, deals: 14 },
-                { rank: 3, name: 'Elena Rostova', quota_pct: 95.5, deals: 10 },
-              ]).map((rep: any) => (
-                <div key={rep.rank} className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className="h-7 w-7 rounded-full bg-amber-100 text-amber-800 font-extrabold text-xs flex items-center justify-center">
-                      #{rep.rank}
-                    </span>
-                    <span className="font-bold text-xs text-slate-900">{rep.name}</span>
-                  </div>
-                  <div className="flex items-center gap-4 text-xs">
-                    <span className="text-slate-500">{rep.deals} Deals</span>
-                    <span className="font-bold text-emerald-600">{rep.quota_pct}% Quota</span>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <DataTable
+              columns={leaderboardColumns}
+              data={filterRows(leaderboardData?.metrics?.table_rows || [], ['name', 'role', 'badge'])}
+              getRowKey={(item) => item.name}
+              isLoading={isLeaderboardLoading}
+              emptyTitle="No Leaderboard Data"
+              emptyDescription="No sales executive rankings found."
+              searchValue={searchQuery}
+              onSearchChange={setSearchQuery}
+              searchPlaceholder="Search sales executive name..."
+              pagination={{ pageSize: 10 }}
+            />
           </div>
         )}
 
-        {/* Revenue Forecasting */}
+        {/* 6. REVENUE FORECASTING */}
         {activeCategory === 'forecasting' && (
           <div className="space-y-6">
-            <div className="flex justify-between items-center pb-4 border-b border-slate-100">
-              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-indigo-600" />
-                Predictive AI Revenue Forecast
-              </h3>
-              <span className="text-xs font-mono text-slate-400">Generated: {forecastData?.generated_at || 'Today'}</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="p-4 bg-indigo-50/60 border border-indigo-100 rounded-xl">
-                <span className="text-xs font-semibold text-indigo-800 uppercase tracking-wider block">Q3 Predicted ARR</span>
-                <h4 className="text-2xl font-extrabold text-indigo-950 mt-1">
-                  ${forecastData?.metrics?.q3_predicted ? forecastData.metrics.q3_predicted.toLocaleString() : '485,000'}
-                </h4>
-              </div>
-              <div className="p-4 bg-emerald-50/60 border border-emerald-100 rounded-xl">
-                <span className="text-xs font-semibold text-emerald-800 uppercase tracking-wider block">Q4 Predicted ARR</span>
-                <h4 className="text-2xl font-extrabold text-emerald-950 mt-1">
-                  ${forecastData?.metrics?.q4_predicted ? forecastData.metrics.q4_predicted.toLocaleString() : '620,000'}
-                </h4>
-              </div>
-              <div className="p-4 bg-purple-50/60 border border-purple-100 rounded-xl">
-                <span className="text-xs font-semibold text-purple-800 uppercase tracking-wider block">Model Confidence</span>
-                <h4 className="text-2xl font-extrabold text-purple-950 mt-1">
-                  {forecastData?.metrics?.confidence ?? 92.4}%
-                </h4>
-              </div>
-            </div>
+            <DataTable
+              columns={forecastColumns}
+              data={filterRows(forecastData?.metrics?.table_rows || [], ['period', 'forecast_status'])}
+              getRowKey={(item) => item.period}
+              isLoading={isForecastLoading}
+              emptyTitle="No Forecast Data"
+              emptyDescription="No forecast periods found."
+              searchValue={searchQuery}
+              onSearchChange={setSearchQuery}
+              searchPlaceholder="Search forecast period..."
+              pagination={{ pageSize: 10 }}
+            />
           </div>
         )}
 
-        {/* Activity Metrics */}
+        {/* 7. ACTIVITY METRICS */}
         {activeCategory === 'activity' && (
           <div className="space-y-6">
-            <div className="flex justify-between items-center pb-4 border-b border-slate-100">
-              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Activity className="w-5 h-5 text-blue-600" />
-                Activity Output Metrics
-              </h3>
-              <span className="text-xs font-mono text-slate-400">Generated: {activityData?.generated_at || 'Today'}</span>
-            </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-center">
-                <span className="text-xs text-slate-500 font-semibold block uppercase">Total Calls</span>
-                <span className="text-2xl font-bold text-slate-900">{activityData?.metrics?.total_calls ?? 0}</span>
-              </div>
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-center">
-                <span className="text-xs text-slate-500 font-semibold block uppercase">Total Emails</span>
-                <span className="text-2xl font-bold text-slate-900">{activityData?.metrics?.total_emails ?? 0}</span>
-              </div>
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-center">
-                <span className="text-xs text-slate-500 font-semibold block uppercase">Meetings</span>
-                <span className="text-2xl font-bold text-slate-900">{activityData?.metrics?.total_meetings ?? 0}</span>
-              </div>
-            </div>
+            <DataTable
+              columns={activityColumns}
+              data={filterRows(activityData?.metrics?.table_rows || [], ['rep_name'])}
+              getRowKey={(item) => item.rep_name}
+              isLoading={isActivityLoading}
+              emptyTitle="No Activity Data"
+              emptyDescription="No rep activity records found."
+              searchValue={searchQuery}
+              onSearchChange={setSearchQuery}
+              searchPlaceholder="Search rep name..."
+              pagination={{ pageSize: 10 }}
+            />
           </div>
         )}
 
-        {/* Deal Duration */}
+        {/* 8. DEAL DURATION */}
         {activeCategory === 'duration' && (
           <div className="space-y-6">
-            <div className="flex justify-between items-center pb-4 border-b border-slate-100">
-              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Clock className="w-5 h-5 text-amber-500" />
-                Deal Duration Analysis
-              </h3>
-              <span className="text-xs font-mono text-slate-400">Generated: {durationData?.generated_at || 'Today'}</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
-                <span className="text-xs font-semibold text-slate-500">Average Sales Cycle Length:</span>
-                <h4 className="text-xl font-bold text-slate-900">{durationData?.metrics?.avg_cycle_days ?? 21.4} Days</h4>
-              </div>
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
-                <span className="text-xs font-semibold text-slate-500">Fastest Close:</span>
-                <h4 className="text-xl font-bold text-emerald-600">{durationData?.metrics?.fastest_close_days ?? 3.0} Days</h4>
-              </div>
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
-                <span className="text-xs font-semibold text-slate-500">Longest Close:</span>
-                <h4 className="text-xl font-bold text-amber-600">{durationData?.metrics?.longest_close_days ?? 65.0} Days</h4>
-              </div>
-            </div>
+            <DataTable
+              columns={durationColumns}
+              data={filterRows(durationData?.metrics?.table_rows || [], ['deal_tier', 'primary_bottleneck'])}
+              getRowKey={(item) => item.deal_tier}
+              isLoading={isDurationLoading}
+              emptyTitle="No Duration Data"
+              emptyDescription="No deal tier records found."
+              searchValue={searchQuery}
+              onSearchChange={setSearchQuery}
+              searchPlaceholder="Search deal tier..."
+              pagination={{ pageSize: 10 }}
+            />
           </div>
         )}
 
-        {/* CAC / LTV / Churn */}
+        {/* 9. UNIT ECONOMICS */}
         {activeCategory === 'unit-economics' && (
           <div className="space-y-6">
-            <div className="flex justify-between items-center pb-4 border-b border-slate-100">
-              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Percent className="w-5 h-5 text-purple-600" />
-                SaaS Unit Economics (CAC, LTV & Churn)
-              </h3>
-              <span className="text-xs font-mono text-slate-400">Generated: {cacData?.generated_at || 'Today'}</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
-                <span className="text-xs text-slate-500 font-semibold block">Blended CAC</span>
-                <span className="text-xl font-bold text-slate-900">${cacData?.metrics?.blended_cac ?? 1250}</span>
-                <span className="text-[11px] text-slate-400 block mt-1">Paid: ${cacData?.metrics?.paid_cac ?? 1850} | Organic: ${cacData?.metrics?.organic_cac ?? 450}</span>
-              </div>
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
-                <span className="text-xs text-slate-500 font-semibold block">Average LTV</span>
-                <span className="text-xl font-bold text-emerald-600">${ltvData?.metrics?.avg_ltv?.toLocaleString() ?? 28500}</span>
-                <span className="text-[11px] text-slate-400 block mt-1">LTV : CAC Ratio = {ltvData?.metrics?.ltv_cac_ratio ?? 22.8}x</span>
-              </div>
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
-                <span className="text-xs text-slate-500 font-semibold block">Annual Churn Rate</span>
-                <span className="text-xl font-bold text-rose-600">{churnData?.metrics?.annual_churn_rate ?? 2.4}%</span>
-                <span className="text-[11px] text-slate-400 block mt-1">Net Retention: {churnData?.metrics?.net_revenue_retention ?? 118.5}%</span>
-              </div>
-            </div>
+            <DataTable
+              columns={unitEconomicsColumns}
+              data={filterRows(cacData?.metrics?.table_rows || [], ['segment'])}
+              getRowKey={(item) => item.segment}
+              isLoading={isCacLoading}
+              emptyTitle="No Unit Economics Data"
+              emptyDescription="No customer segment records found."
+              searchValue={searchQuery}
+              onSearchChange={setSearchQuery}
+              searchPlaceholder="Search customer segment..."
+              pagination={{ pageSize: 10 }}
+            />
           </div>
         )}
 
-        {/* Quota Attainment */}
+        {/* 10. QUOTA ATTAINMENT */}
         {activeCategory === 'quota' && (
           <div className="space-y-6">
-            <div className="flex justify-between items-center pb-4 border-b border-slate-100">
-              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Layers className="w-5 h-5 text-emerald-600" />
-                Team Quota Attainment Progress
-              </h3>
-              <span className="text-xs font-mono text-slate-400">Generated: {quotaData?.generated_at || 'Today'}</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="p-4 bg-emerald-50/60 border border-emerald-100 rounded-xl max-w-sm">
-                <span className="text-xs font-semibold text-emerald-800 uppercase tracking-wider block">Team Target Attainment</span>
-                <h4 className="text-2xl font-extrabold text-emerald-950 mt-1">
-                  {quotaData?.metrics?.team_attainment_pct ?? 112.4}%
-                </h4>
-              </div>
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl max-w-sm">
-                <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider block">Target Benchmark</span>
-                <h4 className="text-2xl font-extrabold text-slate-900 mt-1">
-                  {quotaData?.metrics?.q3_attainment_target ?? 100.0}%
-                </h4>
-              </div>
-            </div>
+            <DataTable
+              columns={quotaColumns}
+              data={filterRows(quotaData?.metrics?.table_rows || [], ['rep_name', 'role', 'status'])}
+              getRowKey={(item) => item.rep_name}
+              isLoading={isQuotaLoading}
+              emptyTitle="No Quota Data"
+              emptyDescription="No quota attainment records found."
+              searchValue={searchQuery}
+              onSearchChange={setSearchQuery}
+              searchPlaceholder="Search rep name..."
+              pagination={{ pageSize: 10 }}
+            />
           </div>
         )}
 
-        {/* Custom Reports */}
+        {/* 11. CUSTOM REPORTS */}
         {activeCategory === 'custom' && (
           <div className="space-y-6">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Plus className="w-5 h-5 text-indigo-600" />
-                Saved Custom Query Reports
-              </h3>
-              <button
-                onClick={() => setIsCustomModalOpen(true)}
-                className="flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-800 cursor-pointer"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                New Query
-              </button>
-            </div>
-            {customReports.length === 0 ? (
-              <p className="text-xs text-slate-500 italic">No custom report queries saved yet. Click "Custom Query Builder" above to create one.</p>
-            ) : (
-              <div className="space-y-3">
-                {customReports.map((r) => (
-                  <div key={r.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-900">{r.name}</h4>
-                      <span className="text-[11px] text-slate-400 font-mono">Created: {r.created_at}</span>
-                    </div>
-                    <button
-                      onClick={() => setReportToDelete(r.id)}
-                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
+            <DataTable
+              columns={customColumns}
+              data={filterRows(customReports, ['name', 'filters'])}
+              getRowKey={(item) => item.id}
+              isLoading={isCustomLoading}
+              emptyTitle="No Custom Reports"
+              emptyDescription="No saved custom queries found. Click New Query Builder above to add one."
+              searchValue={searchQuery}
+              onSearchChange={setSearchQuery}
+              searchPlaceholder="Search custom report name..."
+              pagination={{ pageSize: 10 }}
+            />
           </div>
         )}
 
-        {/* Scheduled Automated Jobs */}
+        {/* 12. SCHEDULED JOBS */}
         {activeCategory === 'scheduled' && (
           <div className="space-y-6">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Mail className="w-5 h-5 text-purple-600" />
-                Active Scheduled Automated Email Reports
-              </h3>
-              <button
-                onClick={() => setIsScheduleModalOpen(true)}
-                className="flex items-center gap-1 text-xs font-bold text-purple-600 hover:text-purple-800 cursor-pointer"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Schedule Job
-              </button>
-            </div>
-            {scheduledReports.length === 0 ? (
-              <p className="text-xs text-slate-500 italic">No scheduled jobs yet. Click "Schedule Delivery" to add automated report emails.</p>
-            ) : (
-              <div className="space-y-3">
-                {scheduledReports.map((job) => (
-                  <div key={job.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <h4 className="text-xs font-bold text-slate-900">{job.report_type}</h4>
-                      <p className="text-xs text-slate-500">Recipient: {job.email} ({job.frequency})</p>
-                    </div>
-                    <span className="px-2.5 py-1 bg-purple-100 text-purple-800 rounded text-xs font-semibold">
-                      Next Run: {job.next_run}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
+            <DataTable
+              columns={scheduledColumns}
+              data={filterRows(scheduledReports, ['report_type', 'email', 'frequency'])}
+              getRowKey={(item) => item.id}
+              isLoading={isScheduledLoading}
+              emptyTitle="No Scheduled Jobs"
+              emptyDescription="No active scheduled report deliveries found. Click Schedule Delivery to add one."
+              searchValue={searchQuery}
+              onSearchChange={setSearchQuery}
+              searchPlaceholder="Search scheduled email..."
+              pagination={{ pageSize: 10 }}
+            />
           </div>
         )}
+
       </div>
 
       {/* Custom Report Query Builder Modal */}
