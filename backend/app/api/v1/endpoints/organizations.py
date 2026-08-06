@@ -186,8 +186,8 @@ async def create_organization(payload: OrganizationCreate, db: AsyncSession = De
             tax_number=payload.tax_number,
             registration_number=payload.registration_number,
             status=payload.status or "active",
-            plan=payload.plan or "Enterprise",
-            max_users=payload.max_users or 100
+            plan=payload.plan or "Free",
+            max_users=payload.max_users or 3
         )
         db.add(org)
         await db.flush()

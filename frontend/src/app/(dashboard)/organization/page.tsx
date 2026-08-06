@@ -111,8 +111,8 @@ export default function OrganizationPage() {
   const [formCity, setFormCity] = useState('Chennai');
   const [formAddress, setFormAddress] = useState('');
   const [formTaxNumber, setFormTaxNumber] = useState('');
-  const [formPlan, setFormPlan] = useState('Enterprise');
-  const [formMaxUsers, setFormMaxUsers] = useState(100);
+  const [formPlan, setFormPlan] = useState('Free');
+  const [formMaxUsers, setFormMaxUsers] = useState(3);
   const [formStatus, setFormStatus] = useState('active');
 
   const resetForm = () => {
@@ -127,8 +127,8 @@ export default function OrganizationPage() {
     setFormCity('Chennai');
     setFormAddress('');
     setFormTaxNumber('');
-    setFormPlan('Enterprise');
-    setFormMaxUsers(100);
+    setFormPlan('Free');
+    setFormMaxUsers(3);
     setFormStatus('active');
     setErrorMessage(null);
   };
@@ -151,8 +151,8 @@ export default function OrganizationPage() {
     setFormCity(org.city || 'Chennai');
     setFormAddress(org.address || '');
     setFormTaxNumber(org.tax_number || '');
-    setFormPlan(org.plan || 'Enterprise');
-    setFormMaxUsers(org.max_users || 100);
+    setFormPlan(org.plan || 'Free');
+    setFormMaxUsers(org.max_users || 3);
     setFormStatus(org.status || 'active');
     setErrorMessage(null);
   };
@@ -172,8 +172,8 @@ export default function OrganizationPage() {
     setFormCity('Bengaluru');
     setFormAddress('45 Tech Park Avenue');
     setFormTaxNumber(`GSTIN${randomSuffix}98765`);
-    setFormPlan('Enterprise');
-    setFormMaxUsers(250);
+    setFormPlan('Free');
+    setFormMaxUsers(3);
   };
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
@@ -196,8 +196,8 @@ export default function OrganizationPage() {
         city: formCity.trim() || undefined,
         address: formAddress.trim() || undefined,
         tax_number: formTaxNumber.trim() || undefined,
-        plan: formPlan,
-        max_users: Number(formMaxUsers) || 100,
+        plan: 'Free',
+        max_users: 3,
         status: formStatus
       };
 
@@ -713,16 +713,13 @@ export default function OrganizationPage() {
                   <Label htmlFor="create-plan">Subscription Plan</Label>
                   <select
                     id="create-plan"
-                    value={formPlan}
-                    onChange={(e) => setFormPlan(e.target.value)}
-                    className="w-full h-10 rounded-btn border border-[#E5E7EB] bg-white px-3 text-body font-medium text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
+                    value="Free"
+                    disabled
+                    className="w-full h-10 rounded-btn border border-[#E5E7EB] bg-[#F9FAFB] px-3 text-body font-medium text-[#111827] cursor-not-allowed opacity-90"
                   >
-                    <option value="Free">Free Plan</option>
-                    <option value="Starter">Starter Plan</option>
-                    <option value="Professional">Professional Plan</option>
-                    <option value="Business">Business Plan</option>
-                    <option value="Enterprise">Enterprise Plan</option>
+                    <option value="Free">Free Plan (Default)</option>
                   </select>
+                  <p className="text-caption text-[#6B7280] mt-1">All new organizations start on the Free Plan by default.</p>
                 </div>
 
                 <div>
@@ -730,10 +727,11 @@ export default function OrganizationPage() {
                   <Input
                     id="create-users"
                     type="number"
-                    min={1}
-                    value={formMaxUsers}
-                    onChange={(e) => setFormMaxUsers(Number(e.target.value))}
+                    value={3}
+                    disabled
+                    className="bg-[#F9FAFB] cursor-not-allowed font-mono opacity-90"
                   />
+                  <p className="text-caption text-[#6B7280] mt-1">Free Plan includes 3 user seats by default.</p>
                 </div>
               </div>
 
