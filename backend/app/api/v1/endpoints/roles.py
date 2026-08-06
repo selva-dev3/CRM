@@ -33,20 +33,13 @@ async def get_default_role_ids(db: AsyncSession) -> set:
     return set()
 
 async def get_all_db_permission_keys(db: AsyncSession) -> List[str]:
-    """Fetch all actual permission keys from Permission DB table, excluding generic 'all'."""
+    """Fetch all actual permission keys directly from DB Permission table."""
     try:
-        p_res = await db.execute(select(Permission.key))
+        p_res = await db.execute(select(Permission.key).where(Permission.key != "all"))
         keys = [k for k in p_res.scalars().all() if k and k != "all"]
-        if keys:
-            return sorted(list(set(keys)))
+        return sorted(list(set(keys)))
     except Exception:
-        pass
-    return [
-        "leads:read", "leads:create", "leads:update", "leads:delete",
-        "contacts:read", "contacts:create", "contacts:update", "contacts:delete",
-        "deals:read", "deals:create", "deals:update", "deals:delete",
-        "organization:read", "organization:write", "organization:manage"
-    ]
+        return []
 
 @router.get("", response_model=List[RoleResponse], summary="List all organization roles")
 async def list_roles(search: Optional[str] = Query(None), db: AsyncSession = Depends(get_db)):
@@ -153,7 +146,7 @@ async def create_role(payload: RoleCreate, db: AsyncSession = Depends(get_db)):
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to create role: {str(e)}")
 
-@router.get("/permissions/matrix", response_model=List[PermissionItem], summary="Get full system permission matrix")
+@router.get("/permissions/matrix", response_model=List[PermissionItem], summary="Get full system permission matrix directly from DB")
 async def get_permission_matrix(db: AsyncSession = Depends(get_db)):
     try:
         res = await db.execute(
@@ -164,28 +157,22 @@ async def get_permission_matrix(db: AsyncSession = Depends(get_db)):
                 Permission.name != "All Permission",
                 Permission.id != "all"
             )
-            .limit(500)
+            .order_by(Permission.category, Permission.name)
+            .limit(1000)
         )
         perms = res.scalars().all()
-        if perms:
-            return [
-                {
-                    "id": p.id,
-                    "key": getattr(p, "key", None) or f"perm:{p.id}",
-                    "name": getattr(p, "name", None) or p.description or "Permission",
-                    "category": getattr(p, "category", None) or getattr(p, "module", None) or "General",
-                    "description": p.description or ""
-                } for p in perms if p.key != "all" and getattr(p, "category", "").lower() != "all"
-            ]
-    except Exception:
-        pass
-
-    return [
-        {"id": "perm-1", "key": "leads:read", "name": "View Leads", "category": "Leads", "description": "View sales leads"},
-        {"id": "perm-2", "key": "leads:create", "name": "Create Leads", "category": "Leads", "description": "Create new sales leads"},
-        {"id": "perm-3", "key": "deals:all", "name": "Manage Deals", "category": "Deals", "description": "Manage deal pipelines"},
-        {"id": "perm-4", "key": "invoices:all", "name": "Manage Invoices", "category": "Invoices", "description": "Manage invoices and billing"}
-    ]
+        return [
+            {
+                "id": p.id,
+                "key": getattr(p, "key", None) or f"perm:{p.id}",
+                "name": getattr(p, "name", None) or p.description or "Permission",
+                "category": getattr(p, "category", None) or getattr(p, "module", None) or "General",
+                "description": p.description or ""
+            } for p in perms if p.key != "all" and getattr(p, "category", "").lower() != "all"
+        ]
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to fetch permissions from DB: {str(e)}")
 
 @router.post("/permissions", response_model=PermissionItem, status_code=status.HTTP_201_CREATED, summary="Create new permission entry")
 async def create_permission(payload: PermissionCreate, db: AsyncSession = Depends(get_db)):
