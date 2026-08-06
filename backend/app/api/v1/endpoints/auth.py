@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, status, Query, Depends
 from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from app.database import get_db
 from app.models import User, UserSession, ApiKey, Organization, UserInvitation, Role, Permission, RolePermission, UserRole
 from app.schemas.crm_schemas import (
