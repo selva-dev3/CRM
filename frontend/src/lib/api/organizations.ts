@@ -79,36 +79,142 @@ export interface UpdateOrganizationPayload {
   max_users?: number;
 }
 
+export interface OrganizationSubscription {
+  plan: string;
+  billing_cycle: string;
+  amount: number;
+  next_billing: string;
+}
+
+export interface OrganizationUsage {
+  users_used: number;
+  users_limit: number;
+  storage_gb_used: number;
+  storage_gb_limit: number;
+}
+
+export interface OrganizationMember {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  status?: string;
+  joined_at?: string;
+}
+
+export interface OrganizationDomain {
+  id: string;
+  domain: string;
+  status: 'verified' | 'pending' | 'failed';
+  verified_at?: string;
+}
+
+export interface OrganizationAuditLog {
+  id: string;
+  action: string;
+  actor: string;
+  timestamp: string;
+  ip?: string;
+}
+
+// 1. GET /api/v1/organizations (Get current organization)
+export async function getCurrentOrganizationApi(): Promise<OrganizationItem> {
+  return apiClient.get<OrganizationItem>('/organizations');
+}
+
+// 2. GET /api/v1/organizations/all (List all organizations)
 export async function getAllOrganizationsApi(): Promise<OrganizationItem[]> {
   try {
     const data = await apiClient.get<OrganizationItem[] | OrganizationItem>('/organizations/all');
     if (Array.isArray(data)) return data;
     if (data && typeof data === 'object' && 'id' in data) return [data];
-  } catch (err) {
+  } catch {
     try {
       const single = await apiClient.get<OrganizationItem>('/organizations');
       if (single && single.id) return [single];
-    } catch (err2) {
-      // return fallback if needed
+    } catch {
+      // fallback
     }
   }
   return [];
 }
 
-export async function fetchOrganizationsApi(): Promise<OrganizationItem[]> {
-  return getAllOrganizationsApi();
-}
-
+// 3. GET /api/v1/organizations/{org_id} (Get organization by ID)
 export async function fetchOrganizationByIdApi(id: string): Promise<OrganizationItem> {
   return apiClient.get<OrganizationItem>(`/organizations/${id}`);
 }
 
+// 4. POST /api/v1/organizations (Create organization)
 export async function createOrganizationApi(payload: CreateOrganizationPayload): Promise<OrganizationItem> {
   return apiClient.post<OrganizationItem>('/organizations', payload);
 }
 
+// 5. PUT /api/v1/organizations/{org_id} (Update organization by ID)
 export async function updateOrganizationApi(id: string, payload: UpdateOrganizationPayload): Promise<OrganizationItem> {
   return apiClient.put<OrganizationItem>(`/organizations/${id}`, payload);
+}
+
+// 6. GET /api/v1/organizations/members (List members)
+export async function getOrganizationMembersApi(): Promise<OrganizationMember[]> {
+  return apiClient.get<OrganizationMember[]>('/organizations/members');
+}
+
+// 7. DELETE /api/v1/organizations/members/{user_id} (Remove member)
+export async function removeOrganizationMemberApi(userId: string): Promise<{ message: string; status: string }> {
+  return apiClient.delete<{ message: string; status: string }>(`/organizations/members/${userId}`);
+}
+
+// 8. GET /api/v1/organizations/subscription (Subscription details)
+export async function getOrganizationSubscriptionApi(): Promise<OrganizationSubscription> {
+  return apiClient.get<OrganizationSubscription>('/organizations/subscription');
+}
+
+// 9. POST /api/v1/organizations/subscription/upgrade (Upgrade plan)
+export async function upgradeOrganizationSubscriptionApi(planName: string): Promise<{ message: string; status: string }> {
+  return apiClient.post<{ message: string; status: string }>(`/organizations/subscription/upgrade?plan_name=${encodeURIComponent(planName)}`);
+}
+
+// 10. POST /api/v1/organizations/subscription/cancel (Cancel subscription)
+export async function cancelOrganizationSubscriptionApi(): Promise<{ message: string; status: string }> {
+  return apiClient.post<{ message: string; status: string }>('/organizations/subscription/cancel');
+}
+
+// 11. GET /api/v1/organizations/usage (Get usage metrics & quotas)
+export async function getOrganizationUsageApi(): Promise<OrganizationUsage> {
+  return apiClient.get<OrganizationUsage>('/organizations/usage');
+}
+
+// 12. POST /api/v1/organizations/branding (Update branding & upload logo to S3)
+export async function updateOrganizationBrandingApi(formData: FormData): Promise<{ message: string; status: string }> {
+  return apiClient.post<{ message: string; status: string }>('/organizations/branding', formData);
+}
+
+// 13. POST /api/v1/organizations/domains/verify (Verify domain TXT record)
+export async function verifyOrganizationDomainApi(domain: string): Promise<{ message: string; status: string }> {
+  return apiClient.post<{ message: string; status: string }>(`/organizations/domains/verify?domain=${encodeURIComponent(domain)}`);
+}
+
+// 14. GET /api/v1/organizations/domains (List custom domains)
+export async function getOrganizationDomainsApi(): Promise<OrganizationDomain[]> {
+  return apiClient.get<OrganizationDomain[]>('/organizations/domains');
+}
+
+// 15. GET /api/v1/organizations/audit-logs (Get audit logs)
+export async function getOrganizationAuditLogsApi(): Promise<OrganizationAuditLog[]> {
+  return apiClient.get<OrganizationAuditLog[]>('/organizations/audit-logs');
+}
+
+// 16. POST /api/v1/organizations/transfer-ownership (Transfer ownership)
+export async function transferOrganizationOwnershipApi(newOwnerUserId: string): Promise<{ message: string; status: string }> {
+  return apiClient.post<{ message: string; status: string }>(`/organizations/transfer-ownership?new_owner_user_id=${encodeURIComponent(newOwnerUserId)}`);
+}
+
+// React Query Hooks
+export function useCurrentOrganizationQuery() {
+  return useQuery({
+    queryKey: ['current-organization'],
+    queryFn: getCurrentOrganizationApi,
+  });
 }
 
 export function useOrganizationsQuery() {
@@ -128,23 +234,120 @@ export function useOrganizationByIdQuery(id: string) {
 
 export function useCreateOrganizationMutation() {
   const queryClient = useQueryClient();
-
   return useMutation({
-    mutationFn: (payload: CreateOrganizationPayload) => createOrganizationApi(payload),
+    mutationFn: createOrganizationApi,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['organizations'] });
+      queryClient.invalidateQueries({ queryKey: ['current-organization'] });
     },
   });
 }
 
 export function useUpdateOrganizationMutation() {
   const queryClient = useQueryClient();
-
   return useMutation({
     mutationFn: ({ id, payload }: { id: string; payload: UpdateOrganizationPayload }) => updateOrganizationApi(id, payload),
     onSuccess: (_, { id }) => {
       queryClient.invalidateQueries({ queryKey: ['organizations'] });
+      queryClient.invalidateQueries({ queryKey: ['current-organization'] });
       queryClient.invalidateQueries({ queryKey: ['organization', id] });
+    },
+  });
+}
+
+export function useOrganizationMembersQuery() {
+  return useQuery({
+    queryKey: ['organization-members'],
+    queryFn: getOrganizationMembersApi,
+  });
+}
+
+export function useRemoveOrganizationMemberMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: removeOrganizationMemberApi,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['organization-members'] });
+    },
+  });
+}
+
+export function useOrganizationSubscriptionQuery() {
+  return useQuery({
+    queryKey: ['organization-subscription'],
+    queryFn: getOrganizationSubscriptionApi,
+  });
+}
+
+export function useUpgradeSubscriptionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: upgradeOrganizationSubscriptionApi,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['organization-subscription'] });
+      queryClient.invalidateQueries({ queryKey: ['current-organization'] });
+    },
+  });
+}
+
+export function useCancelSubscriptionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: cancelOrganizationSubscriptionApi,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['organization-subscription'] });
+    },
+  });
+}
+
+export function useOrganizationUsageQuery() {
+  return useQuery({
+    queryKey: ['organization-usage'],
+    queryFn: getOrganizationUsageApi,
+  });
+}
+
+export function useUpdateBrandingMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateOrganizationBrandingApi,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['current-organization'] });
+    },
+  });
+}
+
+export function useVerifyDomainMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: verifyOrganizationDomainApi,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['organization-domains'] });
+    },
+  });
+}
+
+export function useOrganizationDomainsQuery() {
+  return useQuery({
+    queryKey: ['organization-domains'],
+    queryFn: getOrganizationDomainsApi,
+  });
+}
+
+export function useOrganizationAuditLogsQuery() {
+  return useQuery({
+    queryKey: ['organization-audit-logs'],
+    queryFn: getOrganizationAuditLogsApi,
+  });
+}
+
+export function useTransferOwnershipMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: transferOrganizationOwnershipApi,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['current-organization'] });
+      queryClient.invalidateQueries({ queryKey: ['organization-members'] });
     },
   });
 }
