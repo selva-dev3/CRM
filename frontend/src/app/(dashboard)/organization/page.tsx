@@ -311,21 +311,45 @@ export default function OrganizationPage() {
         id: 'name',
         header: 'Organization',
         className: 'min-w-[220px]',
-        cell: (item: OrganizationItem) => (
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-[#2563EB]/10 border border-[#2563EB]/20 text-[#2563EB] flex items-center justify-center font-bold text-caption shrink-0">
-              {item.logo_url ? (
-                <img src={item.logo_url} alt={item.name} className="w-full h-full object-cover rounded-lg" />
-              ) : (
-                <Building className="w-5 h-5" />
-              )}
+        cell: (item: OrganizationItem) => {
+          const isValidLogo = Boolean(
+            item.logo_url &&
+            item.logo_url.trim().length > 0 &&
+            item.logo_url !== 'string' &&
+            item.logo_url.startsWith('http')
+          );
+          const initials = item.name
+            ? item.name
+                .split(' ')
+                .map((n) => n[0])
+                .join('')
+                .substring(0, 2)
+                .toUpperCase()
+            : 'OR';
+
+          return (
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-[#2563EB]/10 border border-[#2563EB]/20 text-[#2563EB] flex items-center justify-center font-bold text-caption shrink-0 overflow-hidden">
+                {isValidLogo ? (
+                  <img
+                    src={item.logo_url}
+                    alt={item.name}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).style.display = 'none';
+                    }}
+                  />
+                ) : (
+                  <span>{initials}</span>
+                )}
+              </div>
+              <div className="space-y-0.5 min-w-0">
+                <span className="block text-body font-semibold text-[#111827] truncate">{item.name || 'Unnamed Org'}</span>
+                <span className="block text-caption font-mono text-[#6B7280] truncate">{item.slug ? `@${item.slug}` : `ID: ${item.id.substring(0, 8)}`}</span>
+              </div>
             </div>
-            <div className="space-y-0.5 min-w-0">
-              <span className="block text-body font-semibold text-[#111827] truncate">{item.name || 'Unnamed Org'}</span>
-              <span className="block text-caption font-mono text-[#6B7280] truncate">{item.slug ? `@${item.slug}` : `ID: ${item.id.substring(0, 8)}`}</span>
-            </div>
-          </div>
-        ),
+          );
+        },
       },
       {
         id: 'domain_email',
@@ -499,8 +523,6 @@ export default function OrganizationPage() {
         selectedIds={selectedIds}
         onToggleRow={handleToggleRow}
         onToggleAllRows={handleToggleAllRows}
-        showAvatar
-        getAvatarData={(item) => ({ name: item.name, color: '#2563eb' })}
         actionVariant="menu"
         actions={actions}
         searchValue={searchTerm}
