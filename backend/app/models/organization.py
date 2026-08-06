@@ -49,10 +49,176 @@ class OrganizationSetting(Base):
 class OrganizationSubscription(Base):
     __tablename__ = "organization_subscriptions"
 
-    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    organization_id: Mapped[str] = mapped_column(String, ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
-    stripe_customer_id: Mapped[Optional[str]] = mapped_column(String(255))
-    stripe_subscription_id: Mapped[Optional[str]] = mapped_column(String(255))
-    status: Mapped[str] = mapped_column(String(50), default="active")
-    current_period_start: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True))
-    current_period_end: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True))
+    id: Mapped[str] = mapped_column(
+        String,
+        primary_key=True,
+        default=lambda: str(uuid.uuid4())
+    )
+
+    organization_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        unique=True,
+        index=True,
+        nullable=False
+    )
+
+    plan_id: Mapped[Optional[str]] = mapped_column(
+        String,
+        ForeignKey("subscription_plans.id", ondelete="SET NULL"),
+        nullable=True
+    )
+
+
+
+    status: Mapped[str] = mapped_column(
+        String(50),
+        default="active",
+        nullable=False
+    )
+
+    billing_cycle: Mapped[str] = mapped_column(
+        String(20),
+        default="Monthly",
+        nullable=False
+    )
+
+    amount: Mapped[float] = mapped_column(
+        Float,
+        default=0.0,
+        nullable=False
+    )
+
+    currency: Mapped[str] = mapped_column(
+        String(10),
+        default="INR",
+        nullable=False
+    )
+
+    # Trial
+    trial: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False
+    )
+
+    # Billing Dates
+    started_at: Mapped[Optional[DateTime]] = mapped_column(
+        DateTime(timezone=True)
+    )
+
+    current_period_start: Mapped[Optional[DateTime]] = mapped_column(
+        DateTime(timezone=True)
+    )
+
+    current_period_end: Mapped[Optional[DateTime]] = mapped_column(
+        DateTime(timezone=True)
+    )
+
+    next_billing: Mapped[Optional[DateTime]] = mapped_column(
+        DateTime(timezone=True)
+    )
+
+    expires_at: Mapped[Optional[DateTime]] = mapped_column(
+        DateTime(timezone=True)
+    )
+
+    auto_renew: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True
+    )
+
+    # Payment
+    payment_provider: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        default="Stripe"
+    )
+
+    payment_method: Mapped[Optional[str]] = mapped_column(
+        String(100)
+    )
+
+    customer_id: Mapped[Optional[str]] = mapped_column(
+        String(255)
+    )
+
+    subscription_id: Mapped[Optional[str]] = mapped_column(
+        String(255)
+    )
+
+    invoice_id: Mapped[Optional[str]] = mapped_column(
+        String(100)
+    )
+
+    # Usage
+    max_users: Mapped[int] = mapped_column(
+        Integer,
+        default=100
+    )
+
+    current_users: Mapped[int] = mapped_column(
+        Integer,
+        default=1
+    )
+
+    storage_limit_gb: Mapped[int] = mapped_column(
+        Integer,
+        default=500
+    )
+
+    storage_used_gb: Mapped[float] = mapped_column(
+        Float,
+        default=0.5
+    )
+
+    ai_credits: Mapped[int] = mapped_column(
+        Integer,
+        default=-1
+    )
+
+    support_plan: Mapped[str] = mapped_column(
+        String(50),
+        default="Standard"
+    )
+
+    created_at: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now()
+    )
+
+    updated_at: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now()
+    )
+
+
+class SubscriptionPlan(Base):
+    __tablename__ = "subscription_plans"
+
+    id: Mapped[str] = mapped_column(
+        String,
+        primary_key=True,
+        default=lambda: str(uuid.uuid4())
+    )
+
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+
+    slug: Mapped[str] = mapped_column(
+        String(100),
+        unique=True,
+        nullable=False
+    )
+
+    price_monthly: Mapped[float] = mapped_column(Float, default=0)
+
+    price_yearly: Mapped[float] = mapped_column(Float, default=0)
+
+    max_users: Mapped[int] = mapped_column(Integer, default=3)
+
+    max_storage_gb: Mapped[int] = mapped_column(Integer, default=5)
+
+    ai_credits: Mapped[int] = mapped_column(Integer, default=0)
+
+    features: Mapped[Optional[str]] = mapped_column(Text)
+
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
