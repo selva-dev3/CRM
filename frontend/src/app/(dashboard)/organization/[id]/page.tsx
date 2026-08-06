@@ -278,16 +278,26 @@ export default function OrganizationDetailPage({ isCurrentOrgView = false }: { i
       {/* Header Bar */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-[#E5E7EB]">
         <div>
-          {!isCurrentOrgView && (
+          <div className="flex items-center gap-3 mb-2">
             <button
               type="button"
-              onClick={() => router.push('/organization')}
-              className="text-caption font-semibold text-[#2563EB] hover:underline flex items-center gap-1.5 mb-2 cursor-pointer"
+              onClick={() => router.push('/settings')}
+              className="text-caption font-semibold text-slate-600 hover:text-slate-900 flex items-center gap-1.5 cursor-pointer bg-white px-2.5 py-1 rounded-md border border-slate-300 shadow-xs"
             >
-              <ArrowLeft className="w-4 h-4" />
-              <span>Back to Organizations List</span>
+              <ArrowLeft className="w-3.5 h-3.5 text-slate-500" />
+              <span>Back to Settings</span>
             </button>
-          )}
+            {!isCurrentOrgView && (
+              <button
+                type="button"
+                onClick={() => router.push('/organization')}
+                className="text-caption font-semibold text-[#2563EB] hover:underline flex items-center gap-1.5 cursor-pointer"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Back to Organizations List</span>
+              </button>
+            )}
+          </div>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-btn bg-[#2563EB] text-white flex items-center justify-center font-bold shadow-saas-sm">
               {activeOrg.logo_url ? (

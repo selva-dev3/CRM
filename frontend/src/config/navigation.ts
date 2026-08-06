@@ -45,9 +45,7 @@ export const navigationSections: NavSection[] = [
     title: 'Administration',
     items: [
       { title: 'User Management', href: '/users', icon: 'UserCog' },
-      { title: 'Roles & Permissions', href: '/roles', icon: 'ShieldCheck' },
-      { title: 'Organization', href: '/organization', icon: 'Building' },
-      { title: 'Integrations', href: '/integrations', icon: 'Layers' }
+      { title: 'Roles & Permissions', href: '/roles', icon: 'ShieldCheck' }
     ]
   }
 ];

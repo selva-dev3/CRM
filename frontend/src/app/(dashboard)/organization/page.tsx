@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import Link from 'next/link';
 import {
   Building,
   Plus,
@@ -21,7 +22,8 @@ import {
   Users,
   MapPin,
   Building2,
-  Power
+  Power,
+  ArrowLeft
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -515,8 +517,15 @@ export default function OrganizationPage() {
             Manage multi-tenant organizations, domains, seat limits & enterprise subscription tiers
           </p>
         </div>
-        {isSuperAdmin && (
-          <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
+          <Link
+            href="/settings"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 font-semibold text-xs transition shadow-xs cursor-pointer"
+          >
+            <ArrowLeft className="w-4 h-4 text-slate-500" />
+            <span>Back to Settings</span>
+          </Link>
+          {isSuperAdmin && (
             <Button
               type="button"
               onClick={handleOpenCreateModal}
@@ -527,8 +536,8 @@ export default function OrganizationPage() {
               <Plus className="w-4 h-4 mr-2" />
               + Create Organization
             </Button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Notifications */}

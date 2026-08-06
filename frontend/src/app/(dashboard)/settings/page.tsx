@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import {
   Settings as SettingsIcon,
   Globe,
@@ -20,7 +21,9 @@ import {
   Mail,
   RefreshCw,
   X,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Building,
+  Layers
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -275,6 +278,24 @@ export default function SettingsPage() {
           <p className="text-xs font-medium text-slate-500 mt-1">
             Configure system defaults, metadata schemas, webhook subscriptions, SLA policies, and database maintenance.
           </p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Link
+            href="/organization"
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+          >
+            <Building className="w-4 h-4" />
+            <span>Organization Settings</span>
+          </Link>
+
+          <Link
+            href="/integrations"
+            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-4 py-2 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+          >
+            <Layers className="w-4 h-4 text-indigo-600" />
+            <span>Integrations</span>
+          </Link>
         </div>
       </div>
 

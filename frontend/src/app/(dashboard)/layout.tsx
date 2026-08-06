@@ -258,9 +258,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <Link
           href="/settings"
           title="Organization Settings"
-          className={`p-3.5 border-t border-[#E5E7EB] shrink-0 transition flex items-center justify-between group ${
-            pathname === '/settings' ? 'bg-blue-50 text-blue-700 font-bold border-l-4 border-blue-600' : 'bg-[#F9FAFB] hover:bg-slate-100 text-[#374151]'
-          }`}
+          className="p-3.5 border-t border-[#E5E7EB] bg-[#F9FAFB] hover:bg-slate-100 text-[#374151] shrink-0 transition flex items-center justify-between group"
         >
           <div className="flex items-center space-x-2 text-xs font-bold min-w-0">
             <ShieldCheck className="w-4 h-4 text-[#16A34A] shrink-0" />
