@@ -3,7 +3,7 @@ from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
-from app.models import User, UserSession, ApiKey, Organization, UserInvitation
+from app.models import User, UserSession, ApiKey, Organization, UserInvitation, Role, Permission, RolePermission, UserRole
 from app.schemas.crm_schemas import (
     Token, LoginRequest, RegisterRequest, PasswordResetRequest, PasswordChangeRequest,
     TwoFactorSetupResponse, TwoFactorVerifyRequest, OAuthLoginRequest, ApiKeyCreate, ApiKeyResponse,
@@ -13,6 +13,55 @@ from app.core.security import create_access_token, verify_password, get_password
 from app.services.email_service import send_reset_password_email, send_magic_link_email
 
 router = APIRouter()
+
+
+async def get_user_permissions_from_db(db: AsyncSession, user: User) -> List[str]:
+    """Query user permissions directly from DB (Role, Permission, RolePermission, UserRole) with fallback."""
+    permission_keys = set()
+    try:
+        # 1. Query permissions assigned via UserRole -> RolePermission -> Permission
+        user_roles_res = await db.execute(select(UserRole.role_id).where(UserRole.user_id == user.id))
+        user_role_ids = list(user_roles_res.scalars().all())
+
+        # Also check if Role.name matches user.role string (case-insensitive)
+        if user.role:
+            role_by_name_res = await db.execute(
+                select(Role.id).where(func.lower(Role.name) == user.role.strip().lower())
+            )
+            name_role_ids = list(role_by_name_res.scalars().all())
+            user_role_ids = list(set(user_role_ids + name_role_ids))
+
+        if user_role_ids:
+            perm_keys_res = await db.execute(
+                select(Permission.key)
+                .join(RolePermission, Permission.id == RolePermission.permission_id)
+                .where(RolePermission.role_id.in_(user_role_ids))
+            )
+            for key in perm_keys_res.scalars().all():
+                if key:
+                    permission_keys.add(key)
+    except Exception:
+        pass
+
+    # 2. Add standard module permissions fallback
+    base_permissions = [
+        "leads:read", "leads:write", "contacts:read", "contacts:write",
+        "deals:read", "deals:write", "tasks:read", "tasks:write",
+        "organization:read", "organization:write"
+    ]
+    for bp in base_permissions:
+        permission_keys.add(bp)
+
+    role_clean = (user.role or "").lower().replace(" ", "").replace("_", "")
+    if role_clean in ["superadmin", "admin"]:
+        admin_permissions = [
+            "users:manage", "roles:manage", "settings:manage", "billing:manage", "organization:manage"
+        ]
+        for ap in admin_permissions:
+            permission_keys.add(ap)
+
+    return sorted(list(permission_keys))
+
 
 @router.post("/login", response_model=Token, summary="Authenticate user & return JWT token")
 async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
@@ -37,7 +86,26 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
         
         access_token = create_access_token(user.id)
-        return {"access_token": access_token, "refresh_token": f"refresh_{user.id}", "token_type": "bearer", "expires_in": 86400}
+        
+        user_role = user.role or "Admin"
+        user_permissions = await get_user_permissions_from_db(db, user)
+
+        token_user = {
+            "id": user.id,
+            "name": user.name,
+            "email": user.email,
+            "role": user_role,
+            "organization_id": user.organization_id,
+            "permissions": user_permissions
+        }
+
+        return {
+            "access_token": access_token,
+            "refresh_token": f"refresh_{user.id}",
+            "token_type": "bearer",
+            "expires_in": 86400,
+            "user": token_user
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -229,6 +297,8 @@ async def accept_auth_user_invitation(payload: AcceptInviteRequest, db: AsyncSes
         await db.commit()
 
         access_token = create_access_token(user.id)
+        user_permissions = await get_user_permissions_from_db(db, user)
+
         return {
             "message": "Invitation accepted successfully! Your account is active.",
             "access_token": access_token,
@@ -237,7 +307,15 @@ async def accept_auth_user_invitation(payload: AcceptInviteRequest, db: AsyncSes
             "email": user.email,
             "name": user.name,
             "role": user.role,
-            "status": "success"
+            "status": "success",
+            "user": {
+                "id": user.id,
+                "name": user.name,
+                "email": user.email,
+                "role": user.role,
+                "organization_id": user.organization_id,
+                "permissions": user_permissions
+            }
         }
     except Exception as e:
         await db.rollback()

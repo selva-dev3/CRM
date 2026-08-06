@@ -13,6 +13,14 @@ export interface LoginResponse {
   refresh_token?: string;
   expires_in?: number;
   user_id?: string;
+  user?: {
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+    organization_id?: string;
+    permissions?: string[];
+  };
 }
 
 export interface RegisterPayload {

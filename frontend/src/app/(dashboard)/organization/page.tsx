@@ -49,6 +49,7 @@ import {
   deleteOrganizationApi
 } from '@/lib/api/organizations';
 import { useQueryClient } from '@tanstack/react-query';
+import OrganizationDetailPage from './[id]/page';
 
 export default function OrganizationPage() {
   const router = useRouter();
@@ -68,6 +69,10 @@ export default function OrganizationPage() {
   }, []);
 
   const isSuperAdmin = userRole.toLowerCase().replace(/[\s_-]+/g, '') === 'superadmin';
+
+  if (!isSuperAdmin) {
+    return <OrganizationDetailPage isCurrentOrgView={true} />;
+  }
 
   // Search & Pagination State
   const [searchTerm, setSearchTerm] = useState('');

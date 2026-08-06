@@ -25,11 +25,20 @@ class BulkActionResponse(BaseModel):
     message: str
 
 # 1. Authentication Schemas
+class UserTokenInfo(BaseModel):
+    id: str
+    name: str
+    email: str
+    role: str
+    organization_id: Optional[str] = None
+    permissions: List[str] = []
+
 class Token(BaseModel):
     access_token: str
     refresh_token: Optional[str] = None
     token_type: str = "bearer"
     expires_in: int = 86400
+    user: Optional[UserTokenInfo] = None
 
 class LoginRequest(BaseModel):
     email: EmailStr

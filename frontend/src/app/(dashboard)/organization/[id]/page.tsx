@@ -36,6 +36,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import {
+  useCurrentOrganizationQuery,
   useOrganizationByIdQuery,
   useUpdateOrganizationMutation,
   useOrganizationMembersQuery,
@@ -51,7 +52,7 @@ import {
   useTransferOwnershipMutation
 } from '@/lib/api/organizations';
 
-export default function OrganizationDetailPage() {
+export default function OrganizationDetailPage({ isCurrentOrgView = false }: { isCurrentOrgView?: boolean }) {
   const router = useRouter();
   const params = useParams();
   const orgId = (params?.id as string) || 'org-1';
@@ -64,7 +65,12 @@ export default function OrganizationDetailPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Queries
-  const { data: org, isLoading: isOrgLoading, refetch: refetchOrg } = useOrganizationByIdQuery(orgId);
+  const { data: currentOrg, isLoading: isCurrentLoading, refetch: refetchCurrent } = useCurrentOrganizationQuery();
+  const { data: orgById, isLoading: isOrgByIdLoading, refetch: refetchById } = useOrganizationByIdQuery(orgId);
+
+  const org = isCurrentOrgView ? currentOrg : orgById;
+  const isOrgLoading = isCurrentOrgView ? isCurrentLoading : isOrgByIdLoading;
+  const refetchOrg = isCurrentOrgView ? refetchCurrent : refetchById;
   const { data: members = [], refetch: refetchMembers } = useOrganizationMembersQuery();
   const { data: subscription, refetch: refetchSubscription } = useOrganizationSubscriptionQuery();
   const { data: usage } = useOrganizationUsageQuery();
@@ -272,14 +278,16 @@ export default function OrganizationDetailPage() {
       {/* Header Bar */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-[#E5E7EB]">
         <div>
-          <button
-            type="button"
-            onClick={() => router.push('/organization')}
-            className="text-caption font-semibold text-[#2563EB] hover:underline flex items-center gap-1.5 mb-2 cursor-pointer"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span>Back to Organizations List</span>
-          </button>
+          {!isCurrentOrgView && (
+            <button
+              type="button"
+              onClick={() => router.push('/organization')}
+              className="text-caption font-semibold text-[#2563EB] hover:underline flex items-center gap-1.5 mb-2 cursor-pointer"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Back to Organizations List</span>
+            </button>
+          )}
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-btn bg-[#2563EB] text-white flex items-center justify-center font-bold shadow-saas-sm">
               {activeOrg.logo_url ? (
