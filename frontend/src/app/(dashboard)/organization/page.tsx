@@ -54,6 +54,21 @@ export default function OrganizationPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
 
+  // User Role State for RBAC
+  const [userRole, setUserRole] = useState<string>('');
+
+  useEffect(() => {
+    try {
+      const userStr = localStorage.getItem('user');
+      if (userStr) {
+        const u = JSON.parse(userStr);
+        if (u?.role) setUserRole(u.role);
+      }
+    } catch {}
+  }, []);
+
+  const isSuperAdmin = userRole.toLowerCase().replace(/[\s_-]+/g, '') === 'superadmin';
+
   // Search & Pagination State
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
@@ -482,18 +497,20 @@ export default function OrganizationPage() {
             Manage multi-tenant organizations, domains, seat limits & enterprise subscription tiers
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            onClick={handleOpenCreateModal}
-            size="default"
-            variant="primary"
-            className="shadow-saas-sm px-4 text-button cursor-pointer"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            + Create Organization
-          </Button>
-        </div>
+        {isSuperAdmin && (
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              onClick={handleOpenCreateModal}
+              size="default"
+              variant="primary"
+              className="shadow-saas-sm px-4 text-button cursor-pointer"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              + Create Organization
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Notifications */}
