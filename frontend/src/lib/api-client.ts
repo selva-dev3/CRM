@@ -21,7 +21,10 @@ export function clearSessionToken(): void {
   if (typeof window === 'undefined') return;
   sessionStorage.removeItem('token');
   localStorage.removeItem('token');
+  sessionStorage.removeItem('user');
+  localStorage.removeItem('user');
   document.cookie = 'token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
+  document.cookie = 'user=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
 }
 
 export interface ApiClient {

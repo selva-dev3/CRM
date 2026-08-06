@@ -44,6 +44,11 @@ export default function LoginPage() {
       if (data.access_token) {
         setSessionToken(data.access_token, rememberMe);
 
+        if (data.user) {
+          localStorage.setItem('user', JSON.stringify(data.user));
+          sessionStorage.setItem('user', JSON.stringify(data.user));
+        }
+
         setSuccess('Authentication successful! Redirecting to dashboard...');
         
         setTimeout(() => {

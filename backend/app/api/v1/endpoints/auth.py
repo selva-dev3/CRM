@@ -146,6 +146,26 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
+
+@router.get("/me", summary="Get current authenticated user info with DB role and permissions")
+async def get_current_user_me(db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(User).limit(1))
+    user = res.scalars().first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User profile not found")
+
+    user_role_name = await get_user_role_name_from_db(db, user)
+    user_permissions = await get_user_permissions_from_db(db, user, resolved_role_name=user_role_name)
+
+    return {
+        "id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "role": user_role_name,
+        "organization_id": user.organization_id,
+        "permissions": user_permissions
+    }
+
 @router.post("/register", status_code=status.HTTP_201_CREATED, summary="Register new tenant & admin user")
 async def register(payload: RegisterRequest, db: AsyncSession = Depends(get_db)):
     try:

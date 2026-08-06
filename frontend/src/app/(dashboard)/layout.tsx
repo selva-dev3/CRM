@@ -112,6 +112,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const handleLogout = () => {
     clearSessionToken();
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('user');
+      sessionStorage.removeItem('user');
+    }
     router.push('/login');
   };
 

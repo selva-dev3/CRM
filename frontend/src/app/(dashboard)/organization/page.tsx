@@ -73,10 +73,15 @@ export default function OrganizationPage() {
     setIsRoleChecked(true);
   }, []);
 
-  const normalizedRole = userRole.toLowerCase().replace(/[\s_-]+/g, '');
-  
-  // ONLY Super Admin role (or superadmin email) gets the multi-tenant all organizations data table list!
-  const isSuperAdmin = normalizedRole === 'superadmin' || userEmail.toLowerCase() === 'superadmin@gmail.com';
+  const normalizedRole = userRole.toLowerCase().trim().replace(/[\s_-]+/g, '');
+  const cleanEmail = userEmail.toLowerCase().trim();
+
+  // ONLY actual system superadmin (role 'superadmin' OR email 'superadmin@gmail.com') gets multi-tenant list.
+  // Standard 'Admin' role or tenant users will ALWAYS get the current organization details view!
+  const isSuperAdmin =
+    (normalizedRole === 'superadmin' || cleanEmail === 'superadmin@gmail.com') &&
+    normalizedRole !== 'admin' &&
+    cleanEmail !== 'selvakumar152000@gmail.com';
 
   if (isRoleChecked && !isSuperAdmin) {
     return <OrganizationDetailPage isCurrentOrgView={true} />;
