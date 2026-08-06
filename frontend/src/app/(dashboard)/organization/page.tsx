@@ -83,10 +83,6 @@ export default function OrganizationPage() {
     normalizedRole !== 'admin' &&
     cleanEmail !== 'selvakumar152000@gmail.com';
 
-  if (isRoleChecked && !isSuperAdmin) {
-    return <OrganizationDetailPage isCurrentOrgView={true} />;
-  }
-
   // Search & Pagination State
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
@@ -501,6 +497,10 @@ export default function OrganizationPage() {
       onClick: (item) => setOrgToDelete(item),
     },
   ];
+
+  if (isRoleChecked && !isSuperAdmin) {
+    return <OrganizationDetailPage isCurrentOrgView={true} />;
+  }
 
   return (
     <div className="space-y-6 text-[#374151]">
