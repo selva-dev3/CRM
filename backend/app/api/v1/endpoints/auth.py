@@ -16,26 +16,40 @@ router = APIRouter()
 
 
 async def get_user_permissions_from_db(db: AsyncSession, user: User) -> List[str]:
-    """Query user permissions directly from DB (Role, Permission, RolePermission, UserRole) with fallback."""
+    """Query user permissions directly from DB (Role, Permission, RolePermission, UserRole).
+    For Admin and Super Admin roles, return all 126+ permissions from the DB permissions table.
+    """
     permission_keys = set()
     try:
-        # 1. Query permissions assigned via UserRole -> RolePermission -> Permission
-        user_roles_res = await db.execute(select(UserRole.role_id).where(UserRole.user_id == user.id))
-        user_role_ids = list(user_roles_res.scalars().all())
+        role_clean = (user.role or "").lower().replace(" ", "").replace("_", "").replace("-", "")
 
-        # Also check if Role.name matches user.role string (case-insensitive)
+        # 1. Admin / Super Admin gets ALL permission keys from DB 'permissions' table (all 126+ permissions)
+        if role_clean in ["superadmin", "admin"]:
+            all_perms_res = await db.execute(select(Permission.key))
+            all_keys = [k for k in all_perms_res.scalars().all() if k]
+            if all_keys:
+                return sorted(list(set(all_keys)))
+
+        # 2. For custom or role-specific users, query assigned permissions from UserRole -> RolePermission -> Permission
+        role_ids = set()
+        user_roles_res = await db.execute(select(UserRole.role_id).where(UserRole.user_id == user.id))
+        for r_id in user_roles_res.scalars().all():
+            if r_id:
+                role_ids.add(r_id)
+
         if user.role:
             role_by_name_res = await db.execute(
                 select(Role.id).where(func.lower(Role.name) == user.role.strip().lower())
             )
-            name_role_ids = list(role_by_name_res.scalars().all())
-            user_role_ids = list(set(user_role_ids + name_role_ids))
+            for r_id in role_by_name_res.scalars().all():
+                if r_id:
+                    role_ids.add(r_id)
 
-        if user_role_ids:
+        if role_ids:
             perm_keys_res = await db.execute(
                 select(Permission.key)
                 .join(RolePermission, Permission.id == RolePermission.permission_id)
-                .where(RolePermission.role_id.in_(user_role_ids))
+                .where(RolePermission.role_id.in_(list(role_ids)))
             )
             for key in perm_keys_res.scalars().all():
                 if key:
@@ -43,22 +57,17 @@ async def get_user_permissions_from_db(db: AsyncSession, user: User) -> List[str
     except Exception:
         pass
 
-    # 2. Add standard module permissions fallback
-    base_permissions = [
-        "leads:read", "leads:write", "contacts:read", "contacts:write",
-        "deals:read", "deals:write", "tasks:read", "tasks:write",
-        "organization:read", "organization:write"
-    ]
-    for bp in base_permissions:
-        permission_keys.add(bp)
+    if permission_keys:
+        return sorted(list(permission_keys))
 
-    role_clean = (user.role or "").lower().replace(" ", "").replace("_", "")
-    if role_clean in ["superadmin", "admin"]:
-        admin_permissions = [
-            "users:manage", "roles:manage", "settings:manage", "billing:manage", "organization:manage"
-        ]
-        for ap in admin_permissions:
-            permission_keys.add(ap)
+    # 3. Fallback: Fetch all permissions from DB permissions table
+    try:
+        all_perms_res = await db.execute(select(Permission.key))
+        all_keys = [k for k in all_perms_res.scalars().all() if k]
+        if all_keys:
+            return sorted(list(set(all_keys)))
+    except Exception:
+        pass
 
     return sorted(list(permission_keys))
 
