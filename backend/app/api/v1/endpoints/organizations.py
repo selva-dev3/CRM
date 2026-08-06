@@ -687,3 +687,16 @@ async def update_organization_by_id(org_id: str, payload: OrganizationUpdate, db
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+# 18. DELETE /api/v1/organizations/{org_id} - Delete organization by ID
+@router.delete("/{org_id}", response_model=MessageResponse, summary="Delete organization by ID")
+async def delete_organization_by_id(org_id: str, db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(Organization).where(Organization.id == org_id))
+    org = res.scalars().first()
+    if org:
+        await db.delete(org)
+        await db.commit()
+        return {"message": f"Organization '{org.name}' ({org_id}) deleted successfully", "status": "success"}
+    return {"message": f"Organization '{org_id}' deleted successfully", "status": "success"}
+

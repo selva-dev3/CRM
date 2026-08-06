@@ -167,6 +167,11 @@ export async function updateOrganizationApi(id: string, payload: UpdateOrganizat
   return apiClient.put<OrganizationItem>(`/organizations/${id}`, payload);
 }
 
+// 5b. DELETE /api/v1/organizations/{org_id} (Delete organization by ID)
+export async function deleteOrganizationApi(id: string): Promise<{ message: string; status: string }> {
+  return apiClient.delete<{ message: string; status: string }>(`/organizations/${id}`);
+}
+
 // 6. GET /api/v1/organizations/members (List members)
 export async function getOrganizationMembersApi(): Promise<OrganizationMember[]> {
   return apiClient.get<OrganizationMember[]>('/organizations/members');
@@ -374,5 +379,16 @@ export function useSubscriptionPlansQuery() {
   return useQuery({
     queryKey: ['subscription-plans'],
     queryFn: getSubscriptionPlansApi,
+  });
+}
+
+export function useDeleteOrganizationMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: deleteOrganizationApi,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['organizations'] });
+      queryClient.invalidateQueries({ queryKey: ['current-organization'] });
+    },
   });
 }

@@ -1,806 +1,736 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Building,
-  Globe,
-  Mail,
-  Phone,
-  MapPin,
-  Users,
-  CreditCard,
-  Shield,
-  Save,
-  CheckCircle2,
-  AlertCircle,
-  Loader2,
-  Upload,
   Plus,
+  Search,
+  Mail,
+  Globe,
+  Sliders,
+  ChevronDown,
+  Pencil,
   Trash2,
-  Zap,
-  Check,
-  HardDrive,
-  UserCheck,
-  ShieldAlert,
+  RefreshCw,
+  Sparkles,
+  X,
+  AlertCircle,
+  CheckCircle2,
+  ShieldCheck,
   Crown,
-  Lock,
-  ArrowRightLeft,
-  FileText
+  Users,
+  MapPin,
+  Building2,
+  Power
 } from 'lucide-react';
-import { Card } from '@/components/ui/card';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import {
-  useCurrentOrganizationQuery,
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
+import { DataTable, type DataTableColumn, type TableActionOption } from '@/components/shared/data-table';
+import { ConfirmModal } from '@/components/shared/confirm-modal';
+import {
   useOrganizationsQuery,
-  useUpdateOrganizationMutation,
   useCreateOrganizationMutation,
-  useOrganizationMembersQuery,
-  useRemoveOrganizationMemberMutation,
-  useOrganizationSubscriptionQuery,
-  useUpgradeSubscriptionMutation,
-  useCancelSubscriptionMutation,
-  useOrganizationUsageQuery,
-  useUpdateBrandingMutation,
-  useVerifyDomainMutation,
-  useOrganizationDomainsQuery,
-  useOrganizationAuditLogsQuery,
-  useTransferOwnershipMutation
+  useUpdateOrganizationMutation,
+  useDeleteOrganizationMutation,
+  OrganizationItem,
+  CreateOrganizationPayload,
+  UpdateOrganizationPayload,
+  deleteOrganizationApi
 } from '@/lib/api/organizations';
+import { useQueryClient } from '@tanstack/react-query';
 
 export default function OrganizationPage() {
-  const [activeTab, setActiveTab] = useState<
-    'profile' | 'branding' | 'members' | 'subscription' | 'usage' | 'domains' | 'ownership'
-  >('profile');
+  const router = useRouter();
+  const queryClient = useQueryClient();
 
+  // Search & Pagination State
+  const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+  const [page, setPage] = useState(1);
+  const limit = 15;
+
+  // Debounce search input
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+      setPage(1);
+    }, 250);
+    return () => clearTimeout(handler);
+  }, [searchTerm]);
+
+  // Bulk Selection State
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
+
+  // Queries & Mutations
+  const { data: rawOrganizations = [], isLoading, refetch } = useOrganizationsQuery();
+  const createOrgMutation = useCreateOrganizationMutation();
+  const updateOrgMutation = useUpdateOrganizationMutation();
+  const deleteOrgMutation = useDeleteOrganizationMutation();
+
+  // Filter organizations by search term
+  const organizations = useMemo(() => {
+    if (!debouncedSearchTerm.trim()) return rawOrganizations;
+    const term = debouncedSearchTerm.toLowerCase();
+    return rawOrganizations.filter(
+      (org) =>
+        org.name?.toLowerCase().includes(term) ||
+        org.slug?.toLowerCase().includes(term) ||
+        org.email?.toLowerCase().includes(term) ||
+        org.domain?.toLowerCase().includes(term) ||
+        org.industry?.toLowerCase().includes(term)
+    );
+  }, [rawOrganizations, debouncedSearchTerm]);
+
+  // Modal & Notification States
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [orgToEdit, setOrgToEdit] = useState<OrganizationItem | null>(null);
+  const [orgToDelete, setOrgToDelete] = useState<OrganizationItem | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Queries
-  const { data: currentOrg, isLoading: isCurrentOrgLoading, refetch: refetchCurrentOrg } = useCurrentOrganizationQuery();
-  const { data: allOrgs = [] } = useOrganizationsQuery();
-  const { data: members = [], refetch: refetchMembers } = useOrganizationMembersQuery();
-  const { data: subscription, refetch: refetchSubscription } = useOrganizationSubscriptionQuery();
-  const { data: usage } = useOrganizationUsageQuery();
-  const { data: domains = [], refetch: refetchDomains } = useOrganizationDomainsQuery();
-  const { data: auditLogs = [] } = useOrganizationAuditLogsQuery();
+  // Form States for Create/Edit
+  const [formName, setFormName] = useState('');
+  const [formSlug, setFormSlug] = useState('');
+  const [formEmail, setFormEmail] = useState('');
+  const [formPhone, setFormPhone] = useState('');
+  const [formWebsite, setFormWebsite] = useState('');
+  const [formDomain, setFormDomain] = useState('');
+  const [formIndustry, setFormIndustry] = useState('');
+  const [formCountry, setFormCountry] = useState('India');
+  const [formCity, setFormCity] = useState('Chennai');
+  const [formAddress, setFormAddress] = useState('');
+  const [formTaxNumber, setFormTaxNumber] = useState('');
+  const [formPlan, setFormPlan] = useState('Enterprise');
+  const [formMaxUsers, setFormMaxUsers] = useState(100);
+  const [formStatus, setFormStatus] = useState('active');
 
-  // Mutations
-  const updateOrgMutation = useUpdateOrganizationMutation();
-  const createOrgMutation = useCreateOrganizationMutation();
-  const removeMemberMutation = useRemoveOrganizationMemberMutation();
-  const upgradeSubMutation = useUpgradeSubscriptionMutation();
-  const cancelSubMutation = useCancelSubscriptionMutation();
-  const updateBrandingMutation = useUpdateBrandingMutation();
-  const verifyDomainMutation = useVerifyDomainMutation();
-  const transferOwnershipMutation = useTransferOwnershipMutation();
-
-  // Profile Form States
-  const [name, setName] = useState('');
-  const [slug, setSlug] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [website, setWebsite] = useState('');
-  const [industry, setIndustry] = useState('');
-  const [country, setCountry] = useState('');
-  const [city, setCity] = useState('');
-  const [address, setAddress] = useState('');
-  const [taxNumber, setTaxNumber] = useState('');
-  const [currency, setCurrency] = useState('INR');
-  const [timezone, setTimezone] = useState('Asia/Kolkata');
-
-  // Create Org Modal
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [newOrgName, setNewOrgName] = useState('');
-  const [newOrgDomain, setNewOrgDomain] = useState('');
-
-  // Branding States
-  const [logoFile, setLogoFile] = useState<File | null>(null);
-  const [primaryColor, setPrimaryColor] = useState('#2563EB');
-
-  // Domain Verification States
-  const [domainToVerify, setDomainToVerify] = useState('');
-
-  // Transfer Ownership States
-  const [newOwnerUserId, setNewOwnerUserId] = useState('');
-
-  // Populate profile form when data is loaded
-  useEffect(() => {
-    if (currentOrg) {
-      setName(currentOrg.name || '');
-      setSlug(currentOrg.slug || '');
-      setEmail(currentOrg.email || '');
-      setPhone(currentOrg.phone || '');
-      setWebsite(currentOrg.website || '');
-      setIndustry(currentOrg.industry || '');
-      setCountry(currentOrg.country || '');
-      setCity(currentOrg.city || '');
-      setAddress(currentOrg.address || '');
-      setTaxNumber(currentOrg.tax_number || '');
-      setCurrency(currentOrg.currency || 'INR');
-      setTimezone(currentOrg.timezone || 'Asia/Kolkata');
-    }
-  }, [currentOrg]);
-
-  // Handlers
-  const handleUpdateProfile = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!currentOrg?.id) return;
-    try {
-      setErrorMessage(null);
-      await updateOrgMutation.mutateAsync({
-        id: currentOrg.id,
-        payload: {
-          name,
-          slug,
-          email,
-          phone,
-          website,
-          industry,
-          country,
-          city,
-          address,
-          tax_number: taxNumber,
-          currency,
-          timezone
-        }
-      });
-      setSuccessMessage('Organization profile settings updated successfully.');
-      refetchCurrentOrg();
-    } catch {
-      setErrorMessage('Failed to update organization profile.');
-    }
+  const resetForm = () => {
+    setFormName('');
+    setFormSlug('');
+    setFormEmail('');
+    setFormPhone('');
+    setFormWebsite('');
+    setFormDomain('');
+    setFormIndustry('Information Technology');
+    setFormCountry('India');
+    setFormCity('Chennai');
+    setFormAddress('');
+    setFormTaxNumber('');
+    setFormPlan('Enterprise');
+    setFormMaxUsers(100);
+    setFormStatus('active');
+    setErrorMessage(null);
   };
 
-  const handleCreateOrganization = async (e: React.FormEvent) => {
+  const handleOpenCreateModal = () => {
+    resetForm();
+    setIsCreateModalOpen(true);
+  };
+
+  const handleOpenEditModal = (org: OrganizationItem) => {
+    setOrgToEdit(org);
+    setFormName(org.name || '');
+    setFormSlug(org.slug || '');
+    setFormEmail(org.email || '');
+    setFormPhone(org.phone || '');
+    setFormWebsite(org.website || '');
+    setFormDomain(org.domain || '');
+    setFormIndustry(org.industry || 'Information Technology');
+    setFormCountry(org.country || 'India');
+    setFormCity(org.city || 'Chennai');
+    setFormAddress(org.address || '');
+    setFormTaxNumber(org.tax_number || '');
+    setFormPlan(org.plan || 'Enterprise');
+    setFormMaxUsers(org.max_users || 100);
+    setFormStatus(org.status || 'active');
+    setErrorMessage(null);
+  };
+
+  const handleAutofillDemo = () => {
+    const randomSuffix = Math.floor(100 + Math.random() * 900);
+    const demoName = `Apex Global Corp ${randomSuffix}`;
+    const slugified = demoName.toLowerCase().replace(/\s+/g, '-');
+    setFormName(demoName);
+    setFormSlug(slugified);
+    setFormEmail(`contact@apexcorp${randomSuffix}.com`);
+    setFormPhone(`+91 987${randomSuffix}5432`);
+    setFormWebsite(`https://apexcorp${randomSuffix}.com`);
+    setFormDomain(`apexcorp${randomSuffix}.crm.com`);
+    setFormIndustry('Software & Cloud Services');
+    setFormCountry('India');
+    setFormCity('Bengaluru');
+    setFormAddress('45 Tech Park Avenue');
+    setFormTaxNumber(`GSTIN${randomSuffix}98765`);
+    setFormPlan('Enterprise');
+    setFormMaxUsers(250);
+  };
+
+  const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newOrgName) return;
+    if (!formName.trim()) {
+      setErrorMessage('Please enter an Organization Name.');
+      return;
+    }
+
     try {
-      setErrorMessage(null);
-      await createOrgMutation.mutateAsync({
-        name: newOrgName,
-        domain: newOrgDomain || `${newOrgName.toLowerCase().replace(/\s+/g, '-')}.crm.com`,
-        plan: 'Enterprise',
-        max_users: 100
-      });
-      setSuccessMessage(`Organization "${newOrgName}" created successfully.`);
+      const payload: CreateOrganizationPayload = {
+        name: formName.trim(),
+        slug: formSlug.trim() || formName.trim().toLowerCase().replace(/\s+/g, '-'),
+        email: formEmail.trim() || undefined,
+        phone: formPhone.trim() || undefined,
+        website: formWebsite.trim() || undefined,
+        domain: formDomain.trim() || `${formName.trim().toLowerCase().replace(/\s+/g, '-')}.crm.com`,
+        industry: formIndustry.trim() || 'Software',
+        country: formCountry.trim() || 'India',
+        city: formCity.trim() || undefined,
+        address: formAddress.trim() || undefined,
+        tax_number: formTaxNumber.trim() || undefined,
+        plan: formPlan,
+        max_users: Number(formMaxUsers) || 100,
+        status: formStatus
+      };
+
+      const newOrg = await createOrgMutation.mutateAsync(payload);
+      await queryClient.invalidateQueries({ queryKey: ['organizations'] });
+      await refetch();
+
+      setSuccessMessage(`Organization "${newOrg.name}" created successfully!`);
       setIsCreateModalOpen(false);
-      setNewOrgName('');
-      setNewOrgDomain('');
-      refetchCurrentOrg();
-    } catch {
-      setErrorMessage('Failed to create new organization.');
+      resetForm();
+      setTimeout(() => setSuccessMessage(null), 4000);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Failed to create organization.');
     }
   };
 
-  const handleBrandingSubmit = async (e: React.FormEvent) => {
+  const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!orgToEdit || !formName.trim()) return;
+
     try {
-      setErrorMessage(null);
-      const formData = new FormData();
-      if (logoFile) {
-        formData.append('logo_file', logoFile);
+      const payload: UpdateOrganizationPayload = {
+        name: formName.trim(),
+        slug: formSlug.trim() || undefined,
+        email: formEmail.trim() || undefined,
+        phone: formPhone.trim() || undefined,
+        website: formWebsite.trim() || undefined,
+        domain: formDomain.trim() || undefined,
+        industry: formIndustry.trim() || undefined,
+        country: formCountry.trim() || undefined,
+        city: formCity.trim() || undefined,
+        address: formAddress.trim() || undefined,
+        tax_number: formTaxNumber.trim() || undefined,
+        plan: formPlan,
+        max_users: Number(formMaxUsers) || 100,
+        status: formStatus
+      };
+
+      await updateOrgMutation.mutateAsync({ id: orgToEdit.id, payload });
+      await queryClient.invalidateQueries({ queryKey: ['organizations'] });
+      await refetch();
+
+      setSuccessMessage(`Organization "${formName}" updated successfully!`);
+      setOrgToEdit(null);
+      resetForm();
+      setTimeout(() => setSuccessMessage(null), 4000);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Failed to update organization.');
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!orgToDelete) return;
+    try {
+      await deleteOrgMutation.mutateAsync(orgToDelete.id);
+      await queryClient.invalidateQueries({ queryKey: ['organizations'] });
+      await refetch();
+
+      setSuccessMessage(`Organization "${orgToDelete.name}" deleted successfully.`);
+      setOrgToDelete(null);
+      setTimeout(() => setSuccessMessage(null), 4000);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Failed to delete organization.');
+    }
+  };
+
+  // Bulk Selection Handlers
+  const handleToggleRow = useCallback((org: OrganizationItem, checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        next.add(org.id);
+      } else {
+        next.delete(org.id);
       }
-      formData.append('primary_color', primaryColor);
-      const res = await updateBrandingMutation.mutateAsync(formData);
-      setSuccessMessage(res.message || 'Branding updated & logo uploaded to MinIO S3.');
-      refetchCurrentOrg();
-    } catch {
-      setErrorMessage('Failed to update branding S3 asset.');
-    }
-  };
+      return next;
+    });
+  }, []);
 
-  const handleRemoveMember = async (userId: string) => {
+  const handleToggleAllRows = useCallback(
+    (checked: boolean) => {
+      if (checked) {
+        setSelectedIds(new Set(organizations.map((o) => o.id)));
+      } else {
+        setSelectedIds(new Set());
+      }
+    },
+    [organizations]
+  );
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
     try {
-      setErrorMessage(null);
-      const res = await removeMemberMutation.mutateAsync(userId);
-      setSuccessMessage(res.message || 'Member removed from organization.');
-      refetchMembers();
+      for (const id of Array.from(selectedIds)) {
+        await deleteOrganizationApi(id).catch(() => null);
+      }
+      await queryClient.invalidateQueries({ queryKey: ['organizations'] });
+      await refetch();
+      setSuccessMessage(`Deleted ${selectedIds.size} selected organization(s).`);
+      setSelectedIds(new Set());
+      setTimeout(() => setSuccessMessage(null), 4000);
     } catch {
-      setErrorMessage('Failed to remove member.');
+      setErrorMessage('Failed to complete bulk delete.');
     }
   };
 
-  const handleUpgradePlan = async (planName: string) => {
-    try {
-      setErrorMessage(null);
-      const res = await upgradeSubMutation.mutateAsync(planName);
-      setSuccessMessage(res.message || `Upgraded subscription to ${planName}.`);
-      refetchSubscription();
-      refetchCurrentOrg();
-    } catch {
-      setErrorMessage('Failed to upgrade subscription plan.');
-    }
-  };
+  // DataTable Columns Definition
+  const columns: DataTableColumn<OrganizationItem>[] = useMemo(
+    () => [
+      {
+        id: 'name',
+        header: 'Organization',
+        className: 'min-w-[220px]',
+        cell: (item: OrganizationItem) => (
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-[#2563EB]/10 border border-[#2563EB]/20 text-[#2563EB] flex items-center justify-center font-bold text-caption shrink-0">
+              {item.logo_url ? (
+                <img src={item.logo_url} alt={item.name} className="w-full h-full object-cover rounded-lg" />
+              ) : (
+                <Building className="w-5 h-5" />
+              )}
+            </div>
+            <div className="space-y-0.5 min-w-0">
+              <span className="block text-body font-semibold text-[#111827] truncate">{item.name || 'Unnamed Org'}</span>
+              <span className="block text-caption font-mono text-[#6B7280] truncate">{item.slug ? `@${item.slug}` : `ID: ${item.id.substring(0, 8)}`}</span>
+            </div>
+          </div>
+        ),
+      },
+      {
+        id: 'domain_email',
+        header: 'Domain & Contact',
+        className: 'min-w-[200px]',
+        cell: (item: OrganizationItem) => (
+          <div className="space-y-1 text-caption">
+            <div className="flex items-center gap-1.5 font-medium text-[#2563EB]">
+              <Globe className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{item.domain || `${item.slug || 'org'}.crm.com`}</span>
+            </div>
+            {item.email && (
+              <div className="flex items-center gap-1.5 text-[#6B7280]">
+                <Mail className="w-3.5 h-3.5 shrink-0 text-[#9CA3AF]" />
+                <span className="truncate">{item.email}</span>
+              </div>
+            )}
+          </div>
+        ),
+      },
+      {
+        id: 'industry',
+        header: 'Industry & Region',
+        className: 'min-w-[160px]',
+        cell: (item: OrganizationItem) => (
+          <div className="space-y-0.5">
+            <span className="block text-body font-medium text-[#374151] truncate">{item.industry || 'Enterprise Technology'}</span>
+            <div className="flex items-center gap-1 text-caption text-[#6B7280]">
+              <MapPin className="w-3 h-3 text-[#9CA3AF] shrink-0" />
+              <span>{item.country || 'India'}{item.city ? `, ${item.city}` : ''}</span>
+            </div>
+          </div>
+        ),
+      },
+      {
+        id: 'plan',
+        header: 'Plan Tier',
+        className: 'min-w-[130px]',
+        cell: (item: OrganizationItem) => {
+          const planName = item.plan || 'Enterprise';
+          const isEnterprise = planName.toLowerCase().includes('enterprise');
+          const isBusiness = planName.toLowerCase().includes('business') || planName.toLowerCase().includes('pro');
 
-  const handleCancelSub = async () => {
-    try {
-      setErrorMessage(null);
-      const res = await cancelSubMutation.mutateAsync();
-      setSuccessMessage(res.message || 'Subscription cancelled.');
-      refetchSubscription();
-    } catch {
-      setErrorMessage('Failed to cancel subscription.');
-    }
-  };
+          return (
+            <span
+              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-badge font-semibold border ${
+                isEnterprise
+                  ? 'bg-purple-50 text-purple-700 border-purple-200'
+                  : isBusiness
+                  ? 'bg-[#2563EB]/10 text-[#2563EB] border-[#2563EB]/20'
+                  : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              }`}
+            >
+              <Crown className="w-3.5 h-3.5 mr-1 shrink-0" />
+              {planName}
+            </span>
+          );
+        },
+      },
+      {
+        id: 'max_users',
+        header: 'User Seats',
+        className: 'min-w-[110px]',
+        cell: (item: OrganizationItem) => (
+          <div className="flex items-center gap-1.5 text-body font-medium text-[#374151]">
+            <Users className="w-3.5 h-3.5 text-[#2563EB] shrink-0" />
+            <span>{item.max_users || 100} Seats</span>
+          </div>
+        ),
+      },
+      {
+        id: 'status',
+        header: 'Status',
+        className: 'min-w-[110px]',
+        cell: (item: OrganizationItem) => {
+          const isActive = (item.status || 'active').toLowerCase() === 'active';
+          return (
+            <span
+              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-badge font-semibold border ${
+                isActive
+                  ? 'bg-[#16A34A]/10 text-[#16A34A] border-[#16A34A]/20'
+                  : 'bg-[#F59E0B]/10 text-[#D97706] border-[#F59E0B]/20'
+              }`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-[#16A34A]' : 'bg-[#D97706]'} mr-1.5`} />
+              {isActive ? 'Active' : 'Inactive'}
+            </span>
+          );
+        },
+      },
+      {
+        id: 'created_at',
+        header: 'Created Date',
+        className: 'min-w-[120px]',
+        cell: (item: OrganizationItem) => (
+          <span className="text-body font-medium text-[#6B7280]">
+            {item.created_at ? new Date(item.created_at).toLocaleDateString() : 'N/A'}
+          </span>
+        ),
+      },
+    ],
+    []
+  );
 
-  const handleVerifyDomain = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!domainToVerify) return;
-    try {
-      setErrorMessage(null);
-      const res = await verifyDomainMutation.mutateAsync(domainToVerify);
-      setSuccessMessage(res.message || `Domain ${domainToVerify} verified.`);
-      setDomainToVerify('');
-      refetchDomains();
-    } catch {
-      setErrorMessage('Domain DNS verification failed.');
-    }
-  };
-
-  const handleTransferOwnership = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newOwnerUserId) return;
-    try {
-      setErrorMessage(null);
-      const res = await transferOwnershipMutation.mutateAsync(newOwnerUserId);
-      setSuccessMessage(res.message || `Ownership transferred to user ID ${newOwnerUserId}.`);
-      setNewOwnerUserId('');
-    } catch {
-      setErrorMessage('Failed to transfer organization ownership.');
-    }
-  };
-
-  if (isCurrentOrgLoading) {
-    return (
-      <div className="h-64 flex flex-col items-center justify-center space-y-3 text-slate-500">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-        <span className="text-sm font-semibold">Fetching Organization Data from REST APIs...</span>
-      </div>
-    );
-  }
-
-  const activeOrg = currentOrg || {
-    id: 'org-1',
-    name: 'Default Enterprise Organization',
-    domain: 'enterprise.crm.com',
-    plan: 'Enterprise',
-    max_users: 100,
-    created_at: '2026-01-01'
-  };
+  // Actions for Row Dropdown
+  const actions = (org: OrganizationItem): TableActionOption<OrganizationItem>[] => [
+    {
+      label: 'Edit Organization',
+      icon: <Pencil className="w-4 h-4 mr-2 text-[#2563EB]" />,
+      onClick: (item) => handleOpenEditModal(item),
+    },
+    {
+      label: 'Delete Organization',
+      variant: 'destructive',
+      icon: <Trash2 className="w-4 h-4 mr-2 text-[#DC2626]" />,
+      onClick: (item) => setOrgToDelete(item),
+    },
+  ];
 
   return (
-    <div className="space-y-6 max-w-6xl">
-      {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+    <div className="space-y-6 text-[#374151]">
+      {/* Page Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-[#E5E7EB]">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2.5">
-            <Building className="w-6 h-6 text-blue-600" />
+          <h1 className="text-page-title flex items-center gap-2.5">
+            <Building2 className="w-6 h-6 text-[#2563EB]" />
             <span>Organization Management</span>
           </h1>
-          <p className="text-xs font-medium text-slate-500 mt-1">
-            Configure enterprise profile, member roles, S3 branding assets, DNS verification, and usage quotas.
+          <p className="text-caption mt-1">
+            Manage multi-tenant organizations, domains, seat limits & enterprise subscription tiers
           </p>
         </div>
-
-        <Button
-          onClick={() => setIsCreateModalOpen(true)}
-          className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold gap-1.5 cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Create New Org</span>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            onClick={handleOpenCreateModal}
+            size="default"
+            variant="primary"
+            className="shadow-saas-sm px-4 text-button cursor-pointer"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            + Create Organization
+          </Button>
+        </div>
       </div>
 
-      {/* Alert Banners */}
+      {/* Notifications */}
       {successMessage && (
-        <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-sm font-medium flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+        <div className="p-4 rounded-btn bg-[#16A34A]/10 border border-[#16A34A]/20 text-[#16A34A] text-body font-medium flex items-center gap-2 animate-in fade-in-50">
+          <CheckCircle2 className="w-5 h-5 shrink-0" />
           <span>{successMessage}</span>
         </div>
       )}
+
       {errorMessage && (
-        <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-sm font-medium flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+        <div className="p-4 rounded-btn bg-[#DC2626]/10 border border-[#DC2626]/20 text-[#DC2626] text-body font-medium flex items-center gap-2 animate-in fade-in-50">
+          <AlertCircle className="w-5 h-5 shrink-0" />
           <span>{errorMessage}</span>
         </div>
       )}
 
-      {/* Top Usage & Overview Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <Card className="p-4 bg-white border border-slate-200 shadow-xs rounded-xl flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-            <Building className="w-5 h-5" />
-          </div>
-          <div className="min-w-0">
-            <div className="text-[10px] font-bold text-slate-400 uppercase">Current Org</div>
-            <div className="text-xs font-extrabold text-slate-900 truncate">{activeOrg.name}</div>
-          </div>
-        </Card>
-
-        <Card className="p-4 bg-white border border-slate-200 shadow-xs rounded-xl flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
-            <Crown className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-[10px] font-bold text-slate-400 uppercase">Subscription</div>
-            <div className="text-xs font-extrabold text-slate-900">{subscription?.plan || activeOrg.plan || 'Enterprise'} Plan</div>
-          </div>
-        </Card>
-
-        <Card className="p-4 bg-white border border-slate-200 shadow-xs rounded-xl flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-            <Users className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-[10px] font-bold text-slate-400 uppercase">User Quota</div>
-            <div className="text-xs font-extrabold text-slate-900">
-              {usage?.users_used ?? 1} / {usage?.users_limit ?? activeOrg.max_users ?? 100} Seats
-            </div>
-          </div>
-        </Card>
-
-        <Card className="p-4 bg-white border border-slate-200 shadow-xs rounded-xl flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
-            <HardDrive className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-[10px] font-bold text-slate-400 uppercase">S3 Storage Limit</div>
-            <div className="text-xs font-extrabold text-slate-900">
-              {usage?.storage_gb_used ?? 0.5} GB / {usage?.storage_gb_limit ?? 500} GB
-            </div>
-          </div>
-        </Card>
-      </div>
-
-      {/* Tabs Navigation */}
-      <div className="flex items-center border-b border-slate-200 gap-4 text-xs font-semibold text-slate-600 overflow-x-auto">
-        <button
-          onClick={() => setActiveTab('profile')}
-          className={`pb-3 cursor-pointer transition border-b-2 shrink-0 flex items-center gap-1.5 ${
-            activeTab === 'profile' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
-          <Building className="w-4 h-4" />
-          <span>Org Profile & Details</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('branding')}
-          className={`pb-3 cursor-pointer transition border-b-2 shrink-0 flex items-center gap-1.5 ${
-            activeTab === 'branding' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
-          <Upload className="w-4 h-4" />
-          <span>S3 Branding & Logo</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('members')}
-          className={`pb-3 cursor-pointer transition border-b-2 shrink-0 flex items-center gap-1.5 ${
-            activeTab === 'members' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
-          <UserCheck className="w-4 h-4" />
-          <span>Members & Team</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('subscription')}
-          className={`pb-3 cursor-pointer transition border-b-2 shrink-0 flex items-center gap-1.5 ${
-            activeTab === 'subscription' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
-          <CreditCard className="w-4 h-4" />
-          <span>Subscription & Billing</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('usage')}
-          className={`pb-3 cursor-pointer transition border-b-2 shrink-0 flex items-center gap-1.5 ${
-            activeTab === 'usage' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
-          <Zap className="w-4 h-4" />
-          <span>Usage Quotas</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('domains')}
-          className={`pb-3 cursor-pointer transition border-b-2 shrink-0 flex items-center gap-1.5 ${
-            activeTab === 'domains' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
-          <Globe className="w-4 h-4" />
-          <span>Custom Domains</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('ownership')}
-          className={`pb-3 cursor-pointer transition border-b-2 shrink-0 flex items-center gap-1.5 ${
-            activeTab === 'ownership' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
-          <ArrowRightLeft className="w-4 h-4" />
-          <span>Ownership Transfer</span>
-        </button>
-      </div>
-
-      {/* TAB 1: PROFILE & DETAILS */}
-      {activeTab === 'profile' && (
-        <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-xl space-y-6">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-              <Building className="w-4 h-4 text-blue-600" />
-              <span>Organization Details</span>
-            </h3>
-            <div className="flex items-center gap-2">
-              <Badge className="bg-blue-50 text-blue-700 border-blue-200 font-mono text-[11px]">
-                ID: {activeOrg.id}
-              </Badge>
-            </div>
-          </div>
-
-          <form onSubmit={handleUpdateProfile} className="space-y-4 text-xs">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Organization Name</Label>
-                <Input value={name} onChange={(e) => setName(e.target.value)} className="h-9 text-xs" />
-              </div>
-
-              <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Slug Identifier</Label>
-                <Input value={slug} onChange={(e) => setSlug(e.target.value)} className="h-9 text-xs font-mono" />
-              </div>
-
-              <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Official Email</Label>
-                <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="h-9 text-xs" />
-              </div>
-
-              <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Phone Number</Label>
-                <Input value={phone} onChange={(e) => setPhone(e.target.value)} className="h-9 text-xs" />
-              </div>
-
-              <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Website URL</Label>
-                <Input value={website} onChange={(e) => setWebsite(e.target.value)} className="h-9 text-xs" />
-              </div>
-
-              <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Industry Sector</Label>
-                <Input value={industry} onChange={(e) => setIndustry(e.target.value)} className="h-9 text-xs" />
-              </div>
-
-              <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Country</Label>
-                <Input value={country} onChange={(e) => setCountry(e.target.value)} className="h-9 text-xs" />
-              </div>
-
-              <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">City</Label>
-                <Input value={city} onChange={(e) => setCity(e.target.value)} className="h-9 text-xs" />
-              </div>
-
-              <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Tax / GSTIN Number</Label>
-                <Input value={taxNumber} onChange={(e) => setTaxNumber(e.target.value)} className="h-9 text-xs font-mono" />
-              </div>
-
-              <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Primary Currency</Label>
-                <select
-                  value={currency}
-                  onChange={(e) => setCurrency(e.target.value)}
-                  className="w-full h-9 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-900"
+      {/* Enterprise Organizations DataTable */}
+      <DataTable
+        columns={columns}
+        data={organizations}
+        getRowKey={(item) => item.id}
+        onRowClick={(org) => router.push(`/organization/${org.id}`)}
+        emptyTitle="No organizations found"
+        emptyDescription="Create your first organization or adjust your search filter."
+        showCheckbox
+        selectedIds={selectedIds}
+        onToggleRow={handleToggleRow}
+        onToggleAllRows={handleToggleAllRows}
+        showAvatar
+        getAvatarData={(item) => ({ name: item.name, color: '#2563eb' })}
+        actionVariant="menu"
+        actions={actions}
+        searchValue={searchTerm}
+        onSearchChange={setSearchTerm}
+        searchPlaceholder="Search organization name, slug, email or domain..."
+        isLoading={isLoading}
+        pagination={{
+          pageIndex: page - 1,
+          pageCount: organizations.length >= limit ? page + 1 : page,
+          onPageChange: (p) => setPage(p + 1),
+          totalRecords: (page - 1) * limit + organizations.length,
+        }}
+        toolbarActions={
+          <div className="flex items-center gap-2">
+            {/* Bulk Actions Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger className="h-10 px-4 border border-[#E5E7EB] bg-white hover:bg-[#F9FAFB] text-[#374151] font-medium rounded-btn text-button inline-flex items-center gap-2 cursor-pointer shadow-saas-sm">
+                <Sliders className="w-4 h-4 text-[#2563EB]" />
+                <span>Bulk Actions</span>
+                {selectedIds.size > 0 && (
+                  <span className="ml-1 px-2 py-0.5 rounded-full bg-[#2563EB] text-white text-badge font-semibold">
+                    {selectedIds.size}
+                  </span>
+                )}
+                <ChevronDown className="w-4 h-4 text-[#9CA3AF]" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuLabel className="text-badge font-semibold text-[#111827]">
+                  {selectedIds.size > 0 ? `Bulk Actions (${selectedIds.size} selected)` : 'Select orgs below to apply'}
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  disabled={selectedIds.size === 0}
+                  onClick={handleBulkDelete}
+                  className={`cursor-pointer text-button font-medium ${selectedIds.size === 0 ? 'opacity-50 cursor-not-allowed' : 'text-[#DC2626] hover:bg-[#DC2626]/10'}`}
                 >
-                  <option value="INR">INR (₹)</option>
-                  <option value="USD">USD ($)</option>
-                  <option value="EUR">EUR (€)</option>
-                  <option value="GBP">GBP (£)</option>
-                </select>
-              </div>
-            </div>
+                  <Trash2 className="w-4 h-4 mr-2 text-[#DC2626]" />
+                  <span>Bulk Delete ({selectedIds.size})</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-            <div className="pt-3 border-t border-slate-100 flex justify-end">
-              <Button
-                type="submit"
-                disabled={updateOrgMutation.isPending}
-                className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs gap-1.5 cursor-pointer"
-              >
-                <Save className="w-4 h-4" />
-                <span>{updateOrgMutation.isPending ? 'Saving...' : 'Save Organization Profile'}</span>
-              </Button>
-            </div>
-          </form>
-        </Card>
-      )}
-
-      {/* TAB 2: BRANDING & S3 UPLOAD */}
-      {activeTab === 'branding' && (
-        <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-xl space-y-6">
-          <div className="border-b border-slate-100 pb-3">
-            <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-              <Upload className="w-4 h-4 text-blue-600" />
-              <span>MinIO S3 Branding & Logo Upload</span>
-            </h3>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Upload custom company logo to MinIO S3 object storage for branded quotes, emails, and header displays.
-            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="default"
+              onClick={() => refetch()}
+              className="text-button font-medium cursor-pointer"
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 text-[#6B7280] ${isLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
           </div>
+        }
+      />
 
-          <form onSubmit={handleBrandingSubmit} className="space-y-4 text-xs max-w-md">
-            <div className="space-y-2">
-              <Label className="font-semibold text-slate-700">Select Company Logo File</Label>
-              <Input
-                type="file"
-                accept="image/*"
-                onChange={(e) => setLogoFile(e.target.files?.[0] || null)}
-                className="h-10 text-xs cursor-pointer"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label className="font-semibold text-slate-700">Brand Accent Color</Label>
-              <div className="flex items-center gap-3">
-                <input
-                  type="color"
-                  value={primaryColor}
-                  onChange={(e) => setPrimaryColor(e.target.value)}
-                  className="w-10 h-10 rounded border border-slate-300 cursor-pointer"
-                />
-                <Input value={primaryColor} onChange={(e) => setPrimaryColor(e.target.value)} className="h-9 text-xs font-mono w-32" />
-              </div>
-            </div>
-
-            <div className="pt-2">
-              <Button
-                type="submit"
-                disabled={updateBrandingMutation.isPending}
-                className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs gap-1.5 cursor-pointer"
-              >
-                <Upload className="w-4 h-4" />
-                <span>{updateBrandingMutation.isPending ? 'Uploading to S3...' : 'Upload Branding to S3'}</span>
-              </Button>
-            </div>
-          </form>
-        </Card>
-      )}
-
-      {/* TAB 3: MEMBERS */}
-      {activeTab === 'members' && (
-        <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-xl space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-              <UserCheck className="w-4 h-4 text-blue-600" />
-              <span>Organization Members</span>
-            </h3>
-            <Badge variant="outline" className="bg-slate-50 text-slate-700 border-slate-300">
-              {members.length} Total Members
-            </Badge>
-          </div>
-
-          <div className="space-y-3">
-            {members.length > 0 ? (
-              members.map((m) => (
-                <div key={m.id} className="p-3 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-between text-xs">
-                  <div>
-                    <div className="font-bold text-slate-900">{m.name}</div>
-                    <div className="text-[11px] text-slate-500 font-mono">{m.email} • {m.role}</div>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleRemoveMember(m.id)}
-                    disabled={removeMemberMutation.isPending}
-                    className="h-8 text-xs border-rose-200 text-rose-600 hover:bg-rose-50"
-                  >
-                    <Trash2 className="w-3.5 h-3.5 mr-1" />
-                    Remove
-                  </Button>
-                </div>
-              ))
-            ) : (
-              <div className="p-6 text-center text-xs text-slate-500 bg-slate-50 rounded-lg">
-                No extra members listed. Standard default tenant admin is assigned.
-              </div>
-            )}
-          </div>
-        </Card>
-      )}
-
-      {/* TAB 4: SUBSCRIPTION */}
-      {activeTab === 'subscription' && (
-        <div className="space-y-6">
-          <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                <CreditCard className="w-4 h-4 text-blue-600" />
-                <span>Subscription Details</span>
-              </h3>
-              <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200">Active Billing</Badge>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
-                <div className="text-[10px] text-slate-400 font-bold uppercase">Plan Tier</div>
-                <div className="text-sm font-extrabold text-slate-900 mt-0.5">{subscription?.plan || 'Enterprise'}</div>
-              </div>
-              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
-                <div className="text-[10px] text-slate-400 font-bold uppercase">Billing Cycle</div>
-                <div className="text-sm font-extrabold text-slate-900 mt-0.5">{subscription?.billing_cycle || 'Monthly'}</div>
-              </div>
-              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
-                <div className="text-[10px] text-slate-400 font-bold uppercase">Monthly Price</div>
-                <div className="text-sm font-extrabold text-slate-900 mt-0.5">${subscription?.amount || 299}/mo</div>
-              </div>
-            </div>
-
-            <div className="flex gap-3 pt-2">
-              <Button
-                onClick={() => handleUpgradePlan('Enterprise Plus')}
-                disabled={upgradeSubMutation.isPending}
-                className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer"
-              >
-                Upgrade to Enterprise Plus
-              </Button>
-              <Button
-                variant="outline"
-                onClick={handleCancelSub}
-                disabled={cancelSubMutation.isPending}
-                className="border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-semibold cursor-pointer"
-              >
-                Cancel Subscription
-              </Button>
-            </div>
-          </Card>
-        </div>
-      )}
-
-      {/* TAB 5: USAGE METRICS */}
-      {activeTab === 'usage' && (
-        <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-xl space-y-6">
-          <div className="border-b border-slate-100 pb-3">
-            <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-              <Zap className="w-4 h-4 text-blue-600" />
-              <span>Usage Metrics & Quotas</span>
-            </h3>
-          </div>
-
-          <div className="space-y-6 text-xs max-w-xl">
-            <div className="space-y-2">
-              <div className="flex justify-between font-semibold text-slate-700">
-                <span>Active User Seats</span>
-                <span>{usage?.users_used ?? 1} / {usage?.users_limit ?? 100}</span>
-              </div>
-              <div className="w-full h-2.5 rounded-full bg-slate-100 overflow-hidden">
-                <div className="h-full bg-blue-600 rounded-full" style={{ width: `${((usage?.users_used ?? 1) / (usage?.users_limit ?? 100)) * 100}%` }} />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex justify-between font-semibold text-slate-700">
-                <span>MinIO S3 Storage</span>
-                <span>{usage?.storage_gb_used ?? 0.5} GB / {usage?.storage_gb_limit ?? 500} GB</span>
-              </div>
-              <div className="w-full h-2.5 rounded-full bg-slate-100 overflow-hidden">
-                <div className="h-full bg-purple-600 rounded-full" style={{ width: `${((usage?.storage_gb_used ?? 0.5) / (usage?.storage_gb_limit ?? 500)) * 100}%` }} />
-              </div>
-            </div>
-          </div>
-        </Card>
-      )}
-
-      {/* TAB 6: CUSTOM DOMAINS */}
-      {activeTab === 'domains' && (
-        <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-xl space-y-4">
-          <div className="border-b border-slate-100 pb-3">
-            <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-              <Globe className="w-4 h-4 text-blue-600" />
-              <span>Custom Domain TXT DNS Verification</span>
-            </h3>
-          </div>
-
-          <form onSubmit={handleVerifyDomain} className="space-y-3 text-xs max-w-md">
-            <Label className="font-semibold text-slate-700">Domain Name to Verify</Label>
-            <div className="flex gap-2">
-              <Input
-                placeholder="crm.yourcompany.com"
-                value={domainToVerify}
-                onChange={(e) => setDomainToVerify(e.target.value)}
-                className="h-9 text-xs"
-              />
-              <Button
-                type="submit"
-                disabled={verifyDomainMutation.isPending}
-                className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer shrink-0"
-              >
-                Verify Domain TXT
-              </Button>
-            </div>
-          </form>
-        </Card>
-      )}
-
-      {/* TAB 7: OWNERSHIP TRANSFER */}
-      {activeTab === 'ownership' && (
-        <Card className="p-6 bg-white border border-rose-200 bg-rose-50/20 shadow-xs rounded-xl space-y-4">
-          <div className="border-b border-rose-100 pb-3">
-            <h3 className="font-bold text-rose-900 text-base flex items-center gap-2">
-              <ShieldAlert className="w-4 h-4 text-rose-600" />
-              <span>Transfer Primary Organization Ownership</span>
-            </h3>
-            <p className="text-xs text-slate-600 mt-1">
-              Transfer legal primary owner rights and superadmin privileges to another user.
-            </p>
-          </div>
-
-          <form onSubmit={handleTransferOwnership} className="space-y-3 text-xs max-w-md">
-            <Label className="font-semibold text-slate-700">Target User ID</Label>
-            <div className="flex gap-2">
-              <Input
-                placeholder="usr_12345"
-                value={newOwnerUserId}
-                onChange={(e) => setNewOwnerUserId(e.target.value)}
-                className="h-9 text-xs font-mono"
-              />
-              <Button
-                type="submit"
-                disabled={transferOwnershipMutation.isPending}
-                className="bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold cursor-pointer shrink-0"
-              >
-                Transfer Ownership
-              </Button>
-            </div>
-          </form>
-        </Card>
-      )}
-
-      {/* CREATE NEW ORGANIZATION MODAL */}
+      {/* CREATE ORGANIZATION MODAL DIALOG */}
       {isCreateModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
-          <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                <Building className="w-5 h-5 text-blue-600" />
-                <span>Create New Organization</span>
-              </h3>
-              <button type="button" onClick={() => setIsCreateModalOpen(false)} className="text-slate-400 hover:text-slate-700">
-                ✕
-              </button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-[#111827]/60 backdrop-blur-xs animate-in fade-in-50">
+          <div className="relative w-full max-w-2xl bg-white rounded-modal border border-[#E5E7EB] shadow-saas-lg overflow-hidden text-[#111827] flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="p-5 sm:p-6 border-b border-[#E5E7EB] bg-[#F9FAFB] flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-btn bg-[#2563EB] flex items-center justify-center text-white shadow-saas-sm">
+                  <Building className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-subheading font-semibold text-[#111827]">
+                    Create New Organization
+                  </h3>
+                  <p className="text-caption text-[#6B7280]">
+                    Add a new enterprise organization tenant
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAutofillDemo}
+                  className="text-caption font-medium gap-1.5 cursor-pointer px-3"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-[#2563EB] animate-pulse" />
+                  <span>Auto-fill Demo</span>
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => setIsCreateModalOpen(false)}
+                  className="p-1.5 rounded-btn text-[#6B7280] hover:text-[#111827] hover:bg-[#F3F4F6] transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
-            <form onSubmit={handleCreateOrganization} className="space-y-4 text-xs">
-              <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Organization Name</Label>
-                <Input
-                  type="text"
-                  placeholder="e.g. Global Trade Ltd"
-                  value={newOrgName}
-                  onChange={(e) => setNewOrgName(e.target.value)}
-                  className="h-9 text-xs"
-                />
+            {/* Modal Body */}
+            <form onSubmit={handleCreateSubmit} className="p-5 sm:p-6 space-y-4 overflow-y-auto">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="create-name">Organization Name <span className="text-[#DC2626]">*</span></Label>
+                  <Input
+                    id="create-name"
+                    required
+                    placeholder="e.g. Acme Enterprise Ltd"
+                    value={formName}
+                    onChange={(e) => {
+                      setFormName(e.target.value);
+                      if (!formSlug) setFormSlug(e.target.value.toLowerCase().replace(/\s+/g, '-'));
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="create-slug">Slug Identifier</Label>
+                  <Input
+                    id="create-slug"
+                    placeholder="e.g. acme-enterprise"
+                    value={formSlug}
+                    onChange={(e) => setFormSlug(e.target.value)}
+                    className="font-mono"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="create-email">Official Email</Label>
+                  <Input
+                    id="create-email"
+                    type="email"
+                    placeholder="e.g. info@acme.com"
+                    value={formEmail}
+                    onChange={(e) => setFormEmail(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="create-phone">Phone Number</Label>
+                  <Input
+                    id="create-phone"
+                    placeholder="e.g. +91 9876543210"
+                    value={formPhone}
+                    onChange={(e) => setFormPhone(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="create-domain">Custom Domain</Label>
+                  <Input
+                    id="create-domain"
+                    placeholder="e.g. acme.crm.com"
+                    value={formDomain}
+                    onChange={(e) => setFormDomain(e.target.value)}
+                    className="font-mono text-caption"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="create-industry">Industry Sector</Label>
+                  <Input
+                    id="create-industry"
+                    placeholder="e.g. Information Technology"
+                    value={formIndustry}
+                    onChange={(e) => setFormIndustry(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="create-country">Country</Label>
+                  <Input
+                    id="create-country"
+                    placeholder="e.g. India"
+                    value={formCountry}
+                    onChange={(e) => setFormCountry(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="create-city">City</Label>
+                  <Input
+                    id="create-city"
+                    placeholder="e.g. Chennai"
+                    value={formCity}
+                    onChange={(e) => setFormCity(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="create-plan">Subscription Plan</Label>
+                  <select
+                    id="create-plan"
+                    value={formPlan}
+                    onChange={(e) => setFormPlan(e.target.value)}
+                    className="w-full h-10 rounded-btn border border-[#E5E7EB] bg-white px-3 text-body font-medium text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
+                  >
+                    <option value="Free">Free Plan</option>
+                    <option value="Starter">Starter Plan</option>
+                    <option value="Professional">Professional Plan</option>
+                    <option value="Business">Business Plan</option>
+                    <option value="Enterprise">Enterprise Plan</option>
+                  </select>
+                </div>
+
+                <div>
+                  <Label htmlFor="create-users">User Seats Limit</Label>
+                  <Input
+                    id="create-users"
+                    type="number"
+                    min={1}
+                    value={formMaxUsers}
+                    onChange={(e) => setFormMaxUsers(Number(e.target.value))}
+                  />
+                </div>
               </div>
 
-              <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Custom Domain / Subdomain</Label>
-                <Input
-                  type="text"
-                  placeholder="e.g. globaltrade.crm.com"
-                  value={newOrgDomain}
-                  onChange={(e) => setNewOrgDomain(e.target.value)}
-                  className="h-9 text-xs font-mono"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <Button type="button" variant="outline" size="sm" onClick={() => setIsCreateModalOpen(false)}>
+              {/* Modal Actions */}
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#E5E7EB]">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsCreateModalOpen(false)}
+                  className="cursor-pointer"
+                >
                   Cancel
                 </Button>
-                <Button type="submit" size="sm" disabled={createOrgMutation.isPending} className="bg-blue-600 text-white font-semibold">
+                <Button
+                  type="submit"
+                  variant="primary"
+                  disabled={createOrgMutation.isPending}
+                  className="cursor-pointer shadow-saas-sm"
+                >
                   {createOrgMutation.isPending ? 'Creating...' : 'Create Organization'}
                 </Button>
               </div>
@@ -808,6 +738,177 @@ export default function OrganizationPage() {
           </div>
         </div>
       )}
+
+      {/* EDIT ORGANIZATION MODAL DIALOG */}
+      {orgToEdit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-[#111827]/60 backdrop-blur-xs animate-in fade-in-50">
+          <div className="relative w-full max-w-2xl bg-white rounded-modal border border-[#E5E7EB] shadow-saas-lg overflow-hidden text-[#111827] flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="p-5 sm:p-6 border-b border-[#E5E7EB] bg-[#F9FAFB] flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-btn bg-[#2563EB] flex items-center justify-center text-white shadow-saas-sm">
+                  <Pencil className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-subheading font-semibold text-[#111827]">
+                    Edit Organization Details
+                  </h3>
+                  <p className="text-caption text-[#6B7280]">
+                    Update settings for "{orgToEdit.name}"
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOrgToEdit(null)}
+                className="p-1.5 rounded-btn text-[#6B7280] hover:text-[#111827] hover:bg-[#F3F4F6] transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <form onSubmit={handleEditSubmit} className="p-5 sm:p-6 space-y-4 overflow-y-auto">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="edit-name">Organization Name <span className="text-[#DC2626]">*</span></Label>
+                  <Input
+                    id="edit-name"
+                    required
+                    value={formName}
+                    onChange={(e) => setFormName(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="edit-slug">Slug Identifier</Label>
+                  <Input
+                    id="edit-slug"
+                    value={formSlug}
+                    onChange={(e) => setFormSlug(e.target.value)}
+                    className="font-mono"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="edit-email">Official Email</Label>
+                  <Input
+                    id="edit-email"
+                    type="email"
+                    value={formEmail}
+                    onChange={(e) => setFormEmail(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="edit-phone">Phone Number</Label>
+                  <Input
+                    id="edit-phone"
+                    value={formPhone}
+                    onChange={(e) => setFormPhone(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="edit-domain">Custom Domain</Label>
+                  <Input
+                    id="edit-domain"
+                    value={formDomain}
+                    onChange={(e) => setFormDomain(e.target.value)}
+                    className="font-mono text-caption"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="edit-industry">Industry Sector</Label>
+                  <Input
+                    id="edit-industry"
+                    value={formIndustry}
+                    onChange={(e) => setFormIndustry(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="edit-country">Country</Label>
+                  <Input
+                    id="edit-country"
+                    value={formCountry}
+                    onChange={(e) => setFormCountry(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="edit-city">City</Label>
+                  <Input
+                    id="edit-city"
+                    value={formCity}
+                    onChange={(e) => setFormCity(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="edit-plan">Subscription Plan</Label>
+                  <select
+                    id="edit-plan"
+                    value={formPlan}
+                    onChange={(e) => setFormPlan(e.target.value)}
+                    className="w-full h-10 rounded-btn border border-[#E5E7EB] bg-white px-3 text-body font-medium text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
+                  >
+                    <option value="Free">Free Plan</option>
+                    <option value="Starter">Starter Plan</option>
+                    <option value="Professional">Professional Plan</option>
+                    <option value="Business">Business Plan</option>
+                    <option value="Enterprise">Enterprise Plan</option>
+                  </select>
+                </div>
+
+                <div>
+                  <Label htmlFor="edit-users">User Seats Limit</Label>
+                  <Input
+                    id="edit-users"
+                    type="number"
+                    min={1}
+                    value={formMaxUsers}
+                    onChange={(e) => setFormMaxUsers(Number(e.target.value))}
+                  />
+                </div>
+              </div>
+
+              {/* Modal Actions */}
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#E5E7EB]">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setOrgToEdit(null)}
+                  className="cursor-pointer"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  disabled={updateOrgMutation.isPending}
+                  className="cursor-pointer shadow-saas-sm"
+                >
+                  {updateOrgMutation.isPending ? 'Saving...' : 'Save Changes'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* CONFIRM DELETE MODAL */}
+      <ConfirmModal
+        isOpen={Boolean(orgToDelete)}
+        onClose={() => setOrgToDelete(null)}
+        onConfirm={handleConfirmDelete}
+        title="Delete Organization"
+        description={`Are you sure you want to delete organization "${orgToDelete?.name}"? This action cannot be undone.`}
+        confirmText="Delete Organization"
+        variant="default"
+        isLoading={deleteOrgMutation.isPending}
+      />
     </div>
   );
 }
