@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { navigationSections, NavSection, NavItem } from '@/config/navigation';
 import { AIChatAssistant } from '@/components/ai/ai-chat-assistant';
 import { getSessionToken, clearSessionToken } from '@/lib/api-client';
+import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
 import {
   LogOut,
   Loader2,
@@ -66,6 +67,8 @@ const ICON_MAP: Record<string, React.ElementType> = {
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { data: currentOrg } = useCurrentOrganizationQuery();
+  const [orgDisplayName, setOrgDisplayName] = useState<string>('');
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
@@ -73,6 +76,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     Analytics: true,
     Administration: true
   });
+
+  useEffect(() => {
+    if (currentOrg?.name) {
+      setOrgDisplayName(currentOrg.name);
+    } else if (typeof window !== 'undefined') {
+      try {
+        const storedUser = localStorage.getItem('user');
+        if (storedUser) {
+          const parsed = JSON.parse(storedUser);
+          const name = parsed?.organization?.name || parsed?.organization_name || parsed?.org_name;
+          if (name) setOrgDisplayName(name);
+        }
+      } catch {
+        // fallback
+      }
+    }
+  }, [currentOrg]);
 
   const pageTitle = React.useMemo(() => {
     if (!pathname || pathname === '/') return 'Dashboard';
@@ -234,13 +254,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           })}
         </nav>
 
-        {/* Footer Org Badge */}
-        <div className="p-3.5 border-t border-[#E5E7EB] bg-[#F9FAFB] shrink-0">
-          <div className="flex items-center space-x-2 text-xs text-[#374151] font-bold">
+        {/* Footer Org Badge (Links to Settings Page) */}
+        <Link
+          href="/settings"
+          title="Organization Settings"
+          className={`p-3.5 border-t border-[#E5E7EB] shrink-0 transition flex items-center justify-between group ${
+            pathname === '/settings' ? 'bg-blue-50 text-blue-700 font-bold border-l-4 border-blue-600' : 'bg-[#F9FAFB] hover:bg-slate-100 text-[#374151]'
+          }`}
+        >
+          <div className="flex items-center space-x-2 text-xs font-bold min-w-0">
             <ShieldCheck className="w-4 h-4 text-[#16A34A] shrink-0" />
-            <span className="truncate">Acme Enterprise Corp</span>
+            <span className="truncate group-hover:text-blue-600 transition">{orgDisplayName || currentOrg?.name || 'Organization'}</span>
           </div>
-        </div>
+          <Settings className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition shrink-0" />
+        </Link>
       </aside>
 
       {/* Main Content Area (padded left for fixed sidebar w-64) */}
@@ -265,6 +292,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               <span>Multi-Tenant Org</span>
             </div>
+
+            <Link
+              href="/notifications"
+              title="Notifications"
+              className={`p-2 rounded-xl transition cursor-pointer relative border flex items-center justify-center ${
+                pathname === '/notifications'
+                  ? 'bg-blue-50 text-blue-600 border-blue-300 shadow-xs'
+                  : 'bg-slate-50 text-slate-700 hover:text-blue-600 hover:bg-slate-100 border-slate-200'
+              }`}
+            >
+              <Bell className="w-4.5 h-4.5" />
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-blue-600 ring-2 ring-white" />
+            </Link>
+
             <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-900 border border-slate-200">
               Admin
             </div>
