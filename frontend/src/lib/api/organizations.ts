@@ -79,6 +79,19 @@ export interface UpdateOrganizationPayload {
   max_users?: number;
 }
 
+export interface SubscriptionPlanItem {
+  id: string;
+  name: string;
+  slug: string;
+  price_monthly: number;
+  price_yearly: number;
+  max_users: number;
+  max_storage_gb: number;
+  ai_credits: number;
+  features: string[];
+  is_active?: boolean;
+}
+
 export interface OrganizationSubscription {
   plan: string;
   billing_cycle: string;
@@ -167,6 +180,11 @@ export async function removeOrganizationMemberApi(userId: string): Promise<{ mes
 // 8. GET /api/v1/organizations/subscription (Subscription details)
 export async function getOrganizationSubscriptionApi(): Promise<OrganizationSubscription> {
   return apiClient.get<OrganizationSubscription>('/organizations/subscription');
+}
+
+// 8b. GET /api/v1/organizations/subscription/plans (List available plans)
+export async function getSubscriptionPlansApi(): Promise<SubscriptionPlanItem[]> {
+  return apiClient.get<SubscriptionPlanItem[]>('/organizations/subscription/plans');
 }
 
 // 9. POST /api/v1/organizations/subscription/upgrade (Upgrade plan)
@@ -349,5 +367,12 @@ export function useTransferOwnershipMutation() {
       queryClient.invalidateQueries({ queryKey: ['current-organization'] });
       queryClient.invalidateQueries({ queryKey: ['organization-members'] });
     },
+  });
+}
+
+export function useSubscriptionPlansQuery() {
+  return useQuery({
+    queryKey: ['subscription-plans'],
+    queryFn: getSubscriptionPlansApi,
   });
 }

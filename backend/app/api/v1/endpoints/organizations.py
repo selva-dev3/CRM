@@ -349,6 +349,46 @@ async def get_subscription(db: AsyncSession = Depends(get_db)):
     }
 
 
+# 6b. GET /api/v1/organizations/subscription/plans - List all available subscription plans
+@router.get("/subscription/plans", summary="List all available subscription plans")
+async def list_subscription_plans(db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(SubscriptionPlan).where(SubscriptionPlan.is_active == True))
+    db_plans = res.scalars().all()
+
+    if db_plans:
+        return [
+            {
+                "id": p.id,
+                "name": p.name,
+                "slug": p.slug,
+                "price_monthly": p.price_monthly,
+                "price_yearly": p.price_yearly,
+                "max_users": p.max_users,
+                "max_storage_gb": p.max_storage_gb,
+                "ai_credits": p.ai_credits,
+                "features": [f.strip() for f in p.features.split(",")] if p.features else [],
+                "is_active": p.is_active
+            }
+            for p in db_plans
+        ]
+
+    return [
+        {
+            "id": f"plan-{info['slug']}",
+            "name": info["name"],
+            "slug": info["slug"],
+            "price_monthly": info["price_monthly"],
+            "price_yearly": info["price_monthly"] * 10,
+            "max_users": info["max_users"],
+            "max_storage_gb": info["max_storage_gb"],
+            "ai_credits": info["ai_credits"],
+            "features": [f.strip() for f in info["features"].split(",")],
+            "is_active": True
+        }
+        for info in DEFAULT_PLANS.values()
+    ]
+
+
 # 7. POST /api/v1/organizations/subscription/upgrade - Upgrade organization plan
 @router.post("/subscription/upgrade", response_model=MessageResponse, summary="Upgrade organization subscription")
 async def upgrade_plan(plan_slug: str, db: AsyncSession = Depends(get_db)):
