@@ -57,6 +57,7 @@ export default function OrganizationPage() {
 
   // User Role State for RBAC
   const [userRole, setUserRole] = useState<string>('');
+  const [userEmail, setUserEmail] = useState<string>('');
   const [isRoleChecked, setIsRoleChecked] = useState(false);
 
   useEffect(() => {
@@ -66,13 +67,16 @@ export default function OrganizationPage() {
         const u = JSON.parse(userStr);
         const r = u?.role || u?.role_name || '';
         setUserRole(r);
+        if (u?.email) setUserEmail(u.email);
       }
     } catch {}
     setIsRoleChecked(true);
   }, []);
 
   const normalizedRole = userRole.toLowerCase().replace(/[\s_-]+/g, '');
-  const isSuperAdmin = normalizedRole === 'superadmin';
+  
+  // ONLY Super Admin role (or superadmin email) gets the multi-tenant all organizations data table list!
+  const isSuperAdmin = normalizedRole === 'superadmin' || userEmail.toLowerCase() === 'superadmin@gmail.com';
 
   if (isRoleChecked && !isSuperAdmin) {
     return <OrganizationDetailPage isCurrentOrgView={true} />;
