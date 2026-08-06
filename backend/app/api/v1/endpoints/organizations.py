@@ -3,13 +3,14 @@ from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.database import get_db
+from app.api.deps import get_current_user_optional
 from app.models import Organization, OrganizationSetting, OrganizationSubscription, SubscriptionPlan, User, AuditLog
 from app.schemas.crm_schemas import OrganizationResponse, OrganizationCreate, OrganizationUpdate, MessageResponse
 from app.services.s3_service import s3_service
 import uuid
 
 router = APIRouter()
-
+ 
 # Fallback Subscription Plan configurations
 DEFAULT_PLANS = {
     "free": {
@@ -59,7 +60,13 @@ DEFAULT_PLANS = {
     }
 }
 
-async def get_or_create_default_org(db: AsyncSession) -> Organization:
+async def get_or_create_default_org(db: AsyncSession, current_user: Optional[User] = None) -> Organization:
+    if current_user and getattr(current_user, 'organization_id', None):
+        res_user_org = await db.execute(select(Organization).where(Organization.id == current_user.organization_id))
+        user_org = res_user_org.scalars().first()
+        if user_org:
+            return user_org
+
     res = await db.execute(select(Organization).limit(1))
     org = res.scalars().first()
     if not org:
@@ -238,8 +245,11 @@ async def create_organization(payload: OrganizationCreate, db: AsyncSession = De
 
 # 2. GET /api/v1/organizations - Get current organization details
 @router.get("", response_model=OrganizationResponse, summary="Get current organization details")
-async def get_organization(db: AsyncSession = Depends(get_db)):
-    org = await get_or_create_default_org(db)
+async def get_organization(
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    org = await get_or_create_default_org(db, current_user=current_user)
     members_count = await count_org_members(db, org.id)
     return org_to_dict(org, members_count=members_count)
 
@@ -262,8 +272,11 @@ async def list_all_organizations(db: AsyncSession = Depends(get_db)):
 
 # 4. GET /api/v1/organizations/members - List members in current organization
 @router.get("/members", summary="List members in current organization")
-async def list_members(db: AsyncSession = Depends(get_db)):
-    org = await get_or_create_default_org(db)
+async def list_members(
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    org = await get_or_create_default_org(db, current_user=current_user)
     res = await db.execute(select(User).where(User.organization_id == org.id))
     users = res.scalars().all()
     if not users:
@@ -304,8 +317,11 @@ async def remove_member(user_id: str, db: AsyncSession = Depends(get_db)):
 
 # 6. GET /api/v1/organizations/subscription - Get organization subscription details
 @router.get("/subscription", summary="Get organization subscription details")
-async def get_subscription(db: AsyncSession = Depends(get_db)):
-    org = await get_or_create_default_org(db)
+async def get_subscription(
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    org = await get_or_create_default_org(db, current_user=current_user)
     subscription = await get_or_create_subscription(db, org)
 
     db_plan = None
@@ -479,8 +495,11 @@ async def resume_subscription(db: AsyncSession = Depends(get_db)):
 
 # 10. GET /api/v1/organizations/usage - Get organization usage metrics & quota limits
 @router.get("/usage", summary="Get organization usage metrics & quota limits")
-async def get_usage(db: AsyncSession = Depends(get_db)):
-    org = await get_or_create_default_org(db)
+async def get_usage(
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    org = await get_or_create_default_org(db, current_user=current_user)
     subscription = await get_or_create_subscription(db, org)
 
     users_used = await count_org_members(db, org.id)
@@ -524,9 +543,10 @@ async def get_usage(db: AsyncSession = Depends(get_db)):
 async def update_branding(
     logo_file: Optional[UploadFile] = File(None),
     primary_color: Optional[str] = Form("#3B82F6"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
 ):
-    org = await get_or_create_default_org(db)
+    org = await get_or_create_default_org(db, current_user=current_user)
     try:
         logo_url = org.logo_url
         if logo_file:
@@ -562,8 +582,12 @@ async def update_branding(
 
 # 12. POST /api/v1/organizations/domains/verify - Verify organization custom domain TXT record
 @router.post("/domains/verify", response_model=MessageResponse, summary="Verify organization custom domain TXT record")
-async def verify_domain(domain: str, db: AsyncSession = Depends(get_db)):
-    org = await get_or_create_default_org(db)
+async def verify_domain(
+    domain: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    org = await get_or_create_default_org(db, current_user=current_user)
     org.domain = domain
     log = AuditLog(
         id=str(uuid.uuid4()),
@@ -579,8 +603,11 @@ async def verify_domain(domain: str, db: AsyncSession = Depends(get_db)):
 
 # 13. GET /api/v1/organizations/domains - List custom domains associated with organization
 @router.get("/domains", summary="List custom domains associated with organization")
-async def list_organization_domains(db: AsyncSession = Depends(get_db)):
-    org = await get_or_create_default_org(db)
+async def list_organization_domains(
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    org = await get_or_create_default_org(db, current_user=current_user)
     if org.domain:
         return [
             {
@@ -595,8 +622,11 @@ async def list_organization_domains(db: AsyncSession = Depends(get_db)):
 
 # 14. GET /api/v1/organizations/audit-logs - Get organization level audit trail logs
 @router.get("/audit-logs", summary="Get organization level audit trail logs")
-async def get_organization_audit_logs(db: AsyncSession = Depends(get_db)):
-    org = await get_or_create_default_org(db)
+async def get_organization_audit_logs(
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    org = await get_or_create_default_org(db, current_user=current_user)
     res = await db.execute(select(AuditLog).where(AuditLog.organization_id == org.id).order_by(AuditLog.created_at.desc()).limit(20))
     logs = res.scalars().all()
     if not logs:

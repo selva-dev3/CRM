@@ -78,8 +78,17 @@ async def get_current_user(
             detail="User session is inactive or account has been removed",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
     return user
+
+async def get_current_user_optional(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme),
+    token_query: Optional[str] = Query(None, alias="token"),
+    db: AsyncSession = Depends(get_db)
+) -> Optional[User]:
+    try:
+        return await get_current_user(credentials=credentials, token_query=token_query, db=db)
+    except Exception:
+        return None
 
 async def get_valid_org_id(db: AsyncSession, current_user: Optional[User] = None) -> str:
     """Helper function that guarantees a valid Organization foreign key exists in database."""
