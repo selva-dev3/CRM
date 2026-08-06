@@ -498,7 +498,7 @@ export default function OrganizationPage() {
     },
   ];
 
-  if (isRoleChecked && !isSuperAdmin) {
+  if (!isSuperAdmin) {
     return <OrganizationDetailPage isCurrentOrgView={true} />;
   }
 
