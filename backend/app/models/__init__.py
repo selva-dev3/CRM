@@ -18,7 +18,7 @@ from app.models.quote import Quote, QuoteItem
 from app.models.invoice import Invoice, InvoiceItem
 from app.models.notification import Notification
 from app.models.calendar import CalendarEventModel
-from app.models.report import ReportExport
+from app.models.report import ReportExport, CustomReport, ScheduledReport
 from app.models.audit import AuditLog, ActivityLog
 from app.models.integration import Integration, ApiKey, Webhook
 from app.models.ai import AIConversation, AIPrompt, AIGeneratedContent, AILeadScore, AIMeetingSummary
@@ -44,7 +44,7 @@ __all__ = [
     "Invoice", "InvoiceItem",
     "Notification",
     "CalendarEventModel",
-    "ReportExport",
+    "ReportExport", "CustomReport", "ScheduledReport",
     "AuditLog", "ActivityLog",
     "Integration", "ApiKey", "Webhook",
     "AIConversation", "AIPrompt", "AIGeneratedContent", "AILeadScore", "AIMeetingSummary",

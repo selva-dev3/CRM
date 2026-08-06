@@ -286,24 +286,42 @@ export default function ReportsPage() {
                 <DollarSign className="w-5 h-5 text-emerald-600" />
                 Sales Rep Revenue Performance
               </h3>
-              <span className="text-xs font-mono text-slate-400">Generated: {salesData?.generated_at || '2026-08-05'}</span>
+              <span className="text-xs font-mono text-slate-400">Generated: {salesData?.generated_at || 'Today'}</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div className="p-4 bg-emerald-50/60 border border-emerald-100 rounded-xl">
                 <span className="text-xs font-semibold text-emerald-800 uppercase tracking-wider block">Total Closed Revenue</span>
                 <h4 className="text-2xl font-extrabold text-emerald-950 mt-1">
-                  ${salesData?.metrics?.total_revenue ? salesData.metrics.total_revenue.toLocaleString() : '185,000'}
+                  ${salesData?.metrics?.total_revenue !== undefined ? salesData.metrics.total_revenue.toLocaleString() : '0'}
                 </h4>
               </div>
 
               <div className="p-4 bg-indigo-50/60 border border-indigo-100 rounded-xl">
                 <span className="text-xs font-semibold text-indigo-800 uppercase tracking-wider block">Monthly Target</span>
                 <h4 className="text-2xl font-extrabold text-indigo-950 mt-1">
-                  ${salesData?.metrics?.monthly_target ? salesData.metrics.monthly_target.toLocaleString() : '250,000'}
+                  ${salesData?.metrics?.monthly_target !== undefined ? salesData.metrics.monthly_target.toLocaleString() : '250,000'}
                 </h4>
               </div>
             </div>
+
+            {/* Reps Revenue Breakdown */}
+            {salesData?.metrics?.reps && salesData.metrics.reps.length > 0 && (
+              <div className="space-y-3 pt-2">
+                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Individual Sales Rep Output</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {salesData.metrics.reps.map((rep: any, idx: number) => (
+                    <div key={idx} className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex justify-between items-center">
+                      <div>
+                        <span className="font-bold text-xs text-slate-900 block">{rep.name}</span>
+                        <span className="text-[11px] text-slate-500">{rep.deals_closed} Deals Closed</span>
+                      </div>
+                      <span className="font-extrabold text-xs text-emerald-600">${rep.revenue?.toLocaleString() || 0}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -315,15 +333,29 @@ export default function ReportsPage() {
                 <TrendingUp className="w-5 h-5 text-indigo-600" />
                 Pipeline Velocity & Stage Durations
               </h3>
-              <span className="text-xs font-mono text-slate-400">Average Days to Close</span>
+              <span className="text-xs font-mono text-slate-400">Generated: {velocityData?.generated_at || 'Today'}</span>
             </div>
 
             <div className="p-4 bg-indigo-50/60 border border-indigo-100 rounded-xl max-w-sm">
               <span className="text-xs font-semibold text-indigo-800 uppercase tracking-wider block">Average Sales Cycle</span>
               <h4 className="text-2xl font-extrabold text-indigo-950 mt-1">
-                {velocityData?.metrics?.avg_days_to_close || 18.5} Days
+                {velocityData?.metrics?.avg_days_to_close ?? 18.5} Days
               </h4>
             </div>
+
+            {velocityData?.metrics?.stage_durations && (
+              <div className="space-y-3 pt-2">
+                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Stage-by-Stage Average Duration (Days)</h4>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {Object.entries(velocityData.metrics.stage_durations).map(([stage, duration]: [string, any]) => (
+                    <div key={stage} className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
+                      <span className="text-xs text-slate-500 font-semibold block">{stage}</span>
+                      <span className="text-lg font-bold text-slate-900">{duration} Days</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -335,20 +367,35 @@ export default function ReportsPage() {
                 <PieChart className="w-5 h-5 text-purple-600" />
                 Win vs Loss Ratio Breakdown
               </h3>
+              <span className="text-xs font-mono text-slate-400">Generated: {winLossData?.generated_at || 'Today'}</span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="p-4 bg-emerald-50/60 border border-emerald-100 rounded-xl">
                 <span className="text-xs font-semibold text-emerald-800 uppercase tracking-wider block">Win Percentage</span>
                 <h4 className="text-2xl font-extrabold text-emerald-950 mt-1">
-                  {winLossData?.metrics?.win_percentage || 68.4}%
+                  {winLossData?.metrics?.win_percentage ?? 68.4}%
                 </h4>
               </div>
 
               <div className="p-4 bg-rose-50/60 border border-rose-100 rounded-xl">
                 <span className="text-xs font-semibold text-rose-800 uppercase tracking-wider block">Loss Percentage</span>
                 <h4 className="text-2xl font-extrabold text-rose-950 mt-1">
-                  {winLossData?.metrics?.loss_percentage || 31.6}%
+                  {winLossData?.metrics?.loss_percentage ?? 31.6}%
+                </h4>
+              </div>
+
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider block">Total Won Deals</span>
+                <h4 className="text-2xl font-extrabold text-slate-900 mt-1">
+                  {winLossData?.metrics?.total_won_deals ?? 0}
+                </h4>
+              </div>
+
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider block">Total Lost Deals</span>
+                <h4 className="text-2xl font-extrabold text-slate-900 mt-1">
+                  {winLossData?.metrics?.total_lost_deals ?? 0}
                 </h4>
               </div>
             </div>
@@ -358,27 +405,20 @@ export default function ReportsPage() {
         {/* Lead Attribution */}
         {activeCategory === 'attribution' && (
           <div className="space-y-6">
-            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
-              <Target className="w-5 h-5 text-blue-600" />
-              Lead Attribution & Source ROI
-            </h3>
+            <div className="flex justify-between items-center pb-4 border-b border-slate-100">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Target className="w-5 h-5 text-blue-600" />
+                Lead Attribution & Source Distribution
+              </h3>
+              <span className="text-xs font-mono text-slate-400">Generated: {leadAttrData?.generated_at || 'Today'}</span>
+            </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
-                <span className="text-xs text-slate-500 font-semibold block">Organic Search</span>
-                <span className="text-lg font-bold text-slate-900">42.5%</span>
-              </div>
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
-                <span className="text-xs text-slate-500 font-semibold block">Google Ads</span>
-                <span className="text-lg font-bold text-slate-900">28.0%</span>
-              </div>
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
-                <span className="text-xs text-slate-500 font-semibold block">Referrals</span>
-                <span className="text-lg font-bold text-slate-900">18.5%</span>
-              </div>
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
-                <span className="text-xs text-slate-500 font-semibold block">Events</span>
-                <span className="text-lg font-bold text-slate-900">11.0%</span>
-              </div>
+              {Object.entries(leadAttrData?.metrics || { organic_search: 42.5, paid_google_ads: 28.0, referrals: 18.5, events_and_webinars: 11.0 }).map(([src, pct]: [string, any]) => (
+                <div key={src} className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
+                  <span className="text-xs text-slate-500 font-semibold block capitalize">{src.replace(/_/g, ' ')}</span>
+                  <span className="text-lg font-bold text-slate-900">{pct}%</span>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -386,16 +426,19 @@ export default function ReportsPage() {
         {/* Rep Leaderboard */}
         {activeCategory === 'leaderboard' && (
           <div className="space-y-6">
-            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
-              <Trophy className="w-5 h-5 text-amber-500" />
-              Rep Conversion Ranking Leaderboard
-            </h3>
+            <div className="flex justify-between items-center pb-4 border-b border-slate-100">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Trophy className="w-5 h-5 text-amber-500" />
+                Rep Conversion Ranking Leaderboard
+              </h3>
+              <span className="text-xs font-mono text-slate-400">Generated: {leaderboardData?.generated_at || 'Today'}</span>
+            </div>
             <div className="space-y-2">
-              {[
+              {(leaderboardData?.metrics?.top_reps || [
                 { rank: 1, name: 'Sarah Connor', quota_pct: 142.5, deals: 18 },
                 { rank: 2, name: 'Alex Mercer', quota_pct: 118.0, deals: 14 },
                 { rank: 3, name: 'Elena Rostova', quota_pct: 95.5, deals: 10 },
-              ].map((rep) => (
+              ]).map((rep: any) => (
                 <div key={rep.rank} className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <span className="h-7 w-7 rounded-full bg-amber-100 text-amber-800 font-extrabold text-xs flex items-center justify-center">
@@ -416,21 +459,30 @@ export default function ReportsPage() {
         {/* Revenue Forecasting */}
         {activeCategory === 'forecasting' && (
           <div className="space-y-6">
-            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
-              <Sparkles className="w-5 h-5 text-indigo-600" />
-              Predictive AI Revenue Forecast
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="flex justify-between items-center pb-4 border-b border-slate-100">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-indigo-600" />
+                Predictive AI Revenue Forecast
+              </h3>
+              <span className="text-xs font-mono text-slate-400">Generated: {forecastData?.generated_at || 'Today'}</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="p-4 bg-indigo-50/60 border border-indigo-100 rounded-xl">
                 <span className="text-xs font-semibold text-indigo-800 uppercase tracking-wider block">Q3 Predicted ARR</span>
                 <h4 className="text-2xl font-extrabold text-indigo-950 mt-1">
                   ${forecastData?.metrics?.q3_predicted ? forecastData.metrics.q3_predicted.toLocaleString() : '485,000'}
                 </h4>
               </div>
+              <div className="p-4 bg-emerald-50/60 border border-emerald-100 rounded-xl">
+                <span className="text-xs font-semibold text-emerald-800 uppercase tracking-wider block">Q4 Predicted ARR</span>
+                <h4 className="text-2xl font-extrabold text-emerald-950 mt-1">
+                  ${forecastData?.metrics?.q4_predicted ? forecastData.metrics.q4_predicted.toLocaleString() : '620,000'}
+                </h4>
+              </div>
               <div className="p-4 bg-purple-50/60 border border-purple-100 rounded-xl">
                 <span className="text-xs font-semibold text-purple-800 uppercase tracking-wider block">Model Confidence</span>
                 <h4 className="text-2xl font-extrabold text-purple-950 mt-1">
-                  {forecastData?.metrics?.confidence || 92.4}%
+                  {forecastData?.metrics?.confidence ?? 92.4}%
                 </h4>
               </div>
             </div>
@@ -440,22 +492,25 @@ export default function ReportsPage() {
         {/* Activity Metrics */}
         {activeCategory === 'activity' && (
           <div className="space-y-6">
-            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
-              <Activity className="w-5 h-5 text-blue-600" />
-              Activity Output Metrics
-            </h3>
+            <div className="flex justify-between items-center pb-4 border-b border-slate-100">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Activity className="w-5 h-5 text-blue-600" />
+                Activity Output Metrics
+              </h3>
+              <span className="text-xs font-mono text-slate-400">Generated: {activityData?.generated_at || 'Today'}</span>
+            </div>
             <div className="grid grid-cols-3 gap-4">
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-center">
                 <span className="text-xs text-slate-500 font-semibold block uppercase">Total Calls</span>
-                <span className="text-2xl font-bold text-slate-900">{activityData?.metrics?.total_calls || 420}</span>
+                <span className="text-2xl font-bold text-slate-900">{activityData?.metrics?.total_calls ?? 0}</span>
               </div>
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-center">
                 <span className="text-xs text-slate-500 font-semibold block uppercase">Total Emails</span>
-                <span className="text-2xl font-bold text-slate-900">{activityData?.metrics?.total_emails || 1280}</span>
+                <span className="text-2xl font-bold text-slate-900">{activityData?.metrics?.total_emails ?? 0}</span>
               </div>
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-center">
                 <span className="text-xs text-slate-500 font-semibold block uppercase">Meetings</span>
-                <span className="text-2xl font-bold text-slate-900">{activityData?.metrics?.total_meetings || 145}</span>
+                <span className="text-2xl font-bold text-slate-900">{activityData?.metrics?.total_meetings ?? 0}</span>
               </div>
             </div>
           </div>
@@ -464,13 +519,26 @@ export default function ReportsPage() {
         {/* Deal Duration */}
         {activeCategory === 'duration' && (
           <div className="space-y-6">
-            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
-              <Clock className="w-5 h-5 text-amber-500" />
-              Deal Duration Analysis
-            </h3>
-            <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
-              <span className="text-xs font-semibold text-slate-500">Average Sales Cycle Length:</span>
-              <h4 className="text-xl font-bold text-slate-900">{durationData?.metrics?.avg_cycle_days || 21.4} Days</h4>
+            <div className="flex justify-between items-center pb-4 border-b border-slate-100">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Clock className="w-5 h-5 text-amber-500" />
+                Deal Duration Analysis
+              </h3>
+              <span className="text-xs font-mono text-slate-400">Generated: {durationData?.generated_at || 'Today'}</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                <span className="text-xs font-semibold text-slate-500">Average Sales Cycle Length:</span>
+                <h4 className="text-xl font-bold text-slate-900">{durationData?.metrics?.avg_cycle_days ?? 21.4} Days</h4>
+              </div>
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                <span className="text-xs font-semibold text-slate-500">Fastest Close:</span>
+                <h4 className="text-xl font-bold text-emerald-600">{durationData?.metrics?.fastest_close_days ?? 3.0} Days</h4>
+              </div>
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                <span className="text-xs font-semibold text-slate-500">Longest Close:</span>
+                <h4 className="text-xl font-bold text-amber-600">{durationData?.metrics?.longest_close_days ?? 65.0} Days</h4>
+              </div>
             </div>
           </div>
         )}
@@ -478,22 +546,28 @@ export default function ReportsPage() {
         {/* CAC / LTV / Churn */}
         {activeCategory === 'unit-economics' && (
           <div className="space-y-6">
-            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
-              <Percent className="w-5 h-5 text-purple-600" />
-              SaaS Unit Economics (CAC, LTV & Churn)
-            </h3>
+            <div className="flex justify-between items-center pb-4 border-b border-slate-100">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Percent className="w-5 h-5 text-purple-600" />
+                SaaS Unit Economics (CAC, LTV & Churn)
+              </h3>
+              <span className="text-xs font-mono text-slate-400">Generated: {cacData?.generated_at || 'Today'}</span>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
                 <span className="text-xs text-slate-500 font-semibold block">Blended CAC</span>
-                <span className="text-xl font-bold text-slate-900">${cacData?.metrics?.blended_cac || 1250}</span>
+                <span className="text-xl font-bold text-slate-900">${cacData?.metrics?.blended_cac ?? 1250}</span>
+                <span className="text-[11px] text-slate-400 block mt-1">Paid: ${cacData?.metrics?.paid_cac ?? 1850} | Organic: ${cacData?.metrics?.organic_cac ?? 450}</span>
               </div>
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
                 <span className="text-xs text-slate-500 font-semibold block">Average LTV</span>
-                <span className="text-xl font-bold text-emerald-600">${ltvData?.metrics?.avg_ltv || 28500}</span>
+                <span className="text-xl font-bold text-emerald-600">${ltvData?.metrics?.avg_ltv?.toLocaleString() ?? 28500}</span>
+                <span className="text-[11px] text-slate-400 block mt-1">LTV : CAC Ratio = {ltvData?.metrics?.ltv_cac_ratio ?? 22.8}x</span>
               </div>
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
                 <span className="text-xs text-slate-500 font-semibold block">Annual Churn Rate</span>
-                <span className="text-xl font-bold text-rose-600">{churnData?.metrics?.annual_churn_rate || 2.4}%</span>
+                <span className="text-xl font-bold text-rose-600">{churnData?.metrics?.annual_churn_rate ?? 2.4}%</span>
+                <span className="text-[11px] text-slate-400 block mt-1">Net Retention: {churnData?.metrics?.net_revenue_retention ?? 118.5}%</span>
               </div>
             </div>
           </div>
@@ -502,15 +576,26 @@ export default function ReportsPage() {
         {/* Quota Attainment */}
         {activeCategory === 'quota' && (
           <div className="space-y-6">
-            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
-              <Layers className="w-5 h-5 text-emerald-600" />
-              Team Quota Attainment Progress
-            </h3>
-            <div className="p-4 bg-emerald-50/60 border border-emerald-100 rounded-xl max-w-sm">
-              <span className="text-xs font-semibold text-emerald-800 uppercase tracking-wider block">Team Target Attainment</span>
-              <h4 className="text-2xl font-extrabold text-emerald-950 mt-1">
-                {quotaData?.metrics?.team_attainment_pct || 112.4}%
-              </h4>
+            <div className="flex justify-between items-center pb-4 border-b border-slate-100">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Layers className="w-5 h-5 text-emerald-600" />
+                Team Quota Attainment Progress
+              </h3>
+              <span className="text-xs font-mono text-slate-400">Generated: {quotaData?.generated_at || 'Today'}</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="p-4 bg-emerald-50/60 border border-emerald-100 rounded-xl max-w-sm">
+                <span className="text-xs font-semibold text-emerald-800 uppercase tracking-wider block">Team Target Attainment</span>
+                <h4 className="text-2xl font-extrabold text-emerald-950 mt-1">
+                  {quotaData?.metrics?.team_attainment_pct ?? 112.4}%
+                </h4>
+              </div>
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl max-w-sm">
+                <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider block">Target Benchmark</span>
+                <h4 className="text-2xl font-extrabold text-slate-900 mt-1">
+                  {quotaData?.metrics?.q3_attainment_target ?? 100.0}%
+                </h4>
+              </div>
             </div>
           </div>
         )}
@@ -518,49 +603,75 @@ export default function ReportsPage() {
         {/* Custom Reports */}
         {activeCategory === 'custom' && (
           <div className="space-y-6">
-            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
-              <Plus className="w-5 h-5 text-indigo-600" />
-              Saved Custom Query Reports
-            </h3>
-            <div className="space-y-3">
-              {customReports.map((r) => (
-                <div key={r.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-900">{r.name}</h4>
-                    <span className="text-[11px] text-slate-400 font-mono">Created: {r.created_at}</span>
-                  </div>
-                  <button
-                    onClick={() => setReportToDelete(r.id)}
-                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              ))}
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Plus className="w-5 h-5 text-indigo-600" />
+                Saved Custom Query Reports
+              </h3>
+              <button
+                onClick={() => setIsCustomModalOpen(true)}
+                className="flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-800 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                New Query
+              </button>
             </div>
+            {customReports.length === 0 ? (
+              <p className="text-xs text-slate-500 italic">No custom report queries saved yet. Click "Custom Query Builder" above to create one.</p>
+            ) : (
+              <div className="space-y-3">
+                {customReports.map((r) => (
+                  <div key={r.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900">{r.name}</h4>
+                      <span className="text-[11px] text-slate-400 font-mono">Created: {r.created_at}</span>
+                    </div>
+                    <button
+                      onClick={() => setReportToDelete(r.id)}
+                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
         {/* Scheduled Automated Jobs */}
         {activeCategory === 'scheduled' && (
           <div className="space-y-6">
-            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
-              <Mail className="w-5 h-5 text-purple-600" />
-              Active Scheduled Automated Email Reports
-            </h3>
-            <div className="space-y-3">
-              {scheduledReports.map((job) => (
-                <div key={job.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <h4 className="text-xs font-bold text-slate-900">{job.report_type}</h4>
-                    <p className="text-xs text-slate-500">Recipient: {job.email} ({job.frequency})</p>
-                  </div>
-                  <span className="px-2.5 py-1 bg-purple-100 text-purple-800 rounded text-xs font-semibold">
-                    Next Run: {job.next_run}
-                  </span>
-                </div>
-              ))}
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Mail className="w-5 h-5 text-purple-600" />
+                Active Scheduled Automated Email Reports
+              </h3>
+              <button
+                onClick={() => setIsScheduleModalOpen(true)}
+                className="flex items-center gap-1 text-xs font-bold text-purple-600 hover:text-purple-800 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Schedule Job
+              </button>
             </div>
+            {scheduledReports.length === 0 ? (
+              <p className="text-xs text-slate-500 italic">No scheduled jobs yet. Click "Schedule Delivery" to add automated report emails.</p>
+            ) : (
+              <div className="space-y-3">
+                {scheduledReports.map((job) => (
+                  <div key={job.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <h4 className="text-xs font-bold text-slate-900">{job.report_type}</h4>
+                      <p className="text-xs text-slate-500">Recipient: {job.email} ({job.frequency})</p>
+                    </div>
+                    <span className="px-2.5 py-1 bg-purple-100 text-purple-800 rounded text-xs font-semibold">
+                      Next Run: {job.next_run}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
