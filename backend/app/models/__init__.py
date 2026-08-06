@@ -1,5 +1,5 @@
 from app.database import Base
-from app.models.organization import Organization, OrganizationSetting, OrganizationSubscription, SubscriptionPlan
+from app.models.organization import Organization, OrganizationSetting, OrganizationSubscription, SubscriptionPlan, OrganizationInvitation
 from app.models.user import User, UserInvitation
 from app.models.auth import UserProfile, UserSession, RefreshToken, PasswordReset, EmailVerification, OTPVerification
 from app.models.rbac import Role, Permission, RolePermission, UserRole
@@ -26,7 +26,7 @@ from app.models.system import SystemSetting, FileUpload, Country, State, City, C
 
 __all__ = [
     "Base",
-    "Organization", "OrganizationSetting", "OrganizationSubscription", "SubscriptionPlan",
+    "Organization", "OrganizationSetting", "OrganizationSubscription", "SubscriptionPlan", "OrganizationInvitation",
     "User", "UserInvitation", "UserProfile", "UserSession", "RefreshToken", "PasswordReset", "EmailVerification", "OTPVerification",
     "Role", "Permission", "RolePermission", "UserRole",
     "Lead", "LeadSource", "LeadStatus", "LeadScore", "LeadTag", "LeadActivity", "LeadNote", "LeadAttachment",

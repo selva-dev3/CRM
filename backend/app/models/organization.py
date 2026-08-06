@@ -222,3 +222,29 @@ class SubscriptionPlan(Base):
     features: Mapped[Optional[str]] = mapped_column(Text)
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class OrganizationInvitation(Base):
+    __tablename__ = "organization_invitations"
+
+    id: Mapped[str] = mapped_column(
+        String,
+        primary_key=True,
+        default=lambda: str(uuid.uuid4())
+    )
+    organization_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False
+    )
+    email: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
+    full_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    role_id: Mapped[Optional[str]] = mapped_column(String(100), default="Admin", nullable=True)
+    subscription_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    token: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(50), default="Pending", nullable=False)  # Pending, Accepted, Expired, Cancelled
+    expires_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False)
+    accepted_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

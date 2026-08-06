@@ -242,6 +242,102 @@ def send_user_invite_email(
         print(f"[BREVO ERROR] {e}")
         return False
 
+
+def send_organization_onboarding_invite_email(
+    email_to: str,
+    admin_name: str,
+    organization_name: str,
+    plan_name: str,
+    token: str,
+    expires_at_str: str = "24 Hours"
+) -> bool:
+    """Sends SaaS Organization Onboarding & Admin Invitation email via Brevo API."""
+
+    invite_url = f"{settings.FRONTEND_URL}/accept-invite?token={token}"
+    subject = f"Welcome to {organization_name} on {settings.PROJECT_NAME} - Complete Your Admin Setup"
+
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            body {{ font-family: Arial, sans-serif; background-color: #f4f6f9; margin: 0; padding: 20px; }}
+            .container {{ max-width: 600px; background: #ffffff; padding: 32px; border-radius: 12px; margin: 0 auto; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #e5e7eb; }}
+            .header {{ text-align: center; border-bottom: 2px solid #2563eb; padding-bottom: 16px; margin-bottom: 24px; }}
+            .badge {{ display: inline-block; padding: 4px 12px; background-color: #eff6ff; color: #2563eb; font-weight: bold; border-radius: 9999px; font-size: 13px; border: 1px solid #bfdbfe; }}
+            .btn {{ display: inline-block; padding: 14px 28px; background-color: #2563eb; color: #ffffff !important; text-decoration: none; border-radius: 8px; font-weight: bold; margin-top: 24px; font-size: 16px; box-shadow: 0 2px 4px rgba(37,99,235,0.2); }}
+            .info-box {{ background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 20px 0; font-size: 14px; }}
+            .footer {{ font-size: 12px; color: #6b7280; margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 16px; text-align: center; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h2 style="color: #1e293b; margin: 0;">{settings.PROJECT_NAME}</h2>
+                <p style="color: #64748b; margin-top: 4px; font-size: 14px;">Enterprise CRM Organization Onboarding</p>
+            </div>
+
+            <p style="font-size: 16px; color: #334155;">Hello <strong>{admin_name}</strong>,</p>
+
+            <p style="font-size: 15px; color: #475569; line-height: 1.5;">
+                An enterprise organization <strong>{organization_name}</strong> has been successfully provisioned for you on
+                <strong>{settings.PROJECT_NAME}</strong>.
+            </p>
+
+            <div class="info-box">
+                <div style="margin-bottom: 8px;"><strong>Organization:</strong> {organization_name}</div>
+                <div style="margin-bottom: 8px;"><strong>Subscription Plan:</strong> <span class="badge">{plan_name}</span></div>
+                <div style="margin-bottom: 8px;"><strong>Admin Email:</strong> {email_to}</div>
+                <div><strong>Invitation Expiry:</strong> {expires_at_str}</div>
+            </div>
+
+            <p style="font-size: 15px; color: #475569;">
+                Click the button below to accept your invitation, create your password, and activate your Organization Administrator account.
+            </p>
+
+            <div style="text-align: center;">
+                <a href="{invite_url}" class="btn">
+                    Accept Invitation & Activate Account
+                </a>
+            </div>
+
+            <br>
+            <p style="font-size: 13px; color: #64748b;">Or copy and paste this link into your browser:</p>
+            <p style="font-size: 12px; word-break: break-all; color: #2563eb;"><a href="{invite_url}">{invite_url}</a></p>
+
+            <div class="footer">
+                <p>If you were not expecting this invitation, please contact support.</p>
+                <p>&copy; 2026 {settings.PROJECT_NAME}. All rights reserved.</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+
+    try:
+        print(f"[BREVO ONBOARDING] Sending organization onboarding email to {email_to}...")
+
+        success = send_email(
+            to_email=email_to,
+            subject=subject,
+            html_content=html_content
+        )
+
+        if success:
+            logger.info(f"Organization onboarding email sent successfully to {email_to}")
+            print(f"[BREVO SUCCESS] Onboarding email sent to {email_to}")
+        else:
+            logger.error(f"Organization onboarding email failed for {email_to}")
+            print(f"[BREVO FAILED] Onboarding email failed for {email_to}")
+
+        return success
+
+    except Exception as e:
+        logger.exception(f"Organization onboarding email error: {e}")
+        print(f"[BREVO ERROR] {e}")
+        return False
+
+
 def send_magic_link_email(
     email_to: str,
     token: str,

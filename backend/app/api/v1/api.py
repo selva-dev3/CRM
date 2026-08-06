@@ -5,6 +5,8 @@ from app.api.v1.endpoints import (
     users,
     roles,
     organizations,
+    invitations,
+    super_admin,
     dashboard,
     leads,
     contacts,
@@ -32,6 +34,12 @@ api_router = APIRouter()
 
 # Public Authentication endpoints
 api_router.include_router(auth.router, prefix="/auth", tags=["1. Authentication & Security"])
+
+# Super Admin Onboarding & Management endpoints
+api_router.include_router(super_admin.router, prefix="/super-admin", tags=["25. Super Admin Suite"])
+
+# Organization Invitations & Onboarding endpoints (Contains both public token validation/acceptance & protected invitation management)
+api_router.include_router(invitations.router, prefix="/organizations/invitations", tags=["4. Organizations & Invitations"])
 
 # Protected Application API endpoints requiring valid JWT Bearer token
 api_router.include_router(users.router, prefix="/users", tags=["2. User Management"], dependencies=[Depends(get_current_user)])
