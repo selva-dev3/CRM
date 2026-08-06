@@ -146,9 +146,166 @@ async def create_role(payload: RoleCreate, db: AsyncSession = Depends(get_db)):
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to create role: {str(e)}")
 
+ALL_STANDARD_PERMISSIONS = [
+    # Leads
+    {"key": "leads:read", "name": "View Leads", "category": "Leads", "description": "View sales leads and details"},
+    {"key": "leads:create", "name": "Create Leads", "category": "Leads", "description": "Create new sales leads"},
+    {"key": "leads:update", "name": "Update Leads", "category": "Leads", "description": "Edit existing lead details"},
+    {"key": "leads:delete", "name": "Delete Leads", "category": "Leads", "description": "Delete lead records"},
+    {"key": "leads:export", "name": "Export Leads", "category": "Leads", "description": "Export leads to CSV/Excel"},
+    {"key": "leads:import", "name": "Import Leads", "category": "Leads", "description": "Import leads from CSV/Excel"},
+    {"key": "leads:assign", "name": "Assign Leads", "category": "Leads", "description": "Assign leads to team members"},
+
+    # Contacts
+    {"key": "contacts:read", "name": "View Contacts", "category": "Contacts", "description": "View contact records"},
+    {"key": "contacts:create", "name": "Create Contacts", "category": "Contacts", "description": "Create new contact records"},
+    {"key": "contacts:update", "name": "Update Contacts", "category": "Contacts", "description": "Edit existing contact information"},
+    {"key": "contacts:delete", "name": "Delete Contacts", "category": "Contacts", "description": "Delete contact records"},
+    {"key": "contacts:export", "name": "Export Contacts", "category": "Contacts", "description": "Export contact list"},
+    {"key": "contacts:import", "name": "Import Contacts", "category": "Contacts", "description": "Import contact list"},
+
+    # Companies
+    {"key": "companies:read", "name": "View Companies", "category": "Companies", "description": "View company accounts"},
+    {"key": "companies:create", "name": "Create Companies", "category": "Companies", "description": "Create new company accounts"},
+    {"key": "companies:update", "name": "Update Companies", "category": "Companies", "description": "Update company account details"},
+    {"key": "companies:delete", "name": "Delete Companies", "category": "Companies", "description": "Delete company accounts"},
+
+    # Deals
+    {"key": "deals:read", "name": "View Deals", "category": "Deals", "description": "View sales deals and pipelines"},
+    {"key": "deals:create", "name": "Create Deals", "category": "Deals", "description": "Create new deal opportunities"},
+    {"key": "deals:update", "name": "Update Deals", "category": "Deals", "description": "Update deal stages and amounts"},
+    {"key": "deals:delete", "name": "Delete Deals", "category": "Deals", "description": "Delete deal opportunities"},
+    {"key": "deals:pipeline", "name": "Manage Pipelines", "category": "Deals", "description": "Configure deal pipeline stages"},
+
+    # Tasks
+    {"key": "tasks:read", "name": "View Tasks", "category": "Tasks", "description": "View task lists and status"},
+    {"key": "tasks:create", "name": "Create Tasks", "category": "Tasks", "description": "Create new task items"},
+    {"key": "tasks:update", "name": "Update Tasks", "category": "Tasks", "description": "Update task progress and status"},
+    {"key": "tasks:delete", "name": "Delete Tasks", "category": "Tasks", "description": "Delete task items"},
+    {"key": "tasks:assign", "name": "Assign Tasks", "category": "Tasks", "description": "Assign tasks to team members"},
+
+    # Meetings
+    {"key": "meetings:read", "name": "View Meetings", "category": "Meetings", "description": "View scheduled meetings"},
+    {"key": "meetings:create", "name": "Schedule Meetings", "category": "Meetings", "description": "Schedule new customer meetings"},
+    {"key": "meetings:update", "name": "Update Meetings", "category": "Meetings", "description": "Reschedule or update meeting details"},
+    {"key": "meetings:delete", "name": "Cancel Meetings", "category": "Meetings", "description": "Cancel or delete meetings"},
+
+    # Calls
+    {"key": "calls:read", "name": "View Call Logs", "category": "Calls", "description": "View sales call logs and recordings"},
+    {"key": "calls:create", "name": "Log Calls", "category": "Calls", "description": "Log new outbound or inbound calls"},
+    {"key": "calls:update", "name": "Update Call Logs", "category": "Calls", "description": "Update call notes and outcomes"},
+    {"key": "calls:delete", "name": "Delete Call Logs", "category": "Calls", "description": "Delete call log entries"},
+
+    # Emails
+    {"key": "emails:read", "name": "View Email Logs", "category": "Emails", "description": "View sent and received emails"},
+    {"key": "emails:send", "name": "Send Emails", "category": "Emails", "description": "Send emails to leads and contacts"},
+    {"key": "emails:templates", "name": "Manage Templates", "category": "Emails", "description": "Create and edit email templates"},
+
+    # Notes
+    {"key": "notes:read", "name": "View Notes", "category": "Notes", "description": "View notes on CRM records"},
+    {"key": "notes:create", "name": "Create Notes", "category": "Notes", "description": "Add new notes to leads, contacts, or deals"},
+    {"key": "notes:update", "name": "Update Notes", "category": "Notes", "description": "Edit existing note content"},
+    {"key": "notes:delete", "name": "Delete Notes", "category": "Notes", "description": "Delete notes from records"},
+
+    # Documents
+    {"key": "documents:read", "name": "View Documents", "category": "Documents", "description": "View attached documents and files"},
+    {"key": "documents:upload", "name": "Upload Documents", "category": "Documents", "description": "Upload new files to MinIO S3 storage"},
+    {"key": "documents:delete", "name": "Delete Documents", "category": "Documents", "description": "Delete uploaded documents"},
+
+    # Products
+    {"key": "products:read", "name": "View Products", "category": "Products", "description": "View product catalog and price list"},
+    {"key": "products:create", "name": "Create Products", "category": "Products", "description": "Add new products to catalog"},
+    {"key": "products:update", "name": "Update Products", "category": "Products", "description": "Edit product pricing and details"},
+    {"key": "products:delete", "name": "Delete Products", "category": "Products", "description": "Remove products from catalog"},
+
+    # Quotes
+    {"key": "quotes:read", "name": "View Quotes", "category": "Quotes", "description": "View sales quotes and proposals"},
+    {"key": "quotes:create", "name": "Create Quotes", "category": "Quotes", "description": "Generate new sales quotes"},
+    {"key": "quotes:update", "name": "Update Quotes", "category": "Quotes", "description": "Edit sales quotes and line items"},
+    {"key": "quotes:approve", "name": "Approve Quotes", "category": "Quotes", "description": "Approve high-value sales quotes"},
+    {"key": "quotes:delete", "name": "Delete Quotes", "category": "Quotes", "description": "Delete sales quotes"},
+
+    # Invoices
+    {"key": "invoices:read", "name": "View Invoices", "category": "Invoices", "description": "View customer invoices and payments"},
+    {"key": "invoices:create", "name": "Create Invoices", "category": "Invoices", "description": "Create new billing invoices"},
+    {"key": "invoices:update", "name": "Update Invoices", "category": "Invoices", "description": "Edit invoice details"},
+    {"key": "invoices:send", "name": "Send Invoices", "category": "Invoices", "description": "Send invoices to customers"},
+    {"key": "invoices:delete", "name": "Delete Invoices", "category": "Invoices", "description": "Delete invoice records"},
+
+    # Reports
+    {"key": "reports:read", "name": "View Analytics & Reports", "category": "Reports", "description": "View dashboard charts and reports"},
+    {"key": "reports:create", "name": "Create Reports", "category": "Reports", "description": "Build custom analytics reports"},
+    {"key": "reports:export", "name": "Export Reports", "category": "Reports", "description": "Export analytics data"},
+
+    # Users
+    {"key": "users:read", "name": "View Users", "category": "Users", "description": "View organization user list"},
+    {"key": "users:invite", "name": "Invite Users", "category": "Users", "description": "Invite new users to organization"},
+    {"key": "users:update", "name": "Update Users", "category": "Users", "description": "Update user profiles and status"},
+    {"key": "users:delete", "name": "Delete Users", "category": "Users", "description": "Remove users from organization"},
+
+    # Roles
+    {"key": "roles:read", "name": "View Roles & Permissions", "category": "Roles", "description": "View RBAC roles and permissions"},
+    {"key": "roles:create", "name": "Create Custom Roles", "category": "Roles", "description": "Create new custom RBAC roles"},
+    {"key": "roles:update", "name": "Update Roles", "category": "Roles", "description": "Edit role permissions"},
+    {"key": "roles:delete", "name": "Delete Roles", "category": "Roles", "description": "Delete custom RBAC roles"},
+
+    # Organization
+    {"key": "organization:read", "name": "View Organization Details", "category": "Organization", "description": "View organization profile"},
+    {"key": "organization:update", "name": "Update Organization Profile", "category": "Organization", "description": "Edit organization settings"},
+    {"key": "organization:billing", "name": "Manage Subscriptions", "category": "Organization", "description": "Manage subscription plans and billing"},
+    {"key": "organization:domains", "name": "Manage Custom Domains", "category": "Organization", "description": "Configure custom domain verification"},
+    {"key": "organization:audit", "name": "View Audit Trail Logs", "category": "Organization", "description": "View organization audit logs"},
+
+    # Organization Invitations
+    {"key": "invitations:read", "name": "View Organization Invitations", "category": "Organization Invitations", "description": "View pending organization invites"},
+    {"key": "invitations:create", "name": "Create Organization Invitation", "category": "Organization Invitations", "description": "Send new organization invitations"},
+    {"key": "invitations:resend", "name": "Resend Invitation", "category": "Organization Invitations", "description": "Resend pending organization invitations"},
+    {"key": "invitations:revoke", "name": "Revoke Invitation", "category": "Organization Invitations", "description": "Revoke pending organization invitations"},
+
+    # Integrations
+    {"key": "integrations:read", "name": "View Integrations", "category": "Integrations", "description": "View connected third-party tools"},
+    {"key": "integrations:manage", "name": "Manage Integrations", "category": "Integrations", "description": "Configure webhooks and API keys"},
+
+    # Settings
+    {"key": "settings:read", "name": "View System Settings", "category": "Settings", "description": "View system-wide settings"},
+    {"key": "settings:update", "name": "Update System Settings", "category": "Settings", "description": "Modify system configurations"},
+
+    # Activities
+    {"key": "activities:read", "name": "View Activity Trail", "category": "Activities", "description": "View activity logs across CRM"},
+    {"key": "activities:create", "name": "Log Activity", "category": "Activities", "description": "Log new system activity"}
+]
+
+async def seed_all_permissions_into_db(db: AsyncSession):
+    """Seed all 70+ granular CRM permissions into PostgreSQL DB permissions table if missing."""
+    try:
+        p_res = await db.execute(select(Permission.key))
+        existing_keys = set(p_res.scalars().all())
+
+        new_count = 0
+        for item in ALL_STANDARD_PERMISSIONS:
+            key_str = item["key"]
+            if key_str and key_str != "all" and key_str not in existing_keys:
+                perm_obj = Permission(
+                    id=f"perm-{key_str.replace(':', '-')}",
+                    key=key_str,
+                    name=item["name"],
+                    category=item["category"],
+                    description=item["description"]
+                )
+                db.add(perm_obj)
+                existing_keys.add(key_str)
+                new_count += 1
+
+        if new_count > 0:
+            await db.commit()
+    except Exception:
+        await db.rollback()
+
 @router.get("/permissions/matrix", response_model=List[PermissionItem], summary="Get full system permission matrix directly from DB")
 async def get_permission_matrix(db: AsyncSession = Depends(get_db)):
     try:
+        await seed_all_permissions_into_db(db)
+
         res = await db.execute(
             select(Permission)
             .where(
