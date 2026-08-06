@@ -179,14 +179,18 @@ export default function RoleDetailPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Filter permissions assigned to this role
+  // Filter permissions assigned to this role (expanding 'all' to all individual granular permissions)
   const assignedPermissions = React.useMemo(() => {
     if (!role || !permissionMatrix.length) return [];
+    
+    // Exclude generic 'all' placeholder item from permissions table list
+    const cleanMatrix = permissionMatrix.filter((p) => p.key !== 'all' && p.id !== 'all' && p.name !== 'All Permission');
+
     if (role.is_system_role || role.permissions?.includes('all')) {
-      return permissionMatrix;
+      return cleanMatrix;
     }
     const permSet = new Set(role.permissions || []);
-    return permissionMatrix.filter(
+    return cleanMatrix.filter(
       (p) => permSet.has(p.id) || (p.key && permSet.has(p.key))
     );
   }, [role, permissionMatrix]);

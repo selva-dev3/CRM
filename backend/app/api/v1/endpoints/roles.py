@@ -32,10 +32,27 @@ async def get_default_role_ids(db: AsyncSession) -> set:
         pass
     return set()
 
+async def get_all_db_permission_keys(db: AsyncSession) -> List[str]:
+    """Fetch all actual permission keys from Permission DB table, excluding generic 'all'."""
+    try:
+        p_res = await db.execute(select(Permission.key))
+        keys = [k for k in p_res.scalars().all() if k and k != "all"]
+        if keys:
+            return sorted(list(set(keys)))
+    except Exception:
+        pass
+    return [
+        "leads:read", "leads:create", "leads:update", "leads:delete",
+        "contacts:read", "contacts:create", "contacts:update", "contacts:delete",
+        "deals:read", "deals:create", "deals:update", "deals:delete",
+        "organization:read", "organization:write", "organization:manage"
+    ]
+
 @router.get("", response_model=List[RoleResponse], summary="List all organization roles")
 async def list_roles(search: Optional[str] = Query(None), db: AsyncSession = Depends(get_db)):
     try:
         default_ids = await get_default_role_ids(db)
+        all_db_keys = await get_all_db_permission_keys(db)
 
         stmt = select(Role)
         cleaned_search = search.strip() if search and isinstance(search, str) and search.strip() else None
@@ -57,11 +74,15 @@ async def list_roles(search: Optional[str] = Query(None), db: AsyncSession = Dep
             assigned_perms = perm_res.scalars().all()
             
             if assigned_perms:
-                perm_keys = [p.key for p in assigned_perms if p.key]
-            elif getattr(r, "is_system_role", False):
-                perm_keys = ["all"]
+                perm_keys = [p.key for p in assigned_perms if p.key and p.key != "all"]
+            elif getattr(r, "is_system_role", False) or r.name.lower() in ["superadmin", "super_admin", "admin"]:
+                perm_keys = all_db_keys
             else:
                 perm_keys = getattr(r, "permissions", []) if hasattr(r, "permissions") else ["dashboard:read", "users:read", "leads:read"]
+
+            if "all" in perm_keys:
+                perm_keys = [k for k in perm_keys if k != "all"] + all_db_keys
+                perm_keys = sorted(list(set(perm_keys)))
 
             # Determine type: "default" | "system" | "custom"
             if r.id in default_ids or r.name in default_ids:
@@ -552,6 +573,8 @@ async def get_role(role_id: str, db: AsyncSession = Depends(get_db)):
     if not r:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Role '{role_id}' not found")
     
+    all_db_keys = await get_all_db_permission_keys(db)
+
     perm_stmt = (
         select(Permission)
         .join(RolePermission, RolePermission.permission_id == Permission.id)
@@ -561,12 +584,16 @@ async def get_role(role_id: str, db: AsyncSession = Depends(get_db)):
     assigned_perms = perm_res.scalars().all()
 
     if assigned_perms:
-        perm_keys = [p.key for p in assigned_perms if p.key]
-    elif getattr(r, "is_system_role", False):
-        perm_keys = ["all"]
+        perm_keys = [p.key for p in assigned_perms if p.key and p.key != "all"]
+    elif getattr(r, "is_system_role", False) or r.name.lower() in ["superadmin", "super_admin", "admin"]:
+        perm_keys = all_db_keys
     else:
         # Default assigned permission keys for demo custom roles if not explicitly saved in DB yet
         perm_keys = ["dashboard:read", "users:read", "users:create", "users:update", "users:delete", "users:export", "users:import"]
+
+    if "all" in perm_keys:
+        perm_keys = [k for k in perm_keys if k != "all"] + all_db_keys
+        perm_keys = sorted(list(set(perm_keys)))
 
     return {
         "id": r.id,
