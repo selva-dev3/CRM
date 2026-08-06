@@ -57,20 +57,24 @@ export default function OrganizationPage() {
 
   // User Role State for RBAC
   const [userRole, setUserRole] = useState<string>('');
+  const [isRoleChecked, setIsRoleChecked] = useState(false);
 
   useEffect(() => {
     try {
       const userStr = localStorage.getItem('user');
       if (userStr) {
         const u = JSON.parse(userStr);
-        if (u?.role) setUserRole(u.role);
+        const r = u?.role || u?.role_name || '';
+        setUserRole(r);
       }
     } catch {}
+    setIsRoleChecked(true);
   }, []);
 
-  const isSuperAdmin = userRole.toLowerCase().replace(/[\s_-]+/g, '') === 'superadmin';
+  const normalizedRole = userRole.toLowerCase().replace(/[\s_-]+/g, '');
+  const isSuperAdmin = normalizedRole === 'superadmin';
 
-  if (!isSuperAdmin) {
+  if (isRoleChecked && !isSuperAdmin) {
     return <OrganizationDetailPage isCurrentOrgView={true} />;
   }
 

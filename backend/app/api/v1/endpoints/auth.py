@@ -15,13 +15,39 @@ from app.services.email_service import send_reset_password_email, send_magic_lin
 router = APIRouter()
 
 
-async def get_user_permissions_from_db(db: AsyncSession, user: User) -> List[str]:
+async def get_user_role_name_from_db(db: AsyncSession, user: User) -> str:
+    """Resolve human-readable role name (e.g. 'Admin', 'Super Admin', 'Sales Executive') for a user."""
+    try:
+        raw_role = (user.role or "").strip()
+
+        # Check if raw_role is a UUID (role_id)
+        if len(raw_role) == 36 and "-" in raw_role:
+            role_db = await db.scalar(select(Role).where(Role.id == raw_role))
+            if role_db and role_db.name:
+                return role_db.name
+
+        # Check UserRole join table
+        user_role_id = await db.scalar(select(UserRole.role_id).where(UserRole.user_id == user.id))
+        if user_role_id:
+            role_db = await db.scalar(select(Role).where(Role.id == user_role_id))
+            if role_db and role_db.name:
+                return role_db.name
+
+        if raw_role:
+            return raw_role
+    except Exception:
+        pass
+    return "Admin"
+
+
+async def get_user_permissions_from_db(db: AsyncSession, user: User, resolved_role_name: str = "") -> List[str]:
     """Query user permissions directly from DB (Role, Permission, RolePermission, UserRole).
     For Admin and Super Admin roles, return all 126+ permissions from the DB permissions table.
     """
     permission_keys = set()
     try:
-        role_clean = (user.role or "").lower().replace(" ", "").replace("_", "").replace("-", "")
+        role_name = resolved_role_name or user.role or ""
+        role_clean = role_name.lower().replace(" ", "").replace("_", "").replace("-", "")
 
         # 1. Admin / Super Admin gets ALL permission keys from DB 'permissions' table (all 126+ permissions)
         if role_clean in ["superadmin", "admin"]:
@@ -39,7 +65,7 @@ async def get_user_permissions_from_db(db: AsyncSession, user: User) -> List[str
 
         if user.role:
             role_by_name_res = await db.execute(
-                select(Role.id).where(func.lower(Role.name) == user.role.strip().lower())
+                select(Role.id).where(func.lower(Role.name) == role_name.strip().lower())
             )
             for r_id in role_by_name_res.scalars().all():
                 if r_id:
@@ -96,14 +122,14 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
         
         access_token = create_access_token(user.id)
         
-        user_role = user.role or "Admin"
-        user_permissions = await get_user_permissions_from_db(db, user)
+        user_role_name = await get_user_role_name_from_db(db, user)
+        user_permissions = await get_user_permissions_from_db(db, user, resolved_role_name=user_role_name)
 
         token_user = {
             "id": user.id,
             "name": user.name,
             "email": user.email,
-            "role": user_role,
+            "role": user_role_name,
             "organization_id": user.organization_id,
             "permissions": user_permissions
         }
@@ -306,7 +332,8 @@ async def accept_auth_user_invitation(payload: AcceptInviteRequest, db: AsyncSes
         await db.commit()
 
         access_token = create_access_token(user.id)
-        user_permissions = await get_user_permissions_from_db(db, user)
+        user_role_name = await get_user_role_name_from_db(db, user)
+        user_permissions = await get_user_permissions_from_db(db, user, resolved_role_name=user_role_name)
 
         return {
             "message": "Invitation accepted successfully! Your account is active.",
@@ -315,13 +342,13 @@ async def accept_auth_user_invitation(payload: AcceptInviteRequest, db: AsyncSes
             "user_id": user.id,
             "email": user.email,
             "name": user.name,
-            "role": user.role,
+            "role": user_role_name,
             "status": "success",
             "user": {
                 "id": user.id,
                 "name": user.name,
                 "email": user.email,
-                "role": user.role,
+                "role": user_role_name,
                 "organization_id": user.organization_id,
                 "permissions": user_permissions
             }
