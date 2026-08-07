@@ -7,7 +7,9 @@ from app.api.v1.api import api_router
 from app.config import settings
 from app.database import engine
 from app.models import Base
-
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from fastapi import Request
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -47,6 +49,21 @@ app = FastAPI(
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    print("VALIDATION ERROR")
+    print(exc.errors())
+    print(exc.body)
+
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": exc.errors(),
+            "body": exc.body,
+        },
+    )
 
 # CORS
 app.add_middleware(
