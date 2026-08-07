@@ -260,7 +260,17 @@ export default function SettingsPage() {
     try {
       setErrorMessage(null);
       const res = await exportAuditLogsCsvApi();
-      setSuccessMessage(`Audit trail CSV exported. Download URL: ${res.download_url}`);
+      if (res?.download_url) {
+        const link = document.createElement('a');
+        link.href = res.download_url;
+        link.download = 'audit_logs.csv';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setSuccessMessage('Audit trail CSV exported & downloaded successfully.');
+      } else {
+        setSuccessMessage('Audit trail CSV generated.');
+      }
     } catch {
       setErrorMessage('Failed to export audit logs CSV.');
     }
