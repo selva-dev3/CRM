@@ -10,7 +10,7 @@ from app.schemas.crm_schemas import (
     NoteResponse, TaskResponse, TaskCreate, EmailResponse, EmailSendRequest, CallLogResponse, CallLogBase, DocumentResponse
 )
 from app.services.s3_service import s3_service
-
+import json
 router = APIRouter()
 
 def lead_to_dict(l: Lead) -> dict:
@@ -110,6 +110,8 @@ async def bulk_archive_leads(payload: BulkDeleteRequest, db: AsyncSession = Depe
 @router.post("", response_model=LeadResponse, status_code=status.HTTP_201_CREATED, summary="Create a new lead")
 async def create_lead(payload: LeadCreate, db: AsyncSession = Depends(get_db)):
     try:
+        print(json.dumps(await request.json(), indent=2))
+        print(payload)
         l = Lead(
             organization_id=payload.organization_id,
             title=payload.title,
