@@ -311,18 +311,45 @@ async def trigger_zapier_event(
             detail=f"Failed to send webhook: {str(e)}"
         )
 
-# 6. DELETE /api/v1/integrations/zapier
-@router.delete("/zapier", response_model=MessageResponse, summary="Disconnect and revoke Zapier integration configuration")
-async def delete_zapier_integration(db: AsyncSession = Depends(get_db)):
+@router.delete(
+    "/zapier",
+    response_model=MessageResponse,
+    summary="Disconnect and revoke Zapier integration configuration"
+)
+async def delete_zapier_integration(
+    db: AsyncSession = Depends(get_db)
+):
     try:
-        res = await db.execute(select(Integration).where(Integration.name.ilike("%zapier%")))
-        i = res.scalars().first()
-        if i:
-            i.is_connected = False
-            await db.commit()
+        res = await db.execute(
+            select(Integration).where(
+                Integration.provider == "zapier"
+            )
+        )
+
+        integration = res.scalars().first()
+
+        if not integration:
+            raise HTTPException(
+                status_code=404,
+                detail="Zapier integration not found."
+            )
+
+        integration.is_connected = False
+        integration.webhook_url = None      # Delete webhook URL
+        integration.credentials = None      # Optional
+        integration.status = "disconnected" # Optional
+        integration.last_error = None       # Optional
+
+        await db.commit()
+
+        return {
+            "message": "Zapier integration disconnected and webhook removed.",
+            "status": "success"
+        }
+
     except Exception:
         await db.rollback()
-    return {"message": "Zapier integration disconnected and subscription revoked", "status": "success"}
+        raise
 
 # ==================== OTHER THIRD-PARTY INTEGRATION ENDPOINTS ====================
 
