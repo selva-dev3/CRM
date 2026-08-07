@@ -23,6 +23,17 @@ class CustomField(Base):
     label: Mapped[str] = mapped_column(String(100), nullable=False)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+class SLAPolicy(Base):
+    __tablename__ = "sla_policies"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    organization_id: Mapped[Optional[str]] = mapped_column(String, index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    response_time_hours: Mapped[int] = mapped_column(Integer, default=1)
+    resolution_time_hours: Mapped[int] = mapped_column(Integer, default=24)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
 class FileUpload(Base):
     __tablename__ = "file_uploads"
 
