@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { navigationSections, NavSection, NavItem } from '@/config/navigation';
 import { AIChatAssistant } from '@/components/ai/ai-chat-assistant';
+import { GlobalSearchModal } from '@/components/shared/global-search-modal';
 import { getSessionToken, clearSessionToken } from '@/lib/api-client';
 import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
 import {
@@ -14,6 +15,7 @@ import {
   ShieldCheck,
   Menu,
   X,
+  Search,
   LayoutDashboard,
   UserPlus,
   Users,
@@ -77,11 +79,25 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     Administration: true
   });
 
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+
   const [userProfile, setUserProfile] = useState<{ name: string; email: string; role: string }>({
     name: 'Admin User',
     email: 'admin@crm.com',
     role: 'Admin',
   });
+
+  // Global Ctrl+K / Cmd+K listener
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsSearchOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   useEffect(() => {
     if (currentOrg?.name) {
@@ -188,9 +204,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* Fixed Sidebar (Width w-64 / 256px) */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-64 border-r border-[#E5E7EB] bg-white flex flex-col shadow-sm transform transition-transform duration-200 ease-in-out ${
-          isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-        }`}
+        className={`fixed inset-y-0 left-0 z-50 w-64 border-r border-[#E5E7EB] bg-white flex flex-col shadow-sm transform transition-transform duration-200 ease-in-out ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+          }`}
       >
         {/* Brand Header */}
         <div className="p-4 border-b border-[#E5E7EB] flex items-center justify-between shrink-0">
@@ -253,11 +268,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         <Link
                           key={item.href}
                           href={item.href}
-                          className={`flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition duration-150 relative ${
-                            isActive
+                          className={`flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition duration-150 relative ${isActive
                               ? 'bg-blue-50 text-blue-600 font-bold border-l-4 border-blue-600'
                               : 'text-slate-600 hover:text-blue-600 hover:bg-slate-50'
-                          }`}
+                            }`}
                         >
                           <IconComponent
                             className={`w-4 h-4 shrink-0 ${isActive ? 'text-blue-600' : 'text-slate-400'}`}
@@ -318,74 +332,36 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </h2>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-4">
-            <div className="hidden sm:inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-slate-100 text-xs font-bold text-slate-900 border border-slate-200">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Multi-Tenant Org</span>
-            </div>
+          {/* Right Header Controls: Compact Search (Ctrl+K), Notification & Logout */}
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            {/* Compact Search Button */}
+            <button
+              type="button"
+              onClick={() => setIsSearchOpen(true)}
+              title="Search CRM (Ctrl + K)"
+              className="px-2.5 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 hover:text-blue-600 border border-slate-200 transition cursor-pointer flex items-center gap-1.5 text-xs font-medium shadow-2xs group"
+            >
+              <Search className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition shrink-0" />
+              <span className="hidden sm:inline text-xs font-semibold text-slate-600">Search</span>
+              <kbd className="hidden md:inline-flex items-center px-1.5 py-0.5 text-[10px] font-bold text-slate-500 bg-slate-200/80 rounded-md font-mono">
+                Ctrl K
+              </kbd>
+            </button>
 
+            {/* Notifications Button */}
             <Link
               href="/notifications"
               title="Notifications"
-              className={`p-2 rounded-xl transition cursor-pointer relative border flex items-center justify-center ${
-                pathname === '/notifications'
+              className={`p-2 rounded-xl transition cursor-pointer relative border flex items-center justify-center ${pathname === '/notifications'
                   ? 'bg-blue-50 text-blue-600 border-blue-300 shadow-xs'
                   : 'bg-slate-50 text-slate-700 hover:text-blue-600 hover:bg-slate-100 border-slate-200'
-              }`}
+                }`}
             >
               <Bell className="w-4.5 h-4.5" />
               <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-blue-600 ring-2 ring-white" />
             </Link>
 
-            {/* User Profile Badge with Logged-in Role Underneath */}
-            <div className="relative group">
-              <div className="flex items-center gap-2.5 px-2.5 py-1 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200/90 transition cursor-pointer">
-                <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs shadow-xs ring-2 ring-blue-100 shrink-0">
-                  {(userProfile.name || userProfile.email || 'A').charAt(0).toUpperCase()}
-                </div>
-                <div className="flex flex-col text-left">
-                  <span className="text-xs font-bold text-slate-900 leading-tight truncate max-w-[120px]">
-                    {userProfile.name}
-                  </span>
-                  <span className="text-[10px] font-semibold text-blue-600 leading-tight flex items-center gap-0.5">
-                    <ShieldCheck className="w-3 h-3 text-blue-600 inline" />
-                    {userProfile.role}
-                  </span>
-                </div>
-                <ChevronDown className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600 transition hidden sm:block" />
-              </div>
-
-              {/* Profile Dropdown Menu */}
-              <div className="absolute right-0 mt-1.5 w-56 bg-white rounded-2xl shadow-xl border border-slate-100 p-2 hidden group-hover:block z-50 animate-in fade-in slide-in-from-top-2 duration-150">
-                <div className="px-3 py-2 border-b border-slate-100">
-                  <p className="text-xs font-bold text-slate-900 truncate">{userProfile.name}</p>
-                  <p className="text-[11px] text-slate-500 truncate">{userProfile.email}</p>
-                  <div className="mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold">
-                    <ShieldCheck className="w-3 h-3 text-blue-600" />
-                    Logged in as: {userProfile.role}
-                  </div>
-                </div>
-
-                <div className="pt-1">
-                  <Link
-                    href="/settings"
-                    className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 rounded-xl transition"
-                  >
-                    <Settings className="w-3.5 h-3.5 text-slate-500" />
-                    Settings
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={handleLogout}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50 rounded-xl transition text-left cursor-pointer"
-                  >
-                    <LogOut className="w-3.5 h-3.5 text-rose-500" />
-                    Sign Out
-                  </button>
-                </div>
-              </div>
-            </div>
-
+            {/* Logout Button */}
             <button
               type="button"
               onClick={handleLogout}
@@ -403,6 +379,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {children}
         </main>
       </div>
+
+      {/* Global Command Palette Search Modal */}
+      <GlobalSearchModal isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} />
 
       {/* Global AI Assistant Floating Widget */}
       <AIChatAssistant />

@@ -6,6 +6,7 @@ from app.database import get_db
 from app.models import SystemSetting, AuditLog, Webhook, User, Organization
 from app.schemas.crm_schemas import SystemSettings, MessageResponse
 from app.core.security import get_password_hash
+from app.api.deps import get_current_user_optional
 
 router = APIRouter()
 
@@ -54,11 +55,50 @@ async def reset_database(confirm: bool = False, db: AsyncSession = Depends(get_d
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Database reset failed: {str(e)}")
 
 @router.get("", response_model=SystemSettings, summary="Get general system settings")
-async def get_system_settings(db: AsyncSession = Depends(get_db)):
-    return {"organization_name": "Enterprise Organization", "currency": "USD", "timezone": "UTC", "smtp_enabled": True, "ai_features_enabled": True}
+async def get_system_settings(
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    org_name = "Enterprise Organization"
+
+    if current_user and getattr(current_user, "organization_id", None):
+        res = await db.execute(select(Organization).where(Organization.id == current_user.organization_id))
+        org = res.scalars().first()
+        if org and org.name:
+            org_name = org.name
+
+    if org_name == "Enterprise Organization":
+        res_first = await db.execute(select(Organization).limit(1))
+        first_org = res_first.scalars().first()
+        if first_org and first_org.name:
+            org_name = first_org.name
+
+    return {
+        "organization_name": org_name,
+        "currency": "USD",
+        "timezone": "UTC",
+        "smtp_enabled": True,
+        "ai_features_enabled": True
+    }
 
 @router.put("", response_model=SystemSettings, summary="Update general system settings")
-async def update_system_settings(payload: SystemSettings, db: AsyncSession = Depends(get_db)):
+async def update_system_settings(
+    payload: SystemSettings,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    if current_user and getattr(current_user, "organization_id", None) and payload.organization_name:
+        res = await db.execute(select(Organization).where(Organization.id == current_user.organization_id))
+        org = res.scalars().first()
+        if org:
+            org.name = payload.organization_name
+            await db.commit()
+    elif payload.organization_name:
+        res_first = await db.execute(select(Organization).limit(1))
+        first_org = res_first.scalars().first()
+        if first_org:
+            first_org.name = payload.organization_name
+            await db.commit()
     return payload
 
 @router.get("/audit-logs", summary="List security audit trail logs")
