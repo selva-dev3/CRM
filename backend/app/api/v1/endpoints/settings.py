@@ -54,6 +54,29 @@ async def reset_database(confirm: bool = False, db: AsyncSession = Depends(get_d
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Database reset failed: {str(e)}")
 
+async def get_setting_value(db: AsyncSession, key: str, default_val: str) -> str:
+    try:
+        res = await db.execute(select(SystemSetting).where(SystemSetting.key == key))
+        setting = res.scalars().first()
+        if setting and setting.value is not None:
+            return setting.value
+    except Exception:
+        pass
+    return default_val
+
+async def set_setting_value(db: AsyncSession, key: str, val: str):
+    try:
+        res = await db.execute(select(SystemSetting).where(SystemSetting.key == key))
+        setting = res.scalars().first()
+        if setting:
+            setting.value = val
+        else:
+            new_setting = SystemSetting(key=key, value=val)
+            db.add(new_setting)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+
 @router.get("", response_model=SystemSettings, summary="Get general system settings")
 async def get_system_settings(
     db: AsyncSession = Depends(get_db),
@@ -73,12 +96,17 @@ async def get_system_settings(
         if first_org and first_org.name:
             org_name = first_org.name
 
+    currency = await get_setting_value(db, "system_currency", "USD")
+    timezone = await get_setting_value(db, "system_timezone", "UTC")
+    smtp_enabled_str = await get_setting_value(db, "smtp_enabled", "true")
+    ai_features_enabled_str = await get_setting_value(db, "ai_features_enabled", "true")
+
     return {
         "organization_name": org_name,
-        "currency": "USD",
-        "timezone": "UTC",
-        "smtp_enabled": True,
-        "ai_features_enabled": True
+        "currency": currency,
+        "timezone": timezone,
+        "smtp_enabled": smtp_enabled_str.lower() in ("true", "1", "yes"),
+        "ai_features_enabled": ai_features_enabled_str.lower() in ("true", "1", "yes")
     }
 
 @router.put("", response_model=SystemSettings, summary="Update general system settings")
@@ -87,6 +115,7 @@ async def update_system_settings(
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user_optional)
 ):
+    # 1. Update Organization Name
     if current_user and getattr(current_user, "organization_id", None) and payload.organization_name:
         res = await db.execute(select(Organization).where(Organization.id == current_user.organization_id))
         org = res.scalars().first()
@@ -99,6 +128,16 @@ async def update_system_settings(
         if first_org:
             first_org.name = payload.organization_name
             await db.commit()
+
+    # 2. Persist currency, timezone, smtp_enabled, ai_features_enabled
+    if payload.currency:
+        await set_setting_value(db, "system_currency", payload.currency)
+    if payload.timezone:
+        await set_setting_value(db, "system_timezone", payload.timezone)
+
+    await set_setting_value(db, "smtp_enabled", "true" if payload.smtp_enabled else "false")
+    await set_setting_value(db, "ai_features_enabled", "true" if payload.ai_features_enabled else "false")
+
     return payload
 
 @router.get("/audit-logs", summary="List security audit trail logs")
