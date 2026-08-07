@@ -22,7 +22,7 @@ from app.models.report import ReportExport, CustomReport, ScheduledReport
 from app.models.audit import AuditLog, ActivityLog
 from app.models.integration import Integration, ApiKey, Webhook
 from app.models.ai import AIConversation, AIPrompt, AIGeneratedContent, AILeadScore, AIMeetingSummary
-from app.models.system import SystemSetting, FileUpload, Country, State, City, Currency, Language, Timezone
+from app.models.system import SystemSetting, CustomField, FileUpload, Country, State, City, Currency, Language, Timezone
 
 __all__ = [
     "Base",
@@ -48,5 +48,5 @@ __all__ = [
     "AuditLog", "ActivityLog",
     "Integration", "ApiKey", "Webhook",
     "AIConversation", "AIPrompt", "AIGeneratedContent", "AILeadScore", "AIMeetingSummary",
-    "SystemSetting", "FileUpload", "Country", "State", "City", "Currency", "Language", "Timezone"
+    "SystemSetting", "CustomField", "FileUpload", "Country", "State", "City", "Currency", "Language", "Timezone"
 ]

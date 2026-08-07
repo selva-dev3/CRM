@@ -12,6 +12,17 @@ class SystemSetting(Base):
     value: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text)
 
+class CustomField(Base):
+    __tablename__ = "custom_fields"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    organization_id: Mapped[Optional[str]] = mapped_column(String, index=True)
+    entity_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    field_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    field_type: Mapped[str] = mapped_column(String(50), nullable=False, default="text")
+    label: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
 class FileUpload(Base):
     __tablename__ = "file_uploads"
 
