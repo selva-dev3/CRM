@@ -233,11 +233,36 @@ async def delete_custom_field(field_id: str, db: AsyncSession = Depends(get_db))
         await db.rollback()
     return {"message": f"Custom field {field_id} deleted", "status": "success"}
 
+async def resolve_org_id(db: AsyncSession, current_user: Optional[User] = None) -> str:
+    if current_user and getattr(current_user, "organization_id", None):
+        res_user_org = await db.execute(select(Organization).where(Organization.id == current_user.organization_id))
+        user_org = res_user_org.scalars().first()
+        if user_org:
+            return user_org.id
+
+    res = await db.execute(select(Organization).limit(1))
+    org = res.scalars().first()
+    if org:
+        return org.id
+
+    new_org = Organization(name="Default Organization", domain="crm.com", plan="Enterprise")
+    db.add(new_org)
+    await db.commit()
+    await db.refresh(new_org)
+    return new_org.id
+
 @router.get("/webhooks", summary="List outgoing event webhook subscriptions")
-async def list_webhooks(db: AsyncSession = Depends(get_db)):
+async def list_webhooks(
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
     try:
-        res = await db.execute(select(Webhook).limit(20))
+        org_id = await resolve_org_id(db, current_user)
+        res = await db.execute(select(Webhook).where(Webhook.organization_id == org_id).limit(20))
         whs = res.scalars().all()
+        if not whs:
+            res_all = await db.execute(select(Webhook).limit(20))
+            whs = res_all.scalars().all()
         return [{"id": w.id, "target_url": w.target_url, "events": w.events.split(",") if w.events else [], "is_active": w.is_active} for w in whs]
     except Exception:
         return []
@@ -247,7 +272,8 @@ async def create_webhook(
     payload: Optional[CreateWebhookPayload] = Body(None),
     target_url: Optional[str] = Query(None),
     events: Optional[List[str]] = Query(None),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
 ):
     url = (payload and payload.target_url) or target_url
     ev_list = (payload and payload.events) or events or []
@@ -256,7 +282,8 @@ async def create_webhook(
 
     events_str = ",".join(ev_list) if isinstance(ev_list, list) else str(ev_list)
     try:
-        w = Webhook(organization_id="org-1", target_url=url, events=events_str)
+        org_id = await resolve_org_id(db, current_user)
+        w = Webhook(organization_id=org_id, target_url=url, events=events_str)
         db.add(w)
         await db.commit()
         return {"message": f"Webhook registered for {url}", "status": "success"}
