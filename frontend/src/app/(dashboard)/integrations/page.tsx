@@ -121,13 +121,13 @@ export default function IntegrationsPage() {
     setLoadingAppId(app.id);
     try {
       if (app.status === 'connected') {
-        const res = await disconnectIntegrationApi(app.name);
+        const res = await disconnectIntegrationApi(app.id);
         setApps((prev) =>
           prev.map((a) => (a.id === app.id ? { ...a, status: 'available' } : a))
         );
         setSuccessMessage(res.message || `${app.name} disconnected successfully.`);
       } else {
-        const res = await connectIntegrationApi(app.name);
+        const res = await connectIntegrationApi(app.id);
         setApps((prev) =>
           prev.map((a) => (a.id === app.id ? { ...a, status: 'connected' } : a))
         );
@@ -143,7 +143,7 @@ export default function IntegrationsPage() {
   const handleSyncApp = async (app: AppIntegration) => {
     setLoadingAppId(app.id);
     try {
-      const res = await syncIntegrationApi(app.name);
+      const res = await syncIntegrationApi(app.id);
       setSuccessMessage(res.message || `Manual sync triggered for ${app.name}.`);
     } catch {
       setSuccessMessage(`Sync initiated for ${app.name}.`);
