@@ -14,6 +14,14 @@ export interface ZapierConfig {
   last_synced?: string | null;
 }
 
+export interface SlackConfig {
+  name: string;
+  is_connected: boolean;
+  webhook_url?: string;
+  events?: string[];
+  last_synced?: string | null;
+}
+
 export async function fetchIntegrationsApi(): Promise<IntegrationItem[]> {
   try {
     const data = await apiClient.get<IntegrationItem[]>('/integrations');
@@ -41,7 +49,7 @@ export async function fetchZapierConfigApi(): Promise<ZapierConfig> {
   return apiClient.get<ZapierConfig>('/integrations/zapier');
 }
 
-export const DEFAULT_ZAPIER_WEBHOOK = process.env.NEXT_PUBLIC_ZAPIER_WEBHOOK_URL || 'https://hooks.zapier.com/hooks/catch/28479165/46abl1q';
+export const DEFAULT_ZAPIER_WEBHOOK = process.env.NEXT_PUBLIC_ZAPIER_WEBHOOK_URL ;
 
 export async function connectZapierApi(webhookUrl?: string): Promise<{ message: string }> {
   const url = webhookUrl || DEFAULT_ZAPIER_WEBHOOK;
@@ -58,6 +66,26 @@ export async function triggerZapierEventApi(eventName: string, payload: any = {}
 
 export async function deleteZapierApi(): Promise<{ message: string }> {
   return apiClient.delete<{ message: string }>('/integrations/zapier');
+}
+
+// Dedicated Slack REST API Methods
+// export const DEFAULT_SLACK_WEBHOOK = process.env.NEXT_PUBLIC_SLACK_WEBHOOK_URL;
+
+export async function fetchSlackConfigApi(): Promise<SlackConfig> {
+  return apiClient.get<SlackConfig>('/integrations/slack');
+}
+
+export async function connectSlackApi(webhookUrl?: string): Promise<{ message: string }> {
+  const url = webhookUrl;
+  return apiClient.post<{ message: string }>('/integrations/slack/connect', { webhook_url: url });
+}
+
+export async function testSlackConnectionApi(): Promise<{ message: string }> {
+  return apiClient.post<{ message: string }>('/integrations/slack/test');
+}
+
+export async function deleteSlackApi(): Promise<{ message: string }> {
+  return apiClient.delete<{ message: string }>('/integrations/slack');
 }
 
 export async function sendSlackNotifyApi(channel: string, message: string): Promise<{ message: string }> {

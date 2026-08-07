@@ -21,6 +21,8 @@ import {
   disconnectIntegrationApi,
   connectZapierApi,
   deleteZapierApi,
+  connectSlackApi,
+  deleteSlackApi,
   syncIntegrationApi,
   saveCustomApiKeyApi
 } from '@/lib/api/integrations';
@@ -126,6 +128,8 @@ export default function IntegrationsPage() {
         let res: { message: string };
         if (app.id === 'zapier') {
           res = await deleteZapierApi();
+        } else if (app.id === 'slack') {
+          res = await deleteSlackApi();
         } else {
           res = await disconnectIntegrationApi(app.id);
         }
@@ -137,6 +141,8 @@ export default function IntegrationsPage() {
         let res: { message: string };
         if (app.id === 'zapier') {
           res = await connectZapierApi();
+        } else if (app.id === 'slack') {
+          res = await connectSlackApi();
         } else {
           res = await connectIntegrationApi(app.id);
         }
