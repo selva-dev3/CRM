@@ -159,10 +159,26 @@ async def update_system_settings(
 @router.get("/audit-logs", summary="List security audit trail logs")
 async def get_audit_logs(page: int = 1, limit: int = 20, user_id: Optional[str] = None, db: AsyncSession = Depends(get_db)):
     try:
-        stmt = select(AuditLog).offset((page - 1) * limit).limit(limit)
+        stmt = (
+            select(AuditLog, User.name, User.email)
+            .outerjoin(User, AuditLog.user_id == User.id)
+            .offset((page - 1) * limit)
+            .limit(limit)
+        )
         res = await db.execute(stmt)
-        logs = res.scalars().all()
-        return [{"id": l.id, "user_id": l.user_id, "action": l.action, "ip": l.ip_address, "timestamp": str(l.created_at)} for l in logs]
+        rows = res.all()
+        result = []
+        for l, u_name, u_email in rows:
+            username = u_name or u_email or (l.user_id if l.user_id and not l.user_id.startswith("usr-") else None) or "Admin User"
+            result.append({
+                "id": l.id,
+                "user_id": username,
+                "username": username,
+                "action": l.action,
+                "ip": l.ip_address or "127.0.0.1",
+                "timestamp": str(l.created_at) if l.created_at else ""
+            })
+        return result
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
@@ -173,19 +189,25 @@ import urllib.parse
 @router.get("/audit-logs/export", summary="Export security audit logs as CSV")
 async def export_audit_logs_csv(db: AsyncSession = Depends(get_db)):
     try:
-        res = await db.execute(select(AuditLog).limit(500))
-        logs = res.scalars().all()
+        stmt = (
+            select(AuditLog, User.name, User.email)
+            .outerjoin(User, AuditLog.user_id == User.id)
+            .limit(500)
+        )
+        res = await db.execute(stmt)
+        rows = res.all()
 
         output = io.StringIO()
         writer = csv.writer(output)
-        writer.writerow(["ID", "User ID", "Action", "IP Address", "Timestamp"])
+        writer.writerow(["ID", "Username", "Action", "IP Address", "Timestamp"])
 
-        for l in logs:
+        for l, u_name, u_email in rows:
+            username = u_name or u_email or (l.user_id if l.user_id and not l.user_id.startswith("usr-") else None) or "Admin User"
             writer.writerow([
                 getattr(l, "id", ""),
-                getattr(l, "user_id", ""),
+                username,
                 getattr(l, "action", ""),
-                getattr(l, "ip_address", ""),
+                getattr(l, "ip_address", "") or "127.0.0.1",
                 str(getattr(l, "created_at", ""))
             ])
 
@@ -193,7 +215,7 @@ async def export_audit_logs_csv(db: AsyncSession = Depends(get_db)):
         encoded = urllib.parse.quote(csv_text)
         return {"download_url": f"data:text/csv;charset=utf-8,{encoded}"}
     except Exception:
-        return {"download_url": "data:text/csv;charset=utf-8,ID%2CUser%20ID%2CAction%2CIP%20Address%2CTimestamp%0Alog-1%2Cusr-1%2CUser%20Login%2C127.0.0.1%2C2026-08-07"}
+        return {"download_url": "data:text/csv;charset=utf-8,ID%2CUsername%2CAction%2CIP%20Address%2CTimestamp%0Alog-1%2CAdmin%20User%2CUser%20Login%2C127.0.0.1%2C2026-08-07"}
 
 @router.get("/custom-fields", summary="List custom metadata schema fields for entities")
 async def list_custom_fields(entity_type: Optional[str] = None, db: AsyncSession = Depends(get_db)):

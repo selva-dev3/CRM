@@ -12,6 +12,7 @@ export interface SystemSettings {
 export interface AuditLogItem {
   id: string;
   user_id?: string;
+  username?: string;
   action: string;
   ip?: string;
   timestamp: string;

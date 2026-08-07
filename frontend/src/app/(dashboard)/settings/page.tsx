@@ -261,13 +261,18 @@ export default function SettingsPage() {
       setErrorMessage(null);
       const res = await exportAuditLogsCsvApi();
       if (res?.download_url) {
-        const link = document.createElement('a');
-        link.href = res.download_url;
-        link.download = 'audit_logs.csv';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        setSuccessMessage('Audit trail CSV exported & downloaded successfully.');
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = res.download_url;
+        a.download = `audit_logs_${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+          if (document.body.contains(a)) {
+            document.body.removeChild(a);
+          }
+        }, 150);
+        setSuccessMessage('Audit trail CSV downloaded successfully!');
       } else {
         setSuccessMessage('Audit trail CSV generated.');
       }
@@ -722,7 +727,9 @@ export default function SettingsPage() {
               <div key={log.id} className="p-3 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-between">
                 <div>
                   <div className="font-bold text-slate-900">{log.action}</div>
-                  <div className="text-[11px] text-slate-500 font-mono">IP: {log.ip || '127.0.0.1'}</div>
+                  <div className="text-[11px] text-slate-500 font-mono">
+                    User: {log.username || log.user_id || 'Admin User'} | IP: {log.ip || '127.0.0.1'}
+                  </div>
                 </div>
                 <div className="text-[10px] text-slate-400">{new Date(log.timestamp).toLocaleString()}</div>
               </div>
