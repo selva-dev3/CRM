@@ -4,7 +4,7 @@ from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
-from app.models import Lead, LeadNote, LeadAttachment, User, Task, Email, CallLog, Contact
+from app.models import Lead, LeadNote, LeadAttachment, User, Task, Email, CallLog, Contact, Organization
 from app.schemas.crm_schemas import (
     LeadResponse, LeadCreate, LeadUpdate, LeadConvertRequest, MessageResponse, BulkDeleteRequest, BulkActionResponse,
     NoteResponse, TaskResponse, TaskCreate, EmailResponse, EmailSendRequest, CallLogResponse, CallLogBase, DocumentResponse
@@ -110,10 +110,26 @@ async def bulk_archive_leads(payload: BulkDeleteRequest, db: AsyncSession = Depe
 @router.post("", response_model=LeadResponse, status_code=status.HTTP_201_CREATED, summary="Create a new lead")
 async def create_lead(payload: LeadCreate, db: AsyncSession = Depends(get_db)):
     try:
-        print(json.dumps(await request.json(), indent=2))
-        print(payload)
+        org_id = payload.organization_id
+        if org_id:
+            res_org = await db.execute(select(Organization).where(Organization.id == org_id))
+            if not res_org.scalars().first():
+                res_first_org = await db.execute(select(Organization).limit(1))
+                first_org = res_first_org.scalars().first()
+                org_id = first_org.id if first_org else None
+        else:
+            res_first_org = await db.execute(select(Organization).limit(1))
+            first_org = res_first_org.scalars().first()
+            org_id = first_org.id if first_org else None
+
+        assigned_id = payload.assigned_to
+        if assigned_id:
+            res_usr = await db.execute(select(User).where(User.id == assigned_id))
+            if not res_usr.scalars().first():
+                assigned_id = None
+
         l = Lead(
-            organization_id=payload.organization_id,
+            organization_id=org_id,
             title=payload.title,
             company=payload.company,
             contact_name=payload.contact_name,
@@ -130,7 +146,7 @@ async def create_lead(payload: LeadCreate, db: AsyncSession = Depends(get_db)):
             status=payload.status,
             source=payload.source,
             score=payload.score if payload.score is not None else 50.0,
-            assigned_to=payload.assigned_to,
+            assigned_to=assigned_id,
             is_archived=payload.is_archived if payload.is_archived is not None else False,
         )
         db.add(l)
