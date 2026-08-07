@@ -7,8 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
 from app.models import Integration, AuditLog, Organization, User
-from app.schemas.crm_schemas import IntegrationStatus, MessageResponse
 from app.api.deps import get_current_user_optional
+from app.schemas.crm_schemas import (
+    IntegrationStatus, MessageResponse,
+    SlackConnectRequest, SlackConfigResponse, SlackEventPayload,
+    SlackTestResponse, SlackDisconnectResponse, SlackNotifyPayload
+)
 from datetime import datetime
 router = APIRouter()
 
@@ -16,7 +20,13 @@ router = APIRouter()
 class SlackNotifyPayload(BaseModel):
     channel: Optional[str] = "general"
     message: Optional[str] = "Lead status updated in Enterprise CRM"
-
+class SlackEventPayload(BaseModel):
+    event_name: str
+    data: Optional[Dict[str, Any]] = None
+class SlackConnectPayload(BaseModel):
+    webhook_url: Optional[str] = ""
+    credentials: Optional[str] = "" 
+    
 class ZapierEventPayload(BaseModel):
     event_name: Optional[str] = None
     payload: Optional[Dict[str, Any]] = None
@@ -229,12 +239,77 @@ async def connect_zapier(
             detail=str(e)
         )
 # 4. POST /api/v1/integrations/zapier/test
-@router.post("/zapier/test", response_model=MessageResponse, summary="Send test sample event ping payload to Zapier webhook")
-async def test_zapier_ping(db: AsyncSession = Depends(get_db)):
-    return {
-        "message": "Test ping payload successfully delivered to Zapier subscription endpoint",
-        "status": "success"
+@router.post(
+    "/zapier/test",
+    response_model=MessageResponse,
+    summary="Send test payload to Zapier webhook"
+)
+async def test_zapier_connection(
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    org_id = await resolve_org_id(db, current_user)
+
+    integration = await db.scalar(
+        select(Integration).where(
+            Integration.organization_id == org_id,
+            Integration.provider == "zapier",
+            Integration.is_connected == True
+        )
+    )
+
+    if integration is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Zapier integration is not connected."
+        )
+
+    if not integration.webhook_url:
+        raise HTTPException(
+            status_code=400,
+            detail="Zapier webhook URL is missing."
+        )
+
+    zapier_payload = {
+        "event": "test.connection",
+        "organization_id": org_id,
+        "timestamp": datetime.utcnow().isoformat(),
+        "data": {
+            "message": "CRM Zapier integration test successful.",
+            "status": "success"
+        }
     }
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(
+                integration.webhook_url,
+                json=zapier_payload,
+                headers={
+                    "Content-Type": "application/json"
+                }
+            )
+
+        response.raise_for_status()
+
+        integration.last_synced = datetime.utcnow()
+        integration.last_error = None
+
+        await db.commit()
+
+        return {
+            "message": "Zapier test payload sent successfully.",
+            "status": "success"
+        }
+
+    except Exception as e:
+        integration.last_error = str(e)
+        await db.commit()
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to send Zapier test payload: {str(e)}"
+        )
 
 # 5. POST /api/v1/integrations/zapier/event
 @router.post(
@@ -363,17 +438,601 @@ async def get_hubspot_mapping(db: AsyncSession = Depends(get_db)):
 async def update_hubspot_mapping(mapping: Optional[Dict[str, Any]] = Body(None), db: AsyncSession = Depends(get_db)):
     return {"message": "HubSpot schema field mapping rules updated", "status": "success"}
 
-# 9. POST /api/v1/integrations/slack/notify
-@router.post("/slack/notify", response_model=MessageResponse, summary="Publish custom notification message to Slack channel")
-async def send_slack_notification(
-    payload: Optional[SlackNotifyPayload] = Body(None),
-    channel: Optional[str] = Query(None),
-    message: Optional[str] = Query(None),
-    db: AsyncSession = Depends(get_db)
+
+# ==================== SLACK INTEGRATION ENDPOINTS ====================
+
+# 1. GET /api/v1/integrations/slack
+@router.get(
+    "/slack",
+    response_model=SlackConfigResponse,
+    summary="Get Slack integration status and configuration"
+)
+async def get_slack_config(
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
 ):
-    c_name = (payload and payload.channel) or channel or "general"
-    msg = (payload and payload.message) or message or "Notification from Enterprise CRM"
-    return {"message": f"Slack notification posted to #{c_name}: {msg}", "status": "success"}
+    org_id = await resolve_org_id(db, current_user)
+
+    integration = await db.scalar(
+        select(Integration).where(
+            Integration.organization_id == org_id,
+            Integration.provider == "slack"
+        )
+    )
+
+    if integration is None:
+        return {
+            "name": "Slack Connector",
+            "is_connected": False,
+            "webhook_url": None,
+            "events": [],
+            "last_synced": None
+        }
+
+    events = []
+
+    if integration.enabled_events:
+        try:
+            events = json.loads(integration.enabled_events)
+        except Exception:
+            events = []
+
+    return {
+        "name": integration.name,
+        "is_connected": integration.is_connected,
+        "webhook_url": integration.webhook_url,
+        "events": events,
+        "last_synced": (
+            integration.last_synced.isoformat()
+            if integration.last_synced
+            else None
+        )
+    }
+
+# 2. POST /api/v1/integrations/slack/test
+@router.post(
+    "/slack/test",
+    response_model=MessageResponse,
+    summary="Send test message to Slack webhook"
+)
+async def test_slack_connection(
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    org_id = await resolve_org_id(db, current_user)
+
+    integration = await db.scalar(
+        select(Integration).where(
+            Integration.organization_id == org_id,
+            Integration.provider == "slack",
+            Integration.is_connected == True
+        )
+    )
+
+    if integration is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Slack integration is not connected."
+        )
+
+    if not integration.webhook_url:
+        raise HTTPException(
+            status_code=400,
+            detail="Slack webhook URL is missing."
+        )
+
+    slack_payload = {
+        "text": (
+            " *Slack Integration Test*\n\n"
+            "Your CRM has successfully connected to Slack.\n"
+            f"Time: {datetime.utcnow().isoformat()} UTC"
+        )
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(
+                integration.webhook_url,
+                json=slack_payload,
+                headers={
+                    "Content-Type": "application/json"
+                }
+            )
+
+        response.raise_for_status()
+
+        integration.last_synced = datetime.utcnow()
+        integration.last_error = None
+
+        await db.commit()
+
+        return {
+            "message": "Slack test message sent successfully.",
+            "status": "success"
+        }
+
+    except Exception as e:
+        integration.last_error = str(e)
+        await db.commit()
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to send Slack test message: {str(e)}"
+        )
+
+
+# 3. POST /api/v1/integrations/slack/connect
+@router.post(
+    "/slack/connect",
+    response_model=MessageResponse,
+    summary="Connect Slack Incoming Webhook"
+)
+async def connect_slack(
+    payload: SlackConnectPayload,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    org_id = await resolve_org_id(db, current_user)
+
+    if not payload.webhook_url:
+        raise HTTPException(
+            status_code=400,
+            detail="Slack webhook URL is required."
+        )
+
+    try:
+
+        integration = await db.scalar(
+            select(Integration).where(
+                Integration.organization_id == org_id,
+                Integration.provider == "slack"
+            )
+        )
+
+        enabled_events = [
+            "lead.created",
+            "lead.updated",
+            "lead.assigned",
+            "company.created",
+            "company.updated",
+            "contact.created",
+            "deal.created",
+            "deal.won",
+            "deal.lost",
+            "task.created",
+            "task.completed",
+            "meeting.created",
+            "invoice.paid",
+            "integration.connected",
+            "integration.disconnected"
+        ]
+
+        if integration is None:
+
+            integration = Integration(
+                organization_id=org_id,
+                name="Slack Connector",
+                provider="slack",
+                is_connected=True,
+                webhook_url=str(payload.webhook_url),
+                status="connected",
+                enabled_events=json.dumps(enabled_events),
+                credentials=json.dumps({
+                    "channel": "incoming-webhook",
+                    "type": "slack"
+                }),
+                sync_enabled=True,
+                last_synced=datetime.utcnow(),
+                last_error=None
+            )
+
+            db.add(integration)
+
+        else:
+
+            integration.is_connected = True
+            integration.status = "connected"
+            integration.webhook_url = str(payload.webhook_url)
+            integration.enabled_events = json.dumps(enabled_events)
+            integration.credentials = json.dumps({
+                "channel": "incoming-webhook",
+                "type": "slack"
+            })
+            integration.sync_enabled = True
+            integration.last_synced = datetime.utcnow()
+            integration.last_error = None
+
+        await db.commit()
+        await db.refresh(integration)
+
+        return {
+            "message": "Slack connected successfully.",
+            "status": "success"
+        }
+
+    except Exception as e:
+
+        await db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to connect Slack: {str(e)}"
+        )
+
+# 3. POST /api/v1/integrations/slack/test
+@router.post(
+    "/slack/test",
+    response_model=MessageResponse,
+    summary="Send test message to Slack webhook"
+)
+async def test_slack_connection(
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    org_id = await resolve_org_id(db, current_user)
+
+    integration = await db.scalar(
+        select(Integration).where(
+            Integration.organization_id == org_id,
+            Integration.provider == "slack",
+            Integration.is_connected == True
+        )
+    )
+
+    if integration is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Slack integration is not connected."
+        )
+
+    if not integration.webhook_url:
+        raise HTTPException(
+            status_code=400,
+            detail="Slack webhook URL is missing."
+        )
+
+    slack_payload = {
+        "text": (
+            " *Slack Integration Test*\n\n"
+            "Your CRM has successfully connected to Slack.\n\n"
+            f"Organization : {org_id}\n"
+            f"Time : {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}"
+        )
+    }
+
+    try:
+
+        async with httpx.AsyncClient(timeout=30) as client:
+
+            response = await client.post(
+                integration.webhook_url,
+                json=slack_payload,
+                headers={
+                    "Content-Type": "application/json"
+                }
+            )
+
+        response.raise_for_status()
+
+        integration.last_synced = datetime.utcnow()
+        integration.last_error = None
+
+        await db.commit()
+
+        return {
+            "message": "Slack test message sent successfully.",
+            "status": "success"
+        }
+
+    except httpx.HTTPStatusError as e:
+
+        integration.last_error = (
+            f"Slack returned {e.response.status_code}: "
+            f"{e.response.text}"
+        )
+
+        await db.commit()
+
+        raise HTTPException(
+            status_code=e.response.status_code,
+            detail=f"Slack webhook error : {e.response.text}"
+        )
+
+    except Exception as e:
+
+        integration.last_error = str(e)
+
+        await db.commit()
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to send Slack test message : {str(e)}"
+        )
+
+
+# 10. POST /api/v1/integrations/slack/event
+@router.post(
+    "/slack/event",
+    response_model=MessageResponse,
+    summary="Trigger Slack notification event"
+)
+async def trigger_slack_event(
+    payload: SlackEventPayload,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    org_id = await resolve_org_id(db, current_user)
+
+    integration = await db.scalar(
+        select(Integration).where(
+            Integration.organization_id == org_id,
+            Integration.provider == "slack",
+            Integration.is_connected == True
+        )
+    )
+
+    if integration is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Slack integration is not connected."
+        )
+
+    if not integration.webhook_url:
+        raise HTTPException(
+            status_code=400,
+            detail="Slack webhook URL is missing."
+        )
+
+    # ------------------------------------
+    # Enabled Events Validation
+    # ------------------------------------
+
+    enabled_events = []
+
+    if integration.enabled_events:
+
+        try:
+            enabled_events = json.loads(
+                integration.enabled_events
+            )
+        except Exception:
+            enabled_events = []
+
+    if (
+        enabled_events
+        and payload.event_name not in enabled_events
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Slack event '{payload.event_name}' is disabled."
+        )
+
+    # ------------------------------------
+    # Slack Message Formatting
+    # ------------------------------------
+
+    text = f" *CRM Event*\n\nEvent : {payload.event_name}\n"
+
+    if payload.data:
+
+        for key, value in payload.data.items():
+
+            text += f"\n• {key} : {value}"
+
+    slack_payload = {
+        "text": text
+    }
+
+    # ------------------------------------
+    # Send Message
+    # ------------------------------------
+
+    try:
+
+        async with httpx.AsyncClient(
+            timeout=30
+        ) as client:
+
+            response = await client.post(
+                integration.webhook_url,
+                json=slack_payload,
+                headers={
+                    "Content-Type": "application/json"
+                }
+            )
+
+        response.raise_for_status()
+
+        integration.last_synced = datetime.utcnow()
+        integration.last_error = None
+
+        await db.commit()
+
+        return {
+            "message": f"Slack event '{payload.event_name}' sent successfully.",
+            "status": "success"
+        }
+
+    except httpx.HTTPStatusError as e:
+
+        integration.last_error = (
+            f"Slack returned "
+            f"{e.response.status_code}: "
+            f"{e.response.text}"
+        )
+
+        await db.commit()
+
+        raise HTTPException(
+            status_code=e.response.status_code,
+            detail=f"Slack webhook error : {e.response.text}"
+        )
+
+    except Exception as e:
+
+        integration.last_error = str(e)
+
+        await db.commit()
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to send Slack event : {str(e)}"
+        )
+
+# 11. DELETE /api/v1/integrations/slack
+@router.delete(
+    "/slack",
+    response_model=MessageResponse,
+    summary="Disconnect Slack integration"
+)
+async def disconnect_slack(
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    org_id = await resolve_org_id(db, current_user)
+
+    integration = await db.scalar(
+        select(Integration).where(
+            Integration.organization_id == org_id,
+            Integration.provider == "slack"
+        )
+    )
+
+    if integration is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Slack integration not found."
+        )
+
+    try:
+
+        integration.is_connected = False
+        integration.status = "disconnected"
+
+        # Remove Slack configuration
+        integration.webhook_url = None
+        integration.credentials = None
+        integration.enabled_events = None
+
+        # Optional OAuth cleanup
+        integration.access_token = None
+        integration.refresh_token = None
+        integration.external_id = None
+
+        integration.sync_enabled = False
+
+        integration.last_error = None
+        integration.last_synced = datetime.utcnow()
+
+        await db.commit()
+        await db.refresh(integration)
+
+        return {
+            "message": "Slack integration disconnected successfully.",
+            "status": "success"
+        }
+
+    except Exception as e:
+
+        await db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to disconnect Slack: {str(e)}"
+        )
+
+# 12. POST /api/v1/integrations/slack/notify
+@router.post(
+    "/slack/notify",
+    response_model=MessageResponse,
+    summary="Publish custom notification message to Slack"
+)
+async def send_slack_notification(
+    payload: SlackNotifyPayload,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    org_id = await resolve_org_id(db, current_user)
+
+    integration = await db.scalar(
+        select(Integration).where(
+            Integration.organization_id == org_id,
+            Integration.provider == "slack",
+            Integration.is_connected == True
+        )
+    )
+
+    if integration is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Slack integration is not connected."
+        )
+
+    if not integration.webhook_url:
+        raise HTTPException(
+            status_code=400,
+            detail="Slack webhook URL is missing."
+        )
+
+    channel = payload.channel or "general"
+    message = payload.message or "Notification from Enterprise CRM"
+
+    slack_payload = {
+        "text": (
+            f" *CRM Notification*\n\n"
+            f"Channel : #{channel}\n\n"
+            f"{message}"
+        )
+    }
+
+    try:
+
+        async with httpx.AsyncClient(timeout=30) as client:
+
+            response = await client.post(
+                integration.webhook_url,
+                json=slack_payload,
+                headers={
+                    "Content-Type": "application/json"
+                }
+            )
+
+        response.raise_for_status()
+
+        integration.last_synced = datetime.utcnow()
+        integration.last_error = None
+
+        await db.commit()
+
+        return {
+            "message": f"Slack notification posted successfully to #{channel}.",
+            "status": "success"
+        }
+
+    except httpx.HTTPStatusError as e:
+
+        integration.last_error = (
+            f"Slack returned {e.response.status_code}: "
+            f"{e.response.text}"
+        )
+
+        await db.commit()
+
+        raise HTTPException(
+            status_code=e.response.status_code,
+            detail=f"Slack webhook error: {e.response.text}"
+        )
+
+    except Exception as e:
+
+        integration.last_error = str(e)
+
+        await db.commit()
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to send Slack notification: {str(e)}"
+        )
 
 # 10. POST /api/v1/integrations/stripe/webhook
 @router.post("/stripe/webhook", response_model=MessageResponse, summary="Stripe incoming billing webhook handler")

@@ -570,6 +570,34 @@ class IntegrationStatus(BaseModel):
     is_connected: bool
     last_synced: Optional[str] = None
 
+class SlackConnectRequest(BaseModel):
+    webhook_url: str
+
+class SlackConfigResponse(BaseModel):
+    name: str
+    is_connected: bool
+    webhook_url: Optional[str]
+    events: List[str]
+    last_synced: Optional[str]
+
+class SlackEventPayload(BaseModel):
+    event_name: str
+    data: Dict[str, Any]
+
+class SlackTestResponse(BaseModel):
+    message: str
+    status: str = "success"
+
+class SlackDisconnectResponse(BaseModel):
+    message: str
+    status: str = "success"
+
+
+class SlackNotifyPayload(BaseModel):
+    channel: Optional[str] = "general"
+    message: str
+
+    
 # 22. AI Suite Schemas
 class AIScoreResponse(BaseModel):
     score: float
