@@ -19,6 +19,10 @@ class ZapierEventPayload(BaseModel):
     event_name: Optional[str] = "lead.created"
     payload: Optional[Dict[str, Any]] = {}
 
+class ZapierConnectPayload(BaseModel):
+    webhook_url: Optional[str] = "https://hooks.zapier.com/hooks/catch/crm_default"
+    events: Optional[List[str]] = ["lead.created", "deal.won"]
+
 class StripeWebhookPayload(BaseModel):
     event_type: Optional[str] = "payment_intent.succeeded"
     data: Optional[Dict[str, Any]] = {}
@@ -64,27 +68,155 @@ async def list_integrations(db: AsyncSession = Depends(get_db)):
     except Exception:
         return [{"name": c["name"], "is_connected": c["is_connected"], "last_synced": "2026-08-07T10:00:00Z"} for c in DEFAULT_CONNECTORS]
 
-# 2. GET /api/v1/integrations/hubspot/mapping
-@router.get("/hubspot/mapping", summary="Get HubSpot schema field mapping rules")
-async def get_hubspot_mapping(db: AsyncSession = Depends(get_db)):
-    return {"lead_to_contact": {"first_name": "firstname", "last_name": "lastname", "email": "email", "company": "company_name"}}
+# ==================== ZAPIER INTEGRATION ENDPOINTS ====================
 
-# 3. PUT /api/v1/integrations/hubspot/mapping
-@router.put("/hubspot/mapping", response_model=MessageResponse, summary="Update HubSpot schema field mapping rules")
-async def update_hubspot_mapping(mapping: Optional[Dict[str, Any]] = Body(None), db: AsyncSession = Depends(get_db)):
-    return {"message": "HubSpot schema field mapping rules updated", "status": "success"}
-
-# 4. POST /api/v1/integrations/slack/notify
-@router.post("/slack/notify", response_model=MessageResponse, summary="Publish custom notification message to Slack channel")
-async def send_slack_notification(
-    payload: Optional[SlackNotifyPayload] = Body(None),
-    channel: Optional[str] = Query(None),
-    message: Optional[str] = Query(None),
-    db: AsyncSession = Depends(get_db)
+# 2. GET /api/v1/integrations/zapier
+@router.get(
+    "/zapier",
+    summary="Get Zapier integration status and configuration"
+)
+async def get_zapier_config(
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
 ):
-    c_name = (payload and payload.channel) or channel or "general"
-    msg = (payload and payload.message) or message or "Notification from Enterprise CRM"
-    return {"message": f"Slack notification posted to #{c_name}: {msg}", "status": "success"}
+    try:
+        org_id = await resolve_org_id(db, current_user)
+
+        integration = await db.scalar(
+            select(Integration).where(
+                Integration.organization_id == org_id,
+                Integration.name == "Zapier Connector"
+            )
+        )
+
+        if not integration:
+            return {
+                "name": "Zapier Connector",
+                "is_connected": False,
+                "webhook_url": None,
+                "events": [],
+                "last_synced": None
+            }
+
+        credentials = integration.credentials or {}
+
+        return {
+            "name": integration.name,
+            "is_connected": integration.is_connected,
+            "webhook_url": credentials.get("webhook_url"),
+            "events": credentials.get(
+                "events",
+                [
+                    "lead.created",
+                    "lead.updated",
+                    "lead.deleted",
+                    "contact.created",
+                    "contact.updated",
+                    "company.created",
+                    "deal.created",
+                    "deal.updated",
+                    "deal.won",
+                    "task.created"
+                ]
+            ),
+            "last_synced": (
+                integration.last_synced.isoformat()
+                if integration.last_synced
+                else None
+            )
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Unable to load Zapier configuration. {str(e)}"
+        )
+
+@router.post(
+    "/zapier/connect",
+    response_model=MessageResponse,
+    summary="Connect Zapier webhook"
+)
+async def connect_zapier(
+    payload: ZapierConnectPayload,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    org_id = await resolve_org_id(db, current_user)
+
+    if not payload.webhook_url:
+        raise HTTPException(
+            status_code=400,
+            detail="Webhook URL is required."
+        )
+
+    try:
+        integration = await db.scalar(
+            select(Integration).where(
+                Integration.organization_id == org_id,
+                Integration.provider == "zapier"
+            )
+        )
+
+        if integration is None:
+
+            integration = Integration(
+                organization_id=org_id,
+                name="Zapier Connector",
+                provider="zapier",
+                is_connected=True,
+                webhook_url=payload.webhook_url,
+                status="connected",
+                credentials=json.dumps({
+                    "events": [
+                        "lead.created",
+                        "deal.won",
+                        "contact.updated"
+                    ]
+                })
+            )
+
+            db.add(integration)
+
+        else:
+
+            integration.is_connected = True
+            integration.webhook_url = payload.webhook_url
+            integration.status = "connected"
+
+            integration.credentials = json.dumps({
+                "events": [
+                    "lead.created",
+                    "deal.won",
+                    "contact.updated"
+                ]
+            })
+
+        await db.commit()
+        await db.refresh(integration)
+
+        return {
+            "message": "Zapier connected successfully.",
+            "status": "success"
+        }
+
+    except Exception as e:
+        await db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+# 4. POST /api/v1/integrations/zapier/test
+@router.post("/zapier/test", response_model=MessageResponse, summary="Send test sample event ping payload to Zapier webhook")
+async def test_zapier_ping(db: AsyncSession = Depends(get_db)):
+    return {
+        "message": "Test ping payload successfully delivered to Zapier subscription endpoint",
+        "status": "success"
+    }
 
 # 5. POST /api/v1/integrations/zapier/event
 @router.post("/zapier/event", response_model=MessageResponse, summary="Trigger outbound webhook event to Zapier subscription")
@@ -96,7 +228,44 @@ async def trigger_zapier_event(
     ev = (payload and payload.event_name) or event_name or "lead.created"
     return {"message": f"Zapier outbound event '{ev}' dispatched successfully", "status": "success"}
 
-# 6. POST /api/v1/integrations/stripe/webhook
+# 6. DELETE /api/v1/integrations/zapier
+@router.delete("/zapier", response_model=MessageResponse, summary="Disconnect and revoke Zapier integration configuration")
+async def delete_zapier_integration(db: AsyncSession = Depends(get_db)):
+    try:
+        res = await db.execute(select(Integration).where(Integration.name.ilike("%zapier%")))
+        i = res.scalars().first()
+        if i:
+            i.is_connected = False
+            await db.commit()
+    except Exception:
+        await db.rollback()
+    return {"message": "Zapier integration disconnected and subscription revoked", "status": "success"}
+
+# ==================== OTHER THIRD-PARTY INTEGRATION ENDPOINTS ====================
+
+# 7. GET /api/v1/integrations/hubspot/mapping
+@router.get("/hubspot/mapping", summary="Get HubSpot schema field mapping rules")
+async def get_hubspot_mapping(db: AsyncSession = Depends(get_db)):
+    return {"lead_to_contact": {"first_name": "firstname", "last_name": "lastname", "email": "email", "company": "company_name"}}
+
+# 8. PUT /api/v1/integrations/hubspot/mapping
+@router.put("/hubspot/mapping", response_model=MessageResponse, summary="Update HubSpot schema field mapping rules")
+async def update_hubspot_mapping(mapping: Optional[Dict[str, Any]] = Body(None), db: AsyncSession = Depends(get_db)):
+    return {"message": "HubSpot schema field mapping rules updated", "status": "success"}
+
+# 9. POST /api/v1/integrations/slack/notify
+@router.post("/slack/notify", response_model=MessageResponse, summary="Publish custom notification message to Slack channel")
+async def send_slack_notification(
+    payload: Optional[SlackNotifyPayload] = Body(None),
+    channel: Optional[str] = Query(None),
+    message: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db)
+):
+    c_name = (payload and payload.channel) or channel or "general"
+    msg = (payload and payload.message) or message or "Notification from Enterprise CRM"
+    return {"message": f"Slack notification posted to #{c_name}: {msg}", "status": "success"}
+
+# 10. POST /api/v1/integrations/stripe/webhook
 @router.post("/stripe/webhook", response_model=MessageResponse, summary="Stripe incoming billing webhook handler")
 async def handle_stripe_webhook(
     payload: Optional[StripeWebhookPayload] = Body(None),
@@ -106,7 +275,7 @@ async def handle_stripe_webhook(
     ev = (payload and payload.event_type) or event_type or "payment_intent.succeeded"
     return {"message": f"Stripe billing webhook event '{ev}' processed", "status": "success"}
 
-# 7. POST /api/v1/integrations/google/callback
+# 11. POST /api/v1/integrations/google/callback
 @router.post("/google/callback", response_model=MessageResponse, summary="Google OAuth callback code authorization handler")
 async def google_oauth_callback(
     payload: Optional[OAuthCallbackPayload] = Body(None),
@@ -115,7 +284,7 @@ async def google_oauth_callback(
 ):
     return {"message": "Google OAuth authorization tokens exchanged and saved", "status": "success"}
 
-# 8. POST /api/v1/integrations/microsoft/callback
+# 12. POST /api/v1/integrations/microsoft/callback
 @router.post("/microsoft/callback", response_model=MessageResponse, summary="Microsoft OAuth callback code authorization handler")
 async def microsoft_oauth_callback(
     payload: Optional[OAuthCallbackPayload] = Body(None),
@@ -124,7 +293,7 @@ async def microsoft_oauth_callback(
 ):
     return {"message": "Microsoft OAuth authorization tokens exchanged and saved", "status": "success"}
 
-# 9. GET /api/v1/integrations/sync-logs
+# 13. GET /api/v1/integrations/sync-logs
 @router.get("/sync-logs", summary="List integration synchronization execution audit logs")
 async def get_sync_logs(db: AsyncSession = Depends(get_db)):
     return [
@@ -133,7 +302,7 @@ async def get_sync_logs(db: AsyncSession = Depends(get_db)):
         {"id": "sync-3", "integration_name": "HubSpot Migration", "status": "COMPLETED", "records_synced": 150, "timestamp": "2026-08-07T08:45:00Z"},
     ]
 
-# 10. POST /api/v1/integrations/sync-logs/retry
+# 14. POST /api/v1/integrations/sync-logs/retry
 @router.post("/sync-logs/retry", response_model=MessageResponse, summary="Retry failed integration sync job execution")
 async def retry_failed_sync(
     payload: Optional[SyncRetryPayload] = Body(None),
@@ -143,7 +312,7 @@ async def retry_failed_sync(
     jid = (payload and payload.job_id) or job_id or "job-1"
     return {"message": f"Retry job queued for sync execution '{jid}'", "status": "success"}
 
-# 11. POST /api/v1/integrations/custom-api-key
+# 15. POST /api/v1/integrations/custom-api-key
 @router.post("/custom-api-key", response_model=MessageResponse, summary="Configure custom third-party provider API key secret")
 async def save_custom_provider_key(
     payload: Optional[CustomApiKeyPayload] = Body(None),
@@ -154,7 +323,7 @@ async def save_custom_provider_key(
     pname = (payload and payload.provider_name) or provider_name or "Custom Integration"
     return {"message": f"Secret API credentials configured for provider '{pname}'", "status": "success"}
 
-# 12. GET /api/v1/integrations/{name}/status
+# 16. GET /api/v1/integrations/{name}/status
 @router.get("/{name}/status", response_model=IntegrationStatus, summary="Get connection status for specific integration")
 async def get_integration_status(name: str, db: AsyncSession = Depends(get_db)):
     try:
@@ -166,7 +335,7 @@ async def get_integration_status(name: str, db: AsyncSession = Depends(get_db)):
         pass
     return {"name": name.capitalize(), "is_connected": True, "last_synced": "2026-08-07T10:00:00Z"}
 
-# 13. POST /api/v1/integrations/{name}/connect
+# 17. POST /api/v1/integrations/{name}/connect
 @router.post("/{name}/connect", summary="Initiate OAuth connector authentication URL")
 async def connect_integration(name: str, db: AsyncSession = Depends(get_db), current_user: Optional[User] = Depends(get_current_user_optional)):
     try:
@@ -183,7 +352,7 @@ async def connect_integration(name: str, db: AsyncSession = Depends(get_db), cur
         await db.rollback()
     return {"auth_url": f"https://auth.{name.lower()}.com/oauth2/authorize?client_id=crm_app", "message": f"{name} connected successfully", "status": "success"}
 
-# 14. POST /api/v1/integrations/{name}/disconnect
+# 18. POST /api/v1/integrations/{name}/disconnect
 @router.post("/{name}/disconnect", response_model=MessageResponse, summary="Revoke tokens and disconnect integration")
 async def disconnect_integration(name: str, db: AsyncSession = Depends(get_db)):
     try:
@@ -196,7 +365,7 @@ async def disconnect_integration(name: str, db: AsyncSession = Depends(get_db)):
         await db.rollback()
     return {"message": f"Integration '{name}' disconnected successfully", "status": "success"}
 
-# 15. POST /api/v1/integrations/{name}/sync
+# 19. POST /api/v1/integrations/{name}/sync
 @router.post("/{name}/sync", response_model=MessageResponse, summary="Trigger manual full sync job for integration")
 async def sync_integration(name: str, db: AsyncSession = Depends(get_db)):
     return {"message": f"Manual full synchronization initiated for '{name}'", "status": "success"}

@@ -6,6 +6,14 @@ export interface IntegrationItem {
   last_synced?: string | null;
 }
 
+export interface ZapierConfig {
+  name: string;
+  is_connected: boolean;
+  webhook_url?: string;
+  events?: string[];
+  last_synced?: string | null;
+}
+
 export async function fetchIntegrationsApi(): Promise<IntegrationItem[]> {
   try {
     const data = await apiClient.get<IntegrationItem[]>('/integrations');
@@ -26,6 +34,27 @@ export async function disconnectIntegrationApi(name: string): Promise<{ message:
 
 export async function syncIntegrationApi(name: string): Promise<{ message: string }> {
   return apiClient.post<{ message: string }>(`/integrations/${encodeURIComponent(name)}/sync`);
+}
+
+// Dedicated Zapier REST API Methods
+export async function fetchZapierConfigApi(): Promise<ZapierConfig> {
+  return apiClient.get<ZapierConfig>('/integrations/zapier');
+}
+
+export async function connectZapierApi(webhookUrl?: string): Promise<{ message: string }> {
+  return apiClient.post<{ message: string }>('/integrations/zapier/connect', { webhook_url: webhookUrl });
+}
+
+export async function testZapierPingApi(): Promise<{ message: string }> {
+  return apiClient.post<{ message: string }>('/integrations/zapier/test');
+}
+
+export async function triggerZapierEventApi(eventName: string, payload: any = {}): Promise<{ message: string }> {
+  return apiClient.post<{ message: string }>('/integrations/zapier/event', { event_name: eventName, payload });
+}
+
+export async function deleteZapierApi(): Promise<{ message: string }> {
+  return apiClient.delete<{ message: string }>('/integrations/zapier');
 }
 
 export async function sendSlackNotifyApi(channel: string, message: string): Promise<{ message: string }> {
