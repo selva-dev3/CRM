@@ -35,13 +35,12 @@ class Integration(Base):
         nullable=False
     )
 
-    # Display Name
     name: Mapped[str] = mapped_column(
         String(100),
         nullable=False
     )
 
-    # zapier / slack / stripe / google / hubspot ...
+    # zapier / slack / stripe / google / hubspot
     provider: Mapped[str] = mapped_column(
         String(50),
         index=True,
@@ -54,19 +53,35 @@ class Integration(Base):
         nullable=False
     )
 
-    # OAuth / API Credentials
+    status: Mapped[str] = mapped_column(
+        String(30),
+        default="disconnected",
+        nullable=False
+    )
+
+    # OAuth Credentials
     access_token: Mapped[Optional[str]] = mapped_column(Text)
 
     refresh_token: Mapped[Optional[str]] = mapped_column(Text)
 
+    # Webhook URL (Zapier / Slack etc.)
     webhook_url: Mapped[Optional[str]] = mapped_column(Text)
 
-    # Store provider configuration as JSON string
+    # Provider configuration JSON
     credentials: Mapped[Optional[str]] = mapped_column(Text)
 
-    status: Mapped[str] = mapped_column(
-        String(30),
-        default="disconnected"
+    # Provider object id
+    external_id: Mapped[Optional[str]] = mapped_column(
+        String(255)
+    )
+
+    # JSON string
+    enabled_events: Mapped[Optional[str]] = mapped_column(Text)
+
+    sync_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False
     )
 
     last_synced: Mapped[Optional[DateTime]] = mapped_column(
@@ -112,6 +127,13 @@ class ApiKey(Base):
         nullable=False
     )
 
+    description: Mapped[Optional[str]] = mapped_column(Text)
+
+    created_by: Mapped[Optional[str]] = mapped_column(
+        String,
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+
     key_hash: Mapped[str] = mapped_column(
         String(255),
         unique=True,
@@ -133,6 +155,12 @@ class ApiKey(Base):
 
     last_used: Mapped[Optional[DateTime]] = mapped_column(
         DateTime(timezone=True)
+    )
+
+    usage_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False
     )
 
     created_at: Mapped[DateTime] = mapped_column(
@@ -177,7 +205,21 @@ class Webhook(Base):
         nullable=False
     )
 
-    # Comma separated / JSON events
+    method: Mapped[str] = mapped_column(
+        String(10),
+        default="POST",
+        nullable=False
+    )
+
+    content_type: Mapped[str] = mapped_column(
+        String(100),
+        default="application/json",
+        nullable=False
+    )
+
+    headers: Mapped[Optional[str]] = mapped_column(Text)
+
+    # JSON array or comma separated
     events: Mapped[str] = mapped_column(
         Text,
         nullable=False
@@ -187,11 +229,29 @@ class Webhook(Base):
         String(255)
     )
 
+    timeout_seconds: Mapped[int] = mapped_column(
+        Integer,
+        default=30,
+        nullable=False
+    )
+
+    retry_count: Mapped[int] = mapped_column(
+        Integer,
+        default=3,
+        nullable=False
+    )
+
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         default=True,
         nullable=False
     )
+
+    last_status_code: Mapped[Optional[int]] = mapped_column(
+        Integer
+    )
+
+    last_response: Mapped[Optional[str]] = mapped_column(Text)
 
     last_triggered_at: Mapped[Optional[DateTime]] = mapped_column(
         DateTime(timezone=True)

@@ -1,5 +1,7 @@
 from fastapi import APIRouter, HTTPException, status, Query, Depends, Body
 from typing import List, Optional, Dict, Any
+import json
+import httpx
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -7,7 +9,7 @@ from app.database import get_db
 from app.models import Integration, AuditLog, Organization, User
 from app.schemas.crm_schemas import IntegrationStatus, MessageResponse
 from app.api.deps import get_current_user_optional
-
+from datetime import datetime
 router = APIRouter()
 
 # Request Pydantic Schemas
@@ -16,8 +18,8 @@ class SlackNotifyPayload(BaseModel):
     message: Optional[str] = "Lead status updated in Enterprise CRM"
 
 class ZapierEventPayload(BaseModel):
-    event_name: Optional[str] = "lead.created"
-    payload: Optional[Dict[str, Any]] = {}
+    event_name: Optional[str] = None
+    payload: Optional[Dict[str, Any]] = None
 
 class ZapierConnectPayload(BaseModel):
     webhook_url: Optional[str] = "https://hooks.zapier.com/hooks/catch/crm_default"
@@ -85,7 +87,7 @@ async def get_zapier_config(
         integration = await db.scalar(
             select(Integration).where(
                 Integration.organization_id == org_id,
-                Integration.name == "Zapier Connector"
+                (Integration.provider == "zapier") | (Integration.name.ilike("%zapier%"))
             )
         )
 
@@ -98,27 +100,24 @@ async def get_zapier_config(
                 "last_synced": None
             }
 
-        credentials = integration.credentials or {}
+        cred_dict = {}
+        if integration.credentials:
+            if isinstance(integration.credentials, dict):
+                cred_dict = integration.credentials
+            elif isinstance(integration.credentials, str):
+                try:
+                    cred_dict = json.loads(integration.credentials)
+                except Exception:
+                    cred_dict = {}
+
+        webhook_url = getattr(integration, "webhook_url", None) or (cred_dict.get("webhook_url") if isinstance(cred_dict, dict) else None)
+        events = cred_dict.get("events") if isinstance(cred_dict, dict) and "events" in cred_dict else ["lead.created", "deal.won", "contact.updated"]
 
         return {
             "name": integration.name,
             "is_connected": integration.is_connected,
-            "webhook_url": credentials.get("webhook_url"),
-            "events": credentials.get(
-                "events",
-                [
-                    "lead.created",
-                    "lead.updated",
-                    "lead.deleted",
-                    "contact.created",
-                    "contact.updated",
-                    "company.created",
-                    "deal.created",
-                    "deal.updated",
-                    "deal.won",
-                    "task.created"
-                ]
-            ),
+            "webhook_url": webhook_url,
+            "events": events,
             "last_synced": (
                 integration.last_synced.isoformat()
                 if integration.last_synced
@@ -168,8 +167,8 @@ async def connect_zapier(
                 name="Zapier Connector",
                 provider="zapier",
                 is_connected=True,
-                webhook_url=payload.webhook_url,
                 status="connected",
+                webhook_url=payload.webhook_url,
                 credentials=json.dumps({
                     "events": [
                         "lead.created",
@@ -184,9 +183,8 @@ async def connect_zapier(
         else:
 
             integration.is_connected = True
-            integration.webhook_url = payload.webhook_url
             integration.status = "connected"
-
+            integration.webhook_url = payload.webhook_url
             integration.credentials = json.dumps({
                 "events": [
                     "lead.created",
@@ -197,6 +195,26 @@ async def connect_zapier(
 
         await db.commit()
         await db.refresh(integration)
+
+        # -----------------------------
+        # Send test request to Zapier
+        # -----------------------------
+        async with httpx.AsyncClient(timeout=15) as client:
+
+            response = await client.post(
+                integration.webhook_url,
+                json={
+                    "event": "connection.test",
+                    "organization_id": org_id,
+                    "message": "CRM successfully connected to Zapier"
+                }
+            )
+
+        if response.status_code not in [200, 201, 202]:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Zapier returned {response.status_code}"
+            )
 
         return {
             "message": "Zapier connected successfully.",
@@ -219,14 +237,79 @@ async def test_zapier_ping(db: AsyncSession = Depends(get_db)):
     }
 
 # 5. POST /api/v1/integrations/zapier/event
-@router.post("/zapier/event", response_model=MessageResponse, summary="Trigger outbound webhook event to Zapier subscription")
+@router.post(
+    "/zapier/event",
+    response_model=MessageResponse,
+    summary="Trigger outbound webhook event to Zapier subscription"
+)
 async def trigger_zapier_event(
-    payload: Optional[ZapierEventPayload] = Body(None),
-    event_name: Optional[str] = Query(None),
-    db: AsyncSession = Depends(get_db)
+    payload: ZapierEventPayload,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
 ):
-    ev = (payload and payload.event_name) or event_name or "lead.created"
-    return {"message": f"Zapier outbound event '{ev}' dispatched successfully", "status": "success"}
+    org_id = await resolve_org_id(db, current_user)
+
+    integration = await db.scalar(
+        select(Integration).where(
+            Integration.organization_id == org_id,
+            Integration.provider == "zapier",
+            Integration.is_connected == True
+        )
+    )
+
+    if integration is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Zapier integration is not connected."
+        )
+
+    if not integration.webhook_url:
+        raise HTTPException(
+            status_code=400,
+            detail="Zapier webhook URL is missing."
+        )
+
+    webhook_payload = {
+        "event": payload.event_name,
+        "organization_id": org_id,
+        "timestamp": datetime.utcnow().isoformat(),
+        "data": payload.payload
+    }
+
+    try:
+
+        async with httpx.AsyncClient(timeout=30) as client:
+
+            response = await client.post(
+                integration.webhook_url,
+                json=webhook_payload,
+                headers={
+                    "Content-Type": "application/json"
+                }
+            )
+
+        response.raise_for_status()
+
+        integration.last_synced = datetime.utcnow()
+        integration.last_error = None
+
+        await db.commit()
+
+        return {
+            "message": "Zapier event sent successfully.",
+            "status": "success"
+        }
+
+    except Exception as e:
+
+        integration.last_error = str(e)
+
+        await db.commit()
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to send webhook: {str(e)}"
+        )
 
 # 6. DELETE /api/v1/integrations/zapier
 @router.delete("/zapier", response_model=MessageResponse, summary="Disconnect and revoke Zapier integration configuration")

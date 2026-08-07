@@ -41,8 +41,11 @@ export async function fetchZapierConfigApi(): Promise<ZapierConfig> {
   return apiClient.get<ZapierConfig>('/integrations/zapier');
 }
 
+export const DEFAULT_ZAPIER_WEBHOOK = process.env.NEXT_PUBLIC_ZAPIER_WEBHOOK_URL || 'https://hooks.zapier.com/hooks/catch/crm_enterprise_default';
+
 export async function connectZapierApi(webhookUrl?: string): Promise<{ message: string }> {
-  return apiClient.post<{ message: string }>('/integrations/zapier/connect', { webhook_url: webhookUrl });
+  const url = webhookUrl || DEFAULT_ZAPIER_WEBHOOK;
+  return apiClient.post<{ message: string }>('/integrations/zapier/connect', { webhook_url: url });
 }
 
 export async function testZapierPingApi(): Promise<{ message: string }> {

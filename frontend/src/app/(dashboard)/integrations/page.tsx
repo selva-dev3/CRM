@@ -19,6 +19,8 @@ import {
   fetchIntegrationsApi,
   connectIntegrationApi,
   disconnectIntegrationApi,
+  connectZapierApi,
+  deleteZapierApi,
   syncIntegrationApi,
   saveCustomApiKeyApi
 } from '@/lib/api/integrations';
@@ -121,13 +123,23 @@ export default function IntegrationsPage() {
     setLoadingAppId(app.id);
     try {
       if (app.status === 'connected') {
-        const res = await disconnectIntegrationApi(app.id);
+        let res: { message: string };
+        if (app.id === 'zapier') {
+          res = await deleteZapierApi();
+        } else {
+          res = await disconnectIntegrationApi(app.id);
+        }
         setApps((prev) =>
           prev.map((a) => (a.id === app.id ? { ...a, status: 'available' } : a))
         );
         setSuccessMessage(res.message || `${app.name} disconnected successfully.`);
       } else {
-        const res = await connectIntegrationApi(app.id);
+        let res: { message: string };
+        if (app.id === 'zapier') {
+          res = await connectZapierApi();
+        } else {
+          res = await connectIntegrationApi(app.id);
+        }
         setApps((prev) =>
           prev.map((a) => (a.id === app.id ? { ...a, status: 'connected' } : a))
         );
