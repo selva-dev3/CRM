@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
@@ -28,8 +28,8 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { DataTable, type DataTableColumn } from '@/components/shared/data-table';
-import { ConfirmModal } from '@/components/shared/confirm-modal';
+import { DataTable, type DataTableColumn } from '@/components/common/data-table';
+import { ConfirmModal } from '@/components/common/confirm-modal';
 import {
   useContactsQuery,
   useStarredContactsQuery,

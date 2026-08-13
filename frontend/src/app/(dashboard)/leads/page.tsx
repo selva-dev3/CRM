@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -41,7 +41,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator
 } from '@/components/ui';
-import { DataTable, DataTableColumn, TableActionOption } from '@/components/shared/data-table';
+import { DataTable, DataTableColumn, TableActionOption } from '@/components/common/data-table';
 import { 
   useLeadsQuery, 
   useCreateLeadMutation, 
@@ -1141,7 +1141,7 @@ export default function LeadsPage() {
                 Are you sure you want to delete sales lead <span className="font-black text-slate-950">"{leadToDelete.contact_name}"</span> ({leadToDelete.company})?
               </p>
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-[11px] font-bold">
-                ⚠️ Warning: This action cannot be undone and will permanently remove this lead from the database.
+                âš ï¸ Warning: This action cannot be undone and will permanently remove this lead from the database.
               </div>
 
               {/* Modal Actions */}
@@ -1244,7 +1244,7 @@ export default function LeadsPage() {
                   >
                     <div className="flex items-center gap-2">
                       <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${selectedUserId === '' ? 'bg-white/20 text-white' : 'bg-slate-300 text-slate-700'}`}>
-                        🚫
+                        ðŸš«
                       </div>
                       <span>Unassigned (No Owner)</span>
                     </div>

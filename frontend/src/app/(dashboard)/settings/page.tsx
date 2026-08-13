@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState } from 'react';
 import Link from 'next/link';
@@ -30,7 +30,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { ConfirmModal } from '@/components/shared/confirm-modal';
+import { ConfirmModal } from '@/components/common/confirm-modal';
 import {
   useSystemSettingsQuery,
   useUpdateSystemSettingsMutation,
@@ -419,9 +419,9 @@ export default function SettingsPage() {
                   className="w-full h-9 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-900"
                 >
                   <option value="USD">USD ($)</option>
-                  <option value="EUR">EUR (€)</option>
-                  <option value="GBP">GBP (£)</option>
-                  <option value="INR">INR (₹)</option>
+                  <option value="EUR">EUR (â‚¬)</option>
+                  <option value="GBP">GBP (Â£)</option>
+                  <option value="INR">INR (â‚¹)</option>
                 </select>
               </div>
 

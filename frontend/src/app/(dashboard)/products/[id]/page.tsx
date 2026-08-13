@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
@@ -19,7 +19,7 @@ import {
   Edit,
   ShieldCheck
 } from 'lucide-react';
-import { ConfirmModal } from '@/components/shared/confirm-modal';
+import { ConfirmModal } from '@/components/common/confirm-modal';
 import {
   useProductQuery,
   useProductInventoryQuery,

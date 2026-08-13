@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState } from 'react';
 import Link from 'next/link';
@@ -27,7 +27,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ConfirmModal } from '@/components/shared/confirm-modal';
+import { ConfirmModal } from '@/components/common/confirm-modal';
 import {
   useContactQuery,
   useUpdateContactMutation,

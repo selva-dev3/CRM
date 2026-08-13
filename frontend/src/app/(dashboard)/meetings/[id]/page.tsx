@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
@@ -22,7 +22,7 @@ import {
   UserCheck,
   ListTodo
 } from 'lucide-react';
-import { ConfirmModal } from '@/components/shared/confirm-modal';
+import { ConfirmModal } from '@/components/common/confirm-modal';
 import {
   useMeetingQuery,
   useMeetingAiSummaryQuery,

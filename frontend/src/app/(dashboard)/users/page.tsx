@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
@@ -36,8 +36,8 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
-import { DataTable, type DataTableColumn, type TableActionOption } from '@/components/shared/data-table';
-import { ConfirmModal } from '@/components/shared/confirm-modal';
+import { DataTable, type DataTableColumn, type TableActionOption } from '@/components/common/data-table';
+import { ConfirmModal } from '@/components/common/confirm-modal';
 import { 
   useUsersQuery, 
   useUserInvitationsQuery,

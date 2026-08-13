@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
@@ -64,7 +64,7 @@ import { useOrganizationsQuery } from '@/lib/api/organizations';
 import { useCompaniesQuery } from '@/lib/api/companies';
 import { useUsersQuery } from '@/lib/api/users';
 import { useQueryClient } from '@tanstack/react-query';
-import { getSessionToken } from '@/lib/api-client';
+import { getSessionToken } from '@/lib/api/client';
 
 export default function LeadDetailPage() {
   const params = useParams();
@@ -538,7 +538,7 @@ export default function LeadDetailPage() {
             </div>
             <p className="text-body font-medium text-[#6B7280] flex items-center gap-2 flex-wrap">
               <span>{lead.title}</span>
-              <span className="text-[#9CA3AF]">•</span>
+              <span className="text-[#9CA3AF]">â€¢</span>
               <span className="text-[#2563EB] font-semibold">{lead.company}</span>
             </p>
           </div>
@@ -726,15 +726,15 @@ export default function LeadDetailPage() {
                 </span>
                 {(lead.score ?? 75) >= 70 ? (
                   <span className="px-2.5 py-0.5 rounded-full bg-[#16A34A]/10 text-[#16A34A] border border-[#16A34A]/20 text-badge font-semibold">
-                    🔥 High Intent
+                    ðŸ”¥ High Intent
                   </span>
                 ) : (lead.score ?? 75) >= 40 ? (
                   <span className="px-2.5 py-0.5 rounded-full bg-[#F59E0B]/10 text-[#D97706] border border-[#F59E0B]/20 text-badge font-semibold">
-                    ⚡ Warm Lead
+                    âš¡ Warm Lead
                   </span>
                 ) : (
                   <span className="px-2.5 py-0.5 rounded-full bg-[#F3F4F6] text-[#374151] border border-[#E5E7EB] text-badge font-semibold">
-                    ❄️ Cold Lead
+                    â„ï¸ Cold Lead
                   </span>
                 )}
               </div>
@@ -1801,7 +1801,7 @@ export default function LeadDetailPage() {
                 Are you sure you want to delete sales lead <span className="font-black text-slate-950">"{lead.contact_name}"</span> ({lead.company})?
               </p>
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-[11px] font-bold">
-                ⚠️ Warning: This action cannot be undone and will permanently remove this lead from the database.
+                âš ï¸ Warning: This action cannot be undone and will permanently remove this lead from the database.
               </div>
 
               <div className="pt-2 flex items-center justify-end gap-3">
