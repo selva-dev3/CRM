@@ -1,496 +1,184 @@
-from fastapi import APIRouter, HTTPException, status, Query, Depends, UploadFile, File
 from typing import List, Optional
+
+from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from app.core.config import settings
+
 from app.db.session import get_db
-from app.models import User, UserInvitation, Organization, Role
 from app.schemas.crm_schemas import (
-    UserResponse, UserCreate, UserUpdate, UserProfileUpdate, UserInviteRequest,
-    UserInviteBulkResponse, AcceptInviteRequest, UserInvitationDetailsResponse,
-    UserActionResponse, UserDeleteResponse, MessageResponse, BulkDeleteRequest, BulkActionResponse
+    AcceptInviteRequest,
+    BulkActionResponse,
+    BulkDeleteRequest,
+    MessageResponse,
+    UserActionResponse,
+    UserCreate,
+    UserDeleteResponse,
+    UserInvitationDetailsResponse,
+    UserInviteBulkResponse,
+    UserInviteRequest,
+    UserProfileUpdate,
+    UserResponse,
+    UserUpdate,
 )
-from app.services.s3_service import s3_service
-from app.services.email_service import send_user_invite_email
-from app.core.security import generate_random_code, get_password_hash, create_access_token
+from app.services.user_service import user_service
 
 router = APIRouter()
 
-PROTECTED_SUPERADMIN_EMAIL = "superadmin@gmail.com"
 
 @router.get("", response_model=List[UserResponse], summary="List all users with pagination and search")
 async def list_users(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     search: Optional[str] = Query(None),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
-    try:
-        stmt = select(User)
-        cleaned_search = search.strip() if search and isinstance(search, str) and search.strip() else None
-        if cleaned_search:
-            pattern = f"%{cleaned_search}%"
-            stmt = stmt.where(User.name.ilike(pattern) | User.email.ilike(pattern))
-        
-        actual_page = page if isinstance(page, int) else 1
-        actual_limit = limit if isinstance(limit, int) else 20
-        
-        stmt = stmt.offset((actual_page - 1) * actual_limit).limit(actual_limit)
-        res = await db.execute(stmt)
-        users = res.scalars().all()
+    return await user_service.list_users(db, page=page, limit=limit, search=search)
 
-        # Query Role table to map Role UUIDs to human-readable Role Names
-        role_ids = {u.role for u in users if u.role}
-        role_map = {}
-        if role_ids:
-            r_res = await db.execute(select(Role).where((Role.id.in_(role_ids)) | (Role.name.in_(role_ids))))
-            roles_found = r_res.scalars().all()
-            for r in roles_found:
-                role_map[r.id] = r.name
-                role_map[r.name] = r.name
 
-        def get_display_role(u_obj):
-            r_val = u_obj.role
-            if not r_val:
-                return "Super Administrator" if "superadmin" in u_obj.email.lower() else "User"
-            if r_val in role_map:
-                return role_map[r_val]
-            if len(r_val) > 20 and "-" in r_val:
-                return "Super Administrator" if "superadmin" in u_obj.email.lower() else "Assigned Role"
-            return r_val
-
-        return [
-            {
-                "id": u.id,
-                "name": u.name,
-                "email": u.email,
-                "role": get_display_role(u),
-                "organization_id": u.organization_id,
-                "is_active": u.is_active,
-                "created_at": str(u.created_at)
-            }
-            for u in users
-        ]
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
-
-@router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED, summary="Create new user")
+@router.post(
+    "",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create new user",
+)
 async def create_user(payload: UserCreate, db: AsyncSession = Depends(get_db)):
-    try:
-        u = User(name=payload.name, email=payload.email, hashed_password=get_password_hash(payload.password), role=payload.role, organization_id=payload.organization_id)
-        db.add(u)
-        await db.commit()
-        return {"id": u.id, "name": u.name, "email": u.email, "role": u.role, "organization_id": u.organization_id, "is_active": u.is_active, "created_at": str(u.created_at)}
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"User creation failed: {str(e)}")
+    return await user_service.create_user(db, payload)
+
 
 @router.get("/me/profile", response_model=UserResponse, summary="Get current logged in user profile")
 async def get_my_profile(db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(User).limit(1))
-    u = res.scalars().first()
-    if not u:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No profile found")
-    return {"id": u.id, "name": u.name, "email": u.email, "role": u.role, "organization_id": u.organization_id, "is_active": u.is_active, "created_at": str(u.created_at)}
+    return await user_service.get_my_profile(db)
+
 
 @router.put("/me/profile", response_model=UserResponse, summary="Update logged in user profile")
 async def update_my_profile(payload: UserProfileUpdate, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(User).limit(1))
-    u = res.scalars().first()
-    if not u:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
-    try:
-        if payload.name: u.name = payload.name
-        await db.commit()
-        return {"id": u.id, "name": u.name, "email": u.email, "role": u.role, "organization_id": u.organization_id, "is_active": u.is_active, "created_at": str(u.created_at)}
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return await user_service.update_my_profile(db, payload)
+
 
 @router.post("/me/avatar", response_model=MessageResponse, summary="Upload user avatar picture to MinIO S3")
 async def upload_avatar(file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(User).limit(1))
-    u = res.scalars().first()
-    if not u:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    try:
-        object_name = f"avatars/{u.id}_{file.filename}"
-        s3_key = s3_service.upload_file(file.file, object_name=object_name, content_type=file.content_type)
-        avatar_url = s3_service.generate_presigned_url(s3_key)
-        
-        u.avatar_url = avatar_url
-        await db.commit()
-        return {"message": "Avatar uploaded to MinIO S3 successfully", "status": "success"}
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"S3 Avatar upload failed: {str(e)}")
+    return await user_service.upload_avatar(
+        db, file=file.file, filename=file.filename, content_type=file.content_type
+    )
+
 
 @router.post("/invite", response_model=UserInviteBulkResponse, summary="Bulk invite users via email with name, email and 14-char random tokens")
 async def invite_users(payload: UserInviteRequest, db: AsyncSession = Depends(get_db)):
-    invitation_responses = []
-    try:
-        org_res = await db.execute(select(Organization).limit(1))
-        org = org_res.scalars().first()
-        if not org:
-            org = Organization(name="Default Enterprise CRM")
-            db.add(org)
-            await db.flush()
-        org_id = org.id
+    return await user_service.invite_users(db, payload)
 
-        invite_targets = []
-        if payload.users:
-            for u in payload.users:
-                invite_targets.append({"name": u.name or u.email.split("@")[0], "email": u.email.strip()})
-        elif payload.emails:
-            for email in payload.emails:
-                email_clean = email.strip()
-                target_name = payload.name or email_clean.split("@")[0]
-                invite_targets.append({"name": target_name, "email": email_clean})
-                
-
-        for target in invite_targets:
-            token = generate_random_code(14)
-            inv = UserInvitation(
-                email=target["email"],
-                token=token,
-                role=payload.role or "Sales Executive",
-                organization_id=org_id,
-                status="pending"
-            )
-            db.add(inv)
-            await db.flush()
-
-            invite_url = f"{settings.FRONTEND_URL}/accept-invite?token={token}"
-            send_user_invite_email(
-    email_to=target["email"],
-    role=payload.role,
-    invite_url=invite_url
-)
-
-            invitation_responses.append({
-                "name": target["name"],
-                "email": target["email"],
-                "token": token,
-                "role": payload.role or "Sales Executive",
-                "status": "pending"
-            })
-
-        await db.commit()
-        return {
-            "message": f"Invites sent to {len(invitation_responses)} users",
-            "invitations": invitation_responses,
-            "status": "success"
-        }
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invitation dispatch failed: {str(e)}")
 
 @router.get("/invitations", response_model=List[UserInvitationDetailsResponse], summary="List all user invitations")
-@router.get("/invitations/all", response_model=List[UserInvitationDetailsResponse], summary="List all user invitations (alias)")
 async def list_user_invitations(
     token: Optional[str] = Query(None),
     status_filter: Optional[str] = Query(None, alias="status"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
-    """Retrieves list of all organization user invitations (pending, accepted, expired)."""
-    try:
-        stmt = select(UserInvitation)
-        if token and token.strip():
-            stmt = stmt.where(UserInvitation.token == token.strip())
-        elif status_filter and status_filter.strip():
-            stmt = stmt.where(UserInvitation.status == status_filter.strip())
-        stmt = stmt.order_by(UserInvitation.created_at.desc())
-        res = await db.execute(stmt)
-        invitations = res.scalars().all()
-        return [
-            {
-                "id": inv.id,
-                "email": inv.email,
-                "token": inv.token,
-                "role": inv.role,
-                "status": inv.status,
-                "organization_id": inv.organization_id,
-                "created_at": str(inv.created_at) if inv.created_at else ""
-            }
-            for inv in invitations
-        ]
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+    return await user_service.list_user_invitations(db, token=token, status_filter=status_filter)
+
+
+@router.get("/invitations/all", response_model=List[UserInvitationDetailsResponse], summary="List all user invitations (alias)")
+async def list_user_invitations_all(
+    token: Optional[str] = Query(None),
+    status_filter: Optional[str] = Query(None, alias="status"),
+    db: AsyncSession = Depends(get_db),
+):
+    return await user_service.list_user_invitations(db, token=token, status_filter=status_filter)
+
 
 @router.get("/invitations/{token}", response_model=UserInvitationDetailsResponse, summary="Get user invitation details by token")
 async def get_invitation_details(token: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(UserInvitation).where(UserInvitation.token == token.strip()))
-    inv = res.scalars().first()
-    if not inv:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invitation not found or token invalid")
-    
-    # Check if any invitation for this email has already been accepted
-    accepted_any = await db.execute(
-        select(UserInvitation).where(
-            UserInvitation.email.ilike(inv.email),
-            UserInvitation.status == "accepted"
-        )
-    )
-    if accepted_any.scalars().first():
-        inv.status = "accepted"
+    return await user_service.get_invitation_details(db, token)
 
-    return {
-        "id": inv.id,
-        "email": inv.email,
-        "token": inv.token,
-        "role": inv.role,
-        "status": inv.status,
-        "organization_id": inv.organization_id,
-        "created_at": str(inv.created_at)
-    }
 
 @router.post("/accept-invite", summary="Accept organization user invitation, set password, and activate account")
 async def accept_user_invitation(payload: AcceptInviteRequest, db: AsyncSession = Depends(get_db)):
-    token_clean = payload.token.strip()
-    res = await db.execute(select(UserInvitation).where(UserInvitation.token == token_clean))
-    inv = res.scalars().first()
-    if not inv:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid or expired invitation token")
-    
-    # Check if this invitation or any other invitation for the same email has already been accepted
-    accepted_any = await db.execute(
-        select(UserInvitation).where(
-            UserInvitation.email.ilike(inv.email),
-            UserInvitation.status == "accepted"
-        )
-    )
-    if inv.status == "accepted" or accepted_any.scalars().first():
-        inv.status = "accepted"
-        await db.commit()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invitation has already been accepted")
-    
-    try:
-        org_res = await db.execute(select(Organization).limit(1))
-        org = org_res.scalars().first()
-        if not org:
-            org = Organization(name="Default Enterprise CRM")
-            db.add(org)
-            await db.flush()
-        target_org_id = inv.organization_id if inv.organization_id and len(inv.organization_id) > 5 else org.id
+    return await user_service.accept_user_invitation(db, payload)
 
-        user_res = await db.execute(select(User).where(User.email.ilike(inv.email)))
-        user = user_res.scalars().first()
-        
-        hashed_pwd = get_password_hash(payload.password)
-
-        if user:
-            user.name = payload.name
-            user.hashed_password = hashed_pwd
-            user.role = inv.role
-            user.organization_id = target_org_id
-            user.is_active = True
-        else:
-            user = User(
-                name=payload.name,
-                email=inv.email,
-                hashed_password=hashed_pwd,
-                role=inv.role,
-                organization_id=target_org_id,
-                is_active=True
-            )
-            db.add(user)
-            await db.flush()
-        
-        # Mark current and all other invitations for this email address as accepted
-        inv.status = "accepted"
-        other_invs = await db.execute(
-            select(UserInvitation).where(
-                UserInvitation.email.ilike(inv.email),
-                UserInvitation.id != inv.id
-            )
-        )
-        for other in other_invs.scalars().all():
-            other.status = "accepted"
-
-        await db.commit()
-        return {
-            "message": "Invitation accepted successfully! Your account is active.",
-            "user_id": user.id,
-            "email": user.email,
-            "name": user.name,
-            "role": user.role,
-            "status": "success"
-        }
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to accept invitation: {str(e)}")
 
 @router.get("/{user_id}", response_model=UserResponse, summary="Get user details by ID")
 async def get_user(user_id: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(User).where(User.id == user_id))
-    u = res.scalars().first()
-    if not u:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User '{user_id}' not found")
-    return {"id": u.id, "name": u.name, "email": u.email, "role": u.role, "organization_id": u.organization_id, "is_active": u.is_active, "created_at": str(u.created_at)}
+    return await user_service.get_user(db, user_id)
+
 
 @router.put("/{user_id}", response_model=UserResponse, summary="Update user by ID")
 async def update_user(user_id: str, payload: UserUpdate, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(User).where(User.id == user_id))
-    u = res.scalars().first()
-    if not u:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User '{user_id}' not found")
-    try:
-        if payload.name: u.name = payload.name
-        if payload.role: u.role = payload.role
-        await db.commit()
-        return {"id": u.id, "name": u.name, "email": u.email, "role": u.role, "organization_id": u.organization_id, "is_active": u.is_active, "created_at": str(u.created_at)}
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return await user_service.update_user(db, user_id, payload)
+
 
 @router.delete("/{user_id}", response_model=UserDeleteResponse, summary="Delete user by ID (Protected against superadmin@gmail.com deletion)")
 async def delete_user(user_id: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(User).where(User.id == user_id))
-    u = res.scalars().first()
-    if not u:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User '{user_id}' not found")
-    if u.email.lower() == PROTECTED_SUPERADMIN_EMAIL:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Protected user '{PROTECTED_SUPERADMIN_EMAIL}' cannot be deleted")
-    
-    user_name = u.name
-    user_email = u.email
+    return await user_service.delete_user(db, user_id)
 
-    try:
-        await db.delete(u)
-        await db.commit()
-        return {
-            "message": f"User '{user_name}' ({user_email}) deleted successfully",
-            "user_id": user_id,
-            "name": user_name,
-            "email": user_email,
-            "status": "success"
-        }
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 @router.post("/{user_id}/activate", response_model=UserActionResponse, summary="Activate user account")
 async def activate_user(user_id: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(User).where(User.id == user_id))
-    u = res.scalars().first()
-    if not u:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User '{user_id}' not found")
-    u.is_active = True
-    await db.commit()
-    return {
-        "message": f"User '{u.name}' ({u.email}) activated successfully",
-        "user_id": u.id,
-        "name": u.name,
-        "email": u.email,
-        "is_active": u.is_active,
-        "status": "success"
-    }
+    return await user_service.activate_user(db, user_id)
+
 
 @router.post("/{user_id}/deactivate", response_model=UserActionResponse, summary="Deactivate user account")
 async def deactivate_user(user_id: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(User).where(User.id == user_id))
-    u = res.scalars().first()
-    if not u:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User '{user_id}' not found")
-    if u.email.lower() == PROTECTED_SUPERADMIN_EMAIL:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Protected user '{PROTECTED_SUPERADMIN_EMAIL}' cannot be deactivated")
-    u.is_active = False
-    await db.commit()
-    return {
-        "message": f"User '{u.name}' ({u.email}) deactivated successfully",
-        "user_id": u.id,
-        "name": u.name,
-        "email": u.email,
-        "is_active": u.is_active,
-        "status": "success"
-    }
+    return await user_service.deactivate_user(db, user_id)
+
 
 @router.get("/{user_id}/activities", summary="Get user activity timeline")
 async def get_user_activities(user_id: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(User).where(User.id == user_id))
-    if not res.scalars().first():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User '{user_id}' not found")
-    return []
+    return await user_service.get_user_activities(db, user_id)
+
 
 @router.get("/{user_id}/teams", summary="Get user team memberships")
 async def get_user_teams(user_id: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(User).where(User.id == user_id))
-    if not res.scalars().first():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User '{user_id}' not found")
-    return []
+    return await user_service.get_user_teams(db, user_id)
+
 
 @router.post("/{user_id}/teams", response_model=MessageResponse, summary="Assign user to team")
-async def assign_user_team(user_id: str, team_id: str, team_name: Optional[str] = Query(None), db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(User).where(User.id == user_id))
-    if not res.scalars().first():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User '{user_id}' not found")
-    name = team_name if team_name else team_id
-    return {"message": f"User assigned to team '{name}' successfully", "status": "success"}
+async def assign_user_team(
+    user_id: str,
+    team_id: str,
+    team_name: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    return await user_service.assign_user_team(db, user_id=user_id, team_id=team_id, team_name=team_name)
+
 
 @router.delete("/{user_id}/teams/{team_id}", response_model=MessageResponse, summary="Remove user from team")
 async def remove_user_team(user_id: str, team_id: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(User).where(User.id == user_id))
-    if not res.scalars().first():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User '{user_id}' not found")
-    return {"message": f"User {user_id} removed from team {team_id}", "status": "success"}
+    return await user_service.remove_user_team(db, user_id=user_id, team_id=team_id)
+
 
 @router.post("/bulk-delete", response_model=BulkActionResponse, summary="Bulk delete users (Filters out protected superadmin@gmail.com)")
 async def bulk_delete_users(payload: BulkDeleteRequest, db: AsyncSession = Depends(get_db)):
-    try:
-        stmt = select(User).where(User.id.in_(payload.ids))
-        res = await db.execute(stmt)
-        items = res.scalars().all()
-        deleted_count = 0
-        for item in items:
-            if item.email.lower() == PROTECTED_SUPERADMIN_EMAIL:
-                continue
-            await db.delete(item)
-            deleted_count += 1
-        await db.commit()
-        return {"affected_count": deleted_count, "message": "Users deleted successfully (Protected users skipped)"}
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return await user_service.bulk_delete_users(db, payload.ids)
+
 
 @router.get("/export/csv", summary="Export users list as CSV file")
 async def export_users_csv(db: AsyncSession = Depends(get_db)):
     return {"download_url": "https://api.crm.com/exports/users.csv"}
 
+
 @router.post("/import/csv", response_model=MessageResponse, summary="Import users from CSV file")
 async def import_users_csv(db: AsyncSession = Depends(get_db)):
     return {"message": "Import processing completed", "status": "success"}
 
+
 @router.get("/{user_id}/permissions", summary="List effective permissions for specific user")
 async def get_user_effective_permissions(user_id: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(User).where(User.id == user_id))
-    if not res.scalars().first():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User '{user_id}' not found")
-    return {"user_id": user_id, "permissions": ["leads:all", "deals:all", "contacts:all"]}
+    return await user_service.get_user_effective_permissions(db, user_id)
+
 
 @router.post("/{user_id}/reset-password-admin", response_model=MessageResponse, summary="Admin trigger forced user password reset")
 async def admin_reset_user_password(user_id: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(User).where(User.id == user_id))
-    if not res.scalars().first():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User '{user_id}' not found")
-    return {"message": f"Temporary password sent to user {user_id}", "status": "success"}
+    return await user_service.admin_reset_user_password(db, user_id)
+
 
 @router.get("/{user_id}/quota", summary="Get user sales quota target")
 async def get_user_quota(user_id: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(User).where(User.id == user_id))
-    if not res.scalars().first():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User '{user_id}' not found")
-    return {"user_id": user_id, "target_amount": 100000.0, "achieved_amount": 0.0}
+    return await user_service.get_user_quota(db, user_id)
+
 
 @router.post("/{user_id}/quota", response_model=MessageResponse, summary="Set user quarterly sales quota target")
 async def set_user_quota(user_id: str, target_amount: float, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(User).where(User.id == user_id))
-    if not res.scalars().first():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User '{user_id}' not found")
-    return {"message": f"Quota ${target_amount} assigned to {user_id}", "status": "success"}
+    return await user_service.set_user_quota(db, user_id=user_id, target_amount=target_amount)
+
 
 @router.get("/{user_id}/performance", summary="Get detailed performance scorecard for user")
 async def get_user_scorecard(user_id: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(User).where(User.id == user_id))
-    if not res.scalars().first():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User '{user_id}' not found")
-    return {"user_id": user_id, "win_rate": 0.0, "avg_deal_size": 0.0, "calls_made": 0}
+    return await user_service.get_user_scorecard(db, user_id)
