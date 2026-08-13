@@ -2,7 +2,7 @@ import boto3
 from botocore.client import Config
 from botocore.exceptions import ClientError
 from typing import BinaryIO, Optional
-from app.config import settings
+from app.core.config import settings
 
 
 class S3Service:

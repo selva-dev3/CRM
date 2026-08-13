@@ -1,8 +1,9 @@
-import logging
-from app.config import settings
+from app.core.config import settings
 import requests
 
-logger = logging.getLogger(__name__)
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 # Default sender for Resend sandbox mode (no custom domain verified yet).
@@ -50,22 +51,16 @@ def send_email(
 
         if response.status_code in (200, 201):
             logger.info(f"Email sent successfully to {to_email}")
-            print(f"[BREVO SUCCESS] Email sent to {to_email}")
             return True
 
         logger.error(
             f"Brevo Error {response.status_code}: {response.text}"
         )
 
-        print(
-            f"[BREVO ERROR] {response.status_code}: {response.text}"
-        )
-
         return False
 
     except Exception as e:
         logger.exception(f"Brevo API failed: {e}")
-        print(f"[BREVO ERROR] {e}")
         return False
 
 
@@ -129,7 +124,7 @@ def send_reset_password_email(
     """
 
     try:
-        print(f"[BREVO RESET] Sending password reset email to {email_to}...")
+        logger.info("Sending password reset email to %s...", email_to)
 
         success = send_email(
             to_email=email_to,
@@ -139,16 +134,13 @@ def send_reset_password_email(
 
         if success:
             logger.info(f"Password reset email sent successfully to {email_to}")
-            print(f"[BREVO SUCCESS] Password reset email sent to {email_to}")
         else:
             logger.error(f"Password reset email failed for {email_to}")
-            print(f"[BREVO FAILED] Password reset email failed for {email_to}")
 
         return success
 
     except Exception as e:
         logger.exception(f"Password reset email error: {e}")
-        print(f"[BREVO ERROR] {e}")
         return False
 
 def send_user_invite_email(
@@ -220,7 +212,7 @@ def send_user_invite_email(
     """
 
     try:
-        print(f"[BREVO INVITE] Sending invitation email to {email_to}...")
+        logger.info("Sending invitation email to %s...", email_to)
 
         success = send_email(
             to_email=email_to,
@@ -230,16 +222,13 @@ def send_user_invite_email(
 
         if success:
             logger.info(f"Invitation email sent successfully to {email_to}")
-            print(f"[BREVO SUCCESS] Invitation email sent to {email_to}")
         else:
             logger.error(f"Invitation email failed for {email_to}")
-            print(f"[BREVO FAILED] Invitation email failed for {email_to}")
 
         return success
 
     except Exception as e:
         logger.exception(f"Invitation email error: {e}")
-        print(f"[BREVO ERROR] {e}")
         return False
 
 
@@ -315,7 +304,7 @@ def send_organization_onboarding_invite_email(
     """
 
     try:
-        print(f"[BREVO ONBOARDING] Sending organization onboarding email to {email_to}...")
+        logger.info("Sending organization onboarding email to %s...", email_to)
 
         success = send_email(
             to_email=email_to,
@@ -325,16 +314,13 @@ def send_organization_onboarding_invite_email(
 
         if success:
             logger.info(f"Organization onboarding email sent successfully to {email_to}")
-            print(f"[BREVO SUCCESS] Onboarding email sent to {email_to}")
         else:
             logger.error(f"Organization onboarding email failed for {email_to}")
-            print(f"[BREVO FAILED] Onboarding email failed for {email_to}")
 
         return success
 
     except Exception as e:
         logger.exception(f"Organization onboarding email error: {e}")
-        print(f"[BREVO ERROR] {e}")
         return False
 
 
@@ -409,7 +395,7 @@ def send_magic_link_email(
     """
 
     try:
-        print(f"[BREVO MAGIC LINK] Sending magic link email to {email_to}...")
+        logger.info("Sending magic link email to %s...", email_to)
 
         success = send_email(
             to_email=email_to,
@@ -419,14 +405,11 @@ def send_magic_link_email(
 
         if success:
             logger.info(f"Magic link email sent successfully to {email_to}")
-            print(f"[BREVO SUCCESS] Magic link email sent to {email_to}")
         else:
             logger.error(f"Magic link email failed for {email_to}")
-            print(f"[BREVO FAILED] Magic link email failed for {email_to}")
 
         return success
 
     except Exception as e:
         logger.exception(f"Magic link email error: {e}")
-        print(f"[BREVO ERROR] {e}")
         return False

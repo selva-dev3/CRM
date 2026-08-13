@@ -2,7 +2,7 @@ from sqlalchemy import String, Boolean, DateTime, Integer, Text, ForeignKey, fun
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from typing import Optional
 import uuid
-from app.database import Base
+from app.db.base import Base
 
 class Email(Base):
     __tablename__ = "emails"

@@ -5,8 +5,8 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 # உங்க app config மற்றும் models import பண்ணுங்க
-from app.config import settings
-from app.database import Base
+from app.core.config import settings
+from app.db.base import Base
 from app.models import *  # registers all 23 models on Base.metadata
 config = context.config
 # Database URL-ஐ dynamic-ஆ settings-ல இருந்து set பண்ணுங்க

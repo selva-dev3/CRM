@@ -2,14 +2,19 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
 from app.api.v1.api import api_router
-from app.config import settings
-from app.database import engine
+from app.core.config import settings
+from app.core.errors import register_exception_handlers
+from app.core.logging import configure_logging, get_logger
+from app.db.session import AsyncSessionLocal, engine
 from app.models import Base
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
-from fastapi import Request
+
+configure_logging()
+logger = get_logger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -18,27 +23,23 @@ async def lifespan(app: FastAPI):
     Only create tables automatically in development.
     Production should use Alembic migrations.
     """
+    environment = settings.ENVIRONMENT.lower()
 
-    try:
-        environment = getattr(settings, "ENVIRONMENT", "development").lower()
-
-        if environment == "development":
-            print("Development mode - Creating database tables...")
-
+    if environment == "development":
+        logger.info("Development mode - creating database tables if missing")
+        try:
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
-
-            print("Database tables created successfully.")
-
-        else:
-            print("Production mode - Skipping create_all(). Using Alembic migrations.")
-
-    except Exception as e:
-        print(f"Database initialization failed: {e}")
+            logger.info("Database tables created successfully")
+        except Exception as e:  # pragma: no cover - startup failure path
+            logger.error("Database initialization failed: %s", e)
+    else:
+        logger.info(
+            "Production mode - skipping create_all(). Using Alembic migrations."
+        )
 
     yield
 
-    # Optional cleanup
     await engine.dispose()
 
 
@@ -50,25 +51,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    print("VALIDATION ERROR")
-    print(exc.errors())
-    print(exc.body)
-
-    return JSONResponse(
-        status_code=422,
-        content={
-            "detail": exc.errors(),
-            "body": exc.body,
-        },
-    )
+register_exception_handlers(app)
 
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=".*",
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -89,3 +77,18 @@ async def root():
         "docs": "/docs",
         "version": "1.0.0",
     }
+
+
+@app.get("/health", tags=["Health"])
+async def health():
+    """Health check that verifies database connectivity, not just process liveness."""
+    try:
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("SELECT 1"))
+    except Exception as e:
+        logger.error("Health check failed: database unreachable: %s", e)
+        return JSONResponse(
+            status_code=503,
+            content={"status": "error", "database": "unreachable"},
+        )
+    return {"status": "ok", "database": "ok"}

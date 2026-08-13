@@ -2,7 +2,7 @@ from sqlalchemy import String, Float, DateTime, Text, ForeignKey, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from typing import Optional
 import uuid
-from app.database import Base
+from app.db.base import Base
 
 class AIConversation(Base):
     __tablename__ = "ai_conversations"

@@ -1,4 +1,4 @@
-from app.database import Base
+from app.db.base import Base
 from app.models.organization import Organization, OrganizationSetting, OrganizationSubscription, SubscriptionPlan, OrganizationInvitation
 from app.models.user import User, UserInvitation
 from app.models.auth import UserProfile, UserSession, RefreshToken, PasswordReset, EmailVerification, OTPVerification

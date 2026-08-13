@@ -5,9 +5,9 @@ from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, desc, asc
 
-from app.config import settings
+from app.core.config import settings
 from app.core.security import get_password_hash, create_access_token
-from app.api.deps import get_valid_org_id
+from app.api.v1.deps import get_valid_org_id
 from app.models import (
     Organization,
     OrganizationSetting,

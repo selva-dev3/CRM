@@ -2,7 +2,7 @@ import asyncio
 
 from sqlalchemy import select
 
-from app.database import AsyncSessionLocal
+from app.db.session import AsyncSessionLocal
 from app.models.organization import SubscriptionPlan
 
 
