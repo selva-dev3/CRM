@@ -1,1050 +1,156 @@
-from fastapi import APIRouter, HTTPException, status, Query, Depends
 from typing import List, Optional
-from datetime import datetime
-import json
+
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+
 from app.db.session import get_db
-from app.models import Role, Permission, User, RolePermission, UserRole, SystemSetting
 from app.schemas.crm_schemas import (
-    RoleResponse, RoleCreate, RoleUpdate, PermissionItem, PermissionCreate, MessageResponse, BulkDeleteRequest, BulkActionResponse, SetDefaultRolesRequest
+    BulkActionResponse,
+    BulkDeleteRequest,
+    MessageResponse,
+    PermissionCreate,
+    PermissionItem,
+    RoleCreate,
+    RoleResponse,
+    RoleUpdate,
+    SetDefaultRolesRequest,
 )
+from app.services.role_service import role_service
 
 router = APIRouter()
 
-async def get_default_role_ids(db: AsyncSession) -> set:
-    try:
-        s_res = await db.execute(select(SystemSetting).where(SystemSetting.key == "default_registration_roles"))
-        setting = s_res.scalars().first()
-        if setting and setting.value:
-            try:
-                val = json.loads(setting.value)
-                if isinstance(val, list):
-                    return set(val)
-            except Exception:
-                return set([s.strip() for s in setting.value.split(",") if s.strip()])
-
-        s_legacy = await db.execute(select(SystemSetting).where(SystemSetting.key == "default_registration_role"))
-        legacy = s_legacy.scalars().first()
-        if legacy and legacy.value:
-            return {legacy.value}
-    except Exception:
-        pass
-    return set()
-
-async def get_all_db_permission_keys(db: AsyncSession) -> List[str]:
-    """Fetch all actual permission keys directly from DB Permission table."""
-    try:
-        p_res = await db.execute(select(Permission.key).where(Permission.key != "all"))
-        keys = [k for k in p_res.scalars().all() if k and k != "all"]
-        return sorted(list(set(keys)))
-    except Exception:
-        return []
 
 @router.get("", response_model=List[RoleResponse], summary="List all organization roles")
 async def list_roles(search: Optional[str] = Query(None), db: AsyncSession = Depends(get_db)):
-    try:
-        default_ids = await get_default_role_ids(db)
-        all_db_keys = await get_all_db_permission_keys(db)
+    return await role_service.list_roles(db, search)
 
-        stmt = select(Role)
-        cleaned_search = search.strip() if search and isinstance(search, str) and search.strip() else None
-        if cleaned_search:
-            pattern = f"%{cleaned_search}%"
-            stmt = stmt.where(Role.name.ilike(pattern) | Role.description.ilike(pattern))
 
-        res = await db.execute(stmt.limit(50))
-        roles = res.scalars().all()
-        
-        result = []
-        for r in roles:
-            perm_stmt = (
-                select(Permission)
-                .join(RolePermission, RolePermission.permission_id == Permission.id)
-                .where(RolePermission.role_id == r.id)
-            )
-            perm_res = await db.execute(perm_stmt)
-            assigned_perms = perm_res.scalars().all()
-            
-            if assigned_perms:
-                perm_keys = [p.key for p in assigned_perms if p.key and p.key != "all"]
-            elif getattr(r, "is_system_role", False) or r.name.lower() in ["superadmin", "super_admin", "admin"]:
-                perm_keys = all_db_keys
-            else:
-                perm_keys = getattr(r, "permissions", []) if hasattr(r, "permissions") else ["dashboard:read", "users:read", "leads:read"]
-
-            if "all" in perm_keys:
-                perm_keys = [k for k in perm_keys if k != "all"] + all_db_keys
-                perm_keys = sorted(list(set(perm_keys)))
-
-            # Determine type: "default" | "system" | "custom"
-            if r.id in default_ids or r.name in default_ids:
-                role_type = "default"
-            elif getattr(r, "is_system_role", False):
-                role_type = "system"
-            else:
-                role_type = "custom"
-
-            result.append({
-                "id": r.id,
-                "name": r.name,
-                "description": r.description or "Custom Role",
-                "permissions": perm_keys,
-                "is_system_role": getattr(r, "is_system_role", False),
-                "type": role_type,
-                "created_at": str(getattr(r, "created_at", "2026-08-05"))
-            })
-
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
-
-@router.post("", response_model=RoleResponse, status_code=status.HTTP_201_CREATED, summary="Create new custom role")
+@router.post(
+    "", response_model=RoleResponse, status_code=status.HTTP_201_CREATED, summary="Create new custom role"
+)
 async def create_role(payload: RoleCreate, db: AsyncSession = Depends(get_db)):
-    try:
-        r = Role(name=payload.name, description=payload.description or "")
-        db.add(r)
-        await db.commit()
-        await db.refresh(r)
+    return await role_service.create_role(db, payload)
 
-        saved_permissions = []
-        if payload.permissions:
-            # Query Permission table for all keys or IDs passed in payload.permissions
-            p_stmt = select(Permission).where((Permission.key.in_(payload.permissions)) | (Permission.id.in_(payload.permissions)))
-            found_perms = (await db.execute(p_stmt)).scalars().all()
 
-            found_keys_set = {p.key for p in found_perms if p.key} | {p.id for p in found_perms if p.id}
-
-            # Insert into RolePermission mapping table
-            for p in found_perms:
-                db.add(RolePermission(role_id=r.id, permission_id=p.id))
-
-            # Auto-create any permission keys passed that don't exist in Permission table yet
-            missing_keys = set(payload.permissions) - found_keys_set
-            for key_str in missing_keys:
-                if key_str and isinstance(key_str, str):
-                    category = key_str.split(":")[0].capitalize() if ":" in key_str else "General"
-                    name = key_str.replace(":", " ").capitalize()
-                    new_perm = Permission(key=key_str, name=name, category=category, description=name)
-                    db.add(new_perm)
-                    await db.flush()
-                    db.add(RolePermission(role_id=r.id, permission_id=new_perm.id))
-
-            await db.commit()
-            saved_permissions = payload.permissions
-
-        return {
-            "id": r.id,
-            "name": r.name,
-            "description": r.description or "",
-            "permissions": saved_permissions,
-            "is_system_role": False,
-            "type": "custom",
-            "created_at": str(getattr(r, "created_at", datetime.now().isoformat()))
-        }
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to create role: {str(e)}")
-
-ALL_STANDARD_PERMISSIONS = [
-    # Dashboard
-    {"key": "dashboard:read", "name": "View Dashboard", "category": "Dashboard", "description": "View CRM executive dashboard metrics"},
-    {"key": "dashboard:customize", "name": "Customize Dashboard", "category": "Dashboard", "description": "Customize dashboard widgets and layout"},
-    {"key": "dashboard:export", "name": "Export Dashboard", "category": "Dashboard", "description": "Export dashboard data to PDF or Excel"},
-
-    # Leads
-    {"key": "leads:read", "name": "View Leads", "category": "Leads", "description": "View sales leads and details"},
-    {"key": "leads:create", "name": "Create Leads", "category": "Leads", "description": "Create new sales leads"},
-    {"key": "leads:update", "name": "Update Leads", "category": "Leads", "description": "Edit existing lead details"},
-    {"key": "leads:delete", "name": "Delete Leads", "category": "Leads", "description": "Delete lead records"},
-    {"key": "leads:export", "name": "Export Leads", "category": "Leads", "description": "Export leads to CSV/Excel"},
-    {"key": "leads:import", "name": "Import Leads", "category": "Leads", "description": "Import leads from CSV/Excel"},
-    {"key": "leads:assign", "name": "Assign Leads", "category": "Leads", "description": "Assign leads to team members"},
-    {"key": "leads:convert", "name": "Convert Leads", "category": "Leads", "description": "Convert leads into accounts and deals"},
-    {"key": "leads:bulk_delete", "name": "Bulk Delete Leads", "category": "Leads", "description": "Perform bulk deletion on multiple leads"},
-    {"key": "leads:bulk_update", "name": "Bulk Update Leads", "category": "Leads", "description": "Perform bulk updates on lead fields"},
-
-    # Contacts
-    {"key": "contacts:read", "name": "View Contacts", "category": "Contacts", "description": "View contact records"},
-    {"key": "contacts:create", "name": "Create Contacts", "category": "Contacts", "description": "Create new contact records"},
-    {"key": "contacts:update", "name": "Update Contacts", "category": "Contacts", "description": "Edit existing contact information"},
-    {"key": "contacts:delete", "name": "Delete Contacts", "category": "Contacts", "description": "Delete contact records"},
-    {"key": "contacts:export", "name": "Export Contacts", "category": "Contacts", "description": "Export contact list"},
-    {"key": "contacts:import", "name": "Import Contacts", "category": "Contacts", "description": "Import contact list"},
-    {"key": "contacts:assign", "name": "Assign Contacts", "category": "Contacts", "description": "Assign contacts to owners"},
-    {"key": "contacts:bulk_delete", "name": "Bulk Delete Contacts", "category": "Contacts", "description": "Bulk delete selected contacts"},
-    {"key": "contacts:bulk_update", "name": "Bulk Update Contacts", "category": "Contacts", "description": "Bulk update contact fields"},
-
-    # Companies
-    {"key": "companies:read", "name": "View Companies", "category": "Companies", "description": "View company accounts"},
-    {"key": "companies:create", "name": "Create Companies", "category": "Companies", "description": "Create new company accounts"},
-    {"key": "companies:update", "name": "Update Companies", "category": "Companies", "description": "Update company account details"},
-    {"key": "companies:delete", "name": "Delete Companies", "category": "Companies", "description": "Delete company accounts"},
-    {"key": "companies:export", "name": "Export Companies", "category": "Companies", "description": "Export company account list"},
-    {"key": "companies:import", "name": "Import Companies", "category": "Companies", "description": "Import company accounts"},
-    {"key": "companies:bulk_delete", "name": "Bulk Delete Companies", "category": "Companies", "description": "Bulk delete company accounts"},
-
-    # Deals
-    {"key": "deals:read", "name": "View Deals", "category": "Deals", "description": "View sales deals and pipelines"},
-    {"key": "deals:create", "name": "Create Deals", "category": "Deals", "description": "Create new deal opportunities"},
-    {"key": "deals:update", "name": "Update Deals", "category": "Deals", "description": "Update deal stages and amounts"},
-    {"key": "deals:delete", "name": "Delete Deals", "category": "Deals", "description": "Delete deal opportunities"},
-    {"key": "deals:pipeline", "name": "Manage Pipelines", "category": "Deals", "description": "Configure deal pipeline stages"},
-    {"key": "deals:export", "name": "Export Deals", "category": "Deals", "description": "Export sales deal data"},
-    {"key": "deals:import", "name": "Import Deals", "category": "Deals", "description": "Import deal opportunities"},
-    {"key": "deals:assign", "name": "Assign Deals", "category": "Deals", "description": "Reassign deal ownership"},
-    {"key": "deals:bulk_delete", "name": "Bulk Delete Deals", "category": "Deals", "description": "Bulk delete selected deals"},
-
-    # Tasks
-    {"key": "tasks:read", "name": "View Tasks", "category": "Tasks", "description": "View task lists and status"},
-    {"key": "tasks:create", "name": "Create Tasks", "category": "Tasks", "description": "Create new task items"},
-    {"key": "tasks:update", "name": "Update Tasks", "category": "Tasks", "description": "Update task progress and status"},
-    {"key": "tasks:delete", "name": "Delete Tasks", "category": "Tasks", "description": "Delete task items"},
-    {"key": "tasks:assign", "name": "Assign Tasks", "category": "Tasks", "description": "Assign tasks to team members"},
-    {"key": "tasks:complete", "name": "Mark Tasks Complete", "category": "Tasks", "description": "Mark assigned tasks completed"},
-
-    # Meetings
-    {"key": "meetings:read", "name": "View Meetings", "category": "Meetings", "description": "View scheduled meetings"},
-    {"key": "meetings:create", "name": "Schedule Meetings", "category": "Meetings", "description": "Schedule new customer meetings"},
-    {"key": "meetings:update", "name": "Update Meetings", "category": "Meetings", "description": "Reschedule or update meeting details"},
-    {"key": "meetings:delete", "name": "Cancel Meetings", "category": "Meetings", "description": "Cancel or delete meetings"},
-    {"key": "meetings:invite", "name": "Invite Meeting Attendees", "category": "Meetings", "description": "Send invitations to meeting attendees"},
-
-    # Calls
-    {"key": "calls:read", "name": "View Call Logs", "category": "Calls", "description": "View sales call logs and recordings"},
-    {"key": "calls:create", "name": "Log Calls", "category": "Calls", "description": "Log new outbound or inbound calls"},
-    {"key": "calls:update", "name": "Update Call Logs", "category": "Calls", "description": "Update call notes and outcomes"},
-    {"key": "calls:delete", "name": "Delete Call Logs", "category": "Calls", "description": "Delete call log entries"},
-    {"key": "calls:recording", "name": "Access Call Recordings", "category": "Calls", "description": "Listen to and download call recordings"},
-
-    # Emails
-    {"key": "emails:read", "name": "View Email Logs", "category": "Emails", "description": "View sent and received emails"},
-    {"key": "emails:send", "name": "Send Emails", "category": "Emails", "description": "Send emails to leads and contacts"},
-    {"key": "emails:templates", "name": "Manage Templates", "category": "Emails", "description": "Create and edit email templates"},
-    {"key": "emails:delete", "name": "Delete Email Logs", "category": "Emails", "description": "Delete stored email conversation logs"},
-
-    # Notes
-    {"key": "notes:read", "name": "View Notes", "category": "Notes", "description": "View notes on CRM records"},
-    {"key": "notes:create", "name": "Create Notes", "category": "Notes", "description": "Add new notes to leads, contacts, or deals"},
-    {"key": "notes:update", "name": "Update Notes", "category": "Notes", "description": "Edit existing note content"},
-    {"key": "notes:delete", "name": "Delete Notes", "category": "Notes", "description": "Delete notes from records"},
-
-    # Documents
-    {"key": "documents:read", "name": "View Documents", "category": "Documents", "description": "View attached documents and files"},
-    {"key": "documents:upload", "name": "Upload Documents", "category": "Documents", "description": "Upload new files to MinIO S3 storage"},
-    {"key": "documents:delete", "name": "Delete Documents", "category": "Documents", "description": "Delete uploaded documents"},
-    {"key": "documents:share", "name": "Share Documents", "category": "Documents", "description": "Share document links externally"},
-
-    # Products
-    {"key": "products:read", "name": "View Products", "category": "Products", "description": "View product catalog and price list"},
-    {"key": "products:create", "name": "Create Products", "category": "Products", "description": "Add new products to catalog"},
-    {"key": "products:update", "name": "Update Products", "category": "Products", "description": "Edit product pricing and details"},
-    {"key": "products:delete", "name": "Delete Products", "category": "Products", "description": "Remove products from catalog"},
-    {"key": "products:export", "name": "Export Products", "category": "Products", "description": "Export product catalog to CSV"},
-    {"key": "products:import", "name": "Import Products", "category": "Products", "description": "Import product catalog"},
-
-    # Quotes
-    {"key": "quotes:read", "name": "View Quotes", "category": "Quotes", "description": "View sales quotes and proposals"},
-    {"key": "quotes:create", "name": "Create Quotes", "category": "Quotes", "description": "Generate new sales quotes"},
-    {"key": "quotes:update", "name": "Update Quotes", "category": "Quotes", "description": "Edit sales quotes and line items"},
-    {"key": "quotes:approve", "name": "Approve Quotes", "category": "Quotes", "description": "Approve high-value sales quotes"},
-    {"key": "quotes:delete", "name": "Delete Quotes", "category": "Quotes", "description": "Delete sales quotes"},
-    {"key": "quotes:send", "name": "Send Quotes to Client", "category": "Quotes", "description": "Send PDF quote proposals to client"},
-
-    # Invoices
-    {"key": "invoices:read", "name": "View Invoices", "category": "Invoices", "description": "View customer invoices and payments"},
-    {"key": "invoices:create", "name": "Create Invoices", "category": "Invoices", "description": "Create new billing invoices"},
-    {"key": "invoices:update", "name": "Update Invoices", "category": "Invoices", "description": "Edit invoice details"},
-    {"key": "invoices:send", "name": "Send Invoices", "category": "Invoices", "description": "Send invoices to customers"},
-    {"key": "invoices:delete", "name": "Delete Invoices", "category": "Invoices", "description": "Delete invoice records"},
-    {"key": "invoices:payment", "name": "Record Payments", "category": "Invoices", "description": "Record payment receipts on invoices"},
-
-    # Reports
-    {"key": "reports:read", "name": "View Analytics & Reports", "category": "Reports", "description": "View dashboard charts and reports"},
-    {"key": "reports:create", "name": "Create Reports", "category": "Reports", "description": "Build custom analytics reports"},
-    {"key": "reports:export", "name": "Export Reports", "category": "Reports", "description": "Export analytics data"},
-    {"key": "reports:schedule", "name": "Schedule Automated Reports", "category": "Reports", "description": "Configure automated email report delivery"},
-
-    # Calendar
-    {"key": "calendar:read", "name": "View Calendar", "category": "Calendar", "description": "View shared team calendar"},
-    {"key": "calendar:write", "name": "Manage Calendar Events", "category": "Calendar", "description": "Create and edit team calendar events"},
-    {"key": "calendar:sync", "name": "Sync External Calendar", "category": "Calendar", "description": "Sync Google and Outlook calendars"},
-
-    # Users
-    {"key": "users:read", "name": "View Users", "category": "Users", "description": "View organization user list"},
-    {"key": "users:invite", "name": "Invite Users", "category": "Users", "description": "Invite new users to organization"},
-    {"key": "users:update", "name": "Update Users", "category": "Users", "description": "Update user profiles and status"},
-    {"key": "users:delete", "name": "Delete Users", "category": "Users", "description": "Remove users from organization"},
-    {"key": "users:export", "name": "Export User Directory", "category": "Users", "description": "Export team member directory"},
-    {"key": "users:import", "name": "Import Users", "category": "Users", "description": "Import users in bulk"},
-    {"key": "users:roles", "name": "Assign User Roles", "category": "Users", "description": "Change assigned RBAC roles for users"},
-
-    # Roles
-    {"key": "roles:read", "name": "View Roles & Permissions", "category": "Roles", "description": "View RBAC roles and permissions"},
-    {"key": "roles:create", "name": "Create Custom Roles", "category": "Roles", "description": "Create new custom RBAC roles"},
-    {"key": "roles:update", "name": "Update Roles", "category": "Roles", "description": "Edit role permissions"},
-    {"key": "roles:delete", "name": "Delete Roles", "category": "Roles", "description": "Delete custom RBAC roles"},
-    {"key": "roles:assign", "name": "Assign Role Permissions", "category": "Roles", "description": "Modify assigned action permissions"},
-
-    # Organization
-    {"key": "organization:read", "name": "View Organization Details", "category": "Organization", "description": "View organization profile"},
-    {"key": "organization:update", "name": "Update Organization Profile", "category": "Organization", "description": "Edit organization settings"},
-    {"key": "organization:billing", "name": "Manage Subscriptions", "category": "Organization", "description": "Manage subscription plans and billing"},
-    {"key": "organization:domains", "name": "Manage Custom Domains", "category": "Organization", "description": "Configure custom domain verification"},
-    {"key": "organization:branding", "name": "Update Organization Logo", "category": "Organization", "description": "Upload S3 logo and branding colors"},
-    {"key": "organization:audit", "name": "View Audit Trail Logs", "category": "Organization", "description": "View organization audit logs"},
-
-    # Organization Invitations
-    {"key": "invitations:read", "name": "View Organization Invitations", "category": "Organization Invitations", "description": "View pending organization invites"},
-    {"key": "invitations:create", "name": "Create Organization Invitation", "category": "Organization Invitations", "description": "Send new organization invitations"},
-    {"key": "invitations:resend", "name": "Resend Invitation", "category": "Organization Invitations", "description": "Resend pending organization invitations"},
-    {"key": "invitations:revoke", "name": "Revoke Invitation", "category": "Organization Invitations", "description": "Revoke pending organization invitations"},
-
-    # Integrations
-    {"key": "integrations:read", "name": "View Integrations", "category": "Integrations", "description": "View connected third-party tools"},
-    {"key": "integrations:manage", "name": "Manage Integrations", "category": "Integrations", "description": "Configure webhooks and integrations"},
-    {"key": "integrations:apikeys", "name": "Manage API Keys", "category": "Integrations", "description": "Generate and revoke developer API keys"},
-
-    # Notifications
-    {"key": "notifications:read", "name": "View Notifications", "category": "Notifications", "description": "View system notifications and alerts"},
-    {"key": "notifications:manage", "name": "Manage Notification Rules", "category": "Notifications", "description": "Configure notification delivery preferences"},
-    {"key": "notifications:send", "name": "Send Broadcast Notifications", "category": "Notifications", "description": "Send broadcast alerts to team"},
-
-    # Settings
-    {"key": "settings:read", "name": "View System Settings", "category": "Settings", "description": "View system-wide settings"},
-    {"key": "settings:update", "name": "Update System Settings", "category": "Settings", "description": "Modify system configurations"},
-    {"key": "settings:security", "name": "Manage Security & Auth Settings", "category": "Settings", "description": "Configure password policies and 2FA"},
-
-    # Activities
-    {"key": "activities:read", "name": "View Activity Trail", "category": "Activities", "description": "View activity logs across CRM"},
-    {"key": "activities:create", "name": "Log Activity", "category": "Activities", "description": "Log new system activity"},
-    {"key": "activities:export", "name": "Export Activity Trail", "category": "Activities", "description": "Export activity trail logs to CSV"},
-
-    # AI Assistant
-    {"key": "ai:read", "name": "Access AI Sales Assistant", "category": "AI Assistant", "description": "Chat with AI sales assistant"},
-    {"key": "ai:generate", "name": "Generate AI Content & Insights", "category": "AI Assistant", "description": "Generate AI email drafts and deal summaries"}
-]
-
-async def seed_all_permissions_into_db(db: AsyncSession):
-    """Seed all 70+ granular CRM permissions into PostgreSQL DB permissions table if missing."""
-    try:
-        p_res = await db.execute(select(Permission.key))
-        existing_keys = {str(k).strip() for k in p_res.scalars().all() if k}
-
-        new_count = 0
-        for item in ALL_STANDARD_PERMISSIONS:
-            key_str = item["key"]
-            if key_str and key_str != "all" and key_str not in existing_keys:
-                perm_obj = Permission(
-                    id=str(uuid.uuid4()),
-                    key=key_str,
-                    name=item["name"],
-                    category=item["category"],
-                    description=item["description"]
-                )
-                db.add(perm_obj)
-                existing_keys.add(key_str)
-                new_count += 1
-
-        if new_count > 0:
-            await db.commit()
-    except Exception:
-        await db.rollback()
-
-@router.get("/permissions/matrix", response_model=List[PermissionItem], summary="Get full system permission matrix directly from DB")
+@router.get(
+    "/permissions/matrix",
+    response_model=List[PermissionItem],
+    summary="Get full system permission matrix directly from DB",
+)
 async def get_permission_matrix(db: AsyncSession = Depends(get_db)):
-    try:
-        await seed_all_permissions_into_db(db)
-    except Exception:
-        await db.rollback()
+    return await role_service.get_permission_matrix(db)
 
-    try:
-        res = await db.execute(
-            select(Permission)
-            .where(
-                Permission.key != "all",
-                func.lower(Permission.category) != "all",
-                Permission.name != "All Permission",
-                Permission.id != "all"
-            )
-            .order_by(Permission.category, Permission.name)
-            .limit(2000)
-        )
-        perms = res.scalars().all()
-        return [
-            {
-                "id": p.id,
-                "key": p.key,
-                "name": p.name or p.key.replace(":", " ").title(),
-                "category": p.category or "General",
-                "description": p.description or ""
-            } for p in perms if p.key and p.key != "all" and getattr(p, "category", "").lower() != "all"
-        ]
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Database permissions query error: {str(e)}")
 
-@router.post("/permissions", response_model=PermissionItem, status_code=status.HTTP_201_CREATED, summary="Create new permission entry")
+@router.post(
+    "/permissions",
+    response_model=PermissionItem,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create new permission entry",
+)
 async def create_permission(payload: PermissionCreate, db: AsyncSession = Depends(get_db)):
-    try:
-        p = Permission(
-            key=payload.key,
-            name=payload.name,
-            category=payload.category or "General",
-            description=payload.description or payload.name
-        )
-        db.add(p)
-        await db.commit()
-        await db.refresh(p)
-        return {
-            "id": p.id,
-            "key": p.key,
-            "name": p.name,
-            "category": p.category,
-            "description": p.description or ""
-        }
-    except Exception:
-        await db.rollback()
-        return {
-            "id": f"perm-{int(datetime.now().timestamp())}",
-            "key": payload.key,
-            "name": payload.name,
-            "category": payload.category or "General",
-            "description": payload.description or ""
-        }
+    return await role_service.create_permission(db, payload)
 
-@router.post("/permissions/batch-import", response_model=MessageResponse, summary="Batch import permissions list from JSON")
+
+@router.post(
+    "/permissions/batch-import",
+    response_model=MessageResponse,
+    summary="Batch import permissions list from JSON",
+)
 async def import_permissions_batch(payload: List[PermissionCreate], db: AsyncSession = Depends(get_db)):
-    try:
-        count = 0
-        for item in payload:
-            p = Permission(
-                key=item.key,
-                name=item.name,
-                category=item.category or "General",
-                description=item.description or item.name
-            )
-            db.add(p)
-            count += 1
-        await db.commit()
-        return {"message": f"Successfully imported {count} permissions from JSON.", "status": "success"}
-    except Exception as e:
-        await db.rollback()
-        return {"message": f"Imported {len(payload)} permissions from JSON schema.", "status": "success"}
+    return await role_service.import_permissions_batch(db, payload)
+
 
 @router.get("/system-roles", response_model=List[RoleResponse], summary="Get system built-in default roles")
 async def list_system_roles(db: AsyncSession = Depends(get_db)):
-    try:
-        # Fetch default role setting from SystemSetting
-        s_res = await db.execute(select(SystemSetting).where(SystemSetting.key == "default_registration_role"))
-        setting = s_res.scalars().first()
+    return await role_service.list_system_roles(db)
 
-        default_role_id = setting.value if setting else None
-
-        if default_role_id:
-            r_res = await db.execute(select(Role).where((Role.id == default_role_id) | (Role.name == default_role_id)))
-            r = r_res.scalars().first()
-            if r:
-                perm_stmt = (
-                    select(Permission)
-                    .join(RolePermission, RolePermission.permission_id == Permission.id)
-                    .where(RolePermission.role_id == r.id)
-                )
-                perm_res = await db.execute(perm_stmt)
-                assigned_perms = perm_res.scalars().all()
-                perm_keys = [p.key for p in assigned_perms if p.key] if assigned_perms else (["all"] if getattr(r, "is_system_role", False) else ["dashboard:read", "users:read", "leads:read"])
-
-                return [
-                    {
-                        "id": r.id,
-                        "name": r.name,
-                        "description": r.description or "Registration Default Role",
-                        "permissions": perm_keys,
-                        "is_system_role": getattr(r, "is_system_role", True),
-                        "created_at": str(getattr(r, "created_at", "2026-08-05"))
-                    }
-                ]
-
-        res = await db.execute(select(Role).where(Role.is_system_role == True))
-        roles = res.scalars().all()
-        if roles:
-            result = []
-            for r in roles:
-                perm_stmt = (
-                    select(Permission)
-                    .join(RolePermission, RolePermission.permission_id == Permission.id)
-                    .where(RolePermission.role_id == r.id)
-                )
-                perm_res = await db.execute(perm_stmt)
-                assigned_perms = perm_res.scalars().all()
-                perm_keys = [p.key for p in assigned_perms if p.key] if assigned_perms else ["all"]
-
-                result.append({
-                    "id": r.id,
-                    "name": r.name,
-                    "description": r.description or "System Role",
-                    "permissions": perm_keys,
-                    "is_system_role": True,
-                    "created_at": str(getattr(r, "created_at", "2026-08-05"))
-                })
-            return result
-    except Exception:
-        pass
-
-    return [
-        {"id": "sys-manager", "name": "manager", "description": "Registration Default Role", "permissions": ["dashboard:read", "users:read", "leads:read"], "is_system_role": True, "created_at": "2026-08-05"}
-    ]
 
 @router.post("/set-defaults", response_model=MessageResponse, summary="Set multiple roles as default for new registrations")
 async def set_multiple_default_roles(payload: SetDefaultRolesRequest, db: AsyncSession = Depends(get_db)):
-    try:
-        new_val = json.dumps(payload.role_ids)
+    return await role_service.set_multiple_default_roles(db, payload.role_ids)
 
-        s_res = await db.execute(select(SystemSetting).where(SystemSetting.key == "default_registration_roles"))
-        setting = s_res.scalars().first()
-        if setting:
-            setting.value = new_val
-        else:
-            db.add(SystemSetting(key="default_registration_roles", value=new_val, description="Default registration roles JSON array"))
-
-        if payload.role_ids:
-            legacy_res = await db.execute(select(SystemSetting).where(SystemSetting.key == "default_registration_role"))
-            legacy = legacy_res.scalars().first()
-            if legacy:
-                legacy.value = payload.role_ids[0]
-            else:
-                db.add(SystemSetting(key="default_registration_role", value=payload.role_ids[0], description="Legacy default role"))
-
-        await db.commit()
-        return {"message": f"Successfully updated default registration roles ({len(payload.role_ids)} selected)", "status": "success"}
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 @router.get("/default", response_model=RoleResponse, summary="Get default role assigned to new registrations")
 async def get_default_role(db: AsyncSession = Depends(get_db)):
-    try:
-        s_res = await db.execute(select(SystemSetting).where(SystemSetting.key == "default_registration_role"))
-        setting = s_res.scalars().first()
+    return await role_service.get_default_role(db)
 
-        role_obj = None
-        if setting and setting.value:
-            r_res = await db.execute(select(Role).where((Role.id == setting.value) | (Role.name == setting.value)))
-            role_obj = r_res.scalars().first()
-
-        if not role_obj:
-            r_res = await db.execute(select(Role).where(Role.is_system_role == True).limit(1))
-            role_obj = r_res.scalars().first()
-
-        if not role_obj:
-            r_res = await db.execute(select(Role).limit(1))
-            role_obj = r_res.scalars().first()
-
-        if role_obj:
-            perm_stmt = (
-                select(Permission)
-                .join(RolePermission, RolePermission.permission_id == Permission.id)
-                .where(RolePermission.role_id == role_obj.id)
-            )
-            perm_res = await db.execute(perm_stmt)
-            assigned_perms = perm_res.scalars().all()
-            perm_keys = [p.key for p in assigned_perms if p.key] if assigned_perms else ["dashboard:read", "users:read"]
-
-            return {
-                "id": role_obj.id,
-                "name": role_obj.name,
-                "description": role_obj.description or "Default Registration Role",
-                "permissions": perm_keys,
-                "is_system_role": getattr(role_obj, "is_system_role", False),
-                "created_at": str(getattr(role_obj, "created_at", "2026-08-05"))
-            }
-
-        return {
-            "id": "sys-manager",
-            "name": "manager",
-            "description": "Default role",
-            "permissions": ["dashboard:read", "users:read"],
-            "is_system_role": True,
-            "created_at": "2026-08-05"
-        }
-    except Exception:
-        return {
-            "id": "sys-manager",
-            "name": "manager",
-            "description": "Default role",
-            "permissions": ["dashboard:read", "users:read"],
-            "is_system_role": True,
-            "created_at": "2026-08-05"
-        }
 
 @router.get("/audit-logs", summary="Get audit history of role modifications")
 async def role_audit_logs(db: AsyncSession = Depends(get_db)):
-    return [
-        {"id": "aud-1", "action": "Created Role", "role_name": "Regional Director", "user": "Admin User", "timestamp": "2026-08-04T10:15:00Z"},
-        {"id": "aud-2", "action": "Updated Permissions", "role_name": "Sales Manager", "user": "Admin User", "timestamp": "2026-08-05T11:20:00Z"}
-    ]
+    return await role_service.role_audit_logs()
+
 
 @router.get("/export", summary="Export role permissions schema as JSON")
 async def export_roles(db: AsyncSession = Depends(get_db)):
-    return {"download_url": "https://api.crm.com/exports/roles_permissions_schema.json"}
+    return await role_service.export_roles()
+
 
 @router.post("/import", response_model=MessageResponse, summary="Import role definitions from JSON")
 async def import_roles(db: AsyncSession = Depends(get_db)):
-    return {"message": "Role definitions JSON imported successfully", "status": "success"}
+    return await role_service.import_roles()
+
 
 @router.post("/bulk-delete", response_model=BulkActionResponse, summary="Bulk delete custom roles")
 async def bulk_delete_roles(payload: BulkDeleteRequest, db: AsyncSession = Depends(get_db)):
-    try:
-        default_ids = await get_default_role_ids(db)
+    return await role_service.bulk_delete_roles(db, payload.ids)
 
-        stmt = select(Role).where(Role.id.in_(payload.ids))
-        res = await db.execute(stmt)
-        items = res.scalars().all()
-        
-        deleted_count = 0
-        for item in items:
-            # Block deleting default or system roles
-            if item.id in default_ids or item.name in default_ids or getattr(item, "is_system_role", False):
-                continue
-            await db.delete(item)
-            deleted_count += 1
-
-        await db.commit()
-        return {"affected_count": deleted_count, "message": f"Successfully deleted {deleted_count} non-default role(s)"}
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 @router.get("/users/{user_id}/role", response_model=RoleResponse, summary="Get current role of specific user")
 async def get_user_role(user_id: str, db: AsyncSession = Depends(get_db)):
-    try:
-        # 1. Fetch user from DB by ID or Email
-        u_res = await db.execute(select(User).where((User.id == user_id) | (User.email == user_id)))
-        u = u_res.scalars().first()
+    return await role_service.get_user_role(db, user_id)
 
-        role_obj = None
-        if u and getattr(u, "role", None):
-            user_role_val = u.role
-            r_res = await db.execute(select(Role).where((Role.id == user_role_val) | (Role.name == user_role_val)))
-            role_obj = r_res.scalars().first()
-
-        if not role_obj:
-            # Try finding role by ID directly
-            r_res = await db.execute(select(Role).where(Role.id == user_id))
-            role_obj = r_res.scalars().first()
-
-        if not role_obj:
-            # Fallback to default/first role from DB
-            r_res = await db.execute(select(Role).limit(1))
-            role_obj = r_res.scalars().first()
-
-        if role_obj:
-            # Fetch assigned permissions from RolePermission & Permission tables for this role
-            perm_stmt = (
-                select(Permission)
-                .join(RolePermission, RolePermission.permission_id == Permission.id)
-                .where(RolePermission.role_id == role_obj.id)
-            )
-            perm_res = await db.execute(perm_stmt)
-            assigned_perms = perm_res.scalars().all()
-
-            if assigned_perms:
-                perm_keys = [p.key for p in assigned_perms if p.key]
-            elif getattr(role_obj, "is_system_role", False):
-                perm_keys = ["all"]
-            elif getattr(role_obj, "permissions", None):
-                perm_keys = role_obj.permissions
-            else:
-                perm_keys = ["dashboard:read", "users:read", "users:create", "users:update", "users:delete", "users:export", "users:import"]
-
-            return {
-                "id": role_obj.id,
-                "name": role_obj.name,
-                "description": role_obj.description or "User assigned role",
-                "permissions": perm_keys,
-                "is_system_role": getattr(role_obj, "is_system_role", False),
-                "created_at": str(getattr(role_obj, "created_at", "2026-08-05"))
-            }
-
-        return {
-            "id": "sys-manager",
-            "name": "Manager",
-            "description": "User assigned role",
-            "permissions": ["dashboard:read", "users:read", "users:create", "users:update", "users:delete", "users:export", "users:import"],
-            "is_system_role": True,
-            "created_at": "2026-08-05"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 @router.put("/users/{user_id}/role", response_model=MessageResponse, summary="Assign role to user")
-async def assign_role_to_user(user_id: str, role_id: str = Query("sys-manager"), db: AsyncSession = Depends(get_db)):
-    try:
-        # Find User by ID or Email
-        u_res = await db.execute(select(User).where((User.id == user_id) | (User.email == user_id)))
-        u = u_res.scalars().first()
+async def assign_role_to_user(
+    user_id: str, role_id: str = Query("sys-manager"), db: AsyncSession = Depends(get_db)
+):
+    return await role_service.assign_role_to_user(db, user_id, role_id)
 
-        # Find Role by ID or Name
-        r_res = await db.execute(select(Role).where((Role.id == role_id) | (Role.name == role_id)))
-        r = r_res.scalars().first()
-
-        target_role_id = r.id if r else role_id
-        target_role_name = r.name if r else role_id
-
-        if u:
-            # Update user.role field
-            u.role = target_role_id
-
-            # Sync UserRole mapping table if role exists
-            if r:
-                ur_res = await db.execute(select(UserRole).where(UserRole.user_id == u.id))
-                user_role_entry = ur_res.scalars().first()
-                if user_role_entry:
-                    user_role_entry.role_id = r.id
-                else:
-                    db.add(UserRole(user_id=u.id, role_id=r.id))
-
-            await db.commit()
-            return {"message": f"Successfully assigned role '{target_role_name}' to user '{u.name}'", "status": "success"}
-
-        return {"message": f"Assigned role '{target_role_name}' to user identifier '{user_id}'", "status": "success"}
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to assign role: {str(e)}")
 
 @router.post("/check-permission", summary="Verify user permission for resource action")
-async def check_permission(user_id: str = Query("usr-1"), permission: str = Query("leads:create"), db: AsyncSession = Depends(get_db)):
-    try:
-        # 1. Fetch user by ID or Email
-        u_res = await db.execute(select(User).where((User.id == user_id) | (User.email == user_id)))
-        u = u_res.scalars().first()
+async def check_permission(
+    user_id: str = Query("usr-1"),
+    permission: str = Query("leads:create"),
+    db: AsyncSession = Depends(get_db),
+):
+    return await role_service.check_permission(db, user_id, permission)
 
-        user_role_id = None
-        if u and getattr(u, "role", None):
-            user_role_id = u.role
-
-        # Also check UserRole mapping table if not directly set on User object
-        if not user_role_id and u:
-            ur_res = await db.execute(select(UserRole).where(UserRole.user_id == u.id))
-            ur_entry = ur_res.scalars().first()
-            if ur_entry:
-                user_role_id = ur_entry.role_id
-
-        # Fallback to direct role_id if passed user_id is actually a role or sys identifier
-        if not user_role_id:
-            user_role_id = user_id
-
-        # Fetch Role from DB
-        r_res = await db.execute(select(Role).where((Role.id == user_role_id) | (Role.name == user_role_id)))
-        role_obj = r_res.scalars().first()
-
-        if not role_obj:
-            r_res = await db.execute(select(Role).limit(1))
-            role_obj = r_res.scalars().first()
-
-        allowed = False
-        if role_obj:
-            # If system admin / superadmin role or holds 'all'
-            if getattr(role_obj, "is_system_role", False) and ("admin" in role_obj.name.lower() or "super" in role_obj.name.lower()):
-                allowed = True
-            else:
-                # Query DB assigned permissions via RolePermission
-                perm_stmt = (
-                    select(Permission)
-                    .join(RolePermission, RolePermission.permission_id == Permission.id)
-                    .where(RolePermission.role_id == role_obj.id)
-                )
-                perm_res = await db.execute(perm_stmt)
-                assigned_perms = perm_res.scalars().all()
-
-                if assigned_perms:
-                    perm_keys = [p.key for p in assigned_perms if p.key]
-                    allowed = ("all" in perm_keys) or (permission in perm_keys)
-                elif getattr(role_obj, "is_system_role", False):
-                    allowed = True
-                elif getattr(role_obj, "permissions", None):
-                    allowed = ("all" in role_obj.permissions) or (permission in role_obj.permissions)
-                else:
-                    default_allowed = ["dashboard:read", "users:read", "leads:read", "contacts:read", "deals:read"]
-                    allowed = permission in default_allowed
-
-        return {"user_id": user_id, "permission": permission, "allowed": allowed}
-    except Exception as e:
-        return {"user_id": user_id, "permission": permission, "allowed": True}
 
 @router.get("/{role_id}", response_model=RoleResponse, summary="Get role details by ID")
 async def get_role(role_id: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(Role).where(Role.id == role_id))
-    r = res.scalars().first()
-    if not r:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Role '{role_id}' not found")
-    
-    all_db_keys = await get_all_db_permission_keys(db)
+    return await role_service.get_role(db, role_id)
 
-    perm_stmt = (
-        select(Permission)
-        .join(RolePermission, RolePermission.permission_id == Permission.id)
-        .where(RolePermission.role_id == role_id)
-    )
-    perm_res = await db.execute(perm_stmt)
-    assigned_perms = perm_res.scalars().all()
-
-    if assigned_perms:
-        perm_keys = [p.key for p in assigned_perms if p.key and p.key != "all"]
-    elif getattr(r, "is_system_role", False) or r.name.lower() in ["superadmin", "super_admin", "admin"]:
-        perm_keys = all_db_keys
-    else:
-        # Default assigned permission keys for demo custom roles if not explicitly saved in DB yet
-        perm_keys = ["dashboard:read", "users:read", "users:create", "users:update", "users:delete", "users:export", "users:import"]
-
-    if "all" in perm_keys:
-        perm_keys = [k for k in perm_keys if k != "all"] + all_db_keys
-        perm_keys = sorted(list(set(perm_keys)))
-
-    return {
-        "id": r.id,
-        "name": r.name,
-        "description": r.description or "",
-        "permissions": perm_keys,
-        "is_system_role": getattr(r, "is_system_role", False),
-        "created_at": str(getattr(r, "created_at", "2026-08-05"))
-    }
 
 @router.put("/{role_id}", response_model=RoleResponse, summary="Update custom role details")
 async def update_role(role_id: str, payload: RoleUpdate, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(Role).where(Role.id == role_id))
-    r = res.scalars().first()
-    if not r:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Role '{role_id}' not found")
-    try:
-        if payload.name: r.name = payload.name
-        if payload.description: r.description = payload.description
-        await db.commit()
-        await db.refresh(r)
+    return await role_service.update_role(db, role_id, payload)
 
-        if payload.permissions is not None:
-            # Sync RolePermission table
-            await db.execute(select(RolePermission).where(RolePermission.role_id == role_id))
-            del_stmt = select(RolePermission).where(RolePermission.role_id == role_id)
-            existing = (await db.execute(del_stmt)).scalars().all()
-            for item in existing:
-                await db.delete(item)
-            
-            p_stmt = select(Permission).where((Permission.key.in_(payload.permissions)) | (Permission.id.in_(payload.permissions)))
-            found_perms = (await db.execute(p_stmt)).scalars().all()
-            for p in found_perms:
-                db.add(RolePermission(role_id=role_id, permission_id=p.id))
-            await db.commit()
-
-        return {
-            "id": r.id,
-            "name": r.name,
-            "description": r.description or "",
-            "permissions": payload.permissions if payload.permissions is not None else [],
-            "is_system_role": getattr(r, "is_system_role", False),
-            "created_at": str(getattr(r, "created_at", "2026-08-05"))
-        }
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 @router.delete("/{role_id}", response_model=MessageResponse, summary="Delete custom role by ID")
 async def delete_role(role_id: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(Role).where((Role.id == role_id) | (Role.name == role_id)))
-    r = res.scalars().first()
-    if not r:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Role '{role_id}' not found")
+    return await role_service.delete_role(db, role_id)
 
-    default_ids = await get_default_role_ids(db)
-    if r.id in default_ids or r.name in default_ids:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Cannot delete default registration role '{r.name}'. Remove default status first.")
-
-    if getattr(r, "is_system_role", False):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Cannot delete system role '{r.name}'.")
-
-    try:
-        await db.delete(r)
-        await db.commit()
-        return {"message": f"Role '{r.name}' deleted successfully", "status": "success"}
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 @router.post("/{role_id}/clone", response_model=RoleResponse, summary="Clone an existing role configuration")
 async def clone_role(role_id: str, new_name: str = Query("Cloned Role"), db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(Role).where(Role.id == role_id))
-    orig = res.scalars().first()
-    if not orig:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Role '{role_id}' not found")
-    try:
-        r = Role(name=new_name, description=f"Cloned from {orig.name}")
-        db.add(r)
-        await db.commit()
-        await db.refresh(r)
+    return await role_service.clone_role(db, role_id, new_name)
 
-        # Copy existing permissions
-        p_stmt = (
-            select(Permission)
-            .join(RolePermission, RolePermission.permission_id == Permission.id)
-            .where(RolePermission.role_id == role_id)
-        )
-        orig_perms = (await db.execute(p_stmt)).scalars().all()
-        for op in orig_perms:
-            db.add(RolePermission(role_id=r.id, permission_id=op.id))
-        await db.commit()
-
-        return {
-            "id": r.id,
-            "name": r.name,
-            "description": r.description or "",
-            "permissions": [op.key for op in orig_perms] if orig_perms else ["dashboard:read"],
-            "is_system_role": False,
-            "created_at": str(getattr(r, "created_at", datetime.now().isoformat()))
-        }
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 @router.post("/{role_id}/permissions", response_model=MessageResponse, summary="Assign permissions list to role")
 async def assign_permissions(role_id: str, permissions: List[str], db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(Role).where(Role.id == role_id))
-    if not res.scalars().first():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Role '{role_id}' not found")
-    try:
-        # Clear existing role permissions
-        del_stmt = select(RolePermission).where(RolePermission.role_id == role_id)
-        existing = (await db.execute(del_stmt)).scalars().all()
-        for item in existing:
-            await db.delete(item)
+    return await role_service.assign_permissions(db, role_id, permissions)
 
-        # Add new role permissions
-        if permissions:
-            p_stmt = select(Permission).where((Permission.key.in_(permissions)) | (Permission.id.in_(permissions)))
-            found_perms = (await db.execute(p_stmt)).scalars().all()
-            for p in found_perms:
-                db.add(RolePermission(role_id=role_id, permission_id=p.id))
-        
-        await db.commit()
-        return {"message": f"Updated permissions for role {role_id}", "status": "success"}
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 @router.delete("/{role_id}/permissions/{perm_id}", response_model=MessageResponse, summary="Remove single permission from role")
 async def remove_permission(role_id: str, perm_id: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(Role).where(Role.id == role_id))
-    if not res.scalars().first():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Role '{role_id}' not found")
-    try:
-        p_stmt = select(Permission).where((Permission.id == perm_id) | (Permission.key == perm_id))
-        target_perm = (await db.execute(p_stmt)).scalars().first()
-        target_id = target_perm.id if target_perm else perm_id
+    return await role_service.remove_permission(db, role_id, perm_id)
 
-        rp_stmt = select(RolePermission).where(
-            (RolePermission.role_id == role_id) & (RolePermission.permission_id == target_id)
-        )
-        rp_items = (await db.execute(rp_stmt)).scalars().all()
-        for rp in rp_items:
-            await db.delete(rp)
-
-        await db.commit()
-        return {"message": f"Permission '{perm_id}' removed from role", "status": "success"}
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 @router.get("/{role_id}/users", summary="List users belonging to specific role")
 async def get_role_users(role_id: str, db: AsyncSession = Depends(get_db)):
-    try:
-        r_res = await db.execute(select(Role).where((Role.id == role_id) | (Role.name == role_id)))
-        r = r_res.scalars().first()
+    return await role_service.get_role_users(db, role_id)
 
-        target_role_id = r.id if r else role_id
-        target_role_name = r.name if r else role_id
-
-        # Query User table directly where User.role matches target_role_id or name
-        stmt = select(User).where((User.role == target_role_id) | (User.role == target_role_name))
-        res = await db.execute(stmt)
-        users = res.scalars().all()
-
-        # Also query UserRole table
-        ur_stmt = select(User).join(UserRole, UserRole.user_id == User.id).where(UserRole.role_id == target_role_id)
-        ur_res = await db.execute(ur_stmt)
-        ur_users = ur_res.scalars().all()
-
-        # Combine unique users
-        user_dict = {u.id: u for u in list(users) + list(ur_users)}
-        matched_users = list(user_dict.values())
-
-        if matched_users:
-            return [
-                {
-                    "id": u.id,
-                    "name": u.name,
-                    "email": u.email,
-                    "role": target_role_name,
-                    "created_at": str(getattr(u, "created_at", "2026-08-05"))
-                }
-                for u in matched_users
-            ]
-
-        # Return fallback demo list if no users mapped in DB yet
-        return [
-            {"id": "usr-101", "name": "Sarah Connor", "email": "sarah@company.com", "role": target_role_name},
-            {"id": "usr-102", "name": "Alex Mercer", "email": "alex@company.com", "role": target_role_name}
-        ]
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 @router.post("/{role_id}/set-default", response_model=MessageResponse, summary="Toggle role as default for new registrations")
 async def set_default_role(role_id: str, db: AsyncSession = Depends(get_db)):
-    try:
-        res = await db.execute(select(Role).where((Role.id == role_id) | (Role.name == role_id)))
-        r = res.scalars().first()
-        if not r:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Role '{role_id}' not found")
-
-        # Save multiple default role settings in SystemSetting table as JSON list
-        setting_res = await db.execute(select(SystemSetting).where(SystemSetting.key == "default_registration_roles"))
-        setting = setting_res.scalars().first()
-
-        current_defaults = []
-        if setting and setting.value:
-            try:
-                current_defaults = json.loads(setting.value)
-                if not isinstance(current_defaults, list):
-                    current_defaults = [str(current_defaults)]
-            except Exception:
-                current_defaults = [s.strip() for s in setting.value.split(",") if s.strip()]
-
-        target_id = r.id
-        if target_id in current_defaults:
-            current_defaults.remove(target_id)
-            msg = f"Role '{r.name}' removed from default registration roles"
-        else:
-            current_defaults.append(target_id)
-            msg = f"Role '{r.name}' added as default for new registrations"
-
-        new_val = json.dumps(current_defaults)
-
-        if setting:
-            setting.value = new_val
-        else:
-            db.add(SystemSetting(key="default_registration_roles", value=new_val, description="Default registration roles JSON array"))
-
-        # Sync legacy key for backwards compatibility
-        legacy_res = await db.execute(select(SystemSetting).where(SystemSetting.key == "default_registration_role"))
-        legacy_setting = legacy_res.scalars().first()
-        if current_defaults:
-            if legacy_setting:
-                legacy_setting.value = current_defaults[0]
-            else:
-                db.add(SystemSetting(key="default_registration_role", value=current_defaults[0], description="Legacy single default role"))
-
-        await db.commit()
-        return {"message": msg, "status": "success"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return await role_service.set_default_role(db, role_id)
