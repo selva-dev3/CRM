@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
@@ -30,8 +30,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { DataTable, type DataTableColumn } from '@/components/shared/data-table';
-import { ConfirmModal } from '@/components/shared/confirm-modal';
+import { DataTable, type DataTableColumn } from '@/components/common/data-table';
+import { ConfirmModal } from '@/components/common/confirm-modal';
 import {
   useDealsQuery,
   useKanbanBoardQuery,
@@ -205,7 +205,7 @@ export default function DealsPage() {
   const handleMarkWon = async (item: DealItem) => {
     try {
       await markWonMutation.mutateAsync({ id: item.id, final_amount: item.amount });
-      setSuccessMessage(`Deal '${item.title}' marked as Closed Won! 🎉`);
+      setSuccessMessage(`Deal '${item.title}' marked as Closed Won! ðŸŽ‰`);
       refetchAll();
     } catch {
       setErrorMessage('Failed to mark deal as won.');

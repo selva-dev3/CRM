@@ -1,5 +1,5 @@
-import { useQuery, useMutation, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
-import { apiClient } from '@/lib/api-client';
+﻿import { useQuery, useMutation, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
+import { apiClient } from '@/lib/api/client';
 
 export interface SystemSettings {
   organization_name: string;

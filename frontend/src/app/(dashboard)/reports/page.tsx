@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState } from 'react';
 import {
@@ -24,8 +24,8 @@ import {
   Percent,
   Filter
 } from 'lucide-react';
-import { DataTable, DataTableColumn } from '@/components/shared/data-table';
-import { ConfirmModal } from '@/components/shared/confirm-modal';
+import { DataTable, DataTableColumn } from '@/components/common/data-table';
+import { ConfirmModal } from '@/components/common/confirm-modal';
 import {
   useSalesPerformanceReportQuery,
   usePipelineVelocityReportQuery,

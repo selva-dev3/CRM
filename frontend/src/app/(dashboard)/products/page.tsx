@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -22,8 +22,8 @@ import {
   Loader2,
   FileSpreadsheet
 } from 'lucide-react';
-import { DataTable, type DataTableColumn } from '@/components/shared/data-table';
-import { ConfirmModal } from '@/components/shared/confirm-modal';
+import { DataTable, type DataTableColumn } from '@/components/common/data-table';
+import { ConfirmModal } from '@/components/common/confirm-modal';
 import {
   useProductsQuery,
   useProductCategoriesQuery,
@@ -627,9 +627,9 @@ export default function ProductsPage() {
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-amber-500"
                 >
                   <option value="USD">USD ($)</option>
-                  <option value="EUR">EUR (€)</option>
-                  <option value="GBP">GBP (£)</option>
-                  <option value="INR">INR (₹)</option>
+                  <option value="EUR">EUR (â‚¬)</option>
+                  <option value="GBP">GBP (Â£)</option>
+                  <option value="INR">INR (â‚¹)</option>
                 </select>
               </div>
 

@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -19,8 +19,8 @@ import {
   Globe,
   CalendarCheck
 } from 'lucide-react';
-import { DataTable, type DataTableColumn } from '@/components/shared/data-table';
-import { ConfirmModal } from '@/components/shared/confirm-modal';
+import { DataTable, type DataTableColumn } from '@/components/common/data-table';
+import { ConfirmModal } from '@/components/common/confirm-modal';
 import {
   useCalendarEventsQuery,
   useAvailabilityQuery,

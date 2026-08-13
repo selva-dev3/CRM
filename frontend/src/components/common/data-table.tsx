@@ -1,12 +1,12 @@
-'use client';
+﻿'use client';
 
 import { Fragment, type ReactNode, useCallback, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Clock, ListFilter, MoreHorizontal, Pencil, Search, X } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
-import { Avatar } from '@/components/shared/avatar';
-import { EmptyState } from '@/components/shared/empty-state';
-import { PermissionGate } from '@/components/shared/permission-gate';
+import { Avatar } from '@/components/common/avatar';
+import { EmptyState } from '@/components/common/empty-state';
+import { PermissionGate } from '@/components/common/permission-gate';
 import { Button } from '@/components/ui/button';
 
 import { Input } from '@/components/ui/input';
@@ -600,7 +600,7 @@ export function DataTable<TItem>({
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-6 py-4 text-xs font-bold text-slate-700">
           <span>
             Page {pageIndex + 1} of {pageCount}
-            {totalRecords !== undefined && ` · ${totalRecords} records`}
+            {totalRecords !== undefined && ` Â· ${totalRecords} records`}
           </span>
           <div className="flex items-center gap-2">
             <Button

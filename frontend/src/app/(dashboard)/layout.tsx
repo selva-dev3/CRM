@@ -1,12 +1,12 @@
-'use client';
+﻿'use client';
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { navigationSections, NavSection, NavItem } from '@/config/navigation';
-import { AIChatAssistant } from '@/components/ai/ai-chat-assistant';
-import { GlobalSearchModal } from '@/components/shared/global-search-modal';
-import { getSessionToken, clearSessionToken } from '@/lib/api-client';
+import { navigationSections, NavSection, NavItem } from '@/constants/navigation';
+import { AIChatAssistant } from '@/components/features/ai/ai-chat-assistant';
+import { GlobalSearchModal } from '@/components/common/global-search-modal';
+import { getSessionToken, clearSessionToken } from '@/lib/api/client';
 import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
 import {
   LogOut,

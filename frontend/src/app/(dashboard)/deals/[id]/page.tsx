@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState } from 'react';
 import Link from 'next/link';
@@ -29,7 +29,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { ConfirmModal } from '@/components/shared/confirm-modal';
+import { ConfirmModal } from '@/components/common/confirm-modal';
 import {
   useDealQuery,
   useUpdateDealMutation,
@@ -215,7 +215,7 @@ export default function DealDetailsPage() {
     try {
       setErrorMessage(null);
       await markWonMutation.mutateAsync({ id: dealId, final_amount: deal.amount });
-      setSuccessMessage(`Deal '${deal.title}' marked as Closed Won! 🎉`);
+      setSuccessMessage(`Deal '${deal.title}' marked as Closed Won! ðŸŽ‰`);
       refetch();
     } catch {
       setErrorMessage('Failed to mark deal as won.');

@@ -1,10 +1,10 @@
-'use client';
+﻿'use client';
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLoginMutation } from '@/lib/api';
-import { getSessionToken, setSessionToken } from '@/lib/api-client';
+import { getSessionToken, setSessionToken } from '@/lib/api/client';
 import { Button, Input, Label, Alert, AlertTitle, AlertDescription } from '@/components/ui';
 import { 
   ArrowRight, 
@@ -180,7 +180,7 @@ export default function LoginPage() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••••••"
+              placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
               className="pl-10 pr-10"
             />
             <button
