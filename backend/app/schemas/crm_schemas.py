@@ -612,6 +612,10 @@ class SlackNotifyPayload(BaseModel):
     channel: Optional[str] = "general"
     message: str
 
+class ZapierConnectPayload(BaseModel):
+    webhook_url: Optional[str] = "https://hooks.zapier.com/hooks/catch/crm_default"
+    events: Optional[List[str]] = ["lead.created", "deal.won"]
+
     
 # 22. AI Suite Schemas
 class AIScoreResponse(BaseModel):
