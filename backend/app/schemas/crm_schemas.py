@@ -556,6 +556,21 @@ class CalendarEvent(BaseModel):
     end: str
     event_type: Optional[str] = "Meeting"
 
+class CalendarEventCreatePayload(BaseModel):
+    title: str
+    start: str
+    end: str
+    event_type: Optional[str] = "Meeting"
+    description: Optional[str] = None
+
+class CalendarEventResponse(BaseModel):
+    id: str
+    title: str
+    start: str
+    end: str
+    event_type: str
+    description: Optional[str] = None
+
 # 20. Dashboard KPI Schemas
 class DashboardKPIs(BaseModel):
     total_leads: int
