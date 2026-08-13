@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
-from app.api.v1.deps import get_current_user
+from app.api.v1.deps import get_current_user, require_role
+from app.core.permissions import UserRole
 from app.api.v1.routers import (
     auth,
     users,
@@ -36,7 +37,7 @@ api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["1. Authentication & Security"])
 
 # Super Admin Onboarding & Management endpoints
-api_router.include_router(super_admin.router, prefix="/super-admin", tags=["25. Super Admin Suite"])
+api_router.include_router(super_admin.router, prefix="/super-admin", tags=["25. Super Admin Suite"], dependencies=[Depends(require_role(UserRole.SUPER_ADMIN))])
 
 # Organization Invitations & Onboarding endpoints (Contains both public token validation/acceptance & protected invitation management)
 api_router.include_router(invitations.router, prefix="/organizations/invitations", tags=["4. Organizations & Invitations"])

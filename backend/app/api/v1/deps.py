@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.config import settings
+from app.core.permissions import UserRole, check_permission
 from app.core.security import ALGORITHM
 from app.db.session import get_db
 from app.models import User, Organization
@@ -112,3 +113,16 @@ async def get_valid_org_id(db: AsyncSession, current_user: Optional[User] = None
     db.add(default_org)
     await db.commit()
     return default_org.id
+
+
+def require_role(*roles: UserRole):
+    """Dependency factory enforcing that the authenticated user holds one of the given roles."""
+    async def role_dependency(current_user: User = Depends(get_current_user)) -> User:
+        if not check_permission(current_user.role, list(roles)):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to perform this action",
+            )
+        return current_user
+
+    return role_dependency
