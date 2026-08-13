@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import List, Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +16,7 @@ class UserRepository:
         page: int,
         limit: int,
         search: Optional[str] = None,
-    ) -> list[User]:
+    ) -> List[User]:
         stmt = select(User)
         cleaned_search = (
             search.strip() if search and isinstance(search, str) and search.strip() else None
@@ -50,7 +50,7 @@ class UserRepository:
     async def delete(self, db: AsyncSession, user: User) -> None:
         await db.delete(user)
 
-    async def list_by_ids(self, db: AsyncSession, ids: list[str]) -> list[User]:
+    async def list_by_ids(self, db: AsyncSession, ids: List[str]) -> List[User]:
         result = await db.execute(select(User).where(User.id.in_(ids)))
         return list(result.scalars().all())
 
@@ -71,7 +71,7 @@ class UserRepository:
         *,
         token: Optional[str] = None,
         status_filter: Optional[str] = None,
-    ) -> list[UserInvitation]:
+    ) -> List[UserInvitation]:
         stmt = select(UserInvitation)
         if token and token.strip():
             stmt = stmt.where(UserInvitation.token == token.strip())
@@ -100,7 +100,7 @@ class UserRepository:
 
     async def list_invitations_by_email(
         self, db: AsyncSession, email: str, *, exclude_id: Optional[str] = None
-    ) -> list[UserInvitation]:
+    ) -> List[UserInvitation]:
         stmt = select(UserInvitation).where(UserInvitation.email.ilike(email))
         if exclude_id:
             stmt = stmt.where(UserInvitation.id != exclude_id)
