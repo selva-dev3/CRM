@@ -138,7 +138,7 @@ export function DropdownMenuContent({
         zIndex: 99999,
       }}
       className={cn(
-        "min-w-[9.5rem] rounded-dropdown border border-[#E5E7EB] bg-white p-1 text-[#111827] shadow-saas-lg animate-in fade-in-50",
+        "min-w-[9.5rem] rounded-dropdown border border-[#E5E7EB] bg-white p-1 text-text-primary shadow-saas-lg animate-in fade-in-50",
         align === "center" ? "-translate-x-1/2" : undefined,
         className
       )}
@@ -164,7 +164,7 @@ export function DropdownMenuItem({
         setOpen(false);
       }}
       className={cn(
-        "relative flex w-full cursor-pointer select-none items-center gap-2 rounded-btn px-3 py-2 text-button font-medium text-[#374151] hover:bg-[#F3F4F6] hover:text-[#111827] transition-all",
+        "relative flex w-full cursor-pointer select-none items-center gap-2 rounded-btn px-3 py-2 text-button font-medium text-text-secondary hover:bg-[#F3F4F6] hover:text-text-primary transition-all",
         className
       )}
       {...props}
@@ -181,7 +181,7 @@ export function DropdownMenuLabel({
   children: React.ReactNode;
   className?: string;
 }) {
-  return <div className={cn("px-3 py-1.5 text-badge font-semibold text-[#111827]", className)}>{children}</div>;
+  return <div className={cn("px-3 py-1.5 text-badge font-semibold", className)}>{children}</div>;
 }
 
 export function DropdownMenuSeparator({ className }: { className?: string }) {

@@ -410,7 +410,7 @@ export function DataTable<TItem>({
           <TableHeader className="sticky top-0 z-10 bg-[#F9FAFB] border-b border-[#E5E7EB]">
             <TableRow className="border-b border-[#E5E7EB] hover:bg-transparent">
               {showCheckbox && (
-                <TableHead className="w-10 px-4 text-table font-semibold text-[#111827]">
+                <TableHead className="w-10 px-4 text-table font-semibold">
                   <input
                     type="checkbox"
                     checked={allVisibleSelected}
@@ -427,12 +427,12 @@ export function DataTable<TItem>({
               )}
               {expandableRow && <TableHead className="w-10 px-4" aria-label="Expand row" />}
               {visibleColumns.map((column) => (
-                <TableHead key={column.id} className={cn("text-table font-semibold text-[#111827] py-3", column.className)}>
+                <TableHead key={column.id} className={cn("text-table font-semibold py-3", column.className)}>
                   {column.header}
                 </TableHead>
               ))}
               {actions && (
-                <TableHead className={cn('px-4 text-table font-semibold text-[#111827] py-3', actionVariant === 'inline' ? 'w-[100px] text-right' : 'w-[80px] text-center')}>
+                <TableHead className={cn('px-4 text-table font-semibold py-3', actionVariant === 'inline' ? 'w-[100px] text-right' : 'w-[80px] text-center')}>
                   {actionVariant === 'menu' ? 'Actions' : ''}
                 </TableHead>
               )}

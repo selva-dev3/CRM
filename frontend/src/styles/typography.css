@@ -1,0 +1,161 @@
+/*
+ * ─── Enterprise Typography System ──────────────────────────────────────────────
+ *
+ * Typeface pairing rationale (do NOT "fix" this back to a default):
+ *   We ship a single-family system built on Inter for both display and body.
+ *   Enterprise evaluators (procurement, technical review, decision-makers) read
+ *   a neutral, high-x-height humanist-grotesque as credible and legible at the
+ *   small sizes dense CRMs demand; a decorative display face would read as
+ *   editorial and undercut trust. One family also halves the font budget
+ *   versus a two-family pairing while keeping every weight optically
+ *   consistent, which matters more than stylistic contrast for an
+ *   application UI that is 95% body text and 5% headlines.
+ *
+ *   Hierarchy is therefore communicated by SIZE + WEIGHT contrast (see the
+ *   .text-* scale below), not by switching typefaces. The display/body split
+ *   still exists conceptually: headings (H1–H2) sit on 700/600 weights and
+ *   tight leading; body sits on 400 with relaxed leading. Geist Mono is the
+ *   single mono family for data/code/tabular values.
+ *
+ *   Token naming note: this spec's text colors were requested as --text-*,
+ *   but that namespace is Tailwind v4's font-size scale (--text-xs …), so the
+ *   color tokens live under the --color-text-* namespace instead.
+ *   Generated utilities: text-text-primary, text-text-secondary, ….
+ *
+ *   WCAG AA (verified against both #FFFFFF and #F9FAFB):
+ *     #111827  17.74:1 / 16.98:1  AAA
+ *     #374151  10.31:1 /  9.86:1  AAA
+ *     #6B7280   4.83:1 /  4.63:1  AA   ← floor; do not go lighter for text
+ *     #9CA3AF   2.54:1 /  2.43:1  FAIL → placeholder & disabled content ONLY
+ *     #2563EB   5.17:1 on white    AA  (link/primary action text)
+ * ───────────────────────────────────────────────────────────────────────────────
+ */
+
+@theme {
+	/* ─── Modular type scale (≈1.25 ratio, enterprise — no editorial extremes) ── */
+	--text-xs: 0.75rem; /* 12px — captions, legal, labels */
+	--text-xs--line-height: 1rem;
+	--text-sm: 0.875rem; /* 14px — dense UI: tables, inputs, buttons (documented exception) */
+	--text-sm--line-height: 1.25rem;
+	--text-base: 1rem; /* 16px — body copy, never smaller as default */
+	--text-base--line-height: 1.5rem;
+	--text-lg: 1.125rem; /* 18px — H3/section heads, card titles */
+	--text-lg--line-height: 1.75rem;
+	--text-xl: 1.5rem; /* 24px — H2 */
+	--text-xl--line-height: 2rem;
+	--text-2xl: 2rem; /* 32px — H1 / page titles */
+	--text-2xl--line-height: 2.5rem;
+	--text-3xl: 2.75rem; /* 44px — hero/display */
+	--text-3xl--line-height: 3.25rem;
+
+	/* ─── Line heights ─────────────────────────────────────────────────────────── */
+	--leading-tight: 1.2; /* headings */
+	--leading-normal: 1.5; /* body copy */
+	--leading-relaxed: 1.7; /* long-form / legal text */
+
+	/* ─── Letter spacing ───────────────────────────────────────────────────────── */
+	--tracking-tight: -0.01em; /* large display text */
+	--tracking-normal: 0em;
+	--tracking-wide: 0.02em; /* all-caps labels / eyebrows only */
+
+	/* ─── Semantic text colors (tested on #FFFFFF and #F9FAFB, see header) ────── */
+	--color-text-primary: #111827;
+	--color-text-secondary: #374151;
+	--color-text-muted: #6B7280;
+	--color-text-inverse: #ffffff;
+	--color-text-placeholder: #9ca3af; /* placeholder / disabled only — fails AA as content */
+}
+
+@layer components {
+	/* ─── Semantic type classes (maps 1:1 to the tokens above) ─────────────────── */
+	.text-hero {
+		font-size: clamp(var(--text-2xl), 2.5vw + 1.125rem, var(--text-3xl));
+		line-height: var(--text-3xl--line-height);
+		font-weight: 700;
+		letter-spacing: var(--tracking-tight);
+		color: var(--color-text-primary);
+	}
+
+	.text-page-title {
+		font-size: var(--text-2xl);
+		line-height: var(--text-2xl--line-height);
+		font-weight: 700;
+		letter-spacing: var(--tracking-tight);
+		color: var(--color-text-primary);
+	}
+
+	.text-section-title {
+		font-size: var(--text-xl);
+		line-height: var(--text-xl--line-height);
+		font-weight: 600;
+		color: var(--color-text-primary);
+	}
+
+	.text-card-title,
+	.text-heading {
+		font-size: var(--text-lg);
+		line-height: var(--text-lg--line-height);
+		font-weight: 600;
+		color: var(--color-text-primary);
+	}
+
+	.text-subheading {
+		font-size: var(--text-base);
+		line-height: var(--text-base--line-height);
+		font-weight: 600;
+		color: var(--color-text-primary);
+	}
+
+	.text-body {
+		font-size: var(--text-base);
+		line-height: var(--text-base--line-height);
+		font-weight: 400;
+		color: var(--color-text-secondary);
+	}
+
+	.text-table {
+		font-size: var(--text-sm);
+		line-height: var(--text-sm--line-height);
+		font-weight: 500;
+		color: var(--color-text-secondary);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.text-input {
+		font-size: var(--text-sm);
+		line-height: var(--text-sm--line-height);
+		font-weight: 400;
+		color: var(--color-text-primary);
+	}
+
+	.text-label {
+		font-size: var(--text-sm);
+		line-height: var(--text-sm--line-height);
+		font-weight: 500;
+		color: var(--color-text-primary);
+	}
+
+	.text-button {
+		font-size: var(--text-sm);
+		line-height: var(--text-sm--line-height);
+		font-weight: 500;
+	}
+
+	.text-badge {
+		font-size: var(--text-xs);
+		line-height: var(--text-xs--line-height);
+		font-weight: 600;
+	}
+
+	.text-caption {
+		font-size: var(--text-xs);
+		line-height: var(--text-xs--line-height);
+		font-weight: 400;
+		color: var(--color-text-muted);
+	}
+
+	/* Line-length helper for long-form / paragraph blocks (§3: 60–75 chars). */
+	.text-measure {
+		max-width: 65ch;
+	}
+}
