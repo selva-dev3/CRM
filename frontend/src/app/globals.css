@@ -1,5 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "../styles/typography.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -17,11 +18,6 @@
 	--color-status-warning: #F59E0B;
 	--color-status-danger: #DC2626;
 
-	--color-text-heading: #111827;
-	--color-text-body: #374151;
-	--color-text-secondary: #6B7280;
-	--color-text-placeholder: #9CA3AF;
-
 	--color-surface-border: #E5E7EB;
 	--color-surface-bg: #F9FAFB;
 	--color-surface-card: #FFFFFF;
@@ -35,9 +31,26 @@
 	--radius-dropdown: 10px;
 
 	/* Legacy aliases */
+	/* Legacy aliases */
 	--color-primary: #2563EB;
 	--color-border: #E5E7EB;
 	--color-card: #FFFFFF;
+
+	/* ─── shadcn/ui Standard Token Mappings ──────────────────────────── */
+	--color-card-foreground: var(--card-foreground);
+	--color-popover: var(--popover);
+	--color-popover-foreground: var(--popover-foreground);
+	--color-primary-foreground: var(--primary-foreground);
+	--color-secondary: var(--secondary);
+	--color-secondary-foreground: var(--secondary-foreground);
+	--color-muted: var(--muted);
+	--color-muted-foreground: var(--muted-foreground);
+	--color-accent: var(--accent);
+	--color-accent-foreground: var(--accent-foreground);
+	--color-destructive: var(--destructive);
+	--color-destructive-foreground: var(--destructive-foreground);
+	--color-input: var(--input);
+	--color-ring: var(--ring);
 }
 
 :root {
@@ -59,100 +72,11 @@
 	--accent: #F3F4F6;
 	--accent-foreground: #111827;
 	--destructive: #DC2626;
+	--destructive-foreground: #FFFFFF;
 	--border: #E5E7EB;
 	--input: #E5E7EB;
 	--ring: #2563EB;
 	--radius: 0.625rem;
-}
-
-/* ─── Typography Token System ────────────────────────────────────────── */
-.text-page-title {
-	font-size: 32px !important;
-	font-weight: 700 !important;
-	line-height: 40px !important;
-	color: #111827;
-}
-
-.text-section-title {
-	font-size: 24px !important;
-	font-weight: 600 !important;
-	line-height: 32px !important;
-	color: #111827;
-}
-
-.text-card-title {
-	font-size: 20px !important;
-	font-weight: 600 !important;
-	line-height: 28px !important;
-	color: #111827;
-}
-
-.text-heading {
-	font-size: 18px !important;
-	font-weight: 600 !important;
-	line-height: 28px !important;
-	color: #111827;
-}
-
-.text-subheading {
-	font-size: 16px !important;
-	font-weight: 600 !important;
-	line-height: 24px !important;
-	color: #111827;
-}
-
-.text-body {
-	font-size: 14px !important;
-	font-weight: 400 !important;
-	line-height: 20px !important;
-	color: #374151;
-}
-
-.text-table {
-	font-size: 14px !important;
-	font-weight: 500 !important;
-	line-height: 20px !important;
-	color: #374151;
-}
-
-.text-input {
-	font-size: 14px !important;
-	font-weight: 400 !important;
-	line-height: 20px !important;
-	color: #111827;
-}
-
-.text-label {
-	font-size: 14px !important;
-	font-weight: 500 !important;
-	line-height: 20px !important;
-	color: #111827;
-}
-
-.text-button {
-	font-size: 14px !important;
-	font-weight: 500 !important;
-	line-height: 20px !important;
-}
-
-.text-badge {
-	font-size: 12px !important;
-	font-weight: 600 !important;
-	line-height: 18px !important;
-}
-
-.text-caption {
-	font-size: 12px !important;
-	font-weight: 400 !important;
-	line-height: 18px !important;
-	color: #6B7280;
-}
-
-.text-small {
-	font-size: 11px !important;
-	font-weight: 400 !important;
-	line-height: 16px !important;
-	color: #6B7280;
 }
 
 /* ─── Border Radius Utilities ───────────────────────────────────────── */
@@ -195,10 +119,10 @@
 	}
 	body {
 		background-color: #F9FAFB;
-		color: #374151;
+		color: var(--color-text-secondary);
 		font-family: var(--font-sans);
-		font-size: 14px;
-		line-height: 20px;
+		font-size: var(--text-base);
+		line-height: var(--leading-normal);
 		overflow-x: hidden !important;
 	}
 	button:not(:disabled), [role="button"]:not(:disabled) {
