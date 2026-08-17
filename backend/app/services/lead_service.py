@@ -6,7 +6,7 @@ from fastapi import UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, NotFoundError
-from app.models import Lead
+from app.models import Lead, User
 from app.repositories.lead_repository import LeadRepository
 from app.schemas.crm_schemas import (
     CallLogBase,
@@ -80,9 +80,21 @@ class LeadService:
             raise NotFoundError(message=f"Lead '{lead_id}' not found")
         return lead_to_dict(lead)
 
-    async def _resolve_organization_id(self, db: AsyncSession, org_id: Optional[str]) -> Optional[str]:
+    async def _resolve_organization_id(
+        self, db: AsyncSession, org_id: Optional[str], current_user: Optional[User] = None
+    ) -> Optional[str]:
         if org_id and await self.repository.get_organization(db, org_id):
+            user_org = current_user.organization_id if current_user else None
+            if user_org and user_org != org_id:
+                raise APIException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    message="Organization does not match the current user's organization.",
+                )
             return org_id
+        if current_user and getattr(current_user, "organization_id", None):
+            user_org_record = await self.repository.get_organization(db, current_user.organization_id)
+            if user_org_record:
+                return user_org_record.id
         first = await self.repository.get_first_organization(db)
         return first.id if first else None
 
@@ -92,8 +104,10 @@ class LeadService:
         user = await self.repository.get_user(db, assigned_to)
         return assigned_to if user else None
 
-    async def create_lead(self, db: AsyncSession, payload: LeadCreate) -> dict:
-        org_id = await self._resolve_organization_id(db, payload.organization_id)
+    async def create_lead(
+        self, db: AsyncSession, payload: LeadCreate, current_user: Optional[User] = None
+    ) -> dict:
+        org_id = await self._resolve_organization_id(db, payload.organization_id, current_user)
         assigned_to = await self._resolve_assigned_to(db, payload.assigned_to)
         data = {
             "organization_id": org_id,

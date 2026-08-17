@@ -14,6 +14,7 @@ from app.repositories.integration_repository import IntegrationRepository
 from app.schemas.crm_schemas import (
     SlackConnectRequest,
     SlackEventPayload,
+    SlackEventsUpdateRequest,
     SlackNotifyPayload,
     ZapierConnectPayload,
 )
@@ -60,9 +61,13 @@ class IntegrationService:
                     {"name": i.name, "is_connected": i.is_connected, "last_synced": str(i.last_synced) if i.last_synced else None}
                     for i in integrations
                 ]
-            return [{"name": c["name"], "is_connected": c["is_connected"], "last_synced": "2026-08-07T10:00:00Z"} for c in DEFAULT_CONNECTORS]
+            return [
+                {"name": c["name"], "is_connected": False, "last_synced": None}
+                for c in DEFAULT_CONNECTORS
+            ]
         except Exception:
-            return [{"name": c["name"], "is_connected": c["is_connected"], "last_synced": "2026-08-07T10:00:00Z"} for c in DEFAULT_CONNECTORS]
+            logger.warning("Unable to list integrations; returning empty list")
+            return []
 
     # --- Zapier ---
     async def get_zapier_config(self, db: AsyncSession, current_user: Optional[User]) -> dict:
@@ -239,6 +244,8 @@ class IntegrationService:
         org_id = await self.repository.resolve_org_id(db, current_user)
         if not payload.webhook_url:
             raise APIException(status_code=400, message="Slack webhook URL is required.")
+        if not str(payload.webhook_url).startswith("https://hooks.slack.com/"):
+            raise APIException(status_code=400, message="Invalid Slack webhook URL.")
         try:
             integration = await self.repository.get_by_provider(db, org_id, "slack")
             if integration is None:
@@ -279,6 +286,18 @@ class IntegrationService:
         except Exception as e:
             await db.rollback()
             raise APIException(status_code=500, message=f"Failed to connect Slack: {str(e)}") from e
+
+    async def update_slack_events(self, db: AsyncSession, payload: SlackEventsUpdateRequest, current_user: Optional[User]) -> dict:
+        org_id = await self.repository.resolve_org_id(db, current_user)
+        integration = await self.repository.get_by_provider(db, org_id, "slack")
+        if integration is None:
+            raise APIException(status_code=404, message="Slack integration is not connected.")
+        valid_events = [e for e in payload.events if e in SLACK_ENABLED_EVENTS]
+        integration.enabled_events = json.dumps(valid_events)
+        integration.last_error = None
+        await self.repository.commit(db)
+        await db.refresh(integration)
+        return {"message": "Slack enabled events updated.", "status": "success", "events": valid_events}
 
     async def test_slack_connection(self, db: AsyncSession, current_user: Optional[User]) -> dict:
         org_id = await self.repository.resolve_org_id(db, current_user)
@@ -382,10 +401,27 @@ class IntegrationService:
         """
         try:
             integration = await self.repository.get_connected_by_provider(db, org_id, "slack")
-            if integration is None or not integration.webhook_url:
+            if integration is None:
+                logger.info(
+                    "Slack auto-notification skipped for event '%s' (org %s): Slack integration not connected",
+                    event_name,
+                    org_id,
+                )
+                return
+            if not integration.webhook_url:
+                logger.info(
+                    "Slack auto-notification skipped for event '%s' (org %s): webhook URL missing",
+                    event_name,
+                    org_id,
+                )
                 return
             enabled_events = self._enabled_events(integration)
             if enabled_events and event_name not in enabled_events:
+                logger.info(
+                    "Slack auto-notification skipped for event '%s' (org %s): event is disabled",
+                    event_name,
+                    org_id,
+                )
                 return
             await self._post_to_slack(db, integration, self._build_slack_text(event_name, data))
         except Exception as e:
@@ -481,8 +517,8 @@ class IntegrationService:
             if i:
                 return {"name": i.name, "is_connected": i.is_connected, "last_synced": str(i.last_synced) if i.last_synced else None}
         except Exception:
-            pass
-        return {"name": name.capitalize(), "is_connected": True, "last_synced": "2026-08-07T10:00:00Z"}
+            logger.warning("Unable to load integration status for '%s'", name)
+        return {"name": name.capitalize(), "is_connected": False, "last_synced": None}
 
     async def connect_integration(self, db: AsyncSession, name: str, current_user: Optional[User]) -> dict:
         try:

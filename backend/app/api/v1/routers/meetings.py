@@ -3,7 +3,9 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.deps import get_current_user
 from app.db.session import get_db
+from app.models import User
 from app.schemas.crm_schemas import (
     BulkActionResponse,
     BulkDeleteRequest,
@@ -33,8 +35,12 @@ async def list_meetings(
     status_code=status.HTTP_201_CREATED,
     summary="Schedule new meeting",
 )
-async def schedule_meeting(payload: MeetingCreate, db: AsyncSession = Depends(get_db)):
-    return await meeting_service.schedule_meeting(db, payload)
+async def schedule_meeting(
+    payload: MeetingCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await meeting_service.schedule_meeting(db, payload, current_user)
 
 
 @router.get("/upcoming", response_model=List[MeetingResponse], summary="Get upcoming meetings feed")

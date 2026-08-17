@@ -5,6 +5,7 @@ from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, NotFoundError
+from app.models import User
 from app.models.task import Task
 from app.repositories.task_repository import TaskRepository
 from app.schemas.crm_schemas import TaskCreate, TaskUpdate
@@ -90,10 +91,12 @@ class TaskService:
             raise NotFoundError(message=f"Task '{task_id}' not found")
         return task_to_dict(task)
 
-    async def create_task(self, db: AsyncSession, payload: TaskCreate) -> dict:
+    async def create_task(
+        self, db: AsyncSession, payload: TaskCreate, current_user: Optional[User] = None
+    ) -> dict:
         due_dt = parse_datetime(payload.due_date)
         assigned_user = await self._resolve_user_id(db, payload.assigned_to)
-        org_id = await organization_service.resolve_valid_org_id(db)
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
         data = {
             "organization_id": org_id,
             "title": payload.title,

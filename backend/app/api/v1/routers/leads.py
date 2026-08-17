@@ -5,6 +5,8 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
+from app.api.v1.deps import get_current_user
+from app.models import User
 from app.schemas.crm_schemas import (
     BulkActionResponse,
     BulkDeleteRequest,
@@ -55,8 +57,12 @@ async def bulk_archive_leads(payload: BulkDeleteRequest, db: AsyncSession = Depe
 
 
 @router.post("", response_model=LeadResponse, status_code=status.HTTP_201_CREATED, summary="Create a new lead")
-async def create_lead(payload: LeadCreate, db: AsyncSession = Depends(get_db)):
-    return await lead_service.create_lead(db, payload)
+async def create_lead(
+    payload: LeadCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await lead_service.create_lead(db, payload, current_user)
 
 
 @router.get("/sources", summary="Get all lead sources")

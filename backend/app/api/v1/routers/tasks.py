@@ -3,7 +3,9 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.deps import get_current_user
 from app.db.session import get_db
+from app.models import User
 from app.schemas.crm_schemas import (
     BulkActionResponse,
     BulkDeleteRequest,
@@ -29,8 +31,12 @@ async def list_tasks(
 
 
 @router.post("", response_model=TaskResponse, status_code=status.HTTP_201_CREATED, summary="Create new task")
-async def create_task(payload: TaskCreate, db: AsyncSession = Depends(get_db)):
-    return await task_service.create_task(db, payload)
+async def create_task(
+    payload: TaskCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await task_service.create_task(db, payload, current_user)
 
 
 @router.get("/overdue", response_model=List[TaskResponse], summary="Get list of overdue tasks")

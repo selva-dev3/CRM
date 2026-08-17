@@ -4,6 +4,7 @@ from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, NotFoundError
+from app.models import User
 from app.models.company import Company
 from app.repositories.company_repository import CompanyRepository
 from app.schemas.crm_schemas import CompanyCreate, CompanyUpdate
@@ -66,8 +67,10 @@ class CompanyService:
             raise NotFoundError(message=f"Company '{company_id}' not found")
         return company_to_dict(company)
 
-    async def create_company(self, db: AsyncSession, payload: CompanyCreate) -> dict:
-        org_id = await organization_service.resolve_valid_org_id(db)
+    async def create_company(
+        self, db: AsyncSession, payload: CompanyCreate, current_user: Optional[User] = None
+    ) -> dict:
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
         website = getattr(payload, "website", None) or getattr(payload, "domain", None)
         emp_raw = getattr(payload, "employee_count", None) or getattr(payload, "size", None)
         data = {

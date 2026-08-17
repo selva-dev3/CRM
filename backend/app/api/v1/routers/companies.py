@@ -42,8 +42,12 @@ async def list_companies(
     status_code=status.HTTP_201_CREATED,
     summary="Create new company",
 )
-async def create_company(payload: CompanyCreate, db: AsyncSession = Depends(get_db)):
-    return await company_service.create_company(db, payload)
+async def create_company(
+    payload: CompanyCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await company_service.create_company(db, payload, current_user)
 
 
 @router.post("/lookup-domain", summary="Enrich company profile using domain lookup")
