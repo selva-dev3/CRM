@@ -16,6 +16,7 @@ export interface User {
   avatar?: string;
   organizationId: string;
   createdAt: string;
+  permissions?: string[];
 }
 
 export interface Lead {

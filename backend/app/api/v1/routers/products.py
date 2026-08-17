@@ -4,12 +4,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.db.session import get_db
 from app.models import Product, ProductCategory
-from app.api.v1.deps import get_valid_org_id
+from app.api.v1.deps import get_valid_org_id, require_permission
 from app.schemas.crm_schemas import ProductResponse, ProductBase, MessageResponse, BulkDeleteRequest, BulkActionResponse
 
 router = APIRouter()
 
-@router.get("", summary="List product catalog with search & pagination")
+@router.get("", summary="List product catalog with search & pagination", dependencies=[Depends(require_permission("products:read"))])
 async def list_products(
     page: int = 1,
     limit: int = 20,
@@ -37,7 +37,7 @@ async def list_products(
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
-@router.post("", summary="Create new product catalog item")
+@router.post("", summary="Create new product catalog item", dependencies=[Depends(require_permission("products:create"))])
 async def create_product(payload: ProductBase, db: AsyncSession = Depends(get_db)):
     try:
         org_id = await get_valid_org_id(db)
@@ -63,7 +63,7 @@ async def create_product(payload: ProductBase, db: AsyncSession = Depends(get_db
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to create product: {str(e)}")
 
-@router.get("/categories", summary="Get product categories list")
+@router.get("/categories", summary="Get product categories list", dependencies=[Depends(require_permission("products:read"))])
 async def get_product_categories(db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(ProductCategory))
     cats = res.scalars().all()
@@ -71,7 +71,7 @@ async def get_product_categories(db: AsyncSession = Depends(get_db)):
         return ["Software", "Hardware", "Professional Services", "Subscription", "Support Tier"]
     return [c.name for c in cats]
 
-@router.post("/categories", response_model=MessageResponse, summary="Create new product category")
+@router.post("/categories", response_model=MessageResponse, summary="Create new product category", dependencies=[Depends(require_permission("products:create"))])
 async def create_product_category(name: str, db: AsyncSession = Depends(get_db)):
     try:
         org_id = await get_valid_org_id(db)
@@ -83,7 +83,7 @@ async def create_product_category(name: str, db: AsyncSession = Depends(get_db))
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-@router.get("/price-books", summary="List custom price books")
+@router.get("/price-books", summary="List custom price books", dependencies=[Depends(require_permission("products:read"))])
 async def list_price_books(db: AsyncSession = Depends(get_db)):
     return [
         {"id": "pb-1", "name": "Standard Enterprise Pricing", "currency": "USD", "is_default": True},
@@ -91,11 +91,11 @@ async def list_price_books(db: AsyncSession = Depends(get_db)):
         {"id": "pb-3", "name": "APAC Wholesale Book", "currency": "USD", "is_default": False}
     ]
 
-@router.post("/price-books", response_model=MessageResponse, summary="Create new price book")
+@router.post("/price-books", response_model=MessageResponse, summary="Create new price book", dependencies=[Depends(require_permission("products:create"))])
 async def create_price_book(name: str, currency: str = "USD", db: AsyncSession = Depends(get_db)):
     return {"message": f"Price book '{name}' ({currency}) created", "status": "success"}
 
-@router.get("/tax-rates", summary="Get tax rate tiers list")
+@router.get("/tax-rates", summary="Get tax rate tiers list", dependencies=[Depends(require_permission("products:read"))])
 async def get_tax_rates(db: AsyncSession = Depends(get_db)):
     return [
         {"id": "tax-1", "name": "Standard VAT (18%)", "rate_percentage": 18.0},
@@ -103,15 +103,15 @@ async def get_tax_rates(db: AsyncSession = Depends(get_db)):
         {"id": "tax-3", "name": "Zero Rated Tax (0%)", "rate_percentage": 0.0}
     ]
 
-@router.get("/export/csv", summary="Export product catalog as CSV")
+@router.get("/export/csv", summary="Export product catalog as CSV", dependencies=[Depends(require_permission("products:export"))])
 async def export_products_csv(db: AsyncSession = Depends(get_db)):
     return {"download_url": "https://api.crm.com/exports/products_catalog_export.csv"}
 
-@router.post("/import/csv", response_model=MessageResponse, summary="Import product catalog from CSV")
+@router.post("/import/csv", response_model=MessageResponse, summary="Import product catalog from CSV", dependencies=[Depends(require_permission("products:import"))])
 async def import_products_csv(db: AsyncSession = Depends(get_db)):
     return {"message": "Product catalog CSV import processing completed", "status": "success"}
 
-@router.post("/bulk-delete", response_model=BulkActionResponse, summary="Bulk delete products")
+@router.post("/bulk-delete", response_model=BulkActionResponse, summary="Bulk delete products", dependencies=[Depends(require_permission("products:delete"))])
 async def bulk_delete_products(payload: BulkDeleteRequest, db: AsyncSession = Depends(get_db)):
     try:
         stmt = select(Product).where(Product.id.in_(payload.ids))
@@ -125,7 +125,7 @@ async def bulk_delete_products(payload: BulkDeleteRequest, db: AsyncSession = De
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-@router.get("/{product_id}", summary="Get product details by ID")
+@router.get("/{product_id}", summary="Get product details by ID", dependencies=[Depends(require_permission("products:read"))])
 async def get_product(product_id: str, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Product).where(Product.id == product_id))
     p = res.scalars().first()
@@ -140,7 +140,7 @@ async def get_product(product_id: str, db: AsyncSession = Depends(get_db)):
         "in_stock_quantity": getattr(p, "in_stock_quantity", 100) or 100
     }
 
-@router.put("/{product_id}", summary="Update product catalog item")
+@router.put("/{product_id}", summary="Update product catalog item", dependencies=[Depends(require_permission("products:update"))])
 async def update_product(product_id: str, payload: ProductBase, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Product).where(Product.id == product_id))
     p = res.scalars().first()
@@ -164,7 +164,7 @@ async def update_product(product_id: str, payload: ProductBase, db: AsyncSession
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-@router.delete("/{product_id}", response_model=MessageResponse, summary="Delete product item by ID")
+@router.delete("/{product_id}", response_model=MessageResponse, summary="Delete product item by ID", dependencies=[Depends(require_permission("products:delete"))])
 async def delete_product(product_id: str, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Product).where(Product.id == product_id))
     p = res.scalars().first()
@@ -178,7 +178,7 @@ async def delete_product(product_id: str, db: AsyncSession = Depends(get_db)):
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-@router.get("/{product_id}/inventory", summary="Get inventory stock history")
+@router.get("/{product_id}/inventory", summary="Get inventory stock history", dependencies=[Depends(require_permission("products:read"))])
 async def get_product_inventory(product_id: str, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Product).where(Product.id == product_id))
     p = res.scalars().first()
@@ -191,7 +191,7 @@ async def get_product_inventory(product_id: str, db: AsyncSession = Depends(get_
         "warehouse_location": "Main Warehouse Section A-4"
     }
 
-@router.post("/{product_id}/inventory", response_model=MessageResponse, summary="Update product inventory stock level")
+@router.post("/{product_id}/inventory", response_model=MessageResponse, summary="Update product inventory stock level", dependencies=[Depends(require_permission("products:update"))])
 async def update_product_inventory(product_id: str, quantity_delta: int = Query(...), db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Product).where(Product.id == product_id))
     p = res.scalars().first()

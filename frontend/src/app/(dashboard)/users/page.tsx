@@ -38,6 +38,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { DataTable, type DataTableColumn, type TableActionOption } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { PermissionGate } from '@/components/common/permission-gate';
 import { 
   useUsersQuery, 
   useUserInvitationsQuery,
@@ -524,12 +525,14 @@ export default function UsersPage() {
       label: user.is_active ? 'Deactivate User' : 'Activate User',
       icon: user.is_active ? <Ban className="w-4 h-4 mr-2 text-[#F59E0B]" /> : <Power className="w-4 h-4 mr-2 text-[#16A34A]" />,
       onClick: (item) => handleToggleActivate(item),
+      permission: 'users:update',
     },
     {
       label: 'Delete User',
       variant: 'destructive',
       icon: <Trash2 className="w-4 h-4 mr-2 text-[#DC2626]" />,
       onClick: (item) => setUserToDelete(item),
+      permission: 'users:delete',
     },
   ];
 
@@ -546,27 +549,31 @@ export default function UsersPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            onClick={handleOpenCreateModal}
-            size="default"
-            variant="outline"
-            className="shadow-saas-sm px-4 text-button cursor-pointer"
-          >
-            <Plus className="w-4 h-4 mr-2 text-[#2563EB]" />
-            + Create User
-          </Button>
+          <PermissionGate permission="users:create">
+            <Button
+              type="button"
+              onClick={handleOpenCreateModal}
+              size="default"
+              variant="outline"
+              className="shadow-saas-sm px-4 text-button cursor-pointer"
+            >
+              <Plus className="w-4 h-4 mr-2 text-[#2563EB]" />
+              + Create User
+            </Button>
+          </PermissionGate>
 
-          <Button
-            type="button"
-            onClick={handleOpenModal}
-            size="default"
-            variant="primary"
-            className="shadow-saas-sm px-4 text-button cursor-pointer"
-          >
-            <UserPlus className="w-4 h-4 mr-2" />
-            + Invite User
-          </Button>
+          <PermissionGate permission="users:invite">
+            <Button
+              type="button"
+              onClick={handleOpenModal}
+              size="default"
+              variant="primary"
+              className="shadow-saas-sm px-4 text-button cursor-pointer"
+            >
+              <UserPlus className="w-4 h-4 mr-2" />
+              + Invite User
+            </Button>
+          </PermissionGate>
         </div>
       </div>
 
@@ -668,22 +675,26 @@ export default function UsersPage() {
                     {selectedIds.size > 0 ? `Bulk Actions (${selectedIds.size} selected)` : 'Select users below to apply'}
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    disabled={selectedIds.size === 0}
-                    onClick={handleBulkDeactivate}
-                    className={`cursor-pointer text-button font-medium ${selectedIds.size === 0 ? 'opacity-50 cursor-not-allowed' : 'text-[#374151] hover:bg-[#F3F4F6]'}`}
-                  >
-                    <Ban className="w-4 h-4 mr-2 text-[#F59E0B]" />
-                    <span>Bulk Deactivate ({selectedIds.size})</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={selectedIds.size === 0}
-                    onClick={handleBulkDelete}
-                    className={`cursor-pointer text-button font-medium ${selectedIds.size === 0 ? 'opacity-50 cursor-not-allowed' : 'text-[#DC2626] hover:bg-[#DC2626]/10'}`}
-                  >
-                    <Trash2 className="w-4 h-4 mr-2 text-[#DC2626]" />
-                    <span>Bulk Delete ({selectedIds.size})</span>
-                  </DropdownMenuItem>
+                  <PermissionGate permission="users:update">
+                    <DropdownMenuItem
+                      disabled={selectedIds.size === 0}
+                      onClick={handleBulkDeactivate}
+                      className={`cursor-pointer text-button font-medium ${selectedIds.size === 0 ? 'opacity-50 cursor-not-allowed' : 'text-[#374151] hover:bg-[#F3F4F6]'}`}
+                    >
+                      <Ban className="w-4 h-4 mr-2 text-[#F59E0B]" />
+                      <span>Bulk Deactivate ({selectedIds.size})</span>
+                    </DropdownMenuItem>
+                  </PermissionGate>
+                  <PermissionGate permission="users:delete">
+                    <DropdownMenuItem
+                      disabled={selectedIds.size === 0}
+                      onClick={handleBulkDelete}
+                      className={`cursor-pointer text-button font-medium ${selectedIds.size === 0 ? 'opacity-50 cursor-not-allowed' : 'text-[#DC2626] hover:bg-[#DC2626]/10'}`}
+                    >
+                      <Trash2 className="w-4 h-4 mr-2 text-[#DC2626]" />
+                      <span>Bulk Delete ({selectedIds.size})</span>
+                    </DropdownMenuItem>
+                  </PermissionGate>
                 </DropdownMenuContent>
               </DropdownMenu>
 

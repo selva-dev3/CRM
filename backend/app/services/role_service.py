@@ -139,6 +139,7 @@ ALL_STANDARD_PERMISSIONS = [
     {"key": "activities:export", "name": "Export Activity Trail", "category": "Activities", "description": "Export activity trail logs to CSV"},
     {"key": "ai:read", "name": "Access AI Sales Assistant", "category": "AI Assistant", "description": "Chat with AI sales assistant"},
     {"key": "ai:generate", "name": "Generate AI Content & Insights", "category": "AI Assistant", "description": "Generate AI email drafts and deal summaries"},
+    {"key": "super_admin:manage", "name": "Super Admin Platform Management", "category": "Super Admin", "description": "Platform-level operations such as creating organizations"},
 ]
 
 

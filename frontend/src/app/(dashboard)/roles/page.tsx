@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { PermissionGate } from '@/components/common/permission-gate';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -551,68 +552,78 @@ export default function RolesPage() {
                 <MoreHorizontal className="w-4 h-4" />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-52">
-                {isSuperAdminRole && !isDefault && (
-                  <DropdownMenuItem
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleSetDefault(item);
-                    }}
-                    className="flex items-center gap-2 text-xs font-semibold cursor-pointer text-amber-700 hover:bg-amber-50"
-                  >
-                    <Star className="w-3.5 h-3.5 text-amber-500" />
-                    Set Registration Default
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setCloningRole(item);
-                    setCloneNewName(`${item.name} Copy`);
-                    setIsCloneModalOpen(true);
-                  }}
-                  className="flex items-center gap-2 text-xs font-semibold cursor-pointer text-slate-700 hover:bg-slate-50"
-                >
-                  <Copy className="w-3.5 h-3.5 text-indigo-600" />
-                  Clone Role Configuration
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setAssignRoleId(item.id);
-                    setIsAssignModalOpen(true);
-                  }}
-                  className="flex items-center gap-2 text-xs font-semibold cursor-pointer text-slate-700 hover:bg-slate-50"
-                >
-                  <UserCheck className="w-3.5 h-3.5 text-blue-600" />
-                  Assign Role to User
-                </DropdownMenuItem>
-                {!item.is_system_role && (
-                  <DropdownMenuItem
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleOpenEditModal(item);
-                    }}
-                    className="flex items-center gap-2 text-xs font-semibold cursor-pointer text-slate-700 hover:bg-slate-50"
-                  >
-                    <Edit className="w-3.5 h-3.5 text-slate-500" />
-                    Edit Role & Permissions
-                  </DropdownMenuItem>
-                )}
-                {!item.is_system_role && !isDefault && item.type !== 'default' && (
-                  <>
-                    <DropdownMenuSeparator />
+                <PermissionGate permission="roles:update">
+                  {isSuperAdminRole && !isDefault && (
                     <DropdownMenuItem
                       onClick={(e) => {
                         e.stopPropagation();
-                        setRoleToDelete(item);
+                        handleSetDefault(item);
                       }}
-                      className="flex items-center gap-2 text-xs font-semibold cursor-pointer text-rose-600 hover:bg-rose-50"
+                      className="flex items-center gap-2 text-xs font-semibold cursor-pointer text-amber-700 hover:bg-amber-50"
                     >
-                      <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                      Delete Custom Role
+                      <Star className="w-3.5 h-3.5 text-amber-500" />
+                      Set Registration Default
                     </DropdownMenuItem>
-                  </>
-                )}
+                  )}
+                </PermissionGate>
+                <PermissionGate permission="roles:create">
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCloningRole(item);
+                      setCloneNewName(`${item.name} Copy`);
+                      setIsCloneModalOpen(true);
+                    }}
+                    className="flex items-center gap-2 text-xs font-semibold cursor-pointer text-slate-700 hover:bg-slate-50"
+                  >
+                    <Copy className="w-3.5 h-3.5 text-indigo-600" />
+                    Clone Role Configuration
+                  </DropdownMenuItem>
+                </PermissionGate>
+                <PermissionGate permission="users:roles">
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setAssignRoleId(item.id);
+                      setIsAssignModalOpen(true);
+                    }}
+                    className="flex items-center gap-2 text-xs font-semibold cursor-pointer text-slate-700 hover:bg-slate-50"
+                  >
+                    <UserCheck className="w-3.5 h-3.5 text-blue-600" />
+                    Assign Role to User
+                  </DropdownMenuItem>
+                </PermissionGate>
+                <PermissionGate permission="roles:update">
+                  {!item.is_system_role && (
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenEditModal(item);
+                      }}
+                      className="flex items-center gap-2 text-xs font-semibold cursor-pointer text-slate-700 hover:bg-slate-50"
+                    >
+                      <Edit className="w-3.5 h-3.5 text-slate-500" />
+                      Edit Role & Permissions
+                    </DropdownMenuItem>
+                  )}
+                </PermissionGate>
+                <PermissionGate permission="roles:delete">
+                  {!item.is_system_role && !isDefault && item.type !== 'default' && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setRoleToDelete(item);
+                        }}
+                        className="flex items-center gap-2 text-xs font-semibold cursor-pointer text-rose-600 hover:bg-rose-50"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                        Delete Custom Role
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </PermissionGate>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -659,46 +670,56 @@ export default function RolesPage() {
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
-          <button
-            onClick={handleExportSchema}
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer"
-          >
-            <Download className="w-4 h-4 text-slate-600" />
-            Export Schema
-          </button>
+          <PermissionGate permission="roles:read">
+            <button
+              onClick={handleExportSchema}
+              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer"
+            >
+              <Download className="w-4 h-4 text-slate-600" />
+              Export Schema
+            </button>
+          </PermissionGate>
 
-          <button
-            onClick={handleImportSchema}
-            disabled={importRolesMutation.isPending}
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer disabled:opacity-50"
-          >
-            {importRolesMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4 text-indigo-600" />}
-            Import JSON
-          </button>
+          <PermissionGate permission="roles:create">
+            <button
+              onClick={handleImportSchema}
+              disabled={importRolesMutation.isPending}
+              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer disabled:opacity-50"
+            >
+              {importRolesMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4 text-indigo-600" />}
+              Import JSON
+            </button>
+          </PermissionGate>
 
-          <button
-            onClick={() => setIsAuditModalOpen(true)}
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer"
-          >
-            <History className="w-4 h-4 text-purple-600" />
-            Audit Logs
-          </button>
+          <PermissionGate permission="roles:read">
+            <button
+              onClick={() => setIsAuditModalOpen(true)}
+              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer"
+            >
+              <History className="w-4 h-4 text-purple-600" />
+              Audit Logs
+            </button>
+          </PermissionGate>
 
-          <button
-            onClick={() => setIsPermModalOpen(true)}
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer"
-          >
-            <KeyRound className="w-4 h-4 text-emerald-600" />
-            + New Permission
-          </button>
+          <PermissionGate permission="roles:create">
+            <button
+              onClick={() => setIsPermModalOpen(true)}
+              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer"
+            >
+              <KeyRound className="w-4 h-4 text-emerald-600" />
+              + New Permission
+            </button>
+          </PermissionGate>
 
-          <button
-            onClick={handleOpenCreateModal}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors shadow-sm cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            Create Custom Role
-          </button>
+          <PermissionGate permission="roles:create">
+            <button
+              onClick={handleOpenCreateModal}
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors shadow-sm cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              Create Custom Role
+            </button>
+          </PermissionGate>
         </div>
       </div>
 

@@ -1,5 +1,9 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
+from jose import jwt, JWTError
 from typing import List
+
+from app.core.config import settings
+from app.core.security import ALGORITHM
 
 router = APIRouter()
 
@@ -27,8 +31,31 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
+
+async def _authenticate_websocket(websocket: WebSocket) -> bool:
+    """Validate the JWT access token on the websocket connection.
+
+    Accepts the token via the ``token`` query parameter (e.g. /ws/notifications?token=...).
+    Returns True when the token decodes successfully; otherwise closes the socket with 4401.
+    """
+    raw_token = websocket.query_params.get("token")
+    if not raw_token:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Missing token")
+        return False
+    try:
+        payload = jwt.decode(raw_token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid or expired token")
+        return False
+    if not payload.get("sub"):
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid token payload")
+        return False
+    return True
+
 @router.websocket("/notifications")
 async def websocket_notifications(websocket: WebSocket):
+    if not await _authenticate_websocket(websocket):
+        return
     await manager.connect(websocket)
     try:
         while True:
@@ -48,6 +75,8 @@ async def websocket_notifications(websocket: WebSocket):
 
 @router.websocket("/live-events")
 async def websocket_live_events(websocket: WebSocket):
+    if not await _authenticate_websocket(websocket):
+        return
     await manager.connect(websocket)
     try:
         while True:

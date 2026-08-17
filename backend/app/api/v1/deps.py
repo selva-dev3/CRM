@@ -6,10 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.config import settings
+from app.core.errors import ForbiddenError
 from app.core.permissions import UserRole, check_permission
 from app.core.security import ALGORITHM
 from app.db.session import get_db
 from app.models import User, Organization
+from app.services.auth_service import auth_service
 
 # HTTP Bearer scheme auto-configured for FastAPI Swagger UI authentication
 security_scheme = HTTPBearer(auto_error=False)
@@ -126,3 +128,22 @@ def require_role(*roles: UserRole):
         return current_user
 
     return role_dependency
+
+
+def require_permission(permission: str):
+    """Dependency factory enforcing that the authenticated user holds a specific permission key.
+
+    Uses the RBAC permission model (Permission/RolePermission/UserRole tables) via the
+    existing auth_service permission resolution. Raises 403/FORBIDDEN when the permission
+    is missing.
+    """
+    async def permission_dependency(
+        current_user: User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ) -> User:
+        keys = await auth_service.get_user_permissions(db, current_user, strict=True)
+        if permission not in keys:
+            raise ForbiddenError(message=f"Missing required permission: {permission}")
+        return current_user
+
+    return permission_dependency

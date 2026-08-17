@@ -57,9 +57,14 @@ class AuthService:
         return "Admin"
 
     async def get_user_permissions(
-        self, db: AsyncSession, user: User, resolved_role_name: str = ""
+        self, db: AsyncSession, user: User, resolved_role_name: str = "", *, strict: bool = False
     ) -> List[str]:
-        """Query user permissions from Role/Permission/RolePermission/UserRole tables."""
+        """Query user permissions from Role/Permission/RolePermission/UserRole tables.
+
+        When ``strict`` is True (used for authorization enforcement), the permissive
+        "grant everything" fallback for users with no role mapping is disabled so that
+        missing role grants result in an empty permission set (deny by default).
+        """
         permission_keys = set()
         try:
             role_name = resolved_role_name or user.role or ""
@@ -82,6 +87,9 @@ class AuthService:
 
         if permission_keys:
             return sorted(list(permission_keys))
+
+        if strict:
+            return []
 
         try:
             all_keys = await self.repository.all_permission_keys(db)
@@ -133,8 +141,8 @@ class AuthService:
             },
         }
 
-    async def get_current_user_me(self, db: AsyncSession) -> dict:
-        user = await self.repository.get_first_user(db)
+    async def get_current_user_me(self, db: AsyncSession, user: User | None = None) -> dict:
+        user = user or await self.repository.get_first_user(db)
         if not user:
             raise NotFoundError(message="User profile not found")
 

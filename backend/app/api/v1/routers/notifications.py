@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import get_current_user
+from app.api.v1.deps import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.auth import User
 from app.schemas.crm_schemas import (
@@ -19,6 +19,7 @@ router = APIRouter()
     "",
     response_model=list[NotificationItem],
     summary="List notifications for logged in user",
+    dependencies=[Depends(require_permission("notifications:read"))],
 )
 async def list_notifications(
     page: int = 1,
@@ -32,7 +33,7 @@ async def list_notifications(
     )
 
 
-@router.get("/unread-count", summary="Get unread notification count badge")
+@router.get("/unread-count", summary="Get unread notification count badge", dependencies=[Depends(require_permission("notifications:read"))])
 async def get_unread_count(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -41,7 +42,8 @@ async def get_unread_count(
 
 
 @router.post(
-    "/read-all", response_model=MessageResponse, summary="Mark all notifications as read"
+    "/read-all", response_model=MessageResponse, summary="Mark all notifications as read",
+    dependencies=[Depends(require_permission("notifications:read"))],
 )
 async def mark_all_notifications_read(
     db: AsyncSession = Depends(get_db),
@@ -52,7 +54,7 @@ async def mark_all_notifications_read(
     )
 
 
-@router.get("/preferences", summary="Get user notification delivery preferences")
+@router.get("/preferences", summary="Get user notification delivery preferences", dependencies=[Depends(require_permission("notifications:read"))])
 async def get_notification_preferences(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -64,6 +66,7 @@ async def get_notification_preferences(
     "/preferences",
     response_model=MessageResponse,
     summary="Update notification delivery preferences",
+    dependencies=[Depends(require_permission("notifications:manage"))],
 )
 async def update_notification_preferences(
     email_notifications: bool = Query(True),
@@ -85,6 +88,7 @@ async def update_notification_preferences(
     "/webpush/register",
     response_model=MessageResponse,
     summary="Register WebPush browser token for push notifications",
+    dependencies=[Depends(require_permission("notifications:manage"))],
 )
 async def register_webpush_token(
     token: str = Query(...),
@@ -99,6 +103,7 @@ async def register_webpush_token(
     "/send-system-alert",
     response_model=MessageResponse,
     summary="Admin endpoint to broadcast system alert notification",
+    dependencies=[Depends(require_permission("notifications:send"))],
 )
 async def send_system_alert(
     title: str = Query(...),
@@ -116,6 +121,7 @@ async def send_system_alert(
     "/bulk-delete",
     response_model=BulkActionResponse,
     summary="Bulk delete notifications",
+    dependencies=[Depends(require_permission("notifications:manage"))],
 )
 async def bulk_delete_notifications(
     payload: BulkDeleteRequest,
@@ -131,6 +137,7 @@ async def bulk_delete_notifications(
     "/{notification_id}/read",
     response_model=MessageResponse,
     summary="Mark single notification as read",
+    dependencies=[Depends(require_permission("notifications:read"))],
 )
 async def mark_notification_read(
     notification_id: str,
@@ -146,6 +153,7 @@ async def mark_notification_read(
     "/{notification_id}",
     response_model=MessageResponse,
     summary="Delete single notification",
+    dependencies=[Depends(require_permission("notifications:manage"))],
 )
 async def delete_notification(
     notification_id: str,
