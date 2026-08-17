@@ -359,7 +359,7 @@ violation.**
 
 ## 19. Git / Workflow Rules
 
-See `GIT.md` (separate file) for git/workflow rules.
+See the root [`AGENT.md`](../AGENT.md) for git/workflow rules.
 
 ---
 
