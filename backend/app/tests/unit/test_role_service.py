@@ -26,11 +26,13 @@ def _make_role(**overrides) -> Role:
 @pytest.mark.asyncio
 async def test_list_roles_classifies_types():
     admin = _make_role(id="role-1", name="admin", is_system_role=True)
+    perm = type("P", (), {"key": "users:read"})()
+    perm2 = type("P", (), {"key": "leads:read"})()
     repo = RoleRepository()
     repo.get_setting = AsyncMock(return_value=None)
     repo.get_permission_keys = AsyncMock(return_value=["users:read", "leads:read"])
     repo.list_roles = AsyncMock(return_value=[admin])
-    repo.get_role_permissions = AsyncMock(return_value=[])
+    repo.get_role_permissions = AsyncMock(return_value=[perm, perm2])
     service = RoleService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
@@ -149,18 +151,70 @@ async def test_delete_role_blocks_default(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_check_permission_admin_allows_all():
+async def test_check_permission_super_admin_permission_allows_all():
     role = _make_role(name="Super Admin", is_system_role=True)
+    super_perm = type("P", (), {"key": "super_admin:manage"})()
     user = type("U", (), {"id": "u1", "role": "role-1", "email": "a@b.com", "name": "A"})()
     repo = RoleRepository()
     repo.get_user_by_id_or_email = AsyncMock(return_value=user)
     repo.get_role_by_id_or_name = AsyncMock(return_value=role)
+    repo.get_role_permissions = AsyncMock(return_value=[super_perm])
     service = RoleService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
     result = await service.check_permission(db, "u1", "anything:x")
 
     assert result["allowed"] is True
+
+
+@pytest.mark.asyncio
+async def test_check_permission_requires_exact_key():
+    role = _make_role(name="Sales Manager", is_system_role=False)
+    perm = type("P", (), {"key": "deals:read"})()
+    user = type("U", (), {"id": "u1", "role": "role-1", "email": "a@b.com", "name": "A"})()
+    repo = RoleRepository()
+    repo.get_user_by_id_or_email = AsyncMock(return_value=user)
+    repo.get_role_by_id_or_name = AsyncMock(return_value=role)
+    repo.get_role_permissions = AsyncMock(return_value=[perm])
+    service = RoleService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    granted = await service.check_permission(db, "u1", "deals:read")
+    denied = await service.check_permission(db, "u1", "deals:delete")
+
+    assert granted["allowed"] is True
+    assert denied["allowed"] is False
+
+
+@pytest.mark.asyncio
+async def test_check_permission_denies_admin_name_role_without_grants():
+    """An 'Admin'-named role must NOT be granted everything by name alone."""
+    role = _make_role(name="Admin", is_system_role=True)
+    user = type("U", (), {"id": "u1", "role": "role-1", "email": "a@b.com", "name": "A"})()
+    repo = RoleRepository()
+    repo.get_user_by_id_or_email = AsyncMock(return_value=user)
+    repo.get_role_by_id_or_name = AsyncMock(return_value=role)
+    repo.get_role_permissions = AsyncMock(return_value=[])
+    service = RoleService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.check_permission(db, "u1", "anything:x")
+
+    assert result["allowed"] is False
+
+
+@pytest.mark.asyncio
+async def test_check_permission_denies_unknown_role():
+    user = type("U", (), {"id": "u1", "role": "ghost-role", "email": "a@b.com", "name": "A"})()
+    repo = RoleRepository()
+    repo.get_user_by_id_or_email = AsyncMock(return_value=user)
+    repo.get_role_by_id_or_name = AsyncMock(return_value=None)
+    service = RoleService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.check_permission(db, "u1", "leads:read")
+
+    assert result["allowed"] is False
 
 
 @pytest.mark.asyncio

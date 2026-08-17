@@ -115,9 +115,13 @@ async def unstar_contact(contact_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{contact_id}/notes", response_model=List[NoteResponse], summary="List notes for contact", dependencies=[Depends(require_permission("contacts:read"))])
-async def get_contact_notes(contact_id: str, db: AsyncSession = Depends(get_db)):
+async def get_contact_notes(
+    contact_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     return await note_service.list_for_entity(
-        db, entity_type="contact", entity_id=contact_id, created_by_default="usr-1"
+        db, entity_type="contact", entity_id=contact_id, created_by_default=current_user.id
     )
 
 

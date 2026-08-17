@@ -1,3 +1,4 @@
+import logging
 from typing import List, Optional
 
 from fastapi import status
@@ -17,6 +18,8 @@ from app.schemas.crm_schemas import (
     TwoFactorVerifyRequest,
 )
 from app.services.email_service import send_magic_link_email, send_reset_password_email
+
+logger = logging.getLogger(__name__)
 
 
 class AuthService:
@@ -59,46 +62,34 @@ class AuthService:
     async def get_user_permissions(
         self, db: AsyncSession, user: User, resolved_role_name: str = "", *, strict: bool = False
     ) -> List[str]:
-        """Query user permissions from Role/Permission/RolePermission/UserRole tables.
+        """Resolve a user's effective permission keys from the RBAC tables.
 
-        When ``strict`` is True (used for authorization enforcement), the permissive
-        "grant everything" fallback for users with no role mapping is disabled so that
-        missing role grants result in an empty permission set (deny by default).
+        Permissions are derived exclusively from the relationship graph
+        ``User -> UserRole -> Role -> RolePermission -> Permission`` (plus a
+        case-insensitive lookup of the legacy ``User.role`` string so existing
+        role-name assignments keep working). A role that holds the
+        ``super_admin:manage`` permission is treated as unrestricted and is
+        granted every known permission key. There is intentionally no grant-all
+        fallback: an unknown/unmapped user or a resolution failure yields an
+        empty set (deny by default), matching fail-closed authorization.
         """
         permission_keys = set()
         try:
-            role_name = resolved_role_name or user.role or ""
-            role_clean = role_name.lower().replace(" ", "").replace("_", "").replace("-", "")
-
-            if role_clean in ["superadmin", "admin"]:
-                all_keys = await self.repository.all_permission_keys(db)
-                if all_keys:
-                    return sorted(list(set(all_keys)))
-
             role_ids = set(await self.repository.role_ids_for_user(db, user.id))
-            if user.role:
-                role_ids.update(await self.repository.role_ids_by_name(db, role_name))
+            role_lookup = (resolved_role_name or user.role or "").strip()
+            if role_lookup:
+                role_ids.update(await self.repository.role_ids_by_name(db, role_lookup))
 
             if role_ids:
                 keys = await self.repository.permission_keys_for_roles(db, list(role_ids))
                 permission_keys.update(keys)
+                if "super_admin:manage" in keys:
+                    permission_keys.update(await self.repository.all_permission_keys(db))
         except Exception:
-            pass
+            logger.exception("Failed to resolve permissions for user %s", getattr(user, "id", None))
+            permission_keys.clear()
 
-        if permission_keys:
-            return sorted(list(permission_keys))
-
-        if strict:
-            return []
-
-        try:
-            all_keys = await self.repository.all_permission_keys(db)
-            if all_keys:
-                return sorted(list(set(all_keys)))
-        except Exception:
-            pass
-
-        return sorted(list(permission_keys))
+        return sorted(permission_keys)
 
     async def login(self, db: AsyncSession, payload: LoginRequest) -> dict:
         user = await self.repository.get_user_by_email(db, payload.email)

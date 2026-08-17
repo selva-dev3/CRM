@@ -6,7 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.errors import APIException, NotFoundError
 from app.core.security import generate_random_code, get_password_hash
-from app.models import User
+from app.models import User, UserRole
+from app.repositories.role_repository import RoleRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.crm_schemas import (
     AcceptInviteRequest,
@@ -38,6 +39,7 @@ class UserService:
 
     def __init__(self, repository: Optional[UserRepository] = None) -> None:
         self.repository = repository or UserRepository()
+        self.role_repository = RoleRepository()
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
         try:
@@ -85,16 +87,29 @@ class UserService:
         ]
 
     async def create_user(self, db: AsyncSession, payload: UserCreate) -> dict:
+        role = await self.role_repository.get_role_by_id_or_name(db, payload.role)
+        if not role:
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message=f"Invalid role: '{payload.role}'",
+            )
+        if role.organization_id and role.organization_id != payload.organization_id:
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message=f"Role '{role.name}' does not belong to the selected organization",
+            )
         user = await self.repository.create(
             db,
             data={
                 "name": payload.name,
                 "email": payload.email,
                 "hashed_password": get_password_hash(payload.password),
-                "role": payload.role,
+                "role": role.id,
                 "organization_id": payload.organization_id,
             },
         )
+        await db.flush()
+        db.add(UserRole(user_id=user.id, role_id=role.id))
         await self._commit(db, "User creation failed")
         return user_to_dict(user)
 
@@ -134,6 +149,15 @@ class UserService:
             ) from e
 
     async def invite_users(self, db: AsyncSession, payload: UserInviteRequest) -> dict:
+        role_obj = None
+        if payload.role:
+            role_obj = await self.role_repository.get_role_by_id_or_name(db, payload.role)
+            if not role_obj:
+                raise APIException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    message=f"Invalid role: '{payload.role}'",
+                )
+        invite_role = role_obj.name if role_obj else (payload.role or "Sales Executive")
         invitation_responses = []
         try:
             org = await self.repository.get_first_org(db)
@@ -161,7 +185,7 @@ class UserService:
                     data={
                         "email": target["email"],
                         "token": token,
-                        "role": payload.role or "Sales Executive",
+                        "role": invite_role,
                         "organization_id": org_id,
                         "status": "pending",
                     },
@@ -171,7 +195,7 @@ class UserService:
                 invite_url = f"{settings.FRONTEND_URL}/accept-invite?token={token}"
                 send_user_invite_email(
                     email_to=target["email"],
-                    role=payload.role,
+                    role=invite_role,
                     invite_url=invite_url,
                 )
 
@@ -180,7 +204,7 @@ class UserService:
                         "name": target["name"],
                         "email": target["email"],
                         "token": token,
-                        "role": payload.role or "Sales Executive",
+                        "role": invite_role,
                         "status": "pending",
                     }
                 )
@@ -252,6 +276,13 @@ class UserService:
                 message="Invitation has already been accepted",
             )
 
+        role = await self.role_repository.get_role_by_id_or_name(db, inv.role)
+        if not role:
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message=f"Invitation references an invalid role '{inv.role}'. Please contact an administrator.",
+            )
+
         try:
             org = await self.repository.get_first_org(db)
             if not org:
@@ -269,7 +300,7 @@ class UserService:
             if user:
                 user.name = payload.name
                 user.hashed_password = hashed_pwd
-                user.role = inv.role
+                user.role = role.id
                 user.organization_id = target_org_id
                 user.is_active = True
             else:
@@ -279,12 +310,18 @@ class UserService:
                         "name": payload.name,
                         "email": inv.email,
                         "hashed_password": hashed_pwd,
-                        "role": inv.role,
+                        "role": role.id,
                         "organization_id": target_org_id,
                         "is_active": True,
                     },
                 )
                 await db.flush()
+
+            mapping = await self.role_repository.get_user_role_mapping(db, user.id)
+            if mapping:
+                mapping.role_id = role.id
+            else:
+                db.add(UserRole(user_id=user.id, role_id=role.id))
 
             inv.status = "accepted"
             for other in await self.repository.list_invitations_by_email(

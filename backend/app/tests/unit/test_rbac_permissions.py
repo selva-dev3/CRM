@@ -121,8 +121,8 @@ async def test_get_user_permissions_strict_denies_empty_grants():
 
 
 @pytest.mark.asyncio
-async def test_get_user_permissions_non_strict_falls_back_to_all():
-    """Permissive mode (used by /auth/me) keeps the existing grant-all fallback."""
+async def test_get_user_permissions_non_strict_denies_when_no_grants():
+    """Even permissive mode (used by /auth/me) must NOT grant all keys on empty grants."""
     repo = AsyncMock()
     repo.all_permission_keys = AsyncMock(return_value=["deals:read", "deals:create"])
     repo.role_ids_for_user = AsyncMock(return_value=[])
@@ -132,19 +132,38 @@ async def test_get_user_permissions_non_strict_falls_back_to_all():
     db = AsyncMock(spec=AsyncSession)
 
     keys = await service.get_user_permissions(db, user)
-    assert set(keys) == {"deals:read", "deals:create"}
+    assert keys == []
 
 
 @pytest.mark.asyncio
-async def test_get_user_permissions_strict_allows_superadmin_role():
+async def test_get_user_permissions_grants_all_for_super_admin_permission():
     repo = AsyncMock()
     repo.all_permission_keys = AsyncMock(return_value=["deals:read", "roles:update"])
+    repo.role_ids_for_user = AsyncMock(return_value=["sys-1"])
+    repo.role_ids_by_name = AsyncMock(return_value=[])
+    repo.permission_keys_for_roles = AsyncMock(return_value=["super_admin:manage"])
     service = AuthService(repository=repo)
     user = _make_user(role="Super Admin")
     db = AsyncMock(spec=AsyncSession)
 
     keys = await service.get_user_permissions(db, user, strict=True)
-    assert set(keys) == {"deals:read", "roles:update"}
+    assert set(keys) == {"deals:read", "roles:update", "super_admin:manage"}
+
+
+@pytest.mark.asyncio
+async def test_get_user_permissions_denies_when_resolution_errors():
+    """A permission-resolution failure must never grant access (fail closed)."""
+    repo = AsyncMock()
+    repo.role_ids_for_user = AsyncMock(side_effect=RuntimeError("db down"))
+    service = AuthService(repository=repo)
+    user = _make_user(role="Sales Executive")
+    db = AsyncMock(spec=AsyncSession)
+
+    strict_keys = await service.get_user_permissions(db, user, strict=True)
+    permissive_keys = await service.get_user_permissions(db, user)
+
+    assert strict_keys == []
+    assert permissive_keys == []
 
 
 # --- Wiring test: every endpoint must carry a require_permission dependency ---

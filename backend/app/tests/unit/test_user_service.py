@@ -98,13 +98,36 @@ async def test_create_user_hashes_password(monkeypatch):
         "app.services.user_service.get_password_hash", lambda pwd: f"hashed-{pwd}"
     )
 
+    role = type("R", (), {"id": "role-1", "name": "Sales Executive", "organization_id": None})()
+    service.role_repository.get_role_by_id_or_name = AsyncMock(return_value=role)
+
     payload = UserCreate(
-        name="Alex Smith", email="alex@crm.com", role="Sales Executive", organization_id="org-1", password="secret"
+        name="Alex Smith", email="alex@crm.com", role="role-1", organization_id="org-1", password="secret"
     )
     result = await service.create_user(db, payload)
 
     assert result["email"] == "alex@crm.com"
+    assert repo.create.await_args.kwargs["data"]["role"] == "role-1"
     assert repo.create.await_args.kwargs["data"]["hashed_password"] == "hashed-secret"
+    db.add.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_create_user_rejects_unknown_role():
+    repo = UserRepository()
+    repo.create = AsyncMock(return_value=_make_user())
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    service.role_repository.get_role_by_id_or_name = AsyncMock(return_value=None)
+
+    payload = UserCreate(
+        name="Alex Smith", email="alex@crm.com", role="not-a-real-role", organization_id="org-1", password="secret"
+    )
+
+    with pytest.raises(APIException) as exc_info:
+        await service.create_user(db, payload)
+    assert exc_info.value.status_code == 400
+    repo.create.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -161,6 +184,10 @@ async def test_accept_invitation_creates_user(monkeypatch):
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
+    role = type("R", (), {"id": "role-1", "name": "Sales Manager", "organization_id": None})()
+    service.role_repository.get_role_by_id_or_name = AsyncMock(return_value=role)
+    service.role_repository.get_user_role_mapping = AsyncMock(return_value=None)
+
     monkeypatch.setattr("app.services.user_service.get_password_hash", lambda pwd: "hashed")
 
     from app.schemas.crm_schemas import AcceptInviteRequest
@@ -170,6 +197,66 @@ async def test_accept_invitation_creates_user(monkeypatch):
 
     assert result["user_id"] == "user-1"
     assert inv.status == "accepted"
+    assert repo.create.await_args.kwargs["data"]["role"] == "role-1"
+    db.add.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_accept_invitation_rejects_invalid_role(monkeypatch):
+    inv = _make_invitation(role="vanished-role")
+    repo = UserRepository()
+    repo.get_invitation_by_token = AsyncMock(return_value=inv)
+    repo.get_invitation_by_email = AsyncMock(return_value=None)
+    repo.create = AsyncMock(return_value=_make_user())
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    service.role_repository.get_role_by_id_or_name = AsyncMock(return_value=None)
+
+    from app.schemas.crm_schemas import AcceptInviteRequest
+
+    payload = AcceptInviteRequest(token="ABCDEFGHIJKLMN", name="Alex", password="secret")
+
+    with pytest.raises(APIException) as exc_info:
+        await service.accept_user_invitation(db, payload)
+    assert exc_info.value.status_code == 400
+    repo.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_invite_users_validates_role(monkeypatch):
+    repo = UserRepository()
+    repo.get_first_org = AsyncMock(return_value=type("O", (), {"id": "org-1"})())
+    repo.create_invitation = AsyncMock(return_value=None)
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    role = type("R", (), {"id": "role-1", "name": "Sales Manager", "organization_id": None})()
+    service.role_repository.get_role_by_id_or_name = AsyncMock(return_value=role)
+
+    monkeypatch.setattr("app.services.user_service.send_user_invite_email", lambda **kwargs: None)
+
+    from app.schemas.crm_schemas import UserInviteRequest
+
+    payload = UserInviteRequest(users=[{"email": "invite@crm.com"}], role="role-1")
+    result = await service.invite_users(db, payload)
+
+    assert result["invitations"][0]["role"] == "Sales Manager"
+    assert repo.create_invitation.await_args.kwargs["data"]["role"] == "Sales Manager"
+
+
+@pytest.mark.asyncio
+async def test_invite_users_rejects_unknown_role():
+    repo = UserRepository()
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    service.role_repository.get_role_by_id_or_name = AsyncMock(return_value=None)
+
+    from app.schemas.crm_schemas import UserInviteRequest
+
+    payload = UserInviteRequest(users=[{"email": "invite@crm.com"}], role="not-a-real-role")
+
+    with pytest.raises(APIException) as exc_info:
+        await service.invite_users(db, payload)
+    assert exc_info.value.status_code == 400
 
 
 @pytest.mark.asyncio
