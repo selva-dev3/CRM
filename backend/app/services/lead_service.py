@@ -16,6 +16,7 @@ from app.schemas.crm_schemas import (
     LeadUpdate,
     TaskCreate,
 )
+from app.services.integration_service import integration_service
 from app.services.s3_service import s3_service
 
 LEAD_SOURCES = ["Website", "LinkedIn", "Referral", "Cold Call", "Event", "Partner"]
@@ -118,6 +119,21 @@ class LeadService:
         lead = await self.repository.create(db, data=data)
         await self._commit(db, "Failed to create lead")
         await db.refresh(lead)
+        await integration_service.notify_slack_event(
+            db,
+            event_name="lead.created",
+            data={
+                "id": lead.id,
+                "title": lead.title,
+                "company": lead.company,
+                "contact_name": lead.contact_name,
+                "email": lead.email,
+                "status": lead.status,
+                "source": lead.source,
+                "owner": lead.assigned_to,
+            },
+            org_id=lead.organization_id,
+        )
         return lead_to_dict(lead)
 
     async def update_lead(self, db: AsyncSession, lead_id: str, payload: LeadUpdate) -> dict:
@@ -127,6 +143,12 @@ class LeadService:
         for field, value in payload.model_dump(exclude_unset=True).items():
             setattr(lead, field, value)
         await self._commit(db, "Failed to update lead")
+        await integration_service.notify_slack_event(
+            db,
+            event_name="lead.updated",
+            data={"id": lead.id, "title": lead.title, "company": lead.company, "status": lead.status},
+            org_id=lead.organization_id,
+        )
         return lead_to_dict(lead)
 
     async def delete_lead(self, db: AsyncSession, lead_id: str) -> dict:
@@ -187,6 +209,12 @@ class LeadService:
             raise NotFoundError(message=f"Lead '{lead_id}' not found")
         lead.assigned_to = user_id
         await self._commit(db, "Failed to assign lead")
+        await integration_service.notify_slack_event(
+            db,
+            event_name="lead.assigned",
+            data={"id": lead.id, "title": lead.title, "assigned_to": lead.assigned_to},
+            org_id=lead.organization_id,
+        )
         return {"message": f"Lead {lead_id} assigned to user {user_id}", "status": "success"}
 
     async def recalculate_lead_score(self, db: AsyncSession, lead_id: str) -> dict:
@@ -386,6 +414,19 @@ class LeadService:
         )
         await self._commit(db, "Failed to create task")
         await db.refresh(task)
+        await integration_service.notify_slack_event(
+            db,
+            event_name="task.created",
+            data={
+                "id": task.id,
+                "title": task.title,
+                "priority": task.priority,
+                "status": task.status,
+                "due_date": str(task.due_date) if task.due_date else None,
+                "assigned_to": task.assigned_to,
+            },
+            org_id=lead.organization_id,
+        )
         return {
             "id": task.id,
             "title": task.title,

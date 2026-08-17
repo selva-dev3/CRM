@@ -8,6 +8,7 @@ from app.core.errors import APIException, NotFoundError
 from app.models import Meeting
 from app.repositories.meeting_repository import MeetingRepository
 from app.schemas.crm_schemas import MeetingBase, MeetingCreate
+from app.services.integration_service import integration_service
 from app.services.org_service import organization_service
 
 
@@ -89,6 +90,20 @@ class MeetingService:
             for att_email in attendee_emails:
                 await self.repository.create_attendee(db, meeting_id=meeting.id, email=att_email)
             await self._commit(db, "Failed to save meeting attendees")
+        await integration_service.notify_slack_event(
+            db,
+            event_name="meeting.created",
+            data={
+                "id": meeting.id,
+                "title": meeting.title,
+                "start_time": str(meeting.start_time),
+                "end_time": str(meeting.end_time),
+                "location": getattr(meeting, "location", None),
+                "meeting_link": meeting.meeting_link,
+                "attendees": attendee_emails,
+            },
+            org_id=meeting.organization_id,
+        )
         return meeting_to_dict(meeting, attendee_emails)
 
     async def get_upcoming_meetings(self, db: AsyncSession) -> list[dict]:

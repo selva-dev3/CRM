@@ -8,6 +8,7 @@ from app.core.errors import NotFoundError
 from app.models import Meeting
 from app.repositories.meeting_repository import MeetingRepository
 from app.schemas.crm_schemas import MeetingCreate
+from app.services.integration_service import integration_service
 from app.services.meeting_service import MeetingService, parse_datetime
 
 
@@ -55,6 +56,7 @@ async def test_schedule_meeting_resolves_org_and_saves_attendees(monkeypatch):
     repo.create = AsyncMock(return_value=meeting)
     repo.create_attendee = AsyncMock()
     service = _service_with(repo)
+    monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())
     db = AsyncMock(spec=AsyncSession)
 
     from app.services.meeting_service import organization_service
@@ -78,12 +80,47 @@ async def test_schedule_meeting_resolves_org_and_saves_attendees(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_schedule_meeting_fires_meeting_created_event(monkeypatch):
+    meeting = _make_meeting()
+    repo = MeetingRepository()
+    repo.create = AsyncMock(return_value=meeting)
+    repo.create_attendee = AsyncMock()
+    service = _service_with(repo)
+    notify = AsyncMock()
+    monkeypatch.setattr(integration_service, "notify_slack_event", notify)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.services.meeting_service import organization_service
+
+    monkeypatch.setattr(
+        organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
+    )
+
+    await service.schedule_meeting(
+        db,
+        MeetingCreate(
+            title="Product Demo",
+            start_time="2026-08-01T10:00:00",
+            end_time="2026-08-01T11:00:00",
+            attendee_emails=["a@crm.com"],
+        ),
+    )
+
+    notify.assert_awaited_once()
+    kwargs = notify.await_args.kwargs
+    assert kwargs["event_name"] == "meeting.created"
+    assert kwargs["org_id"] == "org-1"
+    assert kwargs["data"]["attendees"] == ["a@crm.com"]
+
+
+@pytest.mark.asyncio
 async def test_schedule_meeting_without_attendees_skips_attendee_creation(monkeypatch):
     meeting = _make_meeting()
     repo = MeetingRepository()
     repo.create = AsyncMock(return_value=meeting)
     repo.create_attendee = AsyncMock()
     service = _service_with(repo)
+    monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())
     db = AsyncMock(spec=AsyncSession)
 
     from app.services.meeting_service import organization_service

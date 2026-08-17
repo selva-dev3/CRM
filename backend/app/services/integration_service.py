@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, NotFoundError
+from app.core.logging import get_logger
 from app.models import Integration, User
 from app.repositories.integration_repository import IntegrationRepository
 from app.schemas.crm_schemas import (
@@ -16,6 +17,8 @@ from app.schemas.crm_schemas import (
     SlackNotifyPayload,
     ZapierConnectPayload,
 )
+
+logger = get_logger(__name__)
 
 DEFAULT_CONNECTORS = [
     {"name": "Slack Sync", "category": "Communication", "is_connected": True, "description": "Post lead updates & deal notifications to Slack channels."},
@@ -266,6 +269,12 @@ class IntegrationService:
                 integration.last_error = None
             await self.repository.commit(db)
             await db.refresh(integration)
+            await self.notify_slack_event(
+                db,
+                event_name="integration.connected",
+                data={"provider": "slack", "organization_id": org_id},
+                org_id=org_id,
+            )
             return {"message": "Slack connected successfully.", "status": "success"}
         except Exception as e:
             await db.rollback()
@@ -299,6 +308,48 @@ class IntegrationService:
             await self.repository.commit(db)
             raise APIException(status_code=500, message=f"Failed to send Slack test message : {str(e)}") from e
 
+    @staticmethod
+    def _build_slack_text(event_name: str, data: dict | None) -> str:
+        text = f" *CRM Event*\n\nEvent : {event_name}\n"
+        if data:
+            for key, value in data.items():
+                text += f"\n• {key} : {value}"
+        return text
+
+    @staticmethod
+    def _enabled_events(integration: Integration) -> list:
+        if not integration.enabled_events:
+            return []
+        try:
+            return json.loads(integration.enabled_events)
+        except Exception:
+            return []
+
+    async def _post_to_slack(self, db: AsyncSession, integration: Integration, text: str) -> None:
+        """Single Slack webhook send path. Sets last_synced/last_error and commits; raises on failure."""
+        slack_payload = {"text": text}
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                response = await client.post(integration.webhook_url, json=slack_payload, headers={"Content-Type": "application/json"})
+            response.raise_for_status()
+            integration.last_synced = datetime.utcnow()
+            integration.last_error = None
+            await self.repository.commit(db)
+        except httpx.HTTPStatusError as e:
+            integration.last_error = f"Slack returned {e.response.status_code}: {e.response.text}"
+            await self._commit_last_error(db)
+            raise APIException(status_code=e.response.status_code, message=f"Slack webhook error : {e.response.text}") from e
+        except Exception as e:
+            integration.last_error = str(e)
+            await self._commit_last_error(db)
+            raise APIException(status_code=500, message=f"Failed to send Slack event : {str(e)}") from e
+
+    async def _commit_last_error(self, db: AsyncSession) -> None:
+        try:
+            await self.repository.commit(db)
+        except Exception:
+            return
+
     async def trigger_slack_event(self, db: AsyncSession, payload: SlackEventPayload, current_user: Optional[User]) -> dict:
         org_id = await self.repository.resolve_org_id(db, current_user)
         integration = await self.repository.get_connected_by_provider(db, org_id, "slack")
@@ -307,37 +358,38 @@ class IntegrationService:
         if not integration.webhook_url:
             raise APIException(status_code=400, message="Slack webhook URL is missing.")
 
-        enabled_events = []
-        if integration.enabled_events:
-            try:
-                enabled_events = json.loads(integration.enabled_events)
-            except Exception:
-                enabled_events = []
+        enabled_events = self._enabled_events(integration)
         if enabled_events and payload.event_name not in enabled_events:
             raise APIException(status_code=400, message=f"Slack event '{payload.event_name}' is disabled.")
 
-        text = f" *CRM Event*\n\nEvent : {payload.event_name}\n"
-        if payload.data:
-            for key, value in payload.data.items():
-                text += f"\n• {key} : {value}"
-        slack_payload = {"text": text}
+        await self._post_to_slack(db, integration, self._build_slack_text(payload.event_name, payload.data))
+        return {"message": f"Slack event '{payload.event_name}' sent successfully.", "status": "success"}
 
+    async def notify_slack_event(
+        self,
+        db: AsyncSession,
+        *,
+        event_name: str,
+        data: dict | None,
+        org_id: str,
+    ) -> None:
+        """Best-effort automatic Slack notification.
+
+        Fired after a CRM operation commits successfully. Never raises: a Slack
+        failure must not roll back a successfully completed CRM operation.
+        Respects the stored enabled_events and silently skips when Slack is not
+        connected, the webhook is missing, or the event is disabled.
+        """
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                response = await client.post(integration.webhook_url, json=slack_payload, headers={"Content-Type": "application/json"})
-            response.raise_for_status()
-            integration.last_synced = datetime.utcnow()
-            integration.last_error = None
-            await self.repository.commit(db)
-            return {"message": f"Slack event '{payload.event_name}' sent successfully.", "status": "success"}
-        except httpx.HTTPStatusError as e:
-            integration.last_error = f"Slack returned {e.response.status_code}: {e.response.text}"
-            await self.repository.commit(db)
-            raise APIException(status_code=e.response.status_code, message=f"Slack webhook error : {e.response.text}") from e
+            integration = await self.repository.get_connected_by_provider(db, org_id, "slack")
+            if integration is None or not integration.webhook_url:
+                return
+            enabled_events = self._enabled_events(integration)
+            if enabled_events and event_name not in enabled_events:
+                return
+            await self._post_to_slack(db, integration, self._build_slack_text(event_name, data))
         except Exception as e:
-            integration.last_error = str(e)
-            await self.repository.commit(db)
-            raise APIException(status_code=500, message=f"Failed to send Slack event : {str(e)}") from e
+            logger.warning("Slack auto-notification for event '%s' (org %s) failed: %s", event_name, org_id, e)
 
     async def disconnect_slack(self, db: AsyncSession, current_user: Optional[User]) -> dict:
         org_id = await self.repository.resolve_org_id(db, current_user)
@@ -345,6 +397,12 @@ class IntegrationService:
         if integration is None:
             raise APIException(status_code=404, message="Slack integration not found.")
         try:
+            await self.notify_slack_event(
+                db,
+                event_name="integration.disconnected",
+                data={"provider": "slack", "organization_id": org_id},
+                org_id=org_id,
+            )
             integration.is_connected = False
             integration.status = "disconnected"
             integration.webhook_url = None

@@ -7,6 +7,7 @@ from app.db.session import get_db
 from app.models import Invoice
 from app.api.v1.deps import get_valid_org_id
 from app.schemas.crm_schemas import InvoiceResponse, InvoiceBase, MessageResponse, BulkDeleteRequest, BulkActionResponse
+from app.services.integration_service import integration_service
 
 router = APIRouter()
 
@@ -201,6 +202,18 @@ async def mark_invoice_paid(invoice_id: str, payment_method: str = Query("Bank T
     try:
         inv.status = "Paid"
         await db.commit()
+        await integration_service.notify_slack_event(
+            db,
+            event_name="invoice.paid",
+            data={
+                "id": inv.id,
+                "invoice_number": inv.invoice_number,
+                "amount": inv.amount,
+                "status": inv.status,
+                "payment_method": payment_method,
+            },
+            org_id=inv.organization_id,
+        )
         return {"message": f"Invoice {invoice_id} marked as Paid via {payment_method}", "status": "success"}
     except Exception as e:
         await db.rollback()

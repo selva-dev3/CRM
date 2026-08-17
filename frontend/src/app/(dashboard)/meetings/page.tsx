@@ -125,7 +125,7 @@ export default function MeetingsPage() {
       title: title.trim(),
       start_time: startTime || new Date().toISOString(),
       end_time: endTime || new Date(Date.now() + 3600000).toISOString(),
-      attendees,
+      attendee_emails: attendees,
       meeting_link: meetingLink.trim() || undefined,
     };
 

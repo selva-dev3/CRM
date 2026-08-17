@@ -798,7 +798,7 @@ export default function UsersPage() {
                   id="role"
                   value={userRole}
                   onChange={(e) => setUserRole(e.target.value)}
-                  className="flex h-10 w-full rounded-input border border-[#E5E7EB] bg-white px-3 py-2 text-input text-[#111827] focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 shadow-saas-sm cursor-pointer"
+                  className="flex h-10 w-full rounded-input border border-[#E5E7EB] bg-white px-3 py-2 text-field focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 shadow-saas-sm cursor-pointer"
                 >
                   <option value="Representative">Representative / Member</option>
                   <option value="Manager">Manager</option>
@@ -811,7 +811,7 @@ export default function UsersPage() {
                 <Label htmlFor="invite-org">Organization <span className="text-[#DC2626]">*</span></Label>
                 <div
                   onClick={() => setIsInviteOrgOpen(!isInviteOrgOpen)}
-                  className="mt-1 flex items-center justify-between h-10 w-full rounded-input border border-[#E5E7EB] bg-white px-3 py-2 text-input text-[#111827] focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 shadow-saas-sm cursor-pointer"
+                  className="mt-1 flex items-center justify-between h-10 w-full rounded-input border border-[#E5E7EB] bg-white px-3 py-2 text-field focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 shadow-saas-sm cursor-pointer"
                 >
                   <div className="flex items-center gap-2 truncate">
                     <Building className="w-4 h-4 text-[#2563EB] shrink-0" />
@@ -972,7 +972,7 @@ export default function UsersPage() {
                   id="create-role"
                   value={createRole}
                   onChange={(e) => setCreateRole(e.target.value)}
-                  className="flex h-10 w-full rounded-input border border-[#E5E7EB] bg-white px-3 py-2 text-input text-[#111827] focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 shadow-saas-sm cursor-pointer"
+                  className="flex h-10 w-full rounded-input border border-[#E5E7EB] bg-white px-3 py-2 text-field focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 shadow-saas-sm cursor-pointer"
                 >
                   <option value="Representative">Representative / Member</option>
                   <option value="Manager">Manager</option>
@@ -985,7 +985,7 @@ export default function UsersPage() {
                 <Label htmlFor="create-org">Organization <span className="text-[#DC2626]">*</span></Label>
                 <div
                   onClick={() => setIsCreateOrgOpen(!isCreateOrgOpen)}
-                  className="mt-1 flex items-center justify-between h-10 w-full rounded-input border border-[#E5E7EB] bg-white px-3 py-2 text-input text-[#111827] focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 shadow-saas-sm cursor-pointer"
+                  className="mt-1 flex items-center justify-between h-10 w-full rounded-input border border-[#E5E7EB] bg-white px-3 py-2 text-field focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 shadow-saas-sm cursor-pointer"
                 >
                   <div className="flex items-center gap-2 truncate">
                     <Building className="w-4 h-4 text-[#2563EB] shrink-0" />

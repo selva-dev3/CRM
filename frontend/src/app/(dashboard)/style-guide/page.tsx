@@ -174,9 +174,9 @@ export default function TypographyStyleGuidePage() {
             <Badge variant="secondary">.text-badge</Badge>
           </div>
           <div className="flex flex-col gap-2 max-w-md">
-            <span className="text-caption font-semibold uppercase tracking-wide">.text-input</span>
+            <span className="text-caption font-semibold uppercase tracking-wide">.text-field</span>
             <input
-              className="flex h-10 w-full rounded-input border border-[#E5E7EB] bg-white px-3 py-2 text-input placeholder:text-text-placeholder focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 transition duration-150 shadow-saas-sm"
+              className="flex h-10 w-full rounded-input border border-[#E5E7EB] bg-white px-3 py-2 text-field placeholder:text-text-placeholder focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 transition duration-150 shadow-saas-sm"
               placeholder="Placeholder text (2.54:1 — placeholder only)"
             />
           </div>

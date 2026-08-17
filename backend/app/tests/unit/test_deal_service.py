@@ -10,6 +10,7 @@ from app.models.deal import Deal
 from app.repositories.deal_repository import DealRepository
 from app.schemas.crm_schemas import DealCreate, DealUpdate
 from app.services.deal_service import DealService, deal_to_dict
+from app.services.integration_service import integration_service
 
 
 def _make_deal(**overrides) -> Deal:
@@ -76,6 +77,7 @@ async def test_create_deal_falls_back_to_first_user(monkeypatch):
     monkeypatch.setattr(
         organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
     )
+    monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())
 
     payload = DealCreate(title="Acme Corp Deal", amount=25000.0)
     result = await service.create_deal(db, payload, None)
@@ -84,6 +86,35 @@ async def test_create_deal_falls_back_to_first_user(monkeypatch):
     created = repo.create.await_args.kwargs["data"]
     assert created["assigned_to"] == "user-1"
     assert created["stage"] == "Qualification"
+
+
+@pytest.mark.asyncio
+async def test_create_deal_fires_deal_created_event(monkeypatch):
+    deal = _make_deal()
+    repo = DealRepository()
+    repo.create = AsyncMock(return_value=deal)
+    repo.user_exists = AsyncMock(return_value=False)
+    repo.first_user_id = AsyncMock(return_value="user-1")
+    repo.company_exists = AsyncMock(return_value=True)
+    repo.contact_exists = AsyncMock(return_value=False)
+    service = _service_with(repo)
+    notify = AsyncMock()
+    monkeypatch.setattr(integration_service, "notify_slack_event", notify)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.services.deal_service import organization_service
+
+    monkeypatch.setattr(
+        organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
+    )
+
+    await service.create_deal(db, DealCreate(title="Acme Corp Deal", amount=25000.0), None)
+
+    notify.assert_awaited_once()
+    kwargs = notify.await_args.kwargs
+    assert kwargs["event_name"] == "deal.created"
+    assert kwargs["org_id"] == "org-1"
+    assert kwargs["data"]["amount"] == 25000.0
 
 
 @pytest.mark.asyncio
@@ -103,11 +134,12 @@ async def test_update_deal_nulls_company_on_sentinel():
 
 
 @pytest.mark.asyncio
-async def test_mark_deal_won_sets_stage_and_probability():
+async def test_mark_deal_won_sets_stage_and_probability(monkeypatch):
     deal = _make_deal()
     repo = DealRepository()
     repo.get_by_id = AsyncMock(return_value=deal)
     service = _service_with(repo)
+    monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())
     db = AsyncMock(spec=AsyncSession)
 
     result = await service.mark_deal_won(db, "deal-1", 30000.0)
@@ -116,6 +148,45 @@ async def test_mark_deal_won_sets_stage_and_probability():
     assert deal.probability == 100.0
     assert deal.amount == 30000.0
     assert result["status"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_mark_deal_won_fires_deal_won_event(monkeypatch):
+    deal = _make_deal()
+    repo = DealRepository()
+    repo.get_by_id = AsyncMock(return_value=deal)
+    service = _service_with(repo)
+    notify = AsyncMock()
+    monkeypatch.setattr(integration_service, "notify_slack_event", notify)
+    db = AsyncMock(spec=AsyncSession)
+
+    await service.mark_deal_won(db, "deal-1", 30000.0)
+
+    notify.assert_awaited_once()
+    kwargs = notify.await_args.kwargs
+    assert kwargs["event_name"] == "deal.won"
+    assert kwargs["org_id"] == "org-1"
+    assert kwargs["data"]["amount"] == 30000.0
+    assert kwargs["data"]["stage"] == "Closed Won"
+
+
+@pytest.mark.asyncio
+async def test_mark_deal_lost_fires_deal_lost_event(monkeypatch):
+    deal = _make_deal()
+    repo = DealRepository()
+    repo.get_by_id = AsyncMock(return_value=deal)
+    service = _service_with(repo)
+    notify = AsyncMock()
+    monkeypatch.setattr(integration_service, "notify_slack_event", notify)
+    db = AsyncMock(spec=AsyncSession)
+
+    await service.mark_deal_lost(db, "deal-1", "Budget cut")
+
+    notify.assert_awaited_once()
+    kwargs = notify.await_args.kwargs
+    assert kwargs["event_name"] == "deal.lost"
+    assert kwargs["org_id"] == "org-1"
+    assert kwargs["data"]["reason"] == "Budget cut"
 
 
 @pytest.mark.asyncio

@@ -13,6 +13,7 @@ from app.models import User
 from app.models.deal import Deal
 from app.repositories.deal_repository import DealRepository
 from app.schemas.crm_schemas import DealCreate, DealUpdate
+from app.services.integration_service import integration_service
 from app.services.note_service import note_service
 from app.services.org_service import organization_service
 
@@ -108,6 +109,19 @@ class DealService:
         )
         await self._commit(db, "Failed to create deal")
         await db.refresh(deal)
+        await integration_service.notify_slack_event(
+            db,
+            event_name="deal.created",
+            data={
+                "id": deal.id,
+                "title": deal.title,
+                "amount": deal.amount,
+                "stage": deal.stage,
+                "probability": deal.probability,
+                "assigned_to": deal.assigned_to,
+            },
+            org_id=deal.organization_id,
+        )
         return deal_to_dict(deal)
 
     async def get_deal_stages(self, db: AsyncSession) -> list[dict]:
@@ -209,6 +223,12 @@ class DealService:
         if final_amount:
             d.amount = final_amount
         await self._commit(db, "Failed to mark deal as won")
+        await integration_service.notify_slack_event(
+            db,
+            event_name="deal.won",
+            data={"id": d.id, "title": d.title, "amount": d.amount, "stage": d.stage},
+            org_id=d.organization_id,
+        )
         return {"message": f"Deal {deal_id} marked as Closed Won!", "status": "success"}
 
     async def mark_deal_lost(self, db: AsyncSession, deal_id: str, reason: str) -> dict:
@@ -216,6 +236,12 @@ class DealService:
         d.stage = "Closed Lost"
         d.probability = 0.0
         await self._commit(db, "Failed to mark deal as lost")
+        await integration_service.notify_slack_event(
+            db,
+            event_name="deal.lost",
+            data={"id": d.id, "title": d.title, "amount": d.amount, "reason": reason},
+            org_id=d.organization_id,
+        )
         return {"message": f"Deal {deal_id} marked as Lost due to: {reason}", "status": "success"}
 
     async def assign_deal(self, db: AsyncSession, deal_id: str, user_id: str) -> dict:

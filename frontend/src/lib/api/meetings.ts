@@ -15,7 +15,7 @@ export interface MeetingCreatePayload {
   title: string;
   start_time: string;
   end_time: string;
-  attendees?: string[];
+  attendee_emails: string[];
   meeting_link?: string;
 }
 
