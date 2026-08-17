@@ -122,7 +122,6 @@ export default function UsersPage() {
   const [createEmail, setCreateEmail] = useState('');
   const [createPassword, setCreatePassword] = useState('');
   const [createRole, setCreateRole] = useState('');
-  const [createOrgId, setCreateOrgId] = useState('');
 
   // Role dropdowns fall back to the first available role until the user
   // explicitly picks one; never submit a stale/unknown role id.
@@ -130,9 +129,7 @@ export default function UsersPage() {
   const effectiveUserRole = userRole || defaultRoleId;
   const effectiveCreateRole = createRole || defaultRoleId;
 
-  // Searchable Organization Dropdown States
-  const [createOrgSearch, setCreateOrgSearch] = useState('');
-  const [isCreateOrgOpen, setIsCreateOrgOpen] = useState(false);
+  // Searchable Organization Dropdown States (invite modal only)
   const [inviteOrgSearch, setInviteOrgSearch] = useState('');
   const [isInviteOrgOpen, setIsInviteOrgOpen] = useState(false);
 
@@ -144,10 +141,7 @@ export default function UsersPage() {
   }, [organizations]);
 
   useEffect(() => {
-    if (organizations.length > 0) {
-      if (!createOrgId) setCreateOrgId(organizations[0].id);
-      if (!userOrgId) setUserOrgId(organizations[0].id);
-    }
+    if (organizations.length > 0 && !userOrgId) setUserOrgId(organizations[0].id);
   }, [organizations]);
 
   const resetForm = () => {
@@ -165,9 +159,6 @@ export default function UsersPage() {
     setCreateEmail('');
     setCreatePassword('');
     setCreateRole('');
-    setCreateOrgId(organizations[0]?.id || '');
-    setCreateOrgSearch('');
-    setIsCreateOrgOpen(false);
     setErrorMessage(null);
   };
 
@@ -197,7 +188,6 @@ export default function UsersPage() {
     setCreateEmail(`user${randomSuffix}@crmcompany.com`);
     setCreatePassword('Password123!');
     setCreateRole('');
-    setCreateOrgId(organizations[0]?.id || '');
   };
 
   const handleCreateUserSubmit = async (e: React.FormEvent) => {
@@ -217,7 +207,6 @@ export default function UsersPage() {
         email: createEmail.trim(),
         password: createPassword || 'Password123!',
         role: effectiveCreateRole,
-        organization_id: createOrgId || organizations[0]?.id || 'org-1',
       });
 
       await queryClient.invalidateQueries({ queryKey: ['users'] });
@@ -1028,66 +1017,6 @@ export default function UsersPage() {
                     ))
                   )}
                 </select>
-              </div>
-
-              {/* Organization Selection with Search */}
-              <div className="relative">
-                <Label htmlFor="create-org">Organization <span className="text-[#DC2626]">*</span></Label>
-                <div
-                  onClick={() => setIsCreateOrgOpen(!isCreateOrgOpen)}
-                  className="mt-1 flex items-center justify-between h-10 w-full rounded-input border border-[#E5E7EB] bg-white px-3 py-2 text-field focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 shadow-saas-sm cursor-pointer"
-                >
-                  <div className="flex items-center gap-2 truncate">
-                    <Building className="w-4 h-4 text-[#2563EB] shrink-0" />
-                    <span className="font-medium text-[#111827]">
-                      {organizations.find((o) => o.id === createOrgId)?.name || 'Select Organization...'}
-                    </span>
-                  </div>
-                  <ChevronDown className="w-4 h-4 text-[#9CA3AF]" />
-                </div>
-
-                {isCreateOrgOpen && (
-                  <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-[#E5E7EB] rounded-btn shadow-saas-lg p-2 space-y-2 max-h-56 overflow-y-auto animate-in fade-in-50">
-                    <div className="relative">
-                      <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-[#9CA3AF]" />
-                      <Input
-                        type="text"
-                        placeholder="Search organization by name..."
-                        value={createOrgSearch}
-                        onChange={(e) => setCreateOrgSearch(e.target.value)}
-                        className="pl-8 text-caption h-8"
-                        autoFocus
-                      />
-                    </div>
-                    <div className="space-y-0.5 max-h-36 overflow-y-auto">
-                      {organizations
-                        .filter((org) => org.name.toLowerCase().includes(createOrgSearch.toLowerCase()))
-                        .map((org) => (
-                          <div
-                            key={org.id}
-                            onClick={() => {
-                              setCreateOrgId(org.id);
-                              setIsCreateOrgOpen(false);
-                            }}
-                            className={`flex items-center justify-between p-2 rounded-btn text-body font-medium cursor-pointer hover:bg-[#F3F4F6] ${
-                              createOrgId === org.id ? 'bg-[#2563EB]/10 text-[#2563EB]' : 'text-[#374151]'
-                            }`}
-                          >
-                            <div className="flex items-center gap-2 truncate">
-                              <Building className="w-4 h-4 text-[#6B7280]" />
-                              <span>{org.name}</span>
-                            </div>
-                            {createOrgId === org.id && <CheckCircle2 className="w-4 h-4 text-[#2563EB]" />}
-                          </div>
-                        ))}
-                      {organizations.length === 0 && (
-                        <div className="p-3 text-caption text-center text-[#6B7280]">
-                          No organizations found
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
               </div>
 
               {/* Modal Footer */}

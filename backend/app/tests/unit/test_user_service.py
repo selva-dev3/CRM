@@ -39,6 +39,17 @@ def _make_invitation(**overrides) -> UserInvitation:
     return UserInvitation(**defaults)
 
 
+def _make_org(**overrides):
+    defaults = {
+        "id": "org-1",
+        "name": "Acme Inc",
+        "status": "active",
+        "is_active": True,
+    }
+    defaults.update(overrides)
+    return type("Org", (), defaults)()
+
+
 def _service_with(repo: UserRepository) -> UserService:
     return UserService(repository=repo)
 
@@ -100,16 +111,123 @@ async def test_create_user_hashes_password(monkeypatch):
 
     role = type("R", (), {"id": "role-1", "name": "Sales Executive", "organization_id": None})()
     service.role_repository.get_role_by_id_or_name = AsyncMock(return_value=role)
+    service.organization_repository.get_by_id = AsyncMock(return_value=_make_org())
 
-    payload = UserCreate(
-        name="Alex Smith", email="alex@crm.com", role="role-1", organization_id="org-1", password="secret"
-    )
-    result = await service.create_user(db, payload)
+    current_user = _make_user(id="current-user", organization_id="org-1")
+    payload = UserCreate(name="Alex Smith", email="alex@crm.com", role="role-1", password="secret")
+    result = await service.create_user(db, payload, current_user=current_user)
 
     assert result["email"] == "alex@crm.com"
     assert repo.create.await_args.kwargs["data"]["role"] == "role-1"
     assert repo.create.await_args.kwargs["data"]["hashed_password"] == "hashed-secret"
+    assert repo.create.await_args.kwargs["data"]["organization_id"] == "org-1"
     db.add.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_create_user_derives_org_from_authenticated_user():
+    repo = UserRepository()
+    repo.create = AsyncMock(return_value=_make_user())
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    role = type("R", (), {"id": "role-1", "name": "Sales Executive", "organization_id": None})()
+    service.role_repository.get_role_by_id_or_name = AsyncMock(return_value=role)
+    service.organization_repository.get_by_id = AsyncMock(return_value=_make_org(id="org-current"))
+
+    current_user = _make_user(id="current-user", organization_id="org-current")
+    payload = UserCreate(name="Alex Smith", email="alex@crm.com", role="role-1", password="secret")
+
+    await service.create_user(db, payload, current_user=current_user)
+
+    assert service.organization_repository.get_by_id.await_args.args[1] == "org-current"
+    assert repo.create.await_args.kwargs["data"]["organization_id"] == "org-current"
+
+
+@pytest.mark.asyncio
+async def test_create_user_rejects_role_from_another_organization():
+    repo = UserRepository()
+    repo.create = AsyncMock(return_value=_make_user())
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    role = type("R", (), {"id": "role-1", "name": "Sales Executive", "organization_id": "org-other"})()
+    service.role_repository.get_role_by_id_or_name = AsyncMock(return_value=role)
+    service.organization_repository.get_by_id = AsyncMock(return_value=_make_org(id="org-1"))
+
+    current_user = _make_user(id="current-user", organization_id="org-1")
+    payload = UserCreate(name="Alex Smith", email="alex@crm.com", role="role-1", password="secret")
+
+    with pytest.raises(APIException) as exc_info:
+        await service.create_user(db, payload, current_user=current_user)
+    assert exc_info.value.status_code == 400
+    repo.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_create_user_allows_system_role_with_no_org():
+    repo = UserRepository()
+    repo.create = AsyncMock(return_value=_make_user())
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    role = type("R", (), {"id": "role-1", "name": "Admin", "organization_id": None})()
+    service.role_repository.get_role_by_id_or_name = AsyncMock(return_value=role)
+    service.organization_repository.get_by_id = AsyncMock(return_value=_make_org(id="org-1"))
+
+    current_user = _make_user(id="current-user", organization_id="org-1")
+    payload = UserCreate(name="Alex Smith", email="alex@crm.com", role="role-1", password="secret")
+
+    await service.create_user(db, payload, current_user=current_user)
+
+    assert repo.create.await_args.kwargs["data"]["organization_id"] == "org-1"
+
+
+@pytest.mark.asyncio
+async def test_create_user_missing_current_org_returns_403():
+    repo = UserRepository()
+    repo.create = AsyncMock(return_value=_make_user())
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    current_user = _make_user(id="current-user", organization_id=None)
+    payload = UserCreate(name="Alex Smith", email="alex@crm.com", role="role-1", password="secret")
+
+    with pytest.raises(APIException) as exc_info:
+        await service.create_user(db, payload, current_user=current_user)
+    assert exc_info.value.status_code == 403
+    repo.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_create_user_current_org_not_found_returns_404():
+    repo = UserRepository()
+    repo.create = AsyncMock(return_value=_make_user())
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    service.organization_repository.get_by_id = AsyncMock(return_value=None)
+
+    current_user = _make_user(id="current-user", organization_id="org-missing")
+    payload = UserCreate(name="Alex Smith", email="alex@crm.com", role="role-1", password="secret")
+
+    with pytest.raises(APIException) as exc_info:
+        await service.create_user(db, payload, current_user=current_user)
+    assert exc_info.value.status_code == 404
+    repo.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_create_user_inactive_org_denied():
+    repo = UserRepository()
+    repo.create = AsyncMock(return_value=_make_user())
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    service.organization_repository.get_by_id = AsyncMock(return_value=_make_org(status="inactive"))
+
+    current_user = _make_user(id="current-user", organization_id="org-1")
+    payload = UserCreate(name="Alex Smith", email="alex@crm.com", role="role-1", password="secret")
+
+    with pytest.raises(APIException) as exc_info:
+        await service.create_user(db, payload, current_user=current_user)
+    assert exc_info.value.status_code == 403
+    repo.create.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -119,13 +237,13 @@ async def test_create_user_rejects_unknown_role():
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
     service.role_repository.get_role_by_id_or_name = AsyncMock(return_value=None)
+    service.organization_repository.get_by_id = AsyncMock(return_value=_make_org())
 
-    payload = UserCreate(
-        name="Alex Smith", email="alex@crm.com", role="not-a-real-role", organization_id="org-1", password="secret"
-    )
+    current_user = _make_user(id="current-user", organization_id="org-1")
+    payload = UserCreate(name="Alex Smith", email="alex@crm.com", role="not-a-real-role", password="secret")
 
     with pytest.raises(APIException) as exc_info:
-        await service.create_user(db, payload)
+        await service.create_user(db, payload, current_user=current_user)
     assert exc_info.value.status_code == 400
     repo.create.assert_not_awaited()
 

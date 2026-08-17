@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.core.errors import APIException, NotFoundError
 from app.core.security import generate_random_code, get_password_hash
 from app.models import User, UserRole
+from app.repositories.organization_repository import OrganizationRepository
 from app.repositories.role_repository import RoleRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.crm_schemas import (
@@ -40,6 +41,7 @@ class UserService:
     def __init__(self, repository: Optional[UserRepository] = None) -> None:
         self.repository = repository or UserRepository()
         self.role_repository = RoleRepository()
+        self.organization_repository = OrganizationRepository()
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
         try:
@@ -86,17 +88,37 @@ class UserService:
             for u in users
         ]
 
-    async def create_user(self, db: AsyncSession, payload: UserCreate) -> dict:
+    async def create_user(self, db: AsyncSession, payload: UserCreate, *, current_user: User) -> dict:
+        # The organization is derived exclusively from the authenticated user —
+        # never from a client-supplied organization_id.
+        org_id = getattr(current_user, "organization_id", None)
+        if not org_id:
+            raise APIException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                message="Authenticated user has no current organization",
+            )
+        org = await self.organization_repository.get_by_id(db, org_id)
+        if not org:
+            raise APIException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                message="Current organization not found",
+            )
+        if getattr(org, "status", "active") != "active" or not getattr(org, "is_active", True):
+            raise APIException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                message="Organization is inactive or disabled.",
+            )
+
         role = await self.role_repository.get_role_by_id_or_name(db, payload.role)
         if not role:
             raise APIException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 message=f"Invalid role: '{payload.role}'",
             )
-        if role.organization_id and role.organization_id != payload.organization_id:
+        if role.organization_id and role.organization_id != org_id:
             raise APIException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                message=f"Role '{role.name}' does not belong to the selected organization",
+                message=f"Role '{role.name}' does not belong to the current organization",
             )
         user = await self.repository.create(
             db,
@@ -105,7 +127,7 @@ class UserService:
                 "email": payload.email,
                 "hashed_password": get_password_hash(payload.password),
                 "role": role.id,
-                "organization_id": payload.organization_id,
+                "organization_id": org_id,
             },
         )
         await db.flush()

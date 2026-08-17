@@ -3,8 +3,9 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import require_permission
+from app.api.v1.deps import get_current_user, require_permission
 from app.db.session import get_db
+from app.models import User
 from app.schemas.crm_schemas import (
     AcceptInviteRequest,
     BulkActionResponse,
@@ -40,10 +41,17 @@ async def list_users(
     response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create new user",
-    dependencies=[Depends(require_permission("users:create"))],
+    dependencies=[
+        Depends(require_permission("users:create")),
+        Depends(require_permission("users:roles")),
+    ],
 )
-async def create_user(payload: UserCreate, db: AsyncSession = Depends(get_db)):
-    return await user_service.create_user(db, payload)
+async def create_user(
+    payload: UserCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await user_service.create_user(db, payload, current_user=current_user)
 
 
 @router.get("/me/profile", response_model=UserResponse, summary="Get current logged in user profile")
