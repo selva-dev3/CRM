@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from typing import List, Optional
 
 from sqlalchemy import select
@@ -52,6 +53,15 @@ class UserRepository:
 
     async def list_by_ids(self, db: AsyncSession, ids: List[str]) -> List[User]:
         result = await db.execute(select(User).where(User.id.in_(ids)))
+        return list(result.scalars().all())
+
+    async def list_active_ids_by_org(self, db: AsyncSession, org_id: str) -> Sequence[str]:
+        result = await db.execute(
+            select(User.id).where(
+                User.organization_id == org_id,
+                User.is_active == True,  # noqa: E712
+            )
+        )
         return list(result.scalars().all())
 
     async def role_name_map(self, db: AsyncSession, role_ids: set) -> dict:

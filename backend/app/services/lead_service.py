@@ -16,7 +16,7 @@ from app.schemas.crm_schemas import (
     LeadUpdate,
     TaskCreate,
 )
-from app.services.integration_service import integration_service
+from app.services.notification_service import notification_service
 from app.services.s3_service import s3_service
 
 LEAD_SOURCES = ["Website", "LinkedIn", "Referral", "Cold Call", "Event", "Partner"]
@@ -133,9 +133,14 @@ class LeadService:
         lead = await self.repository.create(db, data=data)
         await self._commit(db, "Failed to create lead")
         await db.refresh(lead)
-        await integration_service.notify_slack_event(
+        await notification_service.notify(
             db,
             event_name="lead.created",
+            organization_id=lead.organization_id,
+            actor_user_id=current_user.id if current_user else None,
+            entity_type="lead",
+            entity_id=lead.id,
+            assigned_to=lead.assigned_to,
             data={
                 "id": lead.id,
                 "title": lead.title,
@@ -146,7 +151,6 @@ class LeadService:
                 "source": lead.source,
                 "owner": lead.assigned_to,
             },
-            org_id=lead.organization_id,
         )
         return lead_to_dict(lead)
 
@@ -157,11 +161,14 @@ class LeadService:
         for field, value in payload.model_dump(exclude_unset=True).items():
             setattr(lead, field, value)
         await self._commit(db, "Failed to update lead")
-        await integration_service.notify_slack_event(
+        await notification_service.notify(
             db,
             event_name="lead.updated",
+            organization_id=lead.organization_id,
+            entity_type="lead",
+            entity_id=lead.id,
+            assigned_to=lead.assigned_to,
             data={"id": lead.id, "title": lead.title, "company": lead.company, "status": lead.status},
-            org_id=lead.organization_id,
         )
         return lead_to_dict(lead)
 
@@ -223,11 +230,14 @@ class LeadService:
             raise NotFoundError(message=f"Lead '{lead_id}' not found")
         lead.assigned_to = user_id
         await self._commit(db, "Failed to assign lead")
-        await integration_service.notify_slack_event(
+        await notification_service.notify(
             db,
             event_name="lead.assigned",
+            organization_id=lead.organization_id,
+            entity_type="lead",
+            entity_id=lead.id,
+            assigned_to=lead.assigned_to,
             data={"id": lead.id, "title": lead.title, "assigned_to": lead.assigned_to},
-            org_id=lead.organization_id,
         )
         return {"message": f"Lead {lead_id} assigned to user {user_id}", "status": "success"}
 
@@ -428,9 +438,13 @@ class LeadService:
         )
         await self._commit(db, "Failed to create task")
         await db.refresh(task)
-        await integration_service.notify_slack_event(
+        await notification_service.notify(
             db,
             event_name="task.created",
+            organization_id=lead.organization_id,
+            entity_type="task",
+            entity_id=task.id,
+            assigned_to=task.assigned_to,
             data={
                 "id": task.id,
                 "title": task.title,
@@ -439,7 +453,6 @@ class LeadService:
                 "due_date": str(task.due_date) if task.due_date else None,
                 "assigned_to": task.assigned_to,
             },
-            org_id=lead.organization_id,
         )
         return {
             "id": task.id,

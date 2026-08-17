@@ -7,6 +7,13 @@ export interface NotificationItem {
   message: string;
   is_read: boolean;
   created_at: string;
+  organization_id?: string | null;
+  event_name?: string | null;
+  entity_type?: string | null;
+  entity_id?: string | null;
+  payload?: Record<string, unknown> | null;
+  read_at?: string | null;
+  updated_at?: string | null;
 }
 
 export interface NotificationPreferences {

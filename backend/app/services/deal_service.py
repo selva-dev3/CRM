@@ -13,8 +13,8 @@ from app.models import User
 from app.models.deal import Deal
 from app.repositories.deal_repository import DealRepository
 from app.schemas.crm_schemas import DealCreate, DealUpdate
-from app.services.integration_service import integration_service
 from app.services.note_service import note_service
+from app.services.notification_service import notification_service
 from app.services.org_service import organization_service
 
 logger = get_logger(__name__)
@@ -109,9 +109,14 @@ class DealService:
         )
         await self._commit(db, "Failed to create deal")
         await db.refresh(deal)
-        await integration_service.notify_slack_event(
+        await notification_service.notify(
             db,
             event_name="deal.created",
+            organization_id=deal.organization_id,
+            actor_user_id=current_user.id if current_user else None,
+            entity_type="deal",
+            entity_id=deal.id,
+            assigned_to=deal.assigned_to,
             data={
                 "id": deal.id,
                 "title": deal.title,
@@ -120,7 +125,6 @@ class DealService:
                 "probability": deal.probability,
                 "assigned_to": deal.assigned_to,
             },
-            org_id=deal.organization_id,
         )
         return deal_to_dict(deal)
 
@@ -223,11 +227,14 @@ class DealService:
         if final_amount:
             d.amount = final_amount
         await self._commit(db, "Failed to mark deal as won")
-        await integration_service.notify_slack_event(
+        await notification_service.notify(
             db,
             event_name="deal.won",
+            organization_id=d.organization_id,
+            entity_type="deal",
+            entity_id=d.id,
+            assigned_to=d.assigned_to,
             data={"id": d.id, "title": d.title, "amount": d.amount, "stage": d.stage},
-            org_id=d.organization_id,
         )
         return {"message": f"Deal {deal_id} marked as Closed Won!", "status": "success"}
 
@@ -236,11 +243,14 @@ class DealService:
         d.stage = "Closed Lost"
         d.probability = 0.0
         await self._commit(db, "Failed to mark deal as lost")
-        await integration_service.notify_slack_event(
+        await notification_service.notify(
             db,
             event_name="deal.lost",
+            organization_id=d.organization_id,
+            entity_type="deal",
+            entity_id=d.id,
+            assigned_to=d.assigned_to,
             data={"id": d.id, "title": d.title, "amount": d.amount, "reason": reason},
-            org_id=d.organization_id,
         )
         return {"message": f"Deal {deal_id} marked as Lost due to: {reason}", "status": "success"}
 
