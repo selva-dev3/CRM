@@ -3,7 +3,7 @@ from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.api.v1.deps import get_current_user
+from app.api.v1.deps import get_current_user, require_permission
 from app.models import User
 from app.schemas.organization_invitation_schemas import (
     OrganizationInviteRequest,
@@ -29,7 +29,8 @@ router = APIRouter()
 @router.get(
     "",
     response_model=InvitationListResponse,
-    summary="List Organization Invitations"
+    summary="List Organization Invitations",
+    dependencies=[Depends(require_permission("invitations:read"))],
 )
 async def list_invitations(
     search: Optional[str] = Query(None, description="Search by email or full name"),
@@ -55,7 +56,8 @@ async def list_invitations(
     "",
     response_model=InviteUserResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Invite Additional User to Organization"
+    summary="Invite Additional User to Organization",
+    dependencies=[Depends(require_permission("invitations:create"))],
 )
 async def invite_user(
     payload: OrganizationInviteRequest,
@@ -103,7 +105,8 @@ async def accept_invitation(
 @router.post(
     "/{id}/resend",
     response_model=InvitationResponse,
-    summary="Resend Organization Invitation"
+    summary="Resend Organization Invitation",
+    dependencies=[Depends(require_permission("invitations:resend"))],
 )
 async def resend_invitation(
     id: str,
@@ -116,7 +119,8 @@ async def resend_invitation(
 # 6. POST /api/v1/organizations/invitations/{id}/cancel - Cancel invitation (Protected)
 @router.post(
     "/{id}/cancel",
-    summary="Cancel Organization Invitation"
+    summary="Cancel Organization Invitation",
+    dependencies=[Depends(require_permission("invitations:revoke"))],
 )
 async def cancel_invitation(
     id: str,

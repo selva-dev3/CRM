@@ -3,7 +3,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import get_current_user
+from app.api.v1.deps import get_current_user, require_permission
 from app.db.session import get_db
 from app.models import User
 from app.schemas.crm_schemas import (
@@ -22,7 +22,7 @@ from app.services.deal_service import deal_service
 router = APIRouter()
 
 
-@router.get("", response_model=List[DealResponse], summary="List all deals with pagination & filters")
+@router.get("", response_model=List[DealResponse], summary="List all deals with pagination & filters", dependencies=[Depends(require_permission("deals:read"))])
 async def list_deals(
     page: int = 1,
     limit: int = 20,
@@ -38,6 +38,7 @@ async def list_deals(
     response_model=DealResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create new deal",
+    dependencies=[Depends(require_permission("deals:create"))],
 )
 async def create_deal(
     payload: DealCreate,
@@ -47,93 +48,93 @@ async def create_deal(
     return await deal_service.create_deal(db, payload, current_user)
 
 
-@router.get("/stages", summary="Get deal pipeline stages configuration")
+@router.get("/stages", summary="Get deal pipeline stages configuration", dependencies=[Depends(require_permission("deals:read"))])
 async def get_deal_stages(db: AsyncSession = Depends(get_db)):
     return await deal_service.get_deal_stages(db)
 
 
-@router.post("/stages", response_model=MessageResponse, summary="Create new pipeline stage")
+@router.post("/stages", response_model=MessageResponse, summary="Create new pipeline stage", dependencies=[Depends(require_permission("deals:pipeline"))])
 async def create_deal_stage(
     name: str, probability: float, db: AsyncSession = Depends(get_db)
 ):
     return await deal_service.create_deal_stage(db, name=name, probability=probability)
 
 
-@router.get("/kanban", summary="Get aggregated Kanban board layout by stage")
+@router.get("/kanban", summary="Get aggregated Kanban board layout by stage", dependencies=[Depends(require_permission("deals:read"))])
 async def get_kanban_board(db: AsyncSession = Depends(get_db)):
     return await deal_service.get_kanban_board(db)
 
 
-@router.get("/win-loss-analytics", summary="Get win/loss ratio & reason breakdown")
+@router.get("/win-loss-analytics", summary="Get win/loss ratio & reason breakdown", dependencies=[Depends(require_permission("deals:read"))])
 async def get_win_loss_analytics(db: AsyncSession = Depends(get_db)):
     return await deal_service.get_win_loss_analytics()
 
 
-@router.get("/export/csv", summary="Export deals list as CSV")
+@router.get("/export/csv", summary="Export deals list as CSV", dependencies=[Depends(require_permission("deals:export"))])
 async def export_deals_csv(db: AsyncSession = Depends(get_db)):
     return await deal_service.export_deals_csv()
 
 
-@router.post("/import/csv", response_model=MessageResponse, summary="Import deals from CSV")
+@router.post("/import/csv", response_model=MessageResponse, summary="Import deals from CSV", dependencies=[Depends(require_permission("deals:import"))])
 async def import_deals_csv(db: AsyncSession = Depends(get_db)):
     return await deal_service.import_deals_csv()
 
 
-@router.post("/bulk-delete", response_model=BulkActionResponse, summary="Bulk delete deals")
+@router.post("/bulk-delete", response_model=BulkActionResponse, summary="Bulk delete deals", dependencies=[Depends(require_permission("deals:bulk_delete"))])
 async def bulk_delete_deals(payload: BulkDeleteRequest, db: AsyncSession = Depends(get_db)):
     return await deal_service.bulk_delete(db, payload.ids)
 
 
-@router.post("/bulk-update-stage", response_model=BulkActionResponse, summary="Bulk update deal stage")
+@router.post("/bulk-update-stage", response_model=BulkActionResponse, summary="Bulk update deal stage", dependencies=[Depends(require_permission("deals:update"))])
 async def bulk_update_deal_stage(
     payload: BulkDeleteRequest, stage: str, db: AsyncSession = Depends(get_db)
 ):
     return await deal_service.bulk_update_stage(db, payload.ids, stage)
 
 
-@router.get("/{deal_id}", response_model=DealResponse, summary="Get deal details by ID")
+@router.get("/{deal_id}", response_model=DealResponse, summary="Get deal details by ID", dependencies=[Depends(require_permission("deals:read"))])
 async def get_deal(deal_id: str, db: AsyncSession = Depends(get_db)):
     return await deal_service.get_deal(db, deal_id)
 
 
-@router.put("/{deal_id}", response_model=DealResponse, summary="Update deal details by ID")
+@router.put("/{deal_id}", response_model=DealResponse, summary="Update deal details by ID", dependencies=[Depends(require_permission("deals:update"))])
 async def update_deal(deal_id: str, payload: DealUpdate, db: AsyncSession = Depends(get_db)):
     return await deal_service.update_deal(db, deal_id, payload)
 
 
-@router.delete("/{deal_id}", response_model=MessageResponse, summary="Delete deal by ID")
+@router.delete("/{deal_id}", response_model=MessageResponse, summary="Delete deal by ID", dependencies=[Depends(require_permission("deals:delete"))])
 async def delete_deal(deal_id: str, db: AsyncSession = Depends(get_db)):
     return await deal_service.delete_deal(db, deal_id)
 
 
-@router.post("/{deal_id}/stage", response_model=MessageResponse, summary="Update deal pipeline stage (drag and drop)")
+@router.post("/{deal_id}/stage", response_model=MessageResponse, summary="Update deal pipeline stage (drag and drop)", dependencies=[Depends(require_permission("deals:update"))])
 async def update_deal_stage(deal_id: str, stage: str, db: AsyncSession = Depends(get_db)):
     return await deal_service.update_deal_stage(db, deal_id, stage)
 
 
-@router.post("/{deal_id}/win", response_model=MessageResponse, summary="Mark deal as Closed Won")
+@router.post("/{deal_id}/win", response_model=MessageResponse, summary="Mark deal as Closed Won", dependencies=[Depends(require_permission("deals:update"))])
 async def mark_deal_won(
     deal_id: str, final_amount: Optional[float] = None, db: AsyncSession = Depends(get_db)
 ):
     return await deal_service.mark_deal_won(db, deal_id, final_amount)
 
 
-@router.post("/{deal_id}/lose", response_model=MessageResponse, summary="Mark deal as Closed Lost")
+@router.post("/{deal_id}/lose", response_model=MessageResponse, summary="Mark deal as Closed Lost", dependencies=[Depends(require_permission("deals:update"))])
 async def mark_deal_lost(deal_id: str, reason: str, db: AsyncSession = Depends(get_db)):
     return await deal_service.mark_deal_lost(db, deal_id, reason)
 
 
-@router.post("/{deal_id}/assign", response_model=MessageResponse, summary="Assign deal to sales rep")
+@router.post("/{deal_id}/assign", response_model=MessageResponse, summary="Assign deal to sales rep", dependencies=[Depends(require_permission("deals:assign"))])
 async def assign_deal(deal_id: str, user_id: str, db: AsyncSession = Depends(get_db)):
     return await deal_service.assign_deal(db, deal_id, user_id)
 
 
-@router.get("/{deal_id}/products", response_model=List[ProductResponse], summary="List products attached to deal")
+@router.get("/{deal_id}/products", response_model=List[ProductResponse], summary="List products attached to deal", dependencies=[Depends(require_permission("deals:read"))])
 async def get_deal_products(deal_id: str, db: AsyncSession = Depends(get_db)):
     return await deal_service.get_deal_products(db, deal_id)
 
 
-@router.post("/{deal_id}/products", response_model=MessageResponse, summary="Add product item to deal")
+@router.post("/{deal_id}/products", response_model=MessageResponse, summary="Add product item to deal", dependencies=[Depends(require_permission("deals:create"))])
 async def add_deal_product(
     deal_id: str,
     product_id: str,
@@ -152,24 +153,24 @@ async def add_deal_product(
     )
 
 
-@router.delete("/{deal_id}/products/{product_id}", response_model=MessageResponse, summary="Remove product item from deal")
+@router.delete("/{deal_id}/products/{product_id}", response_model=MessageResponse, summary="Remove product item from deal", dependencies=[Depends(require_permission("deals:delete"))])
 async def remove_deal_product(
     deal_id: str, product_id: str, db: AsyncSession = Depends(get_db)
 ):
     return await deal_service.remove_deal_product(db, deal_id=deal_id, product_id=product_id)
 
 
-@router.get("/{deal_id}/timeline", summary="Get deal stage history timeline")
+@router.get("/{deal_id}/timeline", summary="Get deal stage history timeline", dependencies=[Depends(require_permission("deals:read"))])
 async def get_deal_timeline(deal_id: str, db: AsyncSession = Depends(get_db)):
     return await deal_service.get_deal_timeline(db, deal_id)
 
 
-@router.get("/{deal_id}/notes", response_model=List[NoteResponse], summary="List notes for deal")
+@router.get("/{deal_id}/notes", response_model=List[NoteResponse], summary="List notes for deal", dependencies=[Depends(require_permission("deals:read"))])
 async def get_deal_notes(deal_id: str, db: AsyncSession = Depends(get_db)):
     return await deal_service.get_deal_notes(db, deal_id)
 
 
-@router.post("/{deal_id}/notes", response_model=NoteResponse, summary="Add note to deal")
+@router.post("/{deal_id}/notes", response_model=NoteResponse, summary="Add note to deal", dependencies=[Depends(require_permission("deals:create"))])
 async def add_deal_note(
     deal_id: str,
     content: Optional[str] = Query(None),
@@ -183,21 +184,21 @@ async def add_deal_note(
     return await deal_service.add_deal_note(db, deal_id=deal_id, content=note_content, current_user=current_user)
 
 
-@router.get("/{deal_id}/quotes", response_model=List[QuoteResponse], summary="List quotes created for deal")
+@router.get("/{deal_id}/quotes", response_model=List[QuoteResponse], summary="List quotes created for deal", dependencies=[Depends(require_permission("deals:read"))])
 async def get_deal_quotes(deal_id: str, db: AsyncSession = Depends(get_db)):
     return await deal_service.get_deal_quotes(db, deal_id)
 
 
-@router.post("/{deal_id}/predict-win-rate", summary="AI prediction for deal win probability using OpenAI")
+@router.post("/{deal_id}/predict-win-rate", summary="AI prediction for deal win probability using OpenAI", dependencies=[Depends(require_permission("deals:update"))])
 async def predict_deal_win_rate(deal_id: str, db: AsyncSession = Depends(get_db)):
     return await deal_service.predict_deal_win_rate(db, deal_id)
 
 
-@router.post("/{deal_id}/clone", response_model=DealResponse, summary="Clone an existing deal")
+@router.post("/{deal_id}/clone", response_model=DealResponse, summary="Clone an existing deal", dependencies=[Depends(require_permission("deals:create"))])
 async def clone_deal(deal_id: str, new_title: str, db: AsyncSession = Depends(get_db)):
     return await deal_service.clone_deal(db, deal_id=deal_id, new_title=new_title)
 
 
-@router.get("/{deal_id}/commission", summary="Calculate sales rep commission split for deal")
+@router.get("/{deal_id}/commission", summary="Calculate sales rep commission split for deal", dependencies=[Depends(require_permission("deals:read"))])
 async def get_deal_commission(deal_id: str, db: AsyncSession = Depends(get_db)):
     return await deal_service.get_deal_commission(db, deal_id)

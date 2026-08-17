@@ -6,7 +6,7 @@ from fastapi import status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import APIException, NotFoundError
+from app.core.errors import APIException, ForbiddenError, NotFoundError
 from app.models import Role, UserRole
 from app.repositories.role_repository import RoleRepository
 from app.schemas.crm_schemas import PermissionCreate, RoleCreate, RoleUpdate
@@ -139,6 +139,7 @@ ALL_STANDARD_PERMISSIONS = [
     {"key": "activities:export", "name": "Export Activity Trail", "category": "Activities", "description": "Export activity trail logs to CSV"},
     {"key": "ai:read", "name": "Access AI Sales Assistant", "category": "AI Assistant", "description": "Chat with AI sales assistant"},
     {"key": "ai:generate", "name": "Generate AI Content & Insights", "category": "AI Assistant", "description": "Generate AI email drafts and deal summaries"},
+    {"key": "super_admin:manage", "name": "Super Admin Platform Management", "category": "Super Admin", "description": "Platform-level operations such as creating organizations"},
 ]
 
 
@@ -183,18 +184,29 @@ class RoleService:
             pass
         return set()
 
-    async def _get_permission_keys_for_role(self, db: AsyncSession, role: Role, all_db_keys: list[str]) -> list[str]:
+    async def _resolve_role_permission_keys(
+        self, db: AsyncSession, role: Role, all_db_keys: list[str]
+    ) -> list[str]:
+        """Resolve the effective permission keys for a role strictly from its assigned
+        role_permissions (no role-name based shortcuts).
+
+        A role holding the ``all`` sentinel or the ``super_admin:manage`` permission
+        is treated as unrestricted and resolves to every known permission key.
+        """
         assigned = await self.repository.get_role_permissions(db, role.id)
-        if assigned:
-            keys = [p.key for p in assigned if p.key and p.key != "all"]
-        elif getattr(role, "is_system_role", False) or role.name.lower() in ["superadmin", "super_admin", "admin"]:
-            keys = all_db_keys
-        else:
-            keys = getattr(role, "permissions", []) if hasattr(role, "permissions") else ["dashboard:read", "users:read", "leads:read"]
-        if "all" in keys:
-            keys = [k for k in keys if k != "all"] + all_db_keys
-            keys = sorted(set(keys))
+        keys = [p.key for p in assigned if p.key] if assigned else []
+        if "all" in keys or "super_admin:manage" in keys:
+            return all_db_keys
         return keys
+
+    async def _get_permission_keys_for_role(self, db: AsyncSession, role: Role, all_db_keys: list[str]) -> list[str]:
+        return await self._resolve_role_permission_keys(db, role, all_db_keys)
+
+    @staticmethod
+    def _ensure_mutable_role(role: Role) -> None:
+        """Deny mutation of system roles. Enforced server-side regardless of caller permissions."""
+        if getattr(role, "is_system_role", False):
+            raise ForbiddenError(message="System roles cannot be modified or deleted.")
 
     # --- List roles ---
     async def list_roles(self, db: AsyncSession, search: Optional[str] = None) -> list[dict]:
@@ -316,21 +328,20 @@ class RoleService:
 
     # --- System roles ---
     async def list_system_roles(self, db: AsyncSession) -> list[dict]:
+        all_db_keys = await self.repository.get_permission_keys(db)
         try:
             setting = await self.repository.get_setting(db, "default_registration_role")
             default_role_id = setting.value if setting else None
             if default_role_id:
                 r = await self.repository.get_role_by_id_or_name(db, default_role_id)
                 if r:
-                    assigned = await self.repository.get_role_permissions(db, r.id)
-                    perm_keys = [p.key for p in assigned if p.key] if assigned else (["all"] if getattr(r, "is_system_role", False) else ["dashboard:read", "users:read", "leads:read"])
+                    perm_keys = await self._resolve_role_permission_keys(db, r, all_db_keys)
                     return [role_to_dict(r, perm_keys, str(getattr(r, "created_at", "2026-08-05"))) | {"description": r.description or "Registration Default Role"}]
             roles = await self.repository.get_system_roles(db)
             if roles:
                 result = []
                 for r in roles:
-                    assigned = await self.repository.get_role_permissions(db, r.id)
-                    perm_keys = [p.key for p in assigned if p.key] if assigned else ["all"]
+                    perm_keys = await self._resolve_role_permission_keys(db, r, all_db_keys)
                     result.append(role_to_dict(r, perm_keys, str(getattr(r, "created_at", "2026-08-05"))) | {"description": r.description or "System Role"})
                 return result
         except Exception:
@@ -387,10 +398,16 @@ class RoleService:
     # --- Bulk delete ---
     async def bulk_delete_roles(self, db: AsyncSession, ids: list[str]) -> dict:
         default_ids = await self._get_default_role_ids(db)
-        deleted_count = 0
+        roles = []
         for role_id in ids:
             role = await self.repository.get_role(db, role_id)
-            if role and role.id not in default_ids and role.name not in default_ids and not getattr(role, "is_system_role", False):
+            if role:
+                roles.append(role)
+        for role in roles:
+            self._ensure_mutable_role(role)
+        deleted_count = 0
+        for role in roles:
+            if role.id not in default_ids and role.name not in default_ids:
                 await self.repository.delete_role(db, role)
                 deleted_count += 1
         await self._commit(db, "Failed to bulk delete roles")
@@ -398,6 +415,7 @@ class RoleService:
 
     # --- Get user role ---
     async def get_user_role(self, db: AsyncSession, user_id: str) -> dict:
+        all_db_keys = await self.repository.get_permission_keys(db)
         role_obj = None
         u = await self.repository.get_user_by_id_or_email(db, user_id)
         if u and getattr(u, "role", None):
@@ -407,15 +425,7 @@ class RoleService:
         if not role_obj:
             role_obj = await self.repository.get_first_role(db)
         if role_obj:
-            assigned = await self.repository.get_role_permissions(db, role_obj.id)
-            if assigned:
-                perm_keys = [p.key for p in assigned if p.key]
-            elif getattr(role_obj, "is_system_role", False):
-                perm_keys = ["all"]
-            elif getattr(role_obj, "permissions", None):
-                perm_keys = role_obj.permissions
-            else:
-                perm_keys = ["dashboard:read", "users:read", "users:create", "users:update", "users:delete", "users:export", "users:import"]
+            perm_keys = await self._resolve_role_permission_keys(db, role_obj, all_db_keys)
             return role_to_dict(role_obj, perm_keys, str(getattr(role_obj, "created_at", "2026-08-05"))) | {"description": role_obj.description or "User assigned role"}
         return {"id": "sys-manager", "name": "Manager", "description": "User assigned role", "permissions": ["dashboard:read", "users:read", "users:create", "users:update", "users:delete", "users:export", "users:import"], "is_system_role": True, "created_at": "2026-08-05"}
 
@@ -439,6 +449,14 @@ class RoleService:
 
     # --- Check permission ---
     async def check_permission(self, db: AsyncSession, user_id: str, permission: str) -> dict:
+        """Fail-closed permission check for a user against a single permission key.
+
+        The decision is based exclusively on the resolved role's assigned
+        permissions: unrestricted access is granted only to a role holding the
+        ``super_admin:manage`` permission or the ``all`` sentinel, and every other
+        role must explicitly include ``permission`` in its assigned keys. An unknown
+        role, an unknown user, or any resolution error yields ``allowed=False``.
+        """
         try:
             u = await self.repository.get_user_by_id_or_email(db, user_id)
             user_role_id = None
@@ -451,28 +469,18 @@ class RoleService:
             if not user_role_id:
                 user_role_id = user_id
             role_obj = await self.repository.get_role_by_id_or_name(db, user_role_id)
-            if not role_obj:
-                role_obj = await self.repository.get_first_role(db)
 
             allowed = False
             if role_obj:
-                if getattr(role_obj, "is_system_role", False) and ("admin" in role_obj.name.lower() or "super" in role_obj.name.lower()):
+                assigned = await self.repository.get_role_permissions(db, role_obj.id)
+                perm_keys = [p.key for p in assigned if p.key] if assigned else []
+                if "all" in perm_keys or "super_admin:manage" in perm_keys:
                     allowed = True
                 else:
-                    assigned = await self.repository.get_role_permissions(db, role_obj.id)
-                    if assigned:
-                        perm_keys = [p.key for p in assigned if p.key]
-                        allowed = ("all" in perm_keys) or (permission in perm_keys)
-                    elif getattr(role_obj, "is_system_role", False):
-                        allowed = True
-                    elif getattr(role_obj, "permissions", None):
-                        allowed = ("all" in role_obj.permissions) or (permission in role_obj.permissions)
-                    else:
-                        default_allowed = ["dashboard:read", "users:read", "leads:read", "contacts:read", "deals:read"]
-                        allowed = permission in default_allowed
+                    allowed = permission in perm_keys
             return {"user_id": user_id, "permission": permission, "allowed": allowed}
         except Exception:
-            return {"user_id": user_id, "permission": permission, "allowed": True}
+            return {"user_id": user_id, "permission": permission, "allowed": False}
 
     # --- Get role by id ---
     async def get_role(self, db: AsyncSession, role_id: str) -> dict:
@@ -488,6 +496,7 @@ class RoleService:
         r = await self.repository.get_role(db, role_id)
         if not r:
             raise NotFoundError(message=f"Role '{role_id}' not found")
+        self._ensure_mutable_role(r)
         try:
             if payload.name:
                 r.name = payload.name
@@ -516,8 +525,7 @@ class RoleService:
         default_ids = await self._get_default_role_ids(db)
         if r.id in default_ids or r.name in default_ids:
             raise APIException(status_code=status.HTTP_400_BAD_REQUEST, message=f"Cannot delete default registration role '{r.name}'. Remove default status first.")
-        if getattr(r, "is_system_role", False):
-            raise APIException(status_code=status.HTTP_400_BAD_REQUEST, message=f"Cannot delete system role '{r.name}'.")
+        self._ensure_mutable_role(r)
         await self.repository.delete_role(db, r)
         await self._commit(db, "Failed to delete role")
         return {"message": f"Role '{r.name}' deleted successfully", "status": "success"}
@@ -541,6 +549,7 @@ class RoleService:
         role = await self.repository.get_role(db, role_id)
         if not role:
             raise NotFoundError(message=f"Role '{role_id}' not found")
+        self._ensure_mutable_role(role)
         existing = await self.repository.get_role_permission_ids(db, role_id)
         for item in existing:
             await self.repository.delete_role_permission(db, item)
@@ -556,6 +565,7 @@ class RoleService:
         role = await self.repository.get_role(db, role_id)
         if not role:
             raise NotFoundError(message=f"Role '{role_id}' not found")
+        self._ensure_mutable_role(role)
         target_perm = await self.repository.get_permission_by_id_or_key(db, perm_id)
         target_id = target_perm.id if target_perm else perm_id
         await self.repository.remove_permission_from_role(db, role_id, target_id)

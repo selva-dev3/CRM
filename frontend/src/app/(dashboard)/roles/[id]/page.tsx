@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
+import { PermissionGate } from '@/components/common/permission-gate';
 import {
   useRoleQuery,
   useDefaultRoleQuery,
@@ -154,6 +155,9 @@ export default function RoleDetailPage() {
   const { data: assignedUsers = [] } = useRoleUsersQuery(roleId);
   const { data: usersList = [] } = useUsersQuery(1, 100);
 
+  // System roles (e.g. super_admin) are immutable — enforced server-side; UI reflects this.
+  const isSystemRole = role?.is_system_role === true;
+
   // Mutations
   const cloneMutation = useCloneRoleMutation();
   const assignPermsMutation = useAssignPermissionsMutation();
@@ -256,19 +260,24 @@ export default function RoleDetailPage() {
     {
       id: 'actions',
       header: 'ACTIONS',
-      cell: (item) => (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            handleRemovePermission(item.key || item.id);
-          }}
-          title="Remove permission from role"
-          className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer border border-rose-200"
-        >
-          <MinusCircle className="w-3.5 h-3.5" />
-          Remove
-        </button>
-      ),
+      cell: (item) =>
+        !isSystemRole ? (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleRemovePermission(item.key || item.id);
+            }}
+            title="Remove permission from role"
+            className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer border border-rose-200"
+          >
+            <MinusCircle className="w-3.5 h-3.5" />
+            Remove
+          </button>
+        ) : (
+          <span className="px-2.5 py-1 text-[11px] font-semibold text-purple-600 bg-purple-50 border border-purple-200 rounded-md">
+            Protected
+          </span>
+        ),
     },
   ];
 
@@ -424,49 +433,57 @@ export default function RoleDetailPage() {
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
-          {(role.name.toLowerCase().includes('super') || role.name.toLowerCase() === 'super_admin' || role.id === 'sys-admin') && !isDefault && (
+          <PermissionGate permission="roles:update">
+            {(role.name.toLowerCase().includes('super') || role.name.toLowerCase() === 'super_admin' || role.id === 'sys-admin') && !isDefault && (
+              <button
+                onClick={handleSetDefault}
+                disabled={setDefaultMutation.isPending}
+                className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs cursor-pointer transition-colors disabled:opacity-50"
+              >
+                {setDefaultMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-amber-500" />
+                ) : (
+                  <Star className="w-4 h-4 text-amber-500 fill-amber-400/20" />
+                )}
+                Set Registration Default
+              </button>
+            )}
+          </PermissionGate>
+
+          <PermissionGate permission="roles:create">
             <button
-              onClick={handleSetDefault}
-              disabled={setDefaultMutation.isPending}
-              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs cursor-pointer transition-colors disabled:opacity-50"
+              onClick={() => {
+                setCloneNewName(`${role.name} Copy`);
+                setIsCloneModalOpen(true);
+              }}
+              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg text-xs font-semibold shadow-xs cursor-pointer"
             >
-              {setDefaultMutation.isPending ? (
-                <Loader2 className="w-4 h-4 animate-spin text-amber-500" />
-              ) : (
-                <Star className="w-4 h-4 text-amber-500 fill-amber-400/20" />
-              )}
-              Set Registration Default
+              <Copy className="w-4 h-4 text-indigo-600" />
+              Clone Role
             </button>
-          )}
+          </PermissionGate>
 
-          <button
-            onClick={() => {
-              setCloneNewName(`${role.name} Copy`);
-              setIsCloneModalOpen(true);
-            }}
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg text-xs font-semibold shadow-xs cursor-pointer"
-          >
-            <Copy className="w-4 h-4 text-indigo-600" />
-            Clone Role
-          </button>
-
-          <button
-            onClick={() => setIsAssignModalOpen(true)}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer shadow-xs"
-          >
-            <UserCheck className="w-4 h-4" />
-            Assign to User
-          </button>
-
-          {!role.is_system_role && !isDefault && role.type !== 'default' && (
+          <PermissionGate permission="users:roles">
             <button
-              onClick={() => setIsDeleteModalOpen(true)}
-              className="flex items-center gap-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3 py-2 rounded-lg text-xs font-semibold shadow-xs cursor-pointer"
+              onClick={() => setIsAssignModalOpen(true)}
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer shadow-xs"
             >
-              <Trash2 className="w-4 h-4" />
-              Delete Role
+              <UserCheck className="w-4 h-4" />
+              Assign to User
             </button>
-          )}
+          </PermissionGate>
+
+          <PermissionGate permission="roles:delete">
+            {!role.is_system_role && !isDefault && role.type !== 'default' && (
+              <button
+                onClick={() => setIsDeleteModalOpen(true)}
+                className="flex items-center gap-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3 py-2 rounded-lg text-xs font-semibold shadow-xs cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete Role
+              </button>
+            )}
+          </PermissionGate>
         </div>
       </div>
 
@@ -525,7 +542,7 @@ export default function RoleDetailPage() {
                 onSearchChange={setPermSearchTerm}
                 searchPlaceholder="Search assigned permissions..."
                 maxHeight="500px"
-                showCheckbox={true}
+                showCheckbox={!isSystemRole}
                 selectedIds={permSelectedIds}
                 onToggleRow={(item, checked) => {
                   const key = item.key || item.id;
@@ -542,23 +559,31 @@ export default function RoleDetailPage() {
                   }
                 }}
                 toolbarActions={
-                  <div className="flex items-center gap-2">
-                    {permSelectedIds.size > 0 && (
-                      <button
-                        onClick={handleBulkRemovePermissions}
-                        className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold cursor-pointer transition-colors"
-                      >
-                        Remove Selected ({permSelectedIds.size})
-                      </button>
-                    )}
-                    <button
-                      onClick={handleOpenAddPermModal}
-                      className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer shadow-xs"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      Assign Permissions
-                    </button>
-                  </div>
+                  isSystemRole ? (
+                    <span className="px-3 py-1.5 text-[11px] font-semibold text-purple-700 bg-purple-50 border border-purple-200 rounded-lg">
+                      System role is protected — permissions cannot be modified.
+                    </span>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <PermissionGate permission="roles:assign">
+                        {permSelectedIds.size > 0 && (
+                          <button
+                            onClick={handleBulkRemovePermissions}
+                            className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold cursor-pointer transition-colors"
+                          >
+                            Remove Selected ({permSelectedIds.size})
+                          </button>
+                        )}
+                        <button
+                          onClick={handleOpenAddPermModal}
+                          className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer shadow-xs"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          Assign Permissions
+                        </button>
+                      </PermissionGate>
+                    </div>
+                  )
                 }
               />
             </div>

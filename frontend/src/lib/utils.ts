@@ -5,6 +5,13 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+export function hasPermission(permissions: string[] | undefined, required?: string): boolean {
+  if (!required) return true;
+  if (!permissions || permissions.length === 0) return false;
+  if (permissions.includes('all')) return true;
+  return permissions.includes(required);
+}
+
 export function initials(name: string): string {
   if (!name) return 'U';
   const parts = name.trim().split(/\s+/);

@@ -37,6 +37,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { PermissionGate } from '@/components/common/permission-gate';
 import {
   useUserQuery,
   useUserQuotaQuery,
@@ -290,59 +291,63 @@ export default function UserDetailPage() {
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2 flex-wrap">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setQuotaTargetInput(String(quota?.target_amount || 125000));
-              setQuotaAchievedInput(String(quota?.achieved_amount || 87500));
-              setIsQuotaModalOpen(true);
-            }}
-            className="border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 font-semibold text-xs cursor-pointer"
-          >
-            <Target className="w-3.5 h-3.5 mr-1.5" />
-            Set Quota
-          </Button>
+          <PermissionGate permission="users:update">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setQuotaTargetInput(String(quota?.target_amount || 125000));
+                setQuotaAchievedInput(String(quota?.achieved_amount || 87500));
+                setIsQuotaModalOpen(true);
+              }}
+              className="border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 font-semibold text-xs cursor-pointer"
+            >
+              <Target className="w-3.5 h-3.5 mr-1.5" />
+              Set Quota
+            </Button>
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleResetPassword}
-            disabled={resetPasswordMutation.isPending}
-            className="border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold text-xs cursor-pointer"
-          >
-            <RotateCcw className={`w-3.5 h-3.5 mr-1.5 text-blue-600 ${resetPasswordMutation.isPending ? 'animate-spin' : ''}`} />
-            Reset Password
-          </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleResetPassword}
+              disabled={resetPasswordMutation.isPending}
+              className="border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold text-xs cursor-pointer"
+            >
+              <RotateCcw className={`w-3.5 h-3.5 mr-1.5 text-blue-600 ${resetPasswordMutation.isPending ? 'animate-spin' : ''}`} />
+              Reset Password
+            </Button>
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleToggleStatus}
-            className="border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold text-xs cursor-pointer"
-          >
-            {user.is_active ? (
-              <>
-                <Ban className="w-3.5 h-3.5 mr-1.5 text-amber-600" />
-                Deactivate
-              </>
-            ) : (
-              <>
-                <Power className="w-3.5 h-3.5 mr-1.5 text-emerald-600" />
-                Activate Account
-              </>
-            )}
-          </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleToggleStatus}
+              className="border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold text-xs cursor-pointer"
+            >
+              {user.is_active ? (
+                <>
+                  <Ban className="w-3.5 h-3.5 mr-1.5 text-amber-600" />
+                  Deactivate
+                </>
+              ) : (
+                <>
+                  <Power className="w-3.5 h-3.5 mr-1.5 text-emerald-600" />
+                  Activate Account
+                </>
+              )}
+            </Button>
+          </PermissionGate>
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setIsDeleteUserModalOpen(true)}
-            className="border-rose-300 text-rose-600 hover:bg-rose-50 font-semibold text-xs cursor-pointer"
-          >
-            <Trash2 className="w-3.5 h-3.5 mr-1.5" />
-            Delete User
-          </Button>
+          <PermissionGate permission="users:delete">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsDeleteUserModalOpen(true)}
+              className="border-rose-300 text-rose-600 hover:bg-rose-50 font-semibold text-xs cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+              Delete User
+            </Button>
+          </PermissionGate>
         </div>
       </div>
 

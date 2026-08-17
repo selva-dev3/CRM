@@ -87,7 +87,10 @@ class UserBase(BaseModel):
     organization_id: str
     is_active: bool = True
 
-class UserCreate(UserBase):
+class UserCreate(BaseModel):
+    name: str
+    email: EmailStr
+    role: str
     password: str
 
 class UserUpdate(BaseModel):

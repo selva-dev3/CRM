@@ -59,7 +59,9 @@ async def test_login_returns_token_and_user(monkeypatch):
     )
     repo.get_role_name_by_id = AsyncMock(return_value=None)
     repo.get_user_role_id = AsyncMock(return_value=None)
-    repo.all_permission_keys = AsyncMock(return_value=["leads:all", "deals:all"])
+    repo.role_ids_for_user = AsyncMock(return_value=["role-1"])
+    repo.role_ids_by_name = AsyncMock(return_value=["role-1"])
+    repo.permission_keys_for_roles = AsyncMock(return_value=["leads:all", "deals:all"])
 
     result = await service.login(db, LoginRequest(email="alex@crm.com", password="secret"))
 
@@ -101,7 +103,9 @@ async def test_admin_user_gets_all_permissions(monkeypatch):
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
-    repo.all_permission_keys = AsyncMock(return_value=["a:read", "b:write", "c:read"])
+    repo.role_ids_for_user = AsyncMock(return_value=["role-1"])
+    repo.role_ids_by_name = AsyncMock(return_value=["role-1"])
+    repo.permission_keys_for_roles = AsyncMock(return_value=["a:read", "b:write", "c:read"])
 
     result = await service.get_user_permissions(db, user, resolved_role_name="Admin")
 

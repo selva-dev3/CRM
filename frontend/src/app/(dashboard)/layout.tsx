@@ -9,6 +9,7 @@ import { GlobalSearchModal } from '@/components/common/global-search-modal';
 import { NotificationBell } from '@/components/features/notifications/notification-bell';
 import { getSessionToken, clearSessionToken } from '@/lib/api/client';
 import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
+import { useHasPermission } from '@/hooks/use-has-permission';
 import {
   LogOut,
   Loader2,
@@ -71,6 +72,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname();
   const router = useRouter();
   const { data: currentOrg } = useCurrentOrganizationQuery();
+  const { hasPermission } = useHasPermission();
   const [orgDisplayName, setOrgDisplayName] = useState<string>('');
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -261,7 +263,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
                 {isOpen && (
                   <div className={hasTitle ? 'pl-2 space-y-0.5 border-l-2 border-slate-100 ml-2.5' : 'space-y-0.5'}>
-                    {section.items.map((item: NavItem) => {
+                    {section.items
+                      .filter((item: NavItem) => hasPermission(item.permission))
+                      .map((item: NavItem) => {
                       const isActive = pathname === item.href || (item.href === '/email' && pathname === '/emails');
                       const IconComponent = ICON_MAP[item.icon] || LayoutDashboard;
 

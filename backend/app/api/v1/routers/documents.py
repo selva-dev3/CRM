@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
+from app.api.v1.deps import require_permission
 from app.schemas.crm_schemas import (
     BulkActionResponse,
     BulkDeleteRequest,
@@ -16,7 +17,8 @@ router = APIRouter()
 
 
 @router.get(
-    "", response_model=List[DocumentResponse], summary="List documents with pagination"
+    "", response_model=List[DocumentResponse], summary="List documents with pagination",
+    dependencies=[Depends(require_permission("documents:read"))],
 )
 async def list_documents(
     page: int = 1,
@@ -33,6 +35,7 @@ async def list_documents(
     response_model=DocumentResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Upload new document file to MinIO S3 storage",
+    dependencies=[Depends(require_permission("documents:upload"))],
 )
 async def upload_document(file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
     return await document_service.upload_document(db, file)
@@ -42,12 +45,13 @@ async def upload_document(file: UploadFile = File(...), db: AsyncSession = Depen
     "/{document_id}",
     response_model=DocumentResponse,
     summary="Get document metadata & presigned URL",
+    dependencies=[Depends(require_permission("documents:read"))],
 )
 async def get_document(document_id: str, db: AsyncSession = Depends(get_db)):
     return await document_service.get_document(db, document_id)
 
 
-@router.get("/{document_id}/download", summary="Get secure presigned S3 download URL")
+@router.get("/{document_id}/download", summary="Get secure presigned S3 download URL", dependencies=[Depends(require_permission("documents:read"))])
 async def download_document(document_id: str, db: AsyncSession = Depends(get_db)):
     return await document_service.download_document(db, document_id)
 
@@ -56,6 +60,7 @@ async def download_document(document_id: str, db: AsyncSession = Depends(get_db)
     "/{document_id}",
     response_model=MessageResponse,
     summary="Delete document from database & MinIO S3",
+    dependencies=[Depends(require_permission("documents:delete"))],
 )
 async def delete_document(document_id: str, db: AsyncSession = Depends(get_db)):
     return await document_service.delete_document(db, document_id)
@@ -65,6 +70,7 @@ async def delete_document(document_id: str, db: AsyncSession = Depends(get_db)):
     "/bulk-delete",
     response_model=BulkActionResponse,
     summary="Bulk delete documents from S3",
+    dependencies=[Depends(require_permission("documents:delete"))],
 )
 async def bulk_delete_documents(payload: BulkDeleteRequest, db: AsyncSession = Depends(get_db)):
     return await document_service.bulk_delete(db, payload.ids)

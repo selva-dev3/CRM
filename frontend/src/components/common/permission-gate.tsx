@@ -1,11 +1,15 @@
+'use client';
+
 import React from 'react';
+import { useHasPermission } from '@/hooks/use-has-permission';
 
 interface PermissionGateProps {
   readonly permission?: string;
   readonly children: React.ReactNode;
 }
 
-export function PermissionGate({ children }: PermissionGateProps): React.JSX.Element {
-  // Allow all actions by default unless explicit RBAC restrictions are configured
+export function PermissionGate({ permission, children }: PermissionGateProps): React.JSX.Element | null {
+  const { hasPermission } = useHasPermission();
+  if (!hasPermission(permission)) return null;
   return <>{children}</>;
 }

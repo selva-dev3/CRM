@@ -3,7 +3,9 @@ from typing import List
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.deps import get_current_user
 from app.db.session import get_db
+from app.models import User
 from app.schemas.crm_schemas import (
     AcceptInviteRequest,
     ApiKeyCreate,
@@ -30,8 +32,11 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/me", summary="Get current authenticated user info with DB role and permissions")
-async def get_current_user_me(db: AsyncSession = Depends(get_db)):
-    return await auth_service.get_current_user_me(db)
+async def get_current_user_me(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await auth_service.get_current_user_me(db, user=current_user)
 
 
 @router.post(
@@ -49,7 +54,10 @@ async def refresh_token(refresh_token: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/logout", response_model=MessageResponse, summary="Invalidate current session")
-async def logout(db: AsyncSession = Depends(get_db)):
+async def logout(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     return {"message": "Logged out successfully", "status": "success"}
 
 
@@ -64,22 +72,36 @@ async def reset_password(token: str, new_password: str, db: AsyncSession = Depen
 
 
 @router.post("/change-password", response_model=MessageResponse, summary="Change current user password")
-async def change_password(payload: PasswordChangeRequest, db: AsyncSession = Depends(get_db)):
+async def change_password(
+    payload: PasswordChangeRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     return await auth_service.change_password()
 
 
 @router.post("/2fa/setup", response_model=TwoFactorSetupResponse, summary="Setup 2FA TOTP secret & QR")
-async def setup_2fa(db: AsyncSession = Depends(get_db)):
+async def setup_2fa(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     return await auth_service.setup_2fa()
 
 
 @router.post("/2fa/verify", response_model=MessageResponse, summary="Verify 2FA TOTP code")
-async def verify_2fa(payload: TwoFactorVerifyRequest, db: AsyncSession = Depends(get_db)):
+async def verify_2fa(
+    payload: TwoFactorVerifyRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     return await auth_service.verify_2fa(payload)
 
 
 @router.post("/2fa/disable", response_model=MessageResponse, summary="Disable 2FA authentication")
-async def disable_2fa(db: AsyncSession = Depends(get_db)):
+async def disable_2fa(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     return await auth_service.disable_2fa()
 
 
@@ -104,12 +126,19 @@ async def accept_auth_user_invitation(payload: AcceptInviteRequest, db: AsyncSes
 
 
 @router.get("/sessions", summary="List active user sessions")
-async def list_sessions(db: AsyncSession = Depends(get_db)):
+async def list_sessions(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     return await auth_service.list_sessions(db)
 
 
 @router.delete("/sessions/{session_id}", response_model=MessageResponse, summary="Revoke specific user session")
-async def revoke_session(session_id: str, db: AsyncSession = Depends(get_db)):
+async def revoke_session(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     return await auth_service.revoke_session(db, session_id)
 
 
@@ -124,10 +153,17 @@ async def verify_magic_link(token: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/api-keys", response_model=List[ApiKeyResponse], summary="List organization API keys")
-async def list_api_keys(db: AsyncSession = Depends(get_db)):
+async def list_api_keys(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     return await auth_service.list_api_keys(db)
 
 
 @router.post("/api-keys", response_model=ApiKeyResponse, summary="Create new API key")
-async def create_api_key(payload: ApiKeyCreate, db: AsyncSession = Depends(get_db)):
+async def create_api_key(
+    payload: ApiKeyCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     return await auth_service.create_api_key(db, payload)

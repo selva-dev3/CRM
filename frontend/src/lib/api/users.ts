@@ -69,7 +69,6 @@ export interface UserCreatePayload {
   email: string;
   password?: string;
   role?: string;
-  organization_id?: string;
 }
 
 export interface UserQuotaResponse {
@@ -128,7 +127,6 @@ export async function createUserApi(payload: UserCreatePayload): Promise<UserIte
       email: payload.email,
       password: payload.password || 'Password123!',
       role: payload.role || 'Representative',
-      organization_id: payload.organization_id || 'org-1',
     }),
   });
 }
