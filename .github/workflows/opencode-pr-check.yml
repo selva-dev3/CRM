@@ -29,22 +29,9 @@ jobs:
           model: opencode/big-pickle
           use_github_token: true
           prompt: |
-            You are an automated PR reviewer. You MUST reply with a single valid JSON object ONLY (no markdown, no explanatory text).
-            The JSON must exactly follow this schema:
-
-            {
-              "status": "LGTM" | "ISSUES",
-              "summary": "one-sentence summary",
-              "findings": [
-                {
-                  "file": "<path/to/file>",
-                  "line": <number|null>,
-                  "severity": "info" | "warning" | "error",
-                  "message": "<short description>",
-                  "suggested_fix": "<optional patch or code suggestion>"
-                }
-              ]
-            }
+            You are an automated PR reviewer. Reply in clean, human-readable
+            GitHub-flavored Markdown ONLY — no JSON, no code fences wrapping
+            the whole response.
 
             Review this pull request for:
             - Bugs or logic errors
@@ -52,6 +39,35 @@ jobs:
             - Missing error handling
             - Code style violations
 
-            If there are no issues, set "status": "LGTM", "findings": [].
-            Example valid response:
-            {"status":"ISSUES","summary":"Two issues found","findings":[{"file":"src/foo.js","line":42,"severity":"error","message":"Null dereference","suggested_fix":"check for null before using"}]}
+            Format your reply EXACTLY like this:
+
+            ## PR Review — ✅ LGTM
+            (use this heading with ✅ only if there are zero issues, and stop
+            here with one sentence saying why it looks good)
+
+            OR, if there are issues:
+
+            ## PR Review — ⚠️ N issue(s) found
+
+            One-sentence overall summary of the PR and what's wrong.
+
+            ### 🔴 Errors (must fix)
+            - **`path/to/file.py` line 42** — Short description of the bug.
+              _Fix:_ short suggested fix.
+
+            ### 🟡 Warnings (should fix)
+            - **`path/to/file.tsx` line 72** — Short description.
+              _Fix:_ short suggested fix.
+
+            ### 🔵 Info (optional)
+            - **`path/to/file.py` line 59** — Short description.
+              _Fix:_ short suggested fix.
+
+            Rules:
+            - Skip any severity section that has zero findings (don't print
+              an empty heading).
+            - Keep each bullet to 1–2 lines. No long paragraphs.
+            - Group findings under the correct severity only.
+            - Never wrap the whole answer in a JSON object or a single code
+              fence — write it as normal Markdown so it renders nicely as a
+              GitHub comment.
