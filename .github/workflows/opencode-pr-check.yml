@@ -52,6 +52,6 @@ jobs:
             - Missing error handling
             - Code style violations
 
-            If there are no issues, set "status": "Looks Good To Me", "findings": [].
+            If there are no issues, set "status": "LGTM", "findings": [].
             Example valid response:
             {"status":"ISSUES","summary":"Two issues found","findings":[{"file":"src/foo.js","line":42,"severity":"error","message":"Null dereference","suggested_fix":"check for null before using"}]}
