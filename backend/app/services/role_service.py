@@ -6,7 +6,7 @@ from fastapi import status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import APIException, NotFoundError
+from app.core.errors import APIException, ForbiddenError, NotFoundError
 from app.models import Role, UserRole
 from app.repositories.role_repository import RoleRepository
 from app.schemas.crm_schemas import PermissionCreate, RoleCreate, RoleUpdate
@@ -195,6 +195,12 @@ class RoleService:
             keys = [k for k in keys if k != "all"] + all_db_keys
             keys = sorted(set(keys))
         return keys
+
+    @staticmethod
+    def _ensure_mutable_role(role: Role) -> None:
+        """Deny mutation of system roles. Enforced server-side regardless of caller permissions."""
+        if getattr(role, "is_system_role", False):
+            raise ForbiddenError(message="System roles cannot be modified or deleted.")
 
     # --- List roles ---
     async def list_roles(self, db: AsyncSession, search: Optional[str] = None) -> list[dict]:
@@ -387,10 +393,16 @@ class RoleService:
     # --- Bulk delete ---
     async def bulk_delete_roles(self, db: AsyncSession, ids: list[str]) -> dict:
         default_ids = await self._get_default_role_ids(db)
-        deleted_count = 0
+        roles = []
         for role_id in ids:
             role = await self.repository.get_role(db, role_id)
-            if role and role.id not in default_ids and role.name not in default_ids and not getattr(role, "is_system_role", False):
+            if role:
+                roles.append(role)
+        for role in roles:
+            self._ensure_mutable_role(role)
+        deleted_count = 0
+        for role in roles:
+            if role.id not in default_ids and role.name not in default_ids:
                 await self.repository.delete_role(db, role)
                 deleted_count += 1
         await self._commit(db, "Failed to bulk delete roles")
@@ -488,6 +500,7 @@ class RoleService:
         r = await self.repository.get_role(db, role_id)
         if not r:
             raise NotFoundError(message=f"Role '{role_id}' not found")
+        self._ensure_mutable_role(r)
         try:
             if payload.name:
                 r.name = payload.name
@@ -516,8 +529,7 @@ class RoleService:
         default_ids = await self._get_default_role_ids(db)
         if r.id in default_ids or r.name in default_ids:
             raise APIException(status_code=status.HTTP_400_BAD_REQUEST, message=f"Cannot delete default registration role '{r.name}'. Remove default status first.")
-        if getattr(r, "is_system_role", False):
-            raise APIException(status_code=status.HTTP_400_BAD_REQUEST, message=f"Cannot delete system role '{r.name}'.")
+        self._ensure_mutable_role(r)
         await self.repository.delete_role(db, r)
         await self._commit(db, "Failed to delete role")
         return {"message": f"Role '{r.name}' deleted successfully", "status": "success"}
@@ -541,6 +553,7 @@ class RoleService:
         role = await self.repository.get_role(db, role_id)
         if not role:
             raise NotFoundError(message=f"Role '{role_id}' not found")
+        self._ensure_mutable_role(role)
         existing = await self.repository.get_role_permission_ids(db, role_id)
         for item in existing:
             await self.repository.delete_role_permission(db, item)
@@ -556,6 +569,7 @@ class RoleService:
         role = await self.repository.get_role(db, role_id)
         if not role:
             raise NotFoundError(message=f"Role '{role_id}' not found")
+        self._ensure_mutable_role(role)
         target_perm = await self.repository.get_permission_by_id_or_key(db, perm_id)
         target_id = target_perm.id if target_perm else perm_id
         await self.repository.remove_permission_from_role(db, role_id, target_id)

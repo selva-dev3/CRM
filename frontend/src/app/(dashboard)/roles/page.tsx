@@ -586,16 +586,18 @@ export default function RolesPage() {
                   <UserCheck className="w-3.5 h-3.5 text-blue-600" />
                   Assign Role to User
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleOpenEditModal(item);
-                  }}
-                  className="flex items-center gap-2 text-xs font-semibold cursor-pointer text-slate-700 hover:bg-slate-50"
-                >
-                  <Edit className="w-3.5 h-3.5 text-slate-500" />
-                  Edit Role & Permissions
-                </DropdownMenuItem>
+                {!item.is_system_role && (
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleOpenEditModal(item);
+                    }}
+                    className="flex items-center gap-2 text-xs font-semibold cursor-pointer text-slate-700 hover:bg-slate-50"
+                  >
+                    <Edit className="w-3.5 h-3.5 text-slate-500" />
+                    Edit Role & Permissions
+                  </DropdownMenuItem>
+                )}
                 {!item.is_system_role && !isDefault && item.type !== 'default' && (
                   <>
                     <DropdownMenuSeparator />

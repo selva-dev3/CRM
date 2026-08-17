@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import APIException, NotFoundError
+from app.core.errors import APIException, ForbiddenError, NotFoundError
 from app.models import Role
 from app.repositories.role_repository import RoleRepository
 from app.schemas.crm_schemas import PermissionCreate, RoleCreate, RoleUpdate
@@ -250,3 +250,158 @@ def test_all_standard_permissions_complete():
     assert "leads:read" in keys
     assert "ai:generate" in keys
     assert len(keys) == len(ALL_STANDARD_PERMISSIONS)
+
+
+SYSTEM_ROLE_MESSAGE = "System roles cannot be modified or deleted."
+
+
+def _system_role():
+    return _make_role(id="sys-1", name="super_admin", is_system_role=True)
+
+
+def _assert_forbidden(excinfo) -> None:
+    assert isinstance(excinfo.value, ForbiddenError)
+    assert excinfo.value.status_code == 403
+    assert excinfo.value.message == SYSTEM_ROLE_MESSAGE
+
+
+@pytest.mark.asyncio
+async def test_update_system_role_forbidden():
+    role = _system_role()
+    repo = RoleRepository()
+    repo.get_role = AsyncMock(return_value=role)
+    service = RoleService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(ForbiddenError) as excinfo:
+        await service.update_role(db, "sys-1", RoleUpdate(name="New Name"))
+    _assert_forbidden(excinfo)
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_update_system_role_permissions_forbidden():
+    role = _system_role()
+    repo = RoleRepository()
+    repo.get_role = AsyncMock(return_value=role)
+    service = RoleService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(ForbiddenError) as excinfo:
+        await service.update_role(db, "sys-1", RoleUpdate(permissions=["leads:read"]))
+    _assert_forbidden(excinfo)
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_delete_system_role_forbidden():
+    role = _system_role()
+    repo = RoleRepository()
+    repo.get_role_by_id_or_name = AsyncMock(return_value=role)
+    repo.delete_role = AsyncMock()
+    service = RoleService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    async def fake_default_ids(db):
+        return set()
+
+    from unittest.mock import patch
+
+    with patch.object(service, "_get_default_role_ids", fake_default_ids), pytest.raises(ForbiddenError) as excinfo:
+        await service.delete_role(db, "sys-1")
+    _assert_forbidden(excinfo)
+    repo.delete_role.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_delete_normal_role_succeeds():
+    role = _make_role(id="role-1", name="Sales Manager")
+    repo = RoleRepository()
+    repo.get_role_by_id_or_name = AsyncMock(return_value=role)
+    repo.delete_role = AsyncMock()
+    service = RoleService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    async def fake_default_ids(db):
+        return set()
+
+    from unittest.mock import patch
+
+    with patch.object(service, "_get_default_role_ids", fake_default_ids):
+        result = await service.delete_role(db, "role-1")
+
+    assert result["status"] == "success"
+    repo.delete_role.assert_awaited_once_with(db, role)
+
+
+@pytest.mark.asyncio
+async def test_assign_permissions_to_system_role_forbidden():
+    role = _system_role()
+    repo = RoleRepository()
+    repo.get_role = AsyncMock(return_value=role)
+    repo.delete_role_permission = AsyncMock()
+    service = RoleService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(ForbiddenError) as excinfo:
+        await service.assign_permissions(db, "sys-1", ["leads:read"])
+    _assert_forbidden(excinfo)
+    repo.delete_role_permission.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_remove_permission_from_system_role_forbidden():
+    role = _system_role()
+    repo = RoleRepository()
+    repo.get_role = AsyncMock(return_value=role)
+    repo.remove_permission_from_role = AsyncMock()
+    service = RoleService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(ForbiddenError) as excinfo:
+        await service.remove_permission(db, "sys-1", "p1")
+    _assert_forbidden(excinfo)
+    repo.remove_permission_from_role.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_roles_with_system_role_forbidden():
+    role = _make_role(id="role-1", name="Sales Manager")
+    sys_role = _system_role()
+    repo = RoleRepository()
+    repo.get_role = AsyncMock(side_effect=lambda db, role_id: role if role_id == "role-1" else sys_role)
+    repo.delete_role = AsyncMock()
+    service = RoleService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    async def fake_default_ids(db):
+        return set()
+
+    from unittest.mock import patch
+
+    with patch.object(service, "_get_default_role_ids", fake_default_ids), pytest.raises(ForbiddenError) as excinfo:
+        await service.bulk_delete_roles(db, ["role-1", "sys-1"])
+    _assert_forbidden(excinfo)
+    repo.delete_role.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_roles_skips_defaults_only():
+    role = _make_role(id="role-1", name="Sales Manager")
+    default_role = _make_role(id="role-2", name="Default Role")
+    repo = RoleRepository()
+    repo.get_role = AsyncMock(side_effect=lambda db, role_id: role if role_id == "role-1" else default_role)
+    repo.delete_role = AsyncMock()
+    service = RoleService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    async def fake_default_ids(db):
+        return {"role-2"}
+
+    from unittest.mock import patch
+
+    with patch.object(service, "_get_default_role_ids", fake_default_ids):
+        result = await service.bulk_delete_roles(db, ["role-1", "role-2"])
+
+    assert result["affected_count"] == 1
+    repo.delete_role.assert_awaited_once_with(db, role)

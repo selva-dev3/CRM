@@ -154,6 +154,9 @@ export default function RoleDetailPage() {
   const { data: assignedUsers = [] } = useRoleUsersQuery(roleId);
   const { data: usersList = [] } = useUsersQuery(1, 100);
 
+  // System roles (e.g. super_admin) are immutable — enforced server-side; UI reflects this.
+  const isSystemRole = role?.is_system_role === true;
+
   // Mutations
   const cloneMutation = useCloneRoleMutation();
   const assignPermsMutation = useAssignPermissionsMutation();
@@ -256,19 +259,24 @@ export default function RoleDetailPage() {
     {
       id: 'actions',
       header: 'ACTIONS',
-      cell: (item) => (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            handleRemovePermission(item.key || item.id);
-          }}
-          title="Remove permission from role"
-          className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer border border-rose-200"
-        >
-          <MinusCircle className="w-3.5 h-3.5" />
-          Remove
-        </button>
-      ),
+      cell: (item) =>
+        !isSystemRole ? (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleRemovePermission(item.key || item.id);
+            }}
+            title="Remove permission from role"
+            className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer border border-rose-200"
+          >
+            <MinusCircle className="w-3.5 h-3.5" />
+            Remove
+          </button>
+        ) : (
+          <span className="px-2.5 py-1 text-[11px] font-semibold text-purple-600 bg-purple-50 border border-purple-200 rounded-md">
+            Protected
+          </span>
+        ),
     },
   ];
 
@@ -525,7 +533,7 @@ export default function RoleDetailPage() {
                 onSearchChange={setPermSearchTerm}
                 searchPlaceholder="Search assigned permissions..."
                 maxHeight="500px"
-                showCheckbox={true}
+                showCheckbox={!isSystemRole}
                 selectedIds={permSelectedIds}
                 onToggleRow={(item, checked) => {
                   const key = item.key || item.id;
@@ -542,23 +550,29 @@ export default function RoleDetailPage() {
                   }
                 }}
                 toolbarActions={
-                  <div className="flex items-center gap-2">
-                    {permSelectedIds.size > 0 && (
+                  isSystemRole ? (
+                    <span className="px-3 py-1.5 text-[11px] font-semibold text-purple-700 bg-purple-50 border border-purple-200 rounded-lg">
+                      System role is protected — permissions cannot be modified.
+                    </span>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      {permSelectedIds.size > 0 && (
+                        <button
+                          onClick={handleBulkRemovePermissions}
+                          className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold cursor-pointer transition-colors"
+                        >
+                          Remove Selected ({permSelectedIds.size})
+                        </button>
+                      )}
                       <button
-                        onClick={handleBulkRemovePermissions}
-                        className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold cursor-pointer transition-colors"
+                        onClick={handleOpenAddPermModal}
+                        className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer shadow-xs"
                       >
-                        Remove Selected ({permSelectedIds.size})
+                        <Plus className="w-3.5 h-3.5" />
+                        Assign Permissions
                       </button>
-                    )}
-                    <button
-                      onClick={handleOpenAddPermModal}
-                      className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer shadow-xs"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      Assign Permissions
-                    </button>
-                  </div>
+                    </div>
+                  )
                 }
               />
             </div>
