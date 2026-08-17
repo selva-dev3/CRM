@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { navigationSections, NavSection, NavItem } from '@/constants/navigation';
 import { AIChatAssistant } from '@/components/features/ai/ai-chat-assistant';
 import { GlobalSearchModal } from '@/components/common/global-search-modal';
+import { NotificationBell } from '@/components/features/notifications/notification-bell';
 import { getSessionToken, clearSessionToken } from '@/lib/api/client';
 import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
 import {
@@ -348,18 +349,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </kbd>
             </button>
 
-            {/* Notifications Button */}
-            <Link
-              href="/notifications"
-              title="Notifications"
-              className={`p-2 rounded-xl transition cursor-pointer relative border flex items-center justify-center ${pathname === '/notifications'
-                  ? 'bg-blue-50 text-blue-600 border-blue-300 shadow-xs'
-                  : 'bg-slate-50 text-slate-700 hover:text-blue-600 hover:bg-slate-100 border-slate-200'
-                }`}
-            >
-              <Bell className="w-4.5 h-4.5" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-blue-600 ring-2 ring-white" />
-            </Link>
+            {/* Notifications Bell */}
+            <NotificationBell />
 
             {/* Logout Button */}
             <button

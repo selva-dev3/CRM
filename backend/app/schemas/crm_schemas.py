@@ -540,6 +540,13 @@ class NotificationItem(BaseModel):
     message: str
     is_read: bool
     created_at: str
+    organization_id: str | None = None
+    event_name: str | None = None
+    entity_type: str | None = None
+    entity_id: str | None = None
+    payload: dict | None = None
+    read_at: str | None = None
+    updated_at: str | None = None
 
 class NotificationResponse(BaseModel):
     id: str
@@ -547,6 +554,13 @@ class NotificationResponse(BaseModel):
     message: str
     is_read: bool
     created_at: str
+    organization_id: str | None = None
+    event_name: str | None = None
+    entity_type: str | None = None
+    entity_id: str | None = None
+    payload: dict | None = None
+    read_at: str | None = None
+    updated_at: str | None = None
 
 # 19. Calendar Schemas
 class CalendarEvent(BaseModel):

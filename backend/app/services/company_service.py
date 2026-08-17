@@ -9,7 +9,7 @@ from app.models.company import Company
 from app.repositories.company_repository import CompanyRepository
 from app.schemas.crm_schemas import CompanyCreate, CompanyUpdate
 from app.services.contact_service import contact_service
-from app.services.integration_service import integration_service
+from app.services.notification_service import notification_service
 from app.services.org_service import organization_service
 
 
@@ -83,9 +83,13 @@ class CompanyService:
         company = await self.repository.create(db, data=data)
         await self._commit(db, "Failed to create company")
         await db.refresh(company)
-        await integration_service.notify_slack_event(
+        await notification_service.notify(
             db,
             event_name="company.created",
+            organization_id=company.organization_id,
+            actor_user_id=current_user.id if current_user else None,
+            entity_type="company",
+            entity_id=company.id,
             data={
                 "id": company.id,
                 "name": company.name,
@@ -93,7 +97,6 @@ class CompanyService:
                 "industry": company.industry,
                 "employee_count": company.employee_count,
             },
-            org_id=company.organization_id,
         )
         return company_to_dict(company)
 
@@ -119,11 +122,13 @@ class CompanyService:
 
         await self._commit(db, "Failed to update company")
         await db.refresh(company)
-        await integration_service.notify_slack_event(
+        await notification_service.notify(
             db,
             event_name="company.updated",
+            organization_id=company.organization_id,
+            entity_type="company",
+            entity_id=company.id,
             data={"id": company.id, "name": company.name, "industry": company.industry},
-            org_id=company.organization_id,
         )
         return company_to_dict(company)
 

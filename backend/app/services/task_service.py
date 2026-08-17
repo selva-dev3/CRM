@@ -9,7 +9,7 @@ from app.models import User
 from app.models.task import Task
 from app.repositories.task_repository import TaskRepository
 from app.schemas.crm_schemas import TaskCreate, TaskUpdate
-from app.services.integration_service import integration_service
+from app.services.notification_service import notification_service
 from app.services.org_service import organization_service
 
 
@@ -109,9 +109,14 @@ class TaskService:
         task = await self.repository.create(db, data=data)
         await self._commit(db, "Failed to create task")
         await db.refresh(task)
-        await integration_service.notify_slack_event(
+        await notification_service.notify(
             db,
             event_name="task.created",
+            organization_id=task.organization_id,
+            actor_user_id=current_user.id if current_user else None,
+            entity_type="task",
+            entity_id=task.id,
+            assigned_to=task.assigned_to,
             data={
                 "id": task.id,
                 "title": task.title,
@@ -120,7 +125,6 @@ class TaskService:
                 "due_date": str(task.due_date) if task.due_date else None,
                 "assigned_to": task.assigned_to,
             },
-            org_id=task.organization_id,
         )
         return task_to_dict(task)
 
@@ -190,11 +194,14 @@ class TaskService:
             raise NotFoundError(message=f"Task '{task_id}' not found")
         task.status = "Completed"
         await self._commit(db, "Failed to complete task")
-        await integration_service.notify_slack_event(
+        await notification_service.notify(
             db,
             event_name="task.completed",
+            organization_id=task.organization_id,
+            entity_type="task",
+            entity_id=task.id,
+            assigned_to=task.assigned_to,
             data={"id": task.id, "title": task.title, "status": task.status},
-            org_id=task.organization_id,
         )
         return {"message": f"Task {task_id} marked as Completed", "status": "success"}
 

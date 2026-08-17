@@ -1,9 +1,9 @@
-from typing import List
-
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.deps import get_current_user
 from app.db.session import get_db
+from app.models.auth import User
 from app.schemas.crm_schemas import (
     BulkActionResponse,
     BulkDeleteRequest,
@@ -17,7 +17,7 @@ router = APIRouter()
 
 @router.get(
     "",
-    response_model=List[NotificationItem],
+    response_model=list[NotificationItem],
     summary="List notifications for logged in user",
 )
 async def list_notifications(
@@ -25,26 +25,38 @@ async def list_notifications(
     limit: int = 20,
     unread_only: bool = False,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     return await notification_service.list_notifications(
-        db, page=page, limit=limit, unread_only=unread_only
+        db, user_id=current_user.id, page=page, limit=limit, unread_only=unread_only
     )
 
 
 @router.get("/unread-count", summary="Get unread notification count badge")
-async def get_unread_count(db: AsyncSession = Depends(get_db)):
-    return await notification_service.get_unread_count(db)
+async def get_unread_count(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await notification_service.get_unread_count(db, user_id=current_user.id)
 
 
 @router.post(
     "/read-all", response_model=MessageResponse, summary="Mark all notifications as read"
 )
-async def mark_all_notifications_read(db: AsyncSession = Depends(get_db)):
-    return await notification_service.mark_all_notifications_read(db)
+async def mark_all_notifications_read(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await notification_service.mark_all_notifications_read(
+        db, user_id=current_user.id
+    )
 
 
 @router.get("/preferences", summary="Get user notification delivery preferences")
-async def get_notification_preferences(db: AsyncSession = Depends(get_db)):
+async def get_notification_preferences(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     return await notification_service.get_notification_preferences()
 
 
@@ -59,6 +71,7 @@ async def update_notification_preferences(
     slack_notifications: bool = Query(False),
     digest_frequency: str = Query("Daily"),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     return await notification_service.update_notification_preferences(
         email_notifications=email_notifications,
@@ -77,6 +90,7 @@ async def register_webpush_token(
     token: str = Query(...),
     device_type: str = Query("Chrome Desktop"),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     return await notification_service.register_webpush_token(token, device_type)
 
@@ -87,9 +101,15 @@ async def register_webpush_token(
     summary="Admin endpoint to broadcast system alert notification",
 )
 async def send_system_alert(
-    title: str = Query(...), message: str = Query(...), db: AsyncSession = Depends(get_db)
+    title: str = Query(...),
+    message: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    return await notification_service.send_system_alert(db, title, message)
+    return await notification_service.send_system_alert(
+        db, user_id=current_user.id, org_id=current_user.organization_id,
+        title=title, message=message,
+    )
 
 
 @router.post(
@@ -98,9 +118,13 @@ async def send_system_alert(
     summary="Bulk delete notifications",
 )
 async def bulk_delete_notifications(
-    payload: BulkDeleteRequest, db: AsyncSession = Depends(get_db)
+    payload: BulkDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    return await notification_service.bulk_delete(db, payload.ids)
+    return await notification_service.bulk_delete(
+        db, user_id=current_user.id, ids=payload.ids
+    )
 
 
 @router.post(
@@ -108,8 +132,14 @@ async def bulk_delete_notifications(
     response_model=MessageResponse,
     summary="Mark single notification as read",
 )
-async def mark_notification_read(notification_id: str, db: AsyncSession = Depends(get_db)):
-    return await notification_service.mark_notification_read(db, notification_id)
+async def mark_notification_read(
+    notification_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await notification_service.mark_notification_read(
+        db, user_id=current_user.id, notification_id=notification_id
+    )
 
 
 @router.delete(
@@ -117,5 +147,11 @@ async def mark_notification_read(notification_id: str, db: AsyncSession = Depend
     response_model=MessageResponse,
     summary="Delete single notification",
 )
-async def delete_notification(notification_id: str, db: AsyncSession = Depends(get_db)):
-    return await notification_service.delete_notification(db, notification_id)
+async def delete_notification(
+    notification_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await notification_service.delete_notification(
+        db, user_id=current_user.id, notification_id=notification_id
+    )

@@ -8,7 +8,7 @@ from app.models import User
 from app.models.contact import Contact
 from app.repositories.contact_repository import ContactRepository
 from app.schemas.crm_schemas import ContactCreate, ContactUpdate
-from app.services.integration_service import integration_service
+from app.services.notification_service import notification_service
 from app.services.org_service import organization_service
 
 
@@ -113,9 +113,13 @@ class ContactService:
         contact = await self.repository.create(db, data=data)
         await self._commit(db, "Failed to create contact")
         await db.refresh(contact)
-        await integration_service.notify_slack_event(
+        await notification_service.notify(
             db,
             event_name="contact.created",
+            organization_id=contact.organization_id,
+            actor_user_id=current_user.id if current_user else None,
+            entity_type="contact",
+            entity_id=contact.id,
             data={
                 "id": contact.id,
                 "name": contact.name,
@@ -124,7 +128,6 @@ class ContactService:
                 "position": contact.position,
                 "company_id": contact.company_id,
             },
-            org_id=contact.organization_id,
         )
         return contact_to_dict(contact)
 
