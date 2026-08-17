@@ -53,6 +53,7 @@ import {
   deleteUserApi
 } from '@/lib/api/users';
 import { useOrganizationsQuery } from '@/lib/api/organizations';
+import { useRolesQuery } from '@/lib/api/roles';
 import { useQueryClient } from '@tanstack/react-query';
 
 export default function UsersPage() {
@@ -94,6 +95,8 @@ export default function UsersPage() {
 
   const { data: organizations = [] } = useOrganizationsQuery();
 
+  const { data: roles = [], isLoading: isRolesLoading, isError: isRolesError } = useRolesQuery();
+
   // Mutations
   const createUserMutation = useCreateUserMutation();
   const inviteUsersMutation = useInviteUsersMutation();
@@ -111,15 +114,21 @@ export default function UsersPage() {
   // Invite Form State
   const [userName, setUserName] = useState('');
   const [userEmail, setUserEmail] = useState('');
-  const [userRole, setUserRole] = useState('Representative');
+  const [userRole, setUserRole] = useState('');
   const [userOrgId, setUserOrgId] = useState('');
 
   // Create User Direct Form State
   const [createName, setCreateName] = useState('');
   const [createEmail, setCreateEmail] = useState('');
   const [createPassword, setCreatePassword] = useState('');
-  const [createRole, setCreateRole] = useState('Representative');
+  const [createRole, setCreateRole] = useState('');
   const [createOrgId, setCreateOrgId] = useState('');
+
+  // Role dropdowns fall back to the first available role until the user
+  // explicitly picks one; never submit a stale/unknown role id.
+  const defaultRoleId = roles[0]?.id || '';
+  const effectiveUserRole = userRole || defaultRoleId;
+  const effectiveCreateRole = createRole || defaultRoleId;
 
   // Searchable Organization Dropdown States
   const [createOrgSearch, setCreateOrgSearch] = useState('');
@@ -144,7 +153,7 @@ export default function UsersPage() {
   const resetForm = () => {
     setUserName('');
     setUserEmail('');
-    setUserRole('Representative');
+    setUserRole('');
     setUserOrgId(organizations[0]?.id || '');
     setInviteOrgSearch('');
     setIsInviteOrgOpen(false);
@@ -155,7 +164,7 @@ export default function UsersPage() {
     setCreateName('');
     setCreateEmail('');
     setCreatePassword('');
-    setCreateRole('Representative');
+    setCreateRole('');
     setCreateOrgId(organizations[0]?.id || '');
     setCreateOrgSearch('');
     setIsCreateOrgOpen(false);
@@ -187,7 +196,7 @@ export default function UsersPage() {
     setCreateName(`User ${randomSuffix}`);
     setCreateEmail(`user${randomSuffix}@crmcompany.com`);
     setCreatePassword('Password123!');
-    setCreateRole('Representative');
+    setCreateRole('');
     setCreateOrgId(organizations[0]?.id || '');
   };
 
@@ -197,13 +206,17 @@ export default function UsersPage() {
       setErrorMessage('Please fill in both name and email.');
       return;
     }
+    if (!effectiveCreateRole) {
+      setErrorMessage('Please select a role.');
+      return;
+    }
 
     try {
       const newUser = await createUserMutation.mutateAsync({
         name: createName.trim(),
         email: createEmail.trim(),
         password: createPassword || 'Password123!',
-        role: createRole,
+        role: effectiveCreateRole,
         organization_id: createOrgId || organizations[0]?.id || 'org-1',
       });
 
@@ -224,7 +237,7 @@ export default function UsersPage() {
     const randomSuffix = Math.floor(100 + Math.random() * 900);
     setUserName(`Demo User ${randomSuffix}`);
     setUserEmail(`user${randomSuffix}@example.com`);
-    setUserRole('Representative');
+    setUserRole('');
     setUserOrgId(organizations[0]?.id || '');
   };
 
@@ -234,11 +247,15 @@ export default function UsersPage() {
       setErrorMessage('Please provide a valid email address.');
       return;
     }
+    if (!effectiveUserRole) {
+      setErrorMessage('Please select a role.');
+      return;
+    }
 
     try {
       await inviteUsersMutation.mutateAsync({
         users: [{ name: userName.trim() || undefined, email: userEmail.trim() }],
-        role: userRole,
+        role: effectiveUserRole,
       });
 
       await queryClient.invalidateQueries({ queryKey: ['users'] });
@@ -807,13 +824,24 @@ export default function UsersPage() {
                 <Label htmlFor="role">User Role</Label>
                 <select
                   id="role"
-                  value={userRole}
+                  value={effectiveUserRole}
                   onChange={(e) => setUserRole(e.target.value)}
-                  className="flex h-10 w-full rounded-input border border-[#E5E7EB] bg-white px-3 py-2 text-field focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 shadow-saas-sm cursor-pointer"
+                  disabled={isRolesLoading}
+                  className="flex h-10 w-full rounded-input border border-[#E5E7EB] bg-white px-3 py-2 text-field focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 shadow-saas-sm cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <option value="Representative">Representative / Member</option>
-                  <option value="Manager">Manager</option>
-                  <option value="Admin">Administrator</option>
+                  {isRolesLoading ? (
+                    <option value="">Loading roles...</option>
+                  ) : isRolesError ? (
+                    <option value="">Failed to load roles</option>
+                  ) : roles.length === 0 ? (
+                    <option value="">No roles available</option>
+                  ) : (
+                    roles.map((role) => (
+                      <option key={role.id} value={role.id}>
+                        {role.name}
+                      </option>
+                    ))
+                  )}
                 </select>
               </div>
 
@@ -981,13 +1009,24 @@ export default function UsersPage() {
                 <Label htmlFor="create-role">User Role</Label>
                 <select
                   id="create-role"
-                  value={createRole}
+                  value={effectiveCreateRole}
                   onChange={(e) => setCreateRole(e.target.value)}
-                  className="flex h-10 w-full rounded-input border border-[#E5E7EB] bg-white px-3 py-2 text-field focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 shadow-saas-sm cursor-pointer"
+                  disabled={isRolesLoading}
+                  className="flex h-10 w-full rounded-input border border-[#E5E7EB] bg-white px-3 py-2 text-field focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 shadow-saas-sm cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <option value="Representative">Representative / Member</option>
-                  <option value="Manager">Manager</option>
-                  <option value="Admin">Administrator</option>
+                  {isRolesLoading ? (
+                    <option value="">Loading roles...</option>
+                  ) : isRolesError ? (
+                    <option value="">Failed to load roles</option>
+                  ) : roles.length === 0 ? (
+                    <option value="">No roles available</option>
+                  ) : (
+                    roles.map((role) => (
+                      <option key={role.id} value={role.id}>
+                        {role.name}
+                      </option>
+                    ))
+                  )}
                 </select>
               </div>
 
