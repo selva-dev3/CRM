@@ -121,7 +121,7 @@
 		font-variant-numeric: tabular-nums;
 	}
 
-	.text-input {
+	.text-field {
 		font-size: var(--text-sm);
 		line-height: var(--text-sm--line-height);
 		font-weight: 400;
