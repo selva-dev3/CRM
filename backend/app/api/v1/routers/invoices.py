@@ -56,6 +56,19 @@ async def create_invoice(payload: InvoiceBase, db: AsyncSession = Depends(get_db
         db.add(inv)
         await db.commit()
         await db.refresh(inv)
+        await notification_service.notify(
+            db,
+            event_name="invoice.created",
+            organization_id=inv.organization_id,
+            entity_type="invoice",
+            entity_id=inv.id,
+            data={
+                "id": inv.id,
+                "invoice_number": inv.invoice_number,
+                "amount": inv.amount,
+                "status": inv.status,
+            },
+        )
         return {
             "id": inv.id,
             "invoice_number": inv.invoice_number,

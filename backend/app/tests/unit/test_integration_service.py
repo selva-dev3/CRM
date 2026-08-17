@@ -304,7 +304,7 @@ async def test_notify_slack_event_posts_enabled_event():
 
     service._post_to_slack.assert_awaited_once()
     text = service._post_to_slack.await_args.args[2]
-    assert "lead.created" in text
+    assert "New lead created" in text
     assert "Acme Corp" in text
 
 

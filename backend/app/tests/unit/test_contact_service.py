@@ -107,6 +107,26 @@ async def test_create_contact_fires_contact_created_event(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.asyncio
+async def test_update_contact_fires_contact_updated_event(monkeypatch):
+    contact = _make_contact()
+    repo = ContactRepository()
+    repo.get_by_id = AsyncMock(return_value=contact)
+    service = _service_with(repo)
+    notify = AsyncMock()
+    monkeypatch.setattr(integration_service, "notify_slack_event", notify)
+    db = AsyncMock(spec=AsyncSession)
+
+    await service.update_contact(db, "cnt-1", ContactUpdate(email="jane@acme.io"))
+
+    assert contact.email == "jane@acme.io"
+    notify.assert_awaited_once()
+    kwargs = notify.await_args.kwargs
+    assert kwargs["event_name"] == "contact.updated"
+    assert kwargs["org_id"] == "org-1"
+    assert kwargs["data"]["email"] == "jane@acme.io"
+
+
 async def test_create_contact_defaults_name_from_email(monkeypatch):
     contact = _make_contact(name="jane", email="jane@acme.com")
     repo = ContactRepository()

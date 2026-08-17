@@ -177,6 +177,9 @@ class DealService:
     async def update_deal(self, db: AsyncSession, deal_id: str, payload: DealUpdate) -> dict:
         d = await self.require_deal(db, deal_id)
 
+        prev_amount = d.amount
+        prev_probability = d.probability
+
         if payload.title is not None:
             d.title = payload.title
         if payload.amount is not None:
@@ -204,6 +207,36 @@ class DealService:
 
         await self._commit(db, "Failed to update deal")
         await db.refresh(d)
+        if d.amount != prev_amount:
+            await notification_service.notify(
+                db,
+                event_name="deal.amount_changed",
+                organization_id=d.organization_id,
+                entity_type="deal",
+                entity_id=d.id,
+                assigned_to=d.assigned_to,
+                data={
+                    "id": d.id,
+                    "title": d.title,
+                    "old_amount": prev_amount,
+                    "amount": d.amount,
+                },
+            )
+        if d.probability != prev_probability:
+            await notification_service.notify(
+                db,
+                event_name="deal.probability_changed",
+                organization_id=d.organization_id,
+                entity_type="deal",
+                entity_id=d.id,
+                assigned_to=d.assigned_to,
+                data={
+                    "id": d.id,
+                    "title": d.title,
+                    "old_probability": prev_probability,
+                    "probability": d.probability,
+                },
+            )
         return deal_to_dict(d)
 
     async def delete_deal(self, db: AsyncSession, deal_id: str) -> dict:
@@ -216,6 +249,15 @@ class DealService:
         d = await self.require_deal(db, deal_id)
         d.stage = stage
         await self._commit(db, "Failed to update deal stage")
+        await notification_service.notify(
+            db,
+            event_name="deal.stage_changed",
+            organization_id=d.organization_id,
+            entity_type="deal",
+            entity_id=d.id,
+            assigned_to=d.assigned_to,
+            data={"id": d.id, "title": d.title, "stage": d.stage, "amount": d.amount},
+        )
         return {"message": f"Deal {deal_id} moved to {stage}", "status": "success"}
 
     async def mark_deal_won(
@@ -258,6 +300,15 @@ class DealService:
         d = await self.require_deal(db, deal_id)
         d.assigned_to = user_id
         await self._commit(db, "Failed to assign deal")
+        await notification_service.notify(
+            db,
+            event_name="deal.assigned",
+            organization_id=d.organization_id,
+            entity_type="deal",
+            entity_id=d.id,
+            assigned_to=d.assigned_to,
+            data={"id": d.id, "title": d.title, "assigned_to": d.assigned_to},
+        )
         return {"message": f"Deal {deal_id} assigned to user {user_id}", "status": "success"}
 
     async def get_deal_products(self, db: AsyncSession, deal_id: str) -> list[dict]:

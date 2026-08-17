@@ -53,15 +53,15 @@ async def test_list_notifications_filters_unread():
 @pytest.mark.asyncio
 async def test_get_unread_count():
     repo = NotificationRepository()
-    repo.list_unread = AsyncMock(return_value=[_make_notification(), _make_notification(id="n2")])
+    repo.count_unread = AsyncMock(return_value=3)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
     result = await service.get_unread_count(db, user_id="user-1")
 
-    repo.list_unread.assert_awaited_once()
-    assert repo.list_unread.await_args.kwargs["user_id"] == "user-1"
-    assert result["unread_count"] == 2
+    repo.count_unread.assert_awaited_once()
+    assert repo.count_unread.await_args.kwargs["user_id"] == "user-1"
+    assert result["unread_count"] == 3
 
 
 @pytest.mark.asyncio
@@ -286,6 +286,35 @@ async def test_notify_org_wide_event():
 
     user_repo.list_active_ids_by_org.assert_awaited_once()
     assert repo.create_notification.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_notify_in_app_does_not_dispatch_slack(monkeypatch):
+    from app.services.integration_service import integration_service
+
+    repo = NotificationRepository()
+    repo.exists_unread = AsyncMock(return_value=False)
+    repo.create_notification = AsyncMock()
+    user_repo = UserRepository()
+    user_repo.list_active_ids_by_org = AsyncMock(return_value=["user-2"])
+    service = _service_with(repo, user_repo)
+    service.repository.commit = AsyncMock()
+    db = AsyncMock(spec=AsyncSession)
+    slack_notify = AsyncMock()
+    monkeypatch.setattr(integration_service, "notify_slack_event", slack_notify)
+
+    await service.notify_in_app(
+        db,
+        event_name="integration.connected",
+        organization_id="org-1",
+        entity_type="integration",
+        entity_id="int-1",
+        data={"provider": "slack"},
+    )
+
+    slack_notify.assert_not_awaited()
+    created = repo.create_notification.await_args.kwargs["data"]
+    assert created["event_name"] == "integration.connected"
 
 
 @pytest.mark.asyncio

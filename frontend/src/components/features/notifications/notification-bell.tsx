@@ -2,17 +2,40 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Bell, CheckCheck, Loader2, Inbox } from 'lucide-react';
 import {
   useUnreadCountQuery,
   useNotificationsQuery,
   useMarkAllReadMutation,
   useMarkNotificationReadMutation,
+  NotificationItem,
 } from '@/lib/api/notifications';
+
+const ENTITY_ROUTES: Record<string, string> = {
+  lead: '/leads',
+  contact: '/contacts',
+  company: '/companies',
+  deal: '/deals',
+  task: '/tasks',
+  meeting: '/meetings',
+  invoice: '/invoices',
+  product: '/products',
+  quote: '/quotes',
+  call: '/calls',
+};
+
+function notificationHref(n: NotificationItem): string | null {
+  if (n.entity_type && n.entity_id && ENTITY_ROUTES[n.entity_type]) {
+    return `${ENTITY_ROUTES[n.entity_type]}/${n.entity_id}`;
+  }
+  return null;
+}
 
 export function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
 
   const { data: unreadData } = useUnreadCountQuery();
   const { data: notifications = [], isLoading } = useNotificationsQuery({
@@ -56,6 +79,17 @@ export function NotificationBell() {
       await markReadMutation.mutateAsync(id);
     } catch {
       // best-effort
+    }
+  };
+
+  const handleOpen = (n: NotificationItem) => {
+    if (!n.is_read) {
+      handleMarkRead(n.id);
+    }
+    const href = notificationHref(n);
+    if (href) {
+      router.push(href);
+      setIsOpen(false);
     }
   };
 
@@ -127,7 +161,7 @@ export function NotificationBell() {
                 <button
                   key={n.id}
                   type="button"
-                  onClick={() => !n.is_read && handleMarkRead(n.id)}
+                  onClick={() => handleOpen(n)}
                   className={`w-full text-left px-4 py-3 transition flex items-start gap-3 cursor-pointer ${
                     !n.is_read ? 'bg-indigo-50/50 hover:bg-indigo-50' : 'hover:bg-slate-50'
                   }`}

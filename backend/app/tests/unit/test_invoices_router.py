@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.routers.invoices import mark_invoice_paid
 from app.models import Invoice
+from app.schemas.crm_schemas import InvoiceBase
 from app.services.integration_service import integration_service
 
 
@@ -44,3 +45,35 @@ async def test_mark_invoice_paid_fires_invoice_paid_event(monkeypatch):
     assert kwargs["org_id"] == "org-1"
     assert kwargs["data"]["amount"] == 1200.0
     assert kwargs["data"]["status"] == "Paid"
+
+
+@pytest.mark.asyncio
+async def test_create_invoice_fires_invoice_created_event(monkeypatch):
+    db = AsyncMock(spec=AsyncSession)
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock(side_effect=lambda x: setattr(x, "id", "inv-new"))
+
+    from app.api.v1.routers import invoices as invoices_router
+
+    monkeypatch.setattr(
+        invoices_router, "get_valid_org_id", AsyncMock(return_value="org-1")
+    )
+    notify = AsyncMock()
+    monkeypatch.setattr(integration_service, "notify_slack_event", notify)
+
+    payload = InvoiceBase(
+        deal_id="deal-1",
+        invoice_number="INV-200",
+        amount=900.0,
+        status="Draft",
+        due_date="2026-09-01",
+    )
+    result = await invoices_router.create_invoice(payload, db)
+
+    assert result["id"] == "inv-new"
+    notify.assert_awaited_once()
+    kwargs = notify.await_args.kwargs
+    assert kwargs["event_name"] == "invoice.created"
+    assert kwargs["org_id"] == "org-1"
+    assert kwargs["data"]["amount"] == 900.0
