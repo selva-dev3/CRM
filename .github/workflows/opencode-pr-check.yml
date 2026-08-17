@@ -27,11 +27,29 @@ jobs:
         with:
           model: opencode/big-pickle
           prompt: |
-            Review this pull request. Check for:
+            You are an automated PR reviewer. You MUST reply with a single valid JSON object ONLY (no markdown, no explanatory text).
+            The JSON must exactly follow this schema:
+
+            {
+              "status": "LGTM" | "ISSUES",
+              "summary": "one-sentence summary",
+              "findings": [
+                {
+                  "file": "<path/to/file>",
+                  "line": <number|null>,
+                  "severity": "info" | "warning" | "error",
+                  "message": "<short description>",
+                  "suggested_fix": "<optional patch or code suggestion>"
+                }
+              ]
+            }
+
+            Review this pull request for:
             - Bugs or logic errors
             - Security issues
             - Missing error handling
             - Code style violations
 
-            If everything looks good, say "LGTM"
-            If there are issues, list them clearly.
+            If there are no issues, set "status": "LGTM", "findings": [].
+            Example valid response:
+            {"status":"ISSUES","summary":"Two issues found","findings":[{"file":"src/foo.js","line":42,"severity":"error","message":"Null dereference","suggested_fix":"check for null before using"}]}
