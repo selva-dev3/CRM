@@ -8,6 +8,7 @@ from app.models import User
 from app.models.contact import Contact
 from app.repositories.contact_repository import ContactRepository
 from app.schemas.crm_schemas import ContactCreate, ContactUpdate
+from app.services.integration_service import integration_service
 from app.services.org_service import organization_service
 
 
@@ -112,6 +113,19 @@ class ContactService:
         contact = await self.repository.create(db, data=data)
         await self._commit(db, "Failed to create contact")
         await db.refresh(contact)
+        await integration_service.notify_slack_event(
+            db,
+            event_name="contact.created",
+            data={
+                "id": contact.id,
+                "name": contact.name,
+                "email": contact.email,
+                "phone": contact.phone,
+                "position": contact.position,
+                "company_id": contact.company_id,
+            },
+            org_id=contact.organization_id,
+        )
         return contact_to_dict(contact)
 
     async def update_contact(

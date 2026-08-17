@@ -595,9 +595,11 @@ class SlackConfigResponse(BaseModel):
     events: List[str]
     last_synced: Optional[str]
 
+
 class SlackEventPayload(BaseModel):
     event_name: str
     data: Dict[str, Any]
+
 
 class SlackTestResponse(BaseModel):
     message: str

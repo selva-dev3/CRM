@@ -9,6 +9,7 @@ from app.models.contact import Contact
 from app.repositories.contact_repository import ContactRepository
 from app.schemas.crm_schemas import ContactCreate, ContactUpdate
 from app.services.contact_service import ContactService
+from app.services.integration_service import integration_service
 
 
 def _make_contact(**overrides) -> Contact:
@@ -61,6 +62,7 @@ async def test_create_contact_resolves_org_and_serializes(monkeypatch):
     repo = ContactRepository()
     repo.create = AsyncMock(return_value=contact)
     service = _service_with(repo)
+    monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())
     db = AsyncMock(spec=AsyncSession)
 
     from app.services.contact_service import organization_service
@@ -80,11 +82,37 @@ async def test_create_contact_resolves_org_and_serializes(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_create_contact_fires_contact_created_event(monkeypatch):
+    contact = _make_contact()
+    repo = ContactRepository()
+    repo.create = AsyncMock(return_value=contact)
+    service = _service_with(repo)
+    notify = AsyncMock()
+    monkeypatch.setattr(integration_service, "notify_slack_event", notify)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.services.contact_service import organization_service
+
+    monkeypatch.setattr(
+        organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
+    )
+
+    await service.create_contact(db, ContactCreate(name="Jane Doe", email="jane@acme.com"), _make_user())
+
+    notify.assert_awaited_once()
+    kwargs = notify.await_args.kwargs
+    assert kwargs["event_name"] == "contact.created"
+    assert kwargs["org_id"] == "org-1"
+    assert kwargs["data"]["email"] == "jane@acme.com"
+
+
+@pytest.mark.asyncio
 async def test_create_contact_defaults_name_from_email(monkeypatch):
     contact = _make_contact(name="jane", email="jane@acme.com")
     repo = ContactRepository()
     repo.create = AsyncMock(return_value=contact)
     service = _service_with(repo)
+    monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())
     db = AsyncMock(spec=AsyncSession)
 
     from app.services.contact_service import organization_service

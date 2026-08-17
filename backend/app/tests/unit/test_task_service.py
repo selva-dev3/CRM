@@ -9,6 +9,7 @@ from app.models import User
 from app.models.task import Task
 from app.repositories.task_repository import TaskRepository
 from app.schemas.crm_schemas import TaskCreate, TaskUpdate
+from app.services.integration_service import integration_service
 from app.services.task_service import TaskService, parse_datetime
 
 
@@ -58,6 +59,7 @@ async def test_create_task_resolves_org_and_serializes(monkeypatch):
     repo.get_user_by_id_name_email = AsyncMock(return_value=None)
     repo.get_first_user = AsyncMock(return_value=User(id="usr-2"))
     service = _service_with(repo)
+    monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())
     db = AsyncMock(spec=AsyncSession)
 
     from app.services.task_service import organization_service
@@ -73,6 +75,52 @@ async def test_create_task_resolves_org_and_serializes(monkeypatch):
     assert result["status"] == "Pending"
     assert result["priority"] == "Medium"
     repo.create.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_create_task_fires_task_created_event(monkeypatch):
+    task = _make_task()
+    repo = TaskRepository()
+    repo.create = AsyncMock(return_value=task)
+    repo.get_user_by_id_name_email = AsyncMock(return_value=None)
+    repo.get_first_user = AsyncMock(return_value=User(id="usr-2"))
+    service = _service_with(repo)
+    notify = AsyncMock()
+    monkeypatch.setattr(integration_service, "notify_slack_event", notify)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.services.task_service import organization_service
+
+    monkeypatch.setattr(
+        organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
+    )
+
+    await service.create_task(db, TaskCreate(title="Follow up"))
+
+    notify.assert_awaited_once()
+    kwargs = notify.await_args.kwargs
+    assert kwargs["event_name"] == "task.created"
+    assert kwargs["org_id"] == "org-1"
+    assert kwargs["data"]["title"] == "Follow up"
+
+
+@pytest.mark.asyncio
+async def test_complete_task_fires_task_completed_event(monkeypatch):
+    task = _make_task()
+    repo = TaskRepository()
+    repo.get_by_id = AsyncMock(return_value=task)
+    service = _service_with(repo)
+    notify = AsyncMock()
+    monkeypatch.setattr(integration_service, "notify_slack_event", notify)
+    db = AsyncMock(spec=AsyncSession)
+
+    await service.complete_task(db, "task-1")
+
+    notify.assert_awaited_once()
+    kwargs = notify.await_args.kwargs
+    assert kwargs["event_name"] == "task.completed"
+    assert kwargs["org_id"] == "org-1"
+    assert kwargs["data"]["status"] == "Completed"
 
 
 @pytest.mark.asyncio

@@ -8,6 +8,7 @@ from app.core.errors import APIException, NotFoundError
 from app.models.task import Task
 from app.repositories.task_repository import TaskRepository
 from app.schemas.crm_schemas import TaskCreate, TaskUpdate
+from app.services.integration_service import integration_service
 from app.services.org_service import organization_service
 
 
@@ -105,6 +106,19 @@ class TaskService:
         task = await self.repository.create(db, data=data)
         await self._commit(db, "Failed to create task")
         await db.refresh(task)
+        await integration_service.notify_slack_event(
+            db,
+            event_name="task.created",
+            data={
+                "id": task.id,
+                "title": task.title,
+                "priority": task.priority,
+                "status": task.status,
+                "due_date": str(task.due_date) if task.due_date else None,
+                "assigned_to": task.assigned_to,
+            },
+            org_id=task.organization_id,
+        )
         return task_to_dict(task)
 
     async def get_overdue_tasks(self, db: AsyncSession) -> list[dict]:
@@ -173,6 +187,12 @@ class TaskService:
             raise NotFoundError(message=f"Task '{task_id}' not found")
         task.status = "Completed"
         await self._commit(db, "Failed to complete task")
+        await integration_service.notify_slack_event(
+            db,
+            event_name="task.completed",
+            data={"id": task.id, "title": task.title, "status": task.status},
+            org_id=task.organization_id,
+        )
         return {"message": f"Task {task_id} marked as Completed", "status": "success"}
 
     async def reopen_task(self, db: AsyncSession, task_id: str) -> dict:

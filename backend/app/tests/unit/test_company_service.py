@@ -6,8 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import NotFoundError
 from app.models.company import Company
 from app.repositories.company_repository import CompanyRepository
-from app.schemas.crm_schemas import CompanyCreate
+from app.schemas.crm_schemas import CompanyCreate, CompanyUpdate
 from app.services.company_service import CompanyService
+from app.services.integration_service import integration_service
 
 
 def _make_company(**overrides) -> Company:
@@ -44,6 +45,7 @@ async def test_create_company_serializes_domain_and_size(monkeypatch):
     repo = CompanyRepository()
     repo.create = AsyncMock(return_value=company)
     service = _service_with(repo)
+    monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())
     db = AsyncMock(spec=AsyncSession)
 
     from app.services.company_service import organization_service
@@ -59,6 +61,50 @@ async def test_create_company_serializes_domain_and_size(monkeypatch):
     assert result["domain"] == "acme.com"
     assert result["size"] == "250"
     repo.create.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_create_company_fires_company_created_event(monkeypatch):
+    company = _make_company()
+    repo = CompanyRepository()
+    repo.create = AsyncMock(return_value=company)
+    service = _service_with(repo)
+    notify = AsyncMock()
+    monkeypatch.setattr(integration_service, "notify_slack_event", notify)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.services.company_service import organization_service
+
+    monkeypatch.setattr(
+        organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
+    )
+
+    await service.create_company(db, CompanyCreate(name="Acme Inc"))
+
+    notify.assert_awaited_once()
+    kwargs = notify.await_args.kwargs
+    assert kwargs["event_name"] == "company.created"
+    assert kwargs["org_id"] == "org-1"
+    assert kwargs["data"]["name"] == "Acme Inc"
+
+
+@pytest.mark.asyncio
+async def test_update_company_fires_company_updated_event(monkeypatch):
+    company = _make_company()
+    repo = CompanyRepository()
+    repo.get_by_id = AsyncMock(return_value=company)
+    service = _service_with(repo)
+    notify = AsyncMock()
+    monkeypatch.setattr(integration_service, "notify_slack_event", notify)
+    db = AsyncMock(spec=AsyncSession)
+
+    await service.update_company(db, "cmp-1", CompanyUpdate(industry="Fintech"))
+
+    notify.assert_awaited_once()
+    kwargs = notify.await_args.kwargs
+    assert kwargs["event_name"] == "company.updated"
+    assert kwargs["org_id"] == "org-1"
+    assert kwargs["data"]["industry"] == "Fintech"
 
 
 @pytest.mark.asyncio
