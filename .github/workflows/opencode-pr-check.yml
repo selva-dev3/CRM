@@ -26,6 +26,7 @@ jobs:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
         with:
           model: opencode/big-pickle
+          use_github_token: true
           prompt: |
             You are an automated PR reviewer. You MUST reply with a single valid JSON object ONLY (no markdown, no explanatory text).
             The JSON must exactly follow this schema:
