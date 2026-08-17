@@ -38,6 +38,24 @@ SLACK_ENABLED_EVENTS = [
     "invoice.paid", "integration.connected", "integration.disconnected",
 ]
 
+_SLACK_EVENT_TITLES = {
+    "lead.created": "New lead created",
+    "lead.updated": "Lead updated",
+    "lead.assigned": "Lead assigned",
+    "company.created": "New company added",
+    "company.updated": "Company updated",
+    "contact.created": "New contact added",
+    "deal.created": "New deal created",
+    "deal.won": "Deal won 🎉",
+    "deal.lost": "Deal lost",
+    "task.created": "New task",
+    "task.completed": "Task completed",
+    "meeting.created": "Meeting scheduled",
+    "invoice.paid": "Invoice paid",
+    "integration.connected": "Integration connected",
+    "integration.disconnected": "Integration disconnected",
+}
+
 
 class IntegrationService:
     """Business logic for the Integration domain."""
@@ -276,6 +294,16 @@ class IntegrationService:
                 integration.last_error = None
             await self.repository.commit(db)
             await db.refresh(integration)
+            from app.services.notification_service import notification_service
+
+            await notification_service.notify_in_app(
+                db,
+                event_name="integration.connected",
+                organization_id=org_id,
+                entity_type="integration",
+                entity_id=integration.id,
+                data={"provider": "slack", "organization_id": org_id},
+            )
             await self.notify_slack_event(
                 db,
                 event_name="integration.connected",
@@ -329,7 +357,8 @@ class IntegrationService:
 
     @staticmethod
     def _build_slack_text(event_name: str, data: dict | None) -> str:
-        text = f" *CRM Event*\n\nEvent : {event_name}\n"
+        title = _SLACK_EVENT_TITLES.get(event_name, "CRM Event")
+        text = f" *{title}*\n"
         if data:
             for key, value in data.items():
                 text += f"\n• {key} : {value}"
@@ -433,6 +462,16 @@ class IntegrationService:
         if integration is None:
             raise APIException(status_code=404, message="Slack integration not found.")
         try:
+            from app.services.notification_service import notification_service
+
+            await notification_service.notify_in_app(
+                db,
+                event_name="integration.disconnected",
+                organization_id=org_id,
+                entity_type="integration",
+                entity_id=integration.id,
+                data={"provider": "slack", "organization_id": org_id},
+            )
             await self.notify_slack_event(
                 db,
                 event_name="integration.disconnected",

@@ -156,15 +156,71 @@ async def test_bulk_complete_updates_all_matching_tasks():
 
 
 @pytest.mark.asyncio
-async def test_assign_task_resolves_user_id():
+async def test_assign_task_resolves_user_id(monkeypatch):
     task = _make_task()
     repo = TaskRepository()
     repo.get_by_id = AsyncMock(return_value=task)
     repo.get_user_by_id_name_email = AsyncMock(return_value=User(id="usr-9"))
     service = _service_with(repo)
+    monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())
     db = AsyncMock(spec=AsyncSession)
 
     result = await service.assign_task(db, "task-1", "usr-9")
 
     assert task.assigned_to == "usr-9"
     assert result["status"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_assign_task_fires_task_assigned_event(monkeypatch):
+    task = _make_task()
+    repo = TaskRepository()
+    repo.get_by_id = AsyncMock(return_value=task)
+    repo.get_user_by_id_name_email = AsyncMock(return_value=User(id="usr-9"))
+    service = _service_with(repo)
+    notify = AsyncMock()
+    monkeypatch.setattr(integration_service, "notify_slack_event", notify)
+    db = AsyncMock(spec=AsyncSession)
+
+    await service.assign_task(db, "task-1", "usr-9")
+
+    notify.assert_awaited_once()
+    kwargs = notify.await_args.kwargs
+    assert kwargs["event_name"] == "task.assigned"
+    assert kwargs["org_id"] == "org-1"
+    assert kwargs["data"]["assigned_to"] == "usr-9"
+
+
+@pytest.mark.asyncio
+async def test_update_task_fires_priority_changed_event(monkeypatch):
+    task = _make_task()
+    repo = TaskRepository()
+    repo.get_by_id = AsyncMock(return_value=task)
+    service = _service_with(repo)
+    notify = AsyncMock()
+    monkeypatch.setattr(integration_service, "notify_slack_event", notify)
+    db = AsyncMock(spec=AsyncSession)
+
+    await service.update_task(db, "task-1", TaskUpdate(priority="High"))
+
+    assert task.priority == "High"
+    notify.assert_awaited_once()
+    kwargs = notify.await_args.kwargs
+    assert kwargs["event_name"] == "task.priority_changed"
+    assert kwargs["org_id"] == "org-1"
+    assert kwargs["data"]["old_priority"] == "Medium"
+
+
+@pytest.mark.asyncio
+async def test_update_task_no_priority_event_when_unchanged(monkeypatch):
+    task = _make_task()
+    repo = TaskRepository()
+    repo.get_by_id = AsyncMock(return_value=task)
+    service = _service_with(repo)
+    notify = AsyncMock()
+    monkeypatch.setattr(integration_service, "notify_slack_event", notify)
+    db = AsyncMock(spec=AsyncSession)
+
+    await service.update_task(db, "task-1", TaskUpdate(status="Completed"))
+
+    notify.assert_not_awaited()

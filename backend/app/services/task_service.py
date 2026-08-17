@@ -156,6 +156,7 @@ class TaskService:
         if not task:
             raise NotFoundError(message=f"Task '{task_id}' not found")
 
+        prev_priority = task.priority
         updates = payload.model_dump(exclude_unset=True)
         if "status" in updates:
             task.status = updates["status"]
@@ -164,6 +165,21 @@ class TaskService:
 
         await self._commit(db, "Failed to update task")
         await db.refresh(task)
+        if task.priority != prev_priority:
+            await notification_service.notify(
+                db,
+                event_name="task.priority_changed",
+                organization_id=task.organization_id,
+                entity_type="task",
+                entity_id=task.id,
+                assigned_to=task.assigned_to,
+                data={
+                    "id": task.id,
+                    "title": task.title,
+                    "old_priority": prev_priority,
+                    "priority": task.priority,
+                },
+            )
         return task_to_dict(task)
 
     async def delete_task(self, db: AsyncSession, task_id: str) -> dict:
@@ -219,6 +235,15 @@ class TaskService:
             raise NotFoundError(message=f"Task '{task_id}' not found")
         task.assigned_to = await self._resolve_user_id(db, user_id)
         await self._commit(db, "Failed to assign task")
+        await notification_service.notify(
+            db,
+            event_name="task.assigned",
+            organization_id=task.organization_id,
+            entity_type="task",
+            entity_id=task.id,
+            assigned_to=task.assigned_to,
+            data={"id": task.id, "title": task.title, "assigned_to": task.assigned_to},
+        )
         return {"message": f"Task {task_id} assigned to user {user_id}", "status": "success"}
 
     async def require_task(self, db: AsyncSession, task_id: str) -> None:

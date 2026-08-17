@@ -239,6 +239,99 @@ def test_deal_to_dict_handles_missing_dates():
 
 
 @pytest.mark.asyncio
+async def test_assign_deal_fires_deal_assigned_event(monkeypatch):
+    deal = _make_deal()
+    repo = DealRepository()
+    repo.get_by_id = AsyncMock(return_value=deal)
+    service = _service_with(repo)
+    notify = AsyncMock()
+    monkeypatch.setattr(integration_service, "notify_slack_event", notify)
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.assign_deal(db, "deal-1", "user-2")
+
+    assert result["status"] == "success"
+    notify.assert_awaited_once()
+    kwargs = notify.await_args.kwargs
+    assert kwargs["event_name"] == "deal.assigned"
+    assert kwargs["org_id"] == "org-1"
+    assert kwargs["data"]["assigned_to"] == "user-2"
+
+
+@pytest.mark.asyncio
+async def test_update_deal_stage_fires_deal_stage_changed_event(monkeypatch):
+    deal = _make_deal()
+    repo = DealRepository()
+    repo.get_by_id = AsyncMock(return_value=deal)
+    service = _service_with(repo)
+    notify = AsyncMock()
+    monkeypatch.setattr(integration_service, "notify_slack_event", notify)
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.update_deal_stage(db, "deal-1", "Proposal")
+
+    assert result["status"] == "success"
+    notify.assert_awaited_once()
+    kwargs = notify.await_args.kwargs
+    assert kwargs["event_name"] == "deal.stage_changed"
+    assert kwargs["org_id"] == "org-1"
+    assert kwargs["data"]["stage"] == "Proposal"
+
+
+@pytest.mark.asyncio
+async def test_update_deal_fires_amount_changed_event(monkeypatch):
+    deal = _make_deal()
+    repo = DealRepository()
+    repo.get_by_id = AsyncMock(return_value=deal)
+    service = _service_with(repo)
+    notify = AsyncMock()
+    monkeypatch.setattr(integration_service, "notify_slack_event", notify)
+    db = AsyncMock(spec=AsyncSession)
+
+    await service.update_deal(db, "deal-1", DealUpdate(amount=40000.0))
+
+    assert deal.amount == 40000.0
+    notify.assert_awaited_once()
+    kwargs = notify.await_args.kwargs
+    assert kwargs["event_name"] == "deal.amount_changed"
+    assert kwargs["org_id"] == "org-1"
+    assert kwargs["data"]["old_amount"] == 25000.0
+
+
+@pytest.mark.asyncio
+async def test_update_deal_no_amount_event_when_unchanged(monkeypatch):
+    deal = _make_deal()
+    repo = DealRepository()
+    repo.get_by_id = AsyncMock(return_value=deal)
+    service = _service_with(repo)
+    notify = AsyncMock()
+    monkeypatch.setattr(integration_service, "notify_slack_event", notify)
+    db = AsyncMock(spec=AsyncSession)
+
+    await service.update_deal(db, "deal-1", DealUpdate(amount=25000.0))
+
+    notify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_update_deal_fires_probability_changed_event(monkeypatch):
+    deal = _make_deal()
+    repo = DealRepository()
+    repo.get_by_id = AsyncMock(return_value=deal)
+    service = _service_with(repo)
+    notify = AsyncMock()
+    monkeypatch.setattr(integration_service, "notify_slack_event", notify)
+    db = AsyncMock(spec=AsyncSession)
+
+    await service.update_deal(db, "deal-1", DealUpdate(probability=80.0))
+
+    notify.assert_awaited_once()
+    kwargs = notify.await_args.kwargs
+    assert kwargs["event_name"] == "deal.probability_changed"
+    assert kwargs["data"]["old_probability"] == 20.0
+
+
+@pytest.mark.asyncio
 async def test_predict_win_rate_fallback_for_closed_won():
     repo = DealRepository()
     repo.get_by_id = AsyncMock(

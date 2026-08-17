@@ -27,11 +27,17 @@ _ASSIGNEE_OR_ORG_EVENTS = {
     "deal.created",
     "deal.won",
     "deal.lost",
+    "deal.assigned",
+    "deal.stage_changed",
+    "deal.amount_changed",
+    "deal.probability_changed",
     "task.created",
 }
 _ASSIGNEE_ONLY_EVENTS = {
     "lead.assigned",
     "task.completed",
+    "task.assigned",
+    "task.priority_changed",
 }
 
 _EVENT_TITLES = {
@@ -41,13 +47,23 @@ _EVENT_TITLES = {
     "deal.created": "New deal created",
     "deal.won": "Deal won",
     "deal.lost": "Deal lost",
+    "deal.assigned": "Deal assigned to you",
+    "deal.stage_changed": "Deal stage changed",
+    "deal.amount_changed": "Deal amount updated",
+    "deal.probability_changed": "Deal probability updated",
     "task.created": "New task",
     "task.completed": "Task completed",
+    "task.assigned": "Task assigned to you",
+    "task.priority_changed": "Task priority updated",
     "company.created": "New company added",
     "company.updated": "Company updated",
     "contact.created": "New contact added",
+    "contact.updated": "Contact updated",
     "meeting.created": "Meeting scheduled",
+    "invoice.created": "New invoice created",
     "invoice.paid": "Invoice paid",
+    "integration.connected": "Integration connected",
+    "integration.disconnected": "Integration disconnected",
 }
 
 
@@ -139,26 +155,19 @@ class NotificationService:
             candidates = [uid for uid in candidates if uid != actor_user_id]
         return candidates
 
-    async def notify(
+    async def _create_in_app_notifications(
         self,
         db: AsyncSession,
         *,
         event_name: str,
         organization_id: str,
-        actor_user_id: str | None = None,
+        actor_user_id: str | None,
         entity_type: str,
         entity_id: str,
-        data: dict | None = None,
-        assigned_to: str | None = None,
+        data: dict | None,
+        assigned_to: str | None,
     ) -> None:
-        """Central dispatcher for CRM entity events.
-
-        Creates in-app notifications for the resolved recipients (best-effort,
-        never raises) and then dispatches exactly one Slack event through
-        integration_service.notify_slack_event, which is itself best-effort and
-        post-commit. A notification failure must never roll back or break the
-        already-completed CRM operation.
-        """
+        """Create in-app notifications for resolved recipients (best-effort, never raises)."""
         try:
             recipient_ids = await self._resolve_recipient_ids(
                 db,
@@ -206,8 +215,65 @@ class NotificationService:
             )
             await self._safe_rollback(db)
 
+    async def notify(
+        self,
+        db: AsyncSession,
+        *,
+        event_name: str,
+        organization_id: str,
+        actor_user_id: str | None = None,
+        entity_type: str,
+        entity_id: str,
+        data: dict | None = None,
+        assigned_to: str | None = None,
+    ) -> None:
+        """Central dispatcher for CRM entity events.
+
+        Creates in-app notifications for the resolved recipients (best-effort,
+        never raises) and then dispatches exactly one Slack event through
+        integration_service.notify_slack_event, which is itself best-effort and
+        post-commit. A notification failure must never roll back or break the
+        already-completed CRM operation.
+        """
+        await self._create_in_app_notifications(
+            db,
+            event_name=event_name,
+            organization_id=organization_id,
+            actor_user_id=actor_user_id,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            data=data,
+            assigned_to=assigned_to,
+        )
+
         await integration_service.notify_slack_event(
             db, event_name=event_name, data=data, org_id=organization_id
+        )
+
+    async def notify_in_app(
+        self,
+        db: AsyncSession,
+        *,
+        event_name: str,
+        organization_id: str,
+        actor_user_id: str | None = None,
+        entity_type: str,
+        entity_id: str,
+        data: dict | None = None,
+        assigned_to: str | None = None,
+    ) -> None:
+        """In-app-only dispatch (no Slack). Used for events whose Slack
+        delivery is handled explicitly by the caller so there is exactly one
+        Slack dispatch per event."""
+        await self._create_in_app_notifications(
+            db,
+            event_name=event_name,
+            organization_id=organization_id,
+            actor_user_id=actor_user_id,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            data=data,
+            assigned_to=assigned_to,
         )
 
     async def list_notifications(
@@ -225,8 +291,8 @@ class NotificationService:
         return [notification_to_dict(n) for n in notifications]
 
     async def get_unread_count(self, db: AsyncSession, *, user_id: str) -> dict:
-        unread = await self.repository.list_unread(db, user_id=user_id)
-        return {"unread_count": len(unread)}
+        count = await self.repository.count_unread(db, user_id=user_id)
+        return {"unread_count": count}
 
     async def mark_all_notifications_read(self, db: AsyncSession, *, user_id: str) -> dict:
         unread = await self.repository.list_unread(db, user_id=user_id)

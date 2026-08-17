@@ -1,6 +1,6 @@
-from typing import Sequence
+from collections.abc import Sequence
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Notification
@@ -32,6 +32,18 @@ class NotificationRepository:
         )
         res = await db.execute(stmt)
         return res.scalars().all()
+
+    async def count_unread(self, db: AsyncSession, *, user_id: str) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(Notification)
+            .where(
+                Notification.user_id == user_id,
+                Notification.is_read == False,  # noqa: E712
+            )
+        )
+        res = await db.execute(stmt)
+        return res.scalar_one()
 
     async def list_by_ids(
         self, db: AsyncSession, *, user_id: str, ids: list[str]

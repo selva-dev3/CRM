@@ -159,6 +159,19 @@ class ContactService:
 
         await self._commit(db, "Failed to update contact")
         await db.refresh(contact)
+        await notification_service.notify(
+            db,
+            event_name="contact.updated",
+            organization_id=contact.organization_id,
+            entity_type="contact",
+            entity_id=contact.id,
+            data={
+                "id": contact.id,
+                "name": contact.name,
+                "email": contact.email,
+                "company_id": contact.company_id,
+            },
+        )
         return contact_to_dict(contact)
 
     async def delete_contact(self, db: AsyncSession, contact_id: str) -> dict:
