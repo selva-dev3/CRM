@@ -5,7 +5,7 @@ from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, NotFoundError
-from app.models import Meeting
+from app.models import Meeting, User
 from app.repositories.meeting_repository import MeetingRepository
 from app.schemas.crm_schemas import MeetingBase, MeetingCreate
 from app.services.integration_service import integration_service
@@ -73,8 +73,10 @@ class MeetingService:
         attendees = await self.repository.list_attendee_emails(db, meeting_id)
         return meeting_to_dict(meeting, attendees)
 
-    async def schedule_meeting(self, db: AsyncSession, payload: MeetingCreate) -> dict:
-        org_id = await organization_service.resolve_valid_org_id(db)
+    async def schedule_meeting(
+        self, db: AsyncSession, payload: MeetingCreate, current_user: Optional[User] = None
+    ) -> dict:
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
         data = {
             "organization_id": org_id,
             "title": payload.title,

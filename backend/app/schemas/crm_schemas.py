@@ -588,6 +588,9 @@ class IntegrationStatus(BaseModel):
 class SlackConnectRequest(BaseModel):
     webhook_url: str
 
+class SlackEventsUpdateRequest(BaseModel):
+    events: List[str]
+
 class SlackConfigResponse(BaseModel):
     name: str
     is_connected: bool

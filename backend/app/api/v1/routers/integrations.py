@@ -13,6 +13,7 @@ from app.schemas.crm_schemas import (
     SlackConfigResponse,
     SlackConnectRequest,
     SlackEventPayload,
+    SlackEventsUpdateRequest,
     SlackNotifyPayload,
     ZapierConnectPayload,
 )
@@ -121,6 +122,15 @@ async def test_slack_connection(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     return await integration_service.test_slack_connection(db, current_user)
+
+
+@router.put("/slack/events", response_model=MessageResponse, summary="Configure enabled Slack notification events")
+async def update_slack_events(
+    payload: SlackEventsUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
+    return await integration_service.update_slack_events(db, payload, current_user)
 
 
 @router.post("/slack/event", response_model=MessageResponse, summary="Trigger Slack notification event")

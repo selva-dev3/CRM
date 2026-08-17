@@ -69,15 +69,16 @@ export async function deleteZapierApi(): Promise<{ message: string }> {
 }
 
 // Dedicated Slack REST API Methods
-export const DEFAULT_SLACK_WEBHOOK = process.env.NEXT_PUBLIC_SLACK_WEBHOOK_URL;
-
 export async function fetchSlackConfigApi(): Promise<SlackConfig> {
   return apiClient.get<SlackConfig>('/integrations/slack');
 }
 
-export async function connectSlackApi(webhookUrl?: string): Promise<{ message: string }> {
-  const url = webhookUrl || DEFAULT_SLACK_WEBHOOK;
-  return apiClient.post<{ message: string }>('/integrations/slack/connect', { webhook_url: url });
+export async function connectSlackApi(webhookUrl: string): Promise<{ message: string }> {
+  return apiClient.post<{ message: string }>('/integrations/slack/connect', { webhook_url: webhookUrl });
+}
+
+export async function updateSlackEventsApi(events: string[]): Promise<{ message: string }> {
+  return apiClient.put<{ message: string }>('/integrations/slack/events', { events });
 }
 
 export async function testSlackConnectionApi(): Promise<{ message: string }> {
