@@ -141,7 +141,7 @@ def require_permission(permission: str):
         current_user: User = Depends(get_current_user),
         db: AsyncSession = Depends(get_db),
     ) -> User:
-        keys = await auth_service.get_user_permissions(db, current_user, strict=True)
+        keys = await auth_service.get_user_permissions(db, current_user)
         if permission not in keys:
             raise ForbiddenError(message=f"Missing required permission: {permission}")
         return current_user

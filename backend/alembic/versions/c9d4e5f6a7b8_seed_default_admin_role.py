@@ -45,7 +45,7 @@ def upgrade() -> None:
         connection.execute(
             sa.text(
                 "INSERT INTO roles (id, organization_id, name, description, is_system_role, created_at) "
-                "VALUES (:role_id, NULL, 'Admin', 'Default admin role with all permissions', FALSE, NOW())"
+                "VALUES (:role_id, NULL, 'Admin', 'Default admin role with all permissions', TRUE, NOW())"
             ),
             {"role_id": role_id},
         )

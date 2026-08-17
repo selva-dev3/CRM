@@ -60,7 +60,7 @@ class AuthService:
         return "Admin"
 
     async def get_user_permissions(
-        self, db: AsyncSession, user: User, resolved_role_name: str = "", *, strict: bool = False
+        self, db: AsyncSession, user: User, resolved_role_name: str = ""
     ) -> List[str]:
         """Resolve a user's effective permission keys from the RBAC tables.
 

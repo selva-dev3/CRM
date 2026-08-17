@@ -55,7 +55,7 @@ async def _run_permission_dependency(permission: str, user: User, keys: list[str
     dep = require_permission(permission)
     db = AsyncMock(spec=AsyncSession)
 
-    async def fake_get_user_permissions(db, user, resolved_role_name="", *, strict=False):
+    async def fake_get_user_permissions(db, user, resolved_role_name=""):
         return keys
 
     with patch.object(auth_service, "get_user_permissions", fake_get_user_permissions):
@@ -88,41 +88,27 @@ async def test_require_permission_denies_when_user_has_no_grants():
 
 
 @pytest.mark.asyncio
-async def test_require_permission_uses_strict_resolution():
-    """The dependency must resolve with strict=True so the permissive fallback cannot grant access."""
+async def test_require_permission_resolves_via_get_user_permissions():
+    """The dependency must resolve permissions through get_user_permissions (fail-closed)."""
     user = _make_user()
     dep = require_permission("deals:read")
     db = AsyncMock(spec=AsyncSession)
 
     captured = {}
 
-    async def spy(db, user, resolved_role_name="", *, strict=False):
-        captured["strict"] = strict
+    async def spy(db, user, resolved_role_name=""):
+        captured["user"] = user
+        captured["resolved_role_name"] = resolved_role_name
         return []
 
     with patch.object(auth_service, "get_user_permissions", spy), pytest.raises(ForbiddenError):
         await dep(current_user=user, db=db)
-    assert captured["strict"] is True
+    assert captured["user"] is user
 
 
 @pytest.mark.asyncio
-async def test_get_user_permissions_strict_denies_empty_grants():
-    """Strict mode must NOT fall back to granting all keys when no roles are mapped."""
-    repo = AsyncMock()
-    repo.all_permission_keys = AsyncMock(return_value=["deals:read", "deals:create"])
-    repo.role_ids_for_user = AsyncMock(return_value=[])
-    repo.role_ids_by_name = AsyncMock(return_value=[])
-    service = AuthService(repository=repo)
-    user = _make_user(role="Sales Executive")
-    db = AsyncMock(spec=AsyncSession)
-
-    keys = await service.get_user_permissions(db, user, strict=True)
-    assert keys == []
-
-
-@pytest.mark.asyncio
-async def test_get_user_permissions_non_strict_denies_when_no_grants():
-    """Even permissive mode (used by /auth/me) must NOT grant all keys on empty grants."""
+async def test_get_user_permissions_denies_empty_grants():
+    """A user with no mapped roles must NOT be granted all keys (fail closed)."""
     repo = AsyncMock()
     repo.all_permission_keys = AsyncMock(return_value=["deals:read", "deals:create"])
     repo.role_ids_for_user = AsyncMock(return_value=[])
@@ -146,7 +132,7 @@ async def test_get_user_permissions_grants_all_for_super_admin_permission():
     user = _make_user(role="Super Admin")
     db = AsyncMock(spec=AsyncSession)
 
-    keys = await service.get_user_permissions(db, user, strict=True)
+    keys = await service.get_user_permissions(db, user)
     assert set(keys) == {"deals:read", "roles:update", "super_admin:manage"}
 
 
@@ -159,11 +145,9 @@ async def test_get_user_permissions_denies_when_resolution_errors():
     user = _make_user(role="Sales Executive")
     db = AsyncMock(spec=AsyncSession)
 
-    strict_keys = await service.get_user_permissions(db, user, strict=True)
-    permissive_keys = await service.get_user_permissions(db, user)
+    keys = await service.get_user_permissions(db, user)
 
-    assert strict_keys == []
-    assert permissive_keys == []
+    assert keys == []
 
 
 # --- Wiring test: every endpoint must carry a require_permission dependency ---
