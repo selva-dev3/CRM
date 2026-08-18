@@ -21,6 +21,8 @@ interface PanelCoords {
   top: number;
   left: number;
   width: number;
+  openUp: boolean;
+  maxListHeight: number;
 }
 
 const LISTBOX_ID_PREFIX = 'role-search-listbox';
@@ -73,11 +75,25 @@ export function RoleSearchCombobox({
 
       const spaceBelow = viewportHeight - rect.bottom;
       const spaceAbove = rect.top;
-      const estimatedHeight = Math.min(PANEL_MAX_HEIGHT, viewportHeight * 0.4) + 88;
-      const openUp = spaceBelow < estimatedHeight && spaceAbove > spaceBelow;
-      const top = openUp ? Math.max(8, rect.top - 8) : rect.bottom + 4;
 
-      setCoords({ top, left, width });
+      const PANEL_HEADER_HEIGHT = 56;
+      const estimatedPanelHeight = PANEL_MAX_HEIGHT + PANEL_HEADER_HEIGHT;
+      const openUp = spaceBelow < estimatedPanelHeight && spaceAbove > spaceBelow;
+
+      let top: number;
+      let maxListHeight: number;
+
+      if (openUp) {
+        top = rect.top - 4;
+        const availableSpaceAbove = spaceAbove - 16 - PANEL_HEADER_HEIGHT;
+        maxListHeight = Math.max(100, Math.min(PANEL_MAX_HEIGHT, availableSpaceAbove));
+      } else {
+        top = rect.bottom + 4;
+        const availableSpaceBelow = spaceBelow - 16 - PANEL_HEADER_HEIGHT;
+        maxListHeight = Math.max(100, Math.min(PANEL_MAX_HEIGHT, availableSpaceBelow));
+      }
+
+      setCoords({ top, left, width, openUp, maxListHeight });
     };
 
     updatePosition();
@@ -187,7 +203,13 @@ export function RoleSearchCombobox({
         createPortal(
           <div
             ref={panelRef}
-            style={{ top: coords.top, left: coords.left, width: coords.width, zIndex: 99999 }}
+            style={{
+              top: coords.top,
+              left: coords.left,
+              width: coords.width,
+              transform: coords.openUp ? 'translateY(-100%)' : undefined,
+              zIndex: 99999,
+            }}
             className="fixed max-w-[calc(100vw-1rem)] rounded-btn border border-[#E5E7EB] bg-white p-2 shadow-saas-lg animate-in fade-in-50 focus:outline-none"
           >
             <div className="relative mb-2">
@@ -218,7 +240,8 @@ export function RoleSearchCombobox({
               id={listboxId}
               role="listbox"
               aria-label="Available roles"
-              className="max-h-[min(300px,40vh)] space-y-0.5 overflow-y-auto overscroll-contain"
+              style={{ maxHeight: `${coords.maxListHeight}px` }}
+              className="space-y-0.5 overflow-y-auto overscroll-contain"
             >
               {isLoading ? (
                 <div className="flex min-h-9 items-center justify-center gap-2 px-3 py-2 text-caption text-[#6B7280]">
