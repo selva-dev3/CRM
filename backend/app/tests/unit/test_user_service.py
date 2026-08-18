@@ -249,6 +249,30 @@ async def test_create_user_rejects_unknown_role():
 
 
 @pytest.mark.asyncio
+async def test_create_user_rejects_system_role():
+    repo = UserRepository()
+    repo.create = AsyncMock(return_value=_make_user())
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    service.role_repository.get_role_by_id_or_name = AsyncMock(
+        return_value=type(
+            "R",
+            (),
+            {"id": "role-admin", "name": "Admin", "organization_id": None, "is_system_role": True},
+        )()
+    )
+    service.organization_repository.get_by_id = AsyncMock(return_value=_make_org())
+
+    current_user = _make_user(id="current-user", organization_id="org-1")
+    payload = UserCreate(name="Alex Smith", email="alex@crm.com", role="role-admin", password="secret")
+
+    with pytest.raises(APIException) as exc_info:
+        await service.create_user(db, payload, current_user=current_user)
+    assert exc_info.value.status_code == 403
+    repo.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_delete_user_protects_superadmin():
     user = _make_user(email="superadmin@gmail.com")
     repo = UserRepository()
@@ -341,13 +365,14 @@ async def test_accept_invitation_rejects_invalid_role(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_invite_users_validates_role(monkeypatch):
+async def test_invite_users_uses_current_user_org_and_stores_role_id(monkeypatch):
     repo = UserRepository()
-    repo.get_first_org = AsyncMock(return_value=type("O", (), {"id": "org-1"})())
     repo.create_invitation = AsyncMock(return_value=None)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
-    role = type("R", (), {"id": "role-1", "name": "Sales Manager", "organization_id": None})()
+    current_user = _make_user(id="user-1", organization_id="org-1")
+    service.organization_repository.get_by_id = AsyncMock(return_value=_make_org())
+    role = type("R", (), {"id": "role-1", "name": "Sales Manager", "organization_id": None, "is_system_role": False})()
     service.role_repository.get_role_by_id_or_name = AsyncMock(return_value=role)
 
     monkeypatch.setattr("app.services.user_service.send_user_invite_email", lambda **kwargs: None)
@@ -355,10 +380,30 @@ async def test_invite_users_validates_role(monkeypatch):
     from app.schemas.crm_schemas import UserInviteRequest
 
     payload = UserInviteRequest(users=[{"email": "invite@crm.com"}], role="role-1")
-    result = await service.invite_users(db, payload)
+    result = await service.invite_users(db, payload, current_user=current_user)
 
-    assert result["invitations"][0]["role"] == "Sales Manager"
-    assert repo.create_invitation.await_args.kwargs["data"]["role"] == "Sales Manager"
+    assert result["invitations"][0]["role"] == "role-1"
+    assert repo.create_invitation.await_args.kwargs["data"]["role"] == "role-1"
+    assert repo.create_invitation.await_args.kwargs["data"]["organization_id"] == "org-1"
+
+
+@pytest.mark.asyncio
+async def test_invite_users_derives_org_from_session_not_payload():
+    repo = UserRepository()
+    repo.create_invitation = AsyncMock(return_value=None)
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    current_user = _make_user(id="user-1", organization_id="org-2")
+    service.organization_repository.get_by_id = AsyncMock(return_value=_make_org(id="org-2"))
+    role = type("R", (), {"id": "role-1", "name": "Sales Manager", "organization_id": "org-2", "is_system_role": False})()
+    service.role_repository.get_role_by_id_or_name = AsyncMock(return_value=role)
+
+    from app.schemas.crm_schemas import UserInviteRequest
+
+    payload = UserInviteRequest(users=[{"email": "invite@crm.com"}], role="role-1")
+    await service.invite_users(db, payload, current_user=current_user)
+
+    assert repo.create_invitation.await_args.kwargs["data"]["organization_id"] == "org-2"
 
 
 @pytest.mark.asyncio
@@ -366,6 +411,8 @@ async def test_invite_users_rejects_unknown_role():
     repo = UserRepository()
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
+    current_user = _make_user(id="user-1", organization_id="org-1")
+    service.organization_repository.get_by_id = AsyncMock(return_value=_make_org())
     service.role_repository.get_role_by_id_or_name = AsyncMock(return_value=None)
 
     from app.schemas.crm_schemas import UserInviteRequest
@@ -373,8 +420,46 @@ async def test_invite_users_rejects_unknown_role():
     payload = UserInviteRequest(users=[{"email": "invite@crm.com"}], role="not-a-real-role")
 
     with pytest.raises(APIException) as exc_info:
-        await service.invite_users(db, payload)
+        await service.invite_users(db, payload, current_user=current_user)
     assert exc_info.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_invite_users_rejects_role_from_other_org():
+    repo = UserRepository()
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    current_user = _make_user(id="user-1", organization_id="org-1")
+    service.organization_repository.get_by_id = AsyncMock(return_value=_make_org())
+    role = type("R", (), {"id": "role-9", "name": "Rival Manager", "organization_id": "org-99", "is_system_role": False})()
+    service.role_repository.get_role_by_id_or_name = AsyncMock(return_value=role)
+
+    from app.schemas.crm_schemas import UserInviteRequest
+
+    payload = UserInviteRequest(users=[{"email": "invite@crm.com"}], role="role-9")
+
+    with pytest.raises(APIException) as exc_info:
+        await service.invite_users(db, payload, current_user=current_user)
+    assert exc_info.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_invite_users_rejects_system_role():
+    repo = UserRepository()
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    current_user = _make_user(id="user-1", organization_id="org-1")
+    service.organization_repository.get_by_id = AsyncMock(return_value=_make_org())
+    role = type("R", (), {"id": "role-admin", "name": "Admin", "organization_id": None, "is_system_role": True})()
+    service.role_repository.get_role_by_id_or_name = AsyncMock(return_value=role)
+
+    from app.schemas.crm_schemas import UserInviteRequest
+
+    payload = UserInviteRequest(users=[{"email": "invite@crm.com"}], role="role-admin")
+
+    with pytest.raises(APIException) as exc_info:
+        await service.invite_users(db, payload, current_user=current_user)
+    assert exc_info.value.status_code == 403
 
 
 @pytest.mark.asyncio

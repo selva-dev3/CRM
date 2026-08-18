@@ -3,8 +3,9 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import require_permission
+from app.api.v1.deps import get_current_user, require_permission
 from app.db.session import get_db
+from app.models import User
 from app.schemas.crm_schemas import (
     BulkActionResponse,
     BulkDeleteRequest,
@@ -21,9 +22,16 @@ from app.services.role_service import role_service
 router = APIRouter()
 
 
-@router.get("", response_model=List[RoleResponse], summary="List all organization roles", dependencies=[Depends(require_permission("roles:read"))])
-async def list_roles(search: Optional[str] = Query(None), db: AsyncSession = Depends(get_db)):
-    return await role_service.list_roles(db, search)
+@router.get("", response_model=List[RoleResponse], summary="List roles scoped to the current organization", dependencies=[Depends(require_permission("roles:read"))])
+async def list_roles(
+    search: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # Roles are derived from the authenticated user's current organization —
+    # a client-supplied organization_id is never accepted for role search.
+    org_id = getattr(current_user, "organization_id", None)
+    return await role_service.list_roles(db, search, org_id=org_id)
 
 
 @router.post(

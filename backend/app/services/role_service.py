@@ -209,10 +209,12 @@ class RoleService:
             raise ForbiddenError(message="System roles cannot be modified or deleted.")
 
     # --- List roles ---
-    async def list_roles(self, db: AsyncSession, search: Optional[str] = None) -> list[dict]:
+    async def list_roles(
+        self, db: AsyncSession, search: Optional[str] = None, org_id: Optional[str] = None
+    ) -> list[dict]:
         default_ids = await self._get_default_role_ids(db)
         all_db_keys = await self.repository.get_permission_keys(db)
-        roles = await self.repository.list_roles(db, search)
+        roles = await self.repository.list_roles(db, search, org_id=org_id)
 
         result = []
         for r in roles:

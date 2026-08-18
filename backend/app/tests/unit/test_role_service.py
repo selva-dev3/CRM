@@ -43,6 +43,22 @@ async def test_list_roles_classifies_types():
 
 
 @pytest.mark.asyncio
+async def test_list_roles_forwards_org_id_to_repository():
+    repo = RoleRepository()
+    repo.get_setting = AsyncMock(return_value=None)
+    repo.get_permission_keys = AsyncMock(return_value=[])
+    repo.list_roles = AsyncMock(return_value=[])
+    repo.get_role_permissions = AsyncMock(return_value=[])
+    service = RoleService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    await service.list_roles(db, "Manage", org_id="org-1")
+
+    assert repo.list_roles.await_args.kwargs["org_id"] == "org-1"
+    assert repo.list_roles.await_args.args[1] == "Manage"
+
+
+@pytest.mark.asyncio
 async def test_get_role_not_found():
     repo = RoleRepository()
     repo.get_role = AsyncMock(return_value=None)

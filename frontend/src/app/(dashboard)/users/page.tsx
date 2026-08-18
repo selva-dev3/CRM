@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Plus, 
-  Search, 
   Mail, 
   ShieldCheck, 
   UserCheck, 
@@ -53,7 +52,7 @@ import {
   deleteUserApi
 } from '@/lib/api/users';
 import { useOrganizationsQuery } from '@/lib/api/organizations';
-import { useRolesQuery } from '@/lib/api/roles';
+import { RoleSearchCombobox } from '@/components/features/users/role-search-combobox';
 import { useQueryClient } from '@tanstack/react-query';
 
 export default function UsersPage() {
@@ -95,8 +94,6 @@ export default function UsersPage() {
 
   const { data: organizations = [] } = useOrganizationsQuery();
 
-  const { data: roles = [], isLoading: isRolesLoading, isError: isRolesError } = useRolesQuery();
-
   // Mutations
   const createUserMutation = useCreateUserMutation();
   const inviteUsersMutation = useInviteUsersMutation();
@@ -115,23 +112,12 @@ export default function UsersPage() {
   const [userName, setUserName] = useState('');
   const [userEmail, setUserEmail] = useState('');
   const [userRole, setUserRole] = useState('');
-  const [userOrgId, setUserOrgId] = useState('');
 
   // Create User Direct Form State
   const [createName, setCreateName] = useState('');
   const [createEmail, setCreateEmail] = useState('');
   const [createPassword, setCreatePassword] = useState('');
   const [createRole, setCreateRole] = useState('');
-
-  // Role dropdowns fall back to the first available role until the user
-  // explicitly picks one; never submit a stale/unknown role id.
-  const defaultRoleId = roles[0]?.id || '';
-  const effectiveUserRole = userRole || defaultRoleId;
-  const effectiveCreateRole = createRole || defaultRoleId;
-
-  // Searchable Organization Dropdown States (invite modal only)
-  const [inviteOrgSearch, setInviteOrgSearch] = useState('');
-  const [isInviteOrgOpen, setIsInviteOrgOpen] = useState(false);
 
   // Organization lookup map for DataTable rendering
   const orgMap = useMemo(() => {
@@ -140,17 +126,10 @@ export default function UsersPage() {
     return map;
   }, [organizations]);
 
-  useEffect(() => {
-    if (organizations.length > 0 && !userOrgId) setUserOrgId(organizations[0].id);
-  }, [organizations]);
-
   const resetForm = () => {
     setUserName('');
     setUserEmail('');
     setUserRole('');
-    setUserOrgId(organizations[0]?.id || '');
-    setInviteOrgSearch('');
-    setIsInviteOrgOpen(false);
     setErrorMessage(null);
   };
 
@@ -196,7 +175,7 @@ export default function UsersPage() {
       setErrorMessage('Please fill in both name and email.');
       return;
     }
-    if (!effectiveCreateRole) {
+    if (!createRole) {
       setErrorMessage('Please select a role.');
       return;
     }
@@ -206,7 +185,7 @@ export default function UsersPage() {
         name: createName.trim(),
         email: createEmail.trim(),
         password: createPassword || 'Password123!',
-        role: effectiveCreateRole,
+        role: createRole,
       });
 
       await queryClient.invalidateQueries({ queryKey: ['users'] });
@@ -227,7 +206,6 @@ export default function UsersPage() {
     setUserName(`Demo User ${randomSuffix}`);
     setUserEmail(`user${randomSuffix}@example.com`);
     setUserRole('');
-    setUserOrgId(organizations[0]?.id || '');
   };
 
   const handleInviteUser = async (e: React.FormEvent) => {
@@ -236,7 +214,7 @@ export default function UsersPage() {
       setErrorMessage('Please provide a valid email address.');
       return;
     }
-    if (!effectiveUserRole) {
+    if (!userRole) {
       setErrorMessage('Please select a role.');
       return;
     }
@@ -244,7 +222,7 @@ export default function UsersPage() {
     try {
       await inviteUsersMutation.mutateAsync({
         users: [{ name: userName.trim() || undefined, email: userEmail.trim() }],
-        role: effectiveUserRole,
+        role: userRole,
       });
 
       await queryClient.invalidateQueries({ queryKey: ['users'] });
@@ -810,88 +788,13 @@ export default function UsersPage() {
               </div>
 
               <div>
-                <Label htmlFor="role">User Role</Label>
-                <select
+                <Label htmlFor="role">User Role <span className="text-[#DC2626]">*</span></Label>
+                <RoleSearchCombobox
                   id="role"
-                  value={effectiveUserRole}
-                  onChange={(e) => setUserRole(e.target.value)}
-                  disabled={isRolesLoading}
-                  className="flex h-10 w-full rounded-input border border-[#E5E7EB] bg-white px-3 py-2 text-field focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 shadow-saas-sm cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {isRolesLoading ? (
-                    <option value="">Loading roles...</option>
-                  ) : isRolesError ? (
-                    <option value="">Failed to load roles</option>
-                  ) : roles.length === 0 ? (
-                    <option value="">No roles available</option>
-                  ) : (
-                    roles.map((role) => (
-                      <option key={role.id} value={role.id}>
-                        {role.name}
-                      </option>
-                    ))
-                  )}
-                </select>
-              </div>
-
-              {/* Organization Selection with Search */}
-              <div className="relative">
-                <Label htmlFor="invite-org">Organization <span className="text-[#DC2626]">*</span></Label>
-                <div
-                  onClick={() => setIsInviteOrgOpen(!isInviteOrgOpen)}
-                  className="mt-1 flex items-center justify-between h-10 w-full rounded-input border border-[#E5E7EB] bg-white px-3 py-2 text-field focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 shadow-saas-sm cursor-pointer"
-                >
-                  <div className="flex items-center gap-2 truncate">
-                    <Building className="w-4 h-4 text-[#2563EB] shrink-0" />
-                    <span className="font-medium text-[#111827]">
-                      {organizations.find((o) => o.id === userOrgId)?.name || 'Select Organization...'}
-                    </span>
-                  </div>
-                  <ChevronDown className="w-4 h-4 text-[#9CA3AF]" />
-                </div>
-
-                {isInviteOrgOpen && (
-                  <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-[#E5E7EB] rounded-btn shadow-saas-lg p-2 space-y-2 max-h-56 overflow-y-auto animate-in fade-in-50">
-                    <div className="relative">
-                      <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-[#9CA3AF]" />
-                      <Input
-                        type="text"
-                        placeholder="Search organization by name..."
-                        value={inviteOrgSearch}
-                        onChange={(e) => setInviteOrgSearch(e.target.value)}
-                        className="pl-8 text-caption h-8"
-                        autoFocus
-                      />
-                    </div>
-                    <div className="space-y-0.5 max-h-36 overflow-y-auto">
-                      {organizations
-                        .filter((org) => org.name.toLowerCase().includes(inviteOrgSearch.toLowerCase()))
-                        .map((org) => (
-                          <div
-                            key={org.id}
-                            onClick={() => {
-                              setUserOrgId(org.id);
-                              setIsInviteOrgOpen(false);
-                            }}
-                            className={`flex items-center justify-between p-2 rounded-btn text-body font-medium cursor-pointer hover:bg-[#F3F4F6] ${
-                              userOrgId === org.id ? 'bg-[#2563EB]/10 text-[#2563EB]' : 'text-[#374151]'
-                            }`}
-                          >
-                            <div className="flex items-center gap-2 truncate">
-                              <Building className="w-4 h-4 text-[#6B7280]" />
-                              <span>{org.name}</span>
-                            </div>
-                            {userOrgId === org.id && <CheckCircle2 className="w-4 h-4 text-[#2563EB]" />}
-                          </div>
-                        ))}
-                      {organizations.length === 0 && (
-                        <div className="p-3 text-caption text-center text-[#6B7280]">
-                          No organizations found
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
+                  value={userRole}
+                  onChange={setUserRole}
+                  placeholder="Search and select a role..."
+                />
               </div>
 
               {/* Modal Footer */}
@@ -995,28 +898,13 @@ export default function UsersPage() {
               </div>
 
               <div>
-                <Label htmlFor="create-role">User Role</Label>
-                <select
+                <Label htmlFor="create-role">User Role <span className="text-[#DC2626]">*</span></Label>
+                <RoleSearchCombobox
                   id="create-role"
-                  value={effectiveCreateRole}
-                  onChange={(e) => setCreateRole(e.target.value)}
-                  disabled={isRolesLoading}
-                  className="flex h-10 w-full rounded-input border border-[#E5E7EB] bg-white px-3 py-2 text-field focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 shadow-saas-sm cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {isRolesLoading ? (
-                    <option value="">Loading roles...</option>
-                  ) : isRolesError ? (
-                    <option value="">Failed to load roles</option>
-                  ) : roles.length === 0 ? (
-                    <option value="">No roles available</option>
-                  ) : (
-                    roles.map((role) => (
-                      <option key={role.id} value={role.id}>
-                        {role.name}
-                      </option>
-                    ))
-                  )}
-                </select>
+                  value={createRole}
+                  onChange={setCreateRole}
+                  placeholder="Search and select a role..."
+                />
               </div>
 
               {/* Modal Footer */}
