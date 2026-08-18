@@ -71,9 +71,13 @@ async def upload_avatar(file: UploadFile = File(...), db: AsyncSession = Depends
     )
 
 
-@router.post("/invite", response_model=UserInviteBulkResponse, summary="Bulk invite users via email with name, email and 14-char random tokens", dependencies=[Depends(require_permission("users:invite"))])
-async def invite_users(payload: UserInviteRequest, db: AsyncSession = Depends(get_db)):
-    return await user_service.invite_users(db, payload)
+@router.post("/invite", response_model=UserInviteBulkResponse, summary="Bulk invite users via email with name, email and 14-char random tokens", dependencies=[Depends(require_permission("users:invite")), Depends(require_permission("users:roles"))])
+async def invite_users(
+    payload: UserInviteRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await user_service.invite_users(db, payload, current_user=current_user)
 
 
 @router.get("/invitations", response_model=List[UserInvitationDetailsResponse], summary="List all user invitations", dependencies=[Depends(require_permission("users:read"))])
@@ -99,7 +103,7 @@ async def get_invitation_details(token: str, db: AsyncSession = Depends(get_db))
     return await user_service.get_invitation_details(db, token)
 
 
-@router.post("/accept-invite", summary="Accept organization user invitation, set password, and activate account", dependencies=[Depends(require_permission("users:invite"))])
+@router.post("/accept-invite", summary="Accept organization user invitation, set password, and activate account (Public endpoint)")
 async def accept_user_invitation(payload: AcceptInviteRequest, db: AsyncSession = Depends(get_db)):
     return await user_service.accept_user_invitation(db, payload)
 

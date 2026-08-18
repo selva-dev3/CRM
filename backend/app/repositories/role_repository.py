@@ -30,12 +30,23 @@ class RoleRepository:
             db.add(SystemSetting(key=key, value=value, description=description))
 
     # --- Role ---
-    async def list_roles(self, db: AsyncSession, search: Optional[str] = None) -> Sequence[Role]:
+    async def list_roles(
+        self,
+        db: AsyncSession,
+        search: Optional[str] = None,
+        org_id: Optional[str] = None,
+    ) -> Sequence[Role]:
+        """List roles, optionally filtered by search term and restricted to the
+        current organization plus global/system roles (``organization_id IS NULL``)."""
         stmt = select(Role)
         cleaned = search.strip() if search and isinstance(search, str) and search.strip() else None
         if cleaned:
             pattern = f"%{cleaned}%"
             stmt = stmt.where(Role.name.ilike(pattern) | Role.description.ilike(pattern))
+        if org_id:
+            stmt = stmt.where(
+                (Role.organization_id == org_id) | (Role.organization_id.is_(None))
+            )
         res = await db.execute(stmt.limit(50))
         return res.scalars().all()
 

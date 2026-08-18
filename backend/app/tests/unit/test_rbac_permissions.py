@@ -122,18 +122,55 @@ async def test_get_user_permissions_denies_empty_grants():
 
 
 @pytest.mark.asyncio
-async def test_get_user_permissions_grants_all_for_super_admin_permission():
+async def test_get_user_permissions_grants_all_for_super_admin_role():
+    """The super_admin role (by name) is the only role that receives every key."""
     repo = AsyncMock()
     repo.all_permission_keys = AsyncMock(return_value=["deals:read", "roles:update"])
     repo.role_ids_for_user = AsyncMock(return_value=["sys-1"])
     repo.role_ids_by_name = AsyncMock(return_value=[])
     repo.permission_keys_for_roles = AsyncMock(return_value=["super_admin:manage"])
+    repo.roles_by_ids = AsyncMock(return_value=[type("R", (), {"id": "sys-1", "name": "Super Admin"})()])
     service = AuthService(repository=repo)
     user = _make_user(role="Super Admin")
     db = AsyncMock(spec=AsyncSession)
 
     keys = await service.get_user_permissions(db, user)
+    assert set(keys) == {"deals:read", "roles:update"}
+
+
+@pytest.mark.asyncio
+async def test_get_user_permissions_grants_all_when_resolved_role_is_super_admin():
+    """Super_admin identity is also detected when the role is resolved from the DB."""
+    repo = AsyncMock()
+    repo.all_permission_keys = AsyncMock(return_value=["deals:read", "roles:update"])
+    repo.role_ids_for_user = AsyncMock(return_value=["sys-1"])
+    repo.role_ids_by_name = AsyncMock(return_value=[])
+    repo.permission_keys_for_roles = AsyncMock(return_value=["super_admin:manage"])
+    repo.roles_by_ids = AsyncMock(return_value=[type("R", (), {"id": "sys-1", "name": "super_admin"})()])
+    service = AuthService(repository=repo)
+    user = _make_user(role="sys-1")
+    db = AsyncMock(spec=AsyncSession)
+
+    keys = await service.get_user_permissions(db, user)
     assert set(keys) == {"deals:read", "roles:update", "super_admin:manage"}
+
+
+@pytest.mark.asyncio
+async def test_get_user_permissions_admin_holding_super_admin_manage_gets_only_assigned():
+    """An Admin role holding super_admin:manage must NOT receive implicit all-key access."""
+    repo = AsyncMock()
+    repo.all_permission_keys = AsyncMock(return_value=["deals:read", "roles:update"])
+    repo.role_ids_for_user = AsyncMock(return_value=["role-1"])
+    repo.role_ids_by_name = AsyncMock(return_value=["role-1"])
+    repo.permission_keys_for_roles = AsyncMock(return_value=["a:read", "super_admin:manage"])
+    repo.roles_by_ids = AsyncMock(return_value=[type("R", (), {"id": "role-1", "name": "Admin"})()])
+    service = AuthService(repository=repo)
+    user = _make_user(role="Admin")
+    db = AsyncMock(spec=AsyncSession)
+
+    keys = await service.get_user_permissions(db, user)
+    assert set(keys) == {"a:read", "super_admin:manage"}
+    repo.all_permission_keys.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -186,6 +223,7 @@ NO_PERMISSION_PATHS = {
     ("users", "GET", "/me/profile"),
     ("users", "PUT", "/me/profile"),
     ("users", "POST", "/me/avatar"),
+    ("users", "POST", "/accept-invite"),
 }
 
 

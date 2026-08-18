@@ -26,8 +26,8 @@ export interface UserInviteRequestPayload {
 export interface UserInviteResponseItem {
   name: string;
   email: string;
-  token: string;
   role: string;
+  role_name?: string;
   status: string;
 }
 
@@ -57,10 +57,9 @@ export interface UserDeleteResponse {
 export interface UserInvitationItem {
   id: string;
   email: string;
-  token: string;
   role: string;
   status: string;
-  organization_id: string;
+  organization_id?: string;
   created_at: string;
 }
 

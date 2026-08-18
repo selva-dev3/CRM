@@ -4,9 +4,9 @@ from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.errors import APIException, NotFoundError
+from app.core.errors import APIException, ForbiddenError, NotFoundError
 from app.core.security import generate_random_code, get_password_hash
-from app.models import User, UserRole
+from app.models import Role, User, UserRole
 from app.repositories.organization_repository import OrganizationRepository
 from app.repositories.role_repository import RoleRepository
 from app.repositories.user_repository import UserRepository
@@ -58,6 +58,51 @@ class UserService:
             raise NotFoundError(message=f"User '{user_id}' not found")
         return user
 
+    async def _resolve_current_org(self, db: AsyncSession, current_user: User) -> str:
+        """Single source of truth for the current organization: derived exclusively
+        from the authenticated user — never from a client-supplied organization_id."""
+        org_id = getattr(current_user, "organization_id", None)
+        if not org_id:
+            raise APIException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                message="Authenticated user has no current organization",
+            )
+        org = await self.organization_repository.get_by_id(db, org_id)
+        if not org:
+            raise APIException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                message="Current organization not found",
+            )
+        if getattr(org, "status", "active") != "active" or not getattr(org, "is_active", True):
+            raise APIException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                message="Organization is inactive or disabled.",
+            )
+        return org_id
+
+    async def _resolve_assignable_role(self, db: AsyncSession, org_id: str, role_value: str) -> Role:
+        """Resolve a role that may be assigned within the current organization.
+
+        Enforced server-side regardless of any frontend filtering:
+        1. Role must exist.
+        2. Role must belong to the current organization OR be a global/system role.
+        3. Protected system roles cannot be assigned through user creation / invitations.
+        """
+        role = await self.role_repository.get_role_by_id_or_name(db, role_value)
+        if not role:
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message=f"Invalid role: '{role_value}'",
+            )
+        if role.organization_id and role.organization_id != org_id:
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message=f"Role '{role.name}' does not belong to the current organization",
+            )
+        if getattr(role, "is_system_role", False):
+            raise ForbiddenError(message=f"System role '{role.name}' cannot be assigned")
+        return role
+
     @staticmethod
     def _get_display_role(user: User, role_map: dict) -> str:
         role_val = user.role
@@ -91,35 +136,9 @@ class UserService:
     async def create_user(self, db: AsyncSession, payload: UserCreate, *, current_user: User) -> dict:
         # The organization is derived exclusively from the authenticated user —
         # never from a client-supplied organization_id.
-        org_id = getattr(current_user, "organization_id", None)
-        if not org_id:
-            raise APIException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                message="Authenticated user has no current organization",
-            )
-        org = await self.organization_repository.get_by_id(db, org_id)
-        if not org:
-            raise APIException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                message="Current organization not found",
-            )
-        if getattr(org, "status", "active") != "active" or not getattr(org, "is_active", True):
-            raise APIException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                message="Organization is inactive or disabled.",
-            )
+        org_id = await self._resolve_current_org(db, current_user)
 
-        role = await self.role_repository.get_role_by_id_or_name(db, payload.role)
-        if not role:
-            raise APIException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                message=f"Invalid role: '{payload.role}'",
-            )
-        if role.organization_id and role.organization_id != org_id:
-            raise APIException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                message=f"Role '{role.name}' does not belong to the current organization",
-            )
+        role = await self._resolve_assignable_role(db, org_id, payload.role)
         user = await self.repository.create(
             db,
             data={
@@ -170,24 +189,18 @@ class UserService:
                 message=f"S3 Avatar upload failed: {str(e)}",
             ) from e
 
-    async def invite_users(self, db: AsyncSession, payload: UserInviteRequest) -> dict:
-        role_obj = None
-        if payload.role:
-            role_obj = await self.role_repository.get_role_by_id_or_name(db, payload.role)
-            if not role_obj:
-                raise APIException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    message=f"Invalid role: '{payload.role}'",
-                )
-        invite_role = role_obj.name if role_obj else (payload.role or "Sales Executive")
+    async def invite_users(
+        self, db: AsyncSession, payload: UserInviteRequest, *, current_user: User
+    ) -> dict:
+        # The organization is derived exclusively from the authenticated user —
+        # the Invite Team Member form no longer accepts an organization field.
+        org_id = await self._resolve_current_org(db, current_user)
+
+        role = await self._resolve_assignable_role(db, org_id, payload.role)
+        role_id = role.id
+        role_name = role.name
         invitation_responses = []
         try:
-            org = await self.repository.get_first_org(db)
-            if not org:
-                org = await self.repository.create_org(db, name="Default Enterprise CRM")
-                await db.flush()
-            org_id = org.id
-
             invite_targets = []
             if payload.users:
                 for u in payload.users:
@@ -207,7 +220,7 @@ class UserService:
                     data={
                         "email": target["email"],
                         "token": token,
-                        "role": invite_role,
+                        "role": role_id,
                         "organization_id": org_id,
                         "status": "pending",
                     },
@@ -217,7 +230,7 @@ class UserService:
                 invite_url = f"{settings.FRONTEND_URL}/accept-invite?token={token}"
                 send_user_invite_email(
                     email_to=target["email"],
-                    role=invite_role,
+                    role=role_name,
                     invite_url=invite_url,
                 )
 
@@ -225,8 +238,8 @@ class UserService:
                     {
                         "name": target["name"],
                         "email": target["email"],
-                        "token": token,
-                        "role": invite_role,
+                        "role": role_id,
+                        "role_name": role_name,
                         "status": "pending",
                     }
                 )
@@ -250,12 +263,14 @@ class UserService:
         invitations = await self.repository.list_invitations(
             db, token=token, status_filter=status_filter
         )
+        role_map = await self.repository.role_name_map(
+            db, {inv.role for inv in invitations if inv.role}
+        )
         return [
             {
                 "id": inv.id,
                 "email": inv.email,
-                "token": inv.token,
-                "role": inv.role,
+                "role": role_map.get(inv.role, inv.role),
                 "status": inv.status,
                 "organization_id": inv.organization_id,
                 "created_at": str(inv.created_at) if inv.created_at else "",
@@ -272,11 +287,11 @@ class UserService:
         )
         if accepted_any:
             inv.status = "accepted"
+        role_map = await self.repository.role_name_map(db, {inv.role} if inv.role else set())
         return {
             "id": inv.id,
             "email": inv.email,
-            "token": inv.token,
-            "role": inv.role,
+            "role": role_map.get(inv.role, inv.role),
             "status": inv.status,
             "organization_id": inv.organization_id,
             "created_at": str(inv.created_at),
@@ -287,17 +302,6 @@ class UserService:
         if not inv:
             raise NotFoundError(message="Invalid or expired invitation token")
 
-        accepted_any = await self.repository.get_invitation_by_email(
-            db, inv.email, status="accepted"
-        )
-        if inv.status == "accepted" or accepted_any:
-            inv.status = "accepted"
-            await db.commit()
-            raise APIException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                message="Invitation has already been accepted",
-            )
-
         role = await self.role_repository.get_role_by_id_or_name(db, inv.role)
         if not role:
             raise APIException(
@@ -305,16 +309,23 @@ class UserService:
                 message=f"Invitation references an invalid role '{inv.role}'. Please contact an administrator.",
             )
 
-        try:
-            org = await self.repository.get_first_org(db)
-            if not org:
-                org = await self.repository.create_org(db, name="Default Enterprise CRM")
-                await db.flush()
-            target_org_id = (
-                inv.organization_id
-                if inv.organization_id and len(inv.organization_id) > 5
-                else org.id
+        if not inv.organization_id:
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Invitation has no associated organization and cannot be accepted",
             )
+
+        try:
+            accepted_any = await self.repository.get_invitation_by_email(
+                db, inv.email, status="accepted"
+            )
+            if inv.status == "accepted" or accepted_any:
+                raise APIException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    message="Invitation has already been accepted",
+                )
+
+            target_org_id = inv.organization_id
 
             user = await self.repository.get_by_email(db, inv.email)
             hashed_pwd = get_password_hash(payload.password)
@@ -375,7 +386,8 @@ class UserService:
         if payload.name:
             user.name = payload.name
         if payload.role:
-            user.role = payload.role
+            role = await self._resolve_assignable_role(db, user.organization_id, payload.role)
+            user.role = role.id
         await self._commit(db, "Failed to update user")
         return user_to_dict(user)
 
