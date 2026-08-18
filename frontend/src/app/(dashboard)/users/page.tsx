@@ -428,20 +428,14 @@ export default function UsersPage() {
     () => [
       {
         id: 'email',
-        header: 'Invited Email & Token',
+        header: 'Invited Email',
         className: 'min-w-[220px]',
         cell: (item: UserInvitationItem) => (
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-full bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center font-semibold text-caption shrink-0">
               {item.email.charAt(0).toUpperCase()}
             </div>
-            <div className="space-y-0.5">
-              <span className="block text-body font-medium text-[#111827]">{item.email}</span>
-              <div className="flex items-center gap-1.5 text-caption text-[#9CA3AF]">
-                <Mail className="w-3.5 h-3.5 shrink-0" />
-                <span>Token: {item.token}</span>
-              </div>
-            </div>
+            <span className="block text-body font-medium text-[#111827]">{item.email}</span>
           </div>
         ),
       },
@@ -461,7 +455,7 @@ export default function UsersPage() {
         header: 'Organization',
         className: 'min-w-[160px]',
         cell: (item: UserInvitationItem) => {
-          const orgName = orgMap.get(item.organization_id) || (item.organization_id ? `Org (${item.organization_id.substring(0, 8)})` : 'Default Organization');
+          const orgName = orgMap.get(item.organization_id ?? '') || (item.organization_id ? `Org (${item.organization_id.substring(0, 8)})` : 'Default Organization');
           return (
             <div className="flex items-center gap-1.5 text-body font-medium text-[#374151]">
               <Building className="w-3.5 h-3.5 text-[#2563EB] shrink-0" />

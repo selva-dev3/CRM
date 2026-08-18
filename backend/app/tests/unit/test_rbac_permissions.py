@@ -223,6 +223,7 @@ NO_PERMISSION_PATHS = {
     ("users", "GET", "/me/profile"),
     ("users", "PUT", "/me/profile"),
     ("users", "POST", "/me/avatar"),
+    ("users", "POST", "/accept-invite"),
 }
 
 

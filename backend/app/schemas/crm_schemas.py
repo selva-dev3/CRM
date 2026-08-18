@@ -122,7 +122,6 @@ class UserInviteRequest(BaseModel):
 class UserInviteResponseItem(BaseModel):
     name: str
     email: str
-    token: str
     role: str
     role_name: Optional[str] = None
     status: str = "pending"
@@ -140,10 +139,9 @@ class AcceptInviteRequest(BaseModel):
 class UserInvitationDetailsResponse(BaseModel):
     id: str
     email: str
-    token: str
     role: str
     status: str
-    organization_id: str
+    organization_id: Optional[str] = None
     created_at: str
 
 class UserActionResponse(BaseModel):

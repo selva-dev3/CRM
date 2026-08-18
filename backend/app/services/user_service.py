@@ -238,7 +238,6 @@ class UserService:
                     {
                         "name": target["name"],
                         "email": target["email"],
-                        "token": token,
                         "role": role_id,
                         "role_name": role_name,
                         "status": "pending",
@@ -271,7 +270,6 @@ class UserService:
             {
                 "id": inv.id,
                 "email": inv.email,
-                "token": inv.token,
                 "role": role_map.get(inv.role, inv.role),
                 "status": inv.status,
                 "organization_id": inv.organization_id,
@@ -293,7 +291,6 @@ class UserService:
         return {
             "id": inv.id,
             "email": inv.email,
-            "token": inv.token,
             "role": role_map.get(inv.role, inv.role),
             "status": inv.status,
             "organization_id": inv.organization_id,
@@ -304,17 +301,6 @@ class UserService:
         inv = await self.repository.get_invitation_by_token(db, payload.token)
         if not inv:
             raise NotFoundError(message="Invalid or expired invitation token")
-
-        accepted_any = await self.repository.get_invitation_by_email(
-            db, inv.email, status="accepted"
-        )
-        if inv.status == "accepted" or accepted_any:
-            inv.status = "accepted"
-            await db.commit()
-            raise APIException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                message="Invitation has already been accepted",
-            )
 
         role = await self.role_repository.get_role_by_id_or_name(db, inv.role)
         if not role:
@@ -330,6 +316,15 @@ class UserService:
             )
 
         try:
+            accepted_any = await self.repository.get_invitation_by_email(
+                db, inv.email, status="accepted"
+            )
+            if inv.status == "accepted" or accepted_any:
+                raise APIException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    message="Invitation has already been accepted",
+                )
+
             target_org_id = inv.organization_id
 
             user = await self.repository.get_by_email(db, inv.email)
@@ -391,7 +386,8 @@ class UserService:
         if payload.name:
             user.name = payload.name
         if payload.role:
-            user.role = payload.role
+            role = await self._resolve_assignable_role(db, user.organization_id, payload.role)
+            user.role = role.id
         await self._commit(db, "Failed to update user")
         return user_to_dict(user)
 

@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import APIException, NotFoundError
+from app.core.errors import APIException, ForbiddenError, NotFoundError
 from app.models import User, UserInvitation
 from app.repositories.user_repository import UserRepository
 from app.schemas.crm_schemas import UserCreate, UserUpdate
@@ -391,6 +391,29 @@ async def test_accept_invitation_rejects_missing_organization(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_accept_invitation_already_accepted_does_not_commit():
+    inv = _make_invitation(status="accepted")
+    repo = UserRepository()
+    repo.get_invitation_by_token = AsyncMock(return_value=inv)
+    repo.get_invitation_by_email = AsyncMock(return_value=None)
+    repo.create = AsyncMock(return_value=_make_user())
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    role = type("R", (), {"id": "role-1", "name": "Sales Manager", "organization_id": None})()
+    service.role_repository.get_role_by_id_or_name = AsyncMock(return_value=role)
+
+    from app.schemas.crm_schemas import AcceptInviteRequest
+
+    payload = AcceptInviteRequest(token="ABCDEFGHIJKLMN", name="Alex", password="secret")
+
+    with pytest.raises(APIException) as exc_info:
+        await service.accept_user_invitation(db, payload)
+    assert exc_info.value.status_code == 400
+    db.commit.assert_not_awaited()
+    repo.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_invite_users_uses_current_user_org_and_stores_role_id(monkeypatch):
     repo = UserRepository()
     repo.create_invitation = AsyncMock(return_value=None)
@@ -512,9 +535,46 @@ async def test_update_user_only_changes_provided_fields():
     repo.get_by_id = AsyncMock(return_value=user)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
+    role = type("R", (), {"id": "role-9", "name": "Sales Manager", "organization_id": None})()
+    service.role_repository.get_role_by_id_or_name = AsyncMock(return_value=role)
 
     result = await service.update_user(db, "user-1", UserUpdate(role="Sales Manager"))
 
-    assert user.role == "Sales Manager"
+    assert user.role == "role-9"
     assert user.name == "Alex Smith"
-    assert result["role"] == "Sales Manager"
+    assert result["role"] == "role-9"
+
+
+@pytest.mark.asyncio
+async def test_update_user_rejects_role_from_other_org():
+    user = _make_user(organization_id="org-1")
+    repo = UserRepository()
+    repo.get_by_id = AsyncMock(return_value=user)
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    role = type("R", (), {"id": "role-9", "name": "Foreign Role", "organization_id": "org-2"})()
+    service.role_repository.get_role_by_id_or_name = AsyncMock(return_value=role)
+
+    with pytest.raises(APIException) as exc_info:
+        await service.update_user(db, "user-1", UserUpdate(role="role-9"))
+    assert exc_info.value.status_code == 400
+    assert user.role == "Sales Executive"
+
+
+@pytest.mark.asyncio
+async def test_update_user_rejects_system_role():
+    user = _make_user()
+    repo = UserRepository()
+    repo.get_by_id = AsyncMock(return_value=user)
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    role = type(
+        "R",
+        (),
+        {"id": "role-9", "name": "Admin", "organization_id": None, "is_system_role": True},
+    )()
+    service.role_repository.get_role_by_id_or_name = AsyncMock(return_value=role)
+
+    with pytest.raises(ForbiddenError):
+        await service.update_user(db, "user-1", UserUpdate(role="role-9"))
+    assert user.role == "Sales Executive"

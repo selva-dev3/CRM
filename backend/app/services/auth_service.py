@@ -286,7 +286,6 @@ class AuthService:
         return {
             "id": inv.id,
             "email": inv.email,
-            "token": inv.token,
             "role": inv.role,
             "status": inv.status,
             "organization_id": inv.organization_id,

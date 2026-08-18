@@ -103,7 +103,7 @@ async def get_invitation_details(token: str, db: AsyncSession = Depends(get_db))
     return await user_service.get_invitation_details(db, token)
 
 
-@router.post("/accept-invite", summary="Accept organization user invitation, set password, and activate account", dependencies=[Depends(require_permission("users:invite"))])
+@router.post("/accept-invite", summary="Accept organization user invitation, set password, and activate account (Public endpoint)")
 async def accept_user_invitation(payload: AcceptInviteRequest, db: AsyncSession = Depends(get_db)):
     return await user_service.accept_user_invitation(db, payload)
 
