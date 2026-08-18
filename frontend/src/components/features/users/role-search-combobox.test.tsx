@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RoleSearchCombobox } from './role-search-combobox';
 
 const roles = [
@@ -18,6 +18,10 @@ vi.mock('@/lib/api/roles', () => ({
 beforeEach(() => {
   useRolesQueryMock.mockReset();
   useRolesQueryMock.mockReturnValue({ data: roles, isLoading: false, isError: false, refetch: vi.fn() });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 async function openPanel(user: ReturnType<typeof userEvent.setup>) {

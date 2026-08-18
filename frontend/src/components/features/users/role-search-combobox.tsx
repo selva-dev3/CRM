@@ -47,7 +47,7 @@ export function RoleSearchCombobox({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const optionRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const optionRefs = useRef(new Map<string, HTMLDivElement>());
 
   const { data: roles = [], isLoading, isError, refetch } = useRolesQuery(
     debouncedSearch.trim() || undefined,
@@ -63,6 +63,7 @@ export function RoleSearchCombobox({
     if (!isOpen) return;
 
     const updatePosition = () => {
+      if (typeof window === 'undefined') return;
       const trigger = containerRef.current;
       if (!trigger) return;
       const rect = trigger.getBoundingClientRect();
@@ -118,9 +119,10 @@ export function RoleSearchCombobox({
   }, [isOpen]);
 
   useEffect(() => {
-    const el = optionRefs.current[effectiveHighlightedIndex];
-    el?.scrollIntoView({ block: 'nearest' });
-  }, [effectiveHighlightedIndex, isOpen, roles.length]);
+    const activeRole = roles[effectiveHighlightedIndex];
+    if (!activeRole) return;
+    optionRefs.current.get(activeRole.id)?.scrollIntoView({ block: 'nearest' });
+  }, [effectiveHighlightedIndex, isOpen, roles]);
 
   const openPanel = () => {
     if (disabled) return;
@@ -275,7 +277,11 @@ export function RoleSearchCombobox({
                     key={role.id}
                     id={`${OPTION_ID_PREFIX}-${index}`}
                     ref={(el) => {
-                      optionRefs.current[index] = el;
+                      if (el) {
+                        optionRefs.current.set(role.id, el);
+                      } else {
+                        optionRefs.current.delete(role.id);
+                      }
                     }}
                     role="option"
                     aria-selected={value === role.id}
