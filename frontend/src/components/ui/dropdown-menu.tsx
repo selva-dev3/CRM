@@ -83,7 +83,7 @@ export function DropdownMenuContent({
 }) {
   const { open, triggerRef } = React.useContext(DropdownContext);
   const contentRef = React.useRef<HTMLDivElement>(null);
-  const [coords, setCoords] = React.useState<{ top: number; left?: number; right?: number } | null>(null);
+  const [coords, setCoords] = React.useState<{ top: number; left?: number; right?: number; isTop?: boolean } | null>(null);
   const [mounted, setMounted] = React.useState(false);
 
   React.useEffect(() => {
@@ -101,17 +101,17 @@ export function DropdownMenuContent({
 
       const spaceBelow = viewportHeight - rect.bottom;
       const isTop = side === "top" || (side === "auto" && spaceBelow < 180 && rect.top > spaceBelow);
-      const top = isTop ? Math.max(10, rect.top - 8) : rect.bottom + 4;
+      const top = isTop ? rect.top - 4 : rect.bottom + 4;
 
       if (align === "end") {
         const right = Math.max(10, viewportWidth - rect.right);
-        setCoords({ top, right });
+        setCoords({ top, right, isTop });
       } else if (align === "center") {
         const left = Math.max(10, rect.left + rect.width / 2);
-        setCoords({ top, left });
+        setCoords({ top, left, isTop });
       } else {
         const left = Math.max(10, rect.left);
-        setCoords({ top, left });
+        setCoords({ top, left, isTop });
       }
     };
 
@@ -133,6 +133,7 @@ export function DropdownMenuContent({
       style={{
         position: "fixed",
         top: `${coords.top}px`,
+        ...(coords.isTop ? { transform: "translateY(-100%)" } : {}),
         ...(coords.right !== undefined ? { right: `${coords.right}px` } : {}),
         ...(coords.left !== undefined ? { left: `${coords.left}px` } : {}),
         zIndex: 99999,
