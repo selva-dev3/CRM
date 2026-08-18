@@ -474,3 +474,31 @@ export function useAcceptInvitationMutation() {
   });
 }
 
+export interface OrganizationInvitePayload {
+  email: string;
+  full_name?: string;
+  role: string;
+  organization_id: string;
+}
+
+export interface OrganizationInviteResponse {
+  token: string;
+  invite_url: string;
+  message: string;
+}
+
+export async function inviteOrganizationMemberApi(payload: OrganizationInvitePayload): Promise<OrganizationInviteResponse> {
+  return apiClient.post<OrganizationInviteResponse>('/organizations/invitations', payload);
+}
+
+export function useInviteOrganizationMemberMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: inviteOrganizationMemberApi,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['organizations'] });
+      queryClient.invalidateQueries({ queryKey: ['organization-members'] });
+    },
+  });
+}
+

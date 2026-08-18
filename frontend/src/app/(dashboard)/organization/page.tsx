@@ -20,6 +20,7 @@ import {
   ShieldCheck,
   Crown,
   Users,
+  UserPlus,
   MapPin,
   Building2,
   Power,
@@ -40,11 +41,14 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { DataTable, type DataTableColumn, type TableActionOption } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { PermissionGate } from '@/components/common/permission-gate';
+import { RoleSearchCombobox } from '@/components/features/users/role-search-combobox';
 import {
   useOrganizationsQuery,
   useCreateOrganizationMutation,
   useUpdateOrganizationMutation,
   useDeleteOrganizationMutation,
+  useInviteOrganizationMemberMutation,
   OrganizationItem,
   CreateOrganizationPayload,
   UpdateOrganizationPayload,
@@ -108,6 +112,7 @@ export default function OrganizationPage() {
   const createOrgMutation = useCreateOrganizationMutation();
   const updateOrgMutation = useUpdateOrganizationMutation();
   const deleteOrgMutation = useDeleteOrganizationMutation();
+  const inviteOrgMutation = useInviteOrganizationMemberMutation();
 
   // Filter organizations by search term
   const organizations = useMemo(() => {
@@ -127,6 +132,11 @@ export default function OrganizationPage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [orgToEdit, setOrgToEdit] = useState<OrganizationItem | null>(null);
   const [orgToDelete, setOrgToDelete] = useState<OrganizationItem | null>(null);
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [inviteOrg, setInviteOrg] = useState<OrganizationItem | null>(null);
+  const [inviteFullName, setInviteFullName] = useState('');
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState('');
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -292,6 +302,60 @@ export default function OrganizationPage() {
       setTimeout(() => setSuccessMessage(null), 4000);
     } catch (err: any) {
       setErrorMessage(err?.message || 'Failed to delete organization.');
+    }
+  };
+
+  // Invite Organization Member Handlers
+  const handleOpenInviteModal = (org: OrganizationItem) => {
+    setInviteOrg(org);
+    setInviteFullName('');
+    setInviteEmail('');
+    setInviteRole('');
+    setErrorMessage(null);
+    setIsInviteModalOpen(true);
+  };
+
+  const handleCloseInviteModal = () => {
+    setIsInviteModalOpen(false);
+    setInviteOrg(null);
+    setInviteFullName('');
+    setInviteEmail('');
+    setInviteRole('');
+  };
+
+  const handleInviteSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inviteOrg) return;
+    if (!inviteEmail.trim()) {
+      setErrorMessage('Please provide a valid email address.');
+      return;
+    }
+    if (!inviteRole) {
+      setErrorMessage('Please select a role.');
+      return;
+    }
+
+    try {
+      await inviteOrgMutation.mutateAsync({
+        organization_id: inviteOrg.id,
+        email: inviteEmail.trim(),
+        full_name: inviteFullName.trim() || undefined,
+        role: inviteRole,
+      });
+
+      await queryClient.invalidateQueries({ queryKey: ['organizations'] });
+      await refetch();
+
+      setSuccessMessage(`Invitation sent successfully to ${inviteEmail.trim()} for "${inviteOrg.name}"!`);
+      setIsInviteModalOpen(false);
+      setInviteOrg(null);
+      setInviteFullName('');
+      setInviteEmail('');
+      setInviteRole('');
+
+      setTimeout(() => setSuccessMessage(null), 4000);
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to send invitation.');
     }
   };
 
@@ -487,6 +551,12 @@ export default function OrganizationPage() {
 
   // Actions for Row Dropdown
   const actions = (org: OrganizationItem): TableActionOption<OrganizationItem>[] => [
+    {
+      label: 'Invite Member',
+      icon: <UserPlus className="w-4 h-4 mr-2 text-[#2563EB]" />,
+      permission: 'invitations:create',
+      onClick: (item) => handleOpenInviteModal(item),
+    },
     {
       label: 'Edit Organization',
       icon: <Pencil className="w-4 h-4 mr-2 text-[#2563EB]" />,
@@ -955,6 +1025,102 @@ export default function OrganizationPage() {
                   className="cursor-pointer shadow-saas-sm"
                 >
                   {updateOrgMutation.isPending ? 'Saving...' : 'Save Changes'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* INVITE ORGANIZATION MEMBER MODAL DIALOG */}
+      {isInviteModalOpen && inviteOrg && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-[#111827]/60 backdrop-blur-xs animate-in fade-in-50">
+          <div className="relative w-full max-w-lg bg-white rounded-modal border border-[#E5E7EB] shadow-saas-lg overflow-hidden text-[#111827] flex flex-col">
+            {/* Modal Header */}
+            <div className="p-5 sm:p-6 border-b border-[#E5E7EB] bg-[#F9FAFB] flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-btn bg-[#2563EB] flex items-center justify-center text-white shadow-saas-sm">
+                  <UserPlus className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-subheading font-semibold text-[#111827]">
+                    Invite Organization Member
+                  </h3>
+                  <p className="text-caption text-[#6B7280]">
+                    Send an account invite link and set permissions
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleCloseInviteModal}
+                className="p-1.5 rounded-btn text-[#6B7280] hover:text-[#111827] hover:bg-[#F3F4F6] transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <form onSubmit={handleInviteSubmit} className="p-5 sm:p-6 space-y-4">
+              {/* Read-only organization context (determined from the clicked row) */}
+              <div className="p-3 rounded-btn bg-[#2563EB]/5 border border-[#2563EB]/20 flex items-center gap-2.5">
+                <Building2 className="w-4 h-4 text-[#2563EB] shrink-0" />
+                <div className="min-w-0">
+                  <span className="block text-badge font-semibold text-[#2563EB]">Organization</span>
+                  <span className="block text-body font-medium text-[#111827] truncate">{inviteOrg.name || 'Unnamed Org'}</span>
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="invite-name">Full Name</Label>
+                <Input
+                  id="invite-name"
+                  type="text"
+                  placeholder="e.g. Alex Rivera"
+                  value={inviteFullName}
+                  onChange={(e) => setInviteFullName(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="invite-email">Email Address <span className="text-[#DC2626]">*</span></Label>
+                <Input
+                  id="invite-email"
+                  type="email"
+                  required
+                  placeholder="e.g. alex@company.com"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="invite-role">User Role <span className="text-[#DC2626]">*</span></Label>
+                <RoleSearchCombobox
+                  id="invite-role"
+                  value={inviteRole}
+                  onChange={setInviteRole}
+                  placeholder="Search and select a role..."
+                />
+              </div>
+
+              {/* Modal Footer */}
+              <div className="pt-4 border-t border-[#E5E7EB] flex items-center justify-end gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleCloseInviteModal}
+                  className="text-button font-medium cursor-pointer"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  disabled={inviteOrgMutation.isPending}
+                  className="shadow-saas-sm text-button font-medium cursor-pointer"
+                >
+                  {inviteOrgMutation.isPending ? 'Sending...' : 'Send Invitation'}
                 </Button>
               </div>
             </form>

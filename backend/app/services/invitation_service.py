@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, desc, asc
 
 from app.core.config import settings
+from app.core.permissions import is_super_admin_role_name
 from app.core.security import get_password_hash, create_access_token
 from app.api.v1.deps import get_valid_org_id
 from app.models import (
@@ -14,6 +15,7 @@ from app.models import (
     OrganizationSubscription,
     SubscriptionPlan,
     OrganizationInvitation,
+    Role,
     User,
     AuditLog
 )
@@ -237,24 +239,82 @@ async def create_superadmin_organization_flow(
     )
 
 
+async def _resolve_assignable_role(db: AsyncSession, org_id: str, role_value: str) -> Role:
+    """Resolve a role that may be assigned within the target organization.
+
+    Mirrors ``user_service._resolve_assignable_role``:
+    1. Role must exist (by id or name).
+    2. Role must be global/system or belong to the target organization.
+    3. Protected system roles cannot be assigned through invitations.
+    """
+    role = await db.scalar(
+        select(Role).where((Role.id == role_value) | (Role.name == role_value))
+    )
+    if not role:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid role: '{role_value}'",
+        )
+    if role.organization_id and role.organization_id != org_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Role '{role.name}' does not belong to the target organization",
+        )
+    if getattr(role, "is_system_role", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"System role '{role.name}' cannot be assigned through an invitation",
+        )
+    return role
+
+
 async def create_organization_user_invitation(
     db: AsyncSession,
     payload: OrganizationInviteRequest,
     current_user: User
 ) -> InviteUserResponse:
-    """Invite new users via email returning only token, invite_url, and success message."""
-    target_org_id = payload.organization_id if (payload.organization_id and payload.organization_id.strip()) else None
+    """Invite new users via email returning only token, invite_url, and success message.
 
-    org = None
-    sub = None
-    if target_org_id:
-        org = await db.scalar(select(Organization).where(Organization.id == target_org_id))
-        if org and (getattr(org, "status", "active") != "active" or not getattr(org, "is_active", True)):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Organization is inactive or disabled."
-            )
-        sub = await db.scalar(select(OrganizationSubscription).where(OrganizationSubscription.organization_id == target_org_id))
+    The target organization is derived from the authenticated user unless the
+    caller is a platform super_admin, who may target any organization (e.g. the
+    multi-tenant Organization Management page). A client-supplied organization_id
+    is never trusted for non-superadmins.
+    """
+    requested_org_id = payload.organization_id.strip() if (payload.organization_id and payload.organization_id.strip()) else None
+    is_super_admin = is_super_admin_role_name(current_user.role) or (
+        current_user.email and current_user.email.strip().lower() == "superadmin@gmail.com"
+    )
+
+    # Server-side access control for the target organization.
+    if requested_org_id and not is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to invite members into a different organization.",
+        )
+
+    target_org_id = requested_org_id if (requested_org_id and is_super_admin) else current_user.organization_id
+    if not target_org_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Authenticated user has no current organization.",
+        )
+
+    org = await db.scalar(select(Organization).where(Organization.id == target_org_id))
+    if not org:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Organization not found.",
+        )
+    if getattr(org, "status", "active") != "active" or not getattr(org, "is_active", True):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Organization is inactive or disabled."
+        )
+    sub = await db.scalar(select(OrganizationSubscription).where(OrganizationSubscription.organization_id == target_org_id))
+
+    # Validate the requested role is assignable within the target organization.
+    role_value = payload.role.strip() if (payload.role and payload.role.strip()) else "Admin"
+    await _resolve_assignable_role(db, target_org_id, role_value)
 
     # Check if user is already registered & active
     email_clean = payload.email.strip().lower()
@@ -278,9 +338,9 @@ async def create_organization_user_invitation(
     if existing_inv:
         existing_inv.token = token
         existing_inv.expires_at = expires_at
-        existing_inv.role_id = payload.role or "Admin"
+        existing_inv.role_id = role_value
         existing_inv.full_name = payload.full_name or existing_inv.full_name
-        existing_inv.organization_id = target_org_id or existing_inv.organization_id
+        existing_inv.organization_id = target_org_id
         invitation = existing_inv
     else:
         invitation = OrganizationInvitation(
@@ -288,7 +348,7 @@ async def create_organization_user_invitation(
             organization_id=target_org_id,
             email=email_clean,
             full_name=payload.full_name.strip() if payload.full_name else None,
-            role_id=payload.role or "Admin",
+            role_id=role_value,
             subscription_id=sub.id if sub else None,
             token=token,
             status="Pending",
@@ -312,7 +372,7 @@ async def create_organization_user_invitation(
 
     # Send Email
     invite_url = f"{settings.FRONTEND_URL}/accept-invite/organization/{token}"
-    send_user_invite_email(email_to=email_clean, role=payload.role or "Admin", invite_url=invite_url)
+    send_user_invite_email(email_to=email_clean, role=role_value, invite_url=invite_url)
 
     return InviteUserResponse(
         token=token,
