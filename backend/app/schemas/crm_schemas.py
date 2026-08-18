@@ -117,7 +117,7 @@ class UserInviteRequest(BaseModel):
     name: Optional[str] = None
     emails: Optional[List[EmailStr]] = None
     users: Optional[List[UserInviteItem]] = None
-    role: str = "Sales Executive"
+    role: str
 
 class UserInviteResponseItem(BaseModel):
     name: str

@@ -226,6 +226,7 @@ export default function UsersPage() {
       });
 
       await queryClient.invalidateQueries({ queryKey: ['users'] });
+      await queryClient.invalidateQueries({ queryKey: ['user-invitations'] });
       await refetch();
 
       setSuccessMessage(`Invitation sent successfully to ${userEmail}!`);

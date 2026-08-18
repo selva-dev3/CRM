@@ -15,7 +15,6 @@ class OrganizationInviteRequest(BaseModel):
     email: EmailStr = Field(..., example="user@company.com")
     full_name: Optional[str] = Field(None, example="Jane Smith")
     role: Optional[str] = Field("Admin", example="Admin")
-    organization_id: Optional[str] = Field(None, example="org-1")
 
 class AcceptInvitationRequest(BaseModel):
     password: str = Field(..., min_length=6, example="Password123!")
