@@ -106,6 +106,24 @@ describe('RoleSearchCombobox', () => {
     expect(onChange).toHaveBeenCalledWith('role-2');
   });
 
+  it('clamps the highlighted index when the roles list shrinks', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const { rerender } = render(<RoleSearchCombobox value="" onChange={onChange} />);
+    await openPanel(user);
+
+    const input = screen.getByRole('combobox');
+    input.focus();
+    await user.keyboard('{ArrowDown}');
+    await user.keyboard('{ArrowDown}');
+
+    useRolesQueryMock.mockReturnValue({ data: [roles[0]], isLoading: false, isError: false });
+    rerender(<RoleSearchCombobox value="" onChange={onChange} />);
+
+    await user.keyboard('{Enter}');
+    expect(onChange).toHaveBeenCalledWith('role-1');
+  });
+
   it('queries the backend with the debounced search term', async () => {
     const user = userEvent.setup();
     render(<RoleSearchCombobox value="" onChange={vi.fn()} />);

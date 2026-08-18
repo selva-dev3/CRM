@@ -365,6 +365,32 @@ async def test_accept_invitation_rejects_invalid_role(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_accept_invitation_rejects_missing_organization(monkeypatch):
+    inv = _make_invitation(organization_id=None)
+    repo = UserRepository()
+    repo.get_invitation_by_token = AsyncMock(return_value=inv)
+    repo.get_invitation_by_email = AsyncMock(return_value=None)
+    repo.create = AsyncMock(return_value=_make_user())
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    role = type("R", (), {"id": "role-1", "name": "Sales Manager", "organization_id": None})()
+    service.role_repository.get_role_by_id_or_name = AsyncMock(return_value=role)
+    service.role_repository.get_user_role_mapping = AsyncMock(return_value=None)
+
+    monkeypatch.setattr("app.services.user_service.get_password_hash", lambda pwd: "hashed")
+
+    from app.schemas.crm_schemas import AcceptInviteRequest
+
+    payload = AcceptInviteRequest(token="ABCDEFGHIJKLMN", name="Alex", password="secret")
+
+    with pytest.raises(APIException) as exc_info:
+        await service.accept_user_invitation(db, payload)
+    assert exc_info.value.status_code == 400
+    assert "organization" in exc_info.value.message.lower()
+    repo.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_invite_users_uses_current_user_org_and_stores_role_id(monkeypatch):
     repo = UserRepository()
     repo.create_invitation = AsyncMock(return_value=None)

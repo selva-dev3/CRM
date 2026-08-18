@@ -323,16 +323,14 @@ class UserService:
                 message=f"Invitation references an invalid role '{inv.role}'. Please contact an administrator.",
             )
 
-        try:
-            org = await self.repository.get_first_org(db)
-            if not org:
-                org = await self.repository.create_org(db, name="Default Enterprise CRM")
-                await db.flush()
-            target_org_id = (
-                inv.organization_id
-                if inv.organization_id and len(inv.organization_id) > 5
-                else org.id
+        if not inv.organization_id:
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Invitation has no associated organization and cannot be accepted",
             )
+
+        try:
+            target_org_id = inv.organization_id
 
             user = await self.repository.get_by_email(db, inv.email)
             hashed_pwd = get_password_hash(payload.password)

@@ -124,6 +124,7 @@ class UserInviteResponseItem(BaseModel):
     email: str
     token: str
     role: str
+    role_name: Optional[str] = None
     status: str = "pending"
 
 class UserInviteBulkResponse(BaseModel):

@@ -36,6 +36,7 @@ export function RoleSearchCombobox({
 
   const selectedRole = useMemo(() => roles.find((r) => r.id === value), [roles, value]);
   const activeRoleName = selectedRole?.name || selectedRoleName;
+  const effectiveHighlightedIndex = Math.min(highlightedIndex, Math.max(roles.length - 1, 0));
 
   useEffect(() => {
     if (!isOpen) return;
@@ -47,6 +48,13 @@ export function RoleSearchCombobox({
     document.addEventListener('mousedown', handleMouseDown);
     return () => document.removeEventListener('mousedown', handleMouseDown);
   }, [isOpen]);
+
+  const optionRefs = useRef<(HTMLDivElement | null)[]>([]);
+
+  useEffect(() => {
+    const el = optionRefs.current[effectiveHighlightedIndex];
+    el?.scrollIntoView({ block: 'nearest' });
+  }, [effectiveHighlightedIndex, isOpen, roles.length]);
 
   const openPanel = () => {
     if (disabled) return;
@@ -80,7 +88,7 @@ export function RoleSearchCombobox({
     }
     if (e.key === 'Enter' && isOpen) {
       e.preventDefault();
-      const role = roles[highlightedIndex];
+      const role = roles[effectiveHighlightedIndex];
       if (role) selectRole(role);
     }
   };
@@ -150,13 +158,16 @@ export function RoleSearchCombobox({
               roles.map((role, index) => (
                 <div
                   key={role.id}
+                  ref={(el) => {
+                    optionRefs.current[index] = el;
+                  }}
                   role="option"
                   aria-selected={value === role.id}
                   onClick={() => selectRole(role)}
                   onMouseEnter={() => setHighlightedIndex(index)}
                   className={cn(
                     'flex items-center justify-between p-2 rounded-btn text-body font-medium cursor-pointer',
-                    highlightedIndex === index ? 'bg-[#F3F4F6]' : '',
+                    effectiveHighlightedIndex === index ? 'bg-[#F3F4F6]' : '',
                     value === role.id ? 'bg-[#2563EB]/10 text-[#2563EB]' : 'text-[#374151]',
                   )}
                 >
