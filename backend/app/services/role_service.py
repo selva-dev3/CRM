@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, ForbiddenError, NotFoundError
+from app.core.permissions import is_super_admin_role
 from app.models import Role, UserRole
 from app.repositories.role_repository import RoleRepository
 from app.schemas.crm_schemas import PermissionCreate, RoleCreate, RoleUpdate
@@ -188,16 +189,19 @@ class RoleService:
         self, db: AsyncSession, role: Role, all_db_keys: list[str]
     ) -> list[str]:
         """Resolve the effective permission keys for a role strictly from its assigned
-        role_permissions (no role-name based shortcuts).
+        role_permissions (no role-name based shortcuts and no implicit expansion).
 
-        A role holding the ``all`` sentinel or the ``super_admin:manage`` permission
-        is treated as unrestricted and resolves to every known permission key.
+        Only the ``super_admin`` role (identified by name) is treated as
+        unrestricted and resolves to every known permission key. Every other
+        role — including Admin and other system roles — resolves to exactly the
+        keys explicitly assigned via role_permissions. Holding the
+        ``super_admin:manage`` permission or the ``all`` sentinel does NOT
+        implicitly expand a non-super_admin role.
         """
-        assigned = await self.repository.get_role_permissions(db, role.id)
-        keys = [p.key for p in assigned if p.key] if assigned else []
-        if "all" in keys or "super_admin:manage" in keys:
+        if is_super_admin_role(role):
             return all_db_keys
-        return keys
+        assigned = await self.repository.get_role_permissions(db, role.id)
+        return [p.key for p in assigned if p.key] if assigned else []
 
     async def _get_permission_keys_for_role(self, db: AsyncSession, role: Role, all_db_keys: list[str]) -> list[str]:
         return await self._resolve_role_permission_keys(db, role, all_db_keys)
@@ -454,10 +458,12 @@ class RoleService:
         """Fail-closed permission check for a user against a single permission key.
 
         The decision is based exclusively on the resolved role's assigned
-        permissions: unrestricted access is granted only to a role holding the
-        ``super_admin:manage`` permission or the ``all`` sentinel, and every other
-        role must explicitly include ``permission`` in its assigned keys. An unknown
-        role, an unknown user, or any resolution error yields ``allowed=False``.
+        permissions: unrestricted access is granted only to the ``super_admin``
+        role (identified by name). Every other role — including Admin and other
+        system roles — must explicitly include ``permission`` in its assigned
+        keys; holding ``super_admin:manage`` or the ``all`` sentinel does NOT
+        grant implicit access. An unknown role, an unknown user, or any
+        resolution error yields ``allowed=False``.
         """
         try:
             u = await self.repository.get_user_by_id_or_email(db, user_id)
@@ -474,11 +480,11 @@ class RoleService:
 
             allowed = False
             if role_obj:
-                assigned = await self.repository.get_role_permissions(db, role_obj.id)
-                perm_keys = [p.key for p in assigned if p.key] if assigned else []
-                if "all" in perm_keys or "super_admin:manage" in perm_keys:
+                if is_super_admin_role(role_obj):
                     allowed = True
                 else:
+                    assigned = await self.repository.get_role_permissions(db, role_obj.id)
+                    perm_keys = [p.key for p in assigned if p.key] if assigned else []
                     allowed = permission in perm_keys
             return {"user_id": user_id, "permission": permission, "allowed": allowed}
         except Exception:

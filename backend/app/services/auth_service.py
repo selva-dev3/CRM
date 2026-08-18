@@ -5,6 +5,7 @@ from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, NotFoundError
+from app.core.permissions import is_super_admin_role, is_super_admin_role_name
 from app.core.security import create_access_token, generate_random_code, get_password_hash, verify_password
 from app.models import User
 from app.repositories.auth_repository import AuthRepository
@@ -67,11 +68,14 @@ class AuthService:
         Permissions are derived exclusively from the relationship graph
         ``User -> UserRole -> Role -> RolePermission -> Permission`` (plus a
         case-insensitive lookup of the legacy ``User.role`` string so existing
-        role-name assignments keep working). A role that holds the
-        ``super_admin:manage`` permission is treated as unrestricted and is
-        granted every known permission key. There is intentionally no grant-all
-        fallback: an unknown/unmapped user or a resolution failure yields an
-        empty set (deny by default), matching fail-closed authorization.
+        role-name assignments keep working). Only the ``super_admin`` role (by
+        name) is treated as unrestricted and granted every known permission key.
+        Every other role — including Admin and other system roles — resolves to
+        exactly the keys explicitly assigned through role_permissions; the
+        ``super_admin:manage`` permission key or the ``all`` sentinel do NOT
+        implicitly expand a non-super_admin role. There is intentionally no
+        grant-all fallback: an unknown/unmapped user or a resolution failure
+        yields an empty set (deny by default), matching fail-closed authorization.
         """
         permission_keys = set()
         try:
@@ -80,10 +84,15 @@ class AuthService:
             if role_lookup:
                 role_ids.update(await self.repository.role_ids_by_name(db, role_lookup))
 
+            if is_super_admin_role_name(role_lookup):
+                permission_keys.update(await self.repository.all_permission_keys(db))
+                return sorted(permission_keys)
+
             if role_ids:
                 keys = await self.repository.permission_keys_for_roles(db, list(role_ids))
                 permission_keys.update(keys)
-                if "super_admin:manage" in keys:
+                roles = await self.repository.roles_by_ids(db, list(role_ids))
+                if any(is_super_admin_role(r) for r in roles):
                     permission_keys.update(await self.repository.all_permission_keys(db))
         except Exception:
             logger.exception("Failed to resolve permissions for user %s", getattr(user, "id", None))

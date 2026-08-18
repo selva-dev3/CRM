@@ -234,6 +234,87 @@ async def test_check_permission_denies_unknown_role():
 
 
 @pytest.mark.asyncio
+async def test_list_roles_admin_returns_only_assigned_permissions():
+    """Admin with 185 assigned role_permissions (incl. super_admin:manage) resolves to exactly those 185.
+
+    The other 9 keys present in the permission catalog must NOT be added implicitly.
+    """
+    admin = _make_role(id="role-admin", name="Admin", is_system_role=True)
+    all_db_keys = [f"perm:{i:03d}" for i in range(194)]
+    assigned_keys = [f"perm:{i:03d}" for i in range(184)] + ["super_admin:manage"]
+    assert len(assigned_keys) == 185
+    perms = [type("P", (), {"key": k})() for k in assigned_keys]
+    repo = RoleRepository()
+    repo.get_setting = AsyncMock(return_value=None)
+    repo.get_permission_keys = AsyncMock(return_value=all_db_keys)
+    repo.list_roles = AsyncMock(return_value=[admin])
+    repo.get_role_permissions = AsyncMock(return_value=perms)
+    service = RoleService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.list_roles(db, None)
+
+    assert len(result[0]["permissions"]) == 185
+    assert set(result[0]["permissions"]) == set(assigned_keys)
+    assert "super_admin:manage" in result[0]["permissions"]
+    assert "perm:184" not in result[0]["permissions"]
+
+
+@pytest.mark.asyncio
+async def test_super_admin_role_resolves_all_keys():
+    """The super_admin role (by name) is the only role granted every known key."""
+    role = _make_role(id="sys-1", name="super_admin", is_system_role=True)
+    all_db_keys = [f"perm:{i:03d}" for i in range(194)]
+    repo = RoleRepository()
+    repo.get_role = AsyncMock(return_value=role)
+    repo.get_permission_keys = AsyncMock(return_value=all_db_keys)
+    repo.get_role_permissions = AsyncMock(return_value=[type("P", (), {"key": "super_admin:manage"})()])
+    service = RoleService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.get_role(db, "sys-1")
+
+    assert result["permissions"] == all_db_keys
+
+
+@pytest.mark.asyncio
+async def test_check_permission_admin_holding_super_admin_manage_denies_unassigned():
+    """Admin holding super_admin:manage only passes for keys explicitly assigned (fail closed)."""
+    role = _make_role(name="Admin", is_system_role=True)
+    perms = [type("P", (), {"key": "super_admin:manage"}), type("P", (), {"key": "deals:read"})]
+    user = type("U", (), {"id": "u1", "role": "role-1", "email": "a@b.com", "name": "A"})()
+    repo = RoleRepository()
+    repo.get_user_by_id_or_email = AsyncMock(return_value=user)
+    repo.get_role_by_id_or_name = AsyncMock(return_value=role)
+    repo.get_role_permissions = AsyncMock(return_value=perms)
+    service = RoleService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    granted = await service.check_permission(db, "u1", "deals:read")
+    denied = await service.check_permission(db, "u1", "anything:x")
+
+    assert granted["allowed"] is True
+    assert denied["allowed"] is False
+
+
+@pytest.mark.asyncio
+async def test_is_system_role_does_not_grant_permissions():
+    """is_system_role only protects a role from mutation; it never grants permissions."""
+    role = _make_role(id="sys-2", name="Manager", is_system_role=True)
+    all_db_keys = ["dashboard:read", "users:read", "leads:read"]
+    repo = RoleRepository()
+    repo.get_role = AsyncMock(return_value=role)
+    repo.get_permission_keys = AsyncMock(return_value=all_db_keys)
+    repo.get_role_permissions = AsyncMock(return_value=[])
+    service = RoleService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.get_role(db, "sys-2")
+
+    assert result["permissions"] == []
+
+
+@pytest.mark.asyncio
 async def test_update_role_partial():
     role = _make_role()
     repo = RoleRepository()

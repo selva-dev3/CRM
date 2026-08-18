@@ -62,6 +62,7 @@ async def test_login_returns_token_and_user(monkeypatch):
     repo.role_ids_for_user = AsyncMock(return_value=["role-1"])
     repo.role_ids_by_name = AsyncMock(return_value=["role-1"])
     repo.permission_keys_for_roles = AsyncMock(return_value=["leads:all", "deals:all"])
+    repo.roles_by_ids = AsyncMock(return_value=[])
 
     result = await service.login(db, LoginRequest(email="alex@crm.com", password="secret"))
 
@@ -97,7 +98,8 @@ async def test_login_raises_when_user_missing():
 
 
 @pytest.mark.asyncio
-async def test_admin_user_gets_all_permissions(monkeypatch):
+async def test_admin_user_gets_only_assigned_permissions(monkeypatch):
+    """An Admin user receives exactly the keys assigned to its role — never more."""
     user = _make_user(role="Admin")
     repo = AuthRepository()
     service = _service_with(repo)
@@ -106,6 +108,7 @@ async def test_admin_user_gets_all_permissions(monkeypatch):
     repo.role_ids_for_user = AsyncMock(return_value=["role-1"])
     repo.role_ids_by_name = AsyncMock(return_value=["role-1"])
     repo.permission_keys_for_roles = AsyncMock(return_value=["a:read", "b:write", "c:read"])
+    repo.roles_by_ids = AsyncMock(return_value=[type("R", (), {"id": "role-1", "name": "Admin"})()])
 
     result = await service.get_user_permissions(db, user, resolved_role_name="Admin")
 

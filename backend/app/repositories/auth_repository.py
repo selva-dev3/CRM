@@ -89,6 +89,10 @@ class AuthRepository:
         )
         return [role_id for role_id in result.scalars().all() if role_id]
 
+    async def roles_by_ids(self, db: AsyncSession, role_ids: list[str]) -> list[Role]:
+        result = await db.execute(select(Role).where(Role.id.in_(list(role_ids))))
+        return list(result.scalars().all())
+
     async def permission_keys_for_roles(self, db: AsyncSession, role_ids: list[str]) -> list[str]:
         result = await db.execute(
             select(Permission.key)
