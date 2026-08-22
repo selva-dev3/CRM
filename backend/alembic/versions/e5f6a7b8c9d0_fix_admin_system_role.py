@@ -1,3 +1,4 @@
+from typing import Sequence, Union
 """protect admin as system role and attach super_admin:manage to super_admin role
 
 Revision ID: e5f6a7b8c9d0
