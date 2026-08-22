@@ -313,6 +313,7 @@ async def create_new_organization_invitation(
         slug=slug,
         domain=f"{slug}.crm.com",
         email=email_clean,
+        role="Admin",
         plan="Free",
         max_users=3,
         status="active",
