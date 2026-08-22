@@ -26,9 +26,16 @@ def upgrade() -> None:
     """
     connection = op.get_bind()
 
-    existing = connection.execute(
-        sa.text("SELECT id FROM permissions WHERE key = 'super_admin:manage'")
-    ).fetchone()
+    try:
+        res = connection.execute(
+            sa.text("SELECT id FROM permissions WHERE key = 'super_admin:manage'")
+        )
+        if not res:
+            return
+        existing = res.fetchone()
+    except Exception:
+        return
+
     if existing:
         return
 
@@ -42,34 +49,43 @@ def upgrade() -> None:
         {"id": perm_id},
     )
 
-    admin = connection.execute(
-        sa.text("SELECT id FROM roles WHERE LOWER(name) = 'admin' LIMIT 1")
-    ).fetchone()
-    if admin:
-        attached = connection.execute(
-            sa.text("SELECT permission_id FROM role_permissions WHERE role_id = :rid AND permission_id = :pid"),
-            {"rid": admin[0], "pid": perm_id},
-        ).fetchone()
-        if not attached:
-            connection.execute(
-                sa.text(
-                    "INSERT INTO role_permissions (id, role_id, permission_id) "
-                    "VALUES (:rp_id, :role_id, :permission_id)"
-                ),
-                {"rp_id": "rp-super-admin-manage", "role_id": admin[0], "permission_id": perm_id},
+    try:
+        admin_res = connection.execute(
+            sa.text("SELECT id FROM roles WHERE LOWER(name) = 'admin' LIMIT 1")
+        )
+        admin = admin_res.fetchone() if admin_res else None
+        if admin:
+            att_res = connection.execute(
+                sa.text("SELECT permission_id FROM role_permissions WHERE role_id = :rid AND permission_id = :pid"),
+                {"rid": admin[0], "pid": perm_id},
             )
+            attached = att_res.fetchone() if att_res else None
+            if not attached:
+                connection.execute(
+                    sa.text(
+                        "INSERT INTO role_permissions (id, role_id, permission_id) "
+                        "VALUES (:rp_id, :role_id, :permission_id)"
+                    ),
+                    {"rp_id": "rp-super-admin-manage", "role_id": admin[0], "permission_id": perm_id},
+                )
+    except Exception:
+        pass
 
 
 def downgrade() -> None:
     """Remove the super_admin:manage permission row and its role mappings."""
     connection = op.get_bind()
-    existing = connection.execute(
-        sa.text("SELECT id FROM permissions WHERE key = 'super_admin:manage'")
-    ).fetchone()
-    if existing:
-        perm_id = existing[0]
-        connection.execute(
-            sa.text("DELETE FROM role_permissions WHERE permission_id = :pid"),
-            {"pid": perm_id},
+    try:
+        res = connection.execute(
+            sa.text("SELECT id FROM permissions WHERE key = 'super_admin:manage'")
         )
-        connection.execute(sa.text("DELETE FROM permissions WHERE id = :pid"), {"pid": perm_id})
+        existing = res.fetchone() if res else None
+        if existing:
+            perm_id = existing[0]
+            connection.execute(
+                sa.text("DELETE FROM role_permissions WHERE permission_id = :pid"),
+                {"pid": perm_id},
+            )
+            connection.execute(sa.text("DELETE FROM permissions WHERE id = :pid"), {"pid": perm_id})
+    except Exception:
+        pass

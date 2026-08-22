@@ -35,9 +35,12 @@ def upgrade() -> None:
     """
     connection = op.get_bind()
 
-    existing = connection.execute(
+    res = connection.execute(
         sa.text("SELECT id FROM roles WHERE LOWER(name) = 'admin' LIMIT 1")
-    ).fetchone()
+    )
+    if not res:
+        return
+    existing = res.fetchone()
     if existing:
         role_id = existing[0]
     else:

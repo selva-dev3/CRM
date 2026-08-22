@@ -19,26 +19,29 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def add_column_if_not_exists(table_name: str, column: sa.Column):
     bind = op.get_bind()
-    inspector = inspect(bind)
-
-    existing_columns = {
-        c["name"] for c in inspector.get_columns(table_name)
-    }
-
-    if column.name not in existing_columns:
+    try:
+        inspector = inspect(bind)
+        existing_columns = {c["name"] for c in inspector.get_columns(table_name)}
+        if column.name not in existing_columns:
+            op.add_column(table_name, column)
+    except Exception:
         op.add_column(table_name, column)
 
 
 def upgrade() -> None:
 
     bind = op.get_bind()
-    inspector = inspect(bind)
+    try:
+        inspector = inspect(bind)
+        existing_tables = set(inspector.get_table_names())
+    except Exception:
+        existing_tables = set()
 
     # ------------------------------------------------------------------
     # Subscription Plans
     # ------------------------------------------------------------------
 
-    if "subscription_plans" not in inspector.get_table_names():
+    if "subscription_plans" not in existing_tables:
 
         op.create_table(
             "subscription_plans",
@@ -105,7 +108,7 @@ def upgrade() -> None:
     # Organization Subscription
     # ------------------------------------------------------------------
 
-    if "organization_subscriptions" in inspector.get_table_names():
+    if "organization_subscriptions" in existing_tables:
 
         add_column_if_not_exists(
             "organization_subscriptions",
@@ -315,13 +318,16 @@ def upgrade() -> None:
         # Foreign Key
         # ----------------------------------------------------------
 
-        fk_names = {
-            fk["name"]
-            for fk in inspector.get_foreign_keys(
-                "organization_subscriptions"
-            )
-            if fk["name"]
-        }
+        try:
+            fk_names = {
+                fk["name"]
+                for fk in inspector.get_foreign_keys(
+                    "organization_subscriptions"
+                )
+                if fk["name"]
+            }
+        except Exception:
+            fk_names = set()
 
         if "fk_org_subscription_plan" not in fk_names:
 

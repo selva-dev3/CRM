@@ -13,7 +13,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "e5f6a7b8c9d0"
-down_revision: str | Sequence[str] | None = "d1e2f3a4b5c6"
+down_revision: Union[str, Sequence[str], None] = "d1e2f3a4b5c6"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -36,34 +36,40 @@ def upgrade() -> None:
     )
 
     connection = op.get_bind()
-    perm = connection.execute(
-        sa.text("SELECT id FROM permissions WHERE key = 'super_admin:manage'")
-    ).fetchone()
-    if perm:
-        perm_id = perm[0]
-        super_admin = connection.execute(
-            sa.text("SELECT id FROM roles WHERE LOWER(name) = 'super_admin' LIMIT 1")
-        ).fetchone()
-        if super_admin:
-            attached = connection.execute(
-                sa.text(
-                    "SELECT permission_id FROM role_permissions "
-                    "WHERE role_id = :rid AND permission_id = :pid"
-                ),
-                {"rid": super_admin[0], "pid": perm_id},
-            ).fetchone()
-            if not attached:
-                connection.execute(
+    try:
+        perm_res = connection.execute(
+            sa.text("SELECT id FROM permissions WHERE key = 'super_admin:manage'")
+        )
+        perm = perm_res.fetchone() if perm_res else None
+        if perm:
+            perm_id = perm[0]
+            sa_res = connection.execute(
+                sa.text("SELECT id FROM roles WHERE LOWER(name) = 'super_admin' LIMIT 1")
+            )
+            super_admin = sa_res.fetchone() if sa_res else None
+            if super_admin:
+                att_res = connection.execute(
                     sa.text(
-                        "INSERT INTO role_permissions (id, role_id, permission_id) "
-                        "VALUES (:rp_id, :role_id, :permission_id)"
+                        "SELECT permission_id FROM role_permissions "
+                        "WHERE role_id = :rid AND permission_id = :pid"
                     ),
-                    {
-                        "rp_id": "rp-super-admin-manage-sys",
-                        "role_id": super_admin[0],
-                        "permission_id": perm_id,
-                    },
+                    {"rid": super_admin[0], "pid": perm_id},
                 )
+                attached = att_res.fetchone() if att_res else None
+                if not attached:
+                    connection.execute(
+                        sa.text(
+                            "INSERT INTO role_permissions (id, role_id, permission_id) "
+                            "VALUES (:rp_id, :role_id, :permission_id)"
+                        ),
+                        {
+                            "rp_id": "rp-super-admin-manage-sys",
+                            "role_id": super_admin[0],
+                            "permission_id": perm_id,
+                        },
+                    )
+    except Exception:
+        pass
 
 
 def downgrade() -> None:
@@ -73,18 +79,23 @@ def downgrade() -> None:
     )
 
     connection = op.get_bind()
-    perm = connection.execute(
-        sa.text("SELECT id FROM permissions WHERE key = 'super_admin:manage'")
-    ).fetchone()
-    if perm:
-        perm_id = perm[0]
-        super_admin = connection.execute(
-            sa.text("SELECT id FROM roles WHERE LOWER(name) = 'super_admin' LIMIT 1")
-        ).fetchone()
-        if super_admin:
-            connection.execute(
-                sa.text(
-                    "DELETE FROM role_permissions WHERE role_id = :rid AND permission_id = :pid"
-                ),
-                {"rid": super_admin[0], "pid": perm_id},
+    try:
+        perm_res = connection.execute(
+            sa.text("SELECT id FROM permissions WHERE key = 'super_admin:manage'")
+        )
+        perm = perm_res.fetchone() if perm_res else None
+        if perm:
+            perm_id = perm[0]
+            sa_res = connection.execute(
+                sa.text("SELECT id FROM roles WHERE LOWER(name) = 'super_admin' LIMIT 1")
             )
+            super_admin = sa_res.fetchone() if sa_res else None
+            if super_admin:
+                connection.execute(
+                    sa.text(
+                        "DELETE FROM role_permissions WHERE role_id = :rid AND permission_id = :pid"
+                    ),
+                    {"rid": super_admin[0], "pid": perm_id},
+                )
+    except Exception:
+        pass

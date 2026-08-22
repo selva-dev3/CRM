@@ -21,12 +21,11 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
 
     bind = op.get_bind()
-    inspector = inspect(bind)
-
-    columns = {
-        c["name"]
-        for c in inspector.get_columns("organization_subscriptions")
-    }
+    try:
+        inspector = inspect(bind)
+        columns = {c["name"] for c in inspector.get_columns("organization_subscriptions")}
+    except Exception:
+        columns = set()
 
     if "created_at" not in columns:
         op.add_column(
@@ -50,11 +49,14 @@ def upgrade() -> None:
             ),
         )
 
-    fk_names = {
-        fk["name"]
-        for fk in inspector.get_foreign_keys("organization_subscriptions")
-        if fk["name"]
-    }
+    try:
+        fk_names = {
+            fk["name"]
+            for fk in inspector.get_foreign_keys("organization_subscriptions")
+            if fk["name"]
+        }
+    except Exception:
+        fk_names = set()
 
     if "fk_org_subscription_plan" not in fk_names:
         op.create_foreign_key(
