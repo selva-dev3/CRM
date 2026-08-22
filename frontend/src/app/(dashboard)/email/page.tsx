@@ -25,6 +25,8 @@ import {
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { PermissionGate } from '@/components/common/permission-gate';
+import { PERMISSIONS } from '@/lib/permissions';
 import {
   useInboxQuery,
   useDraftsQuery,
@@ -378,16 +380,18 @@ export default function EmailPage() {
             New Template
           </button>
 
-          <button
-            onClick={() => {
-              resetComposeForm();
-              setIsComposeModalOpen(true);
-            }}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors shadow-sm cursor-pointer"
-          >
-            <Send className="w-4 h-4" />
-            Compose Email
-          </button>
+          <PermissionGate permission={PERMISSIONS.EMAILS.SEND}>
+            <button
+              onClick={() => {
+                resetComposeForm();
+                setIsComposeModalOpen(true);
+              }}
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors shadow-sm cursor-pointer"
+            >
+              <Send className="w-4 h-4" />
+              Compose Email
+            </button>
+          </PermissionGate>
         </div>
       </div>
 

@@ -26,6 +26,8 @@ import {
 } from 'lucide-react';
 import { DataTable, DataTableColumn } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { PermissionGate } from '@/components/common/permission-gate';
+import { PERMISSIONS } from '@/lib/permissions';
 import {
   useSalesPerformanceReportQuery,
   usePipelineVelocityReportQuery,
@@ -421,39 +423,47 @@ export default function ReportsPage() {
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
-          <button
-            onClick={handleExportCsv}
-            disabled={exportCsvMutation.isPending}
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg font-semibold text-xs transition-colors shadow-xs cursor-pointer disabled:opacity-50"
-          >
-            {exportCsvMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4 text-emerald-600" />}
-            Export S3 CSV
-          </button>
+          <PermissionGate permission={PERMISSIONS.REPORTS.EXPORT}>
+            <button
+              onClick={handleExportCsv}
+              disabled={exportCsvMutation.isPending}
+              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg font-semibold text-xs transition-colors shadow-xs cursor-pointer disabled:opacity-50"
+            >
+              {exportCsvMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4 text-emerald-600" />}
+              Export S3 CSV
+            </button>
+          </PermissionGate>
 
-          <button
-            onClick={handleExportPdf}
-            disabled={exportPdfMutation.isPending}
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg font-semibold text-xs transition-colors shadow-xs cursor-pointer disabled:opacity-50"
-          >
-            {exportPdfMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4 text-indigo-600" />}
-            Export PDF
-          </button>
+          <PermissionGate permission={PERMISSIONS.REPORTS.EXPORT}>
+            <button
+              onClick={handleExportPdf}
+              disabled={exportPdfMutation.isPending}
+              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg font-semibold text-xs transition-colors shadow-xs cursor-pointer disabled:opacity-50"
+            >
+              {exportPdfMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4 text-indigo-600" />}
+              Export PDF
+            </button>
+          </PermissionGate>
 
-          <button
-            onClick={() => setIsScheduleModalOpen(true)}
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg font-semibold text-xs transition-colors shadow-xs cursor-pointer"
-          >
-            <Mail className="w-4 h-4 text-purple-600" />
-            Schedule Delivery
-          </button>
+          <PermissionGate permission={PERMISSIONS.REPORTS.SCHEDULE}>
+            <button
+              onClick={() => setIsScheduleModalOpen(true)}
+              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg font-semibold text-xs transition-colors shadow-xs cursor-pointer"
+            >
+              <Mail className="w-4 h-4 text-purple-600" />
+              Schedule Delivery
+            </button>
+          </PermissionGate>
 
-          <button
-            onClick={() => setIsCustomModalOpen(true)}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors shadow-xs cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            New Query Builder
-          </button>
+          <PermissionGate permission={PERMISSIONS.REPORTS.CREATE}>
+            <button
+              onClick={() => setIsCustomModalOpen(true)}
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors shadow-xs cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              New Query Builder
+            </button>
+          </PermissionGate>
         </div>
       </div>
 

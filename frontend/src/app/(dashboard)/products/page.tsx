@@ -24,6 +24,8 @@ import {
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { PermissionGate } from '@/components/common/permission-gate';
+import { PERMISSIONS } from '@/lib/permissions';
 import {
   useProductsQuery,
   useProductCategoriesQuery,
@@ -303,20 +305,24 @@ export default function ProductsPage() {
       header: 'ACTIONS',
       cell: (item) => (
         <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-          <button
-            onClick={() => handleOpenEditModal(item)}
-            title="Edit Product"
-            className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-md transition-colors cursor-pointer"
-          >
-            <Edit className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setProductToDelete(item)}
-            title="Delete Product"
-            className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          <PermissionGate permission={PERMISSIONS.PRODUCTS.UPDATE}>
+            <button
+              onClick={() => handleOpenEditModal(item)}
+              title="Edit Product"
+              className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-md transition-colors cursor-pointer"
+            >
+              <Edit className="w-4 h-4" />
+            </button>
+          </PermissionGate>
+          <PermissionGate permission={PERMISSIONS.PRODUCTS.DELETE}>
+            <button
+              onClick={() => setProductToDelete(item)}
+              title="Delete Product"
+              className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </PermissionGate>
         </div>
       ),
     },
@@ -360,30 +366,36 @@ export default function ProductsPage() {
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
-          <button
-            onClick={handleExportCsv}
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer"
-          >
-            <Download className="w-4 h-4 text-slate-600" />
-            Export CSV
-          </button>
+          <PermissionGate permission={PERMISSIONS.PRODUCTS.EXPORT}>
+            <button
+              onClick={handleExportCsv}
+              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer"
+            >
+              <Download className="w-4 h-4 text-slate-600" />
+              Export CSV
+            </button>
+          </PermissionGate>
 
-          <button
-            onClick={handleImportCsv}
-            disabled={importCsvMutation.isPending}
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer disabled:opacity-50"
-          >
-            {importCsvMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4 text-indigo-600" />}
-            Import CSV
-          </button>
+          <PermissionGate permission={PERMISSIONS.PRODUCTS.IMPORT}>
+            <button
+              onClick={handleImportCsv}
+              disabled={importCsvMutation.isPending}
+              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer disabled:opacity-50"
+            >
+              {importCsvMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4 text-indigo-600" />}
+              Import CSV
+            </button>
+          </PermissionGate>
 
-          <button
-            onClick={() => setIsCategoryModalOpen(true)}
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer"
-          >
-            <Layers className="w-4 h-4 text-purple-600" />
-            Add Category
-          </button>
+          <PermissionGate permission={PERMISSIONS.PRODUCTS.CREATE}>
+            <button
+              onClick={() => setIsCategoryModalOpen(true)}
+              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer"
+            >
+              <Layers className="w-4 h-4 text-purple-600" />
+              Add Category
+            </button>
+          </PermissionGate>
 
           <button
             onClick={() => setIsPriceBookModalOpen(true)}
@@ -393,13 +405,15 @@ export default function ProductsPage() {
             Price Book
           </button>
 
-          <button
-            onClick={handleOpenCreateModal}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors shadow-sm cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            Add Product
-          </button>
+          <PermissionGate permission={PERMISSIONS.PRODUCTS.CREATE}>
+            <button
+              onClick={handleOpenCreateModal}
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors shadow-sm cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              Add Product
+            </button>
+          </PermissionGate>
         </div>
       </div>
 
@@ -433,12 +447,14 @@ export default function ProductsPage() {
             {selectedIds.size > 0 && (
               <div className="flex items-center gap-2 bg-indigo-50 px-3 py-1 rounded-lg border border-indigo-200">
                 <span className="text-xs font-semibold text-indigo-700">{selectedIds.size} selected</span>
-                <button
-                  onClick={handleBulkDelete}
-                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-semibold cursor-pointer"
-                >
-                  Bulk Delete
-                </button>
+                <PermissionGate permission={PERMISSIONS.PRODUCTS.DELETE}>
+                  <button
+                    onClick={handleBulkDelete}
+                    className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-semibold cursor-pointer"
+                  >
+                    Bulk Delete
+                  </button>
+                </PermissionGate>
               </div>
             )}
           </div>

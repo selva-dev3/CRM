@@ -1,5 +1,7 @@
 from enum import Enum
 
+from app.core.errors import ForbiddenError
+
 
 class UserRole(str, Enum):
     SUPER_ADMIN = "Super Admin"
@@ -25,6 +27,32 @@ def is_super_admin_role(role) -> bool:
     protected/system-managed and must never grant permissions on its own.
     """
     return is_super_admin_role_name(getattr(role, "name", "") or "")
+
+
+async def is_super_admin_user(db, user) -> bool:
+    """Whether the given user is a platform super_admin.
+
+    Resolves the user's effective role from ``User.role`` (which may hold a role
+    name or a role UUID) before applying the name-based check, so the platform
+    super_admin is recognized regardless of how the role was assigned.
+    """
+    from app.repositories.role_repository import RoleRepository
+
+    role_value = getattr(user, "role", "") or ""
+    if is_super_admin_role_name(role_value):
+        return True
+    if not role_value:
+        return False
+    role = await RoleRepository().get_role_by_id_or_name(db, role_value)
+    return bool(role and is_super_admin_role(role))
+
+
+def ensure_can_assign_role(*, actor_is_super_admin: bool, target_is_super_admin: bool) -> None:
+    """Centralized guard: only a super_admin actor may assign the super_admin role."""
+    if target_is_super_admin and not actor_is_super_admin:
+        raise ForbiddenError(
+            message="Only super_admin users can assign the super_admin role."
+        )
 
 
 def check_permission(user_role: str, required_roles: list[UserRole]) -> bool:

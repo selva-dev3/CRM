@@ -3,18 +3,20 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { navigationSections, NavSection, NavItem } from '@/constants/navigation';
+import { navigationSections, filterNavigationSections, getRoutePermission } from '@/constants/navigation';
 import { AIChatAssistant } from '@/components/features/ai/ai-chat-assistant';
 import { GlobalSearchModal } from '@/components/common/global-search-modal';
 import { NotificationBell } from '@/components/features/notifications/notification-bell';
 import { getSessionToken, clearSessionToken } from '@/lib/api/client';
 import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
-import { useHasPermission } from '@/hooks/use-has-permission';
+import { PERMISSIONS } from '@/lib/permissions';
+import { useHasPermission, notifyAuthUserChanged } from '@/hooks/use-has-permission';
 import {
   LogOut,
   Loader2,
   Zap,
   ShieldCheck,
+  ShieldAlert,
   Menu,
   X,
   Search,
@@ -72,7 +74,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname();
   const router = useRouter();
   const { data: currentOrg } = useCurrentOrganizationQuery();
-  const { hasPermission } = useHasPermission();
+  const { permissions, hasPermission } = useHasPermission();
   const [orgDisplayName, setOrgDisplayName] = useState<string>('');
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -152,6 +154,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return formattedSegments.join(' / ');
   }, [pathname]);
 
+  const visibleSections = React.useMemo(
+    () => filterNavigationSections(navigationSections, permissions),
+    [permissions]
+  );
+
+  const requiredPermission = React.useMemo(() => getRoutePermission(pathname), [pathname]);
+  const isForbidden = Boolean(requiredPermission) && !hasPermission(requiredPermission);
+
   useEffect(() => {
     const token = getSessionToken();
     if (!token) {
@@ -178,6 +188,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (typeof window !== 'undefined') {
       localStorage.removeItem('user');
       sessionStorage.removeItem('user');
+      notifyAuthUserChanged();
     }
     router.push('/login');
   };
@@ -236,7 +247,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* Structured Nav Sections */}
         <nav className="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-thin">
-          {navigationSections.map((section: NavSection, idx: number) => {
+          {visibleSections.map((section, idx: number) => {
             const hasTitle = Boolean(section.title);
             const sectionKey = section.title || `section-${idx}`;
             const isOpen = openSections[sectionKey] !== false;
@@ -263,9 +274,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
                 {isOpen && (
                   <div className={hasTitle ? 'pl-2 space-y-0.5 border-l-2 border-slate-100 ml-2.5' : 'space-y-0.5'}>
-                    {section.items
-                      .filter((item: NavItem) => hasPermission(item.permission))
-                      .map((item: NavItem) => {
+                    {section.items.map((item) => {
                       const isActive = pathname === item.href || (item.href === '/email' && pathname === '/emails');
                       const IconComponent = ICON_MAP[item.icon] || LayoutDashboard;
 
@@ -354,7 +363,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </button>
 
             {/* Notifications Bell */}
-            <NotificationBell />
+            {hasPermission(PERMISSIONS.NOTIFICATIONS.READ) && <NotificationBell />}
 
             {/* Logout Button */}
             <button
@@ -371,7 +380,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* Dynamic Page View */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-50">
-          {children}
+          {isForbidden ? (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-4">
+              <div className="w-16 h-16 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center">
+                <ShieldAlert className="w-8 h-8 text-rose-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">403 — Access Denied</h3>
+                <p className="text-sm text-slate-500 max-w-sm mx-auto">
+                  You do not have permission to view this page. Contact your administrator if you believe this is a
+                  mistake.
+                </p>
+              </div>
+            </div>
+          ) : (
+            children
+          )}
         </main>
       </div>
 

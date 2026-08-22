@@ -17,6 +17,18 @@ class OrganizationInviteRequest(BaseModel):
     role: Optional[str] = Field("Admin", example="Admin")
     organization_id: Optional[str] = Field(None, example="org-1")
 
+class CreateOrganizationInvitationRequest(BaseModel):
+    """Invite Organization payload. The organization is created server-side with a
+    backend-generated ID — a client-supplied organization_id is never accepted."""
+    email: EmailStr = Field(..., example="admin@acme.com")
+    full_name: str = Field(..., min_length=1, example="Jane Smith")
+    role_id: Optional[str] = Field("Admin", example="Admin")
+
+class NewOrganizationInviteResponse(BaseModel):
+    organization: dict
+    invitation: InvitationResponse
+    message: str
+
 class AcceptInvitationRequest(BaseModel):
     password: str = Field(..., min_length=6, example="Password123!")
     full_name: Optional[str] = Field(None, example="Jane Smith")

@@ -23,6 +23,8 @@ import {
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { PermissionGate } from '@/components/common/permission-gate';
+import { PERMISSIONS } from '@/lib/permissions';
 import {
   useNotesQuery,
   usePinnedNotesQuery,
@@ -304,13 +306,15 @@ export default function NotesPage() {
             <option value="Company">Companies</option>
           </select>
 
-          <button
-            onClick={handleOpenCreateModal}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors shadow-sm cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            Add Note
-          </button>
+          <PermissionGate permission={PERMISSIONS.NOTES.CREATE}>
+            <button
+              onClick={handleOpenCreateModal}
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors shadow-sm cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              Add Note
+            </button>
+          </PermissionGate>
         </div>
       </div>
 

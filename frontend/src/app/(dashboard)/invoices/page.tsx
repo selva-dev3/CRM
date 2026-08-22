@@ -27,6 +27,8 @@ import {
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { PermissionGate } from '@/components/common/permission-gate';
+import { PERMISSIONS } from '@/lib/permissions';
 import {
   useInvoicesQuery,
   useOverdueInvoicesQuery,
@@ -323,51 +325,61 @@ export default function InvoicesPage() {
       header: 'ACTIONS',
       cell: (item) => (
         <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-          <button
-            onClick={() => handleStripeCheckout(item)}
-            title="Pay via Stripe Checkout"
-            className="p-1.5 text-purple-600 hover:bg-purple-50 rounded-md transition-colors cursor-pointer flex items-center gap-1 text-xs font-semibold"
-          >
-            <CreditCard className="w-4 h-4 text-purple-600" />
-            Stripe
-          </button>
+          <PermissionGate permission={PERMISSIONS.INVOICES.PAYMENT}>
+            <button
+              onClick={() => handleStripeCheckout(item)}
+              title="Pay via Stripe Checkout"
+              className="p-1.5 text-purple-600 hover:bg-purple-50 rounded-md transition-colors cursor-pointer flex items-center gap-1 text-xs font-semibold"
+            >
+              <CreditCard className="w-4 h-4 text-purple-600" />
+              Stripe
+            </button>
+          </PermissionGate>
 
-          <button
-            onClick={() => {
-              setSendModalInvoice(item);
-              setIsSendModalOpen(true);
-            }}
-            title="Email Invoice PDF & Payment Link"
-            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md transition-colors cursor-pointer"
-          >
-            <Send className="w-4 h-4" />
-          </button>
+          <PermissionGate permission={PERMISSIONS.INVOICES.SEND}>
+            <button
+              onClick={() => {
+                setSendModalInvoice(item);
+                setIsSendModalOpen(true);
+              }}
+              title="Email Invoice PDF & Payment Link"
+              className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md transition-colors cursor-pointer"
+            >
+              <Send className="w-4 h-4" />
+            </button>
+          </PermissionGate>
 
           {item.status !== 'Paid' && (
-            <button
-              onClick={() => handleMarkPaid(item)}
-              title="Mark as Paid"
-              className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors cursor-pointer"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-            </button>
+            <PermissionGate permission={PERMISSIONS.INVOICES.PAYMENT}>
+              <button
+                onClick={() => handleMarkPaid(item)}
+                title="Mark as Paid"
+                className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors cursor-pointer"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+              </button>
+            </PermissionGate>
           )}
 
-          <button
-            onClick={() => handleOpenEditModal(item)}
-            title="Edit Invoice"
-            className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-md transition-colors cursor-pointer"
-          >
-            <Edit className="w-4 h-4" />
-          </button>
+          <PermissionGate permission={PERMISSIONS.INVOICES.UPDATE}>
+            <button
+              onClick={() => handleOpenEditModal(item)}
+              title="Edit Invoice"
+              className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-md transition-colors cursor-pointer"
+            >
+              <Edit className="w-4 h-4" />
+            </button>
+          </PermissionGate>
 
-          <button
-            onClick={() => setInvoiceToDelete(item)}
-            title="Delete Invoice"
-            className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          <PermissionGate permission={PERMISSIONS.INVOICES.DELETE}>
+            <button
+              onClick={() => setInvoiceToDelete(item)}
+              title="Delete Invoice"
+              className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </PermissionGate>
         </div>
       ),
     },
@@ -436,6 +448,7 @@ export default function InvoicesPage() {
             Recurring Schedule
           </button>
 
+          <PermissionGate permission={PERMISSIONS.INVOICES.CREATE}>
           <button
             onClick={handleOpenCreateModal}
             className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors shadow-sm cursor-pointer"
@@ -443,6 +456,7 @@ export default function InvoicesPage() {
             <Plus className="w-4 h-4" />
             Generate Invoice
           </button>
+        </PermissionGate>
         </div>
       </div>
 

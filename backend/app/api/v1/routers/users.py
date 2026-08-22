@@ -114,8 +114,11 @@ async def get_user(user_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.put("/{user_id}", response_model=UserResponse, summary="Update user by ID", dependencies=[Depends(require_permission("users:update"))])
-async def update_user(user_id: str, payload: UserUpdate, db: AsyncSession = Depends(get_db)):
-    return await user_service.update_user(db, user_id, payload)
+async def update_user(
+    user_id: str, payload: UserUpdate, db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await user_service.update_user(db, user_id, payload, current_user=current_user)
 
 
 @router.delete("/{user_id}", response_model=UserDeleteResponse, summary="Delete user by ID (Protected against superadmin@gmail.com deletion)", dependencies=[Depends(require_permission("users:delete"))])

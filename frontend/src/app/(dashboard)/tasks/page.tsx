@@ -25,6 +25,8 @@ import {
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { PermissionGate } from '@/components/common/permission-gate';
+import { PERMISSIONS } from '@/lib/permissions';
 import {
   useTasksQuery,
   useOverdueTasksQuery,
@@ -583,13 +585,15 @@ export default function TasksPage() {
             Export CSV
           </button>
 
-          <button
-            onClick={handleOpenCreateModal}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors shadow-sm cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            Create Task
-          </button>
+          <PermissionGate permission={PERMISSIONS.TASKS.CREATE}>
+            <button
+              onClick={handleOpenCreateModal}
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors shadow-sm cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              Create Task
+            </button>
+          </PermissionGate>
         </div>
       </div>
 
@@ -616,18 +620,22 @@ export default function TasksPage() {
             {selectedIds.size > 0 && (
               <div className="flex items-center gap-2 bg-indigo-50 px-3 py-1 rounded-lg border border-indigo-200">
                 <span className="text-xs font-semibold text-indigo-700">{selectedIds.size} selected</span>
-                <button
-                  onClick={handleBulkComplete}
-                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-semibold cursor-pointer"
-                >
-                  Bulk Complete
-                </button>
-                <button
-                  onClick={handleBulkDelete}
-                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-semibold cursor-pointer"
-                >
-                  Bulk Delete
-                </button>
+                <PermissionGate permission={PERMISSIONS.TASKS.COMPLETE}>
+                  <button
+                    onClick={handleBulkComplete}
+                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-semibold cursor-pointer"
+                  >
+                    Bulk Complete
+                  </button>
+                </PermissionGate>
+                <PermissionGate permission={PERMISSIONS.TASKS.DELETE}>
+                  <button
+                    onClick={handleBulkDelete}
+                    className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-semibold cursor-pointer"
+                  >
+                    Bulk Delete
+                  </button>
+                </PermissionGate>
               </div>
             )}
             {singleFilterPopover}

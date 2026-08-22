@@ -1,4 +1,4 @@
-﻿import { useQuery, useMutation, useQueryClient, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
 
 export interface RoleItem {
@@ -53,6 +53,10 @@ export interface MessageResponse {
 export async function fetchRolesApi(search?: string): Promise<RoleItem[]> {
   const query = search ? `?search=${encodeURIComponent(search)}` : '';
   return apiClient.get<RoleItem[]>(`/roles${query}`);
+}
+
+export async function fetchAssignableRolesApi(search?: string): Promise<RoleItem[]> {
+  return fetchRolesApi(search);
 }
 
 export async function createRoleApi(payload: { name: string; description?: string; permissions?: string[] }): Promise<RoleItem> {
@@ -152,9 +156,18 @@ export function useRolesQuery(search?: string, options?: Omit<UseQueryOptions<Ro
   });
 }
 
+export function useAssignableRolesQuery(search?: string, options?: Omit<UseQueryOptions<RoleItem[]>, 'queryKey' | 'queryFn'>) {
+  return useQuery<RoleItem[]>({
+    queryKey: ['roles', 'assignable-list', search],
+    queryFn: () => fetchAssignableRolesApi(search),
+    staleTime: 1000 * 60 * 5,
+    ...options,
+  });
+}
+
 export function useRoleQuery(roleId: string, options?: Omit<UseQueryOptions<RoleItem>, 'queryKey' | 'queryFn'>) {
   return useQuery<RoleItem>({
-    queryKey: ['roles', roleId],
+    queryKey: ['roles', 'detail', roleId],
     queryFn: () => fetchRoleApi(roleId),
     enabled: !!roleId,
     ...options,
@@ -245,7 +258,7 @@ export function useUpdateRoleMutation(options?: UseMutationOptions<RoleItem, Err
     mutationFn: ({ id, payload }) => updateRoleApi(id, payload),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['roles'] });
-      queryClient.invalidateQueries({ queryKey: ['roles', variables.id] });
+      queryClient.invalidateQueries({ queryKey: ['roles', 'detail', variables.id] });
     },
     ...options,
   });
@@ -278,7 +291,7 @@ export function useAssignPermissionsMutation(options?: UseMutationOptions<Messag
   return useMutation<MessageResponse, Error, { roleId: string; permissions: string[] }>({
     mutationFn: ({ roleId, permissions }) => assignPermissionsApi(roleId, permissions),
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['roles', variables.roleId] });
+      queryClient.invalidateQueries({ queryKey: ['roles', 'detail', variables.roleId] });
     },
     ...options,
   });
@@ -300,7 +313,7 @@ export function useRemovePermissionMutation(options?: UseMutationOptions<Message
   return useMutation<MessageResponse, Error, { roleId: string; permId: string }>({
     mutationFn: ({ roleId, permId }) => removePermissionApi(roleId, permId),
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['roles', variables.roleId] });
+      queryClient.invalidateQueries({ queryKey: ['roles', 'detail', variables.roleId] });
     },
     ...options,
   });

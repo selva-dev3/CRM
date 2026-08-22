@@ -24,6 +24,8 @@ import {
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { PermissionGate } from '@/components/common/permission-gate';
+import { PERMISSIONS } from '@/lib/permissions';
 import {
   useMeetingsQuery,
   useUpcomingMeetingsQuery,
@@ -396,16 +398,18 @@ export default function MeetingsPage() {
             Export iCal
           </button>
 
-          <button
-            onClick={() => {
-              resetCreateForm();
-              setIsCreateModalOpen(true);
-            }}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors shadow-sm cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            Schedule Meeting
-          </button>
+          <PermissionGate permission={PERMISSIONS.MEETINGS.CREATE}>
+            <button
+              onClick={() => {
+                resetCreateForm();
+                setIsCreateModalOpen(true);
+              }}
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors shadow-sm cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              Schedule Meeting
+            </button>
+          </PermissionGate>
         </div>
       </div>
 

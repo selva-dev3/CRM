@@ -29,6 +29,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
+import { PermissionGate } from '@/components/common/permission-gate';
+import { PERMISSIONS } from '@/lib/permissions';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import {
   useContactsQuery,
@@ -446,59 +448,69 @@ export default function ContactsPage() {
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2 flex-wrap">
-          <Button
-            size="sm"
-            onClick={() => {
-              resetForm();
-              setIsCreateModalOpen(true);
-            }}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs gap-1.5 cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add Contact</span>
-          </Button>
+          <PermissionGate permission={PERMISSIONS.CONTACTS.CREATE}>
+            <Button
+              size="sm"
+              onClick={() => {
+                resetForm();
+                setIsCreateModalOpen(true);
+              }}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs gap-1.5 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Contact</span>
+            </Button>
+          </PermissionGate>
 
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleExportCsv}
-            className="border-slate-300 font-semibold text-xs gap-1 cursor-pointer"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Export CSV</span>
-          </Button>
-
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleImportCsv}
-            disabled={importCsvMutation.isPending}
-            className="border-slate-300 font-semibold text-xs gap-1 cursor-pointer"
-          >
-            <Upload className="w-3.5 h-3.5 text-blue-600" />
-            <span>Import CSV</span>
-          </Button>
-
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setIsMergeModalOpen(true)}
-            className="border-slate-300 font-semibold text-xs gap-1 cursor-pointer"
-          >
-            <GitMerge className="w-3.5 h-3.5 text-purple-600" />
-            <span>Merge</span>
-          </Button>
-
-          {selectedIds.size > 0 && (
+          <PermissionGate permission={PERMISSIONS.CONTACTS.EXPORT}>
             <Button
               size="sm"
               variant="outline"
-              onClick={handleBulkDelete}
-              className="border-rose-300 text-rose-600 hover:bg-rose-50 font-semibold text-xs gap-1 cursor-pointer"
+              onClick={handleExportCsv}
+              className="border-slate-300 font-semibold text-xs gap-1 cursor-pointer"
             >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Delete Selected ({selectedIds.size})</span>
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Export CSV</span>
             </Button>
+          </PermissionGate>
+
+          <PermissionGate permission={PERMISSIONS.CONTACTS.IMPORT}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleImportCsv}
+              disabled={importCsvMutation.isPending}
+              className="border-slate-300 font-semibold text-xs gap-1 cursor-pointer"
+            >
+              <Upload className="w-3.5 h-3.5 text-blue-600" />
+              <span>Import CSV</span>
+            </Button>
+          </PermissionGate>
+
+          <PermissionGate permission={PERMISSIONS.CONTACTS.UPDATE}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setIsMergeModalOpen(true)}
+              className="border-slate-300 font-semibold text-xs gap-1 cursor-pointer"
+            >
+              <GitMerge className="w-3.5 h-3.5 text-purple-600" />
+              <span>Merge</span>
+            </Button>
+          </PermissionGate>
+
+          {selectedIds.size > 0 && (
+            <PermissionGate permission={PERMISSIONS.CONTACTS.BULK_DELETE}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleBulkDelete}
+                className="border-rose-300 text-rose-600 hover:bg-rose-50 font-semibold text-xs gap-1 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Selected ({selectedIds.size})</span>
+              </Button>
+            </PermissionGate>
           )}
         </div>
       </div>
@@ -564,12 +576,14 @@ export default function ContactsPage() {
         actions={(item: any) => [
           {
             label: 'Edit',
+            permission: PERMISSIONS.CONTACTS.UPDATE,
             icon: <Edit className="w-4 h-4 text-blue-600 mr-2" />,
             onClick: () => openEditModal(item),
           },
           {
             label: 'Delete',
             variant: 'destructive',
+            permission: PERMISSIONS.CONTACTS.DELETE,
             icon: <Trash2 className="w-4 h-4 text-rose-600 mr-2" />,
             onClick: () => setContactToDelete(item),
           },

@@ -2,9 +2,10 @@
 
 import React from 'react';
 import { useHasPermission } from '@/hooks/use-has-permission';
+import { PermissionKey } from '@/lib/permissions';
 
 interface PermissionGateProps {
-  readonly permission?: string;
+  readonly permission?: PermissionKey;
   readonly children: React.ReactNode;
 }
 

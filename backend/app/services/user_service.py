@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.errors import APIException, ForbiddenError, NotFoundError
+from app.core.permissions import ensure_can_assign_role, is_super_admin_role, is_super_admin_user
 from app.core.security import generate_random_code, get_password_hash
 from app.models import Role, User, UserRole
 from app.repositories.organization_repository import OrganizationRepository
@@ -80,13 +81,16 @@ class UserService:
             )
         return org_id
 
-    async def _resolve_assignable_role(self, db: AsyncSession, org_id: str, role_value: str) -> Role:
+    async def _resolve_assignable_role(
+        self, db: AsyncSession, org_id: str, role_value: str, *, current_user: User
+    ) -> Role:
         """Resolve a role that may be assigned within the current organization.
 
         Enforced server-side regardless of any frontend filtering:
         1. Role must exist.
         2. Role must belong to the current organization OR be a global/system role.
-        3. Protected system roles cannot be assigned through user creation / invitations.
+        3. The super_admin role may only be assigned by a super_admin actor (403 otherwise).
+        4. Other protected system roles cannot be assigned through user creation / invitations.
         """
         role = await self.role_repository.get_role_by_id_or_name(db, role_value)
         if not role:
@@ -99,6 +103,12 @@ class UserService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 message=f"Role '{role.name}' does not belong to the current organization",
             )
+        if is_super_admin_role(role):
+            ensure_can_assign_role(
+                actor_is_super_admin=await is_super_admin_user(db, current_user),
+                target_is_super_admin=True,
+            )
+            return role
         if getattr(role, "is_system_role", False):
             raise ForbiddenError(message=f"System role '{role.name}' cannot be assigned")
         return role
@@ -138,7 +148,7 @@ class UserService:
         # never from a client-supplied organization_id.
         org_id = await self._resolve_current_org(db, current_user)
 
-        role = await self._resolve_assignable_role(db, org_id, payload.role)
+        role = await self._resolve_assignable_role(db, org_id, payload.role, current_user=current_user)
         user = await self.repository.create(
             db,
             data={
@@ -196,7 +206,7 @@ class UserService:
         # the Invite Team Member form no longer accepts an organization field.
         org_id = await self._resolve_current_org(db, current_user)
 
-        role = await self._resolve_assignable_role(db, org_id, payload.role)
+        role = await self._resolve_assignable_role(db, org_id, payload.role, current_user=current_user)
         role_id = role.id
         role_name = role.name
         invitation_responses = []
@@ -381,12 +391,16 @@ class UserService:
     async def get_user(self, db: AsyncSession, user_id: str) -> dict:
         return user_to_dict(await self.require_user(db, user_id))
 
-    async def update_user(self, db: AsyncSession, user_id: str, payload: UserUpdate) -> dict:
+    async def update_user(
+        self, db: AsyncSession, user_id: str, payload: UserUpdate, *, current_user: User
+    ) -> dict:
         user = await self.require_user(db, user_id)
         if payload.name:
             user.name = payload.name
         if payload.role:
-            role = await self._resolve_assignable_role(db, user.organization_id, payload.role)
+            role = await self._resolve_assignable_role(
+                db, user.organization_id, payload.role, current_user=current_user
+            )
             user.role = role.id
         await self._commit(db, "Failed to update user")
         return user_to_dict(user)

@@ -7,8 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, ForbiddenError, NotFoundError
-from app.core.permissions import is_super_admin_role
-from app.models import Role, UserRole
+from app.core.permissions import ensure_can_assign_role, is_super_admin_role, is_super_admin_role_name, is_super_admin_user
+from app.models import Role, User, UserRole
 from app.repositories.role_repository import RoleRepository
 from app.schemas.crm_schemas import PermissionCreate, RoleCreate, RoleUpdate
 
@@ -354,6 +354,20 @@ class RoleService:
             pass
         return [{"id": "sys-manager", "name": "manager", "description": "Registration Default Role", "permissions": ["dashboard:read", "users:read", "leads:read"], "is_system_role": True, "created_at": "2026-08-05"}]
 
+    # --- List assignable roles ---
+    async def list_assignable_roles(
+        self, db: AsyncSession, search: Optional[str] = None, org_id: Optional[str] = None
+    ) -> list[dict]:
+        """Roles that may be assigned to users (Create/Invite/Edit/Assign flows).
+
+        The platform ``super_admin`` role is intentionally excluded here so it can
+        never be offered (or picked) as an assignable target — it remains visible
+        in the Roles & Permissions listing via ``list_roles``. Assignment is still
+        independently enforced server-side by ``ensure_can_assign_role``.
+        """
+        roles = await self.list_roles(db, search, org_id=org_id)
+        return [r for r in roles if not is_super_admin_role_name(r.get("name", ""))]
+
     # --- Set multiple default roles ---
     async def set_multiple_default_roles(self, db: AsyncSession, role_ids: list[str]) -> dict:
         try:
@@ -436,9 +450,17 @@ class RoleService:
         return {"id": "sys-manager", "name": "Manager", "description": "User assigned role", "permissions": ["dashboard:read", "users:read", "users:create", "users:update", "users:delete", "users:export", "users:import"], "is_system_role": True, "created_at": "2026-08-05"}
 
     # --- Assign role to user ---
-    async def assign_role_to_user(self, db: AsyncSession, user_id: str, role_id: str) -> dict:
+    async def assign_role_to_user(
+        self, db: AsyncSession, user_id: str, role_id: str, current_user: User
+    ) -> dict:
         u = await self.repository.get_user_by_id_or_email(db, user_id)
         r = await self.repository.get_role_by_id_or_name(db, role_id)
+        # The super_admin role may only be assigned by a super_admin actor (403 otherwise).
+        if r:
+            ensure_can_assign_role(
+                actor_is_super_admin=await is_super_admin_user(db, current_user),
+                target_is_super_admin=is_super_admin_role(r),
+            )
         target_role_id = r.id if r else role_id
         target_role_name = r.name if r else role_id
         if u:

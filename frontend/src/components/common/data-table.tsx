@@ -8,6 +8,7 @@ import { Avatar } from '@/components/common/avatar';
 import { EmptyState } from '@/components/common/empty-state';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { Button } from '@/components/ui/button';
+import { PermissionKey } from '@/lib/permissions';
 
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -40,7 +41,7 @@ export interface TableActionOption<TItem> {
   readonly onClick: (item: TItem) => void;
   readonly variant?: 'default' | 'destructive';
   readonly icon?: ReactNode;
-  readonly permission?: string;
+  readonly permission?: PermissionKey;
 }
 
 // ---------------------------------------------------------------------------

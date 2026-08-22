@@ -24,6 +24,8 @@ import {
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { PermissionGate } from '@/components/common/permission-gate';
+import { PERMISSIONS } from '@/lib/permissions';
 import {
   useDocumentsQuery,
   useUploadDocumentMutation,
@@ -211,13 +213,15 @@ export default function DocumentsPage() {
             <Download className="w-4 h-4" />
             Download
           </button>
-          <button
-            onClick={() => setDocumentToDelete(item)}
-            title="Delete Document"
-            className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          <PermissionGate permission={PERMISSIONS.DOCUMENTS.DELETE}>
+            <button
+              onClick={() => setDocumentToDelete(item)}
+              title="Delete Document"
+              className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </PermissionGate>
         </div>
       ),
     },
@@ -261,6 +265,7 @@ export default function DocumentsPage() {
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
+          <PermissionGate permission={PERMISSIONS.DOCUMENTS.UPLOAD}>
           <button
             onClick={() => {
               setSelectedFile(null);
@@ -271,6 +276,7 @@ export default function DocumentsPage() {
             <UploadCloud className="w-4 h-4" />
             Upload Document
           </button>
+        </PermissionGate>
         </div>
       </div>
 
@@ -290,12 +296,14 @@ export default function DocumentsPage() {
           selectedIds.size > 0 ? (
             <div className="flex items-center gap-2 bg-indigo-50 px-3 py-1 rounded-lg border border-indigo-200">
               <span className="text-xs font-semibold text-indigo-700">{selectedIds.size} selected</span>
-              <button
-                onClick={handleBulkDelete}
-                className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-semibold cursor-pointer"
-              >
-                Bulk Delete
-              </button>
+              <PermissionGate permission={PERMISSIONS.DOCUMENTS.DELETE}>
+                <button
+                  onClick={handleBulkDelete}
+                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-semibold cursor-pointer"
+                >
+                  Bulk Delete
+                </button>
+              </PermissionGate>
             </div>
           ) : undefined
         }

@@ -6,7 +6,7 @@ import { AlertCircle, Check, ChevronDown, Loader2, RotateCcw, Search, ShieldChec
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { useRolesQuery, type RoleItem } from '@/lib/api/roles';
+import { useAssignableRolesQuery, type RoleItem } from '@/lib/api/roles';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 
 export interface RoleSearchComboboxProps {
@@ -29,6 +29,12 @@ const LISTBOX_ID_PREFIX = 'role-search-listbox';
 const OPTION_ID_PREFIX = 'role-search-option';
 const PANEL_MAX_HEIGHT = 300;
 
+const SUPER_ADMIN_ROLE_NAMES = new Set(['super_admin', 'super admin', 'superadmin']);
+const isSuperAdminRoleName = (value: string | undefined | null): boolean => {
+  if (!value) return false;
+  return SUPER_ADMIN_ROLE_NAMES.has(value.trim().toLowerCase());
+};
+
 export function RoleSearchCombobox({
   value,
   onChange,
@@ -49,13 +55,35 @@ export function RoleSearchCombobox({
   const inputRef = useRef<HTMLInputElement>(null);
   const optionRefs = useRef(new Map<string, HTMLDivElement>());
 
-  const { data: roles = [], isLoading, isError, refetch } = useRolesQuery(
+  const { data: roles = [], isLoading, isError, refetch } = useAssignableRolesQuery(
     debouncedSearch.trim() || undefined,
   );
 
-  const selectedRole = useMemo(() => roles.find((r) => r.id === value), [roles, value]);
+  const displayedRoles = useMemo(
+    () => roles.filter((r) => !isSuperAdminRoleName(r.name)),
+    [roles],
+  );
+
+  const defaultAdminRole = useMemo(() => {
+    if (displayedRoles.length === 0) return null;
+    return (
+      displayedRoles.find(
+        (r) =>
+          r.name.toLowerCase().trim() === 'admin' ||
+          r.name.toLowerCase().trim() === 'administrator',
+      ) || displayedRoles[0]
+    );
+  }, [displayedRoles]);
+
+  useEffect(() => {
+    if (!value && defaultAdminRole?.id) {
+      onChange(defaultAdminRole.id);
+    }
+  }, [value, defaultAdminRole, onChange]);
+
+  const selectedRole = useMemo(() => displayedRoles.find((r) => r.id === value), [displayedRoles, value]);
   const activeRoleName = selectedRole?.name || selectedRoleName;
-  const effectiveHighlightedIndex = Math.min(highlightedIndex, Math.max(roles.length - 1, 0));
+  const effectiveHighlightedIndex = Math.min(highlightedIndex, Math.max(displayedRoles.length - 1, 0));
   const listboxId = `${LISTBOX_ID_PREFIX}-${id ?? 'role'}`;
 
   // Keep the portaled panel anchored to the trigger and clamped to the viewport.
@@ -119,10 +147,10 @@ export function RoleSearchCombobox({
   }, [isOpen]);
 
   useEffect(() => {
-    const activeRole = roles[effectiveHighlightedIndex];
+    const activeRole = displayedRoles[effectiveHighlightedIndex];
     if (!activeRole) return;
     optionRefs.current.get(activeRole.id)?.scrollIntoView({ block: 'nearest' });
-  }, [effectiveHighlightedIndex, isOpen, roles]);
+  }, [effectiveHighlightedIndex, isOpen, displayedRoles]);
 
   const openPanel = () => {
     if (disabled) return;
@@ -154,21 +182,21 @@ export function RoleSearchCombobox({
       closePanel();
       return;
     }
-    if (roles.length === 0) return;
+    if (displayedRoles.length === 0) return;
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setHighlightedIndex((i) => Math.min(i + 1, roles.length - 1));
+      setHighlightedIndex((i) => Math.min(i + 1, displayedRoles.length - 1));
       return;
+    }
+    if (e.key === 'Enter' && isOpen) {
+      e.preventDefault();
+      const role = displayedRoles[effectiveHighlightedIndex];
+      if (role) selectRole(role);
     }
     if (e.key === 'ArrowUp') {
       e.preventDefault();
       setHighlightedIndex((i) => Math.max(i - 1, 0));
       return;
-    }
-    if (e.key === 'Enter' && isOpen) {
-      e.preventDefault();
-      const role = roles[effectiveHighlightedIndex];
-      if (role) selectRole(role);
     }
   };
 
@@ -225,7 +253,7 @@ export function RoleSearchCombobox({
                 aria-expanded={isOpen}
                 aria-controls={listboxId}
                 aria-activedescendant={
-                  roles.length > 0 ? `${OPTION_ID_PREFIX}-${effectiveHighlightedIndex}` : undefined
+                  displayedRoles.length > 0 ? `${OPTION_ID_PREFIX}-${effectiveHighlightedIndex}` : undefined
                 }
                 placeholder="Search roles..."
                 value={search}
@@ -267,12 +295,12 @@ export function RoleSearchCombobox({
                     Try again
                   </Button>
                 </div>
-              ) : roles.length === 0 ? (
+              ) : displayedRoles.length === 0 ? (
                 <div className="flex min-h-9 items-center justify-center px-3 py-2 text-caption text-center text-[#6B7280]">
                   No roles found
                 </div>
               ) : (
-                roles.map((role, index) => (
+                displayedRoles.map((role, index) => (
                   <div
                     key={role.id}
                     id={`${OPTION_ID_PREFIX}-${index}`}

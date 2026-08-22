@@ -26,6 +26,8 @@ import {
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { PermissionGate } from '@/components/common/permission-gate';
+import { PERMISSIONS } from '@/lib/permissions';
 import {
   useCallsQuery,
   useCallDispositionsQuery,
@@ -355,16 +357,18 @@ export default function CallsPage() {
             Dispositions ({dispositions.length})
           </button>
 
-          <button
-            onClick={() => {
-              resetLogForm();
-              setIsLogCallModalOpen(true);
-            }}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors shadow-sm cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            Log Call
-          </button>
+          <PermissionGate permission={PERMISSIONS.CALLS.CREATE}>
+            <button
+              onClick={() => {
+                resetLogForm();
+                setIsLogCallModalOpen(true);
+              }}
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors shadow-sm cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              Log Call
+            </button>
+          </PermissionGate>
         </div>
       </div>
 

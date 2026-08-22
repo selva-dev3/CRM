@@ -31,6 +31,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { PermissionGate } from '@/components/common/permission-gate';
+import { PERMISSIONS } from '@/lib/permissions';
 import {
   useSystemSettingsQuery,
   useUpdateSystemSettingsMutation,
@@ -296,21 +298,25 @@ export default function SettingsPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          <Link
-            href="/organization"
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
-          >
-            <Building className="w-4 h-4" />
-            <span>Organization Settings</span>
-          </Link>
+          <PermissionGate permission={PERMISSIONS.ORGANIZATION.READ}>
+            <Link
+              href="/organization"
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+            >
+              <Building className="w-4 h-4" />
+              <span>Organization Settings</span>
+            </Link>
+          </PermissionGate>
 
-          <Link
-            href="/integrations"
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-4 py-2 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
-          >
-            <Layers className="w-4 h-4 text-indigo-600" />
-            <span>Integrations</span>
-          </Link>
+          <PermissionGate permission={PERMISSIONS.INTEGRATIONS.READ}>
+            <Link
+              href="/integrations"
+              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-4 py-2 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+            >
+              <Layers className="w-4 h-4 text-indigo-600" />
+              <span>Integrations</span>
+            </Link>
+          </PermissionGate>
         </div>
       </div>
 
@@ -380,15 +386,17 @@ export default function SettingsPage() {
           <span>Database & Maintenance</span>
         </button>
 
-        <button
-          onClick={() => setActiveTab('audit')}
-          className={`pb-3 cursor-pointer transition border-b-2 shrink-0 flex items-center gap-1.5 ${
-            activeTab === 'audit' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
-          <ShieldAlert className="w-4 h-4" />
-          <span>Security Audit Trail</span>
-        </button>
+        <PermissionGate permission={PERMISSIONS.SETTINGS.SECURITY}>
+          <button
+            onClick={() => setActiveTab('audit')}
+            className={`pb-3 cursor-pointer transition border-b-2 shrink-0 flex items-center gap-1.5 ${
+              activeTab === 'audit' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
+            }`}
+          >
+            <ShieldAlert className="w-4 h-4" />
+            <span>Security Audit Trail</span>
+          </button>
+        </PermissionGate>
       </div>
 
       {/* TAB 1: GENERAL SYSTEM SETTINGS */}
@@ -475,14 +483,16 @@ export default function SettingsPage() {
             </div>
 
             <div className="pt-3">
-              <Button
-                type="submit"
-                disabled={updateSettingsMutation.isPending}
-                className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs gap-1.5 cursor-pointer"
-              >
-                <Save className="w-4 h-4" />
-                <span>{updateSettingsMutation.isPending ? 'Saving...' : 'Save General Settings'}</span>
-              </Button>
+              <PermissionGate permission={PERMISSIONS.SETTINGS.UPDATE}>
+                <Button
+                  type="submit"
+                  disabled={updateSettingsMutation.isPending}
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs gap-1.5 cursor-pointer"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>{updateSettingsMutation.isPending ? 'Saving...' : 'Save General Settings'}</span>
+                </Button>
+              </PermissionGate>
             </div>
           </form>
         </Card>
@@ -496,6 +506,7 @@ export default function SettingsPage() {
               <Sliders className="w-4 h-4 text-blue-600" />
               <span>Custom Schema Fields</span>
             </h3>
+            <PermissionGate permission={PERMISSIONS.SETTINGS.UPDATE}>
             <Button
               size="sm"
               onClick={() => setIsFieldModalOpen(true)}
@@ -504,6 +515,7 @@ export default function SettingsPage() {
               <Plus className="w-4 h-4" />
               <span>Add Custom Field</span>
             </Button>
+          </PermissionGate>
           </div>
 
           <div className="space-y-3">
@@ -522,6 +534,7 @@ export default function SettingsPage() {
                     </div>
                   </div>
 
+                  <PermissionGate permission={PERMISSIONS.SETTINGS.UPDATE}>
                   <button
                     type="button"
                     onClick={() => setItemToDelete({ type: 'field', id: f.id, name: f.label })}
@@ -530,6 +543,7 @@ export default function SettingsPage() {
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
+                </PermissionGate>
                 </div>
               ))
             ) : (
@@ -547,6 +561,7 @@ export default function SettingsPage() {
               <WebhookIcon className="w-4 h-4 text-blue-600" />
               <span>Outgoing Webhook Subscriptions</span>
             </h3>
+            <PermissionGate permission={PERMISSIONS.SETTINGS.UPDATE}>
             <Button
               size="sm"
               onClick={() => setIsWebhookModalOpen(true)}
@@ -555,6 +570,7 @@ export default function SettingsPage() {
               <Plus className="w-4 h-4" />
               <span>Register Webhook</span>
             </Button>
+          </PermissionGate>
           </div>
 
           <div className="space-y-3">
@@ -564,25 +580,29 @@ export default function SettingsPage() {
                   <div className="flex items-center justify-between">
                     <div className="font-mono font-bold text-slate-900 truncate max-w-md">{w.target_url}</div>
                     <div className="flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleTestWebhook(w.id)}
-                        disabled={testWebhookMutation.isPending}
-                        className="h-7 text-[11px] font-semibold border-slate-300 cursor-pointer"
-                      >
-                        <Send className="w-3 h-3 mr-1 text-blue-600" />
-                        Test Ping
-                      </Button>
+                      <PermissionGate permission={PERMISSIONS.SETTINGS.UPDATE}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleTestWebhook(w.id)}
+                          disabled={testWebhookMutation.isPending}
+                          className="h-7 text-[11px] font-semibold border-slate-300 cursor-pointer"
+                        >
+                          <Send className="w-3 h-3 mr-1 text-blue-600" />
+                          Test Ping
+                        </Button>
+                      </PermissionGate>
 
-                      <button
-                        type="button"
-                        onClick={() => setItemToDelete({ type: 'webhook', id: w.id, name: w.target_url })}
-                        className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
-                        title="Delete webhook"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <PermissionGate permission={PERMISSIONS.SETTINGS.UPDATE}>
+                        <button
+                          type="button"
+                          onClick={() => setItemToDelete({ type: 'webhook', id: w.id, name: w.target_url })}
+                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
+                          title="Delete webhook"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </PermissionGate>
                     </div>
                   </div>
 
@@ -610,6 +630,7 @@ export default function SettingsPage() {
               <Clock className="w-4 h-4 text-blue-600" />
               <span>Response & Resolution SLA Policies</span>
             </h3>
+            <PermissionGate permission={PERMISSIONS.SETTINGS.UPDATE}>
             <Button
               size="sm"
               onClick={() => setIsSlaModalOpen(true)}
@@ -618,6 +639,7 @@ export default function SettingsPage() {
               <Plus className="w-4 h-4" />
               <span>Create SLA Policy</span>
             </Button>
+          </PermissionGate>
           </div>
 
           <div className="space-y-3">
@@ -651,6 +673,7 @@ export default function SettingsPage() {
                 <Database className="w-4 h-4 text-blue-600" />
                 <span>Automated Database Backup Snapshots</span>
               </h3>
+              <PermissionGate permission={PERMISSIONS.SETTINGS.UPDATE}>
               <Button
                 size="sm"
                 onClick={handleTriggerBackup}
@@ -660,6 +683,7 @@ export default function SettingsPage() {
                 <RefreshCw className={`w-3.5 h-3.5 ${triggerBackupMutation.isPending ? 'animate-spin' : ''}`} />
                 <span>Trigger Manual Backup</span>
               </Button>
+            </PermissionGate>
             </div>
 
             <div className="space-y-2">
@@ -690,14 +714,16 @@ export default function SettingsPage() {
               Truncate all system tables and reset database back to factory clean state (Preserves superadmin user).
             </p>
             <div>
-              <Button
-                size="sm"
-                onClick={() => setIsResetDbModalOpen(true)}
-                className="bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs gap-1.5 cursor-pointer"
-              >
-                <Trash2 className="w-4 h-4" />
-                <span>Reset System Database</span>
-              </Button>
+              <PermissionGate permission={PERMISSIONS.SETTINGS.UPDATE}>
+                <Button
+                  size="sm"
+                  onClick={() => setIsResetDbModalOpen(true)}
+                  className="bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs gap-1.5 cursor-pointer"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Reset System Database</span>
+                </Button>
+              </PermissionGate>
             </div>
           </Card>
         </div>
@@ -711,6 +737,7 @@ export default function SettingsPage() {
               <ShieldAlert className="w-4 h-4 text-blue-600" />
               <span>Security & User Activity Audit Trail</span>
             </h3>
+            <PermissionGate permission={PERMISSIONS.SETTINGS.SECURITY}>
             <Button
               size="sm"
               variant="outline"
@@ -720,6 +747,7 @@ export default function SettingsPage() {
               <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
               <span>Export Audit CSV</span>
             </Button>
+          </PermissionGate>
           </div>
 
           <div className="space-y-2 text-xs">

@@ -22,6 +22,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
+import { PermissionGate } from '@/components/common/permission-gate';
+import { PERMISSIONS } from '@/lib/permissions';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import {
   useCompaniesQuery,
@@ -287,49 +289,57 @@ export default function CompaniesPage() {
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2 flex-wrap">
-          <Button
-            size="sm"
-            onClick={() => {
-              resetForm();
-              setIsCreateModalOpen(true);
-            }}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs gap-1.5 cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add Company</span>
-          </Button>
+          <PermissionGate permission={PERMISSIONS.COMPANIES.CREATE}>
+            <Button
+              size="sm"
+              onClick={() => {
+                resetForm();
+                setIsCreateModalOpen(true);
+              }}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs gap-1.5 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Company</span>
+            </Button>
+          </PermissionGate>
 
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleExportCsv}
-            className="border-slate-300 font-semibold text-xs gap-1 cursor-pointer"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Export CSV</span>
-          </Button>
-
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleImportCsv}
-            disabled={importCsvMutation.isPending}
-            className="border-slate-300 font-semibold text-xs gap-1 cursor-pointer"
-          >
-            <Upload className="w-3.5 h-3.5 text-blue-600" />
-            <span>Import CSV</span>
-          </Button>
-
-          {selectedIds.size > 0 && (
+          <PermissionGate permission={PERMISSIONS.COMPANIES.EXPORT}>
             <Button
               size="sm"
               variant="outline"
-              onClick={handleBulkDelete}
-              className="border-rose-300 text-rose-600 hover:bg-rose-50 font-semibold text-xs gap-1 cursor-pointer"
+              onClick={handleExportCsv}
+              className="border-slate-300 font-semibold text-xs gap-1 cursor-pointer"
             >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Delete Selected ({selectedIds.size})</span>
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Export CSV</span>
             </Button>
+          </PermissionGate>
+
+          <PermissionGate permission={PERMISSIONS.COMPANIES.IMPORT}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleImportCsv}
+              disabled={importCsvMutation.isPending}
+              className="border-slate-300 font-semibold text-xs gap-1 cursor-pointer"
+            >
+              <Upload className="w-3.5 h-3.5 text-blue-600" />
+              <span>Import CSV</span>
+            </Button>
+          </PermissionGate>
+
+          {selectedIds.size > 0 && (
+            <PermissionGate permission={PERMISSIONS.COMPANIES.BULK_DELETE}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleBulkDelete}
+                className="border-rose-300 text-rose-600 hover:bg-rose-50 font-semibold text-xs gap-1 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Selected ({selectedIds.size})</span>
+              </Button>
+            </PermissionGate>
           )}
         </div>
       </div>
@@ -361,12 +371,14 @@ export default function CompaniesPage() {
         actions={(item: any) => [
           {
             label: 'Edit',
+            permission: PERMISSIONS.COMPANIES.UPDATE,
             icon: <Edit className="w-4 h-4 text-blue-600 mr-2" />,
             onClick: () => openEditModal(item),
           },
           {
             label: 'Delete',
             variant: 'destructive',
+            permission: PERMISSIONS.COMPANIES.DELETE,
             icon: <Trash2 className="w-4 h-4 text-rose-600 mr-2" />,
             onClick: () => setCompanyToDelete(item),
           },

@@ -39,6 +39,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {
   useRolesQuery,
+  useAssignableRolesQuery,
   useSystemRolesQuery,
   useDefaultRoleQuery,
   usePermissionMatrixQuery,
@@ -207,6 +208,7 @@ export default function RolesPage() {
 
   // Queries - live GET /api/v1/roles?search=... API call on typing search input!
   const { data: roles = [], isLoading: isRolesLoading } = useRolesQuery(debouncedSearch.trim() || undefined);
+  const { data: assignableRoles = [] } = useAssignableRolesQuery();
   const { data: systemRoles = [] } = useSystemRolesQuery();
   const { data: defaultRole } = useDefaultRoleQuery();
   const { data: permissionMatrix = [] } = usePermissionMatrixQuery();
@@ -985,7 +987,8 @@ export default function RolesPage() {
                   onChange={(e) => setAssignRoleId(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  {roles.map((r) => (
+                  <option value="">Select a role...</option>
+                  {assignableRoles.map((r) => (
                     <option key={r.id} value={r.id}>
                       {r.name}
                     </option>

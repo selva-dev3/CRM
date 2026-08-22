@@ -23,13 +23,16 @@ import {
   MapPin,
   Building2,
   Power,
-  ArrowLeft
+  ArrowLeft,
+  UserPlus
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { RoleSearchCombobox } from '@/components/features/users/role-search-combobox';
+import { useHasPermission } from '@/hooks/use-has-permission';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -40,11 +43,13 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { DataTable, type DataTableColumn, type TableActionOption } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { PERMISSIONS } from '@/lib/permissions';
 import {
   useOrganizationsQuery,
   useCreateOrganizationMutation,
   useUpdateOrganizationMutation,
   useDeleteOrganizationMutation,
+  useInviteNewOrganizationMutation,
   OrganizationItem,
   CreateOrganizationPayload,
   UpdateOrganizationPayload,
@@ -61,6 +66,11 @@ export default function OrganizationPage() {
   const [userRole, setUserRole] = useState<string>('');
   const [userEmail, setUserEmail] = useState<string>('');
   const [isRoleChecked, setIsRoleChecked] = useState(false);
+  const { hasPermission } = useHasPermission();
+
+  // Invite Organization permission — the backend independently enforces both keys.
+  const canInviteOrganization =
+    hasPermission(PERMISSIONS.ORGANIZATION.UPDATE) && hasPermission(PERMISSIONS.INVITATIONS.CREATE);
 
   useEffect(() => {
     try {
@@ -108,6 +118,7 @@ export default function OrganizationPage() {
   const createOrgMutation = useCreateOrganizationMutation();
   const updateOrgMutation = useUpdateOrganizationMutation();
   const deleteOrgMutation = useDeleteOrganizationMutation();
+  const inviteNewOrgMutation = useInviteNewOrganizationMutation();
 
   // Filter organizations by search term
   const organizations = useMemo(() => {
@@ -129,6 +140,14 @@ export default function OrganizationPage() {
   const [orgToDelete, setOrgToDelete] = useState<OrganizationItem | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Invite Organization Modal States — the payload only ever carries
+  // { email, full_name, role_id }; no organization_id is collected or sent.
+  const [isInviteOrgModalOpen, setIsInviteOrgModalOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteFullName, setInviteFullName] = useState('');
+  const [inviteRoleId, setInviteRoleId] = useState('');
+  const [inviteErrorMessage, setInviteErrorMessage] = useState<string | null>(null);
 
   // Form States for Create/Edit
   const [formName, setFormName] = useState('');
@@ -489,16 +508,63 @@ export default function OrganizationPage() {
   const actions = (org: OrganizationItem): TableActionOption<OrganizationItem>[] => [
     {
       label: 'Edit Organization',
+      permission: PERMISSIONS.ORGANIZATION.UPDATE,
       icon: <Pencil className="w-4 h-4 mr-2 text-[#2563EB]" />,
       onClick: (item) => handleOpenEditModal(item),
     },
     {
       label: 'Delete Organization',
       variant: 'destructive',
+      permission: PERMISSIONS.ORGANIZATION.UPDATE,
       icon: <Trash2 className="w-4 h-4 mr-2 text-[#DC2626]" />,
       onClick: (item) => setOrgToDelete(item),
     },
   ];
+
+  const handleOpenInviteMemberModal = () => {
+    setInviteEmail('');
+    setInviteFullName('');
+    setInviteRoleId('');
+    setInviteErrorMessage(null);
+    setIsInviteOrgModalOpen(true);
+  };
+
+  const handleInviteOrgSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const email = inviteEmail.trim();
+    const fullName = inviteFullName.trim();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setInviteErrorMessage('Please enter a valid email address.');
+      return;
+    }
+    if (!fullName) {
+      setInviteErrorMessage('Please enter the invitee\'s full name.');
+      return;
+    }
+    if (!inviteRoleId) {
+      setInviteErrorMessage('Please select a role.');
+      return;
+    }
+
+    try {
+      const res = await inviteNewOrgMutation.mutateAsync({
+        email,
+        full_name: fullName,
+        role_id: inviteRoleId,
+      });
+      await queryClient.invalidateQueries({ queryKey: ['organizations'] });
+      await refetch();
+      setSuccessMessage(res.message || `Organization "${res.organization?.name}" created and invitation sent to ${email}.`);
+      setIsInviteOrgModalOpen(false);
+      setInviteEmail('');
+      setInviteFullName('');
+      setInviteRoleId('');
+      setInviteErrorMessage(null);
+      setTimeout(() => setSuccessMessage(null), 6000);
+    } catch (err: unknown) {
+      setInviteErrorMessage(err instanceof Error ? err.message : 'Failed to create the organization invitation.');
+    }
+  };
 
   if (!isSuperAdmin) {
     return <OrganizationDetailPage isCurrentOrgView={true} />;
@@ -525,6 +591,17 @@ export default function OrganizationPage() {
             <ArrowLeft className="w-4 h-4 text-slate-500" />
             <span>Back to Settings</span>
           </Link>
+          <Button
+            type="button"
+            onClick={handleOpenInviteMemberModal}
+            size="default"
+            variant="primary"
+            className="shadow-saas-sm px-4 text-button cursor-pointer"
+            disabled={!canInviteOrganization}
+          >
+            <UserPlus className="w-4 h-4 mr-2" />
+            Invite Organization
+          </Button>
           {isSuperAdmin && (
             <Button
               type="button"
@@ -622,6 +699,107 @@ export default function OrganizationPage() {
           </div>
         }
       />
+
+      {/* INVITE ORGANIZATION MODAL DIALOG */}
+      {isInviteOrgModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-[#111827]/60 backdrop-blur-xs animate-in fade-in-50">
+          <div className="relative w-full max-w-lg bg-white rounded-modal border border-[#E5E7EB] shadow-saas-lg overflow-hidden text-[#111827] flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="p-5 sm:p-6 border-b border-[#E5E7EB] bg-[#F9FAFB] flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-btn bg-[#2563EB] flex items-center justify-center text-white shadow-saas-sm">
+                  <UserPlus className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-subheading font-semibold text-[#111827]">
+                    Invite Organization
+                  </h3>
+                  <p className="text-caption text-[#6B7280]">
+                    Provision a new tenant organization and invite its admin
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsInviteOrgModalOpen(false)}
+                className="p-1.5 rounded-btn text-[#6B7280] hover:text-[#111827] hover:bg-[#F3F4F6] transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <form onSubmit={handleInviteOrgSubmit} className="p-5 sm:p-6 space-y-4 overflow-y-auto">
+              {inviteErrorMessage && (
+                <div className="p-4 rounded-btn bg-[#DC2626]/10 border border-[#DC2626]/20 text-[#DC2626] text-body font-medium flex items-center gap-2">
+                  <AlertCircle className="w-5 h-5 shrink-0" />
+                  <span>{inviteErrorMessage}</span>
+                </div>
+              )}
+
+              <div>
+                <Label htmlFor="invite-email">Email Address <span className="text-[#DC2626]">*</span></Label>
+                <Input
+                  id="invite-email"
+                  type="email"
+                  required
+                  placeholder="e.g. admin@acme.com"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                />
+                <p className="text-caption text-[#6B7280] mt-1">
+                  The invitee becomes the initial admin of a brand-new organization.
+                </p>
+              </div>
+
+              <div>
+                <Label htmlFor="invite-full-name">Full Name <span className="text-[#DC2626]">*</span></Label>
+                <Input
+                  id="invite-full-name"
+                  type="text"
+                  required
+                  placeholder="e.g. Jane Smith"
+                  value={inviteFullName}
+                  onChange={(e) => setInviteFullName(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="invite-role">Role <span className="text-[#DC2626]">*</span></Label>
+                <RoleSearchCombobox
+                  id="invite-role"
+                  value={inviteRoleId}
+                  onChange={setInviteRoleId}
+                  placeholder="Search and select a role..."
+                />
+                <p className="text-caption text-[#6B7280] mt-1">
+                  A new organization is created server-side; the organization ID is generated by the backend.
+                </p>
+              </div>
+
+              {/* Modal Actions */}
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#E5E7EB]">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsInviteOrgModalOpen(false)}
+                  className="cursor-pointer"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  disabled={inviteNewOrgMutation.isPending}
+                  className="cursor-pointer shadow-saas-sm"
+                >
+                  {inviteNewOrgMutation.isPending ? 'Sending Invitation...' : 'Send Invitation'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* CREATE ORGANIZATION MODAL DIALOG */}
       {isCreateModalOpen && (

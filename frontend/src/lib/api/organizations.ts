@@ -1,5 +1,6 @@
 ﻿import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import { notifyAuthUserChanged } from '@/hooks/use-has-permission';
 
 export interface OrganizationItem {
   id: string;
@@ -411,6 +412,38 @@ export interface ValidateInvitationResponse {
   is_valid: boolean;
 }
 
+export interface InviteNewOrganizationPayload {
+  email: string;
+  full_name: string;
+  role_id: string;
+}
+
+export interface InviteNewOrganizationResponse {
+  organization: {
+    id: string;
+    name: string;
+    slug?: string;
+    domain?: string;
+    email?: string;
+    status?: string;
+    plan?: string;
+    max_users?: number;
+  };
+  invitation: {
+    id: string;
+    organization_id?: string;
+    organization_name?: string;
+    email: string;
+    full_name?: string;
+    role?: string;
+    token: string;
+    status: string;
+    expires_at: string;
+    invite_url?: string;
+  };
+  message: string;
+}
+
 export interface AcceptInvitationPayload {
   password: string;
   full_name?: string;
@@ -451,6 +484,10 @@ export async function acceptInvitationApi({ token, payload }: { token: string; p
   return apiClient.post<AcceptInvitationResponse>(`/organizations/invitations/${encodeURIComponent(token)}/accept`, payload);
 }
 
+export async function inviteNewOrganizationApi(payload: InviteNewOrganizationPayload): Promise<InviteNewOrganizationResponse> {
+  return apiClient.post<InviteNewOrganizationResponse>('/organizations/invitations/new-organization', payload);
+}
+
 export function useValidateInvitationQuery(token: string) {
   return useQuery({
     queryKey: ['validate-invitation', token],
@@ -468,7 +505,19 @@ export function useAcceptInvitationMutation() {
       if (data.access_token) {
         localStorage.setItem('token', data.access_token);
         localStorage.setItem('user', JSON.stringify(data.user));
+        notifyAuthUserChanged();
       }
+      queryClient.invalidateQueries({ queryKey: ['current-organization'] });
+    },
+  });
+}
+
+export function useInviteNewOrganizationMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: inviteNewOrganizationApi,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['organizations'] });
       queryClient.invalidateQueries({ queryKey: ['current-organization'] });
     },
   });

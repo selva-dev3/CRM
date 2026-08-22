@@ -31,6 +31,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
+import { PermissionGate } from '@/components/common/permission-gate';
+import { PERMISSIONS } from '@/lib/permissions';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import {
   useDealsQuery,
@@ -350,49 +352,57 @@ export default function DealsPage() {
         {/* Action Buttons */}
         <div className="flex items-center gap-2 flex-wrap">
 
-          <Button
-            size="sm"
-            onClick={() => {
-              resetForm();
-              setIsCreateModalOpen(true);
-            }}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs gap-1.5 cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add Deal</span>
-          </Button>
+          <PermissionGate permission={PERMISSIONS.DEALS.CREATE}>
+            <Button
+              size="sm"
+              onClick={() => {
+                resetForm();
+                setIsCreateModalOpen(true);
+              }}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs gap-1.5 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Deal</span>
+            </Button>
+          </PermissionGate>
 
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleExportCsv}
-            className="border-slate-300 font-semibold text-xs gap-1 cursor-pointer"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Export CSV</span>
-          </Button>
-
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleImportCsv}
-            disabled={importCsvMutation.isPending}
-            className="border-slate-300 font-semibold text-xs gap-1 cursor-pointer"
-          >
-            <Upload className="w-3.5 h-3.5 text-blue-600" />
-            <span>Import CSV</span>
-          </Button>
-
-          {selectedIds.size > 0 && (
+          <PermissionGate permission={PERMISSIONS.DEALS.EXPORT}>
             <Button
               size="sm"
               variant="outline"
-              onClick={handleBulkDelete}
-              className="border-rose-300 text-rose-600 hover:bg-rose-50 font-semibold text-xs gap-1 cursor-pointer"
+              onClick={handleExportCsv}
+              className="border-slate-300 font-semibold text-xs gap-1 cursor-pointer"
             >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Delete Selected ({selectedIds.size})</span>
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Export CSV</span>
             </Button>
+          </PermissionGate>
+
+          <PermissionGate permission={PERMISSIONS.DEALS.IMPORT}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleImportCsv}
+              disabled={importCsvMutation.isPending}
+              className="border-slate-300 font-semibold text-xs gap-1 cursor-pointer"
+            >
+              <Upload className="w-3.5 h-3.5 text-blue-600" />
+              <span>Import CSV</span>
+            </Button>
+          </PermissionGate>
+
+          {selectedIds.size > 0 && (
+            <PermissionGate permission={PERMISSIONS.DEALS.BULK_DELETE}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleBulkDelete}
+                className="border-rose-300 text-rose-600 hover:bg-rose-50 font-semibold text-xs gap-1 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Selected ({selectedIds.size})</span>
+              </Button>
+            </PermissionGate>
           )}
         </div>
       </div>
@@ -423,27 +433,32 @@ export default function DealsPage() {
           actions={(item: any) => [
             {
               label: 'Edit Deal',
+              permission: PERMISSIONS.DEALS.UPDATE,
               icon: <Edit className="w-4 h-4 text-blue-600 mr-2" />,
               onClick: () => openEditModal(item),
             },
             {
               label: 'Mark as Won',
+              permission: PERMISSIONS.DEALS.UPDATE,
               icon: <Trophy className="w-4 h-4 text-emerald-600 mr-2" />,
               onClick: () => handleMarkWon(item),
             },
             {
               label: 'Mark as Lost',
+              permission: PERMISSIONS.DEALS.UPDATE,
               icon: <XCircle className="w-4 h-4 text-rose-600 mr-2" />,
               onClick: () => handleMarkLost(item),
             },
             {
               label: 'Clone Deal',
+              permission: PERMISSIONS.DEALS.CREATE,
               icon: <Copy className="w-4 h-4 text-indigo-600 mr-2" />,
               onClick: () => handleCloneDeal(item),
             },
             {
               label: 'Delete Deal',
               variant: 'destructive',
+              permission: PERMISSIONS.DEALS.DELETE,
               icon: <Trash2 className="w-4 h-4 text-rose-600 mr-2" />,
               onClick: () => setDealToDelete(item),
             },

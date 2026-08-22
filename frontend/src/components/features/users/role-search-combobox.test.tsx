@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+﻿import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RoleSearchCombobox } from './role-search-combobox';
@@ -9,15 +9,15 @@ const roles = [
   { id: 'role-3', name: 'Support Agent' },
 ];
 
-const useRolesQueryMock = vi.fn();
+const useAssignableRolesQueryMock = vi.fn();
 
 vi.mock('@/lib/api/roles', () => ({
-  useRolesQuery: (...args: unknown[]) => useRolesQueryMock(...args),
+  useAssignableRolesQuery: (...args: unknown[]) => useAssignableRolesQueryMock(...args),
 }));
 
 beforeEach(() => {
-  useRolesQueryMock.mockReset();
-  useRolesQueryMock.mockReturnValue({ data: roles, isLoading: false, isError: false, refetch: vi.fn() });
+  useAssignableRolesQueryMock.mockReset();
+  useAssignableRolesQueryMock.mockReturnValue({ data: roles, isLoading: false, isError: false, refetch: vi.fn() });
 });
 
 afterEach(() => {
@@ -50,7 +50,7 @@ describe('RoleSearchCombobox', () => {
   });
 
   it('shows a loading state while roles are being fetched', async () => {
-    useRolesQueryMock.mockReturnValue({ data: [], isLoading: true, isError: false, refetch: vi.fn() });
+    useAssignableRolesQueryMock.mockReturnValue({ data: [], isLoading: true, isError: false, refetch: vi.fn() });
     const user = userEvent.setup();
     render(<RoleSearchCombobox value="" onChange={vi.fn()} />);
     await openPanel(user);
@@ -59,7 +59,7 @@ describe('RoleSearchCombobox', () => {
   });
 
   it('shows an error state when role loading fails', async () => {
-    useRolesQueryMock.mockReturnValue({ data: [], isLoading: false, isError: true, refetch: vi.fn() });
+    useAssignableRolesQueryMock.mockReturnValue({ data: [], isLoading: false, isError: true, refetch: vi.fn() });
     const user = userEvent.setup();
     render(<RoleSearchCombobox value="" onChange={vi.fn()} />);
     await openPanel(user);
@@ -69,7 +69,7 @@ describe('RoleSearchCombobox', () => {
 
   it('retries loading roles from the error state', async () => {
     const refetchMock = vi.fn();
-    useRolesQueryMock.mockReturnValue({ data: [], isLoading: false, isError: true, refetch: refetchMock });
+    useAssignableRolesQueryMock.mockReturnValue({ data: [], isLoading: false, isError: true, refetch: refetchMock });
     const user = userEvent.setup();
     render(<RoleSearchCombobox value="" onChange={vi.fn()} />);
     await openPanel(user);
@@ -80,7 +80,7 @@ describe('RoleSearchCombobox', () => {
   });
 
   it('shows an empty state when no roles are returned', async () => {
-    useRolesQueryMock.mockReturnValue({ data: [], isLoading: false, isError: false });
+    useAssignableRolesQueryMock.mockReturnValue({ data: [], isLoading: false, isError: false });
     const user = userEvent.setup();
     render(<RoleSearchCombobox value="" onChange={vi.fn()} />);
     await openPanel(user);
@@ -133,7 +133,7 @@ describe('RoleSearchCombobox', () => {
     await user.keyboard('{ArrowDown}');
     await user.keyboard('{ArrowDown}');
 
-    useRolesQueryMock.mockReturnValue({ data: [roles[0]], isLoading: false, isError: false });
+    useAssignableRolesQueryMock.mockReturnValue({ data: [roles[0]], isLoading: false, isError: false });
     rerender(<RoleSearchCombobox value="" onChange={onChange} />);
 
     await user.keyboard('{Enter}');
@@ -148,12 +148,12 @@ describe('RoleSearchCombobox', () => {
     const input = screen.getByRole('combobox');
     vi.useFakeTimers();
     fireEvent.change(input, { target: { value: 'Man' } });
-    expect(useRolesQueryMock).toHaveBeenLastCalledWith(undefined);
+    expect(useAssignableRolesQueryMock).toHaveBeenLastCalledWith(undefined);
 
     act(() => {
       vi.advanceTimersByTime(300);
     });
-    expect(useRolesQueryMock).toHaveBeenLastCalledWith('Man');
+    expect(useAssignableRolesQueryMock).toHaveBeenLastCalledWith('Man');
 
     vi.useRealTimers();
   });

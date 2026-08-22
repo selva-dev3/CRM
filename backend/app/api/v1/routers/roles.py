@@ -78,6 +78,16 @@ async def list_system_roles(db: AsyncSession = Depends(get_db)):
     return await role_service.list_system_roles(db)
 
 
+@router.get("/assignable", response_model=List[RoleResponse], summary="List roles that may be assigned to users (excludes super_admin)", dependencies=[Depends(require_permission("roles:read"))])
+async def list_assignable_roles(
+    search: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    org_id = getattr(current_user, "organization_id", None)
+    return await role_service.list_assignable_roles(db, search, org_id=org_id)
+
+
 @router.post("/set-defaults", response_model=MessageResponse, summary="Set multiple roles as default for new registrations", dependencies=[Depends(require_permission("roles:update"))])
 async def set_multiple_default_roles(payload: SetDefaultRolesRequest, db: AsyncSession = Depends(get_db)):
     return await role_service.set_multiple_default_roles(db, payload.role_ids)
@@ -115,9 +125,10 @@ async def get_user_role(user_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.put("/users/{user_id}/role", response_model=MessageResponse, summary="Assign role to user", dependencies=[Depends(require_permission("roles:assign"))])
 async def assign_role_to_user(
-    user_id: str, role_id: str = Query("sys-manager"), db: AsyncSession = Depends(get_db)
+    user_id: str, role_id: str = Query("sys-manager"), db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    return await role_service.assign_role_to_user(db, user_id, role_id)
+    return await role_service.assign_role_to_user(db, user_id, role_id, current_user)
 
 
 @router.post("/check-permission", summary="Verify user permission for resource action", dependencies=[Depends(require_permission("roles:read"))])

@@ -21,6 +21,8 @@ import {
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { PermissionGate } from '@/components/common/permission-gate';
+import { PERMISSIONS } from '@/lib/permissions';
 import {
   useCalendarEventsQuery,
   useAvailabilityQuery,
@@ -248,20 +250,24 @@ export default function CalendarPage() {
       header: 'ACTIONS',
       cell: (item) => (
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => handleOpenEditModal(item)}
-            title="Edit Event"
-            className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-md transition-colors cursor-pointer"
-          >
-            <Edit className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setEventToDelete(item)}
-            title="Delete Event"
-            className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          <PermissionGate permission={PERMISSIONS.CALENDAR.WRITE}>
+            <button
+              onClick={() => handleOpenEditModal(item)}
+              title="Edit Event"
+              className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-md transition-colors cursor-pointer"
+            >
+              <Edit className="w-4 h-4" />
+            </button>
+          </PermissionGate>
+          <PermissionGate permission={PERMISSIONS.CALENDAR.WRITE}>
+            <button
+              onClick={() => setEventToDelete(item)}
+              title="Delete Event"
+              className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </PermissionGate>
         </div>
       ),
     },
@@ -331,13 +337,15 @@ export default function CalendarPage() {
             Recurring Rule
           </button>
 
-          <button
-            onClick={handleOpenCreateModal}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors shadow-sm cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            Create Event
-          </button>
+          <PermissionGate permission={PERMISSIONS.CALENDAR.WRITE}>
+            <button
+              onClick={handleOpenCreateModal}
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors shadow-sm cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              Create Event
+            </button>
+          </PermissionGate>
         </div>
       </div>
 

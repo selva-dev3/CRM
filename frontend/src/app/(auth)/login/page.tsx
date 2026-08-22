@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLoginMutation } from '@/lib/api';
 import { getSessionToken, setSessionToken } from '@/lib/api/client';
+import { notifyAuthUserChanged } from '@/hooks/use-has-permission';
 import { Button, Input, Label, Alert, AlertTitle, AlertDescription } from '@/components/ui';
 import { 
   ArrowRight, 
@@ -47,6 +48,7 @@ export default function LoginPage() {
         if (data.user) {
           localStorage.setItem('user', JSON.stringify(data.user));
           sessionStorage.setItem('user', JSON.stringify(data.user));
+          notifyAuthUserChanged();
         }
 
         setSuccess('Authentication successful! Redirecting to dashboard...');

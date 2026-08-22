@@ -42,6 +42,8 @@ import {
   DropdownMenuSeparator
 } from '@/components/ui';
 import { DataTable, DataTableColumn, TableActionOption } from '@/components/common/data-table';
+import { PermissionGate } from '@/components/common/permission-gate';
+import { PERMISSIONS } from '@/lib/permissions';
 import { 
   useLeadsQuery, 
   useCreateLeadMutation, 
@@ -478,11 +480,13 @@ export default function LeadsPage() {
   const actions = (lead: Lead): TableActionOption<Lead>[] => [
     {
       label: 'Edit Lead',
+      permission: PERMISSIONS.LEADS.UPDATE,
       icon: <Pencil className="w-3.5 h-3.5 mr-2 text-slate-500" />,
       onClick: (item) => handleOpenEditModal(item),
     },
     {
       label: 'Assign Lead',
+      permission: PERMISSIONS.LEADS.ASSIGN,
       icon: <UserCheck className="w-3.5 h-3.5 mr-2 text-indigo-600" />,
       onClick: (item) => {
         setAssigningLead(item);
@@ -493,6 +497,7 @@ export default function LeadsPage() {
       ? [
           {
             label: 'Unarchive Lead',
+            permission: PERMISSIONS.LEADS.UPDATE,
             icon: <RotateCcw className="w-3.5 h-3.5 mr-2 text-emerald-600" />,
             onClick: (item: Lead) => handleUnarchiveLead(item),
           },
@@ -500,6 +505,7 @@ export default function LeadsPage() {
       : [
           {
             label: 'Archive Lead',
+            permission: PERMISSIONS.LEADS.UPDATE,
             icon: <Archive className="w-3.5 h-3.5 mr-2 text-amber-600" />,
             onClick: (item: Lead) => handleArchiveLead(item),
           },
@@ -507,6 +513,7 @@ export default function LeadsPage() {
     {
       label: 'Delete Lead',
       variant: 'destructive',
+      permission: PERMISSIONS.LEADS.DELETE,
       icon: <Trash2 className="w-3.5 h-3.5 mr-2 text-rose-600" />,
       onClick: (item) => setLeadToDelete(item),
     },
@@ -542,35 +549,41 @@ export default function LeadsPage() {
                 {selectedIds.size > 0 ? `Bulk Actions (${selectedIds.size} selected)` : 'Select leads below to apply'}
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem
-                disabled={selectedIds.size === 0}
-                onClick={handleBulkArchive}
-                className={`cursor-pointer text-button font-medium ${selectedIds.size === 0 ? 'opacity-50 cursor-not-allowed' : 'text-[#374151] hover:bg-[#F3F4F6]'}`}
-              >
-                <Archive className="w-4 h-4 mr-2 text-[#F59E0B]" />
-                <span>Bulk Archive ({selectedIds.size})</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                disabled={selectedIds.size === 0}
-                onClick={handleBulkDelete}
-                className={`cursor-pointer text-button font-medium ${selectedIds.size === 0 ? 'opacity-50 cursor-not-allowed' : 'text-[#DC2626] hover:bg-[#DC2626]/10'}`}
-              >
-                <Trash2 className="w-4 h-4 mr-2 text-[#DC2626]" />
-                <span>Bulk Delete ({selectedIds.size})</span>
-              </DropdownMenuItem>
+              <PermissionGate permission={PERMISSIONS.LEADS.BULK_UPDATE}>
+                <DropdownMenuItem
+                  disabled={selectedIds.size === 0}
+                  onClick={handleBulkArchive}
+                  className={`cursor-pointer text-button font-medium ${selectedIds.size === 0 ? 'opacity-50 cursor-not-allowed' : 'text-[#374151] hover:bg-[#F3F4F6]'}`}
+                >
+                  <Archive className="w-4 h-4 mr-2 text-[#F59E0B]" />
+                  <span>Bulk Archive ({selectedIds.size})</span>
+                </DropdownMenuItem>
+              </PermissionGate>
+              <PermissionGate permission={PERMISSIONS.LEADS.BULK_DELETE}>
+                <DropdownMenuItem
+                  disabled={selectedIds.size === 0}
+                  onClick={handleBulkDelete}
+                  className={`cursor-pointer text-button font-medium ${selectedIds.size === 0 ? 'opacity-50 cursor-not-allowed' : 'text-[#DC2626] hover:bg-[#DC2626]/10'}`}
+                >
+                  <Trash2 className="w-4 h-4 mr-2 text-[#DC2626]" />
+                  <span>Bulk Delete ({selectedIds.size})</span>
+                </DropdownMenuItem>
+              </PermissionGate>
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <Button
-            type="button"
-            onClick={handleOpenModal}
-            size="default"
-            variant="primary"
-            className="shadow-saas-sm px-4 text-button cursor-pointer"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            + Add New Lead
-          </Button>
+          <PermissionGate permission={PERMISSIONS.LEADS.CREATE}>
+            <Button
+              type="button"
+              onClick={handleOpenModal}
+              size="default"
+              variant="primary"
+              className="shadow-saas-sm px-4 text-button cursor-pointer"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              + Add New Lead
+            </Button>
+          </PermissionGate>
         </div>
       </div>
 
