@@ -28,6 +28,7 @@ class Organization(Base):
     tax_number: Mapped[Optional[str]] = mapped_column(String(100))
     registration_number: Mapped[Optional[str]] = mapped_column(String(100))
     status: Mapped[Optional[str]] = mapped_column(String(50), default="active")
+    role: Mapped[Optional[str]] = mapped_column(String(100), default="Admin")
 
     plan: Mapped[str] = mapped_column(String(100), default="Enterprise")
     max_users: Mapped[int] = mapped_column(Integer, default=50)

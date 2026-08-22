@@ -213,6 +213,7 @@ class OrganizationBase(BaseModel):
     tax_number: Optional[str] = None
     registration_number: Optional[str] = None
     status: Optional[str] = "active"
+    role: Optional[str] = "Admin"
     domain: Optional[str] = None
     plan: Optional[str] = "Enterprise"
     max_users: Optional[int] = 100
@@ -240,6 +241,7 @@ class OrganizationUpdate(BaseModel):
     tax_number: Optional[str] = None
     registration_number: Optional[str] = None
     status: Optional[str] = None
+    role: Optional[str] = None
     domain: Optional[str] = None
     plan: Optional[str] = None
     max_users: Optional[int] = None
