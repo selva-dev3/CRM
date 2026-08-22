@@ -192,6 +192,7 @@ class OrganizationDomainService:
                     "state": payload.state,
                     "city": payload.city,
                     "address": payload.address,
+                    "role": "Admin",
                     "postal_code": payload.postal_code,
                     "timezone": payload.timezone or "Asia/Kolkata",
                     "currency": payload.currency or "INR",
