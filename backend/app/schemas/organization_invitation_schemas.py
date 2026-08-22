@@ -24,6 +24,24 @@ class CreateOrganizationInvitationRequest(BaseModel):
     full_name: str = Field(..., min_length=1, example="Jane Smith")
     role_id: Optional[str] = Field("Admin", example="Admin")
 
+class InvitationResponse(BaseModel):
+    id: str
+    organization_id: Optional[str] = None
+    organization_name: Optional[str] = None
+    email: str
+    full_name: Optional[str] = None
+    role: Optional[str] = "Admin"
+    subscription_id: Optional[str] = None
+    token: str
+    status: str
+    expires_at: str
+    accepted_at: Optional[str] = None
+    created_at: str
+    invite_url: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
 class NewOrganizationInviteResponse(BaseModel):
     organization: dict
     invitation: InvitationResponse
@@ -43,24 +61,6 @@ class InviteUserResponse(BaseModel):
     token: str
     invite_url: str
     message: str
-
-class InvitationResponse(BaseModel):
-    id: str
-    organization_id: Optional[str] = None
-    organization_name: Optional[str] = None
-    email: str
-    full_name: Optional[str] = None
-    role: Optional[str] = "Admin"
-    subscription_id: Optional[str] = None
-    token: str
-    status: str
-    expires_at: str
-    accepted_at: Optional[str] = None
-    created_at: str
-    invite_url: Optional[str] = None
-
-    class Config:
-        from_attributes = True
 
 class InvitationStatusResponse(BaseModel):
     organization: Optional[dict] = None
