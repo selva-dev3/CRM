@@ -38,6 +38,16 @@ async def lifespan(app: FastAPI):
             "Production mode - skipping create_all(). Using Alembic migrations."
         )
 
+    # Sync standard permissions and ensure system Admin role holds them
+    try:
+        from app.repositories.role_repository import RoleRepository
+        from app.services.role_service import ALL_STANDARD_PERMISSIONS
+        async with AsyncSessionLocal() as session:
+            await RoleRepository().seed_permissions(session, ALL_STANDARD_PERMISSIONS)
+        logger.info("Standard RBAC permissions and system Admin role synced successfully")
+    except Exception as e:
+        logger.warning("Could not sync standard RBAC permissions during startup: %s", e)
+
     yield
 
     await engine.dispose()

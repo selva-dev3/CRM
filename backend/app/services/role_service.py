@@ -105,6 +105,7 @@ ALL_STANDARD_PERMISSIONS = [
     {"key": "calendar:write", "name": "Manage Calendar Events", "category": "Calendar", "description": "Create and edit team calendar events"},
     {"key": "calendar:sync", "name": "Sync External Calendar", "category": "Calendar", "description": "Sync Google and Outlook calendars"},
     {"key": "users:read", "name": "View Users", "category": "Users", "description": "View organization user list"},
+    {"key": "users:create", "name": "Create Users", "category": "Users", "description": "Create new user accounts"},
     {"key": "users:invite", "name": "Invite Users", "category": "Users", "description": "Invite new users to organization"},
     {"key": "users:update", "name": "Update Users", "category": "Users", "description": "Update user profiles and status"},
     {"key": "users:delete", "name": "Delete Users", "category": "Users", "description": "Remove users from organization"},

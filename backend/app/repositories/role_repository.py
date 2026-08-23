@@ -106,6 +106,8 @@ class RoleRepository:
         return permission
 
     async def seed_permissions(self, db: AsyncSession, items: list[dict]) -> None:
+        from sqlalchemy import func
+
         p_res = await db.execute(select(Permission.key))
         existing_keys = {str(k).strip() for k in p_res.scalars().all() if k}
         new_count = 0
@@ -122,6 +124,35 @@ class RoleRepository:
                 )
                 existing_keys.add(key_str)
                 new_count += 1
+        if new_count > 0:
+            await db.flush()
+
+        # Ensure the system Admin role has all standard permissions attached
+        admin_role_res = await db.execute(
+            select(Role).where(func.lower(Role.name) == "admin").limit(1)
+        )
+        admin_role = admin_role_res.scalars().first()
+        if admin_role:
+            all_perms_res = await db.execute(
+                select(Permission).where(
+                    Permission.key.isnot(None),
+                    Permission.key != "all",
+                    Permission.key != "super_admin:manage",
+                )
+            )
+            all_perms = all_perms_res.scalars().all()
+            existing_rp_res = await db.execute(
+                select(RolePermission.permission_id).where(
+                    RolePermission.role_id == admin_role.id
+                )
+            )
+            existing_pids = set(existing_rp_res.scalars().all())
+            for p in all_perms:
+                if p.id not in existing_pids:
+                    db.add(RolePermission(role_id=admin_role.id, permission_id=p.id))
+                    existing_pids.add(p.id)
+                    new_count += 1
+
         if new_count > 0:
             await db.commit()
 

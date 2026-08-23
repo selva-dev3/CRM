@@ -54,8 +54,7 @@ async def test_list_roles_forwards_org_id_to_repository():
 
     await service.list_roles(db, "Manage", org_id="org-1")
 
-    assert repo.list_roles.await_args.kwargs["org_id"] == "org-1"
-    assert repo.list_roles.await_args.args[1] == "Manage"
+    repo.list_roles.assert_awaited_once_with(db, "Manage", org_id="org-1")
 
 
 @pytest.mark.asyncio
@@ -556,3 +555,48 @@ async def test_bulk_delete_roles_skips_defaults_only():
 
     assert result["affected_count"] == 1
     repo.delete_role.assert_awaited_once_with(db, role)
+
+
+@pytest.mark.asyncio
+async def test_seed_permissions_attaches_standard_permissions_to_admin_role():
+    """seed_permissions must ensure missing standard permissions are attached to the Admin role."""
+    admin_role = _make_role(id="admin-1", name="Admin", is_system_role=True)
+    perm_bill = type("P", (), {"id": "p-bill", "key": "organization:billing"})()
+    perm_brand = type("P", (), {"id": "p-brand", "key": "organization:branding"})()
+
+    repo = RoleRepository()
+    db = AsyncMock(spec=AsyncSession)
+
+    # Mock DB executions
+    # 1. p_res for existing keys
+    # 2. admin_role_res
+    # 3. all_perms_res
+    # 4. existing_rp_res
+    mock_res_keys = AsyncMock()
+    mock_res_keys.scalars.return_value.all.return_value = ["dashboard:read"]
+
+    mock_res_admin = AsyncMock()
+    mock_res_admin.scalars.return_value.first.return_value = admin_role
+
+    mock_res_perms = AsyncMock()
+    mock_res_perms.scalars.return_value.all.return_value = [perm_bill, perm_brand]
+
+    mock_res_rp = AsyncMock()
+    mock_res_rp.scalars.return_value.all.return_value = ["p-other"]
+
+    db.execute = AsyncMock(side_effect=[mock_res_keys, mock_res_admin, mock_res_perms, mock_res_rp])
+    db.add = AsyncMock()
+    db.flush = AsyncMock()
+    db.commit = AsyncMock()
+
+    await repo.seed_permissions(
+        db,
+        [
+            {"key": "organization:billing", "name": "Manage Subscriptions", "category": "Organization", "description": ""},
+            {"key": "organization:branding", "name": "Update Logo", "category": "Organization", "description": ""},
+        ],
+    )
+
+    # Check that db.add was called for permissions and role_permissions
+    assert db.add.call_count >= 2
+    db.commit.assert_awaited()

@@ -295,3 +295,62 @@ def test_self_service_auth_endpoints_require_authentication():
                 assert has_auth, f"{method} {path} should require get_current_user"
             elif path in public:
                 assert not has_auth, f"{method} {path} should stay public"
+
+
+@pytest.mark.asyncio
+async def test_organization_subscription_passes_for_admin_with_billing_permission():
+    """An Admin user with organization:billing permission passes the dependency."""
+    admin_user = _make_user(role="Admin")
+    result = await _run_permission_dependency(
+        "organization:billing",
+        admin_user,
+        ["organization:read", "organization:update", "organization:billing", "organization:branding", "organization:domains", "organization:audit"],
+    )
+    assert result is admin_user
+
+
+@pytest.mark.asyncio
+async def test_organization_subscription_raises_forbidden_when_billing_permission_missing():
+    """A user lacking organization:billing receives 403 Forbidden."""
+    user = _make_user(role="Sales Executive")
+    with pytest.raises(ForbiddenError) as excinfo:
+        await _run_permission_dependency(
+            "organization:billing",
+            user,
+            ["organization:read", "leads:read"],
+        )
+    assert excinfo.value.status_code == 403
+    assert excinfo.value.code == "FORBIDDEN"
+    assert "organization:billing" in excinfo.value.message
+
+
+@pytest.mark.asyncio
+async def test_organization_sub_permissions_pass_for_super_admin():
+    """Super Admin receives unrestricted access to all organization sub-permissions."""
+    repo = AsyncMock()
+    repo.all_permission_keys = AsyncMock(
+        return_value=[
+            "organization:read",
+            "organization:update",
+            "organization:billing",
+            "organization:branding",
+            "organization:domains",
+            "organization:audit",
+            "users:create",
+        ]
+    )
+    repo.role_ids_for_user = AsyncMock(return_value=["sa-1"])
+    repo.role_ids_by_name = AsyncMock(return_value=[])
+    repo.permission_keys_for_roles = AsyncMock(return_value=["super_admin:manage"])
+    repo.roles_by_ids = AsyncMock(return_value=[type("R", (), {"id": "sa-1", "name": "super_admin"})()])
+    service = AuthService(repository=repo)
+    user = _make_user(role="super_admin")
+    db = AsyncMock(spec=AsyncSession)
+
+    keys = await service.get_user_permissions(db, user)
+    assert "organization:billing" in keys
+    assert "organization:branding" in keys
+    assert "organization:domains" in keys
+    assert "organization:audit" in keys
+    assert "users:create" in keys
+
