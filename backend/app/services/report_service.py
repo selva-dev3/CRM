@@ -1,3 +1,4 @@
+import asyncio
 import calendar as py_cal
 import csv
 import io
@@ -12,6 +13,7 @@ from app.core.errors import APIException, ForbiddenError, NotFoundError
 from app.core.logging import get_logger
 from app.models.user import User
 from app.repositories.report_repository import ReportRepository
+from app.schemas.report_schemas import ReportTypeEnum
 from app.services.s3_service import s3_service
 
 logger = get_logger(__name__)
@@ -20,20 +22,7 @@ _CSV_FORMULA_PREFIXES = ("=", "+", "-", "@")
 
 EMAIL_REGEX = re.compile(r"^[\w\.\+\-]+@[a-zA-Z0-9\-]+(\.[a-zA-Z0-9\-]+)+$")
 VALID_FREQUENCIES = {"Daily", "Weekly", "Monthly"}
-VALID_REPORT_TYPES = {
-    "sales-performance",
-    "pipeline-velocity",
-    "win-loss-ratio",
-    "lead-attribution",
-    "rep-leaderboard",
-    "revenue-forecasting",
-    "activity-metrics",
-    "deal-duration",
-    "customer-acquisition-cost",
-    "customer-lifetime-value",
-    "churn-analysis",
-    "quota-attainment",
-}
+VALID_REPORT_TYPES = {e.value for e in ReportTypeEnum}
 
 
 def today_str() -> str:
@@ -52,6 +41,44 @@ def compute_next_run(frequency: str, start_dt: Optional[datetime] = None) -> dat
         clamped_day = min(base.day, max_days)
         return base.replace(year=year, month=month, day=clamped_day)
     return base + timedelta(days=7)
+
+
+def _generate_pdf_bytes(title: str, lines: list[str]) -> bytes:
+    """Generate a standard valid minimal PDF-1.4 binary document."""
+    escaped_title = title.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+    stream_content = f"BT\n/F1 16 Tf\n50 750 Td\n({escaped_title}) Tj\n/F1 10 Tf\n0 -25 Td\n"
+    for line in lines:
+        sanitized = line.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+        stream_content += f"({sanitized}) Tj\n0 -15 Td\n"
+    stream_content += "ET"
+    stream_bytes = stream_content.encode("latin-1", "replace")
+    stream_len = len(stream_bytes)
+
+    obj1 = b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
+    obj2 = b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"
+    obj3 = b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n"
+    obj4 = b"4 0 obj\n<< /Length " + str(stream_len).encode("ascii") + b" >>\nstream\n" + stream_bytes + b"\nendstream\nendobj\n"
+    obj5 = b"5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n"
+
+    header = b"%PDF-1.4\n"
+    pos1 = len(header)
+    pos2 = pos1 + len(obj1)
+    pos3 = pos2 + len(obj2)
+    pos4 = pos3 + len(obj3)
+    pos5 = pos4 + len(obj4)
+    xref_pos = pos5 + len(obj5)
+
+    xref = (
+        f"xref\n0 6\n0000000000 65535 f \n"
+        f"{pos1:010d} 00000 n \n"
+        f"{pos2:010d} 00000 n \n"
+        f"{pos3:010d} 00000 n \n"
+        f"{pos4:010d} 00000 n \n"
+        f"{pos5:010d} 00000 n \n"
+    ).encode("ascii")
+    trailer = f"trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{xref_pos}\n%%EOF\n".encode("ascii")
+    return header + obj1 + obj2 + obj3 + obj4 + obj5 + xref + trailer
+
 
 
 class ReportService:
@@ -606,8 +633,43 @@ class ReportService:
                 message="Authenticated user is required to export reports.",
             )
 
-        # PDF generation is asynchronous — record the pending export and return
-        # its ID so clients can poll for completion.
+        # Generate actual PDF content
+        deals = await self.repository.deals_for_csv(db, target_org)
+        total_rev = await self.repository.total_won_revenue(db, target_org)
+        summary_lines = [
+            f"Organization ID: {target_org}",
+            f"Generated At: {today_str()}",
+            f"Total Closed Won Revenue: ${total_rev:,.2f}",
+            f"Total Deals Sampled: {len(deals)}",
+            "",
+            "Recent Deals Summary:",
+        ]
+        for title, amount, stage in deals[:15]:
+            summary_lines.append(f" - {title}: ${float(amount or 0):,.2f} ({stage})")
+
+        pdf_bytes = _generate_pdf_bytes(
+            title=f"{report_type.replace('-', ' ').title()} Report",
+            lines=summary_lines,
+        )
+
+        timestamp_int = int(datetime.now(timezone.utc).timestamp())
+        object_name = f"exports/{target_org}_{report_type}_{timestamp_int}.pdf"
+        try:
+            file_obj = io.BytesIO(pdf_bytes)
+            s3_key = await asyncio.to_thread(
+                s3_service.upload_file,
+                file_obj,
+                object_name=object_name,
+                content_type="application/pdf",
+            )
+            pdf_url = await asyncio.to_thread(s3_service.generate_presigned_url, s3_key)
+        except Exception as e:
+            logger.exception("S3 upload failed for PDF export org=%s report=%s", target_org, report_type)
+            raise APIException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                message="Failed to upload PDF to storage. Please try again later.",
+            ) from e
+
         try:
             export = await self.repository.create_export(
                 db,
@@ -615,18 +677,13 @@ class ReportService:
                     "organization_id": target_org,
                     "report_type": report_type,
                     "file_format": "pdf",
-                    "download_url": "",  # populated when generation completes
+                    "download_url": pdf_url,
                     "requested_by": requesting_user_id,
                 },
             )
             await self._commit(db, "Failed to record PDF export")
             await db.refresh(export)
-            return {
-                "pdf_url": "",
-                "export_id": export.id,
-                "status": "pending",
-                "message": f"PDF export for '{report_type}' has been queued. Use the export_id to check status.",
-            }
+            return {"pdf_url": export.download_url}
         except APIException:
             raise
         except Exception as e:
@@ -686,8 +743,13 @@ class ReportService:
         object_name = f"exports/{target_org}_{report_type}_{timestamp_int}.csv"
         try:
             file_obj = io.BytesIO(csv_content)
-            s3_key = s3_service.upload_file(file_obj, object_name=object_name, content_type="text/csv")
-            csv_url = s3_service.generate_presigned_url(s3_key)
+            s3_key = await asyncio.to_thread(
+                s3_service.upload_file,
+                file_obj,
+                object_name=object_name,
+                content_type="text/csv",
+            )
+            csv_url = await asyncio.to_thread(s3_service.generate_presigned_url, s3_key)
         except Exception as e:
             logger.exception("S3 upload failed for CSV export org=%s report=%s", target_org, report_type)
             raise APIException(
@@ -718,6 +780,7 @@ class ReportService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Unable to complete CSV export. Please try again later.",
             ) from e
+
 
     async def schedule_report_email(
         self,

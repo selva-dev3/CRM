@@ -60,7 +60,8 @@ async def test_create_custom_report_router_passes_user(monkeypatch):
     mock_create = AsyncMock(return_value={"message": "Custom report created", "status": "success"})
     monkeypatch.setattr(report_service, "create_custom_report", mock_create)
 
-    res = await create_custom_report(name="High Value Deals", filters="amount > 10000", current_user=user, db=db)
+    payload = CustomReportCreate(name="High Value Deals", filters="amount > 10000")
+    res = await create_custom_report(payload=payload, current_user=user, db=db)
 
     assert res["status"] == "success"
     mock_create.assert_awaited_once_with(
@@ -98,13 +99,12 @@ async def test_schedule_report_email_router(monkeypatch):
     mock_sched = AsyncMock(return_value={"message": "Scheduled", "status": "success"})
     monkeypatch.setattr(report_service, "schedule_report_email", mock_sched)
 
-    res = await schedule_report_email(
+    payload = ScheduleReportCreate(
         report_type="sales-performance",
         email="alex@acme.com",
-        frequency="Weekly",
-        current_user=user,
-        db=db,
+        frequency=ReportFrequencyEnum.WEEKLY,
     )
+    res = await schedule_report_email(payload=payload, current_user=user, db=db)
     assert res["status"] == "success"
     mock_sched.assert_awaited_once_with(
         db,
@@ -136,8 +136,9 @@ async def test_export_pdf_and_csv_router(monkeypatch):
     monkeypatch.setattr(report_service, "export_report_pdf", mock_pdf)
     monkeypatch.setattr(report_service, "export_report_csv", mock_csv)
 
-    res_pdf = await export_report_pdf(report_type="sales-performance", current_user=user, db=db)
-    res_csv = await export_report_csv(report_type="sales-performance", current_user=user, db=db)
+    payload = ExportReportRequest(report_type="sales-performance")
+    res_pdf = await export_report_pdf(payload=payload, current_user=user, db=db)
+    res_csv = await export_report_csv(payload=payload, current_user=user, db=db)
 
     assert "pdf_url" in res_pdf
     assert "csv_url" in res_csv
@@ -146,40 +147,25 @@ async def test_export_pdf_and_csv_router(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_schedule_report_email_router_with_body_payload(monkeypatch):
+async def test_list_custom_reports_with_pagination(monkeypatch):
     user = _make_user(org_id="org-99")
     db = AsyncMock(spec=AsyncSession)
-    mock_sched = AsyncMock(return_value={"message": "Scheduled", "status": "success"})
-    monkeypatch.setattr(report_service, "schedule_report_email", mock_sched)
+    mock_list = AsyncMock(return_value=[])
+    monkeypatch.setattr(report_service, "list_custom_reports", mock_list)
 
-    payload = ScheduleReportCreate(
-        report_type="pipeline-velocity",
-        email="alex@company.com",
-        frequency=ReportFrequencyEnum.MONTHLY,
-    )
-
-    res = await schedule_report_email(payload=payload, current_user=user, db=db)
-    assert res["status"] == "success"
-    mock_sched.assert_awaited_once_with(
-        db,
-        report_type="pipeline-velocity",
-        email="alex@company.com",
-        frequency="Monthly",
-        current_user=user,
-    )
+    res = await list_custom_reports(limit=50, offset=10, current_user=user, db=db)
+    assert res == []
+    mock_list.assert_awaited_once_with(db, current_user=user, limit=50, offset=10)
 
 
 @pytest.mark.asyncio
-async def test_create_custom_report_router_with_body_payload(monkeypatch):
+async def test_list_scheduled_reports_with_pagination(monkeypatch):
     user = _make_user(org_id="org-99")
     db = AsyncMock(spec=AsyncSession)
-    mock_create = AsyncMock(return_value={"message": "Created", "status": "success"})
-    monkeypatch.setattr(report_service, "create_custom_report", mock_create)
+    mock_list = AsyncMock(return_value=[])
+    monkeypatch.setattr(report_service, "list_scheduled_reports", mock_list)
 
-    payload = CustomReportCreate(name="Q4 Revenue", filters="stage == 'Closed Won'")
+    res = await list_scheduled_reports(limit=30, offset=5, current_user=user, db=db)
+    assert res == []
+    mock_list.assert_awaited_once_with(db, current_user=user, limit=30, offset=5)
 
-    res = await create_custom_report(payload=payload, current_user=user, db=db)
-    assert res["status"] == "success"
-    mock_create.assert_awaited_once_with(
-        db, name="Q4 Revenue", filters="stage == 'Closed Won'", current_user=user
-    )
