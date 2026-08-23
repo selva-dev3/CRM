@@ -404,21 +404,26 @@ async def test_verify_session_rejects_cross_tenant_access(org_service, mock_db):
 
 
 @pytest.mark.asyncio
-async def test_verify_session_reports_pending_sync_when_db_not_yet_updated(org_service, mock_db):
-    """Test 19: Verification returns db_synced=False when Stripe is paid but webhook DB sync is pending."""
+async def test_verify_session_self_heals_delayed_webhook_and_upgrades_db(org_service, mock_db):
+    """Test 19: Verification self-heals when Stripe is paid and updates DB synchronously if webhook is delayed."""
     mock_repo = org_service.repository
-    org = Organization(id="org-1", name="Acme Corp", plan="Free")
+    org = Organization(id="org-1", name="Acme Corp", plan="Free", max_users=3)
+    subscription = OrganizationSubscription(id="s-1", organization_id="org-1", checkout_session_id=None)
     mock_repo.get_by_id = AsyncMock(return_value=org)
-    mock_repo.get_subscription_by_org_id = AsyncMock(
-        return_value=OrganizationSubscription(id="s-1", checkout_session_id=None)
+    mock_repo.get_subscription = AsyncMock(return_value=subscription)
+    starter_plan = SubscriptionPlan(
+        id="p-1", name="Starter", slug="starter", price_monthly=999.0, max_users=10, max_storage_gb=20, ai_credits=500, is_active=True
     )
-    starter_plan = SubscriptionPlan(id="p-1", name="Starter", slug="starter", price_monthly=999.0, is_active=True)
     mock_repo.get_plan_by_slug = AsyncMock(return_value=starter_plan)
+    mock_repo.create_audit_log = AsyncMock()
 
     mock_session = MagicMock()
+    mock_session.id = "cs_test_session_1"
     mock_session.metadata = {"organization_id": "org-1", "plan_slug": "starter"}
     mock_session.mode = "subscription"
     mock_session.payment_status = "paid"
+    mock_session.customer = "cus_123"
+    mock_session.subscription = "sub_123"
 
     with patch("app.core.config.settings.STRIPE_SECRET_KEY", "sk_test_123"), \
          patch("stripe.checkout.Session.retrieve", return_value=mock_session):
@@ -427,23 +432,26 @@ async def test_verify_session_reports_pending_sync_when_db_not_yet_updated(org_s
             mock_db, session_id="cs_test_session_1", org_id="org-1"
         )
         assert result["verified"] is True
-        assert result["db_synced"] is False
+        assert result["db_synced"] is True
         assert result["plan"] == "Starter"
+        assert result["status"] == "completed"
+        assert org.plan == "Starter"
+        assert subscription.checkout_session_id == "cs_test_session_1"
 
 
 @pytest.mark.asyncio
 async def test_verify_session_reports_completed_sync_when_db_updated(org_service, mock_db):
-    """Test 19b: Verification returns db_synced=True when DB subscription matches session."""
+    """Test 19b: Verification returns db_synced=True when DB subscription already matches session."""
     mock_repo = org_service.repository
-    org = Organization(id="org-1", name="Acme Corp", plan="Starter")
+    org = Organization(id="org-1", name="Acme Corp", plan="Starter", max_users=10)
+    subscription = OrganizationSubscription(id="s-1", organization_id="org-1", checkout_session_id="cs_test_session_1")
     mock_repo.get_by_id = AsyncMock(return_value=org)
-    mock_repo.get_subscription_by_org_id = AsyncMock(
-        return_value=OrganizationSubscription(id="s-1", checkout_session_id="cs_test_session_1")
-    )
+    mock_repo.get_subscription = AsyncMock(return_value=subscription)
     starter_plan = SubscriptionPlan(id="p-1", name="Starter", slug="starter", price_monthly=999.0, is_active=True)
     mock_repo.get_plan_by_slug = AsyncMock(return_value=starter_plan)
 
     mock_session = MagicMock()
+    mock_session.id = "cs_test_session_1"
     mock_session.metadata = {"organization_id": "org-1", "plan_slug": "starter"}
     mock_session.mode = "subscription"
     mock_session.payment_status = "paid"
@@ -457,6 +465,7 @@ async def test_verify_session_reports_completed_sync_when_db_updated(org_service
         assert result["verified"] is True
         assert result["db_synced"] is True
         assert result["plan"] == "Starter"
+        assert result["status"] == "completed"
 
 
 @pytest.mark.asyncio
@@ -551,4 +560,57 @@ async def test_webhook_with_real_stripe_event_no_key_error(org_service, mock_db)
     assert result["status"] == "success"
     assert org.plan == "Starter"
     assert subscription.checkout_session_id == "cs_real_session_999"
+
+
+@pytest.mark.asyncio
+async def test_webhook_after_verify_fallback_is_idempotent(org_service, mock_db):
+    """Test 23: When verify endpoint updates DB first, later webhook skips duplicate DB writes without error."""
+    import stripe
+
+    mock_repo = org_service.repository
+    # Organization already upgraded to Starter by verify fallback
+    org = Organization(id="org-1", name="Acme Corp", plan="Starter", max_users=10)
+    subscription = OrganizationSubscription(
+        id="sub-1", organization_id="org-1", plan_id="p-1", amount=999.0, status="active",
+        checkout_session_id="cs_session_already_synced"
+    )
+    starter_plan = SubscriptionPlan(
+        id="p-1", name="Starter", slug="starter", price_monthly=999.0, max_users=10, max_storage_gb=20, ai_credits=500, is_active=True
+    )
+
+    mock_repo.get_by_id = AsyncMock(return_value=org)
+    mock_repo.get_subscription = AsyncMock(return_value=subscription)
+    mock_repo.get_plan_by_slug = AsyncMock(return_value=starter_plan)
+    mock_repo.get_processed_webhook_event = AsyncMock(return_value=None)
+    mock_repo.record_processed_webhook_event = AsyncMock()
+    mock_repo.create_audit_log = AsyncMock()
+
+    real_event = stripe.Event.construct_from({
+        "id": "evt_duplicate_webhook_123",
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "id": "cs_session_already_synced",
+                "customer": "cus_123",
+                "subscription": "sub_123",
+                "payment_status": "paid",
+                "metadata": {
+                    "organization_id": "org-1",
+                    "plan_slug": "starter",
+                },
+            }
+        },
+    }, "key")
+
+    with patch("app.core.config.settings.STRIPE_WEBHOOK_SECRET", "whsec_test"), \
+         patch("stripe.Webhook.construct_event", return_value=real_event):
+
+        result = await org_service.handle_stripe_subscription_webhook(
+            mock_db, payload_bytes=b"{}", sig_header="valid_sig"
+        )
+
+    assert result["status"] == "success"
+    # No duplicate audit log created since DB was already up-to-date
+    mock_repo.create_audit_log.assert_not_called()
+
 

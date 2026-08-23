@@ -626,6 +626,21 @@ class OrganizationDomainService:
         plan_info = DEFAULT_PLANS.get(clean_slug)
         plan_name = db_plan.name if db_plan else (plan_info.get("name", clean_slug.capitalize()) if plan_info else clean_slug.capitalize())
 
+        # If payment is verified by Stripe API but DB sync has not run yet (e.g. delayed webhook or delivery queue backlog),
+        # perform canonical, idempotent server-side database synchronization immediately.
+        if not db_synced and payment_status in ("paid", "no_payment_required"):
+            customer_id = session_dict.get("customer")
+            subscription_id = session_dict.get("subscription")
+            await self.apply_verified_subscription_upgrade(
+                db,
+                organization_id=org.id,
+                plan_slug=clean_slug,
+                stripe_session_id=session_id,
+                stripe_customer_id=customer_id,
+                stripe_subscription_id=subscription_id,
+            )
+            db_synced = True
+
         status_str = "completed" if db_synced else "processing"
         message_str = "Subscription activated successfully." if db_synced else "Payment verified. Subscription activation is still processing."
 
@@ -655,6 +670,12 @@ class OrganizationDomainService:
         clean_slug = plan_slug.strip().lower()
         db_plan = await self.repository.get_plan_by_slug(db, clean_slug)
         plan_info = DEFAULT_PLANS.get(clean_slug) or DEFAULT_PLANS["enterprise"]
+        target_plan_name = db_plan.name if db_plan else (str(plan_info.get("name", clean_slug.capitalize())) if plan_info else clean_slug.capitalize())
+
+        # Idempotency guard: if subscription is already upgraded to target plan with this checkout_session_id, skip duplicate DB writes
+        if stripe_session_id and getattr(subscription, "checkout_session_id", None) == stripe_session_id and org.plan and org.plan.lower() == target_plan_name.lower():
+            logger.info("Subscription for organization %s already upgraded to %s with session %s. Skipping duplicate mutation.", organization_id, org.plan, stripe_session_id)
+            return {"message": f"Organization already upgraded to {org.plan}", "status": "success"}
 
         if db_plan:
             subscription.plan_id = db_plan.id
