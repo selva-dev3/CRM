@@ -4,6 +4,7 @@ from typing import Any, Optional, Sequence
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.logging import get_logger
 from app.models import (
     Permission,
     Role,
@@ -12,6 +13,8 @@ from app.models import (
     User,
     UserRole,
 )
+
+logger = get_logger(__name__)
 
 
 class RoleRepository:
@@ -107,32 +110,28 @@ class RoleRepository:
 
     async def seed_permissions(self, db: AsyncSession, items: list[dict]) -> None:
         from sqlalchemy import func
-        from sqlalchemy.exc import IntegrityError
+        from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
         p_res = await db.execute(select(Permission.key))
         existing_keys = {str(k).strip() for k in p_res.scalars().all() if k}
-        new_count = 0
+
         for item in items:
             key_str = item.get("key")
             if key_str and key_str != "all" and key_str not in existing_keys:
-                db.add(
-                    Permission(
-                        key=key_str,
-                        name=item.get("name", key_str),
-                        category=item.get("category", "General"),
-                        description=item.get("description", ""),
-                    )
-                )
-                existing_keys.add(key_str)
-                new_count += 1
-        if new_count > 0:
-            try:
-                await db.flush()
-            except IntegrityError:
-                await db.rollback()
-                p_res = await db.execute(select(Permission.key))
-                existing_keys = {str(k).strip() for k in p_res.scalars().all() if k}
-                new_count = 0
+                try:
+                    async with db.begin_nested():
+                        db.add(
+                            Permission(
+                                key=key_str,
+                                name=item.get("name", key_str),
+                                category=item.get("category", "General"),
+                                description=item.get("description", ""),
+                            )
+                        )
+                        await db.flush()
+                        existing_keys.add(key_str)
+                except IntegrityError:
+                    existing_keys.add(key_str)
 
         # Ensure ONLY the global system Admin role has standard permissions attached
         admin_role_res = await db.execute(
@@ -166,15 +165,23 @@ class RoleRepository:
             existing_pids = set(existing_rp_res.scalars().all())
             for p in all_perms:
                 if p.id not in existing_pids:
-                    db.add(RolePermission(role_id=admin_role.id, permission_id=p.id))
-                    existing_pids.add(p.id)
-                    new_count += 1
+                    try:
+                        async with db.begin_nested():
+                            db.add(RolePermission(role_id=admin_role.id, permission_id=p.id))
+                            await db.flush()
+                            existing_pids.add(p.id)
+                    except IntegrityError:
+                        existing_pids.add(p.id)
 
-        if new_count > 0:
-            try:
-                await db.commit()
-            except IntegrityError:
-                await db.rollback()
+        try:
+            await db.commit()
+        except IntegrityError as e:
+            logger.warning("IntegrityError during seed_permissions commit, rolling back: %s", e, exc_info=True)
+            await db.rollback()
+        except SQLAlchemyError as e:
+            logger.exception("Database error occurred during seed_permissions commit: %s", e)
+            await db.rollback()
+            raise
 
     # --- RolePermission mapping ---
     async def get_role_permissions(self, db: AsyncSession, role_id: str) -> Sequence[Permission]:

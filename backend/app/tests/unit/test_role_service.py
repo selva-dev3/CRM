@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -557,6 +557,13 @@ async def test_bulk_delete_roles_skips_defaults_only():
     repo.delete_role.assert_awaited_once_with(db, role)
 
 
+def _make_result_mock(items=None, first_item=None) -> MagicMock:
+    res = MagicMock()
+    res.scalars.return_value.all.return_value = items if items is not None else []
+    res.scalars.return_value.first.return_value = first_item
+    return res
+
+
 @pytest.mark.asyncio
 async def test_seed_permissions_global_system_admin_is_synchronized():
     """TEST 1: Global system Admin (is_system_role=True, organization_id=None) is synchronized with standard permissions."""
@@ -567,17 +574,10 @@ async def test_seed_permissions_global_system_admin_is_synchronized():
     repo = RoleRepository()
     db = AsyncMock(spec=AsyncSession)
 
-    mock_res_keys = AsyncMock()
-    mock_res_keys.scalars.return_value.all.return_value = ["dashboard:read"]
-
-    mock_res_admin = AsyncMock()
-    mock_res_admin.scalars.return_value.first.return_value = admin_role
-
-    mock_res_perms = AsyncMock()
-    mock_res_perms.scalars.return_value.all.return_value = [perm_bill, perm_brand]
-
-    mock_res_rp = AsyncMock()
-    mock_res_rp.scalars.return_value.all.return_value = []
+    mock_res_keys = _make_result_mock(items=["dashboard:read"])
+    mock_res_admin = _make_result_mock(first_item=admin_role)
+    mock_res_perms = _make_result_mock(items=[perm_bill, perm_brand])
+    mock_res_rp = _make_result_mock(items=[])
 
     db.execute = AsyncMock(side_effect=[mock_res_keys, mock_res_admin, mock_res_perms, mock_res_rp])
     db.add = AsyncMock()
@@ -605,12 +605,8 @@ async def test_seed_permissions_tenant_custom_admin_role_not_synchronized():
     repo = RoleRepository()
     db = AsyncMock(spec=AsyncSession)
 
-    mock_res_keys = AsyncMock()
-    mock_res_keys.scalars.return_value.all.return_value = ["organization:billing"]
-
-    # When query runs with is_system_role=True and organization_id=None, tenant custom role is NOT matched
-    mock_res_admin = AsyncMock()
-    mock_res_admin.scalars.return_value.first.return_value = None
+    mock_res_keys = _make_result_mock(items=["organization:billing"])
+    mock_res_admin = _make_result_mock(first_item=None)
 
     db.execute = AsyncMock(side_effect=[mock_res_keys, mock_res_admin])
     db.add = AsyncMock()
@@ -631,11 +627,8 @@ async def test_seed_permissions_non_system_global_admin_not_synchronized():
     repo = RoleRepository()
     db = AsyncMock(spec=AsyncSession)
 
-    mock_res_keys = AsyncMock()
-    mock_res_keys.scalars.return_value.all.return_value = ["organization:billing"]
-
-    mock_res_admin = AsyncMock()
-    mock_res_admin.scalars.return_value.first.return_value = None
+    mock_res_keys = _make_result_mock(items=["organization:billing"])
+    mock_res_admin = _make_result_mock(first_item=None)
 
     db.execute = AsyncMock(side_effect=[mock_res_keys, mock_res_admin])
     db.add = AsyncMock()
@@ -659,18 +652,10 @@ async def test_seed_permissions_only_standard_permissions_synchronized():
     repo = RoleRepository()
     db = AsyncMock(spec=AsyncSession)
 
-    mock_res_keys = AsyncMock()
-    mock_res_keys.scalars.return_value.all.return_value = ["organization:billing", "custom:arbitrary_perm"]
-
-    mock_res_admin = AsyncMock()
-    mock_res_admin.scalars.return_value.first.return_value = admin_role
-
-    # Query filtered by standard keys returns only standard permissions
-    mock_res_perms = AsyncMock()
-    mock_res_perms.scalars.return_value.all.return_value = [perm_std]
-
-    mock_res_rp = AsyncMock()
-    mock_res_rp.scalars.return_value.all.return_value = []
+    mock_res_keys = _make_result_mock(items=["organization:billing", "custom:arbitrary_perm"])
+    mock_res_admin = _make_result_mock(first_item=admin_role)
+    mock_res_perms = _make_result_mock(items=[perm_std])
+    mock_res_rp = _make_result_mock(items=[])
 
     db.execute = AsyncMock(side_effect=[mock_res_keys, mock_res_admin, mock_res_perms, mock_res_rp])
     db.add = AsyncMock()
@@ -697,17 +682,10 @@ async def test_seed_permissions_existing_admin_mappings_remain_intact():
     repo = RoleRepository()
     db = AsyncMock(spec=AsyncSession)
 
-    mock_res_keys = AsyncMock()
-    mock_res_keys.scalars.return_value.all.return_value = ["organization:read", "organization:billing"]
-
-    mock_res_admin = AsyncMock()
-    mock_res_admin.scalars.return_value.first.return_value = admin_role
-
-    mock_res_perms = AsyncMock()
-    mock_res_perms.scalars.return_value.all.return_value = [perm_existing, perm_new]
-
-    mock_res_rp = AsyncMock()
-    mock_res_rp.scalars.return_value.all.return_value = ["p-existing"]
+    mock_res_keys = _make_result_mock(items=["organization:read", "organization:billing"])
+    mock_res_admin = _make_result_mock(first_item=admin_role)
+    mock_res_perms = _make_result_mock(items=[perm_existing, perm_new])
+    mock_res_rp = _make_result_mock(items=["p-existing"])
 
     db.execute = AsyncMock(side_effect=[mock_res_keys, mock_res_admin, mock_res_perms, mock_res_rp])
     db.add = AsyncMock()
@@ -736,17 +714,10 @@ async def test_seed_permissions_idempotency():
     repo = RoleRepository()
     db = AsyncMock(spec=AsyncSession)
 
-    mock_res_keys = AsyncMock()
-    mock_res_keys.scalars.return_value.all.return_value = ["organization:billing"]
-
-    mock_res_admin = AsyncMock()
-    mock_res_admin.scalars.return_value.first.return_value = admin_role
-
-    mock_res_perms = AsyncMock()
-    mock_res_perms.scalars.return_value.all.return_value = [perm_bill]
-
-    mock_res_rp = AsyncMock()
-    mock_res_rp.scalars.return_value.all.return_value = ["p-bill"]
+    mock_res_keys = _make_result_mock(items=["organization:billing"])
+    mock_res_admin = _make_result_mock(first_item=admin_role)
+    mock_res_perms = _make_result_mock(items=[perm_bill])
+    mock_res_rp = _make_result_mock(items=["p-bill"])
 
     db.execute = AsyncMock(side_effect=[mock_res_keys, mock_res_admin, mock_res_perms, mock_res_rp])
     db.add = AsyncMock()
@@ -759,3 +730,49 @@ async def test_seed_permissions_idempotency():
 
     added_rp = [call.args[0] for call in db.add.call_args_list if isinstance(call.args[0], RolePermission)]
     assert len(added_rp) == 0
+
+
+@pytest.mark.asyncio
+async def test_seed_permissions_concurrency_savepoint_resilience():
+    """TEST 7: IntegrityError on one item does not rollback outer transaction or lose other items."""
+    from sqlalchemy.exc import IntegrityError
+
+    admin_role = _make_role(id="admin-1", name="Admin", is_system_role=True, organization_id=None)
+    perm_bill = type("P", (), {"id": "p-bill", "key": "organization:billing"})()
+
+    repo = RoleRepository()
+    db = AsyncMock(spec=AsyncSession)
+
+    mock_res_keys = _make_result_mock(items=[])
+    mock_res_admin = _make_result_mock(first_item=admin_role)
+    mock_res_perms = _make_result_mock(items=[perm_bill])
+    mock_res_rp = _make_result_mock(items=[])
+
+    db.execute = AsyncMock(side_effect=[mock_res_keys, mock_res_admin, mock_res_perms, mock_res_rp])
+
+    # First flush (for item 1) raises IntegrityError from concurrent insert; second flush succeeds
+    db.flush = AsyncMock(side_effect=[IntegrityError("stmt", "params", Exception()), None, None])
+    db.commit = AsyncMock()
+
+    await repo.seed_permissions(
+        db,
+        [
+            {"key": "organization:billing", "name": "Manage Subscriptions", "category": "Organization", "description": ""},
+            {"key": "organization:branding", "name": "Update Logo", "category": "Organization", "description": ""},
+        ],
+    )
+
+    db.commit.assert_awaited()
+
+
+def test_standard_permissions_catalog_superset_of_migration_catalog():
+    """TEST 8: Ensure all keys in migration f9a0b1c2d3e4 are present in runtime ALL_STANDARD_PERMISSIONS."""
+    from alembic.versions.f9a0b1c2d3e4_sync_organization_and_admin_permissions import (  # type: ignore
+        STANDARD_PERMISSIONS,
+    )
+
+    runtime_keys = {p["key"] for p in ALL_STANDARD_PERMISSIONS}
+    migration_keys = {p["key"] for p in STANDARD_PERMISSIONS}
+
+    missing_in_runtime = migration_keys - runtime_keys
+    assert not missing_in_runtime, f"Migration contains keys not in runtime catalog: {missing_in_runtime}"

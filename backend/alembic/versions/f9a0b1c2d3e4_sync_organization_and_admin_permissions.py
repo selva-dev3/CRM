@@ -18,6 +18,9 @@ down_revision: Union[str, Sequence[str], None] = "e7f8a9b0c1d2"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+# NOTE: STANDARD_PERMISSIONS is intentionally a frozen point-in-time snapshot for migration f9a0b1c2d3e4.
+# Future standard permission additions must be added via subsequent new Alembic migrations rather than
+# mutating this historical file, preserving Alembic migration reproducibility.
 STANDARD_PERMISSIONS = [
     {"key": "dashboard:read", "name": "View Dashboard", "category": "Dashboard", "description": "View CRM executive dashboard metrics"},
     {"key": "dashboard:customize", "name": "Customize Dashboard", "category": "Dashboard", "description": "Customize dashboard widgets and layout"},
