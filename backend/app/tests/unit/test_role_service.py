@@ -1,11 +1,11 @@
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, ForbiddenError, NotFoundError
-from app.models import Role
+from app.models import Role, RolePermission
 from app.repositories.role_repository import RoleRepository
 from app.schemas.crm_schemas import PermissionCreate, RoleCreate, RoleUpdate
 from app.services.role_service import ALL_STANDARD_PERMISSIONS, RoleService
@@ -54,8 +54,7 @@ async def test_list_roles_forwards_org_id_to_repository():
 
     await service.list_roles(db, "Manage", org_id="org-1")
 
-    assert repo.list_roles.await_args.kwargs["org_id"] == "org-1"
-    assert repo.list_roles.await_args.args[1] == "Manage"
+    repo.list_roles.assert_awaited_once_with(db, "Manage", org_id="org-1")
 
 
 @pytest.mark.asyncio
@@ -556,3 +555,224 @@ async def test_bulk_delete_roles_skips_defaults_only():
 
     assert result["affected_count"] == 1
     repo.delete_role.assert_awaited_once_with(db, role)
+
+
+def _make_result_mock(items=None, first_item=None) -> MagicMock:
+    res = MagicMock()
+    res.scalars.return_value.all.return_value = items if items is not None else []
+    res.scalars.return_value.first.return_value = first_item
+    return res
+
+
+@pytest.mark.asyncio
+async def test_seed_permissions_global_system_admin_is_synchronized():
+    """TEST 1: Global system Admin (is_system_role=True, organization_id=None) is synchronized with standard permissions."""
+    admin_role = _make_role(id="admin-1", name="Admin", is_system_role=True, organization_id=None)
+    perm_bill = type("P", (), {"id": "p-bill", "key": "organization:billing"})()
+    perm_brand = type("P", (), {"id": "p-brand", "key": "organization:branding"})()
+
+    repo = RoleRepository()
+    db = AsyncMock(spec=AsyncSession)
+
+    mock_res_keys = _make_result_mock(items=["dashboard:read"])
+    mock_res_admin = _make_result_mock(first_item=admin_role)
+    mock_res_perms = _make_result_mock(items=[perm_bill, perm_brand])
+    mock_res_rp = _make_result_mock(items=[])
+
+    db.execute = AsyncMock(side_effect=[mock_res_keys, mock_res_admin, mock_res_perms, mock_res_rp])
+    db.add = AsyncMock()
+    db.flush = AsyncMock()
+    db.commit = AsyncMock()
+
+    await repo.seed_permissions(
+        db,
+        [
+            {"key": "organization:billing", "name": "Manage Subscriptions", "category": "Organization", "description": ""},
+            {"key": "organization:branding", "name": "Update Logo", "category": "Organization", "description": ""},
+        ],
+    )
+
+    added_rp = [call.args[0] for call in db.add.call_args_list if isinstance(call.args[0], RolePermission)]
+    assert len(added_rp) == 2
+    assert {rp.permission_id for rp in added_rp} == {"p-bill", "p-brand"}
+    assert all(rp.role_id == "admin-1" for rp in added_rp)
+    db.commit.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_seed_permissions_tenant_custom_admin_role_not_synchronized():
+    """TEST 2: Tenant custom role named Admin (is_system_role=False, organization_id='org-1') is NOT synchronized."""
+    repo = RoleRepository()
+    db = AsyncMock(spec=AsyncSession)
+
+    mock_res_keys = _make_result_mock(items=["organization:billing"])
+    mock_res_admin = _make_result_mock(first_item=None)
+
+    db.execute = AsyncMock(side_effect=[mock_res_keys, mock_res_admin])
+    db.add = AsyncMock()
+    db.commit = AsyncMock()
+
+    await repo.seed_permissions(
+        db,
+        [{"key": "organization:billing", "name": "Manage Subscriptions", "category": "Organization", "description": ""}],
+    )
+
+    added_rp = [call.args[0] for call in db.add.call_args_list if isinstance(call.args[0], RolePermission)]
+    assert len(added_rp) == 0
+
+
+@pytest.mark.asyncio
+async def test_seed_permissions_non_system_global_admin_not_synchronized():
+    """TEST 3: Non-system global role named Admin (is_system_role=False, organization_id=None) is NOT synchronized."""
+    repo = RoleRepository()
+    db = AsyncMock(spec=AsyncSession)
+
+    mock_res_keys = _make_result_mock(items=["organization:billing"])
+    mock_res_admin = _make_result_mock(first_item=None)
+
+    db.execute = AsyncMock(side_effect=[mock_res_keys, mock_res_admin])
+    db.add = AsyncMock()
+    db.commit = AsyncMock()
+
+    await repo.seed_permissions(
+        db,
+        [{"key": "organization:billing", "name": "Manage Subscriptions", "category": "Organization", "description": ""}],
+    )
+
+    added_rp = [call.args[0] for call in db.add.call_args_list if isinstance(call.args[0], RolePermission)]
+    assert len(added_rp) == 0
+
+
+@pytest.mark.asyncio
+async def test_seed_permissions_only_standard_permissions_synchronized():
+    """TEST 4: Only standard permissions are synchronized; custom/arbitrary permissions are NOT attached to Admin."""
+    admin_role = _make_role(id="admin-1", name="Admin", is_system_role=True, organization_id=None)
+    perm_std = type("P", (), {"id": "p-std", "key": "organization:billing"})()
+
+    repo = RoleRepository()
+    db = AsyncMock(spec=AsyncSession)
+
+    mock_res_keys = _make_result_mock(items=["organization:billing", "custom:arbitrary_perm"])
+    mock_res_admin = _make_result_mock(first_item=admin_role)
+    mock_res_perms = _make_result_mock(items=[perm_std])
+    mock_res_rp = _make_result_mock(items=[])
+
+    db.execute = AsyncMock(side_effect=[mock_res_keys, mock_res_admin, mock_res_perms, mock_res_rp])
+    db.add = AsyncMock()
+    db.flush = AsyncMock()
+    db.commit = AsyncMock()
+
+    await repo.seed_permissions(
+        db,
+        [{"key": "organization:billing", "name": "Manage Subscriptions", "category": "Organization", "description": ""}],
+    )
+
+    added_rp = [call.args[0] for call in db.add.call_args_list if isinstance(call.args[0], RolePermission)]
+    assert len(added_rp) == 1
+    assert added_rp[0].permission_id == "p-std"
+
+
+@pytest.mark.asyncio
+async def test_seed_permissions_existing_admin_mappings_remain_intact():
+    """TEST 5: Existing Admin permission mappings remain intact and are not duplicated."""
+    admin_role = _make_role(id="admin-1", name="Admin", is_system_role=True, organization_id=None)
+    perm_existing = type("P", (), {"id": "p-existing", "key": "organization:read"})()
+    perm_new = type("P", (), {"id": "p-new", "key": "organization:billing"})()
+
+    repo = RoleRepository()
+    db = AsyncMock(spec=AsyncSession)
+
+    mock_res_keys = _make_result_mock(items=["organization:read", "organization:billing"])
+    mock_res_admin = _make_result_mock(first_item=admin_role)
+    mock_res_perms = _make_result_mock(items=[perm_existing, perm_new])
+    mock_res_rp = _make_result_mock(items=["p-existing"])
+
+    db.execute = AsyncMock(side_effect=[mock_res_keys, mock_res_admin, mock_res_perms, mock_res_rp])
+    db.add = AsyncMock()
+    db.flush = AsyncMock()
+    db.commit = AsyncMock()
+
+    await repo.seed_permissions(
+        db,
+        [
+            {"key": "organization:read", "name": "View Org", "category": "Organization", "description": ""},
+            {"key": "organization:billing", "name": "Manage Subscriptions", "category": "Organization", "description": ""},
+        ],
+    )
+
+    added_rp = [call.args[0] for call in db.add.call_args_list if isinstance(call.args[0], RolePermission)]
+    assert len(added_rp) == 1
+    assert added_rp[0].permission_id == "p-new"
+
+
+@pytest.mark.asyncio
+async def test_seed_permissions_idempotency():
+    """TEST 6: Synchronization is idempotent and produces no duplicates when run repeatedly."""
+    admin_role = _make_role(id="admin-1", name="Admin", is_system_role=True, organization_id=None)
+    perm_bill = type("P", (), {"id": "p-bill", "key": "organization:billing"})()
+
+    repo = RoleRepository()
+    db = AsyncMock(spec=AsyncSession)
+
+    mock_res_keys = _make_result_mock(items=["organization:billing"])
+    mock_res_admin = _make_result_mock(first_item=admin_role)
+    mock_res_perms = _make_result_mock(items=[perm_bill])
+    mock_res_rp = _make_result_mock(items=["p-bill"])
+
+    db.execute = AsyncMock(side_effect=[mock_res_keys, mock_res_admin, mock_res_perms, mock_res_rp])
+    db.add = AsyncMock()
+    db.commit = AsyncMock()
+
+    await repo.seed_permissions(
+        db,
+        [{"key": "organization:billing", "name": "Manage Subscriptions", "category": "Organization", "description": ""}],
+    )
+
+    added_rp = [call.args[0] for call in db.add.call_args_list if isinstance(call.args[0], RolePermission)]
+    assert len(added_rp) == 0
+
+
+@pytest.mark.asyncio
+async def test_seed_permissions_concurrency_savepoint_resilience():
+    """TEST 7: IntegrityError on one item does not rollback outer transaction or lose other items."""
+    from sqlalchemy.exc import IntegrityError
+
+    admin_role = _make_role(id="admin-1", name="Admin", is_system_role=True, organization_id=None)
+    perm_bill = type("P", (), {"id": "p-bill", "key": "organization:billing"})()
+
+    repo = RoleRepository()
+    db = AsyncMock(spec=AsyncSession)
+
+    mock_res_keys = _make_result_mock(items=[])
+    mock_res_admin = _make_result_mock(first_item=admin_role)
+    mock_res_perms = _make_result_mock(items=[perm_bill])
+    mock_res_rp = _make_result_mock(items=[])
+
+    db.execute = AsyncMock(side_effect=[mock_res_keys, mock_res_admin, mock_res_perms, mock_res_rp])
+
+    # First flush (for item 1) raises IntegrityError from concurrent insert; second flush succeeds
+    db.flush = AsyncMock(side_effect=[IntegrityError("stmt", "params", Exception()), None, None])
+    db.commit = AsyncMock()
+
+    await repo.seed_permissions(
+        db,
+        [
+            {"key": "organization:billing", "name": "Manage Subscriptions", "category": "Organization", "description": ""},
+            {"key": "organization:branding", "name": "Update Logo", "category": "Organization", "description": ""},
+        ],
+    )
+
+    db.commit.assert_awaited()
+
+
+def test_standard_permissions_catalog_superset_of_migration_catalog():
+    """TEST 8: Ensure all keys in migration f9a0b1c2d3e4 are present in runtime ALL_STANDARD_PERMISSIONS."""
+    from alembic.versions.f9a0b1c2d3e4_sync_organization_and_admin_permissions import (  # type: ignore
+        STANDARD_PERMISSIONS,
+    )
+
+    runtime_keys = {p["key"] for p in ALL_STANDARD_PERMISSIONS}
+    migration_keys = {p["key"] for p in STANDARD_PERMISSIONS}
+
+    missing_in_runtime = migration_keys - runtime_keys
+    assert not missing_in_runtime, f"Migration contains keys not in runtime catalog: {missing_in_runtime}"

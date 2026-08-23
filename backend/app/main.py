@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.v1.api import api_router
 from app.core.config import settings
@@ -37,6 +38,17 @@ async def lifespan(app: FastAPI):
         logger.info(
             "Production mode - skipping create_all(). Using Alembic migrations."
         )
+
+    # Sync standard permissions and ensure system Admin role holds them
+    try:
+        from app.repositories.role_repository import RoleRepository
+        from app.services.role_service import ALL_STANDARD_PERMISSIONS
+
+        async with AsyncSessionLocal() as session:
+            await RoleRepository().seed_permissions(session, ALL_STANDARD_PERMISSIONS)
+        logger.info("Standard RBAC permissions and system Admin role synced successfully")
+    except SQLAlchemyError:
+        logger.exception("Database error occurred while syncing standard RBAC permissions during startup")
 
     yield
 

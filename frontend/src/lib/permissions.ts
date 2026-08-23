@@ -11,12 +11,6 @@
  * every other user gets exactly the keys attached to their roles. The `"all"` legacy
  * sentinel is NOT emitted by the backend; the `hasPermission` helpers still honor it
  * so previously persisted sessions keep working.
- *
- * Note on `users:create`: the create-user endpoint (`backend/app/api/v1/routers/users.py`)
- * enforces `users:create`, but the key is missing from `ALL_STANDARD_PERMISSIONS` and
- * therefore cannot be assigned via the role editor. It is listed here because the
- * backend router genuinely requires it; fixing the catalog entry is a separate backend
- * change (see final report).
  */
 
 export const PERMISSIONS = {
