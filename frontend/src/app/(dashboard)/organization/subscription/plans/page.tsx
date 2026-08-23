@@ -21,7 +21,7 @@ import { Badge } from '@/components/ui/badge';
 import {
   useSubscriptionPlansQuery,
   useOrganizationSubscriptionQuery,
-  useUpgradeSubscriptionMutation,
+  useCreateSubscriptionCheckoutMutation,
   type SubscriptionPlanItem,
 } from '@/lib/api/organizations';
 
@@ -31,6 +31,7 @@ function SubscriptionPlansContent() {
   const orgIdParam = searchParams.get('org_id');
 
   const [selectedPlanSlug, setSelectedPlanSlug] = useState<string | null>(null);
+  const [isRedirecting, setIsRedirecting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -43,7 +44,7 @@ function SubscriptionPlansContent() {
   } = useSubscriptionPlansQuery();
 
   const { data: currentSubscription } = useOrganizationSubscriptionQuery();
-  const upgradeMutation = useUpgradeSubscriptionMutation();
+  const checkoutMutation = useCreateSubscriptionCheckoutMutation();
 
   const activePlans = React.useMemo(() => {
     if (!plans || !Array.isArray(plans)) return [];
@@ -66,23 +67,27 @@ function SubscriptionPlansContent() {
   };
 
   const handleUpgrade = async () => {
-    if (!selectedPlanSlug) return;
+    if (!selectedPlanSlug || checkoutMutation.isPending || isRedirecting) return;
     try {
       setErrorMessage(null);
       setSuccessMessage(null);
-      const res = await upgradeMutation.mutateAsync(selectedPlanSlug);
-      const selectedPlanObj = activePlans.find((p) => p.slug === selectedPlanSlug);
-      const planName = selectedPlanObj ? selectedPlanObj.name : selectedPlanSlug;
-      setSuccessMessage(res.message || `Successfully upgraded subscription to ${planName}.`);
+      const res = await checkoutMutation.mutateAsync({
+        plan_slug: selectedPlanSlug,
+        org_id: orgIdParam || undefined,
+      });
 
-      // Navigate back to Organization page after successful upgrade
-      setTimeout(() => {
-        handleBack();
-      }, 1500);
+      if (res.checkout_url) {
+        setIsRedirecting(true);
+        setSuccessMessage('Redirecting to Stripe Checkout...');
+        window.location.href = res.checkout_url;
+      } else {
+        throw new Error('No Stripe checkout URL returned.');
+      }
     } catch (err: unknown) {
+      setIsRedirecting(false);
       const errorObj = err as { response?: { data?: { message?: string } }; message?: string };
       const backendMessage =
-        errorObj.response?.data?.message || errorObj.message || 'Failed to upgrade subscription plan.';
+        errorObj.response?.data?.message || errorObj.message || 'Failed to initialize Stripe checkout.';
       setErrorMessage(backendMessage);
     }
   };
@@ -294,7 +299,7 @@ function SubscriptionPlansContent() {
                 </div>
                 <p className="text-caption text-[#4B5563]">
                   {selectedPlan
-                    ? 'Upgrading will immediately update your organization seat limits and storage quotas.'
+                    ? 'You will be securely redirected to Stripe Checkout to complete payment. Your plan activates automatically upon verification.'
                     : 'Click on any plan card above to review and select your preferred tier.'}
                 </p>
               </div>
@@ -304,7 +309,7 @@ function SubscriptionPlansContent() {
                   type="button"
                   variant="outline"
                   onClick={handleBack}
-                  disabled={upgradeMutation.isPending}
+                  disabled={checkoutMutation.isPending || isRedirecting}
                   className="w-full sm:w-auto border-[#E5E7EB] text-[#374151] cursor-pointer"
                 >
                   Cancel
@@ -313,13 +318,13 @@ function SubscriptionPlansContent() {
                   type="button"
                   variant="primary"
                   onClick={handleUpgrade}
-                  disabled={!selectedPlanSlug || upgradeMutation.isPending}
-                  className="w-full sm:w-auto cursor-pointer shadow-saas-sm gap-2 min-w-[160px]"
+                  disabled={!selectedPlanSlug || checkoutMutation.isPending || isRedirecting}
+                  className="w-full sm:w-auto cursor-pointer shadow-saas-sm gap-2 min-w-[180px]"
                 >
-                  {upgradeMutation.isPending ? (
+                  {checkoutMutation.isPending || isRedirecting ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Upgrading...</span>
+                      <span>{isRedirecting ? 'Redirecting to Stripe...' : 'Initializing Checkout...'}</span>
                     </>
                   ) : (
                     <>

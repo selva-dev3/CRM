@@ -1,6 +1,6 @@
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Header, Request, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user_optional, require_permission
@@ -11,6 +11,8 @@ from app.schemas.crm_schemas import (
     OrganizationCreate,
     OrganizationResponse,
     OrganizationUpdate,
+    SubscriptionCheckoutRequest,
+    SubscriptionCheckoutResponse,
 )
 from app.services.organization_service import organization_domain_service
 
@@ -65,6 +67,37 @@ async def get_subscription(
 @router.get("/subscription/plans", summary="List all available subscription plans", dependencies=[Depends(require_permission("organization:billing"))])
 async def list_subscription_plans(db: AsyncSession = Depends(get_db)):
     return await organization_domain_service.list_subscription_plans(db)
+
+
+@router.post(
+    "/subscription/checkout",
+    response_model=SubscriptionCheckoutResponse,
+    summary="Create a Stripe checkout session for subscription upgrade",
+    dependencies=[Depends(require_permission("organization:billing"))],
+)
+async def create_subscription_checkout(
+    payload: SubscriptionCheckoutRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
+    return await organization_domain_service.create_subscription_checkout(
+        db, plan_slug=payload.plan_slug, org_id=payload.org_id, current_user=current_user
+    )
+
+
+@router.post(
+    "/subscription/webhook",
+    summary="Stripe incoming billing webhook handler",
+)
+async def handle_stripe_subscription_webhook(
+    request: Request,
+    stripe_signature: Optional[str] = Header(None, alias="Stripe-Signature"),
+    db: AsyncSession = Depends(get_db),
+):
+    payload_bytes = await request.body()
+    return await organization_domain_service.handle_stripe_subscription_webhook(
+        db, payload_bytes=payload_bytes, sig_header=stripe_signature
+    )
 
 
 @router.post("/subscription/upgrade", response_model=MessageResponse, summary="Upgrade organization subscription", dependencies=[Depends(require_permission("organization:billing"))])

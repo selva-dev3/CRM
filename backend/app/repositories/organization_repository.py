@@ -3,7 +3,15 @@ from typing import Optional
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AuditLog, Organization, OrganizationSetting, OrganizationSubscription, SubscriptionPlan, User
+from app.models import (
+    AuditLog,
+    Organization,
+    OrganizationSetting,
+    OrganizationSubscription,
+    ProcessedWebhookEvent,
+    SubscriptionPlan,
+    User,
+)
 
 
 class OrganizationRepository:
@@ -158,3 +166,18 @@ class OrganizationRepository:
             .limit(limit)
         )
         return list(result.scalars().all())
+
+    async def get_processed_webhook_event(
+        self, db: AsyncSession, event_id: str
+    ) -> Optional[ProcessedWebhookEvent]:
+        result = await db.execute(
+            select(ProcessedWebhookEvent).where(ProcessedWebhookEvent.event_id == event_id)
+        )
+        return result.scalars().first()
+
+    async def record_processed_webhook_event(
+        self, db: AsyncSession, *, event_id: str, event_type: str
+    ) -> ProcessedWebhookEvent:
+        event = ProcessedWebhookEvent(event_id=event_id, event_type=event_type)
+        db.add(event)
+        return event
