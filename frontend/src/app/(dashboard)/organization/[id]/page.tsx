@@ -551,22 +551,6 @@ export default function OrganizationDetailPage({ isCurrentOrgView = false }: { i
               </div>
 
               <div>
-                <Label htmlFor="org-plan">Subscription Plan</Label>
-                <select
-                  id="org-plan"
-                  value={plan}
-                  onChange={(e) => setPlan(e.target.value)}
-                  className="w-full h-10 rounded-btn border border-[#E5E7EB] bg-white px-3 text-body font-medium text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
-                >
-                  <option value="Free">Free Plan</option>
-                  <option value="Starter">Starter Plan</option>
-                  <option value="Professional">Professional Plan</option>
-                  <option value="Business">Business Plan</option>
-                  <option value="Enterprise">Enterprise Plan</option>
-                </select>
-              </div>
-
-              <div>
                 <Label htmlFor="org-users">User Seats Limit</Label>
                 <Input
                   id="org-users"
