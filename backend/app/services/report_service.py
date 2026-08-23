@@ -3,8 +3,9 @@ import calendar as py_cal
 import csv
 import io
 import re
+import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional, Sequence
+from typing import Any, Optional
 
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,10 +20,24 @@ from app.services.s3_service import s3_service
 logger = get_logger(__name__)
 
 _CSV_FORMULA_PREFIXES = ("=", "+", "-", "@")
+_CSV_NUMERIC_RE = re.compile(r"^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$")
 
 EMAIL_REGEX = re.compile(r"^[\w\.\+\-]+@[a-zA-Z0-9\-]+(\.[a-zA-Z0-9\-]+)+$")
 VALID_FREQUENCIES = {"Daily", "Weekly", "Monthly"}
 VALID_REPORT_TYPES = {e.value for e in ReportTypeEnum}
+
+
+def _normalize_report_type(report_type: Any) -> str:
+    """Accept ReportTypeEnum or its serialized value and return the canonical string."""
+    if isinstance(report_type, ReportTypeEnum):
+        return report_type.value
+    return str(report_type) if report_type is not None else ""
+
+
+def _build_export_object_key(org_id: str, file_format: str) -> str:
+    """Build a unique, tenant-scoped object key for a report export."""
+    safe_org = re.sub(r"[^A-Za-z0-9_-]", "_", str(org_id or "unknown"))[:64]
+    return f"exports/{safe_org}/{uuid.uuid4().hex}.{file_format}"
 
 
 def today_str() -> str:
@@ -616,14 +631,15 @@ class ReportService:
     async def export_report_pdf(
         self,
         db: AsyncSession,
-        report_type: str = "sales-performance",
+        report_type: Any = ReportTypeEnum.SALES_PERFORMANCE,
         org_id: Optional[str] = None,
         current_user: Optional[User] = None,
     ) -> dict:
-        if report_type not in VALID_REPORT_TYPES:
+        report_type_value = _normalize_report_type(report_type)
+        if report_type_value not in VALID_REPORT_TYPES:
             raise APIException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                message=f"Invalid report type '{report_type}'. Valid types: {sorted(list(VALID_REPORT_TYPES))}",
+                message=f"Invalid report type '{report_type_value}'. Valid types: {sorted(list(VALID_REPORT_TYPES))}",
             )
 
         target_org = await self._resolve_org_id(db, org_id, current_user)
@@ -648,12 +664,11 @@ class ReportService:
             summary_lines.append(f" - {title}: ${float(amount or 0):,.2f} ({stage})")
 
         pdf_bytes = _generate_pdf_bytes(
-            title=f"{report_type.replace('-', ' ').title()} Report",
+            title=f"{report_type_value.replace('-', ' ').title()} Report",
             lines=summary_lines,
         )
 
-        timestamp_int = int(datetime.now(timezone.utc).timestamp())
-        object_name = f"exports/{target_org}_{report_type}_{timestamp_int}.pdf"
+        object_name = _build_export_object_key(target_org, "pdf")
         try:
             file_obj = io.BytesIO(pdf_bytes)
             s3_key = await asyncio.to_thread(
@@ -664,7 +679,7 @@ class ReportService:
             )
             pdf_url = await asyncio.to_thread(s3_service.generate_presigned_url, s3_key)
         except Exception as e:
-            logger.exception("S3 upload failed for PDF export org=%s report=%s", target_org, report_type)
+            logger.exception("S3 upload failed for PDF export org=%s report=%s", target_org, report_type_value)
             raise APIException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 message="Failed to upload PDF to storage. Please try again later.",
@@ -675,44 +690,97 @@ class ReportService:
                 db,
                 data={
                     "organization_id": target_org,
-                    "report_type": report_type,
+                    "report_type": report_type_value,
                     "file_format": "pdf",
-                    "download_url": pdf_url,
+                    "download_url": None,
+                    "s3_key": s3_key,
                     "requested_by": requesting_user_id,
                 },
             )
             await self._commit(db, "Failed to record PDF export")
             await db.refresh(export)
-            return {"pdf_url": export.download_url}
+            return {"pdf_url": pdf_url, "export_id": export.id}
         except APIException:
             raise
         except Exception as e:
             await db.rollback()
-            logger.exception("Failed to record PDF export for org=%s report=%s", target_org, report_type)
+            logger.exception("Failed to record PDF export for org=%s report=%s", target_org, report_type_value)
             raise APIException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Unable to start PDF export. Please try again later.",
             ) from e
 
+    async def get_export_download(
+        self,
+        db: AsyncSession,
+        export_id: str,
+        org_id: Optional[str] = None,
+        current_user: Optional[User] = None,
+    ) -> dict:
+        """Mint a fresh presigned URL for a previously generated export."""
+        target_org = await self._resolve_org_id(db, org_id, current_user)
+        export = await self.repository.get_export(db, export_id, target_org)
+        if not export:
+            raise NotFoundError(message=f"Export '{export_id}' not found")
+
+        s3_key = getattr(export, "s3_key", None)
+        if not s3_key:
+            logger.warning(
+                "Export %s for org=%s has no s3_key; refusing to return expired legacy URL",
+                export_id,
+                target_org,
+            )
+            raise APIException(
+                status_code=status.HTTP_410_GONE,
+                message="This export is no longer available. Please regenerate the report.",
+            )
+
+        try:
+            url = await asyncio.to_thread(s3_service.generate_presigned_url, s3_key)
+        except Exception as e:
+            logger.exception(
+                "Failed to generate presigned download URL for export %s", export_id
+            )
+            raise APIException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                message="Failed to generate download link. Please try again later.",
+            ) from e
+
+        return {"download_url": url, "expires_in": 3600}
+
     @staticmethod
     def _sanitize_csv_cell(value: Any) -> str:
-        """Prevent CSV formula injection by prefixing dangerous values."""
+        """Prevent CSV formula injection while preserving legitimate numeric negatives.
+
+        Values starting with =, +, @ are always treated as dangerous.
+        Values starting with - are escaped UNLESS the entire value parses as
+        a numeric literal (e.g. ``-123``, ``-123.45``), which must remain a
+        number so spreadsheets interpret it as numeric rather than text.
+        """
         s = str(value) if value is not None else ""
-        if s and s[0] in _CSV_FORMULA_PREFIXES:
+        if not s:
+            return s
+        first = s[0]
+        if first in ("=", "+", "@"):
+            return "'" + s
+        if first == "-":
+            if _CSV_NUMERIC_RE.match(s):
+                return s
             return "'" + s
         return s
 
     async def export_report_csv(
         self,
         db: AsyncSession,
-        report_type: str = "sales-performance",
+        report_type: Any = ReportTypeEnum.SALES_PERFORMANCE,
         org_id: Optional[str] = None,
         current_user: Optional[User] = None,
     ) -> dict:
-        if report_type not in VALID_REPORT_TYPES:
+        report_type_value = _normalize_report_type(report_type)
+        if report_type_value not in VALID_REPORT_TYPES:
             raise APIException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                message=f"Invalid report type '{report_type}'. Valid types: {sorted(list(VALID_REPORT_TYPES))}",
+                message=f"Invalid report type '{report_type_value}'. Valid types: {sorted(list(VALID_REPORT_TYPES))}",
             )
 
         target_org = await self._resolve_org_id(db, org_id, current_user)
@@ -736,11 +804,10 @@ class ReportService:
                 today_str(),
             ])
         if not deals:
-            writer.writerow(["Report Type", report_type, today_str(), ""])
+            writer.writerow(["Report Type", report_type_value, today_str(), ""])
 
         csv_content = buf.getvalue().encode("utf-8")
-        timestamp_int = int(datetime.now(timezone.utc).timestamp())
-        object_name = f"exports/{target_org}_{report_type}_{timestamp_int}.csv"
+        object_name = _build_export_object_key(target_org, "csv")
         try:
             file_obj = io.BytesIO(csv_content)
             s3_key = await asyncio.to_thread(
@@ -751,7 +818,7 @@ class ReportService:
             )
             csv_url = await asyncio.to_thread(s3_service.generate_presigned_url, s3_key)
         except Exception as e:
-            logger.exception("S3 upload failed for CSV export org=%s report=%s", target_org, report_type)
+            logger.exception("S3 upload failed for CSV export org=%s report=%s", target_org, report_type_value)
             raise APIException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 message="Failed to upload CSV to storage. Please try again later.",
@@ -762,20 +829,21 @@ class ReportService:
                 db,
                 data={
                     "organization_id": target_org,
-                    "report_type": report_type,
+                    "report_type": report_type_value,
                     "file_format": "csv",
-                    "download_url": csv_url,
+                    "download_url": None,
+                    "s3_key": s3_key,
                     "requested_by": requesting_user_id,
                 },
             )
             await self._commit(db, "Failed to record CSV export")
             await db.refresh(export)
-            return {"csv_url": export.download_url}
+            return {"csv_url": csv_url, "export_id": export.id}
         except APIException:
             raise
         except Exception as e:
             await db.rollback()
-            logger.exception("Failed to record CSV export for org=%s report=%s", target_org, report_type)
+            logger.exception("Failed to record CSV export for org=%s report=%s", target_org, report_type_value)
             raise APIException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Unable to complete CSV export. Please try again later.",
@@ -785,7 +853,7 @@ class ReportService:
     async def schedule_report_email(
         self,
         db: AsyncSession,
-        report_type: str,
+        report_type: Any,
         email: str,
         frequency: str = "Weekly",
         org_id: Optional[str] = None,
@@ -805,10 +873,11 @@ class ReportService:
                 message=f"Invalid frequency '{frequency}'. Must be one of: {sorted(list(VALID_FREQUENCIES))}",
             )
 
-        if report_type not in VALID_REPORT_TYPES:
+        report_type_value = _normalize_report_type(report_type)
+        if report_type_value not in VALID_REPORT_TYPES:
             raise APIException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                message=f"Invalid report type '{report_type}'. Valid types: {sorted(list(VALID_REPORT_TYPES))}",
+                message=f"Invalid report type '{report_type_value}'. Valid types: {sorted(list(VALID_REPORT_TYPES))}",
             )
 
         target_org = await self._resolve_org_id(db, org_id, current_user)
@@ -818,14 +887,14 @@ class ReportService:
             db,
             data={
                 "organization_id": target_org,
-                "report_type": report_type,
+                "report_type": report_type_value,
                 "email": clean_email,
                 "frequency": clean_freq,
                 "next_run": next_run_dt,
             },
         )
         await self._commit(db, "Failed to schedule report")
-        return {"message": f"Scheduled {clean_freq} report delivery of '{report_type}' to {clean_email}", "status": "success"}
+        return {"message": f"Scheduled {clean_freq} report delivery of '{report_type_value}' to {clean_email}", "status": "success"}
 
     async def list_scheduled_reports(
         self,

@@ -13,7 +13,8 @@ class Document(Base):
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     file_size: Mapped[int] = mapped_column(Integer, default=0)
     mime_type: Mapped[str] = mapped_column(String(100), default="application/octet-stream")
-    file_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    file_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    s3_key: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True, index=True)
     uploaded_by: Mapped[str] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"))
     uploaded_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

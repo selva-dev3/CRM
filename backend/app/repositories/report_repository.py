@@ -224,6 +224,16 @@ class ReportRepository:
         db.add(export)
         return export
 
+    async def get_export(
+        self, db: AsyncSession, export_id: str, org_id: str
+    ) -> Optional[ReportExport]:
+        stmt = select(ReportExport).where(
+            ReportExport.id == export_id,
+            ReportExport.organization_id == org_id,
+        )
+        res = await db.execute(stmt)
+        return res.scalar_one_or_none()
+
     async def deals_for_csv(self, db: AsyncSession, org_id: str, limit: int = 50) -> list[Any]:
         res = await db.execute(
             select(Deal.title, Deal.amount, Deal.stage).where(Deal.organization_id == org_id).limit(limit)

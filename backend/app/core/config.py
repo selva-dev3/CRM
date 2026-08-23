@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     AWS_S3_BUCKET: str = "crm-enterprise-bucket"
     AWS_REGION: str = "us-east-1"
 
+    # Document upload hardening
+    MAX_DOCUMENT_UPLOAD_SIZE: int = 10 * 1024 * 1024  # 10 MiB
+    DOCUMENT_UPLOAD_BUFFER_BYTES: int = 1024 * 1024  # 1 MiB streaming chunk
+
     # SMTP Gmail Email Configuration
     SMTP_HOST: Optional[str] = "smtp-relay.brevo.com"
     SMTP_PORT: Optional[int] = 587

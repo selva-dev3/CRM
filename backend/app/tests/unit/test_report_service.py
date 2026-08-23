@@ -334,12 +334,18 @@ async def test_export_report_pdf_validates_type_and_user(monkeypatch):
     repo = ReportRepository()
     repo.deals_for_csv = AsyncMock(return_value=[("Deal Alpha", 25000.0, "Closed Won")])
     repo.total_won_revenue = AsyncMock(return_value=25000.0)
-    repo.create_export = AsyncMock(return_value=Row(download_url="https://s3.example.com/exports/test.pdf"))
+    repo.create_export = AsyncMock(
+        return_value=Row(
+            id="exp-1",
+            download_url=None,
+            s3_key="exports/org-sales/abc123.pdf",
+        )
+    )
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
     user = _make_user(org_id="org-sales", user_id="usr-alex")
 
-    monkeypatch.setattr("app.services.report_service.s3_service.upload_file", lambda *a, **kw: "exports/org-sales.pdf")
+    monkeypatch.setattr("app.services.report_service.s3_service.upload_file", lambda *a, **kw: "exports/org-sales/abc123.pdf")
     monkeypatch.setattr("app.services.report_service.s3_service.generate_presigned_url", lambda *a, **kw: "https://s3.example.com/exports/test.pdf")
 
     result = await service.export_report_pdf(db, "sales-performance", current_user=user)
@@ -349,6 +355,32 @@ async def test_export_report_pdf_validates_type_and_user(monkeypatch):
     assert data["organization_id"] == "org-sales"
     assert data["requested_by"] == "usr-alex"
     assert data["file_format"] == "pdf"
+    assert data["download_url"] is None  # never persist presigned URL
+    assert data["s3_key"].startswith("exports/org-sales/")
+    assert len(data["s3_key"]) <= 1024  # fits varchar(1024)
+    assert "pdf_url" in result
+    assert result["export_id"] == "exp-1"
+
+
+@pytest.mark.asyncio
+async def test_export_report_pdf_accepts_enum_report_type(monkeypatch):
+    from app.schemas.report_schemas import ReportTypeEnum
+
+    repo = ReportRepository()
+    repo.deals_for_csv = AsyncMock(return_value=[])
+    repo.total_won_revenue = AsyncMock(return_value=0.0)
+    repo.create_export = AsyncMock(return_value=Row(id="exp-2", download_url=None, s3_key="k"))
+    service = ReportService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+    user = _make_user(org_id="org-enum")
+
+    monkeypatch.setattr("app.services.report_service.s3_service.upload_file", lambda *a, **kw: "exports/k.pdf")
+    monkeypatch.setattr("app.services.report_service.s3_service.generate_presigned_url", lambda *a, **kw: "https://s3.example/x")
+
+    result = await service.export_report_pdf(db, ReportTypeEnum.SALES_PERFORMANCE, current_user=user)
+    assert repo.create_export.await_args is not None
+    data = repo.create_export.await_args.kwargs["data"]
+    assert data["report_type"] == "sales-performance"
     assert "pdf_url" in result
 
 
@@ -388,7 +420,7 @@ async def test_export_report_pdf_raises_on_commit_failure(monkeypatch):
     repo = ReportRepository()
     repo.deals_for_csv = AsyncMock(return_value=[])
     repo.total_won_revenue = AsyncMock(return_value=0.0)
-    repo.create_export = AsyncMock(return_value=Row(download_url="https://s3.example.com/test.pdf"))
+    repo.create_export = AsyncMock(return_value=Row(id="exp-pdf", download_url=None, s3_key="exports/test.pdf"))
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
     db.commit.side_effect = RuntimeError("DB connection lost")
@@ -409,18 +441,22 @@ async def test_export_report_csv_sanitizes_formula_prefixes(monkeypatch):
         ("=cmd|' /C calc'!A0", 5000.0, "@Dangerous"),
         ("+1234567890", 2000.0, "-StageMinus"),
     ])
-    repo.create_export = AsyncMock(return_value=Row(download_url="https://s3.example.com/exports/csv.csv"))
+    repo.create_export = AsyncMock(return_value=Row(id="exp-csv", download_url=None, s3_key="exports/org-safe/x.csv"))
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
     user = _make_user(org_id="org-safe", user_id="usr-1")
 
-    monkeypatch.setattr("app.services.report_service.s3_service.upload_file", lambda *a, **kw: "exports/csv.csv")
+    monkeypatch.setattr("app.services.report_service.s3_service.upload_file", lambda *a, **kw: "exports/org-safe/x.csv")
     monkeypatch.setattr("app.services.report_service.s3_service.generate_presigned_url", lambda *a, **kw: "https://s3.example.com/exports/csv.csv")
 
     result = await service.export_report_csv(db, "sales-performance", current_user=user)
 
     assert repo.create_export.await_args is not None
+    data = repo.create_export.await_args.kwargs["data"]
+    assert data["download_url"] is None  # never persist presigned URL
+    assert data["s3_key"].startswith("exports/org-safe/")
     assert "csv_url" in result
+    assert result["export_id"] == "exp-csv"
 
 
 @pytest.mark.asyncio
@@ -439,3 +475,109 @@ async def test_export_report_csv_raises_502_on_s3_error(monkeypatch):
     with pytest.raises(APIException) as exc_info:
         await service.export_report_csv(db, "sales-performance", current_user=user)
     assert exc_info.value.status_code == 502
+
+@pytest.mark.asyncio
+async def test_get_export_download_mints_fresh_presigned_url(monkeypatch):
+    repo = ReportRepository()
+    repo.get_export = AsyncMock(
+        return_value=Row(id="exp-1", organization_id="org-1", s3_key="exports/org-1/abc.pdf")
+    )
+    service = ReportService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+    user = _make_user(org_id="org-1")
+
+    monkeypatch.setattr(
+        "app.services.report_service.s3_service.generate_presigned_url",
+        lambda key: f"https://fresh.example/{key}?sig=new",
+    )
+
+    result = await service.get_export_download(db, export_id="exp-1", current_user=user)
+
+    repo.get_export.assert_awaited_once_with(db, "exp-1", "org-1")
+    assert result["download_url"] == "https://fresh.example/exports/org-1/abc.pdf?sig=new"
+    assert result["expires_in"] == 3600
+
+
+@pytest.mark.asyncio
+async def test_get_export_download_cross_org_not_found():
+    repo = ReportRepository()
+    repo.get_export = AsyncMock(return_value=None)
+    service = ReportService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+    user = _make_user(org_id="org-A")
+
+    with pytest.raises(NotFoundError):
+        await service.get_export_download(db, export_id="exp-from-org-B", current_user=user)
+
+    repo.get_export.assert_awaited_once_with(db, "exp-from-org-B", "org-A")
+
+
+@pytest.mark.asyncio
+async def test_get_export_download_legacy_record_without_s3_key_returns_410(monkeypatch):
+    repo = ReportRepository()
+    repo.get_export = AsyncMock(
+        return_value=Row(
+            id="exp-legacy",
+            organization_id="org-1",
+            s3_key=None,
+            download_url="https://expired.example/old?sig=expired",
+        )
+    )
+    service = ReportService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+    user = _make_user(org_id="org-1")
+
+    def boom(*args, **kwargs):
+        raise AssertionError("presigned URL must not be minted for legacy records")
+
+    monkeypatch.setattr("app.services.report_service.s3_service.generate_presigned_url", boom)
+
+    with pytest.raises(APIException) as exc:
+        await service.get_export_download(db, export_id="exp-legacy", current_user=user)
+    assert exc.value.status_code == 410
+
+
+@pytest.mark.asyncio
+async def test_get_export_download_raises_502_when_s3_fails(monkeypatch):
+    repo = ReportRepository()
+    repo.get_export = AsyncMock(
+        return_value=Row(id="exp-1", organization_id="org-1", s3_key="exports/org-1/abc.pdf")
+    )
+    service = ReportService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("s3 down")
+
+    monkeypatch.setattr("app.services.report_service.s3_service.generate_presigned_url", boom)
+
+    with pytest.raises(APIException) as exc:
+        await service.get_export_download(db, export_id="exp-1", current_user=_make_user())
+    assert exc.value.status_code == 502
+
+
+# --- CSV sanitization: negative numbers preserved, formulas escaped ---
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("-123", "-123"),
+        ("-123.45", "-123.45"),
+        ("-0.001", "-0.001"),
+        ("-1e10", "-1e10"),
+        ("-123 text", "'-123 text"),
+        ("=-123", "'=-123"),
+        ("=SUM(A1:A2)", "'=SUM(A1:A2)"),
+        ("+CMD(...)", "'+CMD(...)"),
+        ("@formula", "'@formula"),
+        ("normal text", "normal text"),
+        ("hello, world", "hello, world"),
+        ('say "hi"', 'say "hi"'),
+        ("", ""),
+        (None, ""),
+        ("-", "'-"),
+        ("- 5", "'- 5"),
+    ],
+)
+def test_sanitize_csv_cell_negative_numeric_and_injection(value, expected):
+    assert ReportService._sanitize_csv_cell(value) == expected

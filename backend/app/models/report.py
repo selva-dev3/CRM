@@ -11,7 +11,8 @@ class ReportExport(Base):
     organization_id: Mapped[str] = mapped_column(String, ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
     report_type: Mapped[str] = mapped_column(String(100), nullable=False)
     file_format: Mapped[str] = mapped_column(String(20), default="csv")
-    download_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    download_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    s3_key: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True, index=True)
     requested_by: Mapped[str] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"))
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
