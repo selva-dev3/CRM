@@ -1,14 +1,20 @@
+import json
 import uuid
 from typing import Optional
 
 from fastapi import status
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.errors import APIException, NotFoundError
+from app.core.logging import get_logger
 from app.models import Organization, OrganizationSubscription, SubscriptionPlan, User
 from app.repositories.organization_repository import OrganizationRepository
 from app.schemas.crm_schemas import OrganizationCreate, OrganizationUpdate
 from app.services.s3_service import s3_service
+
+logger = get_logger(__name__)
 
 DEFAULT_PLANS = {
     "free": {
@@ -143,7 +149,7 @@ class OrganizationDomainService:
         return sub
 
     def _plan_to_info(
-        self, db_plan: Optional[SubscriptionPlan], org: Organization
+        self, db_plan: Optional[SubscriptionPlan], org: Optional[Organization] = None
     ) -> dict:
         if db_plan:
             return {
@@ -155,8 +161,8 @@ class OrganizationDomainService:
                 "ai_credits": db_plan.ai_credits,
                 "features": db_plan.features or "",
             }
-        plan_slug = (org.plan or "enterprise").lower()
-        return DEFAULT_PLANS.get(plan_slug, DEFAULT_PLANS["enterprise"])
+        plan_slug = (org.plan.lower() if org and getattr(org, "plan", None) else "enterprise")
+        return DEFAULT_PLANS.get(plan_slug) or DEFAULT_PLANS["enterprise"]
 
     async def _resolve_plan_info(self, db: AsyncSession, org: Organization) -> dict:
         subscription = await self.get_or_create_subscription(db, org)
@@ -384,36 +390,358 @@ class OrganizationDomainService:
             for info in DEFAULT_PLANS.values()
         ]
 
-    async def upgrade_plan(self, db: AsyncSession, plan_slug: str) -> dict:
-        org = await self.get_or_create_default_org(db)
-        subscription = await self.get_or_create_subscription(db, org)
+    async def create_subscription_checkout(
+        self,
+        db: AsyncSession,
+        plan_slug: str,
+        org_id: Optional[str] = None,
+        current_user: Optional[User] = None,
+    ) -> dict:
+        # Resolve target organization
+        org: Optional[Organization] = None
+        if org_id:
+            org = await self.repository.get_by_id(db, org_id)
+            if not org:
+                raise NotFoundError(message=f"Organization with ID '{org_id}' not found.")
+            # Verify user has access to this organization
+            if current_user and getattr(current_user, "organization_id", None):
+                if (
+                    current_user.organization_id != org_id
+                    and getattr(current_user, "role", "") not in ("Admin", "Superadmin")
+                ):
+                    raise APIException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        message="You do not have permission to manage billing for this organization.",
+                    )
+        else:
+            org = await self.get_or_create_default_org(db, current_user)
 
-        clean_slug = plan_slug.lower()
-        plan_info = DEFAULT_PLANS.get(clean_slug, DEFAULT_PLANS["enterprise"])
-
+        clean_slug = plan_slug.strip().lower()
         db_plan = await self.repository.get_plan_by_slug(db, clean_slug)
+        plan_info = DEFAULT_PLANS.get(clean_slug)
+
+        if not db_plan and not plan_info:
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message=f"Subscription plan '{plan_slug}' does not exist.",
+            )
+
+        if db_plan and not db_plan.is_active:
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message=f"Subscription plan '{plan_slug}' is currently inactive.",
+            )
+
+        if db_plan:
+            plan_name = db_plan.name
+            price_monthly = float(db_plan.price_monthly)
+        elif plan_info:
+            plan_name = plan_info.get("name", clean_slug.capitalize())
+            price_monthly = float(plan_info.get("price_monthly", 0.0))
+        else:
+            plan_name = clean_slug.capitalize()
+            price_monthly = 0.0
+
+        if price_monthly <= 0 or clean_slug == "free":
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Cannot create a paid checkout session for a free plan.",
+            )
+
+        unit_amount = int(round(price_monthly * 100))
+
+        if not settings.STRIPE_SECRET_KEY:
+            logger.error("Stripe checkout creation requested but STRIPE_SECRET_KEY is not configured.")
+            raise APIException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                message="Billing provider is not configured.",
+            )
+
+        try:
+            import stripe
+
+            stripe.api_key = settings.STRIPE_SECRET_KEY
+            session = await run_in_threadpool(
+                stripe.checkout.Session.create,
+                payment_method_types=["card"],
+                line_items=[
+                    {
+                        "price_data": {
+                            "currency": "inr",
+                            "product_data": {
+                                "name": f"Enterprise CRM - {plan_name} Plan",
+                                "description": f"Monthly recurring subscription for {org.name}",
+                            },
+                            "unit_amount": unit_amount,
+                            "recurring": {
+                                "interval": "month",
+                            },
+                        },
+                        "quantity": 1,
+                    }
+                ],
+                mode="subscription",
+                success_url=f"{settings.frontend_base_url}/organization/subscription/payment/success?session_id={{CHECKOUT_SESSION_ID}}&org_id={org.id}",
+                cancel_url=f"{settings.frontend_base_url}/organization/subscription/payment/cancel?org_id={org.id}",
+                customer_email=current_user.email if current_user and getattr(current_user, "email", None) else None,
+                metadata={
+                    "organization_id": org.id,
+                    "user_id": current_user.id if current_user else "",
+                    "plan_slug": clean_slug,
+                    "type": "subscription_upgrade",
+                },
+            )
+            return {
+                "checkout_url": session.url or f"https://checkout.stripe.com/pay/{session.id}",
+                "session_id": session.id,
+                "status": "success",
+            }
+        except APIException:
+            raise
+        except Exception as e:
+            logger.exception("Failed to create Stripe checkout session: %s", e)
+            raise APIException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                message="Unable to initialize checkout with the payment provider. Please try again later.",
+            ) from e
+
+    async def verify_subscription_checkout(
+        self,
+        db: AsyncSession,
+        session_id: str,
+        org_id: Optional[str] = None,
+        current_user: Optional[User] = None,
+    ) -> dict:
+        if not session_id or not session_id.strip():
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Invalid or missing session_id.",
+            )
+
+        # Resolve organization and verify user access
+        org: Optional[Organization] = None
+        if org_id:
+            org = await self.repository.get_by_id(db, org_id)
+            if not org:
+                raise NotFoundError(message=f"Organization with ID '{org_id}' not found.")
+            if current_user and getattr(current_user, "organization_id", None):
+                if (
+                    current_user.organization_id != org_id
+                    and getattr(current_user, "role", "") not in ("Admin", "Superadmin")
+                ):
+                    raise APIException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        message="You do not have permission to verify billing for this organization.",
+                    )
+        else:
+            org = await self.get_or_create_default_org(db, current_user)
+
+        if not settings.STRIPE_SECRET_KEY:
+            logger.error("Stripe checkout verification requested but STRIPE_SECRET_KEY is not configured.")
+            raise APIException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                message="Billing provider is not configured.",
+            )
+
+        try:
+            import stripe
+
+            stripe.api_key = settings.STRIPE_SECRET_KEY
+            session = await run_in_threadpool(
+                stripe.checkout.Session.retrieve,
+                session_id,
+            )
+        except Exception as e:
+            logger.warning("Failed to retrieve Stripe checkout session %s: %s", session_id, e)
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Invalid or unresolvable Stripe checkout session.",
+            ) from e
+
+        metadata = session.metadata or {}
+        session_org_id = metadata.get("organization_id")
+        plan_slug = metadata.get("plan_slug", "")
+
+        # Verify session ownership
+        if session_org_id != org.id:
+            raise APIException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                message="Checkout session does not belong to this organization.",
+            )
+
+        # Verify mode and payment status
+        if getattr(session, "mode", "") != "subscription":
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Invalid checkout session mode.",
+            )
+
+        payment_status = getattr(session, "payment_status", "")
+        if payment_status not in ("paid", "no_payment_required"):
+            return {
+                "verified": False,
+                "db_synced": False,
+                "plan": None,
+                "plan_slug": plan_slug,
+                "status": "unpaid",
+                "message": f"Payment is not confirmed (status: {payment_status}).",
+            }
+
+        # Check DB synchronization state
+        subscription = await self.repository.get_subscription(db, org.id)
+        db_synced = False
+        if subscription and getattr(subscription, "checkout_session_id", None) == session_id:
+            db_synced = True
+        elif org.plan and plan_slug and org.plan.lower() == plan_slug.lower():
+            db_synced = True
+
+        clean_slug = plan_slug.strip().lower()
+        db_plan = await self.repository.get_plan_by_slug(db, clean_slug)
+        plan_info = DEFAULT_PLANS.get(clean_slug)
+        plan_name = db_plan.name if db_plan else (plan_info.get("name", clean_slug.capitalize()) if plan_info else clean_slug.capitalize())
+
+        return {
+            "verified": True,
+            "db_synced": db_synced,
+            "plan": plan_name,
+            "plan_slug": clean_slug,
+            "status": "success",
+            "message": "Payment verified successfully.",
+        }
+
+    async def apply_verified_subscription_upgrade(
+        self,
+        db: AsyncSession,
+        organization_id: str,
+        plan_slug: str,
+        stripe_session_id: Optional[str] = None,
+        stripe_customer_id: Optional[str] = None,
+        stripe_subscription_id: Optional[str] = None,
+    ) -> dict:
+        org = await self.repository.get_by_id(db, organization_id)
+        if not org:
+            raise NotFoundError(message=f"Organization '{organization_id}' not found.")
+
+        subscription = await self.get_or_create_subscription(db, org)
+        clean_slug = plan_slug.strip().lower()
+        db_plan = await self.repository.get_plan_by_slug(db, clean_slug)
+        plan_info = DEFAULT_PLANS.get(clean_slug) or DEFAULT_PLANS["enterprise"]
+
         if db_plan:
             subscription.plan_id = db_plan.id
             subscription.amount = db_plan.price_monthly
+            subscription.max_users = db_plan.max_users
+            subscription.storage_limit_gb = db_plan.max_storage_gb
+            subscription.ai_credits = db_plan.ai_credits
             org.plan = db_plan.name
-        else:
-            subscription.amount = plan_info["price_monthly"]
-            org.plan = plan_info["name"]
+            org.max_users = db_plan.max_users
+        elif plan_info:
+            subscription.amount = float(plan_info.get("price_monthly", 0.0))
+            subscription.max_users = int(plan_info.get("max_users", 100))
+            subscription.storage_limit_gb = int(plan_info.get("max_storage_gb", 500))
+            subscription.ai_credits = int(plan_info.get("ai_credits", 0))
+            org.plan = str(plan_info.get("name", clean_slug.capitalize()))
+            org.max_users = int(plan_info.get("max_users", 100))
 
         subscription.status = "active"
         subscription.auto_renew = True
+        subscription.payment_provider = "Stripe"
+        if stripe_customer_id:
+            subscription.customer_id = stripe_customer_id
+        if stripe_subscription_id:
+            subscription.subscription_id = stripe_subscription_id
+        if stripe_session_id:
+            subscription.checkout_session_id = stripe_session_id
 
         await self.repository.create_audit_log(
             db,
             organization_id=org.id,
-            action="UPGRADE_SUBSCRIPTION",
-            details=f"Upgraded subscription to {org.plan}",
+            action="UPGRADE_SUBSCRIPTION_STRIPE",
+            details=f"Verified Stripe payment upgrade to {org.plan} (Session: {stripe_session_id or 'N/A'})",
         )
         db.add(org)
         db.add(subscription)
-        await self._commit(db, "Failed to upgrade subscription")
+        await self._commit(db, "Failed to apply verified subscription upgrade")
 
         return {"message": f"Organization upgraded to {org.plan} successfully", "status": "success"}
+
+    async def handle_stripe_subscription_webhook(
+        self, db: AsyncSession, payload_bytes: bytes, sig_header: Optional[str]
+    ) -> dict:
+        if not settings.STRIPE_WEBHOOK_SECRET:
+            logger.error("Stripe webhook received but STRIPE_WEBHOOK_SECRET is not configured.")
+            raise APIException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                message="Billing provider webhook is not configured.",
+            )
+
+        import stripe
+
+        try:
+            event = await run_in_threadpool(
+                stripe.Webhook.construct_event,
+                payload_bytes,
+                sig_header or "",
+                settings.STRIPE_WEBHOOK_SECRET,
+            )
+        except Exception as e:
+            logger.warning("Stripe webhook signature verification failed: %s", e)
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Invalid Stripe webhook signature.",
+            ) from e
+
+        event_id = event.get("id")
+        event_type = event.get("type", "")
+
+        # Idempotency check
+        if event_id:
+            existing_event = await self.repository.get_processed_webhook_event(db, event_id)
+            if existing_event:
+                logger.info("Stripe webhook event %s already processed. Skipping duplicate.", event_id)
+                return {"status": "ignored_duplicate", "message": f"Event '{event_id}' already processed"}
+
+        if event_type in ("checkout.session.completed", "payment_intent.succeeded", "invoice.payment_succeeded"):
+            obj = event.get("data", {}).get("object", {})
+            payment_status = obj.get("payment_status", "paid")
+            if payment_status not in ("paid", "no_payment_required"):
+                logger.warning(
+                    "Stripe checkout session %s payment status '%s' not paid. Skipping upgrade.",
+                    obj.get("id"),
+                    payment_status,
+                )
+                return {"status": "pending_or_unpaid", "message": f"Payment status is {payment_status}"}
+
+            metadata = obj.get("metadata", {})
+            org_id = metadata.get("organization_id")
+            plan_slug = metadata.get("plan_slug")
+            if org_id and plan_slug:
+                await self.apply_verified_subscription_upgrade(
+                    db,
+                    organization_id=org_id,
+                    plan_slug=plan_slug,
+                    stripe_session_id=obj.get("id"),
+                    stripe_customer_id=obj.get("customer"),
+                    stripe_subscription_id=obj.get("subscription"),
+                )
+                if event_id:
+                    try:
+                        await self.repository.record_processed_webhook_event(
+                            db, event_id=event_id, event_type=event_type
+                        )
+                        await db.commit()
+                    except Exception:
+                        await db.rollback()
+                return {
+                    "status": "success",
+                    "message": f"Successfully processed {event_type} and upgraded organization {org_id} to {plan_slug}",
+                }
+
+        return {"status": "ignored", "message": f"Unhandled event type '{event_type}'"}
+
+    async def upgrade_plan(self, db: AsyncSession, plan_slug: str) -> dict:
+        org = await self.get_or_create_default_org(db)
+        return await self.apply_verified_subscription_upgrade(db, org.id, plan_slug)
 
     async def cancel_subscription(self, db: AsyncSession) -> dict:
         org = await self.get_or_create_default_org(db)

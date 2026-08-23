@@ -85,25 +85,27 @@ const mockPlansData = [
 const mockUseSubscriptionPlansQuery = vi.fn();
 const mockUseOrganizationSubscriptionQuery = vi.fn();
 const mockMutateAsync = vi.fn();
-const mockUseUpgradeSubscriptionMutation = vi.fn();
+const mockUseCreateSubscriptionCheckoutMutation = vi.fn();
 
 vi.mock('@/lib/api/organizations', () => ({
   useSubscriptionPlansQuery: () => mockUseSubscriptionPlansQuery(),
   useOrganizationSubscriptionQuery: () => mockUseOrganizationSubscriptionQuery(),
-  useUpgradeSubscriptionMutation: () => mockUseUpgradeSubscriptionMutation(),
+  useCreateSubscriptionCheckoutMutation: () => mockUseCreateSubscriptionCheckoutMutation(),
+  createSubscriptionCheckoutApi: vi.fn(),
   upgradeOrganizationSubscriptionApi: vi.fn(),
   getSubscriptionPlansApi: vi.fn(),
   getOrganizationSubscriptionApi: vi.fn(),
 }));
 
-describe('SubscriptionPlansPage', () => {
+describe('SubscriptionPlansPage - Stripe Checkout Flow', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockMutateAsync.mockResolvedValue({
-      message: 'Successfully upgraded subscription',
+      checkout_url: 'https://checkout.stripe.com/pay/cs_test_mock_session',
+      session_id: 'cs_test_mock_session',
       status: 'success',
     });
-    mockUseUpgradeSubscriptionMutation.mockReturnValue({
+    mockUseCreateSubscriptionCheckoutMutation.mockReturnValue({
       mutateAsync: mockMutateAsync,
       isPending: false,
     });
@@ -151,7 +153,7 @@ describe('SubscriptionPlansPage', () => {
     expect(mockRefetch).toHaveBeenCalledTimes(1);
   });
 
-  it('renders all active plans returned by API with prices and quotas', () => {
+  it('renders all active plans with server-side prices and quotas', () => {
     render(<SubscriptionPlansPage />);
 
     expect(screen.getByText('Free')).toBeInTheDocument();
@@ -169,7 +171,7 @@ describe('SubscriptionPlansPage', () => {
     expect(screen.getByText('Current Plan')).toBeInTheDocument();
   });
 
-  it('allows selecting a plan and calls upgrade mutation with the plan slug', async () => {
+  it('calls checkout mutation with plan_slug and org_id when user clicks upgrade', async () => {
     render(<SubscriptionPlansPage />);
 
     // Upgrade button should be disabled initially until a plan is selected
@@ -184,33 +186,20 @@ describe('SubscriptionPlansPage', () => {
     const activeUpgradeButton = screen.getByRole('button', { name: /Upgrade to Starter/i });
     expect(activeUpgradeButton).toBeEnabled();
 
-    // Click Upgrade
+    // Click Upgrade to trigger checkout
     fireEvent.click(activeUpgradeButton);
 
     await waitFor(() => {
-      expect(mockMutateAsync).toHaveBeenCalledWith('starter');
-    });
-
-    expect(await screen.findByText(/Successfully upgraded subscription/i)).toBeInTheDocument();
-  });
-
-  it('selects Enterprise plan and passes slug "enterprise" to upgrade API', async () => {
-    render(<SubscriptionPlansPage />);
-
-    const enterpriseButton = screen.getByRole('button', { name: /Choose Enterprise/i });
-    fireEvent.click(enterpriseButton);
-
-    const upgradeButton = screen.getByRole('button', { name: /Upgrade to Enterprise/i });
-    fireEvent.click(upgradeButton);
-
-    await waitFor(() => {
-      expect(mockMutateAsync).toHaveBeenCalledWith('enterprise');
+      expect(mockMutateAsync).toHaveBeenCalledWith({
+        plan_slug: 'starter',
+        org_id: 'org-123',
+      });
     });
   });
 
-  it('handles upgrade failure without navigating away and keeps plan selected', async () => {
+  it('handles checkout creation failure without navigating away', async () => {
     mockMutateAsync.mockRejectedValueOnce({
-      response: { data: { message: 'Card declined or insufficient quota' } },
+      response: { data: { message: 'Stripe gateway unavailable' } },
     });
 
     render(<SubscriptionPlansPage />);
@@ -221,7 +210,7 @@ describe('SubscriptionPlansPage', () => {
     const upgradeButton = screen.getByRole('button', { name: /Upgrade to Starter/i });
     fireEvent.click(upgradeButton);
 
-    expect(await screen.findByText('Card declined or insufficient quota')).toBeInTheDocument();
+    expect(await screen.findByText('Stripe gateway unavailable')).toBeInTheDocument();
     expect(upgradeButton).toBeEnabled();
     expect(mockPush).not.toHaveBeenCalled();
   });

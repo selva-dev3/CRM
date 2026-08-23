@@ -767,12 +767,22 @@ async def test_seed_permissions_concurrency_savepoint_resilience():
 
 def test_standard_permissions_catalog_superset_of_migration_catalog():
     """TEST 8: Ensure all keys in migration f9a0b1c2d3e4 are present in runtime ALL_STANDARD_PERMISSIONS."""
-    from alembic.versions.f9a0b1c2d3e4_sync_organization_and_admin_permissions import (  # type: ignore
-        STANDARD_PERMISSIONS,
+    import importlib.util
+    from pathlib import Path
+
+    migration_path = (
+        Path(__file__).resolve().parents[3]
+        / "alembic"
+        / "versions"
+        / "f9a0b1c2d3e4_sync_organization_and_admin_permissions.py"
     )
+    spec = importlib.util.spec_from_file_location("migration_f9a0b1c2d3e4", str(migration_path))
+    assert spec is not None and spec.loader is not None
+    migration_mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration_mod)
 
     runtime_keys = {p["key"] for p in ALL_STANDARD_PERMISSIONS}
-    migration_keys = {p["key"] for p in STANDARD_PERMISSIONS}
+    migration_keys = {p["key"] for p in migration_mod.STANDARD_PERMISSIONS}
 
     missing_in_runtime = migration_keys - runtime_keys
     assert not missing_in_runtime, f"Migration contains keys not in runtime catalog: {missing_in_runtime}"

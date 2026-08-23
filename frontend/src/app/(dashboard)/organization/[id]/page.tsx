@@ -42,7 +42,6 @@ import {
   useOrganizationMembersQuery,
   useRemoveOrganizationMemberMutation,
   useOrganizationSubscriptionQuery,
-  useUpgradeSubscriptionMutation,
   useCancelSubscriptionMutation,
   useOrganizationUsageQuery,
   useUpdateBrandingMutation,
@@ -80,7 +79,6 @@ export default function OrganizationDetailPage({ isCurrentOrgView = false }: { i
   // Mutations
   const updateOrgMutation = useUpdateOrganizationMutation();
   const removeMemberMutation = useRemoveOrganizationMemberMutation();
-  const upgradeSubMutation = useUpgradeSubscriptionMutation();
   const cancelSubMutation = useCancelSubscriptionMutation();
   const updateBrandingMutation = useUpdateBrandingMutation();
   const verifyDomainMutation = useVerifyDomainMutation();
@@ -198,19 +196,6 @@ export default function OrganizationDetailPage({ isCurrentOrgView = false }: { i
       setTimeout(() => setSuccessMessage(null), 4000);
     } catch {
       setErrorMessage('Failed to remove member.');
-    }
-  };
-
-  const handleUpgradePlan = async (targetPlan: string) => {
-    try {
-      setErrorMessage(null);
-      const res = await upgradeSubMutation.mutateAsync(targetPlan);
-      setSuccessMessage(res.message || `Upgraded subscription to ${targetPlan}.`);
-      refetchSubscription();
-      refetchOrg();
-      setTimeout(() => setSuccessMessage(null), 4000);
-    } catch {
-      setErrorMessage('Failed to upgrade subscription plan.');
     }
   };
 

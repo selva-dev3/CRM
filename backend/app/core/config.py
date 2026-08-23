@@ -51,6 +51,11 @@ class Settings(BaseSettings):
     # Resend Email API (primary — HTTPS based email delivery)
     RESEND_API_KEY: Optional[str] = None
 
+    # Stripe Configuration
+    STRIPE_SECRET_KEY: Optional[str] = None
+    STRIPE_PUBLISHABLE_KEY: Optional[str] = None
+    STRIPE_WEBHOOK_SECRET: Optional[str] = None
+
     # AI API Keys
     OPENAI_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None

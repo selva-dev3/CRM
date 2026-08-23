@@ -251,6 +251,23 @@ class OrganizationResponse(OrganizationBase):
     created_at: str
     members_count: int = 1
 
+class SubscriptionCheckoutRequest(BaseModel):
+    plan_slug: str
+    org_id: Optional[str] = None
+
+class SubscriptionCheckoutResponse(BaseModel):
+    checkout_url: str
+    session_id: str
+    status: str = "success"
+
+class SubscriptionCheckoutVerifyResponse(BaseModel):
+    verified: bool
+    db_synced: bool
+    plan: Optional[str] = None
+    plan_slug: Optional[str] = None
+    status: str
+    message: str
+
 # 5. Lead Schemas
 class LeadBase(BaseModel):
     title: str

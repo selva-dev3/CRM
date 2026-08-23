@@ -150,6 +150,12 @@ class OrganizationSubscription(Base):
         String(100)
     )
 
+    checkout_session_id: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        index=True,
+        nullable=True
+    )
+
     # Usage
     max_users: Mapped[int] = mapped_column(
         Integer,
@@ -249,3 +255,27 @@ class OrganizationInvitation(Base):
     accepted_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ProcessedWebhookEvent(Base):
+    __tablename__ = "processed_webhook_events"
+
+    id: Mapped[str] = mapped_column(
+        String,
+        primary_key=True,
+        default=lambda: str(uuid.uuid4())
+    )
+    event_id: Mapped[str] = mapped_column(
+        String(255),
+        unique=True,
+        index=True,
+        nullable=False
+    )
+    event_type: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False
+    )
+    created_at: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now()
+    )
