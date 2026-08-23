@@ -181,9 +181,16 @@ def upgrade() -> None:
             )
             existing_perms[key] = p_id
 
-    # 2. Find or create the Admin role
+    # 2. Find or create ONLY the global system Admin role
     admin_res = connection.execute(
-        sa.text("SELECT id FROM roles WHERE LOWER(name) = 'admin' LIMIT 1")
+        sa.text(
+            "SELECT id FROM roles "
+            "WHERE LOWER(name) = 'admin' "
+            "AND is_system_role = TRUE "
+            "AND organization_id IS NULL "
+            "ORDER BY created_at ASC "
+            "LIMIT 1"
+        )
     )
     admin = admin_res.fetchone() if admin_res else None
 
@@ -199,36 +206,48 @@ def upgrade() -> None:
     else:
         admin_id = admin[0]
 
-    # 3. Attach all non-superadmin permissions to the Admin role
-    all_perm_rows = connection.execute(
-        sa.text(
-            "SELECT id FROM permissions WHERE key IS NOT NULL AND key != 'all' AND key != 'super_admin:manage'"
-        )
-    ).fetchall()
+    # 3. Attach ONLY standard catalog permissions to the system Admin role
+    standard_keys = tuple(
+        p["key"]
+        for p in STANDARD_PERMISSIONS
+        if p.get("key") and p["key"] != "all" and p["key"] != "super_admin:manage"
+    )
 
-    existing_rp = {
-        row[0]
-        for row in connection.execute(
-            sa.text("SELECT permission_id FROM role_permissions WHERE role_id = :role_id"),
-            {"role_id": admin_id},
+    if standard_keys:
+        all_perm_rows = connection.execute(
+            sa.text(
+                "SELECT id FROM permissions "
+                "WHERE key IN :keys "
+                "AND key IS NOT NULL "
+                "AND key != 'all' "
+                "AND key != 'super_admin:manage'"
+            ).bindparams(sa.bindparam("keys", expanding=True)),
+            {"keys": standard_keys},
         ).fetchall()
-    }
 
-    for row in all_perm_rows:
-        perm_id = row[0]
-        if perm_id not in existing_rp:
-            connection.execute(
-                sa.text(
-                    "INSERT INTO role_permissions (id, role_id, permission_id) "
-                    "VALUES (:id, :role_id, :permission_id)"
-                ),
-                {
-                    "id": str(uuid.uuid4()),
-                    "role_id": admin_id,
-                    "permission_id": perm_id,
-                },
-            )
-            existing_rp.add(perm_id)
+        existing_rp = {
+            row[0]
+            for row in connection.execute(
+                sa.text("SELECT permission_id FROM role_permissions WHERE role_id = :role_id"),
+                {"role_id": admin_id},
+            ).fetchall()
+        }
+
+        for row in all_perm_rows:
+            perm_id = row[0]
+            if perm_id not in existing_rp:
+                connection.execute(
+                    sa.text(
+                        "INSERT INTO role_permissions (id, role_id, permission_id) "
+                        "VALUES (:id, :role_id, :permission_id)"
+                    ),
+                    {
+                        "id": str(uuid.uuid4()),
+                        "role_id": admin_id,
+                        "permission_id": perm_id,
+                    },
+                )
+                existing_rp.add(perm_id)
 
 
 def downgrade() -> None:

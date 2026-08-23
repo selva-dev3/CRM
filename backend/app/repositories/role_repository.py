@@ -107,38 +107,55 @@ class RoleRepository:
 
     async def seed_permissions(self, db: AsyncSession, items: list[dict]) -> None:
         from sqlalchemy import func
+        from sqlalchemy.exc import IntegrityError
 
         p_res = await db.execute(select(Permission.key))
         existing_keys = {str(k).strip() for k in p_res.scalars().all() if k}
         new_count = 0
         for item in items:
-            key_str = item["key"]
+            key_str = item.get("key")
             if key_str and key_str != "all" and key_str not in existing_keys:
                 db.add(
                     Permission(
                         key=key_str,
-                        name=item["name"],
-                        category=item["category"],
-                        description=item["description"],
+                        name=item.get("name", key_str),
+                        category=item.get("category", "General"),
+                        description=item.get("description", ""),
                     )
                 )
                 existing_keys.add(key_str)
                 new_count += 1
         if new_count > 0:
-            await db.flush()
+            try:
+                await db.flush()
+            except IntegrityError:
+                await db.rollback()
+                p_res = await db.execute(select(Permission.key))
+                existing_keys = {str(k).strip() for k in p_res.scalars().all() if k}
+                new_count = 0
 
-        # Ensure the system Admin role has all standard permissions attached
+        # Ensure ONLY the global system Admin role has standard permissions attached
         admin_role_res = await db.execute(
-            select(Role).where(func.lower(Role.name) == "admin").limit(1)
+            select(Role)
+            .where(
+                func.lower(Role.name) == "admin",
+                Role.is_system_role.is_(True),
+                Role.organization_id.is_(None),
+            )
+            .order_by(Role.created_at.asc())
+            .limit(1)
         )
         admin_role = admin_role_res.scalars().first()
         if admin_role:
+            standard_keys = [
+                item["key"]
+                for item in items
+                if item.get("key")
+                and item["key"] != "all"
+                and item["key"] != "super_admin:manage"
+            ]
             all_perms_res = await db.execute(
-                select(Permission).where(
-                    Permission.key.isnot(None),
-                    Permission.key != "all",
-                    Permission.key != "super_admin:manage",
-                )
+                select(Permission).where(Permission.key.in_(standard_keys))
             )
             all_perms = all_perms_res.scalars().all()
             existing_rp_res = await db.execute(
@@ -154,7 +171,10 @@ class RoleRepository:
                     new_count += 1
 
         if new_count > 0:
-            await db.commit()
+            try:
+                await db.commit()
+            except IntegrityError:
+                await db.rollback()
 
     # --- RolePermission mapping ---
     async def get_role_permissions(self, db: AsyncSession, role_id: str) -> Sequence[Permission]:

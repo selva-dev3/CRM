@@ -42,11 +42,13 @@ async def lifespan(app: FastAPI):
     try:
         from app.repositories.role_repository import RoleRepository
         from app.services.role_service import ALL_STANDARD_PERMISSIONS
+        from sqlalchemy.exc import SQLAlchemyError
+
         async with AsyncSessionLocal() as session:
             await RoleRepository().seed_permissions(session, ALL_STANDARD_PERMISSIONS)
         logger.info("Standard RBAC permissions and system Admin role synced successfully")
-    except Exception as e:
-        logger.warning("Could not sync standard RBAC permissions during startup: %s", e)
+    except SQLAlchemyError:
+        logger.exception("Database error occurred while syncing standard RBAC permissions during startup")
 
     yield
 
