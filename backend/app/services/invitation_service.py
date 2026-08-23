@@ -426,19 +426,32 @@ async def create_organization_user_invitation(
     payload: OrganizationInviteRequest,
     current_user: User
 ) -> InviteUserResponse:
-    """Invite new users via email returning only token, invite_url, and success message."""
-    target_org_id = payload.organization_id if (payload.organization_id and payload.organization_id.strip()) else None
+    """Invite new users via email returning only token, invite_url, and success message.
 
-    org = None
-    sub = None
-    if target_org_id:
-        org = await db.scalar(select(Organization).where(Organization.id == target_org_id))
-        if org and (getattr(org, "status", "active") != "active" or not getattr(org, "is_active", True)):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Organization is inactive or disabled."
-            )
-        sub = await db.scalar(select(OrganizationSubscription).where(OrganizationSubscription.organization_id == target_org_id))
+    The target organization is ALWAYS derived from the authenticated user's
+    current organization — a client-supplied ``organization_id`` is never
+    trusted, so an inviter cannot place another user into an organization they
+    do not belong to.
+    """
+    target_org_id = getattr(current_user, "organization_id", None)
+    if not target_org_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Authenticated user has no current organization",
+        )
+
+    org = await db.scalar(select(Organization).where(Organization.id == target_org_id))
+    if not org:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Current organization not found",
+        )
+    if getattr(org, "status", "active") != "active" or not getattr(org, "is_active", True):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Organization is inactive or disabled."
+        )
+    sub = await db.scalar(select(OrganizationSubscription).where(OrganizationSubscription.organization_id == target_org_id))
 
     # Resolve & authorize the requested role (super_admin only assignable by a super_admin actor)
     role = await _resolve_invitation_role(db, current_user, payload.role or "Admin")
@@ -468,7 +481,7 @@ async def create_organization_user_invitation(
         existing_inv.expires_at = expires_at
         existing_inv.role_id = role_name
         existing_inv.full_name = payload.full_name or existing_inv.full_name
-        existing_inv.organization_id = target_org_id or existing_inv.organization_id
+        existing_inv.organization_id = target_org_id
         invitation = existing_inv
     else:
         invitation = OrganizationInvitation(

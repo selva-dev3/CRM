@@ -125,7 +125,7 @@ export async function createUserApi(payload: UserCreatePayload): Promise<UserIte
       name: payload.name,
       email: payload.email,
       password: payload.password || 'Password123!',
-      role: payload.role || 'Representative',
+      role: payload.role,
     }),
   });
 }
