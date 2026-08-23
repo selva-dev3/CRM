@@ -194,8 +194,8 @@ export async function getSubscriptionPlansApi(): Promise<SubscriptionPlanItem[]>
 }
 
 // 9. POST /api/v1/organizations/subscription/upgrade (Upgrade plan)
-export async function upgradeOrganizationSubscriptionApi(planName: string): Promise<{ message: string; status: string }> {
-  return apiClient.post<{ message: string; status: string }>(`/organizations/subscription/upgrade?plan_name=${encodeURIComponent(planName)}`);
+export async function upgradeOrganizationSubscriptionApi(planSlug: string): Promise<{ message: string; status: string }> {
+  return apiClient.post<{ message: string; status: string }>(`/organizations/subscription/upgrade?plan_slug=${encodeURIComponent(planSlug)}`);
 }
 
 // 10. POST /api/v1/organizations/subscription/cancel (Cancel subscription)
@@ -310,6 +310,8 @@ export function useUpgradeSubscriptionMutation() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['organization-subscription'] });
       queryClient.invalidateQueries({ queryKey: ['current-organization'] });
+      queryClient.invalidateQueries({ queryKey: ['organization-usage'] });
+      queryClient.invalidateQueries({ queryKey: ['organizations'] });
     },
   });
 }
