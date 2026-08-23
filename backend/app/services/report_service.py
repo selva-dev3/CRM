@@ -1,4 +1,5 @@
 import calendar as py_cal
+import csv
 import io
 import re
 from datetime import datetime, timedelta, timezone
@@ -7,10 +8,15 @@ from typing import Any, Optional, Sequence
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import APIException, NotFoundError
+from app.core.errors import APIException, ForbiddenError, NotFoundError
+from app.core.logging import get_logger
 from app.models.user import User
 from app.repositories.report_repository import ReportRepository
 from app.services.s3_service import s3_service
+
+logger = get_logger(__name__)
+
+_CSV_FORMULA_PREFIXES = ("=", "+", "-", "@")
 
 EMAIL_REGEX = re.compile(r"^[\w\.\+\-]+@[a-zA-Z0-9\-]+(\.[a-zA-Z0-9\-]+)+$")
 VALID_FREQUENCIES = {"Daily", "Weekly", "Monthly"}
@@ -57,17 +63,30 @@ class ReportService:
     async def _resolve_org_id(
         self, db: AsyncSession, org_id: Optional[str] = None, current_user: Optional[User] = None
     ) -> str:
-        if current_user and getattr(current_user, "organization_id", None):
-            return current_user.organization_id
-        if org_id and org_id.strip():
-            return org_id.strip()
-        resolved = await self.repository.get_org_id(db, current_user)
-        if resolved:
-            return resolved
-        raise APIException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            message="Organization context is required for report queries.",
+        """Resolve organization strictly from the authenticated user.
+
+        Never falls back to selecting an arbitrary organization from the
+        database.  If an explicit *org_id* is supplied by the caller it
+        must match the authenticated user's organization.
+        """
+        user_org = (
+            current_user.organization_id
+            if current_user and getattr(current_user, "organization_id", None)
+            else None
         )
+
+        if not user_org:
+            raise ForbiddenError(
+                message="Organization context is required. Please ensure your account is associated with an organization.",
+            )
+
+        # If the caller also passed an explicit org_id, verify it matches.
+        if org_id and org_id.strip() and org_id.strip() != user_org:
+            raise ForbiddenError(
+                message="You do not have access to the requested organization.",
+            )
+
+        return user_org
 
     async def get_sales_performance_report(
         self, db: AsyncSession, org_id: Optional[str] = None, current_user: Optional[User] = None
@@ -470,10 +489,16 @@ class ReportService:
         }
 
     async def list_custom_reports(
-        self, db: AsyncSession, org_id: Optional[str] = None, current_user: Optional[User] = None
+        self,
+        db: AsyncSession,
+        org_id: Optional[str] = None,
+        current_user: Optional[User] = None,
+        *,
+        limit: int = 20,
+        offset: int = 0,
     ) -> list[dict]:
         target_org = await self._resolve_org_id(db, org_id, current_user)
-        reports = await self.repository.list_custom_reports(db, target_org)
+        reports = await self.repository.list_custom_reports(db, target_org, limit=limit, offset=offset)
         return [
             {
                 "id": r.id,
@@ -566,7 +591,6 @@ class ReportService:
         db: AsyncSession,
         report_type: str = "sales-performance",
         org_id: Optional[str] = None,
-        user_id: Optional[str] = None,
         current_user: Optional[User] = None,
     ) -> dict:
         if report_type not in VALID_REPORT_TYPES:
@@ -576,16 +600,14 @@ class ReportService:
             )
 
         target_org = await self._resolve_org_id(db, org_id, current_user)
-        requesting_user_id = user_id or (current_user.id if current_user and getattr(current_user, "id", None) else None)
+        requesting_user_id = current_user.id if current_user and getattr(current_user, "id", None) else None
         if not requesting_user_id:
-            requesting_user_id = await self.repository.resolve_org_user_id(db, target_org)
-        if not requesting_user_id:
-            raise APIException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                message="Cannot export report: no valid user identified for this organization.",
+            raise ForbiddenError(
+                message="Authenticated user is required to export reports.",
             )
 
-        pdf_url = f"https://api.crm.com/exports/analytics_{target_org}_{report_type}.pdf"
+        # PDF generation is asynchronous — record the pending export and return
+        # its ID so clients can poll for completion.
         try:
             export = await self.repository.create_export(
                 db,
@@ -593,28 +615,41 @@ class ReportService:
                     "organization_id": target_org,
                     "report_type": report_type,
                     "file_format": "pdf",
-                    "download_url": pdf_url,
+                    "download_url": "",  # populated when generation completes
                     "requested_by": requesting_user_id,
                 },
             )
             await self._commit(db, "Failed to record PDF export")
             await db.refresh(export)
-            return {"pdf_url": export.download_url}
+            return {
+                "pdf_url": "",
+                "export_id": export.id,
+                "status": "pending",
+                "message": f"PDF export for '{report_type}' has been queued. Use the export_id to check status.",
+            }
         except APIException:
             raise
         except Exception as e:
             await db.rollback()
+            logger.exception("Failed to record PDF export for org=%s report=%s", target_org, report_type)
             raise APIException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                message=f"Failed to export PDF report: {str(e)}",
+                message="Unable to start PDF export. Please try again later.",
             ) from e
+
+    @staticmethod
+    def _sanitize_csv_cell(value: Any) -> str:
+        """Prevent CSV formula injection by prefixing dangerous values."""
+        s = str(value) if value is not None else ""
+        if s and s[0] in _CSV_FORMULA_PREFIXES:
+            return "'" + s
+        return s
 
     async def export_report_csv(
         self,
         db: AsyncSession,
         report_type: str = "sales-performance",
         org_id: Optional[str] = None,
-        user_id: Optional[str] = None,
         current_user: Optional[User] = None,
     ) -> dict:
         if report_type not in VALID_REPORT_TYPES:
@@ -624,31 +659,41 @@ class ReportService:
             )
 
         target_org = await self._resolve_org_id(db, org_id, current_user)
-        requesting_user_id = user_id or (current_user.id if current_user and getattr(current_user, "id", None) else None)
+        requesting_user_id = current_user.id if current_user and getattr(current_user, "id", None) else None
         if not requesting_user_id:
-            requesting_user_id = await self.repository.resolve_org_user_id(db, target_org)
-        if not requesting_user_id:
-            raise APIException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                message="Cannot export report: no valid user identified for this organization.",
+            raise ForbiddenError(
+                message="Authenticated user is required to export reports.",
             )
 
         deals = await self.repository.deals_for_csv(db, target_org)
-        csv_rows = ["Title,Amount,Stage,Generated At"]
-        for title, amount, stage in deals:
-            csv_rows.append(f'"{title}",{amount},"{stage}",{today_str()}')
-        if len(csv_rows) == 1:
-            csv_rows.append(f"Report Type,{report_type},{today_str()}")
 
-        csv_content = "\n".join(csv_rows).encode("utf-8")
+        # Build CSV using the standard library writer for proper escaping.
+        buf = io.StringIO()
+        writer = csv.writer(buf, quoting=csv.QUOTE_ALL)
+        writer.writerow(["Title", "Amount", "Stage", "Generated At"])
+        for title, amount, stage in deals:
+            writer.writerow([
+                self._sanitize_csv_cell(title),
+                self._sanitize_csv_cell(amount),
+                self._sanitize_csv_cell(stage),
+                today_str(),
+            ])
+        if not deals:
+            writer.writerow(["Report Type", report_type, today_str(), ""])
+
+        csv_content = buf.getvalue().encode("utf-8")
         timestamp_int = int(datetime.now(timezone.utc).timestamp())
         object_name = f"exports/{target_org}_{report_type}_{timestamp_int}.csv"
         try:
             file_obj = io.BytesIO(csv_content)
             s3_key = s3_service.upload_file(file_obj, object_name=object_name, content_type="text/csv")
             csv_url = s3_service.generate_presigned_url(s3_key)
-        except Exception:
-            csv_url = f"https://api.crm.com/exports/{object_name}"
+        except Exception as e:
+            logger.exception("S3 upload failed for CSV export org=%s report=%s", target_org, report_type)
+            raise APIException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                message="Failed to upload CSV to storage. Please try again later.",
+            ) from e
 
         try:
             export = await self.repository.create_export(
@@ -668,9 +713,10 @@ class ReportService:
             raise
         except Exception as e:
             await db.rollback()
+            logger.exception("Failed to record CSV export for org=%s report=%s", target_org, report_type)
             raise APIException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                message=f"Failed to export CSV report: {str(e)}",
+                message="Unable to complete CSV export. Please try again later.",
             ) from e
 
     async def schedule_report_email(
@@ -719,10 +765,16 @@ class ReportService:
         return {"message": f"Scheduled {clean_freq} report delivery of '{report_type}' to {clean_email}", "status": "success"}
 
     async def list_scheduled_reports(
-        self, db: AsyncSession, org_id: Optional[str] = None, current_user: Optional[User] = None
+        self,
+        db: AsyncSession,
+        org_id: Optional[str] = None,
+        current_user: Optional[User] = None,
+        *,
+        limit: int = 20,
+        offset: int = 0,
     ) -> list[dict]:
         target_org = await self._resolve_org_id(db, org_id, current_user)
-        items = await self.repository.list_scheduled_reports(db, target_org)
+        items = await self.repository.list_scheduled_reports(db, target_org, limit=limit, offset=offset)
         return [
             {
                 "id": s.id,

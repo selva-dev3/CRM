@@ -20,15 +20,6 @@ from app.models import (
 class ReportRepository:
     """Query layer for report aggregation and report entity persistence."""
 
-    async def get_org_id(self, db: AsyncSession, current_user: Optional[Any] = None) -> str:
-        from app.api.v1.deps import get_valid_org_id
-
-        return await get_valid_org_id(db, current_user)
-
-    async def resolve_org_user_id(self, db: AsyncSession, org_id: str) -> Optional[str]:
-        res = await db.execute(select(User.id).where(User.organization_id == org_id).limit(1))
-        return res.scalar_one_or_none()
-
     # --- Sales Performance ---
     async def total_won_revenue(self, db: AsyncSession, org_id: str) -> float:
         res = await db.execute(
@@ -201,11 +192,14 @@ class ReportRepository:
         return list(res.all())
 
     # --- Custom Reports ---
-    async def list_custom_reports(self, db: AsyncSession, org_id: str, limit: int = 100) -> Sequence[CustomReport]:
+    async def list_custom_reports(
+        self, db: AsyncSession, org_id: str, *, limit: int = 20, offset: int = 0
+    ) -> Sequence[CustomReport]:
         stmt = (
             select(CustomReport)
             .where(CustomReport.organization_id == org_id)
             .order_by(CustomReport.created_at.desc())
+            .offset(offset)
             .limit(limit)
         )
         res = await db.execute(stmt)
@@ -242,11 +236,14 @@ class ReportRepository:
         db.add(report)
         return report
 
-    async def list_scheduled_reports(self, db: AsyncSession, org_id: str, limit: int = 100) -> Sequence[ScheduledReport]:
+    async def list_scheduled_reports(
+        self, db: AsyncSession, org_id: str, *, limit: int = 20, offset: int = 0
+    ) -> Sequence[ScheduledReport]:
         stmt = (
             select(ScheduledReport)
             .where(ScheduledReport.organization_id == org_id)
             .order_by(ScheduledReport.created_at.desc())
+            .offset(offset)
             .limit(limit)
         )
         res = await db.execute(stmt)
