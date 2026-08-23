@@ -271,6 +271,21 @@ async def export_report_csv(
     )
 
 
+@router.get(
+    "/exports/{export_id}/download",
+    summary="Mint a fresh presigned download URL for a previously generated export",
+    dependencies=[Depends(require_permission("reports:export"))],
+)
+async def get_export_download(
+    export_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await report_service.get_export_download(
+        db, export_id=export_id, current_user=current_user
+    )
+
+
 @router.post(
     "/schedule",
     response_model=MessageResponse,

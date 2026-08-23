@@ -51,13 +51,13 @@ class ScheduledReportItem(BaseModel):
 
 
 class ScheduleReportCreate(BaseModel):
-    report_type: str = Field(..., min_length=1, max_length=100)
+    report_type: ReportTypeEnum
     email: EmailStr
     frequency: ReportFrequencyEnum = ReportFrequencyEnum.WEEKLY
 
 
 class ExportReportRequest(BaseModel):
-    report_type: str = Field(default="sales-performance", max_length=100)
+    report_type: ReportTypeEnum = ReportTypeEnum.SALES_PERFORMANCE
 
 
 class PdfExportResponse(BaseModel):
