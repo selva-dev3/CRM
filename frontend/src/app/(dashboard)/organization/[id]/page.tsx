@@ -261,56 +261,46 @@ export default function OrganizationDetailPage({ isCurrentOrgView = false }: { i
   return (
     <div className="space-y-6 text-[#374151]">
       {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-[#E5E7EB]">
-        <div>
-          <div className="flex items-center gap-3 mb-2">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-[#E5E7EB] w-full">
+        <div className="w-full sm:w-auto min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-2">
             <button
               type="button"
               onClick={() => router.push('/settings')}
-              className="text-caption font-semibold text-slate-600 hover:text-slate-900 flex items-center gap-1.5 cursor-pointer bg-white px-2.5 py-1 rounded-md border border-slate-300 shadow-xs"
+              className="text-caption font-semibold text-slate-600 hover:text-slate-900 flex items-center gap-1.5 cursor-pointer bg-white px-2.5 py-1 rounded-md border border-slate-300 shadow-xs transition-colors"
             >
               <ArrowLeft className="w-3.5 h-3.5 text-slate-500" />
               <span>Back to Settings</span>
             </button>
-            {!isCurrentOrgView && (
-              <button
-                type="button"
-                onClick={() => router.push('/organization')}
-                className="text-caption font-semibold text-[#2563EB] hover:underline flex items-center gap-1.5 cursor-pointer"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                <span>Back to Organizations List</span>
-              </button>
-            )}
           </div>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-btn bg-[#2563EB] text-white flex items-center justify-center font-bold shadow-saas-sm">
+          <div className="flex items-start sm:items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-btn bg-[#2563EB] text-white flex items-center justify-center font-bold shadow-saas-sm shrink-0 mt-0.5 sm:mt-0">
               {activeOrg.logo_url ? (
                 <img src={activeOrg.logo_url} alt={activeOrg.name} className="w-full h-full object-cover rounded-btn" />
               ) : (
                 <Building className="w-5 h-5" />
               )}
             </div>
-            <div>
-              <h1 className="text-page-title flex items-center gap-2">
-                <span>{activeOrg.name}</span>
-                <Badge className="bg-purple-50 text-purple-700 border-purple-200 text-badge font-mono">
+            <div className="min-w-0 flex-1">
+              <h1 className="text-page-title flex flex-wrap items-center gap-2 break-words">
+                <span className="break-words">{activeOrg.name}</span>
+                <Badge className="bg-purple-50 text-purple-700 border-purple-200 text-badge font-mono shrink-0">
                   {activeOrg.plan || 'Enterprise'} Plan
                 </Badge>
               </h1>
-              <p className="text-caption text-[#6B7280] mt-0.5 font-mono">
+              <p className="text-caption text-[#6B7280] mt-0.5 font-mono truncate break-all">
                 Domain: {activeOrg.domain || `${activeOrg.slug || 'org'}.crm.com`}
               </p>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0">
           <Button
             onClick={handleUpdateProfile}
             disabled={updateOrgMutation.isPending}
             variant="primary"
-            className="shadow-saas-sm px-4 text-button cursor-pointer"
+            className="shadow-saas-sm px-4 text-button cursor-pointer w-full sm:w-auto"
           >
             <Save className="w-4 h-4 mr-2" />
             <span>{updateOrgMutation.isPending ? 'Saving...' : 'Save Profile'}</span>
@@ -333,7 +323,7 @@ export default function OrganizationDetailPage({ isCurrentOrgView = false }: { i
       )}
 
       {/* Top Overview Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="p-4 bg-white border border-[#E5E7EB] shadow-saas-sm rounded-btn flex items-center gap-3">
           <div className="w-10 h-10 rounded-btn bg-[#2563EB]/10 text-[#2563EB] flex items-center justify-center font-bold">
             <Building className="w-5 h-5" />
@@ -380,95 +370,95 @@ export default function OrganizationDetailPage({ isCurrentOrgView = false }: { i
       </div>
 
       {/* Detail Tabs Bar */}
-      <div className="flex items-center border-b border-[#E5E7EB] gap-2 text-button font-medium text-[#6B7280] overflow-x-auto pb-1">
+      <div className="flex items-center border-b border-[#E5E7EB] gap-1.5 sm:gap-2 text-button font-medium text-[#6B7280] overflow-x-auto pb-2 scrollbar-none w-full">
         <button
           type="button"
           onClick={() => setActiveTab('profile')}
-          className={`px-3 py-2 cursor-pointer transition rounded-btn flex items-center gap-2 ${
+          className={`px-3 py-2 cursor-pointer transition rounded-btn flex items-center gap-2 shrink-0 whitespace-nowrap text-caption sm:text-button ${
             activeTab === 'profile'
               ? 'bg-[#2563EB]/10 text-[#2563EB] font-semibold border border-[#2563EB]/20 shadow-saas-sm'
               : 'hover:text-[#111827] hover:bg-[#F3F4F6]'
           }`}
         >
-          <Building className="w-4 h-4" />
+          <Building className="w-4 h-4 shrink-0" />
           <span>Org Profile & Details</span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab('branding')}
-          className={`px-3 py-2 cursor-pointer transition rounded-btn flex items-center gap-2 ${
+          className={`px-3 py-2 cursor-pointer transition rounded-btn flex items-center gap-2 shrink-0 whitespace-nowrap text-caption sm:text-button ${
             activeTab === 'branding'
               ? 'bg-[#2563EB]/10 text-[#2563EB] font-semibold border border-[#2563EB]/20 shadow-saas-sm'
               : 'hover:text-[#111827] hover:bg-[#F3F4F6]'
           }`}
         >
-          <Upload className="w-4 h-4" />
+          <Upload className="w-4 h-4 shrink-0" />
           <span>S3 Branding & Logo</span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab('members')}
-          className={`px-3 py-2 cursor-pointer transition rounded-btn flex items-center gap-2 ${
+          className={`px-3 py-2 cursor-pointer transition rounded-btn flex items-center gap-2 shrink-0 whitespace-nowrap text-caption sm:text-button ${
             activeTab === 'members'
               ? 'bg-[#2563EB]/10 text-[#2563EB] font-semibold border border-[#2563EB]/20 shadow-saas-sm'
               : 'hover:text-[#111827] hover:bg-[#F3F4F6]'
           }`}
         >
-          <UserCheck className="w-4 h-4" />
+          <UserCheck className="w-4 h-4 shrink-0" />
           <span>Members & Team</span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab('subscription')}
-          className={`px-3 py-2 cursor-pointer transition rounded-btn flex items-center gap-2 ${
+          className={`px-3 py-2 cursor-pointer transition rounded-btn flex items-center gap-2 shrink-0 whitespace-nowrap text-caption sm:text-button ${
             activeTab === 'subscription'
               ? 'bg-[#2563EB]/10 text-[#2563EB] font-semibold border border-[#2563EB]/20 shadow-saas-sm'
               : 'hover:text-[#111827] hover:bg-[#F3F4F6]'
           }`}
         >
-          <CreditCard className="w-4 h-4" />
+          <CreditCard className="w-4 h-4 shrink-0" />
           <span>Subscription & Billing</span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab('usage')}
-          className={`px-3 py-2 cursor-pointer transition rounded-btn flex items-center gap-2 ${
+          className={`px-3 py-2 cursor-pointer transition rounded-btn flex items-center gap-2 shrink-0 whitespace-nowrap text-caption sm:text-button ${
             activeTab === 'usage'
               ? 'bg-[#2563EB]/10 text-[#2563EB] font-semibold border border-[#2563EB]/20 shadow-saas-sm'
               : 'hover:text-[#111827] hover:bg-[#F3F4F6]'
           }`}
         >
-          <Zap className="w-4 h-4" />
+          <Zap className="w-4 h-4 shrink-0" />
           <span>Usage Quotas</span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab('domains')}
-          className={`px-3 py-2 cursor-pointer transition rounded-btn flex items-center gap-2 ${
+          className={`px-3 py-2 cursor-pointer transition rounded-btn flex items-center gap-2 shrink-0 whitespace-nowrap text-caption sm:text-button ${
             activeTab === 'domains'
               ? 'bg-[#2563EB]/10 text-[#2563EB] font-semibold border border-[#2563EB]/20 shadow-saas-sm'
               : 'hover:text-[#111827] hover:bg-[#F3F4F6]'
           }`}
         >
-          <Globe className="w-4 h-4" />
+          <Globe className="w-4 h-4 shrink-0" />
           <span>Custom Domains</span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab('ownership')}
-          className={`px-3 py-2 cursor-pointer transition rounded-btn flex items-center gap-2 ${
+          className={`px-3 py-2 cursor-pointer transition rounded-btn flex items-center gap-2 shrink-0 whitespace-nowrap text-caption sm:text-button ${
             activeTab === 'ownership'
               ? 'bg-[#2563EB]/10 text-[#2563EB] font-semibold border border-[#2563EB]/20 shadow-saas-sm'
               : 'hover:text-[#111827] hover:bg-[#F3F4F6]'
           }`}
         >
-          <ArrowRightLeft className="w-4 h-4" />
+          <ArrowRightLeft className="w-4 h-4 shrink-0" />
           <span>Ownership & Audit Logs</span>
         </button>
       </div>
@@ -660,35 +650,43 @@ export default function OrganizationDetailPage({ isCurrentOrgView = false }: { i
 
       {/* TAB 4: SUBSCRIPTION */}
       {activeTab === 'subscription' && (
-        <Card className="p-6 bg-white border border-[#E5E7EB] shadow-saas-sm rounded-btn space-y-4">
-          <div className="flex items-center justify-between border-b border-[#E5E7EB] pb-3">
-            <h3 className="font-semibold text-[#111827] text-subheading flex items-center gap-2">
-              <CreditCard className="w-5 h-5 text-[#2563EB]" />
+        <Card className="p-4 sm:p-6 bg-white border border-[#E5E7EB] shadow-saas-sm rounded-btn space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4 border-b border-[#E5E7EB] pb-3">
+            <h3 className="font-semibold text-[#111827] text-body sm:text-subheading flex items-center gap-2">
+              <CreditCard className="w-5 h-5 text-[#2563EB] shrink-0" />
               <span>Subscription & Billing Details</span>
             </h3>
-            <Badge className="bg-[#16A34A]/10 text-[#16A34A] border-[#16A34A]/20">Active Billing</Badge>
+            <Badge className="bg-[#16A34A]/10 text-[#16A34A] border-[#16A34A]/20 self-start sm:self-auto shrink-0">
+              Active Billing
+            </Badge>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="p-4 bg-[#F9FAFB] rounded-btn border border-[#E5E7EB]">
-              <div className="text-caption text-[#9CA3AF] font-bold uppercase">Plan Tier</div>
-              <div className="text-subheading font-bold text-[#111827] mt-0.5">{subscription?.plan || activeOrg.plan || 'Enterprise'}</div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+            <div className="p-3.5 sm:p-4 bg-[#F9FAFB] rounded-btn border border-[#E5E7EB]">
+              <div className="text-caption text-[#9CA3AF] font-bold uppercase text-xs">Plan Tier</div>
+              <div className="text-body sm:text-subheading font-bold text-[#111827] mt-0.5 break-words">
+                {subscription?.plan || activeOrg.plan || 'Enterprise'}
+              </div>
             </div>
-            <div className="p-4 bg-[#F9FAFB] rounded-btn border border-[#E5E7EB]">
-              <div className="text-caption text-[#9CA3AF] font-bold uppercase">Billing Cycle</div>
-              <div className="text-subheading font-bold text-[#111827] mt-0.5">{subscription?.billing_cycle || 'Monthly'}</div>
+            <div className="p-3.5 sm:p-4 bg-[#F9FAFB] rounded-btn border border-[#E5E7EB]">
+              <div className="text-caption text-[#9CA3AF] font-bold uppercase text-xs">Billing Cycle</div>
+              <div className="text-body sm:text-subheading font-bold text-[#111827] mt-0.5 break-words">
+                {subscription?.billing_cycle || 'Monthly'}
+              </div>
             </div>
-            <div className="p-4 bg-[#F9FAFB] rounded-btn border border-[#E5E7EB]">
-              <div className="text-caption text-[#9CA3AF] font-bold uppercase">Price</div>
-              <div className="text-subheading font-bold text-[#111827] mt-0.5">₹{subscription?.amount || 29990}/mo</div>
+            <div className="p-3.5 sm:p-4 bg-[#F9FAFB] rounded-btn border border-[#E5E7EB]">
+              <div className="text-caption text-[#9CA3AF] font-bold uppercase text-xs">Price</div>
+              <div className="text-body sm:text-subheading font-bold text-[#111827] mt-0.5 break-words">
+                ₹{subscription?.amount || 29990}/mo
+              </div>
             </div>
           </div>
 
-          <div className="flex gap-3 pt-2">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3 pt-2">
             <Button
               onClick={() => router.push(`/organization/subscription/plans?org_id=${encodeURIComponent(activeOrg.id)}`)}
               variant="primary"
-              className="cursor-pointer shadow-saas-sm"
+              className="cursor-pointer shadow-saas-sm w-full sm:w-auto"
             >
               Upgrade Plan Tier
             </Button>
@@ -696,7 +694,7 @@ export default function OrganizationDetailPage({ isCurrentOrgView = false }: { i
               variant="outline"
               onClick={handleCancelSub}
               disabled={cancelSubMutation.isPending}
-              className="border-[#DC2626]/30 text-[#DC2626] hover:bg-[#DC2626]/10 cursor-pointer font-semibold"
+              className="border-[#DC2626]/30 text-[#DC2626] hover:bg-[#DC2626]/10 cursor-pointer font-semibold w-full sm:w-auto"
             >
               Cancel Subscription
             </Button>
@@ -806,10 +804,10 @@ export default function OrganizationDetailPage({ isCurrentOrgView = false }: { i
           </Card>
 
           {/* Audit Logs Table */}
-          <Card className="p-6 bg-white border border-[#E5E7EB] shadow-saas-sm rounded-btn space-y-4">
+          <Card className="p-4 sm:p-6 bg-white border border-[#E5E7EB] shadow-saas-sm rounded-btn space-y-4">
             <div className="border-b border-[#E5E7EB] pb-3">
-              <h3 className="font-semibold text-[#111827] text-subheading flex items-center gap-2">
-                <FileText className="w-5 h-5 text-[#2563EB]" />
+              <h3 className="font-semibold text-[#111827] text-body sm:text-subheading flex items-center gap-2">
+                <FileText className="w-5 h-5 text-[#2563EB] shrink-0" />
                 <span>Audit Logs History</span>
               </h3>
             </div>
@@ -817,16 +815,25 @@ export default function OrganizationDetailPage({ isCurrentOrgView = false }: { i
             <div className="space-y-2">
               {auditLogs.length > 0 ? (
                 auditLogs.map((log) => (
-                  <div key={log.id} className="p-3 bg-[#F9FAFB] rounded-btn border border-[#E5E7EB] flex items-center justify-between text-body">
-                    <div>
-                      <div className="font-semibold text-[#111827]">{log.action}</div>
-                      <div className="text-caption text-[#6B7280]">Actor: {log.actor} • IP: {log.ip || '127.0.0.1'}</div>
+                  <div
+                    key={log.id}
+                    className="p-3 sm:p-3.5 bg-[#F9FAFB] rounded-btn border border-[#E5E7EB] flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4 text-body transition-colors hover:bg-[#F3F4F6]/60"
+                  >
+                    <div className="min-w-0 flex-1 space-y-0.5">
+                      <div className="font-semibold text-[#111827] break-words text-caption sm:text-body">
+                        {log.action}
+                      </div>
+                      <div className="text-caption text-[#6B7280] break-all sm:break-normal">
+                        Actor: {log.actor} • IP: {log.ip || '127.0.0.1'}
+                      </div>
                     </div>
-                    <div className="text-caption text-[#9CA3AF] font-mono">{log.timestamp}</div>
+                    <div className="text-caption text-[#9CA3AF] font-mono text-xs sm:text-caption shrink-0 self-start sm:self-auto">
+                      {log.timestamp}
+                    </div>
                   </div>
                 ))
               ) : (
-                <div className="p-4 text-center text-body text-[#6B7280] bg-[#F9FAFB] rounded-btn">
+                <div className="p-4 sm:p-6 text-center text-body text-[#6B7280] bg-[#F9FAFB] rounded-btn border border-dashed border-[#E5E7EB]">
                   No recent audit logs recorded.
                 </div>
               )}

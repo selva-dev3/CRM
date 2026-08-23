@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
@@ -662,23 +662,25 @@ export default function RolesPage() {
       )}
 
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2.5">
-            <ShieldCheck className="w-7 h-7 text-indigo-600" />
-            Roles & Permissions (RBAC)
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 w-full">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2 sm:gap-2.5 break-words">
+            <ShieldCheck className="w-6 h-6 sm:w-7 sm:h-7 text-indigo-600 shrink-0" />
+            <span>Roles & Permissions (RBAC)</span>
           </h1>
-          <p className="text-slate-500 text-sm mt-0.5">Configure granular permission matrices for Admins, Managers, Reps & custom organization roles</p>
+          <p className="text-slate-500 text-xs sm:text-sm mt-0.5">
+            Configure granular permission matrices for Admins, Managers, Reps & custom organization roles
+          </p>
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap">
+        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap w-full sm:w-auto">
           <PermissionGate permission="roles:read">
             <button
               onClick={handleExportSchema}
-              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer"
+              className="flex items-center justify-center gap-1.5 sm:gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer flex-1 sm:flex-initial min-w-[110px] sm:min-w-0"
             >
-              <Download className="w-4 h-4 text-slate-600" />
-              Export Schema
+              <Download className="w-4 h-4 text-slate-600 shrink-0" />
+              <span>Export Schema</span>
             </button>
           </PermissionGate>
 
@@ -686,40 +688,40 @@ export default function RolesPage() {
             <button
               onClick={handleImportSchema}
               disabled={importRolesMutation.isPending}
-              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer disabled:opacity-50"
+              className="flex items-center justify-center gap-1.5 sm:gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer disabled:opacity-50 flex-1 sm:flex-initial min-w-[110px] sm:min-w-0"
             >
-              {importRolesMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4 text-indigo-600" />}
-              Import JSON
+              {importRolesMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : <Upload className="w-4 h-4 text-indigo-600 shrink-0" />}
+              <span>Import JSON</span>
             </button>
           </PermissionGate>
 
           <PermissionGate permission="roles:read">
             <button
               onClick={() => setIsAuditModalOpen(true)}
-              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer"
+              className="flex items-center justify-center gap-1.5 sm:gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer flex-1 sm:flex-initial min-w-[100px] sm:min-w-0"
             >
-              <History className="w-4 h-4 text-purple-600" />
-              Audit Logs
+              <History className="w-4 h-4 text-purple-600 shrink-0" />
+              <span>Audit Logs</span>
             </button>
           </PermissionGate>
 
           <PermissionGate permission="roles:create">
             <button
               onClick={() => setIsPermModalOpen(true)}
-              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer"
+              className="flex items-center justify-center gap-1.5 sm:gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer flex-1 sm:flex-initial min-w-[120px] sm:min-w-0"
             >
-              <KeyRound className="w-4 h-4 text-emerald-600" />
-              + New Permission
+              <KeyRound className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>+ New Permission</span>
             </button>
           </PermissionGate>
 
           <PermissionGate permission="roles:create">
             <button
               onClick={handleOpenCreateModal}
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors shadow-sm cursor-pointer"
+              className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-xs sm:text-sm transition-colors shadow-sm cursor-pointer w-full sm:w-auto"
             >
-              <Plus className="w-4 h-4" />
-              Create Custom Role
+              <Plus className="w-4 h-4 shrink-0" />
+              <span>Create Custom Role</span>
             </button>
           </PermissionGate>
         </div>

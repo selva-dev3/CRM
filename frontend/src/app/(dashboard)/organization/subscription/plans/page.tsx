@@ -51,9 +51,16 @@ function SubscriptionPlansContent() {
     return plans.filter((p) => p.is_active !== false);
   }, [plans]);
 
-  const currentPlanName = currentSubscription?.plan?.toLowerCase() || '';
+  const currentPlanName = (currentSubscription?.plan_slug || currentSubscription?.plan || '').toLowerCase();
 
   const handleSelectPlan = (plan: SubscriptionPlanItem) => {
+    if (
+      currentPlanName &&
+      (plan.slug.toLowerCase() === currentPlanName ||
+        plan.name.toLowerCase() === currentPlanName)
+    ) {
+      return;
+    }
     setSelectedPlanSlug(plan.slug);
     setErrorMessage(null);
   };
@@ -67,7 +74,14 @@ function SubscriptionPlansContent() {
   };
 
   const handleUpgrade = async () => {
-    if (!selectedPlanSlug || checkoutMutation.isPending || isRedirecting) return;
+    if (
+      !selectedPlanSlug ||
+      (currentPlanName && selectedPlanSlug.toLowerCase() === currentPlanName) ||
+      checkoutMutation.isPending ||
+      isRedirecting
+    ) {
+      return;
+    }
     try {
       setErrorMessage(null);
       setSuccessMessage(null);
@@ -95,8 +109,8 @@ function SubscriptionPlansContent() {
   const selectedPlan = activePlans.find((p) => p.slug === selectedPlanSlug);
 
   return (
-    <div className="min-h-screen bg-[#F9FAFB] p-6 lg:p-10">
-      <div className="max-w-6xl mx-auto space-y-8">
+    <div className="min-h-screen bg-[#F9FAFB] p-4 sm:p-6 lg:p-8 w-full">
+      <div className="w-full max-w-[1600px] mx-auto space-y-6 lg:space-y-8">
         {/* HEADER & BACK BUTTON */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="space-y-1">
@@ -166,24 +180,29 @@ function SubscriptionPlansContent() {
 
         {/* PLANS GRID */}
         {!isPlansLoading && !isPlansError && activePlans.length > 0 && (
-          <div className="space-y-8">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-5">
+          <div className="space-y-6 lg:space-y-8 w-full">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 lg:gap-5 xl:gap-6">
               {activePlans.map((plan) => {
                 const isSelected = selectedPlanSlug === plan.slug;
                 const isCurrent =
-                  currentPlanName === plan.slug.toLowerCase() ||
-                  currentPlanName === plan.name.toLowerCase();
+                  Boolean(currentPlanName) &&
+                  (currentPlanName === plan.slug.toLowerCase() ||
+                    currentPlanName === plan.name.toLowerCase());
 
                 return (
                   <Card
                     key={plan.id || plan.slug}
-                    onClick={() => handleSelectPlan(plan)}
-                    className={`relative p-5 rounded-btn transition-all duration-200 cursor-pointer flex flex-col justify-between border ${
+                    onClick={() => {
+                      if (!isCurrent) {
+                        handleSelectPlan(plan);
+                      }
+                    }}
+                    className={`relative p-5 rounded-btn transition-all duration-200 flex flex-col justify-between border ${
                       isSelected
-                        ? 'border-[#2563EB] ring-2 ring-[#2563EB]/20 bg-white shadow-saas-md scale-[1.02]'
+                        ? 'border-[#2563EB] ring-2 ring-[#2563EB]/20 bg-white shadow-saas-md scale-[1.02] cursor-pointer'
                         : isCurrent
-                        ? 'border-[#16A34A]/40 bg-white hover:border-[#2563EB]/40 shadow-saas-sm'
-                        : 'border-[#E5E7EB] bg-white hover:border-[#2563EB]/40 hover:shadow-saas-sm'
+                        ? 'border-[#16A34A]/40 bg-[#F9FAFB]/60 shadow-saas-sm cursor-default'
+                        : 'border-[#E5E7EB] bg-white hover:border-[#2563EB]/40 hover:shadow-saas-sm cursor-pointer'
                     }`}
                   >
                     {/* TOP BADGES */}
@@ -268,14 +287,19 @@ function SubscriptionPlansContent() {
                     <Button
                       type="button"
                       variant={isSelected ? 'primary' : 'outline'}
-                      className={`w-full font-semibold cursor-pointer text-xs h-9 ${
-                        isSelected
-                          ? 'shadow-saas-sm'
-                          : 'border-[#E5E7EB] hover:bg-[#F9FAFB] text-[#374151]'
+                      disabled={isCurrent}
+                      className={`w-full font-semibold text-xs h-9 ${
+                        isCurrent
+                          ? 'border-[#E5E7EB] bg-[#F3F4F6] text-[#9CA3AF] cursor-not-allowed opacity-75'
+                          : isSelected
+                          ? 'shadow-saas-sm cursor-pointer'
+                          : 'border-[#E5E7EB] hover:bg-[#F9FAFB] text-[#374151] cursor-pointer'
                       }`}
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleSelectPlan(plan);
+                        if (!isCurrent) {
+                          handleSelectPlan(plan);
+                        }
                       }}
                     >
                       {isSelected ? 'Selected' : isCurrent ? 'Active Plan' : `Choose ${plan.name}`}
@@ -318,7 +342,12 @@ function SubscriptionPlansContent() {
                   type="button"
                   variant="primary"
                   onClick={handleUpgrade}
-                  disabled={!selectedPlanSlug || checkoutMutation.isPending || isRedirecting}
+                  disabled={
+                    !selectedPlanSlug ||
+                    (Boolean(currentPlanName) && selectedPlanSlug.toLowerCase() === currentPlanName) ||
+                    checkoutMutation.isPending ||
+                    isRedirecting
+                  }
                   className="w-full sm:w-auto cursor-pointer shadow-saas-sm gap-2 min-w-[180px]"
                 >
                   {checkoutMutation.isPending || isRedirecting ? (

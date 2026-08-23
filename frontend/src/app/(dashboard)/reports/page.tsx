@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState } from 'react';
 import {
@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { DataTable, DataTableColumn } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { CustomSelect } from '@/components/common/custom-select';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
 import {
@@ -413,24 +414,26 @@ export default function ReportsPage() {
       )}
 
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2.5">
-            <BarChart3 className="w-7 h-7 text-indigo-600" />
-            Executive Reports & Analytics Center
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 w-full">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2 sm:gap-2.5 break-words">
+            <BarChart3 className="w-6 h-6 sm:w-7 sm:h-7 text-indigo-600 shrink-0" />
+            <span>Executive Reports & Analytics Center</span>
           </h1>
-          <p className="text-slate-500 text-sm mt-0.5">High-density data tables, sales performance, pipeline velocity & AI revenue forecasting</p>
+          <p className="text-slate-500 text-xs sm:text-sm mt-0.5">
+            High-density data tables, sales performance, pipeline velocity & AI revenue forecasting
+          </p>
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap">
+        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap w-full sm:w-auto">
           <PermissionGate permission={PERMISSIONS.REPORTS.EXPORT}>
             <button
               onClick={handleExportCsv}
               disabled={exportCsvMutation.isPending}
-              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg font-semibold text-xs transition-colors shadow-xs cursor-pointer disabled:opacity-50"
+              className="flex items-center justify-center gap-1.5 sm:gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg font-semibold text-xs transition-colors shadow-xs cursor-pointer disabled:opacity-50 flex-1 sm:flex-initial min-w-[120px] sm:min-w-0"
             >
-              {exportCsvMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4 text-emerald-600" />}
-              Export S3 CSV
+              {exportCsvMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />}
+              <span>Export S3 CSV</span>
             </button>
           </PermissionGate>
 
@@ -438,37 +441,37 @@ export default function ReportsPage() {
             <button
               onClick={handleExportPdf}
               disabled={exportPdfMutation.isPending}
-              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg font-semibold text-xs transition-colors shadow-xs cursor-pointer disabled:opacity-50"
+              className="flex items-center justify-center gap-1.5 sm:gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg font-semibold text-xs transition-colors shadow-xs cursor-pointer disabled:opacity-50 flex-1 sm:flex-initial min-w-[100px] sm:min-w-0"
             >
-              {exportPdfMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4 text-indigo-600" />}
-              Export PDF
+              {exportPdfMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : <Download className="w-4 h-4 text-indigo-600 shrink-0" />}
+              <span>Export PDF</span>
             </button>
           </PermissionGate>
 
           <PermissionGate permission={PERMISSIONS.REPORTS.SCHEDULE}>
             <button
               onClick={() => setIsScheduleModalOpen(true)}
-              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg font-semibold text-xs transition-colors shadow-xs cursor-pointer"
+              className="flex items-center justify-center gap-1.5 sm:gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg font-semibold text-xs transition-colors shadow-xs cursor-pointer flex-1 sm:flex-initial min-w-[130px] sm:min-w-0"
             >
-              <Mail className="w-4 h-4 text-purple-600" />
-              Schedule Delivery
+              <Mail className="w-4 h-4 text-purple-600 shrink-0" />
+              <span>Schedule Delivery</span>
             </button>
           </PermissionGate>
 
           <PermissionGate permission={PERMISSIONS.REPORTS.CREATE}>
             <button
               onClick={() => setIsCustomModalOpen(true)}
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors shadow-xs cursor-pointer"
+              className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-xs sm:text-sm transition-colors shadow-xs cursor-pointer w-full sm:w-auto"
             >
-              <Plus className="w-4 h-4" />
-              New Query Builder
+              <Plus className="w-4 h-4 shrink-0" />
+              <span>New Query Builder</span>
             </button>
           </PermissionGate>
         </div>
       </div>
 
       {/* Navigation Pills */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-2 border-b border-slate-200">
+      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-2 border-b border-slate-200 w-full">
         {[
           { id: 'performance', label: 'Sales Performance', icon: DollarSign },
           { id: 'velocity', label: 'Pipeline Velocity', icon: TrendingUp },
@@ -489,14 +492,14 @@ export default function ReportsPage() {
             <button
               key={tab.id}
               onClick={() => setActiveCategory(tab.id as ReportCategory)}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-colors cursor-pointer ${
+              className={`flex items-center gap-2 px-3 sm:px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-colors cursor-pointer shrink-0 ${
                 isActive
                   ? 'bg-indigo-600 text-white shadow-xs'
                   : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
               }`}
             >
-              <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-white' : 'text-slate-500'}`} />
-              {tab.label}
+              <Icon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-white' : 'text-slate-500'}`} />
+              <span>{tab.label}</span>
             </button>
           );
         })}
@@ -775,13 +778,13 @@ export default function ReportsPage() {
       {/* Custom Report Query Builder Modal */}
       {isCustomModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-4 sm:p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[calc(100vh-2rem)] overflow-y-auto">
             <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Plus className="w-5 h-5 text-indigo-600" />
-                Custom Query Builder
+              <h3 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+                <Plus className="w-5 h-5 text-indigo-600 shrink-0" />
+                <span>Custom Query Builder</span>
               </h3>
-              <button onClick={() => setIsCustomModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => setIsCustomModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -810,17 +813,17 @@ export default function ReportsPage() {
                 />
               </div>
 
-              <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={() => setIsCustomModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
+              <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 pt-2">
+                <button type="button" onClick={() => setIsCustomModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600 w-full sm:w-auto cursor-pointer">
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={createCustomMutation.isPending}
-                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
+                  className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50 w-full sm:w-auto"
                 >
-                  {createCustomMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  Save Custom Report
+                  {createCustomMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
+                  <span>Save Custom Report</span>
                 </button>
               </div>
             </form>
@@ -831,13 +834,13 @@ export default function ReportsPage() {
       {/* Schedule Automated Delivery Modal */}
       {isScheduleModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-4 sm:p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[calc(100vh-2rem)] overflow-y-auto">
             <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Mail className="w-5 h-5 text-purple-600" />
-                Schedule Automated Email Report
+              <h3 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+                <Mail className="w-5 h-5 text-purple-600 shrink-0" />
+                <span>Schedule Automated Email Report</span>
               </h3>
-              <button onClick={() => setIsScheduleModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => setIsScheduleModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -845,16 +848,17 @@ export default function ReportsPage() {
             <form onSubmit={handleScheduleEmailSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Target Report</label>
-                <select
+                <CustomSelect
                   value={scheduleReportType}
-                  onChange={(e) => setScheduleReportType(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
-                >
-                  <option value="sales-performance">Sales Performance</option>
-                  <option value="pipeline-velocity">Pipeline Velocity</option>
-                  <option value="win-loss-ratio">Win/Loss Ratio</option>
-                  <option value="revenue-forecasting">Revenue Forecast</option>
-                </select>
+                  onChange={setScheduleReportType}
+                  color="purple"
+                  options={[
+                    { value: 'sales-performance', label: 'Sales Performance' },
+                    { value: 'pipeline-velocity', label: 'Pipeline Velocity' },
+                    { value: 'win-loss-ratio', label: 'Win/Loss Ratio' },
+                    { value: 'revenue-forecasting', label: 'Revenue Forecast' },
+                  ]}
+                />
               </div>
 
               <div>
@@ -870,28 +874,29 @@ export default function ReportsPage() {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Delivery Frequency</label>
-                <select
+                <CustomSelect
                   value={scheduleFrequency}
-                  onChange={(e) => setScheduleFrequency(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
-                >
-                  <option value="Daily">Daily</option>
-                  <option value="Weekly">Weekly</option>
-                  <option value="Monthly">Monthly</option>
-                </select>
+                  onChange={setScheduleFrequency}
+                  color="purple"
+                  options={[
+                    { value: 'Daily', label: 'Daily' },
+                    { value: 'Weekly', label: 'Weekly' },
+                    { value: 'Monthly', label: 'Monthly' },
+                  ]}
+                />
               </div>
 
-              <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={() => setIsScheduleModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
+              <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 pt-2">
+                <button type="button" onClick={() => setIsScheduleModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600 w-full sm:w-auto cursor-pointer">
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={scheduleEmailMutation.isPending}
-                  className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
+                  className="flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50 w-full sm:w-auto"
                 >
-                  {scheduleEmailMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  Schedule Delivery
+                  {scheduleEmailMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
+                  <span>Schedule Delivery</span>
                 </button>
               </div>
             </form>
