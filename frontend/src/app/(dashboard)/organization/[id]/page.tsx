@@ -314,7 +314,7 @@ export default function OrganizationDetailPage({ isCurrentOrgView = false }: { i
                 </Badge>
               </h1>
               <p className="text-caption text-[#6B7280] mt-0.5 font-mono">
-                ID: {activeOrg.id} • Domain: {activeOrg.domain || `${activeOrg.slug || 'org'}.crm.com`}
+                Domain: {activeOrg.domain || `${activeOrg.slug || 'org'}.crm.com`}
               </p>
             </div>
           </div>
@@ -491,14 +491,11 @@ export default function OrganizationDetailPage({ isCurrentOrgView = false }: { i
       {/* TAB 1: PROFILE & DETAILS */}
       {activeTab === 'profile' && (
         <Card className="p-6 bg-white border border-[#E5E7EB] shadow-saas-sm rounded-btn space-y-6">
-          <div className="flex items-center justify-between border-b border-[#E5E7EB] pb-3">
+          <div className="border-b border-[#E5E7EB] pb-3">
             <h3 className="font-semibold text-[#111827] text-subheading flex items-center gap-2">
               <Building className="w-5 h-5 text-[#2563EB]" />
               <span>Organization Details</span>
             </h3>
-            <Badge className="bg-[#2563EB]/10 text-[#2563EB] border-[#2563EB]/20 font-mono text-caption">
-              ID: {activeOrg.id}
-            </Badge>
           </div>
 
           <form onSubmit={handleUpdateProfile} className="space-y-4">
