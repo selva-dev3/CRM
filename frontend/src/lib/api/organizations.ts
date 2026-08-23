@@ -1,4 +1,4 @@
-﻿import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
 import { notifyAuthUserChanged } from '@/hooks/use-has-permission';
 
@@ -415,7 +415,6 @@ export interface ValidateInvitationResponse {
 export interface InviteNewOrganizationPayload {
   email: string;
   full_name: string;
-  role_id: string;
 }
 
 export interface InviteNewOrganizationResponse {
