@@ -95,6 +95,7 @@ export interface SubscriptionPlanItem {
 
 export interface OrganizationSubscription {
   plan: string;
+  plan_slug?: string;
   billing_cycle: string;
   amount: number;
   next_billing: string;

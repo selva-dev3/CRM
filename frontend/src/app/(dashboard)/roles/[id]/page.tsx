@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
@@ -407,45 +407,45 @@ export default function RoleDetailPage() {
   return (
     <div className="space-y-6 w-full pb-12">
       {/* Navigation & Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="space-y-1">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 w-full">
+        <div className="space-y-1.5 min-w-0 flex-1">
           <Link href="/roles" className="inline-flex items-center gap-2 text-xs font-semibold text-slate-500 hover:text-indigo-600 transition-colors">
-            <ArrowLeft className="w-4 h-4" />
-            Back to Roles & Permissions
+            <ArrowLeft className="w-4 h-4 shrink-0" />
+            <span>Back to Roles & Permissions</span>
           </Link>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2.5">
-              <ShieldCheck className="w-6 h-6 text-indigo-600" />
-              Role: {role.name}
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2 sm:gap-2.5 break-words">
+              <ShieldCheck className="w-5 h-5 sm:w-6 sm:h-6 text-indigo-600 shrink-0" />
+              <span>Role: {role.name}</span>
             </h1>
             {role.is_system_role && (
-              <span className="px-2.5 py-0.5 bg-purple-100 text-purple-800 border border-purple-200 rounded-full text-xs font-semibold">
+              <span className="px-2.5 py-0.5 bg-purple-100 text-purple-800 border border-purple-200 rounded-full text-xs font-semibold shrink-0">
                 Built-in System
               </span>
             )}
             {isDefault && (
-              <span className="px-2.5 py-0.5 bg-amber-100 text-amber-800 border border-amber-200 rounded-full text-xs font-semibold flex items-center gap-1">
-                <Star className="w-3.5 h-3.5 text-amber-600" />
-                Registration Default
+              <span className="px-2.5 py-0.5 bg-amber-100 text-amber-800 border border-amber-200 rounded-full text-xs font-semibold flex items-center gap-1 shrink-0">
+                <Star className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span>Registration Default</span>
               </span>
             )}
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap">
+        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap w-full sm:w-auto">
           <PermissionGate permission="roles:update">
             {(role.name.toLowerCase().includes('super') || role.name.toLowerCase() === 'super_admin' || role.id === 'sys-admin') && !isDefault && (
               <button
                 onClick={handleSetDefault}
                 disabled={setDefaultMutation.isPending}
-                className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs cursor-pointer transition-colors disabled:opacity-50"
+                className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs cursor-pointer transition-colors disabled:opacity-50 flex-1 sm:flex-initial min-w-[140px] sm:min-w-0"
               >
                 {setDefaultMutation.isPending ? (
-                  <Loader2 className="w-4 h-4 animate-spin text-amber-500" />
+                  <Loader2 className="w-4 h-4 animate-spin text-amber-500 shrink-0" />
                 ) : (
-                  <Star className="w-4 h-4 text-amber-500 fill-amber-400/20" />
+                  <Star className="w-4 h-4 text-amber-500 fill-amber-400/20 shrink-0" />
                 )}
-                Set Registration Default
+                <span>Set Registration Default</span>
               </button>
             )}
           </PermissionGate>
@@ -456,20 +456,20 @@ export default function RoleDetailPage() {
                 setCloneNewName(`${role.name} Copy`);
                 setIsCloneModalOpen(true);
               }}
-              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg text-xs font-semibold shadow-xs cursor-pointer"
+              className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg text-xs font-semibold shadow-xs cursor-pointer flex-1 sm:flex-initial min-w-[100px] sm:min-w-0"
             >
-              <Copy className="w-4 h-4 text-indigo-600" />
-              Clone Role
+              <Copy className="w-4 h-4 text-indigo-600 shrink-0" />
+              <span>Clone Role</span>
             </button>
           </PermissionGate>
 
           <PermissionGate permission="users:roles">
             <button
               onClick={() => setIsAssignModalOpen(true)}
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer shadow-xs"
+              className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer shadow-xs flex-1 sm:flex-initial min-w-[110px] sm:min-w-0"
             >
-              <UserCheck className="w-4 h-4" />
-              Assign to User
+              <UserCheck className="w-4 h-4 shrink-0" />
+              <span>Assign to User</span>
             </button>
           </PermissionGate>
 
@@ -477,10 +477,10 @@ export default function RoleDetailPage() {
             {!role.is_system_role && !isDefault && role.type !== 'default' && (
               <button
                 onClick={() => setIsDeleteModalOpen(true)}
-                className="flex items-center gap-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3 py-2 rounded-lg text-xs font-semibold shadow-xs cursor-pointer"
+                className="flex items-center justify-center gap-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3 py-2 rounded-lg text-xs font-semibold shadow-xs cursor-pointer flex-1 sm:flex-initial min-w-[90px] sm:min-w-0"
               >
-                <Trash2 className="w-4 h-4" />
-                Delete Role
+                <Trash2 className="w-4 h-4 shrink-0" />
+                <span>Delete Role</span>
               </button>
             )}
           </PermissionGate>

@@ -223,4 +223,70 @@ describe('SubscriptionPlansPage - Stripe Checkout Flow', () => {
 
     expect(mockPush).toHaveBeenCalledWith('/organization/org-123');
   });
+
+  it('disables the active plan button and marks it as Active Plan when user is on Professional plan', () => {
+    mockUseOrganizationSubscriptionQuery.mockReturnValue({
+      data: { plan: 'Professional', plan_slug: 'professional', billing_cycle: 'Monthly', amount: 2999 },
+    });
+
+    render(<SubscriptionPlansPage />);
+
+    // Professional should have Current Plan badge and Active Plan button
+    expect(screen.getByText('Current Plan')).toBeInTheDocument();
+    const activePlanButton = screen.getByRole('button', { name: /Active Plan/i });
+    expect(activePlanButton).toBeInTheDocument();
+    expect(activePlanButton).toBeDisabled();
+
+    // Other plans should remain selectable
+    const chooseStarterButton = screen.getByRole('button', { name: /Choose Starter/i });
+    expect(chooseStarterButton).toBeEnabled();
+    const chooseBusinessButton = screen.getByRole('button', { name: /Choose Business/i });
+    expect(chooseBusinessButton).toBeEnabled();
+  });
+
+  it('prevents selecting or upgrading the current active plan', () => {
+    mockUseOrganizationSubscriptionQuery.mockReturnValue({
+      data: { plan: 'Professional', plan_slug: 'professional', billing_cycle: 'Monthly', amount: 2999 },
+    });
+
+    render(<SubscriptionPlansPage />);
+
+    // Attempt to click the active plan button
+    const activePlanButton = screen.getByRole('button', { name: /Active Plan/i });
+    fireEvent.click(activePlanButton);
+
+    // Upgrade button must remain disabled with default text
+    const upgradeButton = screen.getByRole('button', { name: /Select a Plan/i });
+    expect(upgradeButton).toBeDisabled();
+
+    // Clicking upgrade button does not trigger checkout mutation
+    fireEvent.click(upgradeButton);
+    expect(mockMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('allows upgrading to a higher tier like Business when on Professional plan', async () => {
+    mockUseOrganizationSubscriptionQuery.mockReturnValue({
+      data: { plan: 'Professional', plan_slug: 'professional', billing_cycle: 'Monthly', amount: 2999 },
+    });
+
+    render(<SubscriptionPlansPage />);
+
+    // Select Business
+    const chooseBusinessButton = screen.getByRole('button', { name: /Choose Business/i });
+    fireEvent.click(chooseBusinessButton);
+
+    // Upgrade button should now show "Upgrade to Business" and be enabled
+    const upgradeButton = screen.getByRole('button', { name: /Upgrade to Business/i });
+    expect(upgradeButton).toBeEnabled();
+
+    // Click Upgrade
+    fireEvent.click(upgradeButton);
+
+    await waitFor(() => {
+      expect(mockMutateAsync).toHaveBeenCalledWith({
+        plan_slug: 'business',
+        org_id: 'org-123',
+      });
+    });
+  });
 });

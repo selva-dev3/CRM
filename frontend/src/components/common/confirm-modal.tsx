@@ -55,14 +55,14 @@ export function ConfirmModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
-      <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl p-6 space-y-4 text-slate-900">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3">
+      <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl p-4 sm:p-6 space-y-4 text-slate-900 max-h-[calc(100vh-2rem)] overflow-y-auto">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${style.iconBg}`}>
               {icon || style.defaultIcon}
             </div>
-            <div>
-              <h3 className="text-base font-bold text-slate-900">{title}</h3>
+            <div className="min-w-0 flex-1">
+              <h3 className="text-sm sm:text-base font-bold text-slate-900 break-words">{title}</h3>
               {description && <p className="text-xs text-slate-500">{description}</p>}
             </div>
           </div>
@@ -70,23 +70,23 @@ export function ConfirmModal({
             type="button"
             onClick={onClose}
             disabled={isLoading}
-            className="p-1 text-slate-400 hover:text-slate-700 rounded-lg transition cursor-pointer"
+            className="p-1 text-slate-400 hover:text-slate-700 rounded-lg transition cursor-pointer shrink-0"
             aria-label="Close dialog"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {message && <div className="text-xs font-medium text-slate-700">{message}</div>}
+        {message && <div className="text-xs font-medium text-slate-700 break-words">{message}</div>}
 
-        <div className="flex items-center justify-end gap-3 pt-2">
+        <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={onClose}
             disabled={isLoading}
-            className="text-xs cursor-pointer border-slate-300"
+            className="text-xs cursor-pointer border-slate-300 w-full sm:w-auto"
           >
             {cancelText}
           </Button>
@@ -95,10 +95,10 @@ export function ConfirmModal({
             size="sm"
             disabled={isLoading}
             onClick={onConfirm}
-            className={`text-xs font-semibold cursor-pointer ${style.btnBg}`}
+            className={`text-xs font-semibold cursor-pointer w-full sm:w-auto ${style.btnBg}`}
           >
             {isLoading ? (
-              <span className="flex items-center gap-1.5">
+              <span className="flex items-center justify-center gap-1.5">
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 <span>Processing...</span>
               </span>

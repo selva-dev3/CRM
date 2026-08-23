@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { CustomSelect } from '@/components/common/custom-select';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
 import {
@@ -301,61 +302,61 @@ export default function CalendarPage() {
       )}
 
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2.5">
-            <CalendarIcon className="w-7 h-7 text-indigo-600" />
-            Calendar & Scheduling
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 w-full">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2 sm:gap-2.5 break-words">
+            <CalendarIcon className="w-6 h-6 sm:w-7 sm:h-7 text-indigo-600 shrink-0" />
+            <span>Calendar & Scheduling</span>
           </h1>
-          <p className="text-slate-500 text-sm mt-0.5">2-Way Google & Outlook calendar sync, time slot availability, and recurring events</p>
+          <p className="text-slate-500 text-xs sm:text-sm mt-0.5">
+            2-Way Google & Outlook calendar sync, time slot availability, and recurring events
+          </p>
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap">
+        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap w-full sm:w-auto">
           <button
             onClick={handleSyncGoogle}
             disabled={syncGoogleMutation.isPending}
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer disabled:opacity-50"
+            className="flex items-center justify-center gap-1.5 sm:gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer disabled:opacity-50 flex-1 sm:flex-initial min-w-[110px] sm:min-w-0"
           >
-            {syncGoogleMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Globe className="w-4 h-4 text-blue-600" />}
-            Sync Google
+            {syncGoogleMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : <Globe className="w-4 h-4 text-blue-600 shrink-0" />}
+            <span>Sync Google</span>
           </button>
 
           <button
             onClick={handleSyncOutlook}
             disabled={syncOutlookMutation.isPending}
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer disabled:opacity-50"
+            className="flex items-center justify-center gap-1.5 sm:gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer disabled:opacity-50 flex-1 sm:flex-initial min-w-[110px] sm:min-w-0"
           >
-            {syncOutlookMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4 text-indigo-600" />}
-            Sync Outlook
+            {syncOutlookMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : <RefreshCw className="w-4 h-4 text-indigo-600 shrink-0" />}
+            <span>Sync Outlook</span>
           </button>
 
           <button
             onClick={() => setIsRecurringModalOpen(true)}
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer"
+            className="flex items-center justify-center gap-1.5 sm:gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer flex-1 sm:flex-initial min-w-[120px] sm:min-w-0"
           >
-            <Repeat className="w-4 h-4 text-amber-500" />
-            Recurring Rule
+            <Repeat className="w-4 h-4 text-amber-500 shrink-0" />
+            <span>Recurring Rule</span>
           </button>
 
           <PermissionGate permission={PERMISSIONS.CALENDAR.WRITE}>
             <button
               onClick={handleOpenCreateModal}
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors shadow-sm cursor-pointer"
+              className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-xs sm:text-sm transition-colors shadow-sm cursor-pointer w-full sm:w-auto"
             >
-              <Plus className="w-4 h-4" />
-              Create Event
+              <Plus className="w-4 h-4 shrink-0" />
+              <span>Create Event</span>
             </button>
           </PermissionGate>
         </div>
       </div>
 
-
-
       {/* View Switcher Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-2 overflow-x-auto no-scrollbar w-full">
         <button
           onClick={() => setViewMode('table')}
-          className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+          className={`px-3 sm:px-4 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer shrink-0 whitespace-nowrap ${
             viewMode === 'table' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
           }`}
         >
@@ -364,7 +365,7 @@ export default function CalendarPage() {
 
         <button
           onClick={() => setViewMode('availability')}
-          className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+          className={`px-3 sm:px-4 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer shrink-0 whitespace-nowrap ${
             viewMode === 'availability' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
           }`}
         >
@@ -373,7 +374,7 @@ export default function CalendarPage() {
 
         <button
           onClick={() => setViewMode('recurring')}
-          className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+          className={`px-3 sm:px-4 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer shrink-0 whitespace-nowrap ${
             viewMode === 'recurring' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
           }`}
         >
@@ -397,10 +398,10 @@ export default function CalendarPage() {
       )}
 
       {viewMode === 'availability' && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6 shadow-sm space-y-4">
           <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider border-b border-slate-100 pb-3 flex items-center gap-2">
-            <Clock className="w-4 h-4 text-emerald-600" />
-            Free & Open Booking Slots
+            <Clock className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>Free & Open Booking Slots</span>
           </h3>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -416,10 +417,10 @@ export default function CalendarPage() {
       )}
 
       {viewMode === 'recurring' && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6 shadow-sm space-y-4">
           <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider border-b border-slate-100 pb-3 flex items-center gap-2">
-            <Repeat className="w-4 h-4 text-amber-500" />
-            Active Recurring Event Rules
+            <Repeat className="w-4 h-4 text-amber-500 shrink-0" />
+            <span>Active Recurring Event Rules</span>
           </h3>
 
           <div className="space-y-3">
@@ -427,12 +428,12 @@ export default function CalendarPage() {
               <p className="text-xs text-slate-400 italic">No recurring rules configured yet.</p>
             ) : (
               recurringRules.map((rule) => (
-                <div key={rule.id} className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-xl">
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-900">{rule.title}</h4>
-                    <span className="text-[11px] font-mono text-slate-500 block mt-0.5">rrule: {rule.rrule}</span>
+                <div key={rule.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3.5 sm:p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                  <div className="min-w-0 flex-1">
+                    <h4 className="text-xs font-bold text-slate-900 break-words">{rule.title}</h4>
+                    <span className="text-[11px] font-mono text-slate-500 block mt-0.5 break-all">rrule: {rule.rrule}</span>
                   </div>
-                  <span className="px-2.5 py-1 bg-amber-100 text-amber-800 border border-amber-200 rounded-md text-xs font-semibold">
+                  <span className="px-2.5 py-1 bg-amber-100 text-amber-800 border border-amber-200 rounded-md text-xs font-semibold self-start sm:self-auto shrink-0">
                     {rule.event_type || 'Internal'}
                   </span>
                 </div>
@@ -445,13 +446,13 @@ export default function CalendarPage() {
       {/* Create / Edit Event Modal */}
       {isCreateModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-5">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-4 sm:p-6 shadow-2xl border border-slate-200 space-y-4 sm:space-y-5 max-h-[calc(100vh-2rem)] overflow-y-auto">
             <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <CalendarIcon className="w-5 h-5 text-indigo-600" />
-                {editingEvent ? 'Edit Calendar Event' : 'Create New Event'}
+              <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+                <CalendarIcon className="w-5 h-5 text-indigo-600 shrink-0" />
+                <span>{editingEvent ? 'Edit Calendar Event' : 'Create New Event'}</span>
               </h2>
-              <button onClick={() => setIsCreateModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+              <button onClick={() => setIsCreateModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -471,7 +472,7 @@ export default function CalendarPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
                     Start Time
@@ -501,15 +502,16 @@ export default function CalendarPage() {
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
                   Event Type
                 </label>
-                <select
+                <CustomSelect
                   value={eventType}
-                  onChange={(e) => setEventType(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
-                >
-                  <option value="Meeting">Meeting</option>
-                  <option value="Internal">Internal Sync</option>
-                  <option value="Client Demo">Client Demo</option>
-                </select>
+                  onChange={setEventType}
+                  color="indigo"
+                  options={[
+                    { value: 'Meeting', label: 'Meeting' },
+                    { value: 'Internal', label: 'Internal Sync' },
+                    { value: 'Client Demo', label: 'Client Demo' },
+                  ]}
+                />
               </div>
 
               <div>
@@ -525,19 +527,19 @@ export default function CalendarPage() {
                 />
               </div>
 
-              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
-                <button type="button" onClick={() => setIsCreateModalOpen(false)} className="px-4 py-2 text-sm font-medium text-slate-600">
+              <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 pt-3 border-t border-slate-100">
+                <button type="button" onClick={() => setIsCreateModalOpen(false)} className="px-4 py-2 text-sm font-medium text-slate-600 w-full sm:w-auto cursor-pointer">
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={createEventMutation.isPending || updateEventMutation.isPending}
-                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg font-medium text-sm cursor-pointer shadow-sm disabled:opacity-50"
+                  className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg font-medium text-sm cursor-pointer shadow-sm disabled:opacity-50 w-full sm:w-auto"
                 >
                   {(createEventMutation.isPending || updateEventMutation.isPending) && (
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <Loader2 className="w-4 h-4 animate-spin shrink-0" />
                   )}
-                  {editingEvent ? 'Save Changes' : 'Create Event'}
+                  <span>{editingEvent ? 'Save Changes' : 'Create Event'}</span>
                 </button>
               </div>
             </form>
@@ -548,13 +550,13 @@ export default function CalendarPage() {
       {/* Recurring Rule Modal */}
       {isRecurringModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-4 sm:p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[calc(100vh-2rem)] overflow-y-auto">
             <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Repeat className="w-5 h-5 text-amber-500" />
-                Create Recurring Rule
+              <h3 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+                <Repeat className="w-5 h-5 text-amber-500 shrink-0" />
+                <span>Create Recurring Rule</span>
               </h3>
-              <button onClick={() => setIsRecurringModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => setIsRecurringModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -583,17 +585,17 @@ export default function CalendarPage() {
                 />
               </div>
 
-              <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={() => setIsRecurringModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
+              <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 pt-2">
+                <button type="button" onClick={() => setIsRecurringModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600 w-full sm:w-auto cursor-pointer">
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={createRecurringMutation.isPending}
-                  className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
+                  className="flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50 w-full sm:w-auto"
                 >
-                  {createRecurringMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  Create Rule
+                  {createRecurringMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
+                  <span>Create Rule</span>
                 </button>
               </div>
             </form>

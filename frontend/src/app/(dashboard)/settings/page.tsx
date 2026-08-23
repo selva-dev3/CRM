@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState } from 'react';
 import Link from 'next/link';
@@ -23,7 +23,9 @@ import {
   X,
   FileSpreadsheet,
   Building,
-  Layers
+  Layers,
+  ChevronDown,
+  Check
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -31,6 +33,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { CustomSelect } from '@/components/common/custom-select';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
 import {
@@ -286,10 +289,10 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6">
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2.5">
-            <SettingsIcon className="w-6 h-6 text-blue-600" />
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 w-full">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 flex items-center gap-2.5 break-words">
+            <SettingsIcon className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600 shrink-0" />
             <span>System Settings & Governance</span>
           </h1>
           <p className="text-xs font-medium text-slate-500 mt-1">
@@ -297,13 +300,13 @@ export default function SettingsPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3 w-full sm:w-auto shrink-0">
           <PermissionGate permission={PERMISSIONS.ORGANIZATION.READ}>
             <Link
               href="/organization"
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+              className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer w-full sm:w-auto"
             >
-              <Building className="w-4 h-4" />
+              <Building className="w-4 h-4 shrink-0" />
               <span>Organization Settings</span>
             </Link>
           </PermissionGate>
@@ -311,9 +314,9 @@ export default function SettingsPage() {
           <PermissionGate permission={PERMISSIONS.INTEGRATIONS.READ}>
             <Link
               href="/integrations"
-              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-4 py-2 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+              className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-4 py-2 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer w-full sm:w-auto"
             >
-              <Layers className="w-4 h-4 text-indigo-600" />
+              <Layers className="w-4 h-4 text-indigo-600 shrink-0" />
               <span>Integrations</span>
             </Link>
           </PermissionGate>
@@ -421,30 +424,30 @@ export default function SettingsPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1">
                 <Label className="text-slate-700 font-semibold">Default Currency</Label>
-                <select
+                <CustomSelect
                   value={currency}
-                  onChange={(e) => setCurrency(e.target.value)}
-                  className="w-full h-9 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-900"
-                >
-                  <option value="USD">USD ($)</option>
-                  <option value="EUR">EUR (â‚¬)</option>
-                  <option value="GBP">GBP (Â£)</option>
-                  <option value="INR">INR (â‚¹)</option>
-                </select>
+                  onChange={setCurrency}
+                  options={[
+                    { value: 'USD', label: 'USD ($)' },
+                    { value: 'EUR', label: 'EUR (€)' },
+                    { value: 'GBP', label: 'GBP (£)' },
+                    { value: 'INR', label: 'INR (₹)' },
+                  ]}
+                />
               </div>
 
               <div className="space-y-1">
                 <Label className="text-slate-700 font-semibold">System Timezone</Label>
-                <select
+                <CustomSelect
                   value={timezone}
-                  onChange={(e) => setTimezone(e.target.value)}
-                  className="w-full h-9 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-900"
-                >
-                  <option value="UTC">UTC (Coordinated Universal Time)</option>
-                  <option value="EST">EST (Eastern Standard Time)</option>
-                  <option value="PST">PST (Pacific Standard Time)</option>
-                  <option value="IST">IST (Indian Standard Time)</option>
-                </select>
+                  onChange={setTimezone}
+                  options={[
+                    { value: 'UTC', label: 'UTC (Coordinated Universal Time)' },
+                    { value: 'EST', label: 'EST (Eastern Standard Time)' },
+                    { value: 'PST', label: 'PST (Pacific Standard Time)' },
+                    { value: 'IST', label: 'IST (Indian Standard Time)' },
+                  ]}
+                />
               </div>
             </div>
 
@@ -500,50 +503,50 @@ export default function SettingsPage() {
 
       {/* TAB 2: CUSTOM METADATA FIELDS */}
       {activeTab === 'fields' && (
-        <Card className="p-6 border border-slate-200 bg-white shadow-sm rounded-xl space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-              <Sliders className="w-4 h-4 text-blue-600" />
+        <Card className="p-4 sm:p-6 border border-slate-200 bg-white shadow-sm rounded-xl space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+            <h3 className="font-bold text-slate-900 text-sm sm:text-base flex items-center gap-2">
+              <Sliders className="w-4 h-4 text-blue-600 shrink-0" />
               <span>Custom Schema Fields</span>
             </h3>
             <PermissionGate permission={PERMISSIONS.SETTINGS.UPDATE}>
-            <Button
-              size="sm"
-              onClick={() => setIsFieldModalOpen(true)}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs gap-1 cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Add Custom Field</span>
-            </Button>
-          </PermissionGate>
+              <Button
+                size="sm"
+                onClick={() => setIsFieldModalOpen(true)}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs gap-1 cursor-pointer w-full sm:w-auto"
+              >
+                <Plus className="w-4 h-4 shrink-0" />
+                <span>Add Custom Field</span>
+              </Button>
+            </PermissionGate>
           </div>
 
           <div className="space-y-3">
             {customFields.length > 0 ? (
               customFields.map((f: CustomFieldItem) => (
-                <div key={f.id} className="p-3 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-between text-xs">
-                  <div className="space-y-0.5">
-                    <div className="font-bold text-slate-900 flex items-center gap-2">
-                      <span>{f.label}</span>
-                      <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-[10px]">
+                <div key={f.id} className="p-3 bg-slate-50 rounded-lg border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                  <div className="space-y-0.5 min-w-0 flex-1">
+                    <div className="font-bold text-slate-900 flex flex-wrap items-center gap-2">
+                      <span className="break-words">{f.label}</span>
+                      <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-[10px] shrink-0">
                         {f.entity_type}
                       </Badge>
                     </div>
-                    <div className="text-[11px] text-slate-500 font-mono">
+                    <div className="text-[11px] text-slate-500 font-mono break-all">
                       key: <span className="font-bold text-slate-700">{f.field_name}</span> ({f.field_type})
                     </div>
                   </div>
 
                   <PermissionGate permission={PERMISSIONS.SETTINGS.UPDATE}>
-                  <button
-                    type="button"
-                    onClick={() => setItemToDelete({ type: 'field', id: f.id, name: f.label })}
-                    className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
-                    title="Delete field"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </PermissionGate>
+                    <button
+                      type="button"
+                      onClick={() => setItemToDelete({ type: 'field', id: f.id, name: f.label })}
+                      className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer self-end sm:self-auto shrink-0"
+                      title="Delete field"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </PermissionGate>
                 </div>
               ))
             ) : (
@@ -555,41 +558,43 @@ export default function SettingsPage() {
 
       {/* TAB 3: WEBHOOKS */}
       {activeTab === 'webhooks' && (
-        <Card className="p-6 border border-slate-200 bg-white shadow-sm rounded-xl space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-              <WebhookIcon className="w-4 h-4 text-blue-600" />
+        <Card className="p-4 sm:p-6 border border-slate-200 bg-white shadow-sm rounded-xl space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+            <h3 className="font-bold text-slate-900 text-sm sm:text-base flex items-center gap-2">
+              <WebhookIcon className="w-4 h-4 text-blue-600 shrink-0" />
               <span>Outgoing Webhook Subscriptions</span>
             </h3>
             <PermissionGate permission={PERMISSIONS.SETTINGS.UPDATE}>
-            <Button
-              size="sm"
-              onClick={() => setIsWebhookModalOpen(true)}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs gap-1 cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Register Webhook</span>
-            </Button>
-          </PermissionGate>
+              <Button
+                size="sm"
+                onClick={() => setIsWebhookModalOpen(true)}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs gap-1 cursor-pointer w-full sm:w-auto"
+              >
+                <Plus className="w-4 h-4 shrink-0" />
+                <span>Register Webhook</span>
+              </Button>
+            </PermissionGate>
           </div>
 
           <div className="space-y-3">
             {webhooks.length > 0 ? (
               webhooks.map((w: WebhookItem) => (
-                <div key={w.id} className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-2 text-xs">
-                  <div className="flex items-center justify-between">
-                    <div className="font-mono font-bold text-slate-900 truncate max-w-md">{w.target_url}</div>
-                    <div className="flex items-center gap-2">
+                <div key={w.id} className="p-3.5 sm:p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-2.5 text-xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-4">
+                    <div className="font-mono font-bold text-slate-900 break-all sm:truncate sm:max-w-md min-w-0">
+                      {w.target_url}
+                    </div>
+                    <div className="flex items-center justify-between sm:justify-start gap-2 w-full sm:w-auto shrink-0 pt-1.5 sm:pt-0 border-t sm:border-t-0 border-slate-200/60">
                       <PermissionGate permission={PERMISSIONS.SETTINGS.UPDATE}>
                         <Button
                           size="sm"
                           variant="outline"
                           onClick={() => handleTestWebhook(w.id)}
                           disabled={testWebhookMutation.isPending}
-                          className="h-7 text-[11px] font-semibold border-slate-300 cursor-pointer"
+                          className="h-7 text-[11px] font-semibold border-slate-300 cursor-pointer w-full sm:w-auto"
                         >
-                          <Send className="w-3 h-3 mr-1 text-blue-600" />
-                          Test Ping
+                          <Send className="w-3 h-3 mr-1 text-blue-600 shrink-0" />
+                          <span>Test Ping</span>
                         </Button>
                       </PermissionGate>
 
@@ -597,8 +602,9 @@ export default function SettingsPage() {
                         <button
                           type="button"
                           onClick={() => setItemToDelete({ type: 'webhook', id: w.id, name: w.target_url })}
-                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition cursor-pointer shrink-0"
                           title="Delete webhook"
+                          aria-label="Delete webhook"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -606,9 +612,9 @@ export default function SettingsPage() {
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap gap-1.5 pt-1">
+                  <div className="flex flex-wrap gap-1.5 pt-0.5">
                     {w.events.map((ev) => (
-                      <span key={ev} className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[10px] font-semibold">
+                      <span key={ev} className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[10px] font-semibold break-all">
                         {ev}
                       </span>
                     ))}
@@ -616,7 +622,9 @@ export default function SettingsPage() {
                 </div>
               ))
             ) : (
-              <div className="text-xs text-slate-500 p-6 text-center bg-slate-50 rounded-lg">No registered webhooks</div>
+              <div className="text-xs text-slate-500 p-4 sm:p-6 text-center bg-slate-50 rounded-lg border border-dashed border-slate-200">
+                No registered webhooks
+              </div>
             )}
           </div>
         </Card>
@@ -624,35 +632,35 @@ export default function SettingsPage() {
 
       {/* TAB 4: SLA POLICIES */}
       {activeTab === 'sla' && (
-        <Card className="p-6 border border-slate-200 bg-white shadow-sm rounded-xl space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-              <Clock className="w-4 h-4 text-blue-600" />
+        <Card className="p-4 sm:p-6 border border-slate-200 bg-white shadow-sm rounded-xl space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+            <h3 className="font-bold text-slate-900 text-sm sm:text-base flex items-center gap-2">
+              <Clock className="w-4 h-4 text-blue-600 shrink-0" />
               <span>Response & Resolution SLA Policies</span>
             </h3>
             <PermissionGate permission={PERMISSIONS.SETTINGS.UPDATE}>
-            <Button
-              size="sm"
-              onClick={() => setIsSlaModalOpen(true)}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs gap-1 cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Create SLA Policy</span>
-            </Button>
-          </PermissionGate>
+              <Button
+                size="sm"
+                onClick={() => setIsSlaModalOpen(true)}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs gap-1 cursor-pointer w-full sm:w-auto"
+              >
+                <Plus className="w-4 h-4 shrink-0" />
+                <span>Create SLA Policy</span>
+              </Button>
+            </PermissionGate>
           </div>
 
           <div className="space-y-3">
             {slaPolicies.length > 0 ? (
               slaPolicies.map((s: SLAPolicyItem) => (
-                <div key={s.id} className="p-3 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-between text-xs">
-                  <div>
-                    <div className="font-bold text-slate-900">{s.name}</div>
+                <div key={s.id} className="p-3 bg-slate-50 rounded-lg border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                  <div className="min-w-0 flex-1">
+                    <div className="font-bold text-slate-900 break-words">{s.name}</div>
                     <div className="text-[11px] text-slate-500">
                       Response Target: <span className="font-bold text-slate-800">{s.response_time_hours} hrs</span> | Resolution Target: <span className="font-bold text-slate-800">{s.resolution_time_hours} hrs</span>
                     </div>
                   </div>
-                  <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs">
+                  <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs self-start sm:self-auto shrink-0">
                     Active SLA
                   </Badge>
                 </div>
@@ -667,36 +675,36 @@ export default function SettingsPage() {
       {/* TAB 5: BACKUPS & DATABASE RESET */}
       {activeTab === 'backups' && (
         <div className="space-y-6">
-          <Card className="p-6 border border-slate-200 bg-white shadow-sm rounded-xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                <Database className="w-4 h-4 text-blue-600" />
+          <Card className="p-4 sm:p-6 border border-slate-200 bg-white shadow-sm rounded-xl space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+              <h3 className="font-bold text-slate-900 text-sm sm:text-base flex items-center gap-2">
+                <Database className="w-4 h-4 text-blue-600 shrink-0" />
                 <span>Automated Database Backup Snapshots</span>
               </h3>
               <PermissionGate permission={PERMISSIONS.SETTINGS.UPDATE}>
-              <Button
-                size="sm"
-                onClick={handleTriggerBackup}
-                disabled={triggerBackupMutation.isPending}
-                className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs gap-1.5 cursor-pointer"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${triggerBackupMutation.isPending ? 'animate-spin' : ''}`} />
-                <span>Trigger Manual Backup</span>
-              </Button>
-            </PermissionGate>
+                <Button
+                  size="sm"
+                  onClick={handleTriggerBackup}
+                  disabled={triggerBackupMutation.isPending}
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs gap-1.5 cursor-pointer w-full sm:w-auto"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${triggerBackupMutation.isPending ? 'animate-spin' : ''}`} />
+                  <span>Trigger Manual Backup</span>
+                </Button>
+              </PermissionGate>
             </div>
 
             <div className="space-y-2">
               {backups.map((b: BackupSnapshotItem) => (
-                <div key={b.id} className="p-3 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-3">
-                    <Database className="w-4 h-4 text-slate-400" />
-                    <div>
-                      <div className="font-mono font-bold text-slate-900">{b.filename}</div>
+                <div key={b.id} className="p-3 bg-slate-50 rounded-lg border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <Database className="w-4 h-4 text-slate-400 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <div className="font-mono font-bold text-slate-900 break-all">{b.filename}</div>
                       <div className="text-[10px] text-slate-400">{new Date(b.created_at).toLocaleString()}</div>
                     </div>
                   </div>
-                  <Badge variant="outline" className="bg-slate-100 text-slate-700 border-slate-300 text-xs font-mono">
+                  <Badge variant="outline" className="bg-slate-100 text-slate-700 border-slate-300 text-xs font-mono self-start sm:self-auto shrink-0">
                     {b.size_mb} MB
                   </Badge>
                 </div>
@@ -705,9 +713,9 @@ export default function SettingsPage() {
           </Card>
 
           {/* DANGER ZONE: RESET DATABASE */}
-          <Card className="p-6 border border-rose-200 bg-rose-50/40 shadow-sm rounded-xl space-y-3">
+          <Card className="p-4 sm:p-6 border border-rose-200 bg-rose-50/40 shadow-sm rounded-xl space-y-3">
             <div className="flex items-center gap-2 text-rose-700 font-bold text-base">
-              <ShieldAlert className="w-5 h-5" />
+              <ShieldAlert className="w-5 h-5 shrink-0" />
               <span>Danger Zone: Database Maintenance</span>
             </div>
             <p className="text-xs text-slate-600">
@@ -718,7 +726,7 @@ export default function SettingsPage() {
                 <Button
                   size="sm"
                   onClick={() => setIsResetDbModalOpen(true)}
-                  className="bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs gap-1.5 cursor-pointer"
+                  className="bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs gap-1.5 cursor-pointer w-full sm:w-auto"
                 >
                   <Trash2 className="w-4 h-4" />
                   <span>Reset System Database</span>
@@ -731,35 +739,35 @@ export default function SettingsPage() {
 
       {/* TAB 6: SECURITY AUDIT TRAIL LOGS */}
       {activeTab === 'audit' && (
-        <Card className="p-6 border border-slate-200 bg-white shadow-sm rounded-xl space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-              <ShieldAlert className="w-4 h-4 text-blue-600" />
+        <Card className="p-4 sm:p-6 border border-slate-200 bg-white shadow-sm rounded-xl space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+            <h3 className="font-bold text-slate-900 text-sm sm:text-base flex items-center gap-2">
+              <ShieldAlert className="w-4 h-4 text-blue-600 shrink-0" />
               <span>Security & User Activity Audit Trail</span>
             </h3>
             <PermissionGate permission={PERMISSIONS.SETTINGS.SECURITY}>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleExportAuditLogs}
-              className="border-slate-300 font-semibold text-xs gap-1.5 cursor-pointer"
-            >
-              <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-              <span>Export Audit CSV</span>
-            </Button>
-          </PermissionGate>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleExportAuditLogs}
+                className="border-slate-300 font-semibold text-xs gap-1.5 cursor-pointer w-full sm:w-auto"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                <span>Export Audit CSV</span>
+              </Button>
+            </PermissionGate>
           </div>
 
           <div className="space-y-2 text-xs">
             {auditLogs.map((log) => (
-              <div key={log.id} className="p-3 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-between">
-                <div>
-                  <div className="font-bold text-slate-900">{log.action}</div>
-                  <div className="text-[11px] text-slate-500 font-mono">
+              <div key={log.id} className="p-3 bg-slate-50 rounded-lg border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <div className="font-bold text-slate-900 break-words">{log.action}</div>
+                  <div className="text-[11px] text-slate-500 font-mono break-all">
                     User: {log.username || log.user_id || 'Admin User'} | IP: {log.ip || '127.0.0.1'}
                   </div>
                 </div>
-                <div className="text-[10px] text-slate-400">{new Date(log.timestamp).toLocaleString()}</div>
+                <div className="text-[10px] text-slate-400 self-start sm:self-auto shrink-0">{new Date(log.timestamp).toLocaleString()}</div>
               </div>
             ))}
           </div>
@@ -769,13 +777,13 @@ export default function SettingsPage() {
       {/* CREATE CUSTOM FIELD MODAL */}
       {isFieldModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
-          <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl p-6 space-y-4">
+          <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl p-4 sm:p-6 space-y-4 max-h-[calc(100vh-2rem)] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                <Sliders className="w-5 h-5 text-blue-600" />
+              <h3 className="font-bold text-slate-900 text-sm sm:text-base flex items-center gap-2">
+                <Sliders className="w-5 h-5 text-blue-600 shrink-0" />
                 <span>Create Custom Field</span>
               </h3>
-              <button type="button" onClick={() => setIsFieldModalOpen(false)} className="text-slate-400 hover:text-slate-700">
+              <button type="button" onClick={() => setIsFieldModalOpen(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -783,16 +791,16 @@ export default function SettingsPage() {
             <form onSubmit={handleCreateCustomField} className="space-y-4 text-xs">
               <div className="space-y-1">
                 <Label className="font-semibold text-slate-700">Target Entity</Label>
-                <select
+                <CustomSelect
                   value={fieldEntityType}
-                  onChange={(e) => setFieldEntityType(e.target.value)}
-                  className="w-full h-9 rounded-md border border-slate-300 px-3 text-xs font-semibold text-slate-900"
-                >
-                  <option value="Lead">Lead</option>
-                  <option value="Contact">Contact</option>
-                  <option value="Deal">Deal</option>
-                  <option value="Company">Company</option>
-                </select>
+                  onChange={setFieldEntityType}
+                  options={[
+                    { value: 'Lead', label: 'Lead' },
+                    { value: 'Contact', label: 'Contact' },
+                    { value: 'Deal', label: 'Deal' },
+                    { value: 'Company', label: 'Company' },
+                  ]}
+                />
               </div>
 
               <div className="space-y-1">
@@ -819,23 +827,23 @@ export default function SettingsPage() {
 
               <div className="space-y-1">
                 <Label className="font-semibold text-slate-700">Data Type</Label>
-                <select
+                <CustomSelect
                   value={fieldType}
-                  onChange={(e) => setFieldType(e.target.value)}
-                  className="w-full h-9 rounded-md border border-slate-300 px-3 text-xs font-semibold text-slate-900"
-                >
-                  <option value="text">Text String</option>
-                  <option value="number">Number</option>
-                  <option value="select">Dropdown Select</option>
-                  <option value="boolean">Boolean Checkbox</option>
-                </select>
+                  onChange={setFieldType}
+                  options={[
+                    { value: 'text', label: 'Text String' },
+                    { value: 'number', label: 'Number' },
+                    { value: 'select', label: 'Dropdown Select' },
+                    { value: 'boolean', label: 'Boolean Checkbox' },
+                  ]}
+                />
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
-                <Button type="button" variant="outline" size="sm" onClick={() => setIsFieldModalOpen(false)}>
+              <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => setIsFieldModalOpen(false)} className="w-full sm:w-auto cursor-pointer">
                   Cancel
                 </Button>
-                <Button type="submit" size="sm" disabled={createCustomFieldMutation.isPending} className="bg-blue-600 text-white font-semibold">
+                <Button type="submit" size="sm" disabled={createCustomFieldMutation.isPending} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold w-full sm:w-auto cursor-pointer">
                   {createCustomFieldMutation.isPending ? 'Creating...' : 'Create Field'}
                 </Button>
               </div>
@@ -847,13 +855,13 @@ export default function SettingsPage() {
       {/* CREATE WEBHOOK MODAL */}
       {isWebhookModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
-          <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl p-6 space-y-4">
+          <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl p-4 sm:p-6 space-y-4 max-h-[calc(100vh-2rem)] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                <WebhookIcon className="w-5 h-5 text-blue-600" />
+              <h3 className="font-bold text-slate-900 text-sm sm:text-base flex items-center gap-2">
+                <WebhookIcon className="w-5 h-5 text-blue-600 shrink-0" />
                 <span>Register Outgoing Webhook</span>
               </h3>
-              <button type="button" onClick={() => setIsWebhookModalOpen(false)} className="text-slate-400 hover:text-slate-700">
+              <button type="button" onClick={() => setIsWebhookModalOpen(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -881,11 +889,11 @@ export default function SettingsPage() {
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
-                <Button type="button" variant="outline" size="sm" onClick={() => setIsWebhookModalOpen(false)}>
+              <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => setIsWebhookModalOpen(false)} className="w-full sm:w-auto cursor-pointer">
                   Cancel
                 </Button>
-                <Button type="submit" size="sm" disabled={createWebhookMutation.isPending} className="bg-blue-600 text-white font-semibold">
+                <Button type="submit" size="sm" disabled={createWebhookMutation.isPending} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold w-full sm:w-auto cursor-pointer">
                   {createWebhookMutation.isPending ? 'Registering...' : 'Register Webhook'}
                 </Button>
               </div>
@@ -897,13 +905,13 @@ export default function SettingsPage() {
       {/* CREATE SLA MODAL */}
       {isSlaModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
-          <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl p-6 space-y-4">
+          <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl p-4 sm:p-6 space-y-4 max-h-[calc(100vh-2rem)] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                <Clock className="w-5 h-5 text-blue-600" />
+              <h3 className="font-bold text-slate-900 text-sm sm:text-base flex items-center gap-2">
+                <Clock className="w-5 h-5 text-blue-600 shrink-0" />
                 <span>Create SLA Policy</span>
               </h3>
-              <button type="button" onClick={() => setIsSlaModalOpen(false)} className="text-slate-400 hover:text-slate-700">
+              <button type="button" onClick={() => setIsSlaModalOpen(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -920,7 +928,7 @@ export default function SettingsPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label className="font-semibold text-slate-700">Response Target (Hours)</Label>
                   <Input
@@ -941,11 +949,11 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
-                <Button type="button" variant="outline" size="sm" onClick={() => setIsSlaModalOpen(false)}>
+              <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => setIsSlaModalOpen(false)} className="w-full sm:w-auto cursor-pointer">
                   Cancel
                 </Button>
-                <Button type="submit" size="sm" disabled={createSlaMutation.isPending} className="bg-blue-600 text-white font-semibold">
+                <Button type="submit" size="sm" disabled={createSlaMutation.isPending} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold w-full sm:w-auto cursor-pointer">
                   {createSlaMutation.isPending ? 'Creating...' : 'Create SLA Policy'}
                 </Button>
               </div>
