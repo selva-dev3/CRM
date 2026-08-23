@@ -717,8 +717,7 @@ export default function OrganizationDetailPage({ isCurrentOrgView = false }: { i
 
           <div className="flex gap-3 pt-2">
             <Button
-              onClick={() => handleUpgradePlan('Enterprise Plus')}
-              disabled={upgradeSubMutation.isPending}
+              onClick={() => router.push(`/organization/subscription/plans?org_id=${encodeURIComponent(activeOrg.id)}`)}
               variant="primary"
               className="cursor-pointer shadow-saas-sm"
             >
