@@ -260,6 +260,14 @@ class SubscriptionCheckoutResponse(BaseModel):
     session_id: str
     status: str = "success"
 
+class SubscriptionCheckoutVerifyResponse(BaseModel):
+    verified: bool
+    db_synced: bool
+    plan: Optional[str] = None
+    plan_slug: Optional[str] = None
+    status: str
+    message: str
+
 # 5. Lead Schemas
 class LeadBase(BaseModel):
     title: str

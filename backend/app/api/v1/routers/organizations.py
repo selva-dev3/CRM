@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, File, Form, Header, Request, UploadFile,
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user_optional, require_permission
+from app.core.errors import APIException
 from app.db.session import get_db
 from app.models import User
 from app.schemas.crm_schemas import (
@@ -13,6 +14,7 @@ from app.schemas.crm_schemas import (
     OrganizationUpdate,
     SubscriptionCheckoutRequest,
     SubscriptionCheckoutResponse,
+    SubscriptionCheckoutVerifyResponse,
 )
 from app.services.organization_service import organization_domain_service
 
@@ -85,6 +87,23 @@ async def create_subscription_checkout(
     )
 
 
+@router.get(
+    "/subscription/checkout/verify",
+    response_model=SubscriptionCheckoutVerifyResponse,
+    summary="Verify a Stripe checkout session for subscription upgrade",
+    dependencies=[Depends(require_permission("organization:billing"))],
+)
+async def verify_subscription_checkout(
+    session_id: str,
+    org_id: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
+    return await organization_domain_service.verify_subscription_checkout(
+        db, session_id=session_id, org_id=org_id, current_user=current_user
+    )
+
+
 @router.post(
     "/subscription/webhook",
     summary="Stripe incoming billing webhook handler",
@@ -100,9 +119,17 @@ async def handle_stripe_subscription_webhook(
     )
 
 
-@router.post("/subscription/upgrade", response_model=MessageResponse, summary="Upgrade organization subscription", dependencies=[Depends(require_permission("organization:billing"))])
+@router.post(
+    "/subscription/upgrade",
+    response_model=MessageResponse,
+    summary="Upgrade organization subscription (Deprecated - use Stripe checkout)",
+    dependencies=[Depends(require_permission("organization:billing"))],
+)
 async def upgrade_plan(plan_slug: str, db: AsyncSession = Depends(get_db)):
-    return await organization_domain_service.upgrade_plan(db, plan_slug)
+    raise APIException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        message="Direct plan upgrade is disabled. Please use the Stripe checkout flow.",
+    )
 
 
 @router.post("/subscription/cancel", response_model=MessageResponse, summary="Cancel organization subscription", dependencies=[Depends(require_permission("organization:billing"))])

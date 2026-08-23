@@ -111,6 +111,15 @@ export interface SubscriptionCheckoutResponse {
   status: string;
 }
 
+export interface SubscriptionCheckoutVerifyResponse {
+  verified: boolean;
+  db_synced: boolean;
+  plan: string | null;
+  plan_slug: string | null;
+  status: string;
+  message: string;
+}
+
 export interface OrganizationUsage {
   users_used: number;
   users_limit: number;
@@ -212,6 +221,14 @@ export async function upgradeOrganizationSubscriptionApi(planSlug: string): Prom
 // 9b. POST /api/v1/organizations/subscription/checkout (Create Stripe checkout session)
 export async function createSubscriptionCheckoutApi(payload: CreateSubscriptionCheckoutPayload): Promise<SubscriptionCheckoutResponse> {
   return apiClient.post<SubscriptionCheckoutResponse>('/organizations/subscription/checkout', payload);
+}
+
+// 9c. GET /api/v1/organizations/subscription/checkout/verify (Verify Stripe checkout session)
+export async function verifySubscriptionCheckoutApi(sessionId: string, orgId?: string): Promise<SubscriptionCheckoutVerifyResponse> {
+  const url = orgId
+    ? `/organizations/subscription/checkout/verify?session_id=${encodeURIComponent(sessionId)}&org_id=${encodeURIComponent(orgId)}`
+    : `/organizations/subscription/checkout/verify?session_id=${encodeURIComponent(sessionId)}`;
+  return apiClient.get<SubscriptionCheckoutVerifyResponse>(url);
 }
 
 // 10. POST /api/v1/organizations/subscription/cancel (Cancel subscription)
@@ -319,22 +336,25 @@ export function useOrganizationSubscriptionQuery() {
   });
 }
 
-export function useUpgradeSubscriptionMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: upgradeOrganizationSubscriptionApi,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['organization-subscription'] });
-      queryClient.invalidateQueries({ queryKey: ['current-organization'] });
-      queryClient.invalidateQueries({ queryKey: ['organization-usage'] });
-      queryClient.invalidateQueries({ queryKey: ['organizations'] });
-    },
-  });
-}
-
 export function useCreateSubscriptionCheckoutMutation() {
   return useMutation({
     mutationFn: createSubscriptionCheckoutApi,
+  });
+}
+
+export function useVerifySubscriptionCheckoutQuery(sessionId: string | null, orgId?: string | null) {
+  return useQuery({
+    queryKey: ['subscription-checkout-verify', sessionId, orgId],
+    queryFn: () => verifySubscriptionCheckoutApi(sessionId!, orgId || undefined),
+    enabled: Boolean(sessionId && sessionId.trim().length > 0),
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (data && data.verified && !data.db_synced) {
+        return 2000;
+      }
+      return false;
+    },
+    retry: 2,
   });
 }
 

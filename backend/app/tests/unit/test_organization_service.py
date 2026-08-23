@@ -114,6 +114,7 @@ async def test_upgrade_plan_sets_subscription_metadata():
     )()
     repo = OrganizationRepository()
     repo.get_first = AsyncMock(return_value=org)
+    repo.get_by_id = AsyncMock(return_value=org)
     repo.get_subscription = AsyncMock(return_value=None)
     repo.get_plan_by_slug = AsyncMock(return_value=None)
     repo.create_subscription = AsyncMock(return_value=sub)

@@ -124,6 +124,8 @@ class OrganizationRepository:
         )
         return result.scalars().first()
 
+    get_subscription_by_org_id = get_subscription
+
     async def create_subscription(
         self, db: AsyncSession, *, data: dict
     ) -> OrganizationSubscription:
@@ -166,6 +168,16 @@ class OrganizationRepository:
             .limit(limit)
         )
         return list(result.scalars().all())
+
+    async def get_subscription_by_checkout_session_id(
+        self, db: AsyncSession, checkout_session_id: str
+    ) -> Optional[OrganizationSubscription]:
+        result = await db.execute(
+            select(OrganizationSubscription).where(
+                OrganizationSubscription.checkout_session_id == checkout_session_id
+            )
+        )
+        return result.scalars().first()
 
     async def get_processed_webhook_event(
         self, db: AsyncSession, event_id: str

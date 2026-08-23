@@ -150,6 +150,12 @@ class OrganizationSubscription(Base):
         String(100)
     )
 
+    checkout_session_id: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        index=True,
+        nullable=True
+    )
+
     # Usage
     max_users: Mapped[int] = mapped_column(
         Integer,

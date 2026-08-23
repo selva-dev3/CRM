@@ -3,6 +3,7 @@ import uuid
 from typing import Optional
 
 from fastapi import status
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -440,58 +441,172 @@ class OrganizationDomainService:
         else:
             plan_name = clean_slug.capitalize()
             price_monthly = 0.0
+
+        if price_monthly <= 0 or clean_slug == "free":
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Cannot create a paid checkout session for a free plan.",
+            )
+
         unit_amount = int(round(price_monthly * 100))
 
-        if settings.STRIPE_SECRET_KEY:
-            try:
-                import stripe
+        if not settings.STRIPE_SECRET_KEY:
+            logger.error("Stripe checkout creation requested but STRIPE_SECRET_KEY is not configured.")
+            raise APIException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                message="Billing provider is not configured.",
+            )
 
-                stripe.api_key = settings.STRIPE_SECRET_KEY
-                session = stripe.checkout.Session.create(
-                    payment_method_types=["card"],
-                    line_items=[
-                        {
-                            "price_data": {
-                                "currency": "inr",
-                                "product_data": {
-                                    "name": f"Enterprise CRM - {plan_name} Plan",
-                                    "description": f"Monthly subscription for {org.name}",
-                                },
-                                "unit_amount": unit_amount if unit_amount > 0 else 100,
+        try:
+            import stripe
+
+            stripe.api_key = settings.STRIPE_SECRET_KEY
+            session = await run_in_threadpool(
+                stripe.checkout.Session.create,
+                payment_method_types=["card"],
+                line_items=[
+                    {
+                        "price_data": {
+                            "currency": "inr",
+                            "product_data": {
+                                "name": f"Enterprise CRM - {plan_name} Plan",
+                                "description": f"Monthly recurring subscription for {org.name}",
                             },
-                            "quantity": 1,
-                        }
-                    ],
-                    mode="payment",
-                    success_url=f"{settings.frontend_base_url}/organization/subscription/payment/success?session_id={{CHECKOUT_SESSION_ID}}&org_id={org.id}",
-                    cancel_url=f"{settings.frontend_base_url}/organization/subscription/payment/cancel?org_id={org.id}",
-                    customer_email=current_user.email if current_user and getattr(current_user, "email", None) else None,
-                    metadata={
-                        "organization_id": org.id,
-                        "user_id": current_user.id if current_user else "",
-                        "plan_slug": clean_slug,
-                        "type": "subscription_upgrade",
-                    },
-                )
-                return {
-                    "checkout_url": session.url or f"https://checkout.stripe.com/pay/{session.id}",
-                    "session_id": session.id,
-                    "status": "success",
-                }
-            except Exception as e:
-                logger.exception("Failed to create Stripe checkout session: %s", e)
-                raise APIException(
-                    status_code=status.HTTP_502_BAD_GATEWAY,
-                    message=f"Stripe checkout initialization failed: {str(e)}",
-                ) from e
+                            "unit_amount": unit_amount,
+                            "recurring": {
+                                "interval": "month",
+                            },
+                        },
+                        "quantity": 1,
+                    }
+                ],
+                mode="subscription",
+                success_url=f"{settings.frontend_base_url}/organization/subscription/payment/success?session_id={{CHECKOUT_SESSION_ID}}&org_id={org.id}",
+                cancel_url=f"{settings.frontend_base_url}/organization/subscription/payment/cancel?org_id={org.id}",
+                customer_email=current_user.email if current_user and getattr(current_user, "email", None) else None,
+                metadata={
+                    "organization_id": org.id,
+                    "user_id": current_user.id if current_user else "",
+                    "plan_slug": clean_slug,
+                    "type": "subscription_upgrade",
+                },
+            )
+            return {
+                "checkout_url": session.url or f"https://checkout.stripe.com/pay/{session.id}",
+                "session_id": session.id,
+                "status": "success",
+            }
+        except APIException:
+            raise
+        except Exception as e:
+            logger.exception("Failed to create Stripe checkout session: %s", e)
+            raise APIException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                message="Unable to initialize checkout with the payment provider. Please try again later.",
+            ) from e
 
-        # Fallback test mode when STRIPE_SECRET_KEY is not configured
-        session_id = f"cs_test_{uuid.uuid4().hex[:16]}"
-        checkout_url = f"https://checkout.stripe.com/pay/{session_id}"
+    async def verify_subscription_checkout(
+        self,
+        db: AsyncSession,
+        session_id: str,
+        org_id: Optional[str] = None,
+        current_user: Optional[User] = None,
+    ) -> dict:
+        if not session_id or not session_id.strip():
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Invalid or missing session_id.",
+            )
+
+        # Resolve organization and verify user access
+        org: Optional[Organization] = None
+        if org_id:
+            org = await self.repository.get_by_id(db, org_id)
+            if not org:
+                raise NotFoundError(message=f"Organization with ID '{org_id}' not found.")
+            if current_user and getattr(current_user, "organization_id", None):
+                if (
+                    current_user.organization_id != org_id
+                    and getattr(current_user, "role", "") not in ("Admin", "Superadmin")
+                ):
+                    raise APIException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        message="You do not have permission to verify billing for this organization.",
+                    )
+        else:
+            org = await self.get_or_create_default_org(db, current_user)
+
+        if not settings.STRIPE_SECRET_KEY:
+            logger.error("Stripe checkout verification requested but STRIPE_SECRET_KEY is not configured.")
+            raise APIException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                message="Billing provider is not configured.",
+            )
+
+        try:
+            import stripe
+
+            stripe.api_key = settings.STRIPE_SECRET_KEY
+            session = await run_in_threadpool(
+                stripe.checkout.Session.retrieve,
+                session_id,
+            )
+        except Exception as e:
+            logger.warning("Failed to retrieve Stripe checkout session %s: %s", session_id, e)
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Invalid or unresolvable Stripe checkout session.",
+            ) from e
+
+        metadata = session.metadata or {}
+        session_org_id = metadata.get("organization_id")
+        plan_slug = metadata.get("plan_slug", "")
+
+        # Verify session ownership
+        if session_org_id != org.id:
+            raise APIException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                message="Checkout session does not belong to this organization.",
+            )
+
+        # Verify mode and payment status
+        if getattr(session, "mode", "") != "subscription":
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Invalid checkout session mode.",
+            )
+
+        payment_status = getattr(session, "payment_status", "")
+        if payment_status not in ("paid", "no_payment_required"):
+            return {
+                "verified": False,
+                "db_synced": False,
+                "plan": None,
+                "plan_slug": plan_slug,
+                "status": "unpaid",
+                "message": f"Payment is not confirmed (status: {payment_status}).",
+            }
+
+        # Check DB synchronization state
+        subscription = await self.repository.get_subscription(db, org.id)
+        db_synced = False
+        if subscription and getattr(subscription, "checkout_session_id", None) == session_id:
+            db_synced = True
+        elif org.plan and plan_slug and org.plan.lower() == plan_slug.lower():
+            db_synced = True
+
+        clean_slug = plan_slug.strip().lower()
+        db_plan = await self.repository.get_plan_by_slug(db, clean_slug)
+        plan_info = DEFAULT_PLANS.get(clean_slug)
+        plan_name = db_plan.name if db_plan else (plan_info.get("name", clean_slug.capitalize()) if plan_info else clean_slug.capitalize())
+
         return {
-            "checkout_url": checkout_url,
-            "session_id": session_id,
+            "verified": True,
+            "db_synced": db_synced,
+            "plan": plan_name,
+            "plan_slug": clean_slug,
             "status": "success",
+            "message": "Payment verified successfully.",
         }
 
     async def apply_verified_subscription_upgrade(
@@ -505,10 +620,7 @@ class OrganizationDomainService:
     ) -> dict:
         org = await self.repository.get_by_id(db, organization_id)
         if not org:
-            if organization_id == "org-1":
-                org = await self.repository.get_or_create_default(db)
-            else:
-                raise NotFoundError(message=f"Organization '{organization_id}' not found.")
+            raise NotFoundError(message=f"Organization '{organization_id}' not found.")
 
         subscription = await self.get_or_create_subscription(db, org)
         clean_slug = plan_slug.strip().lower()
@@ -539,7 +651,7 @@ class OrganizationDomainService:
         if stripe_subscription_id:
             subscription.subscription_id = stripe_subscription_id
         if stripe_session_id:
-            subscription.invoice_id = stripe_session_id
+            subscription.checkout_session_id = stripe_session_id
 
         await self.repository.create_audit_log(
             db,
@@ -556,27 +668,28 @@ class OrganizationDomainService:
     async def handle_stripe_subscription_webhook(
         self, db: AsyncSession, payload_bytes: bytes, sig_header: Optional[str]
     ) -> dict:
-        event = {}
-        if settings.STRIPE_WEBHOOK_SECRET:
-            import stripe
+        if not settings.STRIPE_WEBHOOK_SECRET:
+            logger.error("Stripe webhook received but STRIPE_WEBHOOK_SECRET is not configured.")
+            raise APIException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                message="Billing provider webhook is not configured.",
+            )
 
-            try:
-                event = stripe.Webhook.construct_event(
-                    payload_bytes, sig_header or "", settings.STRIPE_WEBHOOK_SECRET
-                )
-            except Exception as e:
-                logger.warning("Stripe webhook signature verification failed: %s", e)
-                raise APIException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    message="Invalid Stripe webhook signature.",
-                ) from e
-        else:
-            try:
-                event = json.loads(payload_bytes.decode("utf-8") if isinstance(payload_bytes, bytes) else payload_bytes)
-            except Exception as e:
-                raise APIException(
-                    status_code=status.HTTP_400_BAD_REQUEST, message="Invalid webhook payload JSON."
-                ) from e
+        import stripe
+
+        try:
+            event = await run_in_threadpool(
+                stripe.Webhook.construct_event,
+                payload_bytes,
+                sig_header or "",
+                settings.STRIPE_WEBHOOK_SECRET,
+            )
+        except Exception as e:
+            logger.warning("Stripe webhook signature verification failed: %s", e)
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Invalid Stripe webhook signature.",
+            ) from e
 
         event_id = event.get("id")
         event_type = event.get("type", "")
