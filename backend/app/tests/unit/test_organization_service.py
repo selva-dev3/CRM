@@ -61,6 +61,7 @@ async def test_create_organization_builds_slug_and_subscription():
     result = await service.create_organization(db, OrganizationCreate(name="Acme Inc"))
 
     assert result["id"] == "org-1"
+    assert repo.create.await_args is not None
     created = repo.create.await_args.kwargs["data"]
     assert created["slug"] == "acme-inc"
     assert created["domain"] == "acme-inc.crm.com"
@@ -84,6 +85,7 @@ async def test_create_organization_disambiguates_slug_collision():
 
     await service.create_organization(db, OrganizationCreate(name="Acme Inc"))
 
+    assert repo.create.await_args is not None
     created = repo.create.await_args.kwargs["data"]
     assert created["slug"].startswith("acme-")
 
