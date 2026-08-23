@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from fastapi.routing import APIRoute
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import require_permission
@@ -224,25 +225,32 @@ NO_PERMISSION_PATHS = {
     ("users", "PUT", "/me/profile"),
     ("users", "POST", "/me/avatar"),
     ("users", "POST", "/accept-invite"),
+    ("organizations", "POST", "/subscription/webhook"),
 }
 
 
-def _route_signature(router, route):
-    return (router.router.prefix.rstrip("/") + route.path).replace("//", "/")
+def _route_signature(router, route: APIRoute):
+    return (router.router.prefix.rstrip("/") + (route.path or "")).replace("//", "/")
 
 
 @pytest.mark.parametrize("router", GATED_ROUTERS, ids=lambda r: r.__name__)
 def test_all_routes_have_permission_dependency(router):
-    http_routes = [r for r in router.router.routes if hasattr(r, "methods")]
+    http_routes = [r for r in (router.router.routes or []) if isinstance(r, APIRoute)]
     assert http_routes, f"{router.__name__} has no HTTP routes"
     for route in http_routes:
-        for method in route.methods:
+        methods = route.methods or set()
+        for method in methods:
             if method in ("HEAD", "OPTIONS"):
                 continue
             path = _route_signature(router, route)
             if (router.__name__.rsplit(".", 1)[-1], method, path) in NO_PERMISSION_PATHS:
                 continue
-            dep_names = {d.dependency.__name__ for d in route.dependencies}
+            dependencies = route.dependencies or []
+            dep_names = {
+                getattr(d.dependency, "__name__", "")
+                for d in dependencies
+                if getattr(d, "dependency", None) is not None
+            }
             assert "permission_dependency" in dep_names, (
                 f"{router.__name__} {method} {path} is missing require_permission"
             )
@@ -276,16 +284,22 @@ def test_self_service_auth_endpoints_require_authentication():
         "/magic-link/verify",
     }
 
-    for route in auth_router.router.routes:
-        if not hasattr(route, "methods"):
+    for route in (auth_router.router.routes or []):
+        if not isinstance(route, APIRoute):
             continue
-        path = route.path
-        for method in route.methods:
+        path = route.path or ""
+        methods = route.methods or set()
+        for method in methods:
             if method in ("HEAD", "OPTIONS"):
                 continue
+            dependant_deps = (
+                route.dependant.dependencies or []
+                if getattr(route, "dependant", None) is not None
+                else []
+            )
             func_sigs = [
-                dep.call.__name__
-                for dep in route.dependant.dependencies
+                getattr(dep.call, "__name__", "")
+                for dep in dependant_deps
                 if getattr(dep, "call", None) is not None
             ]
             has_auth = "get_current_user" in func_sigs

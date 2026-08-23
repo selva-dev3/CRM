@@ -232,3 +232,11 @@ class ReportRepository:
         stmt = select(ScheduledReport).where(ScheduledReport.organization_id == org_id).order_by(ScheduledReport.created_at.desc())
         res = await db.execute(stmt)
         return res.scalars().all()
+
+    async def get_scheduled_report(self, db: AsyncSession, schedule_id: str, org_id: str) -> Optional[ScheduledReport]:
+        stmt = select(ScheduledReport).where(ScheduledReport.id == schedule_id, ScheduledReport.organization_id == org_id)
+        res = await db.execute(stmt)
+        return res.scalar_one_or_none()
+
+    async def delete_scheduled_report(self, db: AsyncSession, report: ScheduledReport) -> None:
+        await db.delete(report)

@@ -1,13 +1,32 @@
 import io
+import re
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Any, Optional, Sequence
 
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import APIException
+from app.core.errors import APIException, NotFoundError
+from app.models.user import User
 from app.repositories.report_repository import ReportRepository
 from app.services.s3_service import s3_service
+
+EMAIL_REGEX = re.compile(r"^[\w\.\+\-]+@[a-zA-Z0-9\-]+(\.[a-zA-Z0-9\-]+)+$")
+VALID_FREQUENCIES = {"Daily", "Weekly", "Monthly"}
+VALID_REPORT_TYPES = {
+    "sales-performance",
+    "pipeline-velocity",
+    "win-loss-ratio",
+    "lead-attribution",
+    "rep-leaderboard",
+    "revenue-forecasting",
+    "activity-metrics",
+    "deal-duration",
+    "customer-acquisition-cost",
+    "customer-lifetime-value",
+    "churn-analysis",
+    "quota-attainment",
+}
 
 
 def today_str() -> str:
@@ -15,15 +34,26 @@ def today_str() -> str:
 
 
 class ReportService:
-    """Business logic for analytics reports."""
+    """Business logic for analytics reports with strict multi-tenant organization isolation."""
 
     def __init__(self, repository: Optional[ReportRepository] = None) -> None:
         self.repository = repository or ReportRepository()
 
-    async def get_sales_performance_report(self, db: AsyncSession) -> dict:
-        org_id = await self.repository.get_org_id(db)
-        total_rev = await self.repository.total_won_revenue(db, org_id)
-        rows = await self.repository.rep_performance(db, org_id)
+    async def _resolve_org_id(
+        self, db: AsyncSession, org_id: Optional[str] = None, current_user: Optional[User] = None
+    ) -> str:
+        if org_id:
+            return org_id
+        if current_user and getattr(current_user, "organization_id", None):
+            return current_user.organization_id
+        return await self.repository.get_org_id(db, current_user)
+
+    async def get_sales_performance_report(
+        self, db: AsyncSession, org_id: Optional[str] = None, current_user: Optional[User] = None
+    ) -> dict:
+        target_org = await self._resolve_org_id(db, org_id, current_user)
+        total_rev = await self.repository.total_won_revenue(db, target_org)
+        rows = await self.repository.rep_performance(db, target_org)
 
         table_rows = []
         for name, role, assigned, closed, rev in rows:
@@ -57,9 +87,11 @@ class ReportService:
             "generated_at": today_str(),
         }
 
-    async def get_pipeline_velocity_report(self, db: AsyncSession) -> dict:
-        org_id = await self.repository.get_org_id(db)
-        rows = await self.repository.deals_by_stage(db, org_id)
+    async def get_pipeline_velocity_report(
+        self, db: AsyncSession, org_id: Optional[str] = None, current_user: Optional[User] = None
+    ) -> dict:
+        target_org = await self._resolve_org_id(db, org_id, current_user)
+        rows = await self.repository.deals_by_stage(db, target_org)
 
         table_rows = []
         total_deals = 0
@@ -88,15 +120,17 @@ class ReportService:
             "generated_at": today_str(),
         }
 
-    async def get_win_loss_report(self, db: AsyncSession) -> dict:
-        org_id = await self.repository.get_org_id(db)
-        won_count = await self.repository.count_deals_in_stage(db, org_id, "Closed Won")
-        lost_count = await self.repository.count_deals_in_stage(db, org_id, "Closed Lost")
+    async def get_win_loss_report(
+        self, db: AsyncSession, org_id: Optional[str] = None, current_user: Optional[User] = None
+    ) -> dict:
+        target_org = await self._resolve_org_id(db, org_id, current_user)
+        won_count = await self.repository.count_deals_in_stage(db, target_org, "Closed Won")
+        lost_count = await self.repository.count_deals_in_stage(db, target_org, "Closed Lost")
         total_closed = won_count + lost_count
         overall_win_pct = round((won_count / total_closed * 100.0), 1) if total_closed > 0 else 0.0
         overall_loss_pct = round(100.0 - overall_win_pct, 1) if total_closed > 0 else 0.0
 
-        rows = await self.repository.win_loss_by_industry(db, org_id)
+        rows = await self.repository.win_loss_by_industry(db, target_org)
         table_rows = []
         for ind, won, lost, won_v, lost_v in rows:
             w_cnt = int(won or 0)
@@ -126,9 +160,11 @@ class ReportService:
             "generated_at": today_str(),
         }
 
-    async def get_lead_attribution_report(self, db: AsyncSession) -> dict:
-        org_id = await self.repository.get_org_id(db)
-        rows = await self.repository.leads_by_source(db, org_id)
+    async def get_lead_attribution_report(
+        self, db: AsyncSession, org_id: Optional[str] = None, current_user: Optional[User] = None
+    ) -> dict:
+        target_org = await self._resolve_org_id(db, org_id, current_user)
+        rows = await self.repository.leads_by_source(db, target_org)
 
         table_rows = []
         for src, total_l, conv_l, avg_s in rows:
@@ -155,9 +191,11 @@ class ReportService:
             "generated_at": today_str(),
         }
 
-    async def get_rep_leaderboard_report(self, db: AsyncSession) -> dict:
-        org_id = await self.repository.get_org_id(db)
-        rows = await self.repository.rep_leaderboard(db, org_id)
+    async def get_rep_leaderboard_report(
+        self, db: AsyncSession, org_id: Optional[str] = None, current_user: Optional[User] = None
+    ) -> dict:
+        target_org = await self._resolve_org_id(db, org_id, current_user)
+        rows = await self.repository.rep_leaderboard(db, target_org)
 
         table_rows = []
         for idx, (name, email, role, deals, rev) in enumerate(rows, start=1):
@@ -186,9 +224,11 @@ class ReportService:
             "generated_at": today_str(),
         }
 
-    async def get_revenue_forecasting_report(self, db: AsyncSession) -> dict:
-        org_id = await self.repository.get_org_id(db)
-        row = await self.repository.revenue_forecast(db, org_id)
+    async def get_revenue_forecasting_report(
+        self, db: AsyncSession, org_id: Optional[str] = None, current_user: Optional[User] = None
+    ) -> dict:
+        target_org = await self._resolve_org_id(db, org_id, current_user)
+        row = await self.repository.revenue_forecast(db, target_org)
         committed_rev = float(row[0] if row else 0.0)
         pipeline_total = float(row[1] if row else 0.0)
         weighted_pipeline = float(row[2] if row else 0.0)
@@ -216,15 +256,17 @@ class ReportService:
             "generated_at": today_str(),
         }
 
-    async def get_activity_metrics_report(self, db: AsyncSession) -> dict:
-        org_id = await self.repository.get_org_id(db)
-        total_calls = await self.repository.count_calls(db, org_id)
-        total_emails = await self.repository.count_emails(db, org_id)
-        total_meetings = await self.repository.count_meetings(db, org_id)
+    async def get_activity_metrics_report(
+        self, db: AsyncSession, org_id: Optional[str] = None, current_user: Optional[User] = None
+    ) -> dict:
+        target_org = await self._resolve_org_id(db, org_id, current_user)
+        total_calls = await self.repository.count_calls(db, target_org)
+        total_emails = await self.repository.count_emails(db, target_org)
+        total_meetings = await self.repository.count_meetings(db, target_org)
 
         table_rows = []
         if total_calls > 0 or total_emails > 0 or total_meetings > 0:
-            users = await self.repository.org_users(db, org_id)
+            users = await self.repository.org_users(db, target_org)
             for name, role in users:
                 table_rows.append({
                     "rep_name": name,
@@ -248,9 +290,11 @@ class ReportService:
             "generated_at": today_str(),
         }
 
-    async def get_deal_duration_report(self, db: AsyncSession) -> dict:
-        org_id = await self.repository.get_org_id(db)
-        deals_count = await self.repository.count_deals(db, org_id)
+    async def get_deal_duration_report(
+        self, db: AsyncSession, org_id: Optional[str] = None, current_user: Optional[User] = None
+    ) -> dict:
+        target_org = await self._resolve_org_id(db, org_id, current_user)
+        deals_count = await self.repository.count_deals(db, target_org)
 
         table_rows = []
         if deals_count > 0:
@@ -274,9 +318,11 @@ class ReportService:
             "generated_at": today_str(),
         }
 
-    async def get_cac_report(self, db: AsyncSession) -> dict:
-        org_id = await self.repository.get_org_id(db)
-        customer_count = await self.repository.count_deals_in_stage(db, org_id, "Closed Won")
+    async def get_cac_report(
+        self, db: AsyncSession, org_id: Optional[str] = None, current_user: Optional[User] = None
+    ) -> dict:
+        target_org = await self._resolve_org_id(db, org_id, current_user)
+        customer_count = await self.repository.count_deals_in_stage(db, target_org, "Closed Won")
 
         table_rows = []
         if customer_count > 0:
@@ -301,9 +347,11 @@ class ReportService:
             "generated_at": today_str(),
         }
 
-    async def get_ltv_report(self, db: AsyncSession) -> dict:
-        org_id = await self.repository.get_org_id(db)
-        row = await self.repository.won_aggregate(db, org_id)
+    async def get_ltv_report(
+        self, db: AsyncSession, org_id: Optional[str] = None, current_user: Optional[User] = None
+    ) -> dict:
+        target_org = await self._resolve_org_id(db, org_id, current_user)
+        row = await self.repository.won_aggregate(db, target_org)
         won_cnt = int(row[0] if row else 0)
         tot_rev = float(row[1] if row else 0.0)
         avg_ltv = round(tot_rev / won_cnt, 2) if won_cnt > 0 else 0.0
@@ -330,12 +378,14 @@ class ReportService:
             "generated_at": today_str(),
         }
 
-    async def get_churn_analysis_report(self, db: AsyncSession) -> dict:
-        org_id = await self.repository.get_org_id(db)
-        row = await self.repository.lost_aggregate(db, org_id)
+    async def get_churn_analysis_report(
+        self, db: AsyncSession, org_id: Optional[str] = None, current_user: Optional[User] = None
+    ) -> dict:
+        target_org = await self._resolve_org_id(db, org_id, current_user)
+        row = await self.repository.lost_aggregate(db, target_org)
         lost_cnt = int(row[0] if row else 0)
         lost_arr = float(row[1] if row else 0.0)
-        tot_cnt = await self.repository.count_deals(db, org_id)
+        tot_cnt = await self.repository.count_deals(db, target_org)
         churn_rate = round((lost_cnt / tot_cnt * 100.0), 1) if tot_cnt > 0 else 0.0
 
         table_rows = []
@@ -360,9 +410,11 @@ class ReportService:
             "generated_at": today_str(),
         }
 
-    async def get_quota_attainment_report(self, db: AsyncSession) -> dict:
-        org_id = await self.repository.get_org_id(db)
-        rows = await self.repository.rep_quota(db, org_id)
+    async def get_quota_attainment_report(
+        self, db: AsyncSession, org_id: Optional[str] = None, current_user: Optional[User] = None
+    ) -> dict:
+        target_org = await self._resolve_org_id(db, org_id, current_user)
+        rows = await self.repository.rep_quota(db, target_org)
 
         table_rows = []
         total_rev = 0.0
@@ -396,9 +448,11 @@ class ReportService:
             "generated_at": today_str(),
         }
 
-    async def list_custom_reports(self, db: AsyncSession) -> list[dict]:
-        org_id = await self.repository.get_org_id(db)
-        reports = await self.repository.list_custom_reports(db, org_id)
+    async def list_custom_reports(
+        self, db: AsyncSession, org_id: Optional[str] = None, current_user: Optional[User] = None
+    ) -> list[dict]:
+        target_org = await self._resolve_org_id(db, org_id, current_user)
+        reports = await self.repository.list_custom_reports(db, target_org)
         return [
             {
                 "id": r.id,
@@ -410,52 +464,89 @@ class ReportService:
             for r in reports
         ]
 
-    async def create_custom_report(self, db: AsyncSession, name: str, filters: Optional[str] = None) -> dict:
-        org_id = await self.repository.get_org_id(db)
+    async def create_custom_report(
+        self,
+        db: AsyncSession,
+        name: str,
+        filters: Optional[str] = None,
+        org_id: Optional[str] = None,
+        current_user: Optional[User] = None,
+    ) -> dict:
+        clean_name = (name or "").strip()
+        if not clean_name:
+            raise APIException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                message="Report name must not be empty.",
+            )
+
+        target_org = await self._resolve_org_id(db, org_id, current_user)
         await self.repository.create_custom_report(
             db,
             data={
-                "organization_id": org_id,
-                "name": name,
+                "organization_id": target_org,
+                "name": clean_name,
                 "filters": filters or "All Enterprise Filters",
                 "metrics_included": "sales-performance,deal-duration,win-loss-ratio",
             },
         )
         await self._commit(db, "Failed to create custom report")
-        return {"message": f"Custom report query '{name}' saved successfully", "status": "success"}
+        return {"message": f"Custom report query '{clean_name}' saved successfully", "status": "success"}
 
-    async def run_custom_report(self, db: AsyncSession, report_id: str) -> dict:
-        org_id = await self.repository.get_org_id(db)
-        report = await self.repository.get_custom_report(db, report_id, org_id)
-        total_rev = await self.repository.total_won_revenue(db, org_id)
-        deals_count = await self.repository.count_deals(db, org_id)
-        report_name = report.name if report else f"Custom Report ({report_id})"
+    async def run_custom_report(
+        self, db: AsyncSession, report_id: str, org_id: Optional[str] = None, current_user: Optional[User] = None
+    ) -> dict:
+        target_org = await self._resolve_org_id(db, org_id, current_user)
+        report = await self.repository.get_custom_report(db, report_id, target_org)
+        if not report:
+            raise NotFoundError(message=f"Custom report with id '{report_id}' not found.")
+
+        total_rev = await self.repository.total_won_revenue(db, target_org)
+        deals_count = await self.repository.count_deals(db, target_org)
         return {
-            "report_type": report_name,
+            "report_type": report.name,
             "metrics": {"total_revenue": total_rev, "deals_analyzed": deals_count},
             "generated_at": today_str(),
         }
 
-    async def delete_custom_report(self, db: AsyncSession, report_id: str) -> dict:
-        org_id = await self.repository.get_org_id(db)
-        report = await self.repository.get_custom_report(db, report_id, org_id)
-        if report:
-            await self.repository.delete_custom_report(db, report)
-            await self._commit(db, "Failed to delete custom report")
+    async def delete_custom_report(
+        self, db: AsyncSession, report_id: str, org_id: Optional[str] = None, current_user: Optional[User] = None
+    ) -> dict:
+        target_org = await self._resolve_org_id(db, org_id, current_user)
+        report = await self.repository.get_custom_report(db, report_id, target_org)
+        if not report:
+            raise NotFoundError(message=f"Custom report with id '{report_id}' not found.")
+
+        await self.repository.delete_custom_report(db, report)
+        await self._commit(db, "Failed to delete custom report")
         return {"message": f"Custom report {report_id} deleted successfully", "status": "success"}
 
-    async def export_report_pdf(self, db: AsyncSession, report_type: str = "sales-performance") -> dict:
-        org_id = await self.repository.get_org_id(db)
+    async def export_report_pdf(
+        self,
+        db: AsyncSession,
+        report_type: str = "sales-performance",
+        org_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        current_user: Optional[User] = None,
+    ) -> dict:
+        if report_type not in VALID_REPORT_TYPES:
+            raise APIException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                message=f"Invalid report type '{report_type}'. Valid types: {sorted(list(VALID_REPORT_TYPES))}",
+            )
+
+        target_org = await self._resolve_org_id(db, org_id, current_user)
+        requesting_user_id = user_id or (current_user.id if current_user else "usr-1")
+
         pdf_url = f"https://api.crm.com/exports/analytics_{report_type}.pdf"
         try:
             export = await self.repository.create_export(
                 db,
                 data={
-                    "organization_id": org_id,
+                    "organization_id": target_org,
                     "report_type": report_type,
                     "file_format": "pdf",
                     "download_url": pdf_url,
-                    "requested_by": "usr-1",
+                    "requested_by": requesting_user_id,
                 },
             )
             await self._commit(db, "Failed to export report")
@@ -464,10 +555,24 @@ class ReportService:
             await db.rollback()
             return {"pdf_url": pdf_url}
 
-    async def export_report_csv(self, db: AsyncSession, report_type: str = "sales-performance") -> dict:
-        org_id = await self.repository.get_org_id(db)
-        deals = await self.repository.deals_for_csv(db, org_id)
+    async def export_report_csv(
+        self,
+        db: AsyncSession,
+        report_type: str = "sales-performance",
+        org_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        current_user: Optional[User] = None,
+    ) -> dict:
+        if report_type not in VALID_REPORT_TYPES:
+            raise APIException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                message=f"Invalid report type '{report_type}'. Valid types: {sorted(list(VALID_REPORT_TYPES))}",
+            )
 
+        target_org = await self._resolve_org_id(db, org_id, current_user)
+        requesting_user_id = user_id or (current_user.id if current_user else "usr-1")
+
+        deals = await self.repository.deals_for_csv(db, target_org)
         csv_rows = ["Title,Amount,Stage,Generated At"]
         for title, amount, stage in deals:
             csv_rows.append(f'"{title}",{amount},"{stage}",{today_str()}')
@@ -488,11 +593,11 @@ class ReportService:
             export = await self.repository.create_export(
                 db,
                 data={
-                    "organization_id": org_id,
+                    "organization_id": target_org,
                     "report_type": report_type,
                     "file_format": "csv",
                     "download_url": csv_url,
-                    "requested_by": "usr-1",
+                    "requested_by": requesting_user_id,
                 },
             )
             await self._commit(db, "Failed to export report")
@@ -502,35 +607,84 @@ class ReportService:
             return {"csv_url": csv_url}
 
     async def schedule_report_email(
-        self, db: AsyncSession, report_type: str, email: str, frequency: str = "Weekly"
+        self,
+        db: AsyncSession,
+        report_type: str,
+        email: str,
+        frequency: str = "Weekly",
+        org_id: Optional[str] = None,
+        current_user: Optional[User] = None,
     ) -> dict:
-        org_id = await self.repository.get_org_id(db)
+        clean_email = (email or "").strip()
+        if not clean_email or not EMAIL_REGEX.match(clean_email):
+            raise APIException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                message=f"Invalid email address '{email}'. Please provide a valid email format.",
+            )
+
+        clean_freq = (frequency or "Weekly").capitalize()
+        if clean_freq not in VALID_FREQUENCIES:
+            raise APIException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                message=f"Invalid frequency '{frequency}'. Must be one of: {sorted(list(VALID_FREQUENCIES))}",
+            )
+
+        if report_type not in VALID_REPORT_TYPES:
+            raise APIException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                message=f"Invalid report type '{report_type}'. Valid types: {sorted(list(VALID_REPORT_TYPES))}",
+            )
+
+        target_org = await self._resolve_org_id(db, org_id, current_user)
+
+        now_utc = datetime.now(timezone.utc)
+        if clean_freq == "Daily":
+            next_run_dt = now_utc + timedelta(days=1)
+        elif clean_freq == "Monthly":
+            next_run_dt = now_utc + timedelta(days=30)
+        else:
+            next_run_dt = now_utc + timedelta(days=7)
+
         await self.repository.create_scheduled_report(
             db,
             data={
-                "organization_id": org_id,
+                "organization_id": target_org,
                 "report_type": report_type,
-                "email": email,
-                "frequency": frequency,
-                "next_run": datetime.now(timezone.utc) + timedelta(days=7 if frequency == "Weekly" else 30),
+                "email": clean_email,
+                "frequency": clean_freq,
+                "next_run": next_run_dt,
             },
         )
         await self._commit(db, "Failed to schedule report")
-        return {"message": f"Scheduled {frequency} report delivery of '{report_type}' to {email}", "status": "success"}
+        return {"message": f"Scheduled {clean_freq} report delivery of '{report_type}' to {clean_email}", "status": "success"}
 
-    async def list_scheduled_reports(self, db: AsyncSession) -> list[dict]:
-        org_id = await self.repository.get_org_id(db)
-        items = await self.repository.list_scheduled_reports(db, org_id)
+    async def list_scheduled_reports(
+        self, db: AsyncSession, org_id: Optional[str] = None, current_user: Optional[User] = None
+    ) -> list[dict]:
+        target_org = await self._resolve_org_id(db, org_id, current_user)
+        items = await self.repository.list_scheduled_reports(db, target_org)
         return [
             {
                 "id": s.id,
                 "report_type": s.report_type,
                 "email": s.email,
                 "frequency": s.frequency,
-                "next_run": s.next_run.strftime("%Y-%m-%d") if s.next_run else "2026-08-10",
+                "next_run": s.next_run.strftime("%Y-%m-%d") if s.next_run else today_str(),
             }
             for s in items
         ]
+
+    async def delete_scheduled_report(
+        self, db: AsyncSession, schedule_id: str, org_id: Optional[str] = None, current_user: Optional[User] = None
+    ) -> dict:
+        target_org = await self._resolve_org_id(db, org_id, current_user)
+        report = await self.repository.get_scheduled_report(db, schedule_id, target_org)
+        if not report:
+            raise NotFoundError(message=f"Scheduled report with id '{schedule_id}' not found.")
+
+        await self.repository.delete_scheduled_report(db, report)
+        await self._commit(db, "Failed to delete scheduled report")
+        return {"message": f"Scheduled report {schedule_id} deleted successfully", "status": "success"}
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
         try:

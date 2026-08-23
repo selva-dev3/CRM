@@ -1,4 +1,4 @@
-﻿import { useQuery, useMutation, useQueryClient, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
 
 export interface ReportData {
@@ -111,6 +111,10 @@ export async function scheduleReportEmailApi(report_type: string, email: string,
 
 export async function fetchScheduledReportsApi(): Promise<ScheduledReportItem[]> {
   return apiClient.get<ScheduledReportItem[]>('/reports/scheduled');
+}
+
+export async function deleteScheduledReportApi(scheduleId: string): Promise<MessageResponse> {
+  return apiClient.delete<MessageResponse>(`/reports/scheduled/${scheduleId}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -283,6 +287,17 @@ export function useScheduleReportEmailMutation(options?: UseMutationOptions<Mess
   const queryClient = useQueryClient();
   return useMutation<MessageResponse, Error, { report_type: string; email: string; frequency?: string }>({
     mutationFn: ({ report_type, email, frequency }) => scheduleReportEmailApi(report_type, email, frequency),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['reports', 'scheduled'] });
+    },
+    ...options,
+  });
+}
+
+export function useDeleteScheduledReportMutation(options?: UseMutationOptions<MessageResponse, Error, string>) {
+  const queryClient = useQueryClient();
+  return useMutation<MessageResponse, Error, string>({
+    mutationFn: (scheduleId) => deleteScheduledReportApi(scheduleId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['reports', 'scheduled'] });
     },
