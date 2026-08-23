@@ -1,6 +1,6 @@
 import json
 import uuid
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import status
 from fastapi.concurrency import run_in_threadpool
@@ -63,6 +63,30 @@ DEFAULT_PLANS = {
         "features": "Unlimited Everything, Priority Support",
     },
 }
+
+
+def _stripe_to_dict(obj: Any) -> dict:
+    if obj is None:
+        return {}
+    if isinstance(obj, dict):
+        return obj
+    if hasattr(obj, "to_dict") and callable(getattr(obj, "to_dict")):
+        try:
+            res = obj.to_dict()
+            if isinstance(res, dict):
+                return res
+        except Exception:
+            pass
+    result = {}
+    for attr in ("id", "mode", "payment_status", "customer", "subscription", "metadata", "type", "data", "object"):
+        val = getattr(obj, attr, None)
+        if val is not None and not callable(val):
+            result[attr] = val
+    if result:
+        return result
+    if hasattr(obj, "__dict__"):
+        return vars(obj)
+    return {}
 
 
 def org_to_dict(org: Organization, members_count: int = 1) -> dict:
@@ -558,7 +582,8 @@ class OrganizationDomainService:
                 message="Invalid or unresolvable Stripe checkout session.",
             ) from e
 
-        metadata = session.metadata or {}
+        session_dict = _stripe_to_dict(session)
+        metadata = _stripe_to_dict(session_dict.get("metadata"))
         session_org_id = metadata.get("organization_id")
         plan_slug = metadata.get("plan_slug", "")
 
@@ -570,21 +595,22 @@ class OrganizationDomainService:
             )
 
         # Verify mode and payment status
-        if getattr(session, "mode", "") != "subscription":
+        mode = session_dict.get("mode", "")
+        if mode != "subscription":
             raise APIException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 message="Invalid checkout session mode.",
             )
 
-        payment_status = getattr(session, "payment_status", "")
+        payment_status = session_dict.get("payment_status", "")
         if payment_status not in ("paid", "no_payment_required"):
             return {
                 "verified": False,
                 "db_synced": False,
                 "plan": None,
                 "plan_slug": plan_slug,
-                "status": "unpaid",
-                "message": f"Payment is not confirmed (status: {payment_status}).",
+                "status": "pending",
+                "message": f"Payment has not been confirmed (status: {payment_status}).",
             }
 
         # Check DB synchronization state
@@ -600,13 +626,16 @@ class OrganizationDomainService:
         plan_info = DEFAULT_PLANS.get(clean_slug)
         plan_name = db_plan.name if db_plan else (plan_info.get("name", clean_slug.capitalize()) if plan_info else clean_slug.capitalize())
 
+        status_str = "completed" if db_synced else "processing"
+        message_str = "Subscription activated successfully." if db_synced else "Payment verified. Subscription activation is still processing."
+
         return {
             "verified": True,
             "db_synced": db_synced,
             "plan": plan_name,
             "plan_slug": clean_slug,
-            "status": "success",
-            "message": "Payment verified successfully.",
+            "status": status_str,
+            "message": message_str,
         }
 
     async def apply_verified_subscription_upgrade(
@@ -691,8 +720,9 @@ class OrganizationDomainService:
                 message="Invalid Stripe webhook signature.",
             ) from e
 
-        event_id = event.get("id")
-        event_type = event.get("type", "")
+        event_dict = _stripe_to_dict(event)
+        event_id = event_dict.get("id")
+        event_type = event_dict.get("type", "")
 
         # Idempotency check
         if event_id:
@@ -702,7 +732,8 @@ class OrganizationDomainService:
                 return {"status": "ignored_duplicate", "message": f"Event '{event_id}' already processed"}
 
         if event_type in ("checkout.session.completed", "payment_intent.succeeded", "invoice.payment_succeeded"):
-            obj = event.get("data", {}).get("object", {})
+            data_dict = _stripe_to_dict(event_dict.get("data", {}))
+            obj = _stripe_to_dict(data_dict.get("object", {}))
             payment_status = obj.get("payment_status", "paid")
             if payment_status not in ("paid", "no_payment_required"):
                 logger.warning(
@@ -712,7 +743,7 @@ class OrganizationDomainService:
                 )
                 return {"status": "pending_or_unpaid", "message": f"Payment status is {payment_status}"}
 
-            metadata = obj.get("metadata", {})
+            metadata = _stripe_to_dict(obj.get("metadata", {}))
             org_id = metadata.get("organization_id")
             plan_slug = metadata.get("plan_slug")
             if org_id and plan_slug:

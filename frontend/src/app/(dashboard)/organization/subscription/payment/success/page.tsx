@@ -41,6 +41,22 @@ function PaymentSuccessContent() {
     useOrganizationSubscriptionQuery();
   const { data: org } = useCurrentOrganizationQuery();
 
+  const [isSyncTimedOut, setIsSyncTimedOut] = React.useState(false);
+
+  useEffect(() => {
+    let timer: NodeJS.Timeout | undefined;
+    if (verifyResult?.verified && !verifyResult?.db_synced) {
+      timer = setTimeout(() => {
+        setIsSyncTimedOut(true);
+      }, 20000);
+    } else {
+      setIsSyncTimedOut(false);
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [verifyResult?.verified, verifyResult?.db_synced]);
+
   useEffect(() => {
     if (verifyResult?.verified && verifyResult?.db_synced) {
       queryClient.invalidateQueries({ queryKey: ['organization-subscription'] });
@@ -171,6 +187,54 @@ function PaymentSuccessContent() {
 
   // State 4: Verified by Stripe, but Webhook DB sync is still pending
   if (verifyResult.verified && !verifyResult.db_synced) {
+    if (isSyncTimedOut) {
+      return (
+        <div className="min-h-screen bg-[#F9FAFB] flex items-center justify-center p-6">
+          <div className="max-w-md w-full space-y-6">
+            <Card className="p-8 bg-white border border-[#E5E7EB] rounded-2xl shadow-saas-md text-center space-y-6">
+              <div className="mx-auto w-16 h-16 bg-[#F59E0B]/10 border border-[#F59E0B]/20 rounded-full flex items-center justify-center text-[#F59E0B]">
+                <RefreshCw className="w-9 h-9" />
+              </div>
+              <div className="space-y-2">
+                <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+                  Payment Received · Sync In Progress
+                </Badge>
+                <h1 className="text-xl font-bold text-[#111827] tracking-tight">
+                  Activation Still Processing
+                </h1>
+                <p className="text-sm text-[#4B5563]">
+                  Your payment was received. Our system is still finalizing the subscription update.
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setIsSyncTimedOut(false);
+                    refetchVerify();
+                  }}
+                  className="flex-1 cursor-pointer gap-2"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  <span>Check Status</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant="primary"
+                  onClick={handleReturn}
+                  className="flex-1 cursor-pointer gap-2"
+                >
+                  <span>Return to Billing</span>
+                  <ArrowRight className="w-4 h-4" />
+                </Button>
+              </div>
+            </Card>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="min-h-screen bg-[#F9FAFB] flex items-center justify-center p-6">
         <div className="max-w-md w-full space-y-6">

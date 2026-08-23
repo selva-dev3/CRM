@@ -44,7 +44,7 @@ api_router.include_router(invitations.router, prefix="/organizations/invitations
 # Protected Application API endpoints requiring valid JWT Bearer token
 api_router.include_router(users.router, prefix="/users", tags=["2. User Management"], dependencies=[Depends(get_current_user)])
 api_router.include_router(roles.router, prefix="/roles", tags=["3. Roles & Permissions (RBAC)"], dependencies=[Depends(get_current_user)])
-api_router.include_router(organizations.router, prefix="/organizations", tags=["4. Organizations"], dependencies=[Depends(get_current_user)])
+api_router.include_router(organizations.router, prefix="/organizations", tags=["4. Organizations"])
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["5. Dashboard & KPIs"], dependencies=[Depends(get_current_user)])
 api_router.include_router(leads.router, prefix="/leads", tags=["6. Lead Management"], dependencies=[Depends(get_current_user)])
 api_router.include_router(contacts.router, prefix="/contacts", tags=["7. Contact Management"], dependencies=[Depends(get_current_user)])

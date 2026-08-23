@@ -457,3 +457,98 @@ async def test_verify_session_reports_completed_sync_when_db_updated(org_service
         assert result["verified"] is True
         assert result["db_synced"] is True
         assert result["plan"] == "Starter"
+
+
+@pytest.mark.asyncio
+async def test_verify_session_with_real_stripe_object_no_key_error(org_service, mock_db):
+    """Test 21: Verify endpoint handles real StripeObject without KeyError: 'get' or AttributeError."""
+    import stripe
+
+    mock_repo = org_service.repository
+    org = Organization(id="org-1", name="Acme Corp", plan="Starter")
+    mock_repo.get_by_id = AsyncMock(return_value=org)
+    mock_repo.get_subscription = AsyncMock(
+        return_value=OrganizationSubscription(id="s-1", checkout_session_id="cs_real_stripe_123")
+    )
+    starter_plan = SubscriptionPlan(id="p-1", name="Starter", slug="starter", price_monthly=999.0, is_active=True)
+    mock_repo.get_plan_by_slug = AsyncMock(return_value=starter_plan)
+
+    # Construct real StripeObject (which does not have a .get method)
+    real_session = stripe.StripeObject.construct_from({
+        "id": "cs_real_stripe_123",
+        "mode": "subscription",
+        "payment_status": "paid",
+        "customer": "cus_real_123",
+        "subscription": "sub_real_123",
+        "metadata": {"organization_id": "org-1", "plan_slug": "starter"}
+    }, "key")
+
+    with patch("app.core.config.settings.STRIPE_SECRET_KEY", "sk_test_123"), \
+         patch("stripe.checkout.Session.retrieve", return_value=real_session):
+
+        result = await org_service.verify_subscription_checkout(
+            mock_db, session_id="cs_real_stripe_123", org_id="org-1"
+        )
+        assert result["verified"] is True
+        assert result["db_synced"] is True
+        assert result["plan"] == "Starter"
+        assert result["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_webhook_with_real_stripe_event_no_key_error(org_service, mock_db):
+    """Test 22: Webhook handles real Stripe Event without AttributeError/KeyError on dict methods."""
+    import stripe
+
+    mock_repo = org_service.repository
+    org = Organization(id="org-1", name="Acme Corp", plan="Free", max_users=3)
+    subscription = OrganizationSubscription(
+        id="sub-1", organization_id="org-1", plan_id=None, amount=0.0, status="active"
+    )
+    starter_plan = SubscriptionPlan(
+        id="plan-starter-id",
+        name="Starter",
+        slug="starter",
+        price_monthly=999.0,
+        max_users=10,
+        max_storage_gb=20,
+        ai_credits=500,
+        is_active=True,
+    )
+
+    mock_repo.get_by_id = AsyncMock(return_value=org)
+    mock_repo.get_subscription = AsyncMock(return_value=subscription)
+    mock_repo.get_plan_by_slug = AsyncMock(return_value=starter_plan)
+    mock_repo.get_processed_webhook_event = AsyncMock(return_value=None)
+    mock_repo.record_processed_webhook_event = AsyncMock()
+    mock_repo.create_audit_log = AsyncMock()
+
+    # Construct real Stripe Event object
+    real_event = stripe.Event.construct_from({
+        "id": "evt_real_123",
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "id": "cs_real_session_999",
+                "customer": "cus_real_999",
+                "subscription": "sub_real_999",
+                "payment_status": "paid",
+                "metadata": {
+                    "organization_id": "org-1",
+                    "plan_slug": "starter",
+                },
+            }
+        },
+    }, "key")
+
+    with patch("app.core.config.settings.STRIPE_WEBHOOK_SECRET", "whsec_test"), \
+         patch("stripe.Webhook.construct_event", return_value=real_event):
+
+        result = await org_service.handle_stripe_subscription_webhook(
+            mock_db, payload_bytes=b"{}", sig_header="valid_sig"
+        )
+
+    assert result["status"] == "success"
+    assert org.plan == "Starter"
+    assert subscription.checkout_session_id == "cs_real_session_999"
+
