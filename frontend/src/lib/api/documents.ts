@@ -1,4 +1,4 @@
-﻿import { useQuery, useMutation, useQueryClient, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
 
 export interface DocumentItem {
@@ -43,11 +43,7 @@ export async function fetchDocumentsApi(params?: { page?: number; limit?: number
 export async function uploadDocumentApi(file: File): Promise<DocumentItem> {
   const formData = new FormData();
   formData.append('file', file);
-  return apiClient.post<DocumentItem>('/documents/upload', formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
-  });
+  return apiClient.post<DocumentItem>('/documents/upload', formData);
 }
 
 export async function fetchDocumentApi(documentId: string): Promise<DocumentItem> {
