@@ -56,6 +56,10 @@ class ScheduleReportCreate(BaseModel):
     frequency: ReportFrequencyEnum = ReportFrequencyEnum.WEEKLY
 
 
+class ExportReportRequest(BaseModel):
+    report_type: str = Field(default="sales-performance", max_length=100)
+
+
 class PdfExportResponse(BaseModel):
     pdf_url: str
 

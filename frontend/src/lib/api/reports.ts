@@ -84,9 +84,7 @@ export async function fetchCustomReportsApi(): Promise<CustomReportItem[]> {
 }
 
 export async function createCustomReportApi(name: string, filters?: string): Promise<MessageResponse> {
-  const query = new URLSearchParams({ name });
-  if (filters) query.append('filters', filters);
-  return apiClient.post<MessageResponse>(`/reports/custom-reports?${query.toString()}`);
+  return apiClient.post<MessageResponse>('/reports/custom-reports', { name, filters });
 }
 
 export async function runCustomReportApi(reportId: string): Promise<ReportData> {
@@ -98,15 +96,15 @@ export async function deleteCustomReportApi(reportId: string): Promise<MessageRe
 }
 
 export async function exportReportPdfApi(report_type: string = 'sales-performance'): Promise<{ pdf_url: string }> {
-  return apiClient.post<{ pdf_url: string }>(`/reports/export/pdf?report_type=${encodeURIComponent(report_type)}`);
+  return apiClient.post<{ pdf_url: string }>('/reports/export/pdf', { report_type });
 }
 
 export async function exportReportCsvApi(report_type: string = 'sales-performance'): Promise<{ csv_url: string }> {
-  return apiClient.post<{ csv_url: string }>(`/reports/export/csv?report_type=${encodeURIComponent(report_type)}`);
+  return apiClient.post<{ csv_url: string }>('/reports/export/csv', { report_type });
 }
 
 export async function scheduleReportEmailApi(report_type: string, email: string, frequency: string = 'Weekly'): Promise<MessageResponse> {
-  return apiClient.post<MessageResponse>(`/reports/schedule?report_type=${encodeURIComponent(report_type)}&email=${encodeURIComponent(email)}&frequency=${encodeURIComponent(frequency)}`);
+  return apiClient.post<MessageResponse>('/reports/schedule', { report_type, email, frequency });
 }
 
 export async function fetchScheduledReportsApi(): Promise<ScheduledReportItem[]> {

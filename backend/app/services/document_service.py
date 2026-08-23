@@ -5,7 +5,7 @@ from fastapi import status, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, NotFoundError
-from app.models import Document
+from app.models import Document, User
 from app.repositories.document_repository import DocumentRepository
 from app.services.org_service import organization_service
 from app.services.s3_service import s3_service
@@ -50,9 +50,19 @@ class DocumentService:
         )
         return [document_to_dict(d) for d in documents]
 
-    async def upload_document(self, db: AsyncSession, file: UploadFile) -> dict:
-        org_id = await organization_service.resolve_valid_org_id(db)
-        user_id = await self.repository.resolve_user_id(db)
+    async def upload_document(
+        self, db: AsyncSession, file: UploadFile, current_user: Optional[User] = None
+    ) -> dict:
+        org_id = (
+            current_user.organization_id
+            if current_user and getattr(current_user, "organization_id", None)
+            else await organization_service.resolve_valid_org_id(db)
+        )
+        user_id = (
+            current_user.id
+            if current_user and getattr(current_user, "id", None)
+            else await self.repository.resolve_user_id(db)
+        )
         file_bytes = await file.read()
         file_size = len(file_bytes)
 

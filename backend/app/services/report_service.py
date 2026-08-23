@@ -1,3 +1,4 @@
+import calendar as py_cal
 import io
 import re
 from datetime import datetime, timedelta, timezone
@@ -33,6 +34,20 @@ def today_str() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
+def compute_next_run(frequency: str, start_dt: Optional[datetime] = None) -> datetime:
+    base = start_dt or datetime.now(timezone.utc)
+    clean_freq = (frequency or "").capitalize()
+    if clean_freq == "Daily":
+        return base + timedelta(days=1)
+    if clean_freq == "Monthly":
+        year = base.year + (base.month // 12)
+        month = (base.month % 12) + 1
+        max_days = py_cal.monthrange(year, month)[1]
+        clamped_day = min(base.day, max_days)
+        return base.replace(year=year, month=month, day=clamped_day)
+    return base + timedelta(days=7)
+
+
 class ReportService:
     """Business logic for analytics reports with strict multi-tenant organization isolation."""
 
@@ -42,11 +57,17 @@ class ReportService:
     async def _resolve_org_id(
         self, db: AsyncSession, org_id: Optional[str] = None, current_user: Optional[User] = None
     ) -> str:
-        if org_id:
-            return org_id
         if current_user and getattr(current_user, "organization_id", None):
             return current_user.organization_id
-        return await self.repository.get_org_id(db, current_user)
+        if org_id and org_id.strip():
+            return org_id.strip()
+        resolved = await self.repository.get_org_id(db, current_user)
+        if resolved:
+            return resolved
+        raise APIException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            message="Organization context is required for report queries.",
+        )
 
     async def get_sales_performance_report(
         self, db: AsyncSession, org_id: Optional[str] = None, current_user: Optional[User] = None
@@ -76,7 +97,7 @@ class ReportService:
                 "avg_deal_size": avg_deal_size,
             })
 
-        monthly_target = sum(r["quota_target"] for r in table_rows) if table_rows else 0.0
+        monthly_target = sum(float(r["quota_target"]) for r in table_rows) if table_rows else 0.0
         return {
             "report_type": "Sales Performance",
             "metrics": {
@@ -459,7 +480,7 @@ class ReportService:
                 "name": r.name,
                 "filters": r.filters or "All Accounts",
                 "metrics_included": (r.metrics_included.split(",") if r.metrics_included else []),
-                "created_at": r.created_at.strftime("%Y-%m-%d") if r.created_at else today_str(),
+                "created_at": r.created_at.strftime("%Y-%m-%d") if r.created_at else today_str(),  # type: ignore[union-attr]
             }
             for r in reports
         ]
@@ -502,9 +523,29 @@ class ReportService:
 
         total_rev = await self.repository.total_won_revenue(db, target_org)
         deals_count = await self.repository.count_deals(db, target_org)
+
+        raw_metrics = getattr(report, "metrics_included", None)
+        metrics_included = raw_metrics.split(",") if raw_metrics else []
+        filter_text = getattr(report, "filters", None) or "All Enterprise Filters"
+
+        metrics: dict[str, Any] = {
+            "total_revenue": total_rev,
+            "deals_analyzed": deals_count,
+            "filters_applied": filter_text,
+            "metrics_included": metrics_included,
+        }
+
+        if "pipeline-velocity" in metrics_included or "pipeline" in filter_text.lower():
+            velocity = await self.get_pipeline_velocity_report(db, target_org, current_user)
+            metrics["pipeline_velocity"] = velocity.get("metrics", {})
+
+        if "win-loss-ratio" in metrics_included or "win" in filter_text.lower():
+            win_loss = await self.get_win_loss_report(db, target_org, current_user)
+            metrics["win_loss"] = win_loss.get("metrics", {})
+
         return {
             "report_type": report.name,
-            "metrics": {"total_revenue": total_rev, "deals_analyzed": deals_count},
+            "metrics": metrics,
             "generated_at": today_str(),
         }
 
@@ -535,9 +576,16 @@ class ReportService:
             )
 
         target_org = await self._resolve_org_id(db, org_id, current_user)
-        requesting_user_id = user_id or (current_user.id if current_user else "usr-1")
+        requesting_user_id = user_id or (current_user.id if current_user and getattr(current_user, "id", None) else None)
+        if not requesting_user_id:
+            requesting_user_id = await self.repository.resolve_org_user_id(db, target_org)
+        if not requesting_user_id:
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Cannot export report: no valid user identified for this organization.",
+            )
 
-        pdf_url = f"https://api.crm.com/exports/analytics_{report_type}.pdf"
+        pdf_url = f"https://api.crm.com/exports/analytics_{target_org}_{report_type}.pdf"
         try:
             export = await self.repository.create_export(
                 db,
@@ -549,11 +597,17 @@ class ReportService:
                     "requested_by": requesting_user_id,
                 },
             )
-            await self._commit(db, "Failed to export report")
+            await self._commit(db, "Failed to record PDF export")
+            await db.refresh(export)
             return {"pdf_url": export.download_url}
-        except Exception:
+        except APIException:
+            raise
+        except Exception as e:
             await db.rollback()
-            return {"pdf_url": pdf_url}
+            raise APIException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message=f"Failed to export PDF report: {str(e)}",
+            ) from e
 
     async def export_report_csv(
         self,
@@ -570,7 +624,14 @@ class ReportService:
             )
 
         target_org = await self._resolve_org_id(db, org_id, current_user)
-        requesting_user_id = user_id or (current_user.id if current_user else "usr-1")
+        requesting_user_id = user_id or (current_user.id if current_user and getattr(current_user, "id", None) else None)
+        if not requesting_user_id:
+            requesting_user_id = await self.repository.resolve_org_user_id(db, target_org)
+        if not requesting_user_id:
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Cannot export report: no valid user identified for this organization.",
+            )
 
         deals = await self.repository.deals_for_csv(db, target_org)
         csv_rows = ["Title,Amount,Stage,Generated At"]
@@ -580,14 +641,14 @@ class ReportService:
             csv_rows.append(f"Report Type,{report_type},{today_str()}")
 
         csv_content = "\n".join(csv_rows).encode("utf-8")
-        csv_url = f"https://api.crm.com/exports/{report_type}.csv"
+        timestamp_int = int(datetime.now(timezone.utc).timestamp())
+        object_name = f"exports/{target_org}_{report_type}_{timestamp_int}.csv"
         try:
             file_obj = io.BytesIO(csv_content)
-            object_name = f"exports/{report_type}.csv"
             s3_key = s3_service.upload_file(file_obj, object_name=object_name, content_type="text/csv")
             csv_url = s3_service.generate_presigned_url(s3_key)
         except Exception:
-            pass
+            csv_url = f"https://api.crm.com/exports/{object_name}"
 
         try:
             export = await self.repository.create_export(
@@ -600,11 +661,17 @@ class ReportService:
                     "requested_by": requesting_user_id,
                 },
             )
-            await self._commit(db, "Failed to export report")
+            await self._commit(db, "Failed to record CSV export")
+            await db.refresh(export)
             return {"csv_url": export.download_url}
-        except Exception:
+        except APIException:
+            raise
+        except Exception as e:
             await db.rollback()
-            return {"csv_url": csv_url}
+            raise APIException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message=f"Failed to export CSV report: {str(e)}",
+            ) from e
 
     async def schedule_report_email(
         self,
@@ -636,14 +703,7 @@ class ReportService:
             )
 
         target_org = await self._resolve_org_id(db, org_id, current_user)
-
-        now_utc = datetime.now(timezone.utc)
-        if clean_freq == "Daily":
-            next_run_dt = now_utc + timedelta(days=1)
-        elif clean_freq == "Monthly":
-            next_run_dt = now_utc + timedelta(days=30)
-        else:
-            next_run_dt = now_utc + timedelta(days=7)
+        next_run_dt = compute_next_run(clean_freq)
 
         await self.repository.create_scheduled_report(
             db,
@@ -669,7 +729,7 @@ class ReportService:
                 "report_type": s.report_type,
                 "email": s.email,
                 "frequency": s.frequency,
-                "next_run": s.next_run.strftime("%Y-%m-%d") if s.next_run else today_str(),
+                "next_run": s.next_run.strftime("%Y-%m-%d") if s.next_run else today_str(),  # type: ignore[union-attr]
             }
             for s in items
         ]

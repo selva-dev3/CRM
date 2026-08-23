@@ -9,8 +9,11 @@ from app.models.user import User
 from app.schemas.crm_schemas import MessageResponse, ReportData
 from app.schemas.report_schemas import (
     CsvExportResponse,
+    CustomReportCreate,
     CustomReportItem,
+    ExportReportRequest,
     PdfExportResponse,
+    ScheduleReportCreate,
     ScheduledReportItem,
 )
 from app.services.report_service import report_service
@@ -195,13 +198,16 @@ async def list_custom_reports(
     dependencies=[Depends(require_permission("reports:create"))],
 )
 async def create_custom_report(
-    name: str = Query(..., min_length=1, max_length=255),
+    payload: Optional[CustomReportCreate] = None,
+    name: Optional[str] = Query(None),
     filters: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    report_name = (payload.name if payload else name) or ""
+    report_filters = (payload.filters if payload else filters)
     return await report_service.create_custom_report(
-        db, name=name, filters=filters, current_user=current_user
+        db, name=report_name, filters=report_filters, current_user=current_user
     )
 
 
@@ -242,12 +248,14 @@ async def delete_custom_report(
     dependencies=[Depends(require_permission("reports:export"))],
 )
 async def export_report_pdf(
-    report_type: str = Query("sales-performance"),
+    payload: Optional[ExportReportRequest] = None,
+    report_type: Optional[str] = Query("sales-performance"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    rtype = (payload.report_type if payload else report_type) or "sales-performance"
     return await report_service.export_report_pdf(
-        db, report_type=report_type, current_user=current_user
+        db, report_type=rtype, current_user=current_user
     )
 
 
@@ -258,12 +266,14 @@ async def export_report_pdf(
     dependencies=[Depends(require_permission("reports:export"))],
 )
 async def export_report_csv(
-    report_type: str = Query("sales-performance"),
+    payload: Optional[ExportReportRequest] = None,
+    report_type: Optional[str] = Query("sales-performance"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    rtype = (payload.report_type if payload else report_type) or "sales-performance"
     return await report_service.export_report_csv(
-        db, report_type=report_type, current_user=current_user
+        db, report_type=rtype, current_user=current_user
     )
 
 
@@ -275,17 +285,21 @@ async def export_report_csv(
     dependencies=[Depends(require_permission("reports:schedule"))],
 )
 async def schedule_report_email(
-    report_type: str = Query(...),
-    email: str = Query(...),
-    frequency: str = Query("Weekly"),
+    payload: Optional[ScheduleReportCreate] = None,
+    report_type: Optional[str] = Query(None),
+    email: Optional[str] = Query(None),
+    frequency: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    rtype = (payload.report_type if payload else report_type) or ""
+    rmail = (str(payload.email) if payload else email) or ""
+    rfreq = (payload.frequency.value if payload and hasattr(payload.frequency, "value") else (str(payload.frequency) if payload else frequency)) or "Weekly"
     return await report_service.schedule_report_email(
         db,
-        report_type=report_type,
-        email=email,
-        frequency=frequency,
+        report_type=rtype,
+        email=rmail,
+        frequency=rfreq,
         current_user=current_user,
     )
 

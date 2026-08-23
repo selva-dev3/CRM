@@ -5,9 +5,22 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import NotFoundError
-from app.models import Document
+from app.models import Document, User
 from app.repositories.document_repository import DocumentRepository
 from app.services.document_service import DocumentService, document_to_dict
+
+
+def _make_user(**overrides) -> User:
+    defaults = {
+        "id": "usr-123",
+        "email": "user@crm.com",
+        "name": "Alex Smith",
+        "organization_id": "org-test",
+        "role": "Admin",
+        "hashed_password": "hash",
+    }
+    defaults.update(overrides)
+    return User(**defaults)
 
 
 def _make_document(**overrides) -> Document:
@@ -106,3 +119,30 @@ def test_document_to_dict_uses_fallbacks():
     assert result["file_size"] == 0
     assert result["mime_type"] == "application/octet-stream"
     assert result["download_url"] == "https://api.crm.com/documents/doc-1/download"
+
+
+@pytest.mark.asyncio
+async def test_upload_document_creates_record_with_user():
+    repo = DocumentRepository()
+    mock_doc = _make_document(id="doc-new", filename="1.png", file_size=4320000, mime_type="image/png")
+    repo.create_document = AsyncMock(return_value=mock_doc)
+    service = DocumentService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    mock_upload_file = AsyncMock()
+    mock_upload_file.filename = "1.png"
+    mock_upload_file.content_type = "image/png"
+    mock_upload_file.read = AsyncMock(return_value=b"fake image bytes")
+
+    user = _make_user(id="usr-123", organization_id="org-test")
+
+    result = await service.upload_document(db, mock_upload_file, current_user=user)
+
+    assert repo.create_document.await_args is not None
+    data = repo.create_document.await_args.kwargs["data"]
+    assert data["organization_id"] == "org-test"
+    assert data["uploaded_by"] == "usr-123"
+    assert data["filename"] == "1.png"
+    assert data["mime_type"] == "image/png"
+    db.commit.assert_awaited_once()
+    assert result["filename"] == "1.png"

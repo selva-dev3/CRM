@@ -46,7 +46,9 @@ const mainClient = async function <T>(
     ...(options.headers as Record<string, string>),
   };
 
-  if (!isFormData && !headers['Content-Type']) {
+  if (isFormData) {
+    delete headers['Content-Type'];
+  } else if (!headers['Content-Type']) {
     headers['Content-Type'] = 'application/json';
   }
 

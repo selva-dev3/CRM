@@ -3,8 +3,9 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.deps import get_current_user, require_permission
 from app.db.session import get_db
-from app.api.v1.deps import require_permission
+from app.models.user import User
 from app.schemas.crm_schemas import (
     BulkActionResponse,
     BulkDeleteRequest,
@@ -37,8 +38,12 @@ async def list_documents(
     summary="Upload new document file to MinIO S3 storage",
     dependencies=[Depends(require_permission("documents:upload"))],
 )
-async def upload_document(file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
-    return await document_service.upload_document(db, file)
+async def upload_document(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await document_service.upload_document(db, file, current_user=current_user)
 
 
 @router.get(

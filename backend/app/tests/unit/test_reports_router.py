@@ -16,6 +16,12 @@ from app.api.v1.routers.reports import (
 )
 from app.core.errors import NotFoundError
 from app.models.user import User
+from app.schemas.report_schemas import (
+    CustomReportCreate,
+    ExportReportRequest,
+    ReportFrequencyEnum,
+    ScheduleReportCreate,
+)
 from app.services.report_service import report_service
 
 
@@ -137,3 +143,43 @@ async def test_export_pdf_and_csv_router(monkeypatch):
     assert "csv_url" in res_csv
     mock_pdf.assert_awaited_once_with(db, report_type="sales-performance", current_user=user)
     mock_csv.assert_awaited_once_with(db, report_type="sales-performance", current_user=user)
+
+
+@pytest.mark.asyncio
+async def test_schedule_report_email_router_with_body_payload(monkeypatch):
+    user = _make_user(org_id="org-99")
+    db = AsyncMock(spec=AsyncSession)
+    mock_sched = AsyncMock(return_value={"message": "Scheduled", "status": "success"})
+    monkeypatch.setattr(report_service, "schedule_report_email", mock_sched)
+
+    payload = ScheduleReportCreate(
+        report_type="pipeline-velocity",
+        email="alex@company.com",
+        frequency=ReportFrequencyEnum.MONTHLY,
+    )
+
+    res = await schedule_report_email(payload=payload, current_user=user, db=db)
+    assert res["status"] == "success"
+    mock_sched.assert_awaited_once_with(
+        db,
+        report_type="pipeline-velocity",
+        email="alex@company.com",
+        frequency="Monthly",
+        current_user=user,
+    )
+
+
+@pytest.mark.asyncio
+async def test_create_custom_report_router_with_body_payload(monkeypatch):
+    user = _make_user(org_id="org-99")
+    db = AsyncMock(spec=AsyncSession)
+    mock_create = AsyncMock(return_value={"message": "Created", "status": "success"})
+    monkeypatch.setattr(report_service, "create_custom_report", mock_create)
+
+    payload = CustomReportCreate(name="Q4 Revenue", filters="stage == 'Closed Won'")
+
+    res = await create_custom_report(payload=payload, current_user=user, db=db)
+    assert res["status"] == "success"
+    mock_create.assert_awaited_once_with(
+        db, name="Q4 Revenue", filters="stage == 'Closed Won'", current_user=user
+    )

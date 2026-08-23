@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -5,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import APIException, NotFoundError
 from app.models.user import User
 from app.repositories.report_repository import ReportRepository
-from app.services.report_service import ReportService, today_str
+from app.services.report_service import ReportService, compute_next_run, today_str
 
 
 class Row:
@@ -291,3 +292,59 @@ def test_today_str_format():
     value = today_str()
     assert len(value) == 10
     assert "-" in value
+
+
+def test_compute_next_run_daily_and_weekly():
+    base = datetime(2026, 3, 10, 12, 0, tzinfo=timezone.utc)
+    daily = compute_next_run("Daily", base)
+    assert daily == datetime(2026, 3, 11, 12, 0, tzinfo=timezone.utc)
+
+    weekly = compute_next_run("Weekly", base)
+    assert weekly == datetime(2026, 3, 17, 12, 0, tzinfo=timezone.utc)
+
+
+def test_compute_next_run_monthly_calendar_arithmetic():
+    # Jan 31 -> Feb 28 (clamps to last day of Feb)
+    jan31 = datetime(2026, 1, 31, 10, 0, tzinfo=timezone.utc)
+    feb_run = compute_next_run("Monthly", jan31)
+    assert feb_run.year == 2026
+    assert feb_run.month == 2
+    assert feb_run.day == 28
+
+    # Dec 15 -> Jan 15 of next year
+    dec15 = datetime(2026, 12, 15, 10, 0, tzinfo=timezone.utc)
+    jan_run = compute_next_run("Monthly", dec15)
+    assert jan_run.year == 2027
+    assert jan_run.month == 1
+    assert jan_run.day == 15
+
+
+@pytest.mark.asyncio
+async def test_export_report_pdf_raises_on_commit_failure():
+    repo = ReportRepository()
+    repo.create_export = AsyncMock(return_value=Row(download_url="https://api.crm.com/exports/test.pdf"))
+    service = ReportService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+    db.commit.side_effect = RuntimeError("DB connection lost")
+    user = _make_user(org_id="org-fail", user_id="usr-1")
+
+    with pytest.raises(APIException) as exc_info:
+        await service.export_report_pdf(db, "sales-performance", current_user=user)
+    assert exc_info.value.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_export_report_csv_resolves_org_user_fallback():
+    repo = ReportRepository()
+    repo.resolve_org_user_id = AsyncMock(return_value="usr-org-owner")
+    repo.deals_for_csv = AsyncMock(return_value=[("Deal 1", 5000.0, "Closed Won")])
+    repo.create_export = AsyncMock(return_value=Row(download_url="https://api.crm.com/exports/csv.csv"))
+    service = ReportService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.export_report_csv(db, "sales-performance", org_id="org-fallback")
+
+    repo.resolve_org_user_id.assert_awaited_once_with(db, "org-fallback")
+    assert repo.create_export.await_args is not None
+    assert repo.create_export.await_args.kwargs["data"]["requested_by"] == "usr-org-owner"
+    assert "csv_url" in result

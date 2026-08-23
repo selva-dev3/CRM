@@ -25,6 +25,10 @@ class ReportRepository:
 
         return await get_valid_org_id(db, current_user)
 
+    async def resolve_org_user_id(self, db: AsyncSession, org_id: str) -> Optional[str]:
+        res = await db.execute(select(User.id).where(User.organization_id == org_id).limit(1))
+        return res.scalar_one_or_none()
+
     # --- Sales Performance ---
     async def total_won_revenue(self, db: AsyncSession, org_id: str) -> float:
         res = await db.execute(
@@ -34,7 +38,7 @@ class ReportRepository:
         )
         return float(res.scalar() or 0.0)
 
-    async def rep_performance(self, db: AsyncSession, org_id: str) -> list[Any]:
+    async def rep_performance(self, db: AsyncSession, org_id: str, limit: int = 100) -> list[Any]:
         query = (
             select(
                 User.name,
@@ -47,9 +51,10 @@ class ReportRepository:
             .where(Deal.organization_id == org_id)
             .group_by(User.id, User.name, User.role)
             .order_by(func.sum(case((Deal.stage == "Closed Won", Deal.amount), else_=0.0)).desc())
+            .limit(limit)
         )
         res = await db.execute(query)
-        return res.all()
+        return list(res.all())
 
     # --- Pipeline Velocity ---
     async def deals_by_stage(self, db: AsyncSession, org_id: str) -> list[Any]:
@@ -63,7 +68,7 @@ class ReportRepository:
             .group_by(Deal.stage)
         )
         res = await db.execute(query)
-        return res.all()
+        return list(res.all())
 
     # --- Win / Loss ---
     async def count_deals_in_stage(self, db: AsyncSession, org_id: str, stage: str) -> int:
@@ -72,7 +77,7 @@ class ReportRepository:
         )
         return res.scalar() or 0
 
-    async def win_loss_by_industry(self, db: AsyncSession, org_id: str) -> list[Any]:
+    async def win_loss_by_industry(self, db: AsyncSession, org_id: str, limit: int = 50) -> list[Any]:
         query = (
             select(
                 Company.industry,
@@ -84,12 +89,13 @@ class ReportRepository:
             .join(Company, Deal.company_id == Company.id)
             .where(Deal.organization_id == org_id)
             .group_by(Company.industry)
+            .limit(limit)
         )
         res = await db.execute(query)
-        return res.all()
+        return list(res.all())
 
     # --- Lead Attribution ---
-    async def leads_by_source(self, db: AsyncSession, org_id: str) -> list[Any]:
+    async def leads_by_source(self, db: AsyncSession, org_id: str, limit: int = 50) -> list[Any]:
         query = (
             select(
                 Lead.source,
@@ -99,12 +105,13 @@ class ReportRepository:
             )
             .where(Lead.organization_id == org_id)
             .group_by(Lead.source)
+            .limit(limit)
         )
         res = await db.execute(query)
-        return res.all()
+        return list(res.all())
 
     # --- Rep Leaderboard ---
-    async def rep_leaderboard(self, db: AsyncSession, org_id: str) -> list[Any]:
+    async def rep_leaderboard(self, db: AsyncSession, org_id: str, limit: int = 100) -> list[Any]:
         query = (
             select(
                 User.name,
@@ -117,9 +124,10 @@ class ReportRepository:
             .where(Deal.organization_id == org_id)
             .group_by(User.id, User.name, User.email, User.role)
             .order_by(func.sum(case((Deal.stage == "Closed Won", Deal.amount), else_=0.0)).desc())
+            .limit(limit)
         )
         res = await db.execute(query)
-        return res.all()
+        return list(res.all())
 
     # --- Revenue Forecasting ---
     async def revenue_forecast(self, db: AsyncSession, org_id: str) -> Optional[Any]:
@@ -146,9 +154,9 @@ class ReportRepository:
         res = await db.execute(select(func.count(Meeting.id)).where(Meeting.organization_id == org_id))
         return res.scalar() or 0
 
-    async def org_users(self, db: AsyncSession, org_id: str) -> list[Any]:
-        res = await db.execute(select(User.name, User.role).where(User.organization_id == org_id))
-        return res.all()
+    async def org_users(self, db: AsyncSession, org_id: str, limit: int = 100) -> list[Any]:
+        res = await db.execute(select(User.name, User.role).where(User.organization_id == org_id).limit(limit))
+        return list(res.all())
 
     # --- Deal Duration / CAC / LTV / Churn ---
     async def count_deals(self, db: AsyncSession, org_id: str) -> int:
@@ -176,7 +184,7 @@ class ReportRepository:
         return res.one_or_none()
 
     # --- Quota Attainment ---
-    async def rep_quota(self, db: AsyncSession, org_id: str) -> list[Any]:
+    async def rep_quota(self, db: AsyncSession, org_id: str, limit: int = 100) -> list[Any]:
         query = (
             select(
                 User.name,
@@ -187,13 +195,19 @@ class ReportRepository:
             .join(Deal, Deal.assigned_to == User.id)
             .where(Deal.organization_id == org_id)
             .group_by(User.id, User.name, User.role)
+            .limit(limit)
         )
         res = await db.execute(query)
-        return res.all()
+        return list(res.all())
 
     # --- Custom Reports ---
-    async def list_custom_reports(self, db: AsyncSession, org_id: str) -> Sequence[CustomReport]:
-        stmt = select(CustomReport).where(CustomReport.organization_id == org_id).order_by(CustomReport.created_at.desc())
+    async def list_custom_reports(self, db: AsyncSession, org_id: str, limit: int = 100) -> Sequence[CustomReport]:
+        stmt = (
+            select(CustomReport)
+            .where(CustomReport.organization_id == org_id)
+            .order_by(CustomReport.created_at.desc())
+            .limit(limit)
+        )
         res = await db.execute(stmt)
         return res.scalars().all()
 
@@ -216,11 +230,11 @@ class ReportRepository:
         db.add(export)
         return export
 
-    async def deals_for_csv(self, db: AsyncSession, org_id: str) -> list[Any]:
+    async def deals_for_csv(self, db: AsyncSession, org_id: str, limit: int = 50) -> list[Any]:
         res = await db.execute(
-            select(Deal.title, Deal.amount, Deal.stage).where(Deal.organization_id == org_id).limit(50)
+            select(Deal.title, Deal.amount, Deal.stage).where(Deal.organization_id == org_id).limit(limit)
         )
-        return res.all()
+        return list(res.all())
 
     # --- Scheduled Reports ---
     async def create_scheduled_report(self, db: AsyncSession, *, data: dict) -> ScheduledReport:
@@ -228,8 +242,13 @@ class ReportRepository:
         db.add(report)
         return report
 
-    async def list_scheduled_reports(self, db: AsyncSession, org_id: str) -> Sequence[ScheduledReport]:
-        stmt = select(ScheduledReport).where(ScheduledReport.organization_id == org_id).order_by(ScheduledReport.created_at.desc())
+    async def list_scheduled_reports(self, db: AsyncSession, org_id: str, limit: int = 100) -> Sequence[ScheduledReport]:
+        stmt = (
+            select(ScheduledReport)
+            .where(ScheduledReport.organization_id == org_id)
+            .order_by(ScheduledReport.created_at.desc())
+            .limit(limit)
+        )
         res = await db.execute(stmt)
         return res.scalars().all()
 
