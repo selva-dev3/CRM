@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 import pytest
@@ -20,7 +20,7 @@ def _make_user(**overrides) -> User:
         "role": "Sales Executive",
         "organization_id": "org-1",
         "is_active": True,
-        "created_at": datetime(2026, 8, 1, tzinfo=timezone.utc),
+        "created_at": datetime(2026, 8, 1, tzinfo=UTC),
     }
     defaults.update(overrides)
     return User(**defaults)
@@ -103,7 +103,6 @@ async def test_create_user_hashes_password(monkeypatch):
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
-    from app.services.user_service import get_password_hash
 
     monkeypatch.setattr(
         "app.services.user_service.get_password_hash", lambda pwd: f"hashed-{pwd}"
@@ -538,7 +537,9 @@ async def test_update_user_only_changes_provided_fields():
     role = type("R", (), {"id": "role-9", "name": "Sales Manager", "organization_id": None})()
     service.role_repository.get_role_by_id_or_name = AsyncMock(return_value=role)
 
-    result = await service.update_user(db, "user-1", UserUpdate(role="Sales Manager"))
+    result = await service.update_user(
+        db, "user-1", UserUpdate(role="Sales Manager"), current_user=_make_user(role="Admin")
+    )
 
     assert user.role == "role-9"
     assert user.name == "Alex Smith"
@@ -556,7 +557,9 @@ async def test_update_user_rejects_role_from_other_org():
     service.role_repository.get_role_by_id_or_name = AsyncMock(return_value=role)
 
     with pytest.raises(APIException) as exc_info:
-        await service.update_user(db, "user-1", UserUpdate(role="role-9"))
+        await service.update_user(
+            db, "user-1", UserUpdate(role="role-9"), current_user=_make_user(role="Admin")
+        )
     assert exc_info.value.status_code == 400
     assert user.role == "Sales Executive"
 
@@ -576,7 +579,9 @@ async def test_update_user_rejects_system_role():
     service.role_repository.get_role_by_id_or_name = AsyncMock(return_value=role)
 
     with pytest.raises(ForbiddenError):
-        await service.update_user(db, "user-1", UserUpdate(role="role-9"))
+        await service.update_user(
+            db, "user-1", UserUpdate(role="role-9"), current_user=_make_user(role="Admin")
+        )
     assert user.role == "Sales Executive"
 
 @pytest.mark.asyncio
@@ -591,7 +596,7 @@ async def test_get_user_quota_returns_target_and_real_achieved():
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.get_user_quota(db, "user-1")
+    result = await service.get_user_quota(db, "user-1", current_user=_make_user(role="Admin"))
 
     assert result["user_id"] == "user-1"
     assert result["target_amount"] == 100000.0
@@ -608,7 +613,7 @@ async def test_get_user_quota_without_configured_quota_is_none():
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.get_user_quota(db, "user-1")
+    result = await service.get_user_quota(db, "user-1", current_user=_make_user(role="Admin"))
 
     assert result["target_amount"] is None
     assert result["achieved_amount"] == 12000.5
@@ -623,7 +628,9 @@ async def test_set_user_quota_persists_and_commits():
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.set_user_quota(db, user_id="user-1", target_amount=250000.0)
+    result = await service.set_user_quota(
+        db, user_id="user-1", target_amount=250000.0, current_user=_make_user(role="Admin")
+    )
 
     repo.upsert_quota.assert_awaited_once_with(
         db, user_id="user-1", organization_id="org-1", target_amount=250000.0
@@ -640,5 +647,33 @@ async def test_set_user_quota_rejects_negative_target():
     db = AsyncMock(spec=AsyncSession)
 
     with pytest.raises(APIException) as exc_info:
-        await service.set_user_quota(db, user_id="user-1", target_amount=-1.0)
+        await service.set_user_quota(
+            db, user_id="user-1", target_amount=-1.0, current_user=_make_user(role="Admin")
+        )
     assert exc_info.value.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_get_user_quota_rejects_cross_org_target():
+    repo = UserRepository()
+    repo.get_by_id = AsyncMock(return_value=_make_user(organization_id="org-other"))
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(NotFoundError):
+        await service.get_user_quota(db, "user-1", current_user=_make_user(role="Admin"))
+
+
+@pytest.mark.asyncio
+async def test_set_user_quota_rejects_cross_org_target():
+    repo = UserRepository()
+    repo.get_by_id = AsyncMock(return_value=_make_user(organization_id="org-other"))
+    repo.upsert_quota = AsyncMock()
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(NotFoundError):
+        await service.set_user_quota(
+            db, user_id="user-1", target_amount=1000.0, current_user=_make_user(role="Admin")
+        )
+    repo.upsert_quota.assert_not_awaited()

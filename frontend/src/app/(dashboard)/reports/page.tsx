@@ -239,9 +239,7 @@ export default function ReportsPage() {
     { id: 'total_leads', header: 'Total Leads', className: 'text-center', cell: (row) => <span className="font-semibold">{row.total_leads}</span> },
     { id: 'converted_leads', header: 'Converted Leads', className: 'text-center', cell: (row) => <span className="font-bold text-emerald-600">{row.converted_leads}</span> },
     { id: 'conversion_rate', header: 'Conversion Rate (%)', className: 'text-center', cell: (row) => <span className="font-extrabold text-indigo-600">{row.conversion_rate}%</span> },
-    { id: 'avg_lead_score', header: 'Avg Lead Score', className: 'text-center', cell: (row) => <span className="font-semibold">{row.avg_lead_score}</span> },
-    { id: 'cac', header: 'CAC ($)', className: 'text-right', cell: (row) => <span className="font-mono text-slate-600">${row.cac}</span> },
-    { id: 'roi_ratio', header: 'ROI Ratio', className: 'text-center', cell: (row) => <span className="font-bold text-purple-600">{row.roi_ratio}x</span> }
+    { id: 'avg_lead_score', header: 'Avg Lead Score', className: 'text-center', cell: (row) => <span className="font-semibold">{row.avg_lead_score}</span> }
   ];
 
   const leaderboardColumns: DataTableColumn<any>[] = [

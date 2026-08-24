@@ -1,3 +1,4 @@
+import asyncio
 import io
 from datetime import UTC, datetime
 
@@ -8,12 +9,9 @@ from app.workers.celery_app import celery_app
 
 logger = get_logger(__name__)
 
-
-@celery_app.task(ignore_result=True)
-def send_email_async(to_email: str, subject: str, body: str):
-    # Asynchronous email delivery logic (SMTP / SendGrid / AWS SES)
-    logger.info("Sending email to %s with subject: %s", to_email, subject)
-    return {"status": "sent", "to": to_email}
+# Scheduled download links must comfortably outlive the hourly delivery
+# sweep (MinIO/S3 allows up to 7 days).
+_SCHEDULED_LINK_EXPIRY_SECONDS = 86400
 
 
 @celery_app.task
@@ -23,30 +21,33 @@ def calculate_lead_score_async(lead_id: str):
     return {"lead_id": lead_id, "status": "processed"}
 
 
-@celery_app.task
+@celery_app.task(ignore_result=True)
 def deliver_due_scheduled_reports():
-    """Generate and email every scheduled report whose next_run is due.
+    """Generate, email, and mark-delivered every scheduled report that is due.
 
     Runs hourly via celery beat. For each due schedule it builds the report
     CSV from live data, uploads it to object storage, emails a presigned
-    download link, and advances ``next_run`` — each schedule is committed
-    independently so one failure does not block or duplicate the others.
+    download link through the production email sender, and only then
+    advances ``next_run`` — a failed send leaves the schedule untouched so
+    it is retried on the next sweep. Each schedule commits independently.
     """
-    return _run_deliver_due_scheduled_reports()
-
-
-def _run_deliver_due_scheduled_reports() -> dict:
-    import asyncio
-
     return asyncio.run(_deliver_due_reports())
 
 
 async def _deliver_due_reports() -> dict:
+    from app.core.config import settings
     from app.db.session import AsyncSessionLocal
     from app.models.report import ScheduledReport
+    from app.services.email_service import send_email as send_email_via_brevo
     from app.services.report_service import compute_next_run, report_service
     from app.services.s3_service import s3_service
-    from app.workers.tasks import send_email_async
+
+    if not settings.BREVO_API_KEY:
+        logger.error(
+            "Scheduled report delivery skipped entirely: BREVO_API_KEY is not "
+            "configured; due schedules were left untouched and will be retried."
+        )
+        return {"delivered": 0, "failed": 0, "skipped_unconfigured": True}
 
     now = datetime.now(UTC)
     delivered = 0
@@ -76,18 +77,25 @@ async def _deliver_due_reports() -> dict:
                     object_name=object_name,
                     content_type="text/csv",
                 )
-                download_url = s3_service.generate_presigned_url(s3_key)
-
-                send_email_async.delay(
-                    to_email=sched_email,
-                    subject=f"Scheduled report: {sched_type}",
-                    body=(
-                        f"Your scheduled '{sched_type}' report is ready.\n\n"
-                        f"Download (link valid for 1 hour): {download_url}\n"
-                    ),
+                download_url = s3_service.generate_presigned_url(
+                    s3_key, expiration_seconds=_SCHEDULED_LINK_EXPIRY_SECONDS
                 )
 
-                # Advance only after successful generation+upload+enqueue.
+                sent = await asyncio.to_thread(
+                    send_email_via_brevo,
+                    to_email=sched_email,
+                    subject=f"Scheduled report: {sched_type}",
+                    html_content=(
+                        f"<p>Your scheduled <strong>{sched_type}</strong> report is ready.</p>"
+                        f'<p><a href="{download_url}">Download the CSV</a> '
+                        f"(link valid for 24 hours).</p>"
+                    ),
+                )
+                if not sent:
+                    # The sender already logged the provider-side failure.
+                    raise RuntimeError("email delivery failed")
+
+                # Advance only after generation+upload+actual delivery succeeded.
                 current_next = sched.next_run
                 base = max(now, current_next) if isinstance(current_next, datetime) else now
                 sched.next_run = compute_next_run(sched.frequency, base)  # type: ignore[assignment]
