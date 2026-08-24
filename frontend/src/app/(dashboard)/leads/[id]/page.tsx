@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
@@ -820,7 +820,7 @@ export default function LeadDetailPage() {
       {/* 2. NOTES TAB */}
       {activeTab === 'notes' && (
         <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-5">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-100 pb-4">
             <div>
               <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
                 <FileText className="w-4 h-4 text-indigo-600" /> Lead Notes ({notes.length})
@@ -874,7 +874,7 @@ export default function LeadDetailPage() {
       {/* 3. TASKS TAB */}
       {activeTab === 'tasks' && (
         <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-5">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-100 pb-4">
             <div>
               <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
                 <CheckSquare className="w-4 h-4 text-indigo-600" /> Assigned Lead Tasks ({tasks.length})
@@ -943,7 +943,7 @@ export default function LeadDetailPage() {
       {/* 4. EMAILS TAB */}
       {activeTab === 'emails' && (
         <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-5">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-100 pb-4">
             <div>
               <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
                 <Send className="w-4 h-4 text-indigo-600" /> Email History ({emails.length})
@@ -1002,7 +1002,7 @@ export default function LeadDetailPage() {
       {/* 5. CALLS TAB */}
       {activeTab === 'calls' && (
         <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-5">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-100 pb-4">
             <div>
               <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
                 <PhoneCall className="w-4 h-4 text-indigo-600" /> Phone Call Logs ({calls.length})
@@ -1063,7 +1063,7 @@ export default function LeadDetailPage() {
       {/* 6. DOCUMENTS TAB */}
       {activeTab === 'documents' && (
         <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-5">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-100 pb-4">
             <div>
               <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
                 <Paperclip className="w-4 h-4 text-indigo-600" /> Attached Documents ({documents.length})
@@ -1141,7 +1141,7 @@ export default function LeadDetailPage() {
       {activeTab === 'actions' && (
         <div className="space-y-6">
           <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-100 pb-3">
               <div>
                 <h3 className="text-sm font-black text-slate-950 flex items-center gap-2">
                   <Award className="w-4 h-4 text-indigo-600" /> Recalculate AI Qualification Score
@@ -1156,7 +1156,7 @@ export default function LeadDetailPage() {
           </Card>
 
           <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-100 pb-3">
               <div>
                 <h3 className="text-sm font-black text-slate-950 flex items-center gap-2">
                   <ArrowRightLeft className="w-4 h-4 text-emerald-600" /> Convert Lead to Deal, Contact & Company
@@ -1175,7 +1175,7 @@ export default function LeadDetailPage() {
               <UserCheck className="w-4 h-4 text-indigo-600" /> Assign Lead to Sales Representative
             </h3>
             <div className="flex items-center gap-3 flex-wrap">
-              <select value={selectedAssignUser} onChange={(e) => setSelectedAssignUser(e.target.value)} className="w-full sm:w-72 px-3 py-2 border border-slate-300 rounded-lg bg-slate-50 text-xs font-bold text-black">
+              <select value={selectedAssignUser} onChange={(e) => setSelectedAssignUser(e.target.value)} className="w-full sm:w-72 max-w-full px-3 py-2 border border-slate-300 rounded-lg bg-slate-50 text-xs font-bold text-black truncate">
                 <option value="">Select Sales Rep User...</option>
                 {users.map((u) => (
                   <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
@@ -1188,7 +1188,7 @@ export default function LeadDetailPage() {
           </Card>
 
           <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-100 pb-3">
               <div>
                 <h3 className="text-sm font-black text-slate-950 flex items-center gap-2">
                   <Archive className="w-4 h-4 text-amber-600" /> Archive / Unarchive Lead

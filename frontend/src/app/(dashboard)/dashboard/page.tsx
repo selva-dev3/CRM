@@ -126,9 +126,9 @@ export default function DashboardPage() {
       )}
 
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-[#E5E7EB]">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-4 border-b border-[#E5E7EB]">
         <div>
-          <h1 className="text-page-title flex items-center gap-2">
+          <h1 className="text-page-title flex flex-wrap items-center gap-x-2 gap-y-1">
             <span>Sales & CRM Overview</span>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
               Live APIs Connected
@@ -138,7 +138,7 @@ export default function DashboardPage() {
             Real-time executive metrics, sales pipeline stages, AI lead scoring & activities summary
           </p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => refetchKpis()}
             title="Refresh Live Data"
@@ -319,7 +319,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Recent Deals Table */}
         <Card className="lg:col-span-8 border border-slate-200 bg-white shadow-xs">
-          <CardHeader className="flex flex-row items-center justify-between pb-4 border-b border-slate-100">
+          <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-slate-100">
             <div>
               <CardTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">
                 <Briefcase className="w-5 h-5 text-indigo-600" />
@@ -336,10 +336,10 @@ export default function DashboardPage() {
               <table className="w-full text-left text-sm border-collapse">
                 <thead>
                   <tr className="border-b border-slate-100 bg-slate-50/70 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                    <th className="py-3 px-6">Opportunity Title</th>
-                    <th className="py-3 px-6">Value</th>
-                    <th className="py-3 px-6">Stage</th>
-                    <th className="py-3 px-6">Sales Rep</th>
+                    <th className="py-3 px-3 sm:px-6">Opportunity Title</th>
+                    <th className="py-3 px-3 sm:px-6">Value</th>
+                    <th className="py-3 px-3 sm:px-6">Stage</th>
+                    <th className="py-3 px-3 sm:px-6">Sales Rep</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -349,21 +349,21 @@ export default function DashboardPage() {
                       onClick={() => router.push('/deals')}
                       className="hover:bg-slate-50/80 transition duration-150 cursor-pointer"
                     >
-                      <td className="py-4 px-6 font-semibold text-slate-900 flex items-center gap-3">
+                      <td className="py-4 px-3 sm:px-6 font-semibold text-slate-900 flex items-center gap-3">
                         <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center font-bold text-indigo-600 text-xs shrink-0">
                           {deal.title.charAt(0)}
                         </div>
                         <span className="truncate max-w-[200px]">{deal.title}</span>
                       </td>
-                      <td className="py-4 px-6 font-bold text-emerald-700 tabular-nums">
+                      <td className="py-4 px-3 sm:px-6 font-bold text-emerald-700 tabular-nums">
                         ${deal.amount ? deal.amount.toLocaleString() : '0'}
                       </td>
-                      <td className="py-4 px-6">
+                      <td className="py-4 px-3 sm:px-6">
                         <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">
                           {deal.stage || 'In Pipeline'}
                         </span>
                       </td>
-                      <td className="py-4 px-6 text-slate-600 text-xs font-medium">
+                      <td className="py-4 px-3 sm:px-6 text-slate-600 text-xs font-medium">
                         {deal.owner || 'Selva Admin'}
                       </td>
                     </tr>

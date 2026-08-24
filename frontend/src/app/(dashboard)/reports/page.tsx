@@ -183,17 +183,23 @@ export default function ReportsPage() {
     { id: 'deals_closed', header: 'Closed', className: 'text-center', cell: (row) => <span className="font-bold text-emerald-700">{row.deals_closed}</span> },
     { id: 'win_rate', header: 'Win Rate (%)', className: 'text-center', cell: (row) => <span className="font-bold">{row.win_rate}%</span> },
     { id: 'revenue', header: 'Revenue ($)', className: 'text-right', cell: (row) => <span className="font-extrabold text-emerald-600">${row.revenue?.toLocaleString()}</span> },
-    { id: 'quota_target', header: 'Quota ($)', className: 'text-right', cell: (row) => <span className="font-mono text-slate-600">${row.quota_target?.toLocaleString()}</span> },
+    { id: 'quota_target', header: 'Quota ($)', className: 'text-right', cell: (row) => <span className="font-mono text-slate-600">{row.quota_target != null ? `$${row.quota_target.toLocaleString()}` : '—'}</span> },
     {
       id: 'attainment_pct',
       header: 'Attainment Progress',
       className: 'text-center',
       cell: (row) => (
         <div className="flex items-center gap-2 justify-center">
-          <div className="w-20 bg-slate-200 h-2 rounded-full overflow-hidden">
-            <div className={`h-full ${row.attainment_pct >= 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`} style={{ width: `${Math.min(100, row.attainment_pct)}%` }} />
-          </div>
-          <span className="font-bold text-[11px]">{row.attainment_pct}%</span>
+          {row.attainment_pct == null ? (
+            <span className="text-slate-400 text-[11px]">No quota set</span>
+          ) : (
+            <>
+              <div className="w-20 bg-slate-200 h-2 rounded-full overflow-hidden">
+                <div className={`h-full ${row.attainment_pct >= 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`} style={{ width: `${Math.min(100, row.attainment_pct)}%` }} />
+              </div>
+              <span className="font-bold text-[11px]">{row.attainment_pct}%</span>
+            </>
+          )}
         </div>
       )
     },
@@ -205,7 +211,6 @@ export default function ReportsPage() {
     { id: 'deal_count', header: 'Active Deals', className: 'text-center', cell: (row) => <span className="font-semibold">{row.deal_count}</span> },
     { id: 'total_value', header: 'Stage Value ($)', className: 'text-right', cell: (row) => <span className="font-extrabold text-emerald-600">${row.total_value?.toLocaleString()}</span> },
     { id: 'avg_days_in_stage', header: 'Avg Days in Stage', className: 'text-center', cell: (row) => <span className="font-bold text-indigo-600">{row.avg_days_in_stage} Days</span> },
-    { id: 'conversion_rate', header: 'Conversion Rate (%)', className: 'text-center', cell: (row) => <span className="font-bold">{row.conversion_rate}%</span> },
     {
       id: 'bottleneck_risk',
       header: 'Bottleneck Risk',
@@ -234,7 +239,6 @@ export default function ReportsPage() {
     { id: 'total_leads', header: 'Total Leads', className: 'text-center', cell: (row) => <span className="font-semibold">{row.total_leads}</span> },
     { id: 'converted_leads', header: 'Converted Leads', className: 'text-center', cell: (row) => <span className="font-bold text-emerald-600">{row.converted_leads}</span> },
     { id: 'conversion_rate', header: 'Conversion Rate (%)', className: 'text-center', cell: (row) => <span className="font-extrabold text-indigo-600">{row.conversion_rate}%</span> },
-    { id: 'revenue_generated', header: 'Revenue Generated ($)', className: 'text-right', cell: (row) => <span className="font-extrabold text-emerald-600">${row.revenue_generated?.toLocaleString()}</span> },
     { id: 'avg_lead_score', header: 'Avg Lead Score', className: 'text-center', cell: (row) => <span className="font-semibold">{row.avg_lead_score}</span> },
     { id: 'cac', header: 'CAC ($)', className: 'text-right', cell: (row) => <span className="font-mono text-slate-600">${row.cac}</span> },
     { id: 'roi_ratio', header: 'ROI Ratio', className: 'text-center', cell: (row) => <span className="font-bold text-purple-600">{row.roi_ratio}x</span> }
@@ -255,10 +259,8 @@ export default function ReportsPage() {
     { id: 'role', header: 'Role', cell: (row) => <span className="text-slate-500">{row.role}</span> },
     { id: 'deals_closed', header: 'Deals Closed', className: 'text-center', cell: (row) => <span className="font-bold text-emerald-600">{row.deals_closed}</span> },
     { id: 'revenue', header: 'Revenue ($)', className: 'text-right', cell: (row) => <span className="font-extrabold text-emerald-600">${row.revenue?.toLocaleString()}</span> },
-    { id: 'quota_target', header: 'Quota ($)', className: 'text-right', cell: (row) => <span className="font-mono text-slate-600">${row.quota_target?.toLocaleString()}</span> },
-    { id: 'attainment_pct', header: 'Attainment (%)', className: 'text-center', cell: (row) => <span className="font-extrabold text-indigo-600">{row.attainment_pct}%</span> },
-    { id: 'calls_made', header: 'Calls', className: 'text-center', cell: (row) => <span className="font-semibold">{row.calls_made}</span> },
-    { id: 'meetings_held', header: 'Meetings', className: 'text-center', cell: (row) => <span className="font-semibold">{row.meetings_held}</span> },
+    { id: 'quota_target', header: 'Quota ($)', className: 'text-right', cell: (row) => <span className="font-mono text-slate-600">{row.quota_target != null ? `$${row.quota_target.toLocaleString()}` : '—'}</span> },
+    { id: 'attainment_pct', header: 'Attainment (%)', className: 'text-center', cell: (row) => <span className="font-extrabold text-indigo-600">{row.attainment_pct != null ? `${row.attainment_pct}%` : '—'}</span> },
     {
       id: 'badge',
       header: 'Status',
@@ -273,32 +275,9 @@ export default function ReportsPage() {
 
   const forecastColumns: DataTableColumn<any>[] = [
     { id: 'period', header: 'Forecast Period', cell: (row) => <span className="font-bold text-slate-900">{row.period}</span> },
-    { id: 'committed_revenue', header: 'Committed ($)', className: 'text-right', cell: (row) => <span className="font-semibold text-slate-700">${row.committed_revenue?.toLocaleString()}</span> },
-    { id: 'best_case_forecast', header: 'Best Case ($)', className: 'text-right', cell: (row) => <span className="font-semibold text-indigo-600">${row.best_case_forecast?.toLocaleString()}</span> },
-    { id: 'pipeline_weighted', header: 'Weighted Pipeline ($)', className: 'text-right', cell: (row) => <span className="font-extrabold text-emerald-600">${row.pipeline_weighted?.toLocaleString()}</span> },
-    { id: 'target', header: 'Target Benchmark ($)', className: 'text-right', cell: (row) => <span className="font-mono text-slate-500">${row.target?.toLocaleString()}</span> },
-    { id: 'confidence_score', header: 'AI Confidence (%)', className: 'text-center', cell: (row) => <span className="font-bold text-purple-600">{row.confidence_score}%</span> },
-    {
-      id: 'forecast_status',
-      header: 'Status',
-      className: 'text-center',
-      cell: (row) => (
-        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-100 text-indigo-800">
-          {row.forecast_status}
-        </span>
-      )
-    }
-  ];
-
-  const activityColumns: DataTableColumn<any>[] = [
-    { id: 'rep_name', header: 'Sales Executive', cell: (row) => <span className="font-bold text-slate-900">{row.rep_name}</span> },
-    { id: 'total_calls', header: 'Calls Made', className: 'text-center', cell: (row) => <span className="font-bold text-slate-800">{row.total_calls}</span> },
-    { id: 'call_duration_mins', header: 'Duration (Mins)', className: 'text-center', cell: (row) => <span className="font-mono">{row.call_duration_mins} mins</span> },
-    { id: 'emails_sent', header: 'Emails Sent', className: 'text-center', cell: (row) => <span className="font-bold text-slate-800">{row.emails_sent}</span> },
-    { id: 'email_open_rate', header: 'Open Rate (%)', className: 'text-center', cell: (row) => <span className="font-bold text-emerald-600">{row.email_open_rate}%</span> },
-    { id: 'meetings_conducted', header: 'Meetings', className: 'text-center', cell: (row) => <span className="font-bold text-purple-600">{row.meetings_conducted}</span> },
-    { id: 'demos_given', header: 'Demos Given', className: 'text-center', cell: (row) => <span className="font-bold text-indigo-600">{row.demos_given}</span> },
-    { id: 'activity_score', header: 'Activity Score', className: 'text-center', cell: (row) => <span className="font-extrabold text-blue-600">{row.activity_score}</span> }
+    { id: 'open_deals', header: 'Open Deals', className: 'text-center', cell: (row) => <span className="font-semibold">{row.open_deals}</span> },
+    { id: 'pipeline_amount', header: 'Pipeline ($)', className: 'text-right', cell: (row) => <span className="font-semibold text-indigo-600">${row.pipeline_amount?.toLocaleString()}</span> },
+    { id: 'pipeline_weighted', header: 'Weighted Pipeline ($)', className: 'text-right', cell: (row) => <span className="font-extrabold text-emerald-600">${row.pipeline_weighted?.toLocaleString()}</span> }
   ];
 
   const durationColumns: DataTableColumn<any>[] = [
@@ -314,11 +293,7 @@ export default function ReportsPage() {
     { id: 'segment', header: 'Customer Segment', cell: (row) => <span className="font-bold text-slate-900">{row.segment}</span> },
     { id: 'customer_count', header: 'Customers', className: 'text-center', cell: (row) => <span className="font-semibold">{row.customer_count}</span> },
     { id: 'avg_ltv', header: 'Avg LTV ($)', className: 'text-right', cell: (row) => <span className="font-extrabold text-emerald-600">${row.avg_ltv?.toLocaleString()}</span> },
-    { id: 'blended_cac', header: 'Blended CAC ($)', className: 'text-right', cell: (row) => <span className="font-mono font-bold text-slate-800">${row.blended_cac?.toLocaleString()}</span> },
-    { id: 'paid_cac', header: 'Paid CAC ($)', className: 'text-right', cell: (row) => <span className="font-mono text-slate-600">${row.paid_cac?.toLocaleString()}</span> },
-    { id: 'organic_cac', header: 'Organic CAC ($)', className: 'text-right', cell: (row) => <span className="font-mono text-slate-600">${row.organic_cac?.toLocaleString()}</span> },
-    { id: 'ltv_cac_ratio', header: 'LTV : CAC Ratio', className: 'text-center', cell: (row) => <span className="font-extrabold text-purple-600">{row.ltv_cac_ratio}x</span> },
-    { id: 'annual_churn_rate', header: 'Annual Churn (%)', className: 'text-center', cell: (row) => <span className="font-bold text-rose-600">{row.annual_churn_rate ?? row.churn_rate}%</span> }
+    { id: 'total_revenue', header: 'Total Revenue ($)', className: 'text-right', cell: (row) => <span className="font-mono text-slate-700">${row.total_revenue?.toLocaleString()}</span> }
   ];
 
   const quotaColumns: DataTableColumn<any>[] = [
@@ -333,10 +308,16 @@ export default function ReportsPage() {
       className: 'text-center',
       cell: (row) => (
         <div className="flex items-center gap-2 justify-center">
-          <div className="w-20 bg-slate-200 h-2 rounded-full overflow-hidden">
-            <div className={`h-full ${row.attainment_pct >= 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`} style={{ width: `${Math.min(100, row.attainment_pct)}%` }} />
-          </div>
-          <span className="font-bold text-[11px]">{row.attainment_pct}%</span>
+          {row.attainment_pct == null ? (
+            <span className="text-slate-400 text-[11px]">No quota set</span>
+          ) : (
+            <>
+              <div className="w-20 bg-slate-200 h-2 rounded-full overflow-hidden">
+                <div className={`h-full ${row.attainment_pct >= 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`} style={{ width: `${Math.min(100, row.attainment_pct)}%` }} />
+              </div>
+              <span className="font-bold text-[11px]">{row.attainment_pct}%</span>
+            </>
+          )}
         </div>
       )
     },
@@ -345,7 +326,7 @@ export default function ReportsPage() {
       header: 'Status',
       className: 'text-center',
       cell: (row) => (
-        <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${row.status === 'Target Met' ? 'bg-emerald-100 text-emerald-800' : (row.status === 'On Track' ? 'bg-indigo-100 text-indigo-800' : 'bg-rose-100 text-rose-800')}`}>
+        <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${row.status === 'Target Met' ? 'bg-emerald-100 text-emerald-800' : (row.status === 'On Track' ? 'bg-indigo-100 text-indigo-800' : (row.status === 'No Quota Set' ? 'bg-slate-100 text-slate-500' : 'bg-rose-100 text-rose-800'))}`}>
           {row.status}
         </span>
       )
@@ -521,7 +502,7 @@ export default function ReportsPage() {
               <div className="p-4 bg-indigo-50/70 border border-indigo-100 rounded-xl">
                 <span className="text-xs font-semibold text-indigo-800 uppercase tracking-wider block">Monthly Target</span>
                 <h4 className="text-2xl font-extrabold text-indigo-950 mt-1">
-                  ${salesData?.metrics?.monthly_target !== undefined ? salesData.metrics.monthly_target.toLocaleString() : '250,000'}
+                  ${salesData?.metrics?.monthly_target !== undefined ? salesData.metrics.monthly_target.toLocaleString() : '—'}
                 </h4>
               </div>
               <div className="p-4 bg-purple-50/70 border border-purple-100 rounded-xl">
@@ -668,18 +649,23 @@ export default function ReportsPage() {
         {/* 7. ACTIVITY METRICS */}
         {activeCategory === 'activity' && (
           <div className="space-y-6">
-            <DataTable
-              columns={activityColumns}
-              data={filterRows(activityData?.metrics?.table_rows || [], ['rep_name'])}
-              getRowKey={(item) => item.rep_name}
-              isLoading={isActivityLoading}
-              emptyTitle="No Activity Data"
-              emptyDescription="No rep activity records found."
-              searchValue={searchQuery}
-              onSearchChange={setSearchQuery}
-              searchPlaceholder="Search rep name..."
-              pagination={{ pageSize: 10 }}
-            />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="p-4 bg-slate-50/70 border border-slate-100 rounded-xl">
+                <span className="text-xs font-semibold text-slate-700 uppercase tracking-wider block">Total Calls</span>
+                <h4 className="text-2xl font-extrabold text-slate-900 mt-1">{activityData?.metrics?.total_calls ?? 0}</h4>
+                <span className="text-xs text-slate-500">{activityData?.metrics?.total_call_duration_minutes ?? 0} mins total</span>
+              </div>
+              <div className="p-4 bg-emerald-50/70 border border-emerald-100 rounded-xl">
+                <span className="text-xs font-semibold text-emerald-800 uppercase tracking-wider block">Emails Sent</span>
+                <h4 className="text-2xl font-extrabold text-emerald-950 mt-1">{activityData?.metrics?.total_emails ?? 0}</h4>
+                <span className="text-xs text-emerald-700">{activityData?.metrics?.email_open_rate_pct ?? 0}% open rate</span>
+              </div>
+              <div className="p-4 bg-purple-50/70 border border-purple-100 rounded-xl">
+                <span className="text-xs font-semibold text-purple-800 uppercase tracking-wider block">Meetings Held</span>
+                <h4 className="text-2xl font-extrabold text-purple-950 mt-1">{activityData?.metrics?.total_meetings ?? 0}</h4>
+              </div>
+            </div>
+            <p className="text-sm text-slate-500">Per-rep activity breakdown is unavailable because calls, emails, and meetings are not attributed to individual users in the current data model.</p>
           </div>
         )}
 

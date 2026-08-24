@@ -497,11 +497,30 @@ class UserService:
         return {"message": f"Temporary password sent to user {user_id}", "status": "success"}
 
     async def get_user_quota(self, db: AsyncSession, user_id: str) -> dict:
-        await self.require_user(db, user_id)
-        return {"user_id": user_id, "target_amount": 100000.0, "achieved_amount": 0.0}
+        user = await self.require_user(db, user_id)
+        quota = await self.repository.get_quota(db, user_id)
+        target = float(quota.target_amount) if quota else None
+        achieved = await self.repository.total_won_revenue(db, user_id)
+        return {
+            "user_id": user.id,
+            "target_amount": target,
+            "achieved_amount": round(achieved, 2),
+        }
 
     async def set_user_quota(self, db: AsyncSession, *, user_id: str, target_amount: float) -> dict:
-        await self.require_user(db, user_id)
+        user = await self.require_user(db, user_id)
+        if target_amount < 0:
+            raise APIException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                message="Quota target must not be negative.",
+            )
+        await self.repository.upsert_quota(
+            db,
+            user_id=user.id,
+            organization_id=user.organization_id,
+            target_amount=float(target_amount),
+        )
+        await self._commit(db, "Failed to assign quota")
         return {"message": f"Quota ${target_amount} assigned to {user_id}", "status": "success"}
 
     async def get_user_scorecard(self, db: AsyncSession, user_id: str) -> dict:
