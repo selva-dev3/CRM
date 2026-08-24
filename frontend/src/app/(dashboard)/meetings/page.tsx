@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { ModalShell } from '@/components/common/modal-shell';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
 import {
@@ -449,263 +450,247 @@ export default function MeetingsPage() {
       />
 
       {/* Schedule Meeting Modal */}
-      {isCreateModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-5">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Video className="w-5 h-5 text-indigo-600" />
-                Schedule New Meeting
-              </h2>
-              <button onClick={() => setIsCreateModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
-                <X className="w-5 h-5" />
-              </button>
+      <ModalShell
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        size="lg"
+        title={
+          <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <Video className="w-5 h-5 text-indigo-600" />
+            Schedule New Meeting
+          </h2>
+        }
+      >
+        <form onSubmit={handleCreateMeetingSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+              Meeting Title *
+            </label>
+            <input
+              type="text"
+              required
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g. Q3 Sales Review with Client"
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                Start Time
+              </label>
+              <input
+                type="datetime-local"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+              />
             </div>
 
-            <form onSubmit={handleCreateMeetingSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                  Meeting Title *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Q3 Sales Review with Client"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                    Start Time
-                  </label>
-                  <input
-                    type="datetime-local"
-                    value={startTime}
-                    onChange={(e) => setStartTime(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                    End Time
-                  </label>
-                  <input
-                    type="datetime-local"
-                    value={endTime}
-                    onChange={(e) => setEndTime(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                  Attendees (comma-separated emails)
-                </label>
-                <input
-                  type="text"
-                  value={attendeesInput}
-                  onChange={(e) => setAttendeesInput(e.target.value)}
-                  placeholder="john@example.com, sara@example.com"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                  Meeting URL Link
-                </label>
-                <input
-                  type="url"
-                  value={meetingLink}
-                  onChange={(e) => setMeetingLink(e.target.value)}
-                  placeholder="https://zoom.us/j/123456789 or https://meet.google.com/..."
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
-                <button type="button" onClick={() => setIsCreateModalOpen(false)} className="px-4 py-2 text-sm font-medium text-slate-600">
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={createMeetingMutation.isPending}
-                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg font-medium text-sm cursor-pointer shadow-sm disabled:opacity-50"
-                >
-                  {createMeetingMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                  Schedule Meeting
-                </button>
-              </div>
-            </form>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                End Time
+              </label>
+              <input
+                type="datetime-local"
+                value={endTime}
+                onChange={(e) => setEndTime(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+              />
+            </div>
           </div>
-        </div>
-      )}
+
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+              Attendees (comma-separated emails)
+            </label>
+            <input
+              type="text"
+              value={attendeesInput}
+              onChange={(e) => setAttendeesInput(e.target.value)}
+              placeholder="john@example.com, sara@example.com"
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+              Meeting URL Link
+            </label>
+            <input
+              type="url"
+              value={meetingLink}
+              onChange={(e) => setMeetingLink(e.target.value)}
+              placeholder="https://zoom.us/j/123456789 or https://meet.google.com/..."
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+            />
+          </div>
+
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-3 border-t border-slate-100">
+            <button type="button" onClick={() => setIsCreateModalOpen(false)} className="px-4 py-2 text-sm font-medium text-slate-600">
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={createMeetingMutation.isPending}
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg font-medium text-sm cursor-pointer shadow-sm disabled:opacity-50"
+            >
+              {createMeetingMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+              Schedule Meeting
+            </button>
+          </div>
+        </form>
+      </ModalShell>
 
       {/* Generate Zoom Link Modal */}
-      {isZoomModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Video className="w-5 h-5 text-blue-600" />
-                Generate Zoom Meeting URL
-              </h3>
-              <button onClick={() => setIsZoomModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleGenerateZoomSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Meeting Topic</label>
-                <input
-                  type="text"
-                  value={videoTopic}
-                  onChange={(e) => setVideoTopic(e.target.value)}
-                  placeholder="e.g. Technical Product Demo"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              {generatedLinkResult && (
-                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-900 space-y-1">
-                  <span className="font-bold block">Generated Zoom Join URL:</span>
-                  <a href={generatedLinkResult} target="_blank" rel="noreferrer" className="underline font-mono break-all">
-                    {generatedLinkResult}
-                  </a>
-                </div>
-              )}
-
-              <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={() => setIsZoomModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
-                  Close
-                </button>
-                <button
-                  type="submit"
-                  disabled={createZoomMutation.isPending}
-                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
-                >
-                  {createZoomMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  Generate Link
-                </button>
-              </div>
-            </form>
+      <ModalShell
+        isOpen={isZoomModalOpen}
+        onClose={() => setIsZoomModalOpen(false)}
+        size="md"
+        title={
+          <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <Video className="w-5 h-5 text-blue-600" />
+            Generate Zoom Meeting URL
+          </h3>
+        }
+      >
+        <form onSubmit={handleGenerateZoomSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Meeting Topic</label>
+            <input
+              type="text"
+              value={videoTopic}
+              onChange={(e) => setVideoTopic(e.target.value)}
+              placeholder="e.g. Technical Product Demo"
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
+            />
           </div>
-        </div>
-      )}
+
+          {generatedLinkResult && (
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-900 space-y-1">
+              <span className="font-bold block">Generated Zoom Join URL:</span>
+              <a href={generatedLinkResult} target="_blank" rel="noreferrer" className="underline font-mono break-all">
+                {generatedLinkResult}
+              </a>
+            </div>
+          )}
+
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
+            <button type="button" onClick={() => setIsZoomModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
+              Close
+            </button>
+            <button
+              type="submit"
+              disabled={createZoomMutation.isPending}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
+            >
+              {createZoomMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              Generate Link
+            </button>
+          </div>
+        </form>
+      </ModalShell>
 
       {/* Generate Teams Link Modal */}
-      {isTeamsModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Share2 className="w-5 h-5 text-indigo-600" />
-                Generate MS Teams Meeting URL
-              </h3>
-              <button onClick={() => setIsTeamsModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleGenerateTeamsSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Meeting Subject</label>
-                <input
-                  type="text"
-                  value={videoTopic}
-                  onChange={(e) => setVideoTopic(e.target.value)}
-                  placeholder="e.g. Contract Discussion"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              {generatedLinkResult && (
-                <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg text-xs text-indigo-900 space-y-1">
-                  <span className="font-bold block">Generated Teams Join URL:</span>
-                  <a href={generatedLinkResult} target="_blank" rel="noreferrer" className="underline font-mono break-all">
-                    {generatedLinkResult}
-                  </a>
-                </div>
-              )}
-
-              <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={() => setIsTeamsModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
-                  Close
-                </button>
-                <button
-                  type="submit"
-                  disabled={createTeamsMutation.isPending}
-                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
-                >
-                  {createTeamsMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  Generate Link
-                </button>
-              </div>
-            </form>
+      <ModalShell
+        isOpen={isTeamsModalOpen}
+        onClose={() => setIsTeamsModalOpen(false)}
+        size="md"
+        title={
+          <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <Share2 className="w-5 h-5 text-indigo-600" />
+            Generate MS Teams Meeting URL
+          </h3>
+        }
+      >
+        <form onSubmit={handleGenerateTeamsSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Meeting Subject</label>
+            <input
+              type="text"
+              value={videoTopic}
+              onChange={(e) => setVideoTopic(e.target.value)}
+              placeholder="e.g. Contract Discussion"
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+            />
           </div>
-        </div>
-      )}
+
+          {generatedLinkResult && (
+            <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg text-xs text-indigo-900 space-y-1">
+              <span className="font-bold block">Generated Teams Join URL:</span>
+              <a href={generatedLinkResult} target="_blank" rel="noreferrer" className="underline font-mono break-all">
+                {generatedLinkResult}
+              </a>
+            </div>
+          )}
+
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
+            <button type="button" onClick={() => setIsTeamsModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
+              Close
+            </button>
+            <button
+              type="submit"
+              disabled={createTeamsMutation.isPending}
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
+            >
+              {createTeamsMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              Generate Link
+            </button>
+          </div>
+        </form>
+      </ModalShell>
 
       {/* Reschedule Modal */}
-      {rescheduleMeeting && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Clock className="w-5 h-5 text-indigo-600" />
-                Reschedule Meeting
-              </h3>
-              <button onClick={() => setRescheduleMeeting(null)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleRescheduleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">New Start Time</label>
-                <input
-                  type="datetime-local"
-                  required
-                  value={newStartTime}
-                  onChange={(e) => setNewStartTime(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">New End Time</label>
-                <input
-                  type="datetime-local"
-                  value={newEndTime}
-                  onChange={(e) => setNewEndTime(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={() => setRescheduleMeeting(null)} className="px-4 py-2 text-xs font-semibold text-slate-600">
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={rescheduleMutation.isPending}
-                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
-                >
-                  {rescheduleMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  Confirm Reschedule
-                </button>
-              </div>
-            </form>
+      <ModalShell
+        isOpen={!!rescheduleMeeting}
+        onClose={() => setRescheduleMeeting(null)}
+        size="md"
+        title={
+          <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <Clock className="w-5 h-5 text-indigo-600" />
+            Reschedule Meeting
+          </h3>
+        }
+      >
+        <form onSubmit={handleRescheduleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">New Start Time</label>
+            <input
+              type="datetime-local"
+              required
+              value={newStartTime}
+              onChange={(e) => setNewStartTime(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+            />
           </div>
-        </div>
-      )}
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">New End Time</label>
+            <input
+              type="datetime-local"
+              value={newEndTime}
+              onChange={(e) => setNewEndTime(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
+            <button type="button" onClick={() => setRescheduleMeeting(null)} className="px-4 py-2 text-xs font-semibold text-slate-600">
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={rescheduleMutation.isPending}
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
+            >
+              {rescheduleMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              Confirm Reschedule
+            </button>
+          </div>
+        </form>
+      </ModalShell>
 
       {/* Confirm Delete Modal */}
       {meetingToDelete && (

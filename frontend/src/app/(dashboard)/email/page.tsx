@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { ModalShell } from '@/components/common/modal-shell';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
 import {
@@ -398,10 +399,10 @@ export default function EmailPage() {
 
 
       {/* Folder Switcher Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-2 overflow-x-auto">
         <button
           onClick={() => setActiveFolder('inbox')}
-          className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+          className={`shrink-0 whitespace-nowrap px-4 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
             activeFolder === 'inbox' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
           }`}
         >
@@ -410,7 +411,7 @@ export default function EmailPage() {
 
         <button
           onClick={() => setActiveFolder('drafts')}
-          className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+          className={`shrink-0 whitespace-nowrap px-4 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
             activeFolder === 'drafts' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
           }`}
         >
@@ -419,7 +420,7 @@ export default function EmailPage() {
 
         <button
           onClick={() => setActiveFolder('templates')}
-          className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+          className={`shrink-0 whitespace-nowrap px-4 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
             activeFolder === 'templates' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
           }`}
         >
@@ -428,7 +429,7 @@ export default function EmailPage() {
 
         <button
           onClick={() => setActiveFolder('signatures')}
-          className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+          className={`shrink-0 whitespace-nowrap px-4 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
             activeFolder === 'signatures' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
           }`}
         >
@@ -567,316 +568,298 @@ export default function EmailPage() {
       )}
 
       {/* Compose Email Modal */}
-      {isComposeModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-5">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Send className="w-5 h-5 text-indigo-600" />
-                Compose Outbound Email
-              </h2>
-              <button onClick={() => setIsComposeModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
-                <X className="w-5 h-5" />
+      <ModalShell
+        isOpen={isComposeModalOpen}
+        onClose={() => setIsComposeModalOpen(false)}
+        size="xl"
+        title={
+          <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <Send className="w-5 h-5 text-indigo-600" />
+            Compose Outbound Email
+          </h2>
+        }
+      >
+        <form onSubmit={handleSendEmailSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+              Recipient Email (To) *
+            </label>
+            <input
+              type="email"
+              required
+              value={recipient}
+              onChange={(e) => setRecipient(e.target.value)}
+              placeholder="client@company.com"
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+              Subject *
+            </label>
+            <input
+              type="text"
+              required
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              placeholder="e.g. Enterprise CRM Proposal Review"
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+              Email Message Body
+            </label>
+            <textarea
+              rows={6}
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              placeholder="Type your email message or select a template..."
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none resize-none font-sans"
+            />
+          </div>
+
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-3 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={handleSaveDraftSubmit}
+              className="px-3.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg border border-slate-300 cursor-pointer"
+            >
+              Save as Draft
+            </button>
+
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-3">
+              <button type="button" onClick={() => setIsComposeModalOpen(false)} className="px-4 py-2 text-sm font-medium text-slate-600">
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={sendEmailMutation.isPending}
+                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg font-medium text-sm cursor-pointer shadow-sm disabled:opacity-50"
+              >
+                {sendEmailMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                Send Email
               </button>
             </div>
-
-            <form onSubmit={handleSendEmailSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                  Recipient Email (To) *
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={recipient}
-                  onChange={(e) => setRecipient(e.target.value)}
-                  placeholder="client@company.com"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                  Subject *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={subject}
-                  onChange={(e) => setSubject(e.target.value)}
-                  placeholder="e.g. Enterprise CRM Proposal Review"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                  Email Message Body
-                </label>
-                <textarea
-                  rows={6}
-                  value={body}
-                  onChange={(e) => setBody(e.target.value)}
-                  placeholder="Type your email message or select a template..."
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none resize-none font-sans"
-                />
-              </div>
-
-              <div className="flex justify-between items-center pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={handleSaveDraftSubmit}
-                  className="px-3.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg border border-slate-300 cursor-pointer"
-                >
-                  Save as Draft
-                </button>
-
-                <div className="flex gap-3">
-                  <button type="button" onClick={() => setIsComposeModalOpen(false)} className="px-4 py-2 text-sm font-medium text-slate-600">
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={sendEmailMutation.isPending}
-                    className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg font-medium text-sm cursor-pointer shadow-sm disabled:opacity-50"
-                  >
-                    {sendEmailMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                    Send Email
-                  </button>
-                </div>
-              </div>
-            </form>
           </div>
-        </div>
-      )}
+        </form>
+      </ModalShell>
 
       {/* Create Template Modal */}
-      {isTemplateModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Layers className="w-5 h-5 text-purple-600" />
-                Create Email Template
-              </h3>
-              <button onClick={() => setIsTemplateModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateTemplateSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Template Name *</label>
-                <input
-                  type="text"
-                  required
-                  value={tmplName}
-                  onChange={(e) => setTmplName(e.target.value)}
-                  placeholder="e.g. Sales Intro Template"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Subject Line *</label>
-                <input
-                  type="text"
-                  required
-                  value={tmplSubject}
-                  onChange={(e) => setTmplSubject(e.target.value)}
-                  placeholder="e.g. Quick question about {{company}}"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Template Body</label>
-                <textarea
-                  rows={4}
-                  value={tmplBody}
-                  onChange={(e) => setTmplBody(e.target.value)}
-                  placeholder="Hi {{first_name}}, ..."
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-purple-500 resize-none"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={() => setIsTemplateModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={createTemplateMutation.isPending}
-                  className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
-                >
-                  {createTemplateMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  Save Template
-                </button>
-              </div>
-            </form>
+      <ModalShell
+        isOpen={isTemplateModalOpen}
+        onClose={() => setIsTemplateModalOpen(false)}
+        size="lg"
+        title={
+          <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <Layers className="w-5 h-5 text-purple-600" />
+            Create Email Template
+          </h3>
+        }
+      >
+        <form onSubmit={handleCreateTemplateSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Template Name *</label>
+            <input
+              type="text"
+              required
+              value={tmplName}
+              onChange={(e) => setTmplName(e.target.value)}
+              placeholder="e.g. Sales Intro Template"
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
+            />
           </div>
-        </div>
-      )}
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Subject Line *</label>
+            <input
+              type="text"
+              required
+              value={tmplSubject}
+              onChange={(e) => setTmplSubject(e.target.value)}
+              placeholder="e.g. Quick question about {{company}}"
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Template Body</label>
+            <textarea
+              rows={4}
+              value={tmplBody}
+              onChange={(e) => setTmplBody(e.target.value)}
+              placeholder="Hi {{first_name}}, ..."
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-purple-500 resize-none"
+            />
+          </div>
+
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3 pt-2">
+            <button type="button" onClick={() => setIsTemplateModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={createTemplateMutation.isPending}
+              className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
+            >
+              {createTemplateMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              Save Template
+            </button>
+          </div>
+        </form>
+      </ModalShell>
 
       {/* Bulk Campaign Blast Modal */}
-      {isCampaignModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Users className="w-5 h-5 text-purple-600" />
-                Bulk Campaign Blast
-              </h3>
-              <button onClick={() => setIsCampaignModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSendCampaignSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Select Email Template</label>
-                <select
-                  value={selectedTemplateId}
-                  onChange={(e) => setSelectedTemplateId(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
-                >
-                  <option value="">Choose Template...</option>
-                  {templates.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name} ({t.category})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Target Lead IDs (comma-separated)</label>
-                <input
-                  type="text"
-                  required
-                  value={targetLeadsInput}
-                  onChange={(e) => setTargetLeadsInput(e.target.value)}
-                  placeholder="lead-101, lead-102, lead-103"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={() => setIsCampaignModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={sendCampaignMutation.isPending}
-                  className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
-                >
-                  {sendCampaignMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  Launch Campaign
-                </button>
-              </div>
-            </form>
+      <ModalShell
+        isOpen={isCampaignModalOpen}
+        onClose={() => setIsCampaignModalOpen(false)}
+        size="md"
+        title={
+          <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <Users className="w-5 h-5 text-purple-600" />
+            Bulk Campaign Blast
+          </h3>
+        }
+      >
+        <form onSubmit={handleSendCampaignSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Select Email Template</label>
+            <select
+              value={selectedTemplateId}
+              onChange={(e) => setSelectedTemplateId(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
+            >
+              <option value="">Choose Template...</option>
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name} ({t.category})
+                </option>
+              ))}
+            </select>
           </div>
-        </div>
-      )}
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Target Lead IDs (comma-separated)</label>
+            <input
+              type="text"
+              required
+              value={targetLeadsInput}
+              onChange={(e) => setTargetLeadsInput(e.target.value)}
+              placeholder="lead-101, lead-102, lead-103"
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
+            />
+          </div>
+
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3 pt-2">
+            <button type="button" onClick={() => setIsCampaignModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={sendCampaignMutation.isPending}
+              className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
+            >
+              {sendCampaignMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              Launch Campaign
+            </button>
+          </div>
+        </form>
+      </ModalShell>
 
       {/* Signature Modal */}
-      {isSignatureModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <SignatureIcon className="w-5 h-5 text-emerald-600" />
-                Add User Signature
-              </h3>
-              <button onClick={() => setIsSignatureModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveSignatureSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Signature Name *</label>
-                <input
-                  type="text"
-                  required
-                  value={sigName}
-                  onChange={(e) => setSigName(e.target.value)}
-                  placeholder="e.g. Sales Director Signature"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">HTML Markup</label>
-                <textarea
-                  rows={3}
-                  value={sigHtml}
-                  onChange={(e) => setSigHtml(e.target.value)}
-                  placeholder="<b>John Doe</b><br/>Sales Manager"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500 font-mono resize-none"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={() => setIsSignatureModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saveSignatureMutation.isPending}
-                  className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
-                >
-                  {saveSignatureMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  Save Signature
-                </button>
-              </div>
-            </form>
+      <ModalShell
+        isOpen={isSignatureModalOpen}
+        onClose={() => setIsSignatureModalOpen(false)}
+        size="md"
+        title={
+          <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <SignatureIcon className="w-5 h-5 text-emerald-600" />
+            Add User Signature
+          </h3>
+        }
+      >
+        <form onSubmit={handleSaveSignatureSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Signature Name *</label>
+            <input
+              type="text"
+              required
+              value={sigName}
+              onChange={(e) => setSigName(e.target.value)}
+              placeholder="e.g. Sales Director Signature"
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+            />
           </div>
-        </div>
-      )}
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">HTML Markup</label>
+            <textarea
+              rows={3}
+              value={sigHtml}
+              onChange={(e) => setSigHtml(e.target.value)}
+              placeholder="<b>John Doe</b><br/>Sales Manager"
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500 font-mono resize-none"
+            />
+          </div>
+
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3 pt-2">
+            <button type="button" onClick={() => setIsSignatureModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saveSignatureMutation.isPending}
+              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
+            >
+              {saveSignatureMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              Save Signature
+            </button>
+          </div>
+        </form>
+      </ModalShell>
 
       {/* Analytics Modal Drawer */}
       {trackingModalEmail && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Eye className="w-5 h-5 text-indigo-600" />
-                Email Open & Click Tracking
-              </h3>
-              <button onClick={() => setTrackingModalEmail(null)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
+        <ModalShell
+          isOpen={!!trackingModalEmail}
+          onClose={() => setTrackingModalEmail(null)}
+          size="md"
+          title={
+            <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <Eye className="w-5 h-5 text-indigo-600" />
+              Email Open & Click Tracking
+            </h3>
+          }
+        >
+          {isLoadingTracking ? (
+            <div className="py-8 flex justify-center text-slate-500">
+              <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
             </div>
-
-            {isLoadingTracking ? (
-              <div className="py-8 flex justify-center text-slate-500">
-                <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
+          ) : (
+            <div className="space-y-3">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <span className="text-xs font-semibold text-slate-500 block">Subject:</span>
+                <span className="text-xs font-bold text-slate-900">{trackingModalEmail.subject}</span>
               </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                  <span className="text-xs font-semibold text-slate-500 block">Subject:</span>
-                  <span className="text-xs font-bold text-slate-900">{trackingModalEmail.subject}</span>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl text-center">
+                  <Eye className="w-5 h-5 text-indigo-600 mx-auto mb-1" />
+                  <span className="text-slate-500 font-medium block">Total Opens</span>
+                  <span className="text-lg font-extrabold text-indigo-950">{trackingData?.opens || 3} Opens</span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 text-xs">
-                  <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl text-center">
-                    <Eye className="w-5 h-5 text-indigo-600 mx-auto mb-1" />
-                    <span className="text-slate-500 font-medium block">Total Opens</span>
-                    <span className="text-lg font-extrabold text-indigo-950">{trackingData?.opens || 3} Opens</span>
-                  </div>
-
-                  <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl text-center">
-                    <MousePointer className="w-5 h-5 text-purple-600 mx-auto mb-1" />
-                    <span className="text-slate-500 font-medium block">Link Clicks</span>
-                    <span className="text-lg font-extrabold text-purple-950">{trackingData?.link_clicks || 2} Clicks</span>
-                  </div>
+                <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl text-center">
+                  <MousePointer className="w-5 h-5 text-purple-600 mx-auto mb-1" />
+                  <span className="text-slate-500 font-medium block">Link Clicks</span>
+                  <span className="text-lg font-extrabold text-purple-950">{trackingData?.link_clicks || 2} Clicks</span>
                 </div>
               </div>
-            )}
-          </div>
-        </div>
+            </div>
+          )}
+        </ModalShell>
       )}
     </div>
   );

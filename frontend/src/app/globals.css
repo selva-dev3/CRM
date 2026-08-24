@@ -134,12 +134,54 @@
 	}
 }
 
-/* Hide horizontal scrollbar globally */
-*::-webkit-scrollbar:horizontal,
+/* Hide page-level horizontal scrollbar (the page itself must not pan).
+   Isolated scroll containers below still show an affordance. */
 html::-webkit-scrollbar:horizontal,
-body::-webkit-scrollbar:horizontal,
-[data-slot="table-container"]::-webkit-scrollbar:horizontal,
-.table-container::-webkit-scrollbar:horizontal {
+body::-webkit-scrollbar:horizontal {
 	display: none !important;
 	height: 0 !important;
+}
+
+/* Thin, unobtrusive scrollbar affordance for isolated scroll containers
+   (data tables, horizontally scrolling tab strips). */
+.overflow-x-auto::-webkit-scrollbar,
+[data-slot="table-container"]::-webkit-scrollbar {
+	height: 6px;
+}
+.overflow-x-auto::-webkit-scrollbar-thumb,
+[data-slot="table-container"]::-webkit-scrollbar-thumb {
+	background-color: rgb(148 163 184 / 0.5);
+	border-radius: 9999px;
+}
+.overflow-x-auto::-webkit-scrollbar-track,
+[data-slot="table-container"]::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+/* Utility: fully hide scrollbars on both axes (used by tab strips that
+   scroll horizontally but should not show a bar). Must stay AFTER the
+   .overflow-x-auto rules above so it wins when combined. */
+.no-scrollbar,
+.scrollbar-none {
+	-ms-overflow-style: none;
+	scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar,
+.scrollbar-none::-webkit-scrollbar {
+	display: none;
+	width: 0;
+	height: 0;
+}
+
+/* Utility: slim scrollbars for dense areas (e.g. sidebar nav). */
+.scrollbar-thin {
+	scrollbar-width: thin;
+}
+.scrollbar-thin::-webkit-scrollbar {
+	width: 6px;
+	height: 6px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+	background-color: rgb(148 163 184 / 0.5);
+	border-radius: 9999px;
 }

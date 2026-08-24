@@ -28,6 +28,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { ModalShell } from '@/components/common/modal-shell';
 import {
   useContactQuery,
   useUpdateContactMutation,
@@ -312,7 +313,7 @@ export default function ContactDetailsPage() {
           <span>Back to Contact Directory</span>
         </Link>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Button
             size="sm"
             variant="outline"
@@ -398,10 +399,10 @@ export default function ContactDetailsPage() {
       </div>
 
       {/* Sub-Resource Tabs Bar */}
-      <div className="flex items-center border-b border-slate-200 gap-6 text-sm font-semibold text-slate-600">
+      <div className="flex items-center border-b border-slate-200 gap-4 sm:gap-6 text-sm font-semibold text-slate-600 overflow-x-auto">
         <button
           onClick={() => setActiveTab('overview')}
-          className={`pb-3 cursor-pointer transition border-b-2 flex items-center gap-2 ${
+          className={`pb-3 cursor-pointer transition border-b-2 flex items-center gap-2 shrink-0 whitespace-nowrap ${
             activeTab === 'overview' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
           }`}
         >
@@ -411,7 +412,7 @@ export default function ContactDetailsPage() {
 
         <button
           onClick={() => setActiveTab('deals')}
-          className={`pb-3 cursor-pointer transition border-b-2 flex items-center gap-2 ${
+          className={`pb-3 cursor-pointer transition border-b-2 flex items-center gap-2 shrink-0 whitespace-nowrap ${
             activeTab === 'deals' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
           }`}
         >
@@ -421,7 +422,7 @@ export default function ContactDetailsPage() {
 
         <button
           onClick={() => setActiveTab('notes')}
-          className={`pb-3 cursor-pointer transition border-b-2 flex items-center gap-2 ${
+          className={`pb-3 cursor-pointer transition border-b-2 flex items-center gap-2 shrink-0 whitespace-nowrap ${
             activeTab === 'notes' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
           }`}
         >
@@ -431,7 +432,7 @@ export default function ContactDetailsPage() {
 
         <button
           onClick={() => setActiveTab('emails')}
-          className={`pb-3 cursor-pointer transition border-b-2 flex items-center gap-2 ${
+          className={`pb-3 cursor-pointer transition border-b-2 flex items-center gap-2 shrink-0 whitespace-nowrap ${
             activeTab === 'emails' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
           }`}
         >
@@ -441,7 +442,7 @@ export default function ContactDetailsPage() {
 
         <button
           onClick={() => setActiveTab('calls')}
-          className={`pb-3 cursor-pointer transition border-b-2 flex items-center gap-2 ${
+          className={`pb-3 cursor-pointer transition border-b-2 flex items-center gap-2 shrink-0 whitespace-nowrap ${
             activeTab === 'calls' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
           }`}
         >
@@ -592,109 +593,110 @@ export default function ContactDetailsPage() {
 
       {/* EDIT MODAL */}
       {isEditModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
-          <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                <Edit className="w-5 h-5 text-blue-600" />
-                <span>Edit Contact Details</span>
-              </h3>
-            </div>
-
-            <form onSubmit={handleEditSubmit} className="space-y-4 text-xs">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">First Name</Label>
-                  <Input
-                    type="text"
-                    value={formFirstName}
-                    onChange={(e) => setFormFirstName(e.target.value)}
-                    className="h-9 text-xs"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">Last Name</Label>
-                  <Input
-                    type="text"
-                    value={formLastName}
-                    onChange={(e) => setFormLastName(e.target.value)}
-                    className="h-9 text-xs"
-                  />
-                </div>
-              </div>
-
+        <ModalShell
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+          size="md"
+          title={
+            <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+              <Edit className="w-5 h-5 text-blue-600" />
+              <span>Edit Contact Details</span>
+            </h3>
+          }
+        >
+          <form onSubmit={handleEditSubmit} className="space-y-4 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Full Name</Label>
+                <Label className="font-semibold text-slate-700">First Name</Label>
                 <Input
                   type="text"
-                  value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
+                  value={formFirstName}
+                  onChange={(e) => setFormFirstName(e.target.value)}
                   className="h-9 text-xs"
                 />
               </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">Email Address</Label>
-                  <Input
-                    type="text"
-                    value={formEmail}
-                    onChange={(e) => setFormEmail(e.target.value)}
-                    className="h-9 text-xs"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">Phone Number</Label>
-                  <Input
-                    type="text"
-                    value={formPhone}
-                    onChange={(e) => setFormPhone(e.target.value)}
-                    className="h-9 text-xs"
-                  />
-                </div>
-              </div>
-
               <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Company</Label>
-                <SearchableCompanySelect
-                  value={formCompanyId}
-                  onChange={setFormCompanyId}
-                  companies={companiesList}
+                <Label className="font-semibold text-slate-700">Last Name</Label>
+                <Input
+                  type="text"
+                  value={formLastName}
+                  onChange={(e) => setFormLastName(e.target.value)}
+                  className="h-9 text-xs"
                 />
               </div>
+            </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">Position</Label>
-                  <Input
-                    type="text"
-                    value={formPosition}
-                    onChange={(e) => setFormPosition(e.target.value)}
-                    className="h-9 text-xs"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">Job Title</Label>
-                  <Input
-                    type="text"
-                    value={formJobTitle}
-                    onChange={(e) => setFormJobTitle(e.target.value)}
-                    className="h-9 text-xs"
-                  />
-                </div>
-              </div>
+            <div className="space-y-1">
+              <Label className="font-semibold text-slate-700">Full Name</Label>
+              <Input
+                type="text"
+                value={formName}
+                onChange={(e) => setFormName(e.target.value)}
+                className="h-9 text-xs"
+              />
+            </div>
 
-              <div className="flex justify-end gap-2 pt-2">
-                <Button type="button" variant="outline" size="sm" onClick={() => setIsEditModalOpen(false)} className="cursor-pointer">
-                  Cancel
-                </Button>
-                <Button type="submit" size="sm" disabled={updateContactMutation.isPending} className="bg-blue-600 text-white font-semibold cursor-pointer">
-                  {updateContactMutation.isPending ? 'Saving...' : 'Save Changes'}
-                </Button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="font-semibold text-slate-700">Email Address</Label>
+                <Input
+                  type="text"
+                  value={formEmail}
+                  onChange={(e) => setFormEmail(e.target.value)}
+                  className="h-9 text-xs"
+                />
               </div>
-            </form>
-          </div>
-        </div>
+              <div className="space-y-1">
+                <Label className="font-semibold text-slate-700">Phone Number</Label>
+                <Input
+                  type="text"
+                  value={formPhone}
+                  onChange={(e) => setFormPhone(e.target.value)}
+                  className="h-9 text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="font-semibold text-slate-700">Company</Label>
+              <SearchableCompanySelect
+                value={formCompanyId}
+                onChange={setFormCompanyId}
+                companies={companiesList}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="font-semibold text-slate-700">Position</Label>
+                <Input
+                  type="text"
+                  value={formPosition}
+                  onChange={(e) => setFormPosition(e.target.value)}
+                  className="h-9 text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="font-semibold text-slate-700">Job Title</Label>
+                <Input
+                  type="text"
+                  value={formJobTitle}
+                  onChange={(e) => setFormJobTitle(e.target.value)}
+                  className="h-9 text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setIsEditModalOpen(false)} className="cursor-pointer">
+                Cancel
+              </Button>
+              <Button type="submit" size="sm" disabled={updateContactMutation.isPending} className="bg-blue-600 text-white font-semibold cursor-pointer">
+                {updateContactMutation.isPending ? 'Saving...' : 'Save Changes'}
+              </Button>
+            </div>
+          </form>
+        </ModalShell>
       )}
 
       {/* CONFIRM DELETE MODAL */}

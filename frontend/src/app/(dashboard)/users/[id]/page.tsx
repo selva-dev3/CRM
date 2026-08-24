@@ -28,7 +28,6 @@ import {
   Lock,
   RotateCcw,
   Plus,
-  X,
   Pencil
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -37,6 +36,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { ModalShell } from '@/components/common/modal-shell';
 import { PermissionGate } from '@/components/common/permission-gate';
 import {
   useUserQuery,
@@ -465,10 +465,10 @@ export default function UserDetailPage() {
       </div>
 
       {/* Navigation Tabs */}
-      <div className="flex items-center border-b border-slate-200 gap-6 text-sm font-semibold text-slate-600">
+      <div className="flex items-center border-b border-slate-200 gap-4 sm:gap-6 overflow-x-auto text-sm font-semibold text-slate-600">
         <button
           onClick={() => setActiveTab('profile')}
-          className={`pb-3 cursor-pointer transition border-b-2 ${
+          className={`shrink-0 whitespace-nowrap pb-3 cursor-pointer transition border-b-2 ${
             activeTab === 'profile' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
           }`}
         >
@@ -476,7 +476,7 @@ export default function UserDetailPage() {
         </button>
         <button
           onClick={() => setActiveTab('performance')}
-          className={`pb-3 cursor-pointer transition border-b-2 ${
+          className={`shrink-0 whitespace-nowrap pb-3 cursor-pointer transition border-b-2 ${
             activeTab === 'performance' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
           }`}
         >
@@ -484,7 +484,7 @@ export default function UserDetailPage() {
         </button>
         <button
           onClick={() => setActiveTab('security')}
-          className={`pb-3 cursor-pointer transition border-b-2 ${
+          className={`shrink-0 whitespace-nowrap pb-3 cursor-pointer transition border-b-2 ${
             activeTab === 'security' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
           }`}
         >
@@ -492,7 +492,7 @@ export default function UserDetailPage() {
         </button>
         <button
           onClick={() => setActiveTab('activity')}
-          className={`pb-3 cursor-pointer transition border-b-2 ${
+          className={`shrink-0 whitespace-nowrap pb-3 cursor-pointer transition border-b-2 ${
             activeTab === 'activity' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
           }`}
         >
@@ -645,134 +645,120 @@ export default function UserDetailPage() {
 
       {/* CREATE TEAM MODAL */}
       {isTeamModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
-          <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                <Users className="w-5 h-5 text-blue-600" />
-                <span>Assign / Create Team</span>
-              </h3>
-              <button
-                type="button"
-                onClick={() => setIsTeamModalOpen(false)}
-                className="p-1 rounded text-slate-400 hover:text-slate-700 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+        <ModalShell
+          isOpen={isTeamModalOpen}
+          onClose={() => setIsTeamModalOpen(false)}
+          title={
+            <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+              <Users className="w-5 h-5 text-blue-600" />
+              <span>Assign / Create Team</span>
+            </h3>
+          }
+        >
+          <form onSubmit={handleCreateTeamSubmit} className="space-y-4 text-xs">
+            <div className="space-y-1">
+              <Label className="text-slate-700 font-semibold">Team Name</Label>
+              <Input
+                type="text"
+                placeholder="e.g. Enterprise Sales East"
+                value={newTeamName}
+                onChange={(e) => setNewTeamName(e.target.value)}
+                className="h-9 text-xs"
+              />
             </div>
 
-            <form onSubmit={handleCreateTeamSubmit} className="space-y-4 text-xs">
-              <div className="space-y-1">
-                <Label className="text-slate-700 font-semibold">Team Name</Label>
-                <Input
-                  type="text"
-                  placeholder="e.g. Enterprise Sales East"
-                  value={newTeamName}
-                  onChange={(e) => setNewTeamName(e.target.value)}
-                  className="h-9 text-xs"
-                />
-              </div>
+            <div className="space-y-1">
+              <Label className="text-slate-700 font-semibold">Role in Team</Label>
+              <select
+                value={newTeamRole}
+                onChange={(e) => setNewTeamRole(e.target.value)}
+                className="w-full h-9 rounded-md border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="Member">Member</option>
+                <option value="Team Lead">Team Lead</option>
+                <option value="Manager">Manager</option>
+              </select>
+            </div>
 
-              <div className="space-y-1">
-                <Label className="text-slate-700 font-semibold">Role in Team</Label>
-                <select
-                  value={newTeamRole}
-                  onChange={(e) => setNewTeamRole(e.target.value)}
-                  className="w-full h-9 rounded-md border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="Member">Member</option>
-                  <option value="Team Lead">Team Lead</option>
-                  <option value="Manager">Manager</option>
-                </select>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsTeamModalOpen(false)}
-                  className="text-xs cursor-pointer"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  size="sm"
-                  disabled={assignTeamMutation.isPending}
-                  className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer"
-                >
-                  {assignTeamMutation.isPending ? 'Assigning...' : 'Assign Team'}
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsTeamModalOpen(false)}
+                className="text-xs cursor-pointer"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={assignTeamMutation.isPending}
+                className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer"
+              >
+                {assignTeamMutation.isPending ? 'Assigning...' : 'Assign Team'}
+              </Button>
+            </div>
+          </form>
+        </ModalShell>
       )}
 
       {/* SET SALES QUOTA MODAL */}
       {isQuotaModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
-          <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                <Target className="w-5 h-5 text-blue-600" />
-                <span>Set / Update Sales Quota Target</span>
-              </h3>
-              <button
-                type="button"
-                onClick={() => setIsQuotaModalOpen(false)}
-                className="p-1 rounded text-slate-400 hover:text-slate-700 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+        <ModalShell
+          isOpen={isQuotaModalOpen}
+          onClose={() => setIsQuotaModalOpen(false)}
+          title={
+            <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+              <Target className="w-5 h-5 text-blue-600" />
+              <span>Set / Update Sales Quota Target</span>
+            </h3>
+          }
+        >
+          <form onSubmit={handleSetQuotaSubmit} className="space-y-4 text-xs">
+            <div className="space-y-1">
+              <Label className="text-slate-700 font-semibold">Target Sales Quota ($)</Label>
+              <Input
+                type="number"
+                placeholder="e.g. 150000"
+                value={quotaTargetInput}
+                onChange={(e) => setQuotaTargetInput(e.target.value)}
+                className="h-9 text-xs"
+              />
             </div>
 
-            <form onSubmit={handleSetQuotaSubmit} className="space-y-4 text-xs">
-              <div className="space-y-1">
-                <Label className="text-slate-700 font-semibold">Target Sales Quota ($)</Label>
-                <Input
-                  type="number"
-                  placeholder="e.g. 150000"
-                  value={quotaTargetInput}
-                  onChange={(e) => setQuotaTargetInput(e.target.value)}
-                  className="h-9 text-xs"
-                />
-              </div>
+            <div className="space-y-1">
+              <Label className="text-slate-700 font-semibold">Current Achieved Amount ($)</Label>
+              <Input
+                type="number"
+                placeholder="e.g. 87500"
+                value={quotaAchievedInput}
+                onChange={(e) => setQuotaAchievedInput(e.target.value)}
+                className="h-9 text-xs"
+              />
+            </div>
 
-              <div className="space-y-1">
-                <Label className="text-slate-700 font-semibold">Current Achieved Amount ($)</Label>
-                <Input
-                  type="number"
-                  placeholder="e.g. 87500"
-                  value={quotaAchievedInput}
-                  onChange={(e) => setQuotaAchievedInput(e.target.value)}
-                  className="h-9 text-xs"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsQuotaModalOpen(false)}
-                  className="text-xs cursor-pointer"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  size="sm"
-                  disabled={setQuotaMutation.isPending}
-                  className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer"
-                >
-                  {setQuotaMutation.isPending ? 'Saving...' : 'Save Sales Quota'}
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsQuotaModalOpen(false)}
+                className="text-xs cursor-pointer"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={setQuotaMutation.isPending}
+                className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer"
+              >
+                {setQuotaMutation.isPending ? 'Saving...' : 'Save Sales Quota'}
+              </Button>
+            </div>
+          </form>
+        </ModalShell>
       )}
 
       {/* REMOVE TEAM CONFIRMATION MODAL */}

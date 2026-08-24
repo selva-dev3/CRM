@@ -22,13 +22,13 @@ import {
   AlertCircle,
   Mail,
   Phone,
-  Calendar,
-  X
+  Calendar
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { ModalShell } from '@/components/common/modal-shell';
 import {
   useCompanyQuery,
   useUpdateCompanyMutation,
@@ -600,94 +600,92 @@ export default function CompanyDetailsPage() {
 
       {/* EDIT COMPANY MODAL */}
       {isEditModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
-          <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                <Edit className="w-5 h-5 text-blue-600" />
-                <span>Edit Company Profile</span>
-              </h3>
-              <button type="button" onClick={() => setIsEditModalOpen(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
+        <ModalShell
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+          size="md"
+          title={
+            <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+              <Edit className="w-5 h-5 text-blue-600" />
+              <span>Edit Company Profile</span>
+            </h3>
+          }
+        >
+          <form onSubmit={handleEditSubmit} className="space-y-4 text-xs">
+            <div className="space-y-1">
+              <Label className="font-semibold text-slate-700">Company Name</Label>
+              <Input
+                type="text"
+                value={formName}
+                onChange={(e) => setFormName(e.target.value)}
+                className="h-9 text-xs"
+              />
             </div>
 
-            <form onSubmit={handleEditSubmit} className="space-y-4 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Company Name</Label>
+                <Label className="font-semibold text-slate-700">Domain Handle</Label>
                 <Input
                   type="text"
-                  value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
+                  value={formDomain}
+                  onChange={(e) => setFormDomain(e.target.value)}
                   className="h-9 text-xs"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">Domain Handle</Label>
-                  <Input
-                    type="text"
-                    value={formDomain}
-                    onChange={(e) => setFormDomain(e.target.value)}
-                    className="h-9 text-xs"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">Website URL</Label>
-                  <Input
-                    type="text"
-                    value={formWebsite}
-                    onChange={(e) => setFormWebsite(e.target.value)}
-                    className="h-9 text-xs"
-                  />
-                </div>
-              </div>
-
               <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Industry Sector</Label>
+                <Label className="font-semibold text-slate-700">Website URL</Label>
                 <Input
                   type="text"
-                  value={formIndustry}
-                  onChange={(e) => setFormIndustry(e.target.value)}
+                  value={formWebsite}
+                  onChange={(e) => setFormWebsite(e.target.value)}
+                  className="h-9 text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="font-semibold text-slate-700">Industry Sector</Label>
+              <Input
+                type="text"
+                value={formIndustry}
+                onChange={(e) => setFormIndustry(e.target.value)}
+                className="h-9 text-xs"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="font-semibold text-slate-700">Size String</Label>
+                <Input
+                  type="text"
+                  value={formSize}
+                  onChange={(e) => setFormSize(e.target.value)}
                   className="h-9 text-xs"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">Size String</Label>
-                  <Input
-                    type="text"
-                    value={formSize}
-                    onChange={(e) => setFormSize(e.target.value)}
-                    className="h-9 text-xs"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">Employee Count</Label>
-                  <Input
-                    type="number"
-                    value={formEmployeeCount}
-                    onChange={(e) => setFormEmployeeCount(e.target.value !== '' ? Number(e.target.value) : '')}
-                    className="h-9 text-xs"
-                  />
-                </div>
+              <div className="space-y-1">
+                <Label className="font-semibold text-slate-700">Employee Count</Label>
+                <Input
+                  type="number"
+                  value={formEmployeeCount}
+                  onChange={(e) => setFormEmployeeCount(e.target.value !== '' ? Number(e.target.value) : '')}
+                  className="h-9 text-xs"
+                />
               </div>
+            </div>
 
-              <div className="flex justify-end gap-2 pt-2">
-                <Button type="button" variant="outline" size="sm" onClick={() => setIsEditModalOpen(false)} className="cursor-pointer">
-                  Cancel
-                </Button>
-                <Button type="submit" size="sm" disabled={updateCompanyMutation.isPending} className="bg-blue-600 text-white font-semibold cursor-pointer">
-                  {updateCompanyMutation.isPending ? 'Saving...' : 'Save Changes'}
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setIsEditModalOpen(false)} className="cursor-pointer">
+                Cancel
+              </Button>
+              <Button type="submit" size="sm" disabled={updateCompanyMutation.isPending} className="bg-blue-600 text-white font-semibold cursor-pointer">
+                {updateCompanyMutation.isPending ? 'Saving...' : 'Save Changes'}
+              </Button>
+            </div>
+          </form>
+        </ModalShell>
       )}
 
       {/* DELETE CONFIRM MODAL */}

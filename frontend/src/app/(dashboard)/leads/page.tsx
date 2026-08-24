@@ -42,6 +42,7 @@ import {
   DropdownMenuSeparator
 } from '@/components/ui';
 import { DataTable, DataTableColumn, TableActionOption } from '@/components/common/data-table';
+import { ModalShell } from '@/components/common/modal-shell';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
 import { 
@@ -639,723 +640,698 @@ export default function LeadsPage() {
 
       {/* CREATE / EDIT LEAD MODAL DIALOG */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
-          <div className="relative w-full max-w-3xl xl:max-w-4xl bg-white rounded-2xl border border-slate-300 shadow-2xl overflow-hidden text-black flex flex-col transition-all duration-200">
-            {/* Modal Header */}
-            <div className="p-5 sm:p-6 border-b border-slate-200 bg-slate-50 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-sm">
-                  {editingLead ? <Pencil className="w-4 h-4" /> : <Plus className="w-5 h-5" />}
-                </div>
-                <div>
-                  <h3 className="text-lg sm:text-xl font-black text-black">
-                    {editingLead ? 'Edit Sales Lead' : 'Create New Sales Lead'}
-                  </h3>
-                  <p className="text-xs font-bold text-slate-700">
-                    {editingLead ? `Update details for ${editingLead.contact_name}` : 'Fill lead, company & location details below'}
-                  </p>
-                </div>
+        <ModalShell
+          isOpen={isModalOpen}
+          onClose={handleCloseModal}
+          size="3xl"
+          title={
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0">
+              <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-sm shrink-0">
+                {editingLead ? <Pencil className="w-4 h-4" /> : <Plus className="w-5 h-5" />}
               </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleAutofill}
-                  className="border-indigo-200 bg-indigo-50/90 hover:bg-indigo-100 text-indigo-700 font-black text-xs shadow-2xs gap-1.5 cursor-pointer px-3 py-1.5"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-indigo-600 animate-pulse" />
-                  <span>Auto-fill Sample Data</span>
-                </Button>
-                <button
-                  type="button"
-                  onClick={handleCloseModal}
-                  className="p-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-200 transition cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+              <div className="min-w-0">
+                <h3 className="text-lg sm:text-xl font-black text-black break-words">
+                  {editingLead ? 'Edit Sales Lead' : 'Create New Sales Lead'}
+                </h3>
+                <p className="text-xs font-bold text-slate-700 break-words">
+                  {editingLead ? `Update details for ${editingLead.contact_name}` : 'Fill lead, company & location details below'}
+                </p>
               </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleAutofill}
+                className="border-indigo-200 bg-indigo-50/90 hover:bg-indigo-100 text-indigo-700 font-black text-xs shadow-2xs gap-1.5 cursor-pointer px-3 py-1.5"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-indigo-600 animate-pulse" />
+                <span>Auto-fill Sample Data</span>
+              </Button>
             </div>
+          }
+        >
+          {/* Category Navigation Tabs */}
+          <div className="flex items-center border-b border-slate-200 bg-slate-100/70 px-4 sm:px-6 pt-2.5 gap-1.5 overflow-x-auto shrink-0 select-none">
+            <button
+              type="button"
+              onClick={() => setActiveModalTab('contact')}
+              className={`flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-bold rounded-t-xl transition-all border-b-2 cursor-pointer ${
+                activeModalTab === 'contact'
+                  ? 'bg-white text-indigo-600 border-indigo-600 shadow-xs font-black'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 border-transparent'
+              }`}
+            >
+              <User className="w-4 h-4" />
+              <span>1. Contact Info</span>
+            </button>
 
-            {/* Category Navigation Tabs */}
-            <div className="flex items-center border-b border-slate-200 bg-slate-100/70 px-4 sm:px-6 pt-2.5 gap-1.5 overflow-x-auto shrink-0 select-none">
-              <button
-                type="button"
-                onClick={() => setActiveModalTab('contact')}
-                className={`flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-bold rounded-t-xl transition-all border-b-2 cursor-pointer ${
-                  activeModalTab === 'contact'
-                    ? 'bg-white text-indigo-600 border-indigo-600 shadow-xs font-black'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 border-transparent'
-                }`}
-              >
-                <User className="w-4 h-4" />
-                <span>1. Contact Info</span>
-              </button>
+            <button
+              type="button"
+              onClick={() => setActiveModalTab('company')}
+              className={`flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-bold rounded-t-xl transition-all border-b-2 cursor-pointer ${
+                activeModalTab === 'company'
+                  ? 'bg-white text-indigo-600 border-indigo-600 shadow-xs font-black'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 border-transparent'
+              }`}
+            >
+              <Building2 className="w-4 h-4" />
+              <span>2. Company Details</span>
+            </button>
 
-              <button
-                type="button"
-                onClick={() => setActiveModalTab('company')}
-                className={`flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-bold rounded-t-xl transition-all border-b-2 cursor-pointer ${
-                  activeModalTab === 'company'
-                    ? 'bg-white text-indigo-600 border-indigo-600 shadow-xs font-black'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 border-transparent'
-                }`}
-              >
-                <Building2 className="w-4 h-4" />
-                <span>2. Company Details</span>
-              </button>
+            <button
+              type="button"
+              onClick={() => setActiveModalTab('location')}
+              className={`flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-bold rounded-t-xl transition-all border-b-2 cursor-pointer ${
+                activeModalTab === 'location'
+                  ? 'bg-white text-indigo-600 border-indigo-600 shadow-xs font-black'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 border-transparent'
+              }`}
+            >
+              <MapPin className="w-4 h-4" />
+              <span>3. Address & Location</span>
+            </button>
 
-              <button
-                type="button"
-                onClick={() => setActiveModalTab('location')}
-                className={`flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-bold rounded-t-xl transition-all border-b-2 cursor-pointer ${
-                  activeModalTab === 'location'
-                    ? 'bg-white text-indigo-600 border-indigo-600 shadow-xs font-black'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 border-transparent'
-                }`}
-              >
-                <MapPin className="w-4 h-4" />
-                <span>3. Address & Location</span>
-              </button>
+            <button
+              type="button"
+              onClick={() => setActiveModalTab('organization')}
+              className={`flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-bold rounded-t-xl transition-all border-b-2 cursor-pointer ${
+                activeModalTab === 'organization'
+                  ? 'bg-white text-indigo-600 border-indigo-600 shadow-xs font-black'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 border-transparent'
+              }`}
+            >
+              <Sliders className="w-4 h-4" />
+              <span>4. Status & Organization</span>
+            </button>
+          </div>
 
-              <button
-                type="button"
-                onClick={() => setActiveModalTab('organization')}
-                className={`flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-bold rounded-t-xl transition-all border-b-2 cursor-pointer ${
-                  activeModalTab === 'organization'
-                    ? 'bg-white text-indigo-600 border-indigo-600 shadow-xs font-black'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 border-transparent'
-                }`}
-              >
-                <Sliders className="w-4 h-4" />
-                <span>4. Status & Organization</span>
-              </button>
-            </div>
+          {/* Modal Form Body */}
+          <form onSubmit={handleSubmit} className="p-6 sm:p-7 space-y-6 overflow-y-auto max-h-[calc(85vh-150px)]">
+            {errorMessage && (
+              <Alert variant="destructive" className="bg-rose-50 border-rose-300 text-rose-950 font-bold">
+                <AlertCircle className="h-4 w-4 text-rose-600 mr-2" />
+                <AlertDescription className="text-rose-900 font-bold text-xs">
+                  {errorMessage}
+                </AlertDescription>
+              </Alert>
+            )}
 
-            {/* Modal Form Body */}
-            <form onSubmit={handleSubmit} className="p-6 sm:p-7 space-y-6 overflow-y-auto max-h-[calc(85vh-150px)]">
-              {errorMessage && (
-                <Alert variant="destructive" className="bg-rose-50 border-rose-300 text-rose-950 font-bold">
-                  <AlertCircle className="h-4 w-4 text-rose-600 mr-2" />
-                  <AlertDescription className="text-rose-900 font-bold text-xs">
-                    {errorMessage}
-                  </AlertDescription>
-                </Alert>
-              )}
-
-              {/* TAB 1: Contact Information */}
-              {activeModalTab === 'contact' && (
-                <div className="space-y-4 animate-in fade-in-50">
-                  <h4 className="text-xs font-black uppercase tracking-wider text-indigo-700 pb-1 border-b border-slate-200 flex items-center gap-1.5">
-                    <User className="w-4 h-4" />
-                    1. Contact Information
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-black text-black">Contact Name *</Label>
-                      <Input
-                        type="text"
-                        required
-                        placeholder="e.g. John Doe"
-                        value={contactName}
-                        onChange={(e) => setContactName(e.target.value)}
-                        className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-black text-black">Email Address *</Label>
-                      <Input
-                        type="email"
-                        required
-                        placeholder="john@acmecorp.com"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-black text-black">Phone Number</Label>
-                      <Input
-                        type="tel"
-                        placeholder="+1 (555) 000-0000"
-                        value={phone}
-                        onChange={(e) => setPhone(e.target.value)}
-                        className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-black text-black">Opportunity / Lead Title</Label>
-                      <Input
-                        type="text"
-                        placeholder="e.g. Enterprise Cloud Deal"
-                        value={title}
-                        onChange={(e) => setTitle(e.target.value)}
-                        className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* TAB 2: Company Information */}
-              {activeModalTab === 'company' && (
-                <div className="space-y-4 animate-in fade-in-50">
-                  <h4 className="text-xs font-black uppercase tracking-wider text-indigo-700 pb-1 border-b border-slate-200 flex items-center gap-1.5">
-                    <Building2 className="w-4 h-4" />
-                    2. Company & Industry Details
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-black text-black">Select Company *</Label>
-                      <select
-                        value={company}
-                        onChange={(e) => setCompany(e.target.value)}
-                        className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      >
-                        {isCompaniesLoading ? (
-                          <option value="">Loading companies...</option>
-                        ) : (
-                          companies.map((c) => (
-                            <option key={c.id} value={c.name}>
-                              {c.name}
-                            </option>
-                          ))
-                        )}
-                        <option value="other">+ Enter Custom Company...</option>
-                      </select>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-black text-black">Website</Label>
-                      <Input
-                        type="url"
-                        placeholder="https://company.com"
-                        value={website}
-                        onChange={(e) => setWebsite(e.target.value)}
-                        className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
-                      />
-                    </div>
-                  </div>
-
-                  {company === 'other' && (
-                    <div className="space-y-1.5 animate-in fade-in-50">
-                      <Label className="text-xs font-black text-black">Custom Company Name *</Label>
-                      <Input
-                        type="text"
-                        required
-                        placeholder="Enter new company name..."
-                        value={customCompany}
-                        onChange={(e) => setCustomCompany(e.target.value)}
-                        className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
-                      />
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-black text-black">Industry</Label>
-                      <Input
-                        type="text"
-                        placeholder="e.g. Software, Finance, Healthcare"
-                        value={industry}
-                        onChange={(e) => setIndustry(e.target.value)}
-                        className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-black text-black">Company Size</Label>
-                      <select
-                        value={companySize}
-                        onChange={(e) => setCompanySize(e.target.value)}
-                        className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      >
-                        <option value="">Select Company Size...</option>
-                        <option value="1-10">1-10 Employees</option>
-                        <option value="11-50">11-50 Employees</option>
-                        <option value="51-200">51-200 Employees</option>
-                        <option value="201-500">201-500 Employees</option>
-                        <option value="500+">500+ Employees</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* TAB 3: Location & Address Details */}
-              {activeModalTab === 'location' && (
-                <div className="space-y-4 animate-in fade-in-50">
-                  <h4 className="text-xs font-black uppercase tracking-wider text-indigo-700 pb-1 border-b border-slate-200 flex items-center gap-1.5">
-                    <MapPin className="w-4 h-4" />
-                    3. Address & Location
-                  </h4>
+            {/* TAB 1: Contact Information */}
+            {activeModalTab === 'contact' && (
+              <div className="space-y-4 animate-in fade-in-50">
+                <h4 className="text-xs font-black uppercase tracking-wider text-indigo-700 pb-1 border-b border-slate-200 flex items-center gap-1.5">
+                  <User className="w-4 h-4" />
+                  1. Contact Information
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <Label className="text-xs font-black text-black">Address</Label>
+                    <Label className="text-xs font-black text-black">Contact Name *</Label>
                     <Input
                       type="text"
-                      placeholder="Street address, suite, or building"
-                      value={address}
-                      onChange={(e) => setAddress(e.target.value)}
+                      required
+                      placeholder="e.g. John Doe"
+                      value={contactName}
+                      onChange={(e) => setContactName(e.target.value)}
+                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Email Address *</Label>
+                    <Input
+                      type="email"
+                      required
+                      placeholder="john@acmecorp.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Phone Number</Label>
+                    <Input
+                      type="tel"
+                      placeholder="+1 (555) 000-0000"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Opportunity / Lead Title</Label>
+                    <Input
+                      type="text"
+                      placeholder="e.g. Enterprise Cloud Deal"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 2: Company Information */}
+            {activeModalTab === 'company' && (
+              <div className="space-y-4 animate-in fade-in-50">
+                <h4 className="text-xs font-black uppercase tracking-wider text-indigo-700 pb-1 border-b border-slate-200 flex items-center gap-1.5">
+                  <Building2 className="w-4 h-4" />
+                  2. Company & Industry Details
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Select Company *</Label>
+                    <select
+                      value={company}
+                      onChange={(e) => setCompany(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      {isCompaniesLoading ? (
+                        <option value="">Loading companies...</option>
+                      ) : (
+                        companies.map((c) => (
+                          <option key={c.id} value={c.name}>
+                            {c.name}
+                          </option>
+                        ))
+                      )}
+                      <option value="other">+ Enter Custom Company...</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Website</Label>
+                    <Input
+                      type="url"
+                      placeholder="https://company.com"
+                      value={website}
+                      onChange={(e) => setWebsite(e.target.value)}
+                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                    />
+                  </div>
+                </div>
+
+                {company === 'other' && (
+                  <div className="space-y-1.5 animate-in fade-in-50">
+                    <Label className="text-xs font-black text-black">Custom Company Name *</Label>
+                    <Input
+                      type="text"
+                      required
+                      placeholder="Enter new company name..."
+                      value={customCompany}
+                      onChange={(e) => setCustomCompany(e.target.value)}
+                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                    />
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Industry</Label>
+                    <Input
+                      type="text"
+                      placeholder="e.g. Software, Finance, Healthcare"
+                      value={industry}
+                      onChange={(e) => setIndustry(e.target.value)}
                       className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-black text-black">City</Label>
-                      <Input
-                        type="text"
-                        placeholder="e.g. Chennai"
-                        value={city}
-                        onChange={(e) => setCity(e.target.value)}
-                        className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-black text-black">State</Label>
-                      <Input
-                        type="text"
-                        placeholder="e.g. TN"
-                        value={stateName}
-                        onChange={(e) => setStateName(e.target.value)}
-                        className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-black text-black">Country</Label>
-                      <Input
-                        type="text"
-                        placeholder="e.g. India"
-                        value={country}
-                        onChange={(e) => setCountry(e.target.value)}
-                        className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-black text-black">Postal Code</Label>
-                      <Input
-                        type="text"
-                        placeholder="600096"
-                        value={postalCode}
-                        onChange={(e) => setPostalCode(e.target.value)}
-                        className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* TAB 4: Status, Source, Score & Organization */}
-              {activeModalTab === 'organization' && (
-                <div className="space-y-4 animate-in fade-in-50">
-                  <h4 className="text-xs font-black uppercase tracking-wider text-indigo-700 pb-1 border-b border-slate-200 flex items-center gap-1.5">
-                    <Sliders className="w-4 h-4" />
-                    4. Status, Source, Score & Organization
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-black text-black">Lead Status</Label>
-                      <select
-                        value={status}
-                        onChange={(e) => setStatus(e.target.value)}
-                        className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      >
-                        <option value="New">New</option>
-                        <option value="Contacted">Contacted</option>
-                        <option value="Qualified">Qualified</option>
-                        <option value="Unqualified">Unqualified</option>
-                        <option value="Converted">Converted</option>
-                      </select>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-black text-black">Lead Source</Label>
-                      <select
-                        value={source}
-                        onChange={(e) => setSource(e.target.value)}
-                        className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      >
-                        <option value="Website">Website</option>
-                        <option value="LinkedIn">LinkedIn</option>
-                        <option value="Referral">Referral</option>
-                        <option value="Cold Call">Cold Call</option>
-                        <option value="Event">Event</option>
-                        <option value="Partner">Partner</option>
-                      </select>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-black text-black">Organization *</Label>
-                      <select
-                        value={organizationId}
-                        onChange={(e) => setOrganizationId(e.target.value)}
-                        className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      >
-                        {isOrgsLoading ? (
-                          <option value="">Loading...</option>
-                        ) : (
-                          organizations.map((org) => (
-                            <option key={org.id} value={org.id}>
-                              {org.name}
-                            </option>
-                          ))
-                        )}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1 items-end">
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-black text-black">AI Score (0-100)</Label>
-                      <Input
-                        type="number"
-                        min={0}
-                        max={100}
-                        placeholder="75"
-                        value={score}
-                        onChange={(e) => setScore(Number(e.target.value))}
-                        className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-black text-black">Assigned To User</Label>
-                      <select
-                        value={assignedTo}
-                        onChange={(e) => setAssignedTo(e.target.value)}
-                        className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      >
-                        <option value="">Unassigned (None)</option>
-                        {isUsersLoading ? (
-                          <option value="" disabled>Loading users...</option>
-                        ) : (
-                          users.map((u) => (
-                            <option key={u.id} value={u.id}>
-                              {u.name} ({u.role})
-                            </option>
-                          ))
-                        )}
-                      </select>
-                    </div>
-
-                    <div className="flex items-center gap-2 pb-2">
-                      <input
-                        type="checkbox"
-                        id="isArchivedCheck"
-                        checked={isArchived}
-                        onChange={(e) => setIsArchived(e.target.checked)}
-                        className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
-                      />
-                      <label htmlFor="isArchivedCheck" className="text-xs font-black text-slate-800 cursor-pointer select-none">
-                        Archive this lead
-                      </label>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Modal Actions */}
-              <div className="pt-4 border-t border-slate-200 flex items-center justify-between gap-3 shrink-0">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleCloseModal}
-                  disabled={createLeadMutation.isPending || updateLeadMutation.isPending}
-                  className="border-slate-300 text-black font-bold hover:bg-slate-100 text-xs"
-                >
-                  Cancel
-                </Button>
-
-                <div className="flex items-center gap-2">
-                  {activeModalTab !== 'contact' && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => {
-                        if (activeModalTab === 'company') setActiveModalTab('contact');
-                        else if (activeModalTab === 'location') setActiveModalTab('company');
-                        else if (activeModalTab === 'organization') setActiveModalTab('location');
-                      }}
-                      className="border-slate-300 text-slate-800 font-bold hover:bg-slate-100 text-xs"
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Company Size</Label>
+                    <select
+                      value={companySize}
+                      onChange={(e) => setCompanySize(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     >
-                      <ChevronLeft className="w-3.5 h-3.5 mr-1" />
-                      Previous
-                    </Button>
-                  )}
-
-                  {activeModalTab !== 'organization' && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => {
-                        if (activeModalTab === 'contact') setActiveModalTab('company');
-                        else if (activeModalTab === 'company') setActiveModalTab('location');
-                        else if (activeModalTab === 'location') setActiveModalTab('organization');
-                      }}
-                      className="border-indigo-300 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 font-bold text-xs"
-                    >
-                      Next Category
-                      <ChevronRight className="w-3.5 h-3.5 ml-1" />
-                    </Button>
-                  )}
-
-                  <Button
-                    type="submit"
-                    disabled={createLeadMutation.isPending || updateLeadMutation.isPending}
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-sm text-xs px-5"
-                  >
-                    {createLeadMutation.isPending || updateLeadMutation.isPending ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                        {editingLead ? 'Updating Lead...' : 'Creating Lead...'}
-                      </>
-                    ) : (
-                      editingLead ? 'Save Changes' : 'Create Lead'
-                    )}
-                  </Button>
+                      <option value="">Select Company Size...</option>
+                      <option value="1-10">1-10 Employees</option>
+                      <option value="11-50">11-50 Employees</option>
+                      <option value="51-200">51-200 Employees</option>
+                      <option value="201-500">201-500 Employees</option>
+                      <option value="500+">500+ Employees</option>
+                    </select>
+                  </div>
                 </div>
               </div>
-            </form>
-          </div>
-        </div>
+            )}
+
+            {/* TAB 3: Location & Address Details */}
+            {activeModalTab === 'location' && (
+              <div className="space-y-4 animate-in fade-in-50">
+                <h4 className="text-xs font-black uppercase tracking-wider text-indigo-700 pb-1 border-b border-slate-200 flex items-center gap-1.5">
+                  <MapPin className="w-4 h-4" />
+                  3. Address & Location
+                </h4>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-black text-black">Address</Label>
+                  <Input
+                    type="text"
+                    placeholder="Street address, suite, or building"
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                    className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">City</Label>
+                    <Input
+                      type="text"
+                      placeholder="e.g. Chennai"
+                      value={city}
+                      onChange={(e) => setCity(e.target.value)}
+                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">State</Label>
+                    <Input
+                      type="text"
+                      placeholder="e.g. TN"
+                      value={stateName}
+                      onChange={(e) => setStateName(e.target.value)}
+                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Country</Label>
+                    <Input
+                      type="text"
+                      placeholder="e.g. India"
+                      value={country}
+                      onChange={(e) => setCountry(e.target.value)}
+                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Postal Code</Label>
+                    <Input
+                      type="text"
+                      placeholder="600096"
+                      value={postalCode}
+                      onChange={(e) => setPostalCode(e.target.value)}
+                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 4: Status, Source, Score & Organization */}
+            {activeModalTab === 'organization' && (
+              <div className="space-y-4 animate-in fade-in-50">
+                <h4 className="text-xs font-black uppercase tracking-wider text-indigo-700 pb-1 border-b border-slate-200 flex items-center gap-1.5">
+                  <Sliders className="w-4 h-4" />
+                  4. Status, Source, Score & Organization
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Lead Status</Label>
+                    <select
+                      value={status}
+                      onChange={(e) => setStatus(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="New">New</option>
+                      <option value="Contacted">Contacted</option>
+                      <option value="Qualified">Qualified</option>
+                      <option value="Unqualified">Unqualified</option>
+                      <option value="Converted">Converted</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Lead Source</Label>
+                    <select
+                      value={source}
+                      onChange={(e) => setSource(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="Website">Website</option>
+                      <option value="LinkedIn">LinkedIn</option>
+                      <option value="Referral">Referral</option>
+                      <option value="Cold Call">Cold Call</option>
+                      <option value="Event">Event</option>
+                      <option value="Partner">Partner</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Organization *</Label>
+                    <select
+                      value={organizationId}
+                      onChange={(e) => setOrganizationId(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      {isOrgsLoading ? (
+                        <option value="">Loading...</option>
+                      ) : (
+                        organizations.map((org) => (
+                          <option key={org.id} value={org.id}>
+                            {org.name}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1 items-end">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">AI Score (0-100)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={100}
+                      placeholder="75"
+                      value={score}
+                      onChange={(e) => setScore(Number(e.target.value))}
+                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-black text-black">Assigned To User</Label>
+                    <select
+                      value={assignedTo}
+                      onChange={(e) => setAssignedTo(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="">Unassigned (None)</option>
+                      {isUsersLoading ? (
+                        <option value="" disabled>Loading users...</option>
+                      ) : (
+                        users.map((u) => (
+                          <option key={u.id} value={u.id}>
+                            {u.name} ({u.role})
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-2 pb-2">
+                    <input
+                      type="checkbox"
+                      id="isArchivedCheck"
+                      checked={isArchived}
+                      onChange={(e) => setIsArchived(e.target.checked)}
+                      className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
+                    />
+                    <label htmlFor="isArchivedCheck" className="text-xs font-black text-slate-800 cursor-pointer select-none">
+                      Archive this lead
+                    </label>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Modal Actions */}
+            <div className="pt-4 border-t border-slate-200 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleCloseModal}
+                disabled={createLeadMutation.isPending || updateLeadMutation.isPending}
+                className="border-slate-300 text-black font-bold hover:bg-slate-100 text-xs"
+              >
+                Cancel
+              </Button>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {activeModalTab !== 'contact' && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      if (activeModalTab === 'company') setActiveModalTab('contact');
+                      else if (activeModalTab === 'location') setActiveModalTab('company');
+                      else if (activeModalTab === 'organization') setActiveModalTab('location');
+                    }}
+                    className="border-slate-300 text-slate-800 font-bold hover:bg-slate-100 text-xs"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5 mr-1" />
+                    Previous
+                  </Button>
+                )}
+
+                {activeModalTab !== 'organization' && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      if (activeModalTab === 'contact') setActiveModalTab('company');
+                      else if (activeModalTab === 'company') setActiveModalTab('location');
+                      else if (activeModalTab === 'location') setActiveModalTab('organization');
+                    }}
+                    className="border-indigo-300 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 font-bold text-xs"
+                  >
+                    Next Category
+                    <ChevronRight className="w-3.5 h-3.5 ml-1" />
+                  </Button>
+                )}
+
+                <Button
+                  type="submit"
+                  disabled={createLeadMutation.isPending || updateLeadMutation.isPending}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-sm text-xs px-5"
+                >
+                  {createLeadMutation.isPending || updateLeadMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                      {editingLead ? 'Updating Lead...' : 'Creating Lead...'}
+                    </>
+                  ) : (
+                    editingLead ? 'Save Changes' : 'Create Lead'
+                  )}
+                </Button>
+              </div>
+            </div>
+          </form>
+        </ModalShell>
       )}
 
       {/* DELETE CONFIRMATION MODAL DIALOG */}
       {leadToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
-          <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl overflow-hidden text-black">
-            {/* Modal Header */}
-            <div className="p-5 border-b border-slate-200 bg-rose-50 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-rose-600 flex items-center justify-center text-white shrink-0">
-                  <Trash2 className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-base font-black text-rose-950">Delete Sales Lead</h3>
-                  <p className="text-xs font-bold text-rose-700">Confirm permanent lead removal</p>
-                </div>
+        <ModalShell
+          isOpen={!!leadToDelete}
+          onClose={() => setLeadToDelete(null)}
+          size="md"
+          title={
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-lg bg-rose-600 flex items-center justify-center text-white shrink-0">
+                <Trash2 className="w-4 h-4" />
               </div>
-              <button
+              <div className="min-w-0">
+                <h3 className="text-base font-black text-rose-950 break-words">Delete Sales Lead</h3>
+                <p className="text-xs font-bold text-rose-700 break-words">Confirm permanent lead removal</p>
+              </div>
+            </div>
+          }
+        >
+          {/* Modal Content */}
+          <div className="space-y-4">
+            <p className="text-xs font-bold text-slate-700 leading-relaxed">
+              Are you sure you want to delete sales lead <span className="font-black text-slate-950">"{leadToDelete.contact_name}"</span> ({leadToDelete.company})?
+            </p>
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-[11px] font-bold">
+              âš ï¸ Warning: This action cannot be undone and will permanently remove this lead from the database.
+            </div>
+
+            {/* Modal Actions */}
+            <div className="pt-2 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3">
+              <Button
                 type="button"
+                variant="outline"
                 onClick={() => setLeadToDelete(null)}
                 disabled={deleteLeadMutation.isPending}
-                className="p-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-200 transition cursor-pointer"
+                className="border-slate-300 text-black font-bold hover:bg-slate-100 text-xs"
               >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Modal Content */}
-            <div className="p-6 space-y-4">
-              <p className="text-xs font-bold text-slate-700 leading-relaxed">
-                Are you sure you want to delete sales lead <span className="font-black text-slate-950">"{leadToDelete.contact_name}"</span> ({leadToDelete.company})?
-              </p>
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-[11px] font-bold">
-                âš ï¸ Warning: This action cannot be undone and will permanently remove this lead from the database.
-              </div>
-
-              {/* Modal Actions */}
-              <div className="pt-2 flex items-center justify-end gap-3">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setLeadToDelete(null)}
-                  disabled={deleteLeadMutation.isPending}
-                  className="border-slate-300 text-black font-bold hover:bg-slate-100 text-xs"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="button"
-                  onClick={handleConfirmDelete}
-                  disabled={deleteLeadMutation.isPending}
-                  className="bg-rose-600 hover:bg-rose-700 text-white font-bold shadow-sm text-xs px-5"
-                >
-                  {deleteLeadMutation.isPending ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                      Deleting Lead...
-                    </>
-                  ) : (
-                    'Delete Lead'
-                  )}
-                </Button>
-              </div>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={deleteLeadMutation.isPending}
+                className="bg-rose-600 hover:bg-rose-700 text-white font-bold shadow-sm text-xs px-5"
+              >
+                {deleteLeadMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                    Deleting Lead...
+                  </>
+                ) : (
+                  'Delete Lead'
+                )}
+              </Button>
             </div>
           </div>
-        </div>
+        </ModalShell>
       )}
 
       {/* ASSIGN LEAD MODAL DIALOG */}
       {assigningLead && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
-          <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl overflow-hidden text-black">
-            {/* Modal Header */}
-            <div className="p-5 border-b border-slate-200 bg-indigo-50 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white shrink-0">
-                  <UserCheck className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-base font-black text-indigo-950">Assign Sales Lead</h3>
-                  <p className="text-xs font-bold text-indigo-700">Assign to team member / sales rep</p>
-                </div>
+        <ModalShell
+          isOpen={!!assigningLead}
+          onClose={() => setAssigningLead(null)}
+          size="md"
+          title={
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white shrink-0">
+                <UserCheck className="w-4 h-4" />
               </div>
-              <button
-                type="button"
-                onClick={() => setAssigningLead(null)}
-                disabled={assignLeadMutation.isPending}
-                className="p-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-200 transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="min-w-0">
+                <h3 className="text-base font-black text-indigo-950 break-words">Assign Sales Lead</h3>
+                <p className="text-xs font-bold text-indigo-700 break-words">Assign to team member / sales rep</p>
+              </div>
             </div>
+          }
+        >
+          {/* Modal Content */}
+          <div className="space-y-4">
+            <p className="text-xs font-bold text-slate-700 leading-relaxed">
+              Assign sales lead <span className="font-black text-slate-950">"{assigningLead.contact_name}"</span> ({assigningLead.company}) to a team member:
+            </p>
 
-            {/* Modal Content */}
-            <div className="p-6 space-y-4">
-              <p className="text-xs font-bold text-slate-700 leading-relaxed">
-                Assign sales lead <span className="font-black text-slate-950">"{assigningLead.contact_name}"</span> ({assigningLead.company}) to a team member:
-              </p>
+            <div className="space-y-2">
+              <Label className="text-xs font-black text-black">Select Sales Rep / User</Label>
 
-              <div className="space-y-2">
-                <Label className="text-xs font-black text-black">Select Sales Rep / User</Label>
-
-                {/* Quick Search Input */}
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <Input
-                    type="text"
-                    placeholder="Search user by name, email, or role..."
-                    value={userSearchTerm}
-                    onChange={(e) => setUserSearchTerm(e.target.value)}
-                    className="pl-9 text-xs h-9 bg-slate-50 border-slate-300 font-bold text-black focus:bg-white"
-                  />
-                  {userSearchTerm && (
-                    <button
-                      type="button"
-                      onClick={() => setUserSearchTerm('')}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-0.5 cursor-pointer"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-
-                {/* Searchable User Selection List */}
-                <div className="max-h-44 overflow-y-auto border border-slate-200 rounded-xl bg-slate-50 p-1.5 space-y-1">
+              {/* Quick Search Input */}
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Input
+                  type="text"
+                  placeholder="Search user by name, email, or role..."
+                  value={userSearchTerm}
+                  onChange={(e) => setUserSearchTerm(e.target.value)}
+                  className="pl-9 text-xs h-9 bg-slate-50 border-slate-300 font-bold text-black focus:bg-white"
+                />
+                {userSearchTerm && (
                   <button
                     type="button"
-                    onClick={() => setSelectedUserId('')}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                      selectedUserId === ''
-                        ? 'bg-indigo-600 text-white font-black shadow-xs'
-                        : 'text-slate-700 hover:bg-slate-200/70'
-                    }`}
+                    onClick={() => setUserSearchTerm('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-0.5 cursor-pointer"
                   >
-                    <div className="flex items-center gap-2">
-                      <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${selectedUserId === '' ? 'bg-white/20 text-white' : 'bg-slate-300 text-slate-700'}`}>
-                        ðŸš«
-                      </div>
-                      <span>Unassigned (No Owner)</span>
-                    </div>
-                    {selectedUserId === '' && <CheckCircle2 className="w-4 h-4 text-white" />}
+                    <X className="w-3.5 h-3.5" />
                   </button>
-
-                  {users.length === 0 ? (
-                    <div className="p-3 text-center text-xs font-bold text-slate-500">
-                      No team members match "{userSearchTerm}"
-                    </div>
-                  ) : (
-                    users.map((u) => {
-                      const isSelected = selectedUserId === u.id;
-                      return (
-                        <button
-                          key={u.id}
-                          type="button"
-                          onClick={() => setSelectedUserId(u.id)}
-                          className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs transition-all text-left cursor-pointer ${
-                            isSelected
-                              ? 'bg-indigo-600 text-white font-black shadow-xs'
-                              : 'text-slate-900 hover:bg-slate-200/70 font-bold'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black shrink-0 ${isSelected ? 'bg-white text-indigo-700' : 'bg-indigo-100 text-indigo-700'}`}>
-                              {u.name ? u.name.charAt(0).toUpperCase() : 'U'}
-                            </div>
-                            <div className="min-w-0">
-                              <div className="font-black truncate">{u.name}</div>
-                              <div className={`text-[10px] truncate ${isSelected ? 'text-indigo-100 font-bold' : 'text-slate-700'}`}>
-                                {u.email}
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5 shrink-0 ml-2">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-black ${
-                              isSelected 
-                                ? 'bg-white/20 text-white' 
-                                : 'bg-slate-200 text-slate-800'
-                            }`}>
-                              {u.role || 'Sales Rep'}
-                            </span>
-                            {isSelected && <CheckCircle2 className="w-4 h-4 text-white" />}
-                          </div>
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
-
-                {/* Dropdown Select Menu */}
-                <div className="pt-1">
-                  <select
-                    value={selectedUserId}
-                    onChange={(e) => setSelectedUserId(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-                  >
-                    <option value="">Unassigned (No Owner)</option>
-                    {users.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.name} ({u.role || 'Sales Rep'}) - {u.email}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                )}
               </div>
 
-              {/* Modal Actions */}
-              <div className="pt-2 flex items-center justify-end gap-3 border-t border-slate-200">
-                <Button
+              {/* Searchable User Selection List */}
+              <div className="max-h-44 overflow-y-auto border border-slate-200 rounded-xl bg-slate-50 p-1.5 space-y-1">
+                <button
                   type="button"
-                  variant="outline"
-                  onClick={() => setAssigningLead(null)}
-                  disabled={assignLeadMutation.isPending}
-                  className="border-slate-300 text-black font-bold hover:bg-slate-100 text-xs"
+                  onClick={() => setSelectedUserId('')}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                    selectedUserId === ''
+                      ? 'bg-indigo-600 text-white font-black shadow-xs'
+                      : 'text-slate-700 hover:bg-slate-200/70'
+                  }`}
                 >
-                  Cancel
-                </Button>
-                <Button
-                  type="button"
-                  onClick={handleConfirmAssign}
-                  disabled={assignLeadMutation.isPending}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-sm text-xs px-5"
+                  <div className="flex items-center gap-2">
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${selectedUserId === '' ? 'bg-white/20 text-white' : 'bg-slate-300 text-slate-700'}`}>
+                      ðŸš«
+                    </div>
+                    <span>Unassigned (No Owner)</span>
+                  </div>
+                  {selectedUserId === '' && <CheckCircle2 className="w-4 h-4 text-white" />}
+                </button>
+
+                {users.length === 0 ? (
+                  <div className="p-3 text-center text-xs font-bold text-slate-500">
+                    No team members match "{userSearchTerm}"
+                  </div>
+                ) : (
+                  users.map((u) => {
+                    const isSelected = selectedUserId === u.id;
+                    return (
+                      <button
+                        key={u.id}
+                        type="button"
+                        onClick={() => setSelectedUserId(u.id)}
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs transition-all text-left cursor-pointer ${
+                          isSelected
+                            ? 'bg-indigo-600 text-white font-black shadow-xs'
+                            : 'text-slate-900 hover:bg-slate-200/70 font-bold'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black shrink-0 ${isSelected ? 'bg-white text-indigo-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                            {u.name ? u.name.charAt(0).toUpperCase() : 'U'}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="font-black truncate">{u.name}</div>
+                            <div className={`text-[10px] truncate ${isSelected ? 'text-indigo-100 font-bold' : 'text-slate-700'}`}>
+                              {u.email}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-black ${
+                            isSelected 
+                              ? 'bg-white/20 text-white' 
+                              : 'bg-slate-200 text-slate-800'
+                          }`}>
+                            {u.role || 'Sales Rep'}
+                          </span>
+                          {isSelected && <CheckCircle2 className="w-4 h-4 text-white" />}
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Dropdown Select Menu */}
+              <div className="pt-1">
+                <select
+                  value={selectedUserId}
+                  onChange={(e) => setSelectedUserId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
                 >
-                  {assignLeadMutation.isPending ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                      Assigning...
-                    </>
-                  ) : (
-                    'Assign Lead'
-                  )}
-                </Button>
+                  <option value="">Unassigned (No Owner)</option>
+                  {users.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name} ({u.role || 'Sales Rep'}) - {u.email}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
+
+            {/* Modal Actions */}
+            <div className="pt-2 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 border-t border-slate-200">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setAssigningLead(null)}
+                disabled={assignLeadMutation.isPending}
+                className="border-slate-300 text-black font-bold hover:bg-slate-100 text-xs"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={handleConfirmAssign}
+                disabled={assignLeadMutation.isPending}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-sm text-xs px-5"
+              >
+                {assignLeadMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                    Assigning...
+                  </>
+                ) : (
+                  'Assign Lead'
+                )}
+              </Button>
+            </div>
           </div>
-        </div>
+        </ModalShell>
       )}
     </div>
   );

@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { ModalShell } from '@/components/common/modal-shell';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
 import {
@@ -377,86 +378,82 @@ export default function NotesPage() {
       />
 
       {/* Create / Edit Note Modal */}
-      {isNoteModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-5">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <FileText className="w-5 h-5 text-indigo-600" />
-                {editingNote ? 'Edit Note' : 'Add Note to Entity'}
-              </h2>
-              <button onClick={() => setIsNoteModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveNoteSubmit} className="space-y-4">
-              {!editingNote && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                      Entity Type
-                    </label>
-                    <select
-                      value={entityType}
-                      onChange={(e) => setEntityType(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
-                    >
-                      <option value="Lead">Lead</option>
-                      <option value="Contact">Contact</option>
-                      <option value="Deal">Deal</option>
-                      <option value="Company">Company</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                      Entity ID / Reference
-                    </label>
-                    <input
-                      type="text"
-                      value={entityId}
-                      onChange={(e) => setEntityId(e.target.value)}
-                      placeholder="e.g. lead-101"
-                      className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
-                    />
-                  </div>
-                </div>
-              )}
+      <ModalShell
+        isOpen={isNoteModalOpen}
+        onClose={() => setIsNoteModalOpen(false)}
+        size="lg"
+        title={
+          <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <FileText className="w-5 h-5 text-indigo-600" />
+            {editingNote ? 'Edit Note' : 'Add Note to Entity'}
+          </h2>
+        }
+      >
+        <form onSubmit={handleSaveNoteSubmit} className="space-y-4">
+          {!editingNote && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                  Entity Type
+                </label>
+                <select
+                  value={entityType}
+                  onChange={(e) => setEntityType(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+                >
+                  <option value="Lead">Lead</option>
+                  <option value="Contact">Contact</option>
+                  <option value="Deal">Deal</option>
+                  <option value="Company">Company</option>
+                </select>
+              </div>
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                  Note Content *
+                  Entity ID / Reference
                 </label>
-                <textarea
-                  rows={5}
-                  required
-                  value={content}
-                  onChange={(e) => setContent(e.target.value)}
-                  placeholder="Record internal call notes, deal updates, or action items..."
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none resize-none font-sans"
+                <input
+                  type="text"
+                  value={entityId}
+                  onChange={(e) => setEntityId(e.target.value)}
+                  placeholder="e.g. lead-101"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
                 />
               </div>
+            </div>
+          )}
 
-              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
-                <button type="button" onClick={() => setIsNoteModalOpen(false)} className="px-4 py-2 text-sm font-medium text-slate-600">
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={createNoteMutation.isPending || updateNoteMutation.isPending}
-                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg font-medium text-sm cursor-pointer shadow-sm disabled:opacity-50"
-                >
-                  {(createNoteMutation.isPending || updateNoteMutation.isPending) && (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  )}
-                  {editingNote ? 'Save Changes' : 'Create Note'}
-                </button>
-              </div>
-            </form>
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+              Note Content *
+            </label>
+            <textarea
+              rows={5}
+              required
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              placeholder="Record internal call notes, deal updates, or action items..."
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none resize-none font-sans"
+            />
           </div>
-        </div>
-      )}
+
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-3 border-t border-slate-100">
+            <button type="button" onClick={() => setIsNoteModalOpen(false)} className="px-4 py-2 text-sm font-medium text-slate-600">
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={createNoteMutation.isPending || updateNoteMutation.isPending}
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg font-medium text-sm cursor-pointer shadow-sm disabled:opacity-50"
+            >
+              {(createNoteMutation.isPending || updateNoteMutation.isPending) && (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              )}
+              {editingNote ? 'Save Changes' : 'Create Note'}
+            </button>
+          </div>
+        </form>
+      </ModalShell>
 
       {/* Confirm Delete Modal */}
       {noteToDelete && (

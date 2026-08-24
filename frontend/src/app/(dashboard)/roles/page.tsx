@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { ModalShell } from '@/components/common/modal-shell';
 import { PermissionGate } from '@/components/common/permission-gate';
 import {
   DropdownMenu,
@@ -763,439 +764,421 @@ export default function RolesPage() {
       />
 
       {/* Create / Edit Role Modal */}
-      {isRoleModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-5">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <ShieldCheck className="w-5 h-5 text-indigo-600" />
-                {editingRole ? 'Edit Role & Permissions' : 'Create Custom Role'}
-              </h2>
-              <button onClick={() => setIsRoleModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
-                <X className="w-5 h-5" />
-              </button>
+      <ModalShell
+        isOpen={isRoleModalOpen}
+        onClose={() => setIsRoleModalOpen(false)}
+        size="lg"
+        title={
+          <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <ShieldCheck className="w-5 h-5 text-indigo-600" />
+            {editingRole ? 'Edit Role & Permissions' : 'Create Custom Role'}
+          </h2>
+        }
+      >
+        <form onSubmit={handleSaveRoleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+              Role Name *
+            </label>
+            <input
+              type="text"
+              required
+              value={roleName}
+              onChange={(e) => setRoleName(e.target.value)}
+              placeholder="e.g. Regional Sales Director"
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+              Description
+            </label>
+            <textarea
+              rows={2}
+              value={roleDescription}
+              onChange={(e) => setRoleDescription(e.target.value)}
+              placeholder="e.g. Full pipeline visibility with discount approval permission"
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+            />
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600">
+                System Permissions Matrix ({permissionMatrix.length} Actions)
+              </label>
+              <div className="flex items-center gap-3">
+                <span className="text-[11px] text-indigo-600 font-semibold">{selectedPerms.size} Selected</span>
+                <button
+                  type="button"
+                  onClick={toggleAllMatrixPermissions}
+                  className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer underline"
+                >
+                  {permissionMatrix.length > 0 && permissionMatrix.every((p) => selectedPerms.has(p.id) || (p.key && selectedPerms.has(p.key)))
+                    ? 'Deselect All Actions'
+                    : 'Select All Actions'}
+                </button>
+              </div>
             </div>
+            <div className="max-h-72 overflow-y-auto space-y-4 pr-1 border border-slate-200 rounded-xl p-3 bg-slate-50/50">
+              {Object.keys(groupedPermissions).length === 0 ? (
+                <div className="text-center text-xs text-slate-400 py-4">No permissions available</div>
+              ) : (
+                Object.entries(groupedPermissions).map(([category, items]) => {
+                  const allSelected = items.every((i) => selectedPerms.has(i.id) || (i.key && selectedPerms.has(i.key)));
+                  const someSelected = items.some((i) => selectedPerms.has(i.id) || (i.key && selectedPerms.has(i.key)));
 
-            <form onSubmit={handleSaveRoleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                  Role Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={roleName}
-                  onChange={(e) => setRoleName(e.target.value)}
-                  placeholder="e.g. Regional Sales Director"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
-                />
-              </div>
+                  return (
+                    <div key={category} className="space-y-2 bg-white p-3 rounded-xl border border-slate-200">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={allSelected}
+                            ref={(el) => {
+                              if (el) el.indeterminate = someSelected && !allSelected;
+                            }}
+                            onChange={() => toggleModulePermissions(category)}
+                            className="h-4 w-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
+                          />
+                          <span className="px-2.5 py-0.5 bg-indigo-50 text-indigo-700 font-bold rounded-md text-xs border border-indigo-100">
+                            {category}
+                          </span>
+                          <span className="text-[11px] font-semibold text-slate-400">({items.length} permissions)</span>
+                        </label>
 
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                  Description
-                </label>
-                <textarea
-                  rows={2}
-                  value={roleDescription}
-                  onChange={(e) => setRoleDescription(e.target.value)}
-                  placeholder="e.g. Full pipeline visibility with discount approval permission"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
-                />
-              </div>
+                        <button
+                          type="button"
+                          onClick={() => toggleModulePermissions(category)}
+                          className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer"
+                        >
+                          {allSelected ? 'Deselect All' : 'Select All'}
+                        </button>
+                      </div>
 
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600">
-                    System Permissions Matrix ({permissionMatrix.length} Actions)
-                  </label>
-                  <div className="flex items-center gap-3">
-                    <span className="text-[11px] text-indigo-600 font-semibold">{selectedPerms.size} Selected</span>
-                    <button
-                      type="button"
-                      onClick={toggleAllMatrixPermissions}
-                      className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer underline"
-                    >
-                      {permissionMatrix.length > 0 && permissionMatrix.every((p) => selectedPerms.has(p.id) || (p.key && selectedPerms.has(p.key)))
-                        ? 'Deselect All Actions'
-                        : 'Select All Actions'}
-                    </button>
-                  </div>
-                </div>
-                <div className="max-h-72 overflow-y-auto space-y-4 pr-1 border border-slate-200 rounded-xl p-3 bg-slate-50/50">
-                  {Object.keys(groupedPermissions).length === 0 ? (
-                    <div className="text-center text-xs text-slate-400 py-4">No permissions available</div>
-                  ) : (
-                    Object.entries(groupedPermissions).map(([category, items]) => {
-                      const allSelected = items.every((i) => selectedPerms.has(i.id) || (i.key && selectedPerms.has(i.key)));
-                      const someSelected = items.some((i) => selectedPerms.has(i.id) || (i.key && selectedPerms.has(i.key)));
-
-                      return (
-                        <div key={category} className="space-y-2 bg-white p-3 rounded-xl border border-slate-200">
-                          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                            <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                        {items.map((p) => {
+                          const isChecked = selectedPerms.has(p.id) || (p.key ? selectedPerms.has(p.key) : false);
+                          return (
+                            <label
+                              key={p.id}
+                              className={`flex items-start justify-between p-2 rounded-lg border cursor-pointer transition-colors ${isChecked ? 'bg-indigo-50/50 border-indigo-200' : 'bg-slate-50/50 border-slate-200 hover:bg-slate-100/50'
+                                }`}
+                            >
+                              <div className="space-y-0.5 pr-2">
+                                <span className="text-xs font-bold text-slate-900 block leading-tight">
+                                  {p.name || p.key || 'Permission'}
+                                </span>
+                                {p.key && <span className="text-[10px] font-mono text-slate-500 block">{p.key}</span>}
+                                {p.description && (
+                                  <span className="text-[10px] text-slate-400 block truncate max-w-[180px]">
+                                    {p.description}
+                                  </span>
+                                )}
+                              </div>
                               <input
                                 type="checkbox"
-                                checked={allSelected}
-                                ref={(el) => {
-                                  if (el) el.indeterminate = someSelected && !allSelected;
-                                }}
-                                onChange={() => toggleModulePermissions(category)}
-                                className="h-4 w-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
+                                checked={isChecked}
+                                onChange={() => togglePermissionSelection(p)}
+                                className="h-4 w-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 mt-0.5 shrink-0"
                               />
-                              <span className="px-2.5 py-0.5 bg-indigo-50 text-indigo-700 font-bold rounded-md text-xs border border-indigo-100">
-                                {category}
-                              </span>
-                              <span className="text-[11px] font-semibold text-slate-400">({items.length} permissions)</span>
                             </label>
-
-                            <button
-                              type="button"
-                              onClick={() => toggleModulePermissions(category)}
-                              className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer"
-                            >
-                              {allSelected ? 'Deselect All' : 'Select All'}
-                            </button>
-                          </div>
-
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                            {items.map((p) => {
-                              const isChecked = selectedPerms.has(p.id) || (p.key ? selectedPerms.has(p.key) : false);
-                              return (
-                                <label
-                                  key={p.id}
-                                  className={`flex items-start justify-between p-2 rounded-lg border cursor-pointer transition-colors ${isChecked ? 'bg-indigo-50/50 border-indigo-200' : 'bg-slate-50/50 border-slate-200 hover:bg-slate-100/50'
-                                    }`}
-                                >
-                                  <div className="space-y-0.5 pr-2">
-                                    <span className="text-xs font-bold text-slate-900 block leading-tight">
-                                      {p.name || p.key || 'Permission'}
-                                    </span>
-                                    {p.key && <span className="text-[10px] font-mono text-slate-500 block">{p.key}</span>}
-                                    {p.description && (
-                                      <span className="text-[10px] text-slate-400 block truncate max-w-[180px]">
-                                        {p.description}
-                                      </span>
-                                    )}
-                                  </div>
-                                  <input
-                                    type="checkbox"
-                                    checked={isChecked}
-                                    onChange={() => togglePermissionSelection(p)}
-                                    className="h-4 w-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 mt-0.5 shrink-0"
-                                  />
-                                </label>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
-                <button type="button" onClick={() => setIsRoleModalOpen(false)} className="px-4 py-2 text-sm font-medium text-slate-600">
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={createRoleMutation.isPending || updateRoleMutation.isPending}
-                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg font-medium text-sm cursor-pointer shadow-sm disabled:opacity-50"
-                >
-                  {(createRoleMutation.isPending || updateRoleMutation.isPending) && (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  )}
-                  {editingRole ? 'Save Changes' : 'Create Role'}
-                </button>
-              </div>
-            </form>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
-        </div>
-      )}
+
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3 pt-3 border-t border-slate-100">
+            <button type="button" onClick={() => setIsRoleModalOpen(false)} className="px-4 py-2 text-sm font-medium text-slate-600">
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={createRoleMutation.isPending || updateRoleMutation.isPending}
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg font-medium text-sm cursor-pointer shadow-sm disabled:opacity-50"
+            >
+              {(createRoleMutation.isPending || updateRoleMutation.isPending) && (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              )}
+              {editingRole ? 'Save Changes' : 'Create Role'}
+            </button>
+          </div>
+        </form>
+      </ModalShell>
 
       {/* Clone Role Modal */}
-      {isCloneModalOpen && cloningRole && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Copy className="w-5 h-5 text-indigo-600" />
-                Clone Role Configuration
-              </h3>
-              <button onClick={() => setIsCloneModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      <ModalShell
+        isOpen={isCloneModalOpen && !!cloningRole}
+        onClose={() => setIsCloneModalOpen(false)}
+        size="md"
+        title={
+          <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <Copy className="w-5 h-5 text-indigo-600" />
+            Clone Role Configuration
+          </h3>
+        }
+      >
+        <form onSubmit={handleCloneRoleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">New Cloned Role Name *</label>
+            <input
+              type="text"
+              required
+              value={cloneNewName}
+              onChange={(e) => setCloneNewName(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
 
-            <form onSubmit={handleCloneRoleSubmit} className="space-y-4">
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3 pt-2">
+            <button type="button" onClick={() => setIsCloneModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={cloneRoleMutation.isPending}
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
+            >
+              {cloneRoleMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              Clone Role
+            </button>
+          </div>
+        </form>
+      </ModalShell>
+
+      {/* Assign Role to User Modal */}
+      <ModalShell
+        isOpen={isAssignModalOpen}
+        onClose={() => setIsAssignModalOpen(false)}
+        size="md"
+        title={
+          <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <UserCheck className="w-5 h-5 text-blue-600" />
+            Assign Role to User Account
+          </h3>
+        }
+      >
+        <form onSubmit={handleAssignUserSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Select User Account *</label>
+            <UserSelect
+              value={assignUserId}
+              onChange={setAssignUserId}
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Target Role</label>
+            <select
+              value={assignRoleId}
+              onChange={(e) => setAssignRoleId(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">Select a role...</option>
+              {assignableRoles.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3 pt-2">
+            <button type="button" onClick={() => setIsAssignModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={assignUserMutation.isPending}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
+            >
+              {assignUserMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              Assign Role
+            </button>
+          </div>
+        </form>
+      </ModalShell>
+
+      {/* Audit History Logs Modal */}
+      <ModalShell
+        isOpen={isAuditModalOpen}
+        onClose={() => setIsAuditModalOpen(false)}
+        size="lg"
+        title={
+          <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <History className="w-5 h-5 text-purple-600" />
+            Role Audit Modifications History
+          </h3>
+        }
+      >
+        <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
+          {auditLogs.map((log) => (
+            <div key={log.id} className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+              <div className="flex justify-between text-xs font-bold text-slate-900">
+                <span>{log.action}: {log.role_name}</span>
+                <span className="text-slate-400 font-mono text-[10px]">{log.timestamp}</span>
+              </div>
+              <div className="text-[11px] text-slate-500">Performed by: {log.user}</div>
+            </div>
+          ))}
+        </div>
+      </ModalShell>
+
+      {/* Create New Permission Modal */}
+      <ModalShell
+        isOpen={isPermModalOpen}
+        onClose={() => setIsPermModalOpen(false)}
+        size="md"
+        title={
+          <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <KeyRound className="w-5 h-5 text-emerald-600" />
+            System Permissions Manager
+          </h3>
+        }
+      >
+        <div className="space-y-4">
+          {/* Mode Switcher Tabs */}
+          <div className="flex bg-slate-100 p-1 rounded-xl gap-1">
+            <button
+              type="button"
+              onClick={() => setPermMode('single')}
+              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer ${permMode === 'single' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-900'
+                }`}
+            >
+              Single Entry
+            </button>
+            <button
+              type="button"
+              onClick={() => setPermMode('json')}
+              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer ${permMode === 'json' ? 'bg-white text-emerald-700 shadow-xs' : 'text-slate-500 hover:text-slate-900'
+                }`}
+            >
+              Upload JSON File
+            </button>
+          </div>
+
+          {permMode === 'single' ? (
+            <form onSubmit={handleCreatePermSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">New Cloned Role Name *</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Permission Name *</label>
                 <input
                   type="text"
                   required
-                  value={cloneNewName}
-                  onChange={(e) => setCloneNewName(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={() => setIsCloneModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={cloneRoleMutation.isPending}
-                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
-                >
-                  {cloneRoleMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  Clone Role
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Assign Role to User Modal */}
-      {isAssignModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <UserCheck className="w-5 h-5 text-blue-600" />
-                Assign Role to User Account
-              </h3>
-              <button onClick={() => setIsAssignModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleAssignUserSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Select User Account *</label>
-                <UserSelect
-                  value={assignUserId}
-                  onChange={setAssignUserId}
+                  value={permName}
+                  onChange={(e) => setPermName(e.target.value)}
+                  placeholder="e.g. Export Financial Reports"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Target Role</label>
-                <select
-                  value={assignRoleId}
-                  onChange={(e) => setAssignRoleId(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Select a role...</option>
-                  {assignableRoles.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name}
-                    </option>
-                  ))}
-                </select>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Permission Action Key *</label>
+                <input
+                  type="text"
+                  required
+                  value={permKey}
+                  onChange={(e) => setPermKey(e.target.value)}
+                  placeholder="e.g. reports:export"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+                />
               </div>
 
-              <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={() => setIsAssignModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={assignUserMutation.isPending}
-                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
-                >
-                  {assignUserMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  Assign Role
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Audit History Logs Modal */}
-      {isAuditModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <History className="w-5 h-5 text-purple-600" />
-                Role Audit Modifications History
-              </h3>
-              <button onClick={() => setIsAuditModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
-              {auditLogs.map((log) => (
-                <div key={log.id} className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
-                  <div className="flex justify-between text-xs font-bold text-slate-900">
-                    <span>{log.action}: {log.role_name}</span>
-                    <span className="text-slate-400 font-mono text-[10px]">{log.timestamp}</span>
-                  </div>
-                  <div className="text-[11px] text-slate-500">Performed by: {log.user}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Create New Permission Modal */}
-      {isPermModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <KeyRound className="w-5 h-5 text-emerald-600" />
-                System Permissions Manager
-              </h3>
-              <button onClick={() => setIsPermModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Mode Switcher Tabs */}
-            <div className="flex bg-slate-100 p-1 rounded-xl gap-1">
-              <button
-                type="button"
-                onClick={() => setPermMode('single')}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer ${permMode === 'single' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-900'
-                  }`}
-              >
-                Single Entry
-              </button>
-              <button
-                type="button"
-                onClick={() => setPermMode('json')}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer ${permMode === 'json' ? 'bg-white text-emerald-700 shadow-xs' : 'text-slate-500 hover:text-slate-900'
-                  }`}
-              >
-                Upload JSON File
-              </button>
-            </div>
-
-            {permMode === 'single' ? (
-              <form onSubmit={handleCreatePermSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Permission Name *</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Category / Module</label>
+                  <select
+                    value={permCategory}
+                    onChange={(e) => setPermCategory(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    <option value="Leads">Leads</option>
+                    <option value="Deals">Deals</option>
+                    <option value="Contacts">Contacts</option>
+                    <option value="Invoices">Invoices</option>
+                    <option value="Reports">Reports</option>
+                    <option value="Settings">Settings</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Description</label>
                   <input
                     type="text"
-                    required
-                    value={permName}
-                    onChange={(e) => setPermName(e.target.value)}
-                    placeholder="e.g. Export Financial Reports"
+                    value={permDesc}
+                    onChange={(e) => setPermDesc(e.target.value)}
+                    placeholder="e.g. Allow downloading PDF/CSV"
                     className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
+              </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Permission Action Key *</label>
+              <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3 pt-2">
+                <button type="button" onClick={() => setIsPermModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={createPermMutation.isPending}
+                  className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
+                >
+                  {createPermMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  Create Permission
+                </button>
+              </div>
+            </form>
+          ) : (
+            <form onSubmit={handleBatchImportSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Upload permissions.json File</label>
+                <div className="border-2 border-dashed border-slate-300 hover:border-emerald-500 rounded-xl p-4 text-center bg-slate-50 transition-colors relative cursor-pointer">
+                  <Upload className="w-6 h-6 text-emerald-600 mx-auto mb-1" />
+                  <span className="text-xs font-semibold text-slate-700 block">
+                    {jsonFileName ? `File selected: ${jsonFileName}` : 'Click or drop permissions.json here'}
+                  </span>
+                  <span className="text-[10px] text-slate-400 block">Supports standard permissions JSON array</span>
                   <input
-                    type="text"
-                    required
-                    value={permKey}
-                    onChange={(e) => setPermKey(e.target.value)}
-                    placeholder="e.g. reports:export"
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+                    type="file"
+                    accept=".json,application/json"
+                    onChange={handleFileUpload}
+                    className="absolute inset-0 opacity-0 cursor-pointer"
                   />
                 </div>
+              </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Category / Module</label>
-                    <select
-                      value={permCategory}
-                      onChange={(e) => setPermCategory(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
-                    >
-                      <option value="Leads">Leads</option>
-                      <option value="Deals">Deals</option>
-                      <option value="Contacts">Contacts</option>
-                      <option value="Invoices">Invoices</option>
-                      <option value="Reports">Reports</option>
-                      <option value="Settings">Settings</option>
-                    </select>
-                  </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Or Paste Permissions JSON Content</label>
+                <textarea
+                  rows={6}
+                  value={jsonText}
+                  onChange={(e) => setJsonText(e.target.value)}
+                  placeholder='[{"key": "users:read", "name": "View Users", "category": "Users", "description": "View users"}]'
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg p-3 text-xs text-slate-900 font-mono outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Description</label>
-                    <input
-                      type="text"
-                      value={permDesc}
-                      onChange={(e) => setPermDesc(e.target.value)}
-                      placeholder="e.g. Allow downloading PDF/CSV"
-                      className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex justify-end gap-3 pt-2">
-                  <button type="button" onClick={() => setIsPermModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={createPermMutation.isPending}
-                    className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
-                  >
-                    {createPermMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                    Create Permission
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <form onSubmit={handleBatchImportSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Upload permissions.json File</label>
-                  <div className="border-2 border-dashed border-slate-300 hover:border-emerald-500 rounded-xl p-4 text-center bg-slate-50 transition-colors relative cursor-pointer">
-                    <Upload className="w-6 h-6 text-emerald-600 mx-auto mb-1" />
-                    <span className="text-xs font-semibold text-slate-700 block">
-                      {jsonFileName ? `File selected: ${jsonFileName}` : 'Click or drop permissions.json here'}
-                    </span>
-                    <span className="text-[10px] text-slate-400 block">Supports standard permissions JSON array</span>
-                    <input
-                      type="file"
-                      accept=".json,application/json"
-                      onChange={handleFileUpload}
-                      className="absolute inset-0 opacity-0 cursor-pointer"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Or Paste Permissions JSON Content</label>
-                  <textarea
-                    rows={6}
-                    value={jsonText}
-                    onChange={(e) => setJsonText(e.target.value)}
-                    placeholder='[{"key": "users:read", "name": "View Users", "category": "Users", "description": "View users"}]'
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg p-3 text-xs text-slate-900 font-mono outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-
-                <div className="flex justify-end gap-3 pt-2">
-                  <button type="button" onClick={() => setIsPermModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={batchImportPermMutation.isPending || !jsonText.trim()}
-                    className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
-                  >
-                    {batchImportPermMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                    Import JSON Permissions
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
+              <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3 pt-2">
+                <button type="button" onClick={() => setIsPermModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={batchImportPermMutation.isPending || !jsonText.trim()}
+                  className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
+                >
+                  {batchImportPermMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  Import JSON Permissions
+                </button>
+              </div>
+            </form>
+          )}
         </div>
-      )}
+      </ModalShell>
 
       {/* Confirm Delete Modal */}
       {roleToDelete && (

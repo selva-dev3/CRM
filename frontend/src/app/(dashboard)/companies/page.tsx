@@ -15,8 +15,7 @@ import {
   Trash2,
   Edit,
   CheckCircle2,
-  AlertCircle,
-  X
+  AlertCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,6 +24,7 @@ import { DataTable, type DataTableColumn } from '@/components/common/data-table'
 import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { ModalShell } from '@/components/common/modal-shell';
 import {
   useCompaniesQuery,
   useCreateCompanyMutation,
@@ -410,202 +410,196 @@ export default function CompaniesPage() {
 
       {/* CREATE COMPANY MODAL (Payload fields: name, domain, website, industry, size, employee_count) */}
       {isCreateModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
-          <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                <Building2 className="w-5 h-5 text-blue-600" />
-                <span>Create New Company</span>
-              </h3>
-              <button type="button" onClick={() => setIsCreateModalOpen(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
+        <ModalShell
+          isOpen={isCreateModalOpen}
+          onClose={() => setIsCreateModalOpen(false)}
+          title={
+            <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+              <Building2 className="w-5 h-5 text-blue-600" />
+              <span>Create New Company</span>
+            </h3>
+          }
+        >
+          <form onSubmit={handleCreateSubmit} className="space-y-4 text-xs">
+            <div className="space-y-1">
+              <Label className="font-semibold text-slate-700">Company Name</Label>
+              <Input
+                type="text"
+                placeholder="e.g. selvakumar / Acme Corp"
+                value={formName}
+                onChange={(e) => setFormName(e.target.value)}
+                className="h-9 text-xs"
+              />
             </div>
 
-            <form onSubmit={handleCreateSubmit} className="space-y-4 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Company Name</Label>
+                <Label className="font-semibold text-slate-700">Domain Handle</Label>
                 <Input
                   type="text"
-                  placeholder="e.g. selvakumar / Acme Corp"
-                  value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
+                  placeholder="e.g. linkedin"
+                  value={formDomain}
+                  onChange={(e) => setFormDomain(e.target.value)}
                   className="h-9 text-xs"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">Domain Handle</Label>
-                  <Input
-                    type="text"
-                    placeholder="e.g. linkedin"
-                    value={formDomain}
-                    onChange={(e) => setFormDomain(e.target.value)}
-                    className="h-9 text-xs"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">Website URL</Label>
-                  <div className="flex items-center gap-1">
-                    <Input
-                      type="text"
-                      placeholder="https://crm-one-sable.vercel.app/"
-                      value={formWebsite}
-                      onChange={(e) => setFormWebsite(e.target.value)}
-                      className="h-9 text-xs"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleDomainLookup}
-                      title="Enrich domain info"
-                      className="px-2 py-2 text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded cursor-pointer shrink-0"
-                    >
-                      Enrich
-                    </button>
-                  </div>
-                </div>
-              </div>
-
               <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Industry Sector</Label>
-                <Input
-                  type="text"
-                  placeholder="e.g. software / IT"
-                  value={formIndustry}
-                  onChange={(e) => setFormIndustry(e.target.value)}
-                  className="h-9 text-xs"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">Size String</Label>
+                <Label className="font-semibold text-slate-700">Website URL</Label>
+                <div className="flex items-center gap-1">
                   <Input
                     type="text"
-                    placeholder='e.g. "10"'
-                    value={formSize}
-                    onChange={(e) => setFormSize(e.target.value)}
-                    className="h-9 text-xs"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">Employee Count</Label>
-                  <Input
-                    type="number"
-                    placeholder="10"
-                    value={formEmployeeCount}
-                    onChange={(e) => setFormEmployeeCount(e.target.value !== '' ? Number(e.target.value) : '')}
-                    className="h-9 text-xs"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <Button type="button" variant="outline" size="sm" onClick={() => setIsCreateModalOpen(false)} className="cursor-pointer">
-                  Cancel
-                </Button>
-                <Button type="submit" size="sm" disabled={createCompanyMutation.isPending} className="bg-blue-600 text-white font-semibold cursor-pointer">
-                  {createCompanyMutation.isPending ? 'Creating...' : 'Create Company'}
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* EDIT COMPANY MODAL */}
-      {isEditModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
-          <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                <Edit className="w-5 h-5 text-blue-600" />
-                <span>Edit Company Profile</span>
-              </h3>
-              <button type="button" onClick={() => setIsEditModalOpen(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleEditSubmit} className="space-y-4 text-xs">
-              <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Company Name</Label>
-                <Input
-                  type="text"
-                  value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
-                  className="h-9 text-xs"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">Domain Handle</Label>
-                  <Input
-                    type="text"
-                    value={formDomain}
-                    onChange={(e) => setFormDomain(e.target.value)}
-                    className="h-9 text-xs"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">Website URL</Label>
-                  <Input
-                    type="text"
+                    placeholder="https://crm-one-sable.vercel.app/"
                     value={formWebsite}
                     onChange={(e) => setFormWebsite(e.target.value)}
                     className="h-9 text-xs"
                   />
+                  <button
+                    type="button"
+                    onClick={handleDomainLookup}
+                    title="Enrich domain info"
+                    className="px-2 py-2 text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded cursor-pointer shrink-0"
+                  >
+                    Enrich
+                  </button>
                 </div>
               </div>
+            </div>
 
+            <div className="space-y-1">
+              <Label className="font-semibold text-slate-700">Industry Sector</Label>
+              <Input
+                type="text"
+                placeholder="e.g. software / IT"
+                value={formIndustry}
+                onChange={(e) => setFormIndustry(e.target.value)}
+                className="h-9 text-xs"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Industry Sector</Label>
+                <Label className="font-semibold text-slate-700">Size String</Label>
                 <Input
                   type="text"
-                  value={formIndustry}
-                  onChange={(e) => setFormIndustry(e.target.value)}
+                  placeholder='e.g. "10"'
+                  value={formSize}
+                  onChange={(e) => setFormSize(e.target.value)}
                   className="h-9 text-xs"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">Size String</Label>
-                  <Input
-                    type="text"
-                    value={formSize}
-                    onChange={(e) => setFormSize(e.target.value)}
-                    className="h-9 text-xs"
-                  />
-                </div>
+              <div className="space-y-1">
+                <Label className="font-semibold text-slate-700">Employee Count</Label>
+                <Input
+                  type="number"
+                  placeholder="10"
+                  value={formEmployeeCount}
+                  onChange={(e) => setFormEmployeeCount(e.target.value !== '' ? Number(e.target.value) : '')}
+                  className="h-9 text-xs"
+                />
+              </div>
+            </div>
 
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">Employee Count</Label>
-                  <Input
-                    type="number"
-                    value={formEmployeeCount}
-                    onChange={(e) => setFormEmployeeCount(e.target.value !== '' ? Number(e.target.value) : '')}
-                    className="h-9 text-xs"
-                  />
-                </div>
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setIsCreateModalOpen(false)} className="cursor-pointer">
+                Cancel
+              </Button>
+              <Button type="submit" size="sm" disabled={createCompanyMutation.isPending} className="bg-blue-600 text-white font-semibold cursor-pointer">
+                {createCompanyMutation.isPending ? 'Creating...' : 'Create Company'}
+              </Button>
+            </div>
+          </form>
+        </ModalShell>
+      )}
+
+      {/* EDIT COMPANY MODAL */}
+      {isEditModalOpen && (
+        <ModalShell
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+          title={
+            <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+              <Edit className="w-5 h-5 text-blue-600" />
+              <span>Edit Company Profile</span>
+            </h3>
+          }
+        >
+          <form onSubmit={handleEditSubmit} className="space-y-4 text-xs">
+            <div className="space-y-1">
+              <Label className="font-semibold text-slate-700">Company Name</Label>
+              <Input
+                type="text"
+                value={formName}
+                onChange={(e) => setFormName(e.target.value)}
+                className="h-9 text-xs"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="font-semibold text-slate-700">Domain Handle</Label>
+                <Input
+                  type="text"
+                  value={formDomain}
+                  onChange={(e) => setFormDomain(e.target.value)}
+                  className="h-9 text-xs"
+                />
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
-                <Button type="button" variant="outline" size="sm" onClick={() => setIsEditModalOpen(false)} className="cursor-pointer">
-                  Cancel
-                </Button>
-                <Button type="submit" size="sm" disabled={updateCompanyMutation.isPending} className="bg-blue-600 text-white font-semibold cursor-pointer">
-                  {updateCompanyMutation.isPending ? 'Saving...' : 'Save Changes'}
-                </Button>
+              <div className="space-y-1">
+                <Label className="font-semibold text-slate-700">Website URL</Label>
+                <Input
+                  type="text"
+                  value={formWebsite}
+                  onChange={(e) => setFormWebsite(e.target.value)}
+                  className="h-9 text-xs"
+                />
               </div>
-            </form>
-          </div>
-        </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="font-semibold text-slate-700">Industry Sector</Label>
+              <Input
+                type="text"
+                value={formIndustry}
+                onChange={(e) => setFormIndustry(e.target.value)}
+                className="h-9 text-xs"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="font-semibold text-slate-700">Size String</Label>
+                <Input
+                  type="text"
+                  value={formSize}
+                  onChange={(e) => setFormSize(e.target.value)}
+                  className="h-9 text-xs"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="font-semibold text-slate-700">Employee Count</Label>
+                <Input
+                  type="number"
+                  value={formEmployeeCount}
+                  onChange={(e) => setFormEmployeeCount(e.target.value !== '' ? Number(e.target.value) : '')}
+                  className="h-9 text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setIsEditModalOpen(false)} className="cursor-pointer">
+                Cancel
+              </Button>
+              <Button type="submit" size="sm" disabled={updateCompanyMutation.isPending} className="bg-blue-600 text-white font-semibold cursor-pointer">
+                {updateCompanyMutation.isPending ? 'Saving...' : 'Save Changes'}
+              </Button>
+            </div>
+          </form>
+        </ModalShell>
       )}
 
       {/* CONFIRM DELETE MODAL */}
