@@ -284,6 +284,9 @@ class DealService:
         d = await self.require_deal(db, deal_id)
         d.stage = "Closed Lost"
         d.probability = 0.0
+        # Persist the caller-supplied reason so win/loss and churn reports can
+        # aggregate real loss reasons instead of placeholders.
+        d.loss_reason = (reason or "").strip() or None
         await self._commit(db, "Failed to mark deal as lost")
         await notification_service.notify(
             db,

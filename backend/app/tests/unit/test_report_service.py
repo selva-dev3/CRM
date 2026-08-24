@@ -34,8 +34,12 @@ async def test_sales_performance_report_builds_rows_with_org():
     repo = ReportRepository()
     repo.total_won_revenue = AsyncMock(return_value=150000.0)
     repo.rep_performance = AsyncMock(
-        return_value=[("Alice", "AE", 10, 4, 60000.0), ("Bob", "SE", 5, 1, 10000.0)]
+        return_value=[
+            ("user-1", "Alice", "AE", 10, 4, 60000.0),
+            ("user-2", "Bob", "SE", 5, 1, 10000.0),
+        ]
     )
+    repo.quotas_by_user = AsyncMock(return_value={"user-1": 100000.0})
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
     user = _make_user(org_id="org-acme")
@@ -49,13 +53,20 @@ async def test_sales_performance_report_builds_rows_with_org():
     assert len(result["metrics"]["table_rows"]) == 2
     assert result["metrics"]["table_rows"][0]["rep_name"] == "Alice"
     assert result["metrics"]["table_rows"][0]["win_rate"] == 40.0
-    assert result["metrics"]["monthly_target"] == 200000.0
+    # Quota comes from persisted UserQuota records only.
+    assert result["metrics"]["table_rows"][0]["quota_target"] == 100000.0
+    assert result["metrics"]["table_rows"][0]["attainment_pct"] == 60.0
+    # Rep without a configured quota must not get a fabricated one.
+    assert result["metrics"]["table_rows"][1]["quota_target"] is None
+    assert result["metrics"]["table_rows"][1]["attainment_pct"] is None
+    assert result["metrics"]["monthly_target"] == 100000.0
 
 
 @pytest.mark.asyncio
 async def test_pipeline_velocity_empty_returns_zero_avg():
     repo = ReportRepository()
-    repo.deals_by_stage = AsyncMock(return_value=[])
+    repo.stage_age_breakdown = AsyncMock(return_value=[])
+    repo.closed_cycle_stats = AsyncMock(return_value=Row(closed_cnt=0, fastest_sec=0.0, longest_sec=0.0, avg_sec=0.0))
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
     user = _make_user(org_id="org-1")
@@ -67,12 +78,36 @@ async def test_pipeline_velocity_empty_returns_zero_avg():
 
 
 @pytest.mark.asyncio
+async def test_pipeline_velocity_computes_real_stage_age():
+    repo = ReportRepository()
+    repo.stage_age_breakdown = AsyncMock(
+        return_value=[("Negotiation", 2, 30000.0, 5 * 86400.0)]
+    )
+    repo.closed_cycle_stats = AsyncMock(
+        return_value=Row(closed_cnt=3, fastest_sec=2 * 86400.0, longest_sec=20 * 86400.0, avg_sec=10 * 86400.0)
+    )
+    service = ReportService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+    user = _make_user(org_id="org-1")
+
+    result = await service.get_pipeline_velocity_report(db, current_user=user)
+
+    row = result["metrics"]["table_rows"][0]
+    assert row["avg_days_in_stage"] == 5.0
+    assert row["bottleneck_risk"] == "Medium"
+    assert "conversion_rate" not in row  # fabricated metric removed
+    assert result["metrics"]["avg_days_to_close"] == 10.0
+    assert result["metrics"]["closed_won_deals"] == 3
+
+
+@pytest.mark.asyncio
 async def test_win_loss_report_ratio():
     repo = ReportRepository()
     repo.count_deals_in_stage = AsyncMock(side_effect=[7, 3])
     repo.win_loss_by_industry = AsyncMock(
         return_value=[("Software", 5, 1, 50000.0, 5000.0)]
     )
+    repo.top_loss_reason = AsyncMock(return_value="Budget Constraint")
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
     user = _make_user(org_id="org-1")
@@ -82,22 +117,210 @@ async def test_win_loss_report_ratio():
     assert result["metrics"]["win_percentage"] == 70.0
     assert result["metrics"]["loss_percentage"] == 30.0
     assert result["metrics"]["total_won_deals"] == 7
+    assert result["metrics"]["top_loss_reason"] == "Budget Constraint"
     assert result["metrics"]["table_rows"][0]["segment"] == "Software"
+    assert result["metrics"]["table_rows"][0]["primary_loss_reason"] == "Budget Constraint"
 
 
 @pytest.mark.asyncio
-async def test_revenue_forecast_no_pipeline():
+async def test_win_loss_report_without_recorded_reasons():
     repo = ReportRepository()
-    repo.revenue_forecast = AsyncMock(return_value=None)
+    repo.count_deals_in_stage = AsyncMock(side_effect=[7, 3])
+    repo.win_loss_by_industry = AsyncMock(return_value=[])
+    repo.top_loss_reason = AsyncMock(return_value=None)
+    service = ReportService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+    user = _make_user(org_id="org-1")
+
+    result = await service.get_win_loss_report(db, current_user=user)
+
+    assert result["metrics"]["top_loss_reason"] is None
+
+
+@pytest.mark.asyncio
+async def test_lead_attribution_has_no_fabricated_revenue():
+    repo = ReportRepository()
+    repo.leads_by_source = AsyncMock(
+        return_value=[("Website", 10, 4, 72.0)]
+    )
+    service = ReportService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+    user = _make_user(org_id="org-1")
+
+    result = await service.get_lead_attribution_report(db, current_user=user)
+
+    row = result["metrics"]["table_rows"][0]
+    assert row["total_leads"] == 10
+    assert row["converted_leads"] == 4
+    assert row["conversion_rate"] == 40.0
+    for fabricated in ("revenue_generated", "cac", "roi_ratio"):
+        assert fabricated not in row
+
+
+@pytest.mark.asyncio
+async def test_rep_leaderboard_uses_real_quota_and_no_activity_padding():
+    repo = ReportRepository()
+    repo.rep_leaderboard = AsyncMock(
+        return_value=[("user-1", "Alice", "a@x.com", "AE", 6, 120000.0)]
+    )
+    repo.quotas_by_user = AsyncMock(return_value={"user-1": 100000.0})
+    service = ReportService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+    user = _make_user(org_id="org-1")
+
+    result = await service.get_rep_leaderboard_report(db, current_user=user)
+
+    row = result["metrics"]["table_rows"][0]
+    assert row["rank"] == 1
+    assert row["badge"] == "Top Performer"
+    assert row["quota_target"] == 100000.0
+    assert row["attainment_pct"] == 120.0
+    for fabricated in ("calls_made", "meetings_held"):
+        assert fabricated not in row
+
+
+@pytest.mark.asyncio
+async def test_revenue_forecast_periods_from_expected_close_dates():
+    repo = ReportRepository()
+    repo.total_won_revenue = AsyncMock(return_value=80000.0)
+    repo.revenue_forecast = AsyncMock(return_value=Row(total_pipeline=50000.0, weighted=25000.0))
+    repo.forecast_by_period = AsyncMock(
+        return_value=[("2026-Q3", 2, 20000.0, 10000.0), ("2026-Q4", 3, 30000.0, 15000.0)]
+    )
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
     user = _make_user(org_id="org-1")
 
     result = await service.get_revenue_forecasting_report(db, current_user=user)
 
-    assert result["metrics"]["q3_predicted"] == 0.0
-    assert result["metrics"]["confidence"] == 0.0
+    metrics = result["metrics"]
+    assert metrics["committed_revenue"] == 80000.0
+    assert metrics["open_pipeline_amount"] == 50000.0
+    assert metrics["weighted_pipeline_amount"] == 25000.0
+    assert [r["period"] for r in metrics["table_rows"]] == ["2026-Q3", "2026-Q4"]
+    for fabricated in ("q3_predicted", "q4_predicted", "confidence"):
+        assert fabricated not in metrics
+
+
+@pytest.mark.asyncio
+async def test_revenue_forecast_no_pipeline():
+    repo = ReportRepository()
+    repo.total_won_revenue = AsyncMock(return_value=0.0)
+    repo.revenue_forecast = AsyncMock(return_value=None)
+    repo.forecast_by_period = AsyncMock(return_value=[])
+    service = ReportService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+    user = _make_user(org_id="org-1")
+
+    result = await service.get_revenue_forecasting_report(db, current_user=user)
+
+    assert result["metrics"]["committed_revenue"] == 0.0
+    assert result["metrics"]["open_pipeline_amount"] == 0.0
+    assert result["metrics"]["weighted_pipeline_amount"] == 0.0
     assert result["metrics"]["table_rows"] == []
+
+
+@pytest.mark.asyncio
+async def test_activity_metrics_org_totals_only():
+    repo = ReportRepository()
+    repo.count_calls = AsyncMock(return_value=12)
+    repo.total_call_duration_seconds = AsyncMock(return_value=3600)
+    repo.count_emails = AsyncMock(return_value=40)
+    repo.count_opened_emails = AsyncMock(return_value=10)
+    repo.count_meetings = AsyncMock(return_value=5)
+    service = ReportService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+    user = _make_user(org_id="org-1")
+
+    result = await service.get_activity_metrics_report(db, current_user=user)
+
+    metrics = result["metrics"]
+    assert metrics["total_calls"] == 12
+    assert metrics["total_call_duration_minutes"] == 60.0
+    assert metrics["total_emails"] == 40
+    assert metrics["email_open_rate_pct"] == 25.0
+    assert metrics["total_meetings"] == 5
+    # No per-rep attribution columns exist in the schema: rows stay empty.
+    assert metrics["table_rows"] == []
+
+
+@pytest.mark.asyncio
+async def test_deal_duration_computes_real_cycle_stats():
+    repo = ReportRepository()
+    repo.closed_cycle_stats = AsyncMock(
+        return_value=Row(closed_cnt=4, fastest_sec=2 * 86400.0, longest_sec=30 * 86400.0, avg_sec=12.5 * 86400.0)
+    )
+    repo.stage_age_breakdown = AsyncMock(
+        return_value=[("Proposal", 3, 40000.0, 21 * 86400.0)]
+    )
+    service = ReportService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+    user = _make_user(org_id="org-1")
+
+    result = await service.get_deal_duration_report(db, current_user=user)
+
+    metrics = result["metrics"]
+    assert metrics["avg_cycle_days"] == 12.5
+    assert metrics["fastest_close_days"] == 2.0
+    assert metrics["longest_close_days"] == 30.0
+    assert metrics["closed_won_deals"] == 4
+    assert metrics["table_rows"][0]["primary_bottleneck"] == "Proposal (avg 21.0d)"
+
+
+@pytest.mark.asyncio
+async def test_deal_duration_empty_when_nothing_closed():
+    repo = ReportRepository()
+    repo.closed_cycle_stats = AsyncMock(
+        return_value=Row(closed_cnt=0, fastest_sec=0.0, longest_sec=0.0, avg_sec=0.0)
+    )
+    repo.stage_age_breakdown = AsyncMock(return_value=[])
+    service = ReportService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+    user = _make_user(org_id="org-1")
+
+    result = await service.get_deal_duration_report(db, current_user=user)
+
+    assert result["metrics"]["avg_cycle_days"] == 0.0
+    assert result["metrics"]["table_rows"] == []
+
+
+@pytest.mark.asyncio
+async def test_cac_reports_acquisition_volume_and_value_only():
+    repo = ReportRepository()
+    repo.count_deals_in_stage = AsyncMock(return_value=8)
+    repo.total_won_revenue = AsyncMock(return_value=200000.0)
+    service = ReportService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+    user = _make_user(org_id="org-1")
+
+    result = await service.get_cac_report(db, current_user=user)
+
+    metrics = result["metrics"]
+    assert metrics["customer_count"] == 8
+    assert metrics["avg_revenue_per_customer"] == 25000.0
+    for fabricated in ("blended_cac", "paid_cac", "organic_cac", "ltv_cac_ratio"):
+        assert fabricated not in metrics
+    row = metrics["table_rows"][0]
+    for fabricated in ("blended_cac", "paid_cac", "organic_cac", "ltv_cac_ratio"):
+        assert fabricated not in row
+
+
+@pytest.mark.asyncio
+async def test_ltv_reports_real_aggregates():
+    repo = ReportRepository()
+    repo.won_aggregate = AsyncMock(return_value=(5, 300000.0))
+    service = ReportService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+    user = _make_user(org_id="org-1")
+
+    result = await service.get_ltv_report(db, current_user=user)
+
+    metrics = result["metrics"]
+    assert metrics["avg_ltv"] == 60000.0
+    assert metrics["customer_count"] == 5
+    assert metrics["total_revenue"] == 300000.0
+    for fabricated in ("ltv_cac_ratio", "churn_rate", "net_retention"):
+        assert fabricated not in str(metrics)
 
 
 @pytest.mark.asyncio
@@ -105,6 +328,7 @@ async def test_churn_analysis():
     repo = ReportRepository()
     repo.lost_aggregate = AsyncMock(return_value=(2, 20000.0))
     repo.count_deals = AsyncMock(return_value=10)
+    repo.top_loss_reason = AsyncMock(return_value="Pricing")
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
     user = _make_user(org_id="org-1")
@@ -112,8 +336,36 @@ async def test_churn_analysis():
     result = await service.get_churn_analysis_report(db, current_user=user)
 
     assert result["metrics"]["annual_churn_rate"] == 20.0
-    assert result["metrics"]["net_revenue_retention"] == 80.0
+    assert result["metrics"]["lost_arr"] == 20000.0
     assert result["metrics"]["table_rows"][0]["churned_accounts"] == 2
+    assert result["metrics"]["table_rows"][0]["top_churn_reason"] == "Pricing"
+    assert "net_revenue_retention" not in result["metrics"]
+
+
+@pytest.mark.asyncio
+async def test_quota_attainment_with_and_without_quotas():
+    repo = ReportRepository()
+    repo.rep_quota = AsyncMock(
+        return_value=[
+            ("user-1", "Alice", "AE", 90000.0, 50000.0),
+            ("user-2", "Bob", "SE", 20000.0, 30000.0),
+        ]
+    )
+    repo.quotas_by_user = AsyncMock(return_value={"user-1": 100000.0})
+    service = ReportService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+    user = _make_user(org_id="org-1")
+
+    result = await service.get_quota_attainment_report(db, current_user=user)
+
+    rows = result["metrics"]["table_rows"]
+    assert rows[0]["attainment_pct"] == 90.0
+    assert rows[0]["status"] == "On Track"
+    assert rows[1]["assigned_quota"] is None
+    assert rows[1]["status"] == "No Quota Set"
+    # Team attainment counts only reps with a configured quota.
+    assert result["metrics"]["team_attainment_pct"] == 90.0
+    assert result["metrics"]["reps_with_quota"] == 1
 
 
 @pytest.mark.asyncio
@@ -332,8 +584,11 @@ async def test_list_scheduled_reports_pagination():
 @pytest.mark.asyncio
 async def test_export_report_pdf_validates_type_and_user(monkeypatch):
     repo = ReportRepository()
-    repo.deals_for_csv = AsyncMock(return_value=[("Deal Alpha", 25000.0, "Closed Won")])
     repo.total_won_revenue = AsyncMock(return_value=25000.0)
+    repo.rep_performance = AsyncMock(
+        return_value=[("user-1", "Alice", "AE", 4, 1, 25000.0)]
+    )
+    repo.quotas_by_user = AsyncMock(return_value={})
     repo.create_export = AsyncMock(
         return_value=Row(
             id="exp-1",
@@ -367,8 +622,9 @@ async def test_export_report_pdf_accepts_enum_report_type(monkeypatch):
     from app.schemas.report_schemas import ReportTypeEnum
 
     repo = ReportRepository()
-    repo.deals_for_csv = AsyncMock(return_value=[])
     repo.total_won_revenue = AsyncMock(return_value=0.0)
+    repo.rep_performance = AsyncMock(return_value=[])
+    repo.quotas_by_user = AsyncMock(return_value={})
     repo.create_export = AsyncMock(return_value=Row(id="exp-2", download_url=None, s3_key="k"))
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -418,8 +674,9 @@ def test_compute_next_run_monthly_calendar_arithmetic():
 @pytest.mark.asyncio
 async def test_export_report_pdf_raises_on_commit_failure(monkeypatch):
     repo = ReportRepository()
-    repo.deals_for_csv = AsyncMock(return_value=[])
     repo.total_won_revenue = AsyncMock(return_value=0.0)
+    repo.rep_performance = AsyncMock(return_value=[])
+    repo.quotas_by_user = AsyncMock(return_value={})
     repo.create_export = AsyncMock(return_value=Row(id="exp-pdf", download_url=None, s3_key="exports/test.pdf"))
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -437,16 +694,26 @@ async def test_export_report_pdf_raises_on_commit_failure(monkeypatch):
 @pytest.mark.asyncio
 async def test_export_report_csv_sanitizes_formula_prefixes(monkeypatch):
     repo = ReportRepository()
-    repo.deals_for_csv = AsyncMock(return_value=[
-        ("=cmd|' /C calc'!A0", 5000.0, "@Dangerous"),
-        ("+1234567890", 2000.0, "-StageMinus"),
-    ])
+    repo.total_won_revenue = AsyncMock(return_value=7000.0)
+    repo.rep_performance = AsyncMock(
+        return_value=[
+            ("user-1", "=cmd|' /C calc'!A0", "@Role", 5, 1, 5000.0),
+            ("user-2", "+1234567890", "-StageMinus", 2, 0, 2000.0),
+        ]
+    )
+    repo.quotas_by_user = AsyncMock(return_value={})
     repo.create_export = AsyncMock(return_value=Row(id="exp-csv", download_url=None, s3_key="exports/org-safe/x.csv"))
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
     user = _make_user(org_id="org-safe", user_id="usr-1")
 
-    monkeypatch.setattr("app.services.report_service.s3_service.upload_file", lambda *a, **kw: "exports/org-safe/x.csv")
+    uploaded = {}
+
+    def fake_upload(file_obj, object_name="", content_type=None):
+        uploaded["content"] = file_obj.read().decode("utf-8")
+        return "exports/org-safe/x.csv"
+
+    monkeypatch.setattr("app.services.report_service.s3_service.upload_file", fake_upload)
     monkeypatch.setattr("app.services.report_service.s3_service.generate_presigned_url", lambda *a, **kw: "https://s3.example.com/exports/csv.csv")
 
     result = await service.export_report_csv(db, "sales-performance", current_user=user)
@@ -457,12 +724,73 @@ async def test_export_report_csv_sanitizes_formula_prefixes(monkeypatch):
     assert data["s3_key"].startswith("exports/org-safe/")
     assert "csv_url" in result
     assert result["export_id"] == "exp-csv"
+    # Dangerous formula prefixes are escaped; numeric negatives are preserved.
+    assert "'=cmd" in uploaded["content"]
+    assert "'+1234567890" in uploaded["content"]
+
+
+@pytest.mark.asyncio
+async def test_export_csv_reflects_requested_report_rows(monkeypatch):
+    repo = ReportRepository()
+    repo.count_deals_in_stage = AsyncMock(side_effect=[7, 3])
+    repo.win_loss_by_industry = AsyncMock(
+        return_value=[("Software", 5, 1, 50000.0, 5000.0)]
+    )
+    repo.top_loss_reason = AsyncMock(return_value="Budget Constraint")
+    repo.create_export = AsyncMock(return_value=Row(id="exp-wl", download_url=None, s3_key="exports/org-1/x.csv"))
+    service = ReportService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+    user = _make_user(org_id="org-1", user_id="usr-1")
+
+    uploaded = {}
+
+    def fake_upload(file_obj, object_name="", content_type=None):
+        uploaded["content"] = file_obj.read().decode("utf-8")
+        return "exports/org-1/x.csv"
+
+    monkeypatch.setattr("app.services.report_service.s3_service.upload_file", fake_upload)
+    monkeypatch.setattr("app.services.report_service.s3_service.generate_presigned_url", lambda *a, **kw: "https://s3.example/x.csv")
+
+    result = await service.export_report_csv(db, "win-loss-ratio", current_user=user)
+
+    # CSV must contain the win/loss breakdown, not raw deal rows.
+    assert '"Software"' in uploaded["content"]
+    assert '"win_percentage"' in uploaded["content"]
+    assert "50000.0" in uploaded["content"]
+    assert "csv_url" in result
+
+
+@pytest.mark.asyncio
+async def test_build_report_csv_for_organization_internal(monkeypatch):
+    """Scheduler path: builds report data for an org without a request user."""
+    repo = ReportRepository()
+    repo.leads_by_source = AsyncMock(return_value=[("Referral", 4, 2, 80.0)])
+    service = ReportService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    csv_text = await service.build_report_csv_for_organization(db, "org-bg", "lead-attribution")
+
+    assert '"source"' in csv_text
+    assert '"Referral"' in csv_text
+    repo.leads_by_source.assert_awaited_once_with(db, "org-bg")
+
+
+@pytest.mark.asyncio
+async def test_build_report_csv_for_organization_invalid_type():
+    service = ReportService(repository=ReportRepository())
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(APIException) as exc_info:
+        await service.build_report_csv_for_organization(db, "org-bg", "not-a-type")
+    assert exc_info.value.status_code == 422
 
 
 @pytest.mark.asyncio
 async def test_export_report_csv_raises_502_on_s3_error(monkeypatch):
     repo = ReportRepository()
-    repo.deals_for_csv = AsyncMock(return_value=[])
+    repo.total_won_revenue = AsyncMock(return_value=0.0)
+    repo.rep_performance = AsyncMock(return_value=[])
+    repo.quotas_by_user = AsyncMock(return_value={})
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 

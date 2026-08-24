@@ -7,6 +7,7 @@ from app.models.lead import Lead, LeadSource, LeadStatus, LeadScore, LeadTag, Le
 from app.models.contact import Contact, ContactAddress, ContactTag
 from app.models.company import Company, CompanyContact
 from app.models.deal import Deal, DealStage, DealActivity, DealProduct
+from app.models.user_quota import UserQuota
 from app.models.task import Task, TaskComment, TaskAttachment
 from app.models.meeting import Meeting, MeetingAttendee
 from app.models.call import CallLog
@@ -33,6 +34,7 @@ __all__ = [
     "Contact", "ContactAddress", "ContactTag",
     "Company", "CompanyContact",
     "Deal", "DealStage", "DealActivity", "DealProduct",
+    "UserQuota",
     "Task", "TaskComment", "TaskAttachment",
     "Meeting", "MeetingAttendee",
     "CallLog",

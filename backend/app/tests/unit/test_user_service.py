@@ -578,3 +578,67 @@ async def test_update_user_rejects_system_role():
     with pytest.raises(ForbiddenError):
         await service.update_user(db, "user-1", UserUpdate(role="role-9"))
     assert user.role == "Sales Executive"
+
+@pytest.mark.asyncio
+async def test_get_user_quota_returns_target_and_real_achieved():
+    user = _make_user()
+    repo = UserRepository()
+    repo.get_by_id = AsyncMock(return_value=user)
+    repo.get_quota = AsyncMock(
+        return_value=type("Q", (), {"target_amount": 100000.0})()
+    )
+    repo.total_won_revenue = AsyncMock(return_value=45000.0)
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.get_user_quota(db, "user-1")
+
+    assert result["user_id"] == "user-1"
+    assert result["target_amount"] == 100000.0
+    assert result["achieved_amount"] == 45000.0
+
+
+@pytest.mark.asyncio
+async def test_get_user_quota_without_configured_quota_is_none():
+    user = _make_user()
+    repo = UserRepository()
+    repo.get_by_id = AsyncMock(return_value=user)
+    repo.get_quota = AsyncMock(return_value=None)
+    repo.total_won_revenue = AsyncMock(return_value=12000.5)
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.get_user_quota(db, "user-1")
+
+    assert result["target_amount"] is None
+    assert result["achieved_amount"] == 12000.5
+
+
+@pytest.mark.asyncio
+async def test_set_user_quota_persists_and_commits():
+    user = _make_user()
+    repo = UserRepository()
+    repo.get_by_id = AsyncMock(return_value=user)
+    repo.upsert_quota = AsyncMock()
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.set_user_quota(db, user_id="user-1", target_amount=250000.0)
+
+    repo.upsert_quota.assert_awaited_once_with(
+        db, user_id="user-1", organization_id="org-1", target_amount=250000.0
+    )
+    db.commit.assert_awaited_once()
+    assert result["status"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_set_user_quota_rejects_negative_target():
+    repo = UserRepository()
+    repo.get_by_id = AsyncMock(return_value=_make_user())
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(APIException) as exc_info:
+        await service.set_user_quota(db, user_id="user-1", target_amount=-1.0)
+    assert exc_info.value.status_code == 422
