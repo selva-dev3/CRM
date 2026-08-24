@@ -485,10 +485,9 @@ class OrganizationDomainService:
             import stripe
 
             stripe.api_key = settings.STRIPE_SECRET_KEY
-            session = await run_in_threadpool(
-                stripe.checkout.Session.create,
-                payment_method_types=["card"],
-                line_items=[
+            checkout_params: dict[str, Any] = {
+                "payment_method_types": ["card"],
+                "line_items": [
                     {
                         "price_data": {
                             "currency": "inr",
@@ -504,16 +503,22 @@ class OrganizationDomainService:
                         "quantity": 1,
                     }
                 ],
-                mode="subscription",
-                success_url=f"{settings.frontend_base_url}/organization/subscription/payment/success?session_id={{CHECKOUT_SESSION_ID}}&org_id={org.id}",
-                cancel_url=f"{settings.frontend_base_url}/organization/subscription/payment/cancel?org_id={org.id}",
-                customer_email=current_user.email if current_user and getattr(current_user, "email", None) else None,
-                metadata={
+                "mode": "subscription",
+                "success_url": f"{settings.frontend_base_url}/organization/subscription/payment/success?session_id={{CHECKOUT_SESSION_ID}}&org_id={org.id}",
+                "cancel_url": f"{settings.frontend_base_url}/organization/subscription/payment/cancel?org_id={org.id}",
+                "metadata": {
                     "organization_id": org.id,
                     "user_id": current_user.id if current_user else "",
                     "plan_slug": clean_slug,
                     "type": "subscription_upgrade",
                 },
+            }
+            if current_user and current_user.email:
+                checkout_params["customer_email"] = current_user.email
+
+            session = await run_in_threadpool(
+                stripe.checkout.Session.create,
+                **checkout_params,
             )
             return {
                 "checkout_url": session.url or f"https://checkout.stripe.com/pay/{session.id}",
