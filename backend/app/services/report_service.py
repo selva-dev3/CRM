@@ -278,22 +278,34 @@ class ReportService:
 
         rows = await self.repository.win_loss_by_industry(db, target_org)
         top_loss_reason = await self.repository.top_loss_reason(db, target_org)
+
+        # Modal loss reason per industry so each segment reports only reasons
+        # actually recorded against its own deals (never the org-wide mode).
+        reason_rows = await self.repository.loss_reason_by_industry(db, target_org)
+        industry_reason_counts: dict[str, tuple[str, int]] = {}
+        for ind, reason, cnt in reason_rows:
+            key = ind or "General Enterprise"
+            c = int(cnt or 0)
+            if key not in industry_reason_counts or c > industry_reason_counts[key][1]:
+                industry_reason_counts[key] = (str(reason), c)
+
         table_rows = []
         for ind, won, lost, won_v, lost_v in rows:
             w_cnt = int(won or 0)
             l_cnt = int(lost or 0)
             tot_cnt = w_cnt + l_cnt
             win_pct = round((w_cnt / tot_cnt * 100.0), 1) if tot_cnt > 0 else 0.0
+            ind_label = ind or "General Enterprise"
             table_rows.append(
                 {
-                    "segment": ind or "General Enterprise",
+                    "segment": ind_label,
                     "won_deals": w_cnt,
                     "lost_deals": l_cnt,
                     "total_deals": tot_cnt,
                     "win_percentage": win_pct,
                     "won_value": round(float(won_v or 0.0), 2),
                     "lost_value": round(float(lost_v or 0.0), 2),
-                    "primary_loss_reason": top_loss_reason,
+                    "primary_loss_reason": industry_reason_counts.get(ind_label, (None, 0))[0],
                 }
             )
 

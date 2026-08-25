@@ -163,6 +163,29 @@ class ReportRepository:
         row = res.first()
         return row[0] if row else None
 
+    async def loss_reason_by_industry(
+        self, db: AsyncSession, org_id: str, limit: int = 200
+    ) -> list[Any]:
+        """Loss-reason counts per company industry among Closed Lost deals."""
+        query = (
+            select(
+                Company.industry,
+                Deal.loss_reason,
+                func.count(Deal.id).label("cnt"),
+            )
+            .join(Company, Deal.company_id == Company.id)
+            .where(
+                Deal.organization_id == org_id,
+                Deal.stage == CLOSED_LOST_STAGE,
+                Deal.loss_reason.is_not(None),
+                func.length(Deal.loss_reason) > 0,
+            )
+            .group_by(Company.industry, Deal.loss_reason)
+            .limit(limit)
+        )
+        res = await db.execute(query)
+        return list(res.all())
+
     # --- Lead Attribution ---
     async def leads_by_source(self, db: AsyncSession, org_id: str, limit: int = 50) -> list[Any]:
         query = (

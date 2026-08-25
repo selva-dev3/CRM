@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { ModalShell } from '@/components/common/modal-shell';
 import { CustomSelect } from '@/components/common/custom-select';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
@@ -445,162 +446,158 @@ export default function CalendarPage() {
 
       {/* Create / Edit Event Modal */}
       {isCreateModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-4 sm:p-6 shadow-2xl border border-slate-200 space-y-4 sm:space-y-5 max-h-[calc(100vh-2rem)] overflow-y-auto">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
-                <CalendarIcon className="w-5 h-5 text-indigo-600 shrink-0" />
-                <span>{editingEvent ? 'Edit Calendar Event' : 'Create New Event'}</span>
-              </h2>
-              <button onClick={() => setIsCreateModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
+        <ModalShell
+          isOpen={isCreateModalOpen}
+          onClose={() => setIsCreateModalOpen(false)}
+          size="lg"
+          title={
+            <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+              <CalendarIcon className="w-5 h-5 text-indigo-600 shrink-0" />
+              <span>{editingEvent ? 'Edit Calendar Event' : 'Create New Event'}</span>
+            </h2>
+          }
+        >
+          <form onSubmit={handleSaveEventSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                Event Title *
+              </label>
+              <input
+                type="text"
+                required
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g. Sales Pipeline Review"
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+              />
             </div>
 
-            <form onSubmit={handleSaveEventSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                  Event Title *
+                  Start Time
                 </label>
                 <input
-                  type="text"
-                  required
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Sales Pipeline Review"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                    Start Time
-                  </label>
-                  <input
-                    type="datetime-local"
-                    value={start}
-                    onChange={(e) => setStart(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                    End Time
-                  </label>
-                  <input
-                    type="datetime-local"
-                    value={end}
-                    onChange={(e) => setEnd(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                  Event Type
-                </label>
-                <CustomSelect
-                  value={eventType}
-                  onChange={setEventType}
-                  color="indigo"
-                  options={[
-                    { value: 'Meeting', label: 'Meeting' },
-                    { value: 'Internal', label: 'Internal Sync' },
-                    { value: 'Client Demo', label: 'Client Demo' },
-                  ]}
+                  type="datetime-local"
+                  value={start}
+                  onChange={(e) => setStart(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                  Description
+                  End Time
                 </label>
-                <textarea
-                  rows={3}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Notes or outcome objectives for the event..."
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
+                <input
+                  type="datetime-local"
+                  value={end}
+                  onChange={(e) => setEnd(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
                 />
               </div>
+            </div>
 
-              <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 pt-3 border-t border-slate-100">
-                <button type="button" onClick={() => setIsCreateModalOpen(false)} className="px-4 py-2 text-sm font-medium text-slate-600 w-full sm:w-auto cursor-pointer">
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={createEventMutation.isPending || updateEventMutation.isPending}
-                  className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg font-medium text-sm cursor-pointer shadow-sm disabled:opacity-50 w-full sm:w-auto"
-                >
-                  {(createEventMutation.isPending || updateEventMutation.isPending) && (
-                    <Loader2 className="w-4 h-4 animate-spin shrink-0" />
-                  )}
-                  <span>{editingEvent ? 'Save Changes' : 'Create Event'}</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                Event Type
+              </label>
+              <CustomSelect
+                value={eventType}
+                onChange={setEventType}
+                color="indigo"
+                options={[
+                  { value: 'Meeting', label: 'Meeting' },
+                  { value: 'Internal', label: 'Internal Sync' },
+                  { value: 'Client Demo', label: 'Client Demo' },
+                ]}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                Description
+              </label>
+              <textarea
+                rows={3}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Notes or outcome objectives for the event..."
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
+              />
+            </div>
+
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 pt-3 border-t border-slate-100">
+              <button type="button" onClick={() => setIsCreateModalOpen(false)} className="px-4 py-2 text-sm font-medium text-slate-600 w-full sm:w-auto cursor-pointer">
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={createEventMutation.isPending || updateEventMutation.isPending}
+                className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg font-medium text-sm cursor-pointer shadow-sm disabled:opacity-50 w-full sm:w-auto"
+              >
+                {(createEventMutation.isPending || updateEventMutation.isPending) && (
+                  <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                )}
+                <span>{editingEvent ? 'Save Changes' : 'Create Event'}</span>
+              </button>
+            </div>
+          </form>
+        </ModalShell>
       )}
 
       {/* Recurring Rule Modal */}
       {isRecurringModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-4 sm:p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[calc(100vh-2rem)] overflow-y-auto">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h3 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Repeat className="w-5 h-5 text-amber-500 shrink-0" />
-                <span>Create Recurring Rule</span>
-              </h3>
-              <button onClick={() => setIsRecurringModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
+        <ModalShell
+          isOpen={isRecurringModalOpen}
+          onClose={() => setIsRecurringModalOpen(false)}
+          size="md"
+          title={
+            <h3 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+              <Repeat className="w-5 h-5 text-amber-500 shrink-0" />
+              <span>Create Recurring Rule</span>
+            </h3>
+          }
+        >
+          <form onSubmit={handleCreateRecurringSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Event Rule Title *</label>
+              <input
+                type="text"
+                required
+                value={recurringTitle}
+                onChange={(e) => setRecurringTitle(e.target.value)}
+                placeholder="e.g. Weekly Monday Demo"
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-amber-500"
+              />
             </div>
 
-            <form onSubmit={handleCreateRecurringSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Event Rule Title *</label>
-                <input
-                  type="text"
-                  required
-                  value={recurringTitle}
-                  onChange={(e) => setRecurringTitle(e.target.value)}
-                  placeholder="e.g. Weekly Monday Demo"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-amber-500"
-                />
-              </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">RRule Pattern</label>
+              <input
+                type="text"
+                value={rrulePattern}
+                onChange={(e) => setRrulePattern(e.target.value)}
+                placeholder="FREQ=WEEKLY;BYDAY=MO"
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-amber-500 font-mono"
+              />
+            </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">RRule Pattern</label>
-                <input
-                  type="text"
-                  value={rrulePattern}
-                  onChange={(e) => setRrulePattern(e.target.value)}
-                  placeholder="FREQ=WEEKLY;BYDAY=MO"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-amber-500 font-mono"
-                />
-              </div>
-
-              <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 pt-2">
-                <button type="button" onClick={() => setIsRecurringModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600 w-full sm:w-auto cursor-pointer">
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={createRecurringMutation.isPending}
-                  className="flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50 w-full sm:w-auto"
-                >
-                  {createRecurringMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
-                  <span>Create Rule</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 pt-2">
+              <button type="button" onClick={() => setIsRecurringModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600 w-full sm:w-auto cursor-pointer">
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={createRecurringMutation.isPending}
+                className="flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50 w-full sm:w-auto"
+              >
+                {createRecurringMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
+                <span>Create Rule</span>
+              </button>
+            </div>
+          </form>
+        </ModalShell>
       )}
 
       {/* Confirm Delete Event Modal */}

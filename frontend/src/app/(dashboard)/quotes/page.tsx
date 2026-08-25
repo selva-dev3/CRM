@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { ModalShell } from '@/components/common/modal-shell';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
 import {
@@ -469,126 +470,122 @@ export default function QuotesPage() {
 
       {/* Create / Edit Quote Modal */}
       {isQuoteModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-5">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <FileCode className="w-5 h-5 text-indigo-600" />
-                {editingQuote ? 'Edit Sales Quote' : 'Create Sales Quote'}
-              </h2>
-              <button onClick={() => setIsQuoteModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
-                <X className="w-5 h-5" />
-              </button>
+        <ModalShell
+          isOpen={isQuoteModalOpen}
+          onClose={() => setIsQuoteModalOpen(false)}
+          size="lg"
+          title={
+            <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <FileCode className="w-5 h-5 text-indigo-600" />
+              {editingQuote ? 'Edit Sales Quote' : 'Create Sales Quote'}
+            </h2>
+          }
+        >
+          <form onSubmit={handleSaveQuoteSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                Quote Reference Number
+              </label>
+              <input
+                type="text"
+                value={quoteNumber}
+                onChange={(e) => setQuoteNumber(e.target.value)}
+                placeholder="e.g. Q-2026-0801"
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none font-mono"
+              />
             </div>
 
-            <form onSubmit={handleSaveQuoteSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                  Quote Reference Number
+                  Total Amount (USD) *
                 </label>
                 <input
-                  type="text"
-                  value={quoteNumber}
-                  onChange={(e) => setQuoteNumber(e.target.value)}
-                  placeholder="e.g. Q-2026-0801"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none font-mono"
+                  type="number"
+                  step="0.01"
+                  required
+                  value={totalAmount}
+                  onChange={(e) => setTotalAmount(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                    Total Amount (USD) *
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    required
-                    value={totalAmount}
-                    onChange={(e) => setTotalAmount(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                    Initial Status
-                  </label>
-                  <select
-                    value={status}
-                    onChange={(e) => setStatus(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
-                  >
-                    <option value="Draft">Draft</option>
-                    <option value="Sent">Sent</option>
-                    <option value="Accepted">Accepted</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
-                <button type="button" onClick={() => setIsQuoteModalOpen(false)} className="px-4 py-2 text-sm font-medium text-slate-600">
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={createQuoteMutation.isPending || updateQuoteMutation.isPending}
-                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg font-medium text-sm cursor-pointer shadow-sm disabled:opacity-50"
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                  Initial Status
+                </label>
+                <select
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
                 >
-                  {(createQuoteMutation.isPending || updateQuoteMutation.isPending) && (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  )}
-                  {editingQuote ? 'Save Changes' : 'Create Quote'}
-                </button>
+                  <option value="Draft">Draft</option>
+                  <option value="Sent">Sent</option>
+                  <option value="Accepted">Accepted</option>
+                </select>
               </div>
-            </form>
-          </div>
-        </div>
+            </div>
+
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3 pt-3 border-t border-slate-100">
+              <button type="button" onClick={() => setIsQuoteModalOpen(false)} className="px-4 py-2 text-sm font-medium text-slate-600">
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={createQuoteMutation.isPending || updateQuoteMutation.isPending}
+                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg font-medium text-sm cursor-pointer shadow-sm disabled:opacity-50"
+              >
+                {(createQuoteMutation.isPending || updateQuoteMutation.isPending) && (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                )}
+                {editingQuote ? 'Save Changes' : 'Create Quote'}
+              </button>
+            </div>
+          </form>
+        </ModalShell>
       )}
 
       {/* Send Email Modal */}
       {isSendEmailModalOpen && sendModalQuote && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Send className="w-5 h-5 text-blue-600" />
-                Send Quote Proposal
-              </h3>
-              <button onClick={() => setIsSendEmailModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
+        <ModalShell
+          isOpen={isSendEmailModalOpen}
+          onClose={() => setIsSendEmailModalOpen(false)}
+          size="md"
+          title={
+            <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <Send className="w-5 h-5 text-blue-600" />
+              Send Quote Proposal
+            </h3>
+          }
+        >
+          <form onSubmit={handleSendEmailSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Recipient Email Address *</label>
+              <input
+                type="email"
+                required
+                value={recipientEmailInput}
+                onChange={(e) => setRecipientEmailInput(e.target.value)}
+                placeholder="client@company.com"
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
+              />
             </div>
 
-            <form onSubmit={handleSendEmailSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Recipient Email Address *</label>
-                <input
-                  type="email"
-                  required
-                  value={recipientEmailInput}
-                  onChange={(e) => setRecipientEmailInput(e.target.value)}
-                  placeholder="client@company.com"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={() => setIsSendEmailModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={sendEmailMutation.isPending}
-                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
-                >
-                  {sendEmailMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  Send Proposal
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3 pt-2">
+              <button type="button" onClick={() => setIsSendEmailModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={sendEmailMutation.isPending}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
+              >
+                {sendEmailMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                Send Proposal
+              </button>
+            </div>
+          </form>
+        </ModalShell>
       )}
 
       {/* Confirm Delete Modal */}

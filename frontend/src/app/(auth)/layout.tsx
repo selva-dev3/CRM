@@ -77,7 +77,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
 
       {/* Right Form Container */}
       <div className="lg:col-span-6 xl:col-span-5 flex items-center justify-center p-6 sm:p-12 relative bg-slate-50">
-        <div className="w-full max-w-md space-y-8 bg-white p-8 rounded-2xl border border-slate-200 shadow-xl shadow-slate-200/50">
+        <div className="w-full max-w-md space-y-8 bg-white p-4 sm:p-8 rounded-2xl border border-slate-200 shadow-xl shadow-slate-200/50">
           {children}
         </div>
       </div>

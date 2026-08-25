@@ -480,7 +480,7 @@ export function DataTable<TItem>({
                             e.stopPropagation();
                             toggleRowExpanded(rowKey);
                           }}
-                          className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition"
+                          className="flex h-11 w-11 -m-1.5 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition"
                           aria-label={isExpanded ? 'Collapse row' : 'Expand row'}
                           aria-expanded={isExpanded}
                         >
@@ -528,7 +528,7 @@ export function DataTable<TItem>({
                           {actionVariant === 'menu' ? (
                             <DropdownMenu>
                               <DropdownMenuTrigger
-                                className="h-8 w-8 p-0 border-0 bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg cursor-pointer"
+                                className="h-11 w-11 -m-1.5 p-0 border-0 bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg cursor-pointer"
                                 onClick={(e: React.MouseEvent) => e.stopPropagation()}
                               >
                                 <MoreHorizontal className="h-4 w-4 mx-auto" />
@@ -561,7 +561,7 @@ export function DataTable<TItem>({
                                       e.stopPropagation();
                                       action.onClick(item);
                                     }}
-                                    className="h-8 px-2 text-xs font-bold text-slate-700 hover:text-slate-900 hover:bg-slate-100"
+                                    className="h-11 -my-1.5 px-2 text-xs font-bold text-slate-700 hover:text-slate-900 hover:bg-slate-100"
                                   >
                                     {action.icon ? action.icon : <Pencil className="h-3.5 w-3.5 mr-1" />}
                                     {action.label}

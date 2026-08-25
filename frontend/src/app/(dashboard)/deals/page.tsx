@@ -23,8 +23,7 @@ import {
   DollarSign,
   Layers,
   ArrowRight,
-  TrendingUp,
-  X
+  TrendingUp
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,6 +33,7 @@ import { DataTable, type DataTableColumn } from '@/components/common/data-table'
 import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { ModalShell } from '@/components/common/modal-shell';
 import {
   useDealsQuery,
   useKanbanBoardQuery,
@@ -490,191 +490,185 @@ export default function DealsPage() {
       
       {/* CREATE DEAL MODAL */}
       {isCreateModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
-          <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                <Briefcase className="w-5 h-5 text-blue-600" />
-                <span>Create New Sales Deal</span>
-              </h3>
-              <button type="button" onClick={() => setIsCreateModalOpen(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
+        <ModalShell
+          isOpen={isCreateModalOpen}
+          onClose={() => setIsCreateModalOpen(false)}
+          title={
+            <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+              <Briefcase className="w-5 h-5 text-blue-600" />
+              <span>Create New Sales Deal</span>
+            </h3>
+          }
+        >
+          <form onSubmit={handleCreateSubmit} className="space-y-4 text-xs">
+            <div className="space-y-1">
+              <Label className="font-semibold text-slate-700">Deal Title</Label>
+              <Input
+                type="text"
+                placeholder="e.g. Acme Corp Enterprise License"
+                value={formTitle}
+                onChange={(e) => setFormTitle(e.target.value)}
+                className="h-9 text-xs"
+              />
             </div>
 
-            <form onSubmit={handleCreateSubmit} className="space-y-4 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Deal Title</Label>
+                <Label className="font-semibold text-slate-700">Amount ($)</Label>
                 <Input
-                  type="text"
-                  placeholder="e.g. Acme Corp Enterprise License"
-                  value={formTitle}
-                  onChange={(e) => setFormTitle(e.target.value)}
+                  type="number"
+                  placeholder="45000"
+                  value={formAmount}
+                  onChange={(e) => setFormAmount(e.target.value !== '' ? Number(e.target.value) : '')}
                   className="h-9 text-xs"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">Amount ($)</Label>
-                  <Input
-                    type="number"
-                    placeholder="45000"
-                    value={formAmount}
-                    onChange={(e) => setFormAmount(e.target.value !== '' ? Number(e.target.value) : '')}
-                    className="h-9 text-xs"
-                  />
-                </div>
+              <div className="space-y-1">
+                <Label className="font-semibold text-slate-700">Pipeline Stage</Label>
+                <select
+                  value={formStage}
+                  onChange={(e) => setFormStage(e.target.value)}
+                  className="w-full h-9 rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                >
+                  {STAGES.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
 
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">Pipeline Stage</Label>
-                  <select
-                    value={formStage}
-                    onChange={(e) => setFormStage(e.target.value)}
-                    className="w-full h-9 rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-                  >
-                    {STAGES.map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="font-semibold text-slate-700">Win Probability (%)</Label>
+                <Input
+                  type="number"
+                  placeholder="50"
+                  value={formProbability}
+                  onChange={(e) => setFormProbability(e.target.value !== '' ? Number(e.target.value) : '')}
+                  className="h-9 text-xs"
+                />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">Win Probability (%)</Label>
-                  <Input
-                    type="number"
-                    placeholder="50"
-                    value={formProbability}
-                    onChange={(e) => setFormProbability(e.target.value !== '' ? Number(e.target.value) : '')}
-                    className="h-9 text-xs"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">Assigned Sales Rep</Label>
-                  <select
-                    value={formAssignedTo}
-                    onChange={(e) => setFormAssignedTo(e.target.value)}
-                    className="w-full h-9 rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-                  >
-                    <option value="">-- Select Sales Rep --</option>
-                    {users.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.name || u.email} ({u.email})
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              <div className="space-y-1">
+                <Label className="font-semibold text-slate-700">Assigned Sales Rep</Label>
+                <select
+                  value={formAssignedTo}
+                  onChange={(e) => setFormAssignedTo(e.target.value)}
+                  className="w-full h-9 rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                >
+                  <option value="">-- Select Sales Rep --</option>
+                  {users.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name || u.email} ({u.email})
+                    </option>
+                  ))}
+                </select>
               </div>
+            </div>
 
-              <div className="flex justify-end gap-2 pt-2">
-                <Button type="button" variant="outline" size="sm" onClick={() => setIsCreateModalOpen(false)} className="cursor-pointer">
-                  Cancel
-                </Button>
-                <Button type="submit" size="sm" disabled={createDealMutation.isPending} className="bg-blue-600 text-white font-semibold cursor-pointer">
-                  {createDealMutation.isPending ? 'Creating...' : 'Create Deal'}
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setIsCreateModalOpen(false)} className="cursor-pointer">
+                Cancel
+              </Button>
+              <Button type="submit" size="sm" disabled={createDealMutation.isPending} className="bg-blue-600 text-white font-semibold cursor-pointer">
+                {createDealMutation.isPending ? 'Creating...' : 'Create Deal'}
+              </Button>
+            </div>
+          </form>
+        </ModalShell>
       )}
 
       {/* EDIT DEAL MODAL */}
       {isEditModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
-          <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                <Edit className="w-5 h-5 text-blue-600" />
-                <span>Edit Sales Deal</span>
-              </h3>
-              <button type="button" onClick={() => setIsEditModalOpen(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
+        <ModalShell
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+          title={
+            <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+              <Edit className="w-5 h-5 text-blue-600" />
+              <span>Edit Sales Deal</span>
+            </h3>
+          }
+        >
+          <form onSubmit={handleEditSubmit} className="space-y-4 text-xs">
+            <div className="space-y-1">
+              <Label className="font-semibold text-slate-700">Deal Title</Label>
+              <Input
+                type="text"
+                value={formTitle}
+                onChange={(e) => setFormTitle(e.target.value)}
+                className="h-9 text-xs"
+              />
             </div>
 
-            <form onSubmit={handleEditSubmit} className="space-y-4 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Deal Title</Label>
+                <Label className="font-semibold text-slate-700">Amount ($)</Label>
                 <Input
-                  type="text"
-                  value={formTitle}
-                  onChange={(e) => setFormTitle(e.target.value)}
+                  type="number"
+                  value={formAmount}
+                  onChange={(e) => setFormAmount(e.target.value !== '' ? Number(e.target.value) : '')}
                   className="h-9 text-xs"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">Amount ($)</Label>
-                  <Input
-                    type="number"
-                    value={formAmount}
-                    onChange={(e) => setFormAmount(e.target.value !== '' ? Number(e.target.value) : '')}
-                    className="h-9 text-xs"
-                  />
-                </div>
+              <div className="space-y-1">
+                <Label className="font-semibold text-slate-700">Pipeline Stage</Label>
+                <select
+                  value={formStage}
+                  onChange={(e) => setFormStage(e.target.value)}
+                  className="w-full h-9 rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                >
+                  {STAGES.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
 
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">Pipeline Stage</Label>
-                  <select
-                    value={formStage}
-                    onChange={(e) => setFormStage(e.target.value)}
-                    className="w-full h-9 rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-                  >
-                    {STAGES.map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="font-semibold text-slate-700">Win Probability (%)</Label>
+                <Input
+                  type="number"
+                  value={formProbability}
+                  onChange={(e) => setFormProbability(e.target.value !== '' ? Number(e.target.value) : '')}
+                  className="h-9 text-xs"
+                />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">Win Probability (%)</Label>
-                  <Input
-                    type="number"
-                    value={formProbability}
-                    onChange={(e) => setFormProbability(e.target.value !== '' ? Number(e.target.value) : '')}
-                    className="h-9 text-xs"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">Assigned Sales Rep</Label>
-                  <select
-                    value={formAssignedTo}
-                    onChange={(e) => setFormAssignedTo(e.target.value)}
-                    className="w-full h-9 rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-                  >
-                    <option value="">-- Select Sales Rep --</option>
-                    {users.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.name || u.email} ({u.email})
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              <div className="space-y-1">
+                <Label className="font-semibold text-slate-700">Assigned Sales Rep</Label>
+                <select
+                  value={formAssignedTo}
+                  onChange={(e) => setFormAssignedTo(e.target.value)}
+                  className="w-full h-9 rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                >
+                  <option value="">-- Select Sales Rep --</option>
+                  {users.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name || u.email} ({u.email})
+                    </option>
+                  ))}
+                </select>
               </div>
+            </div>
 
-              <div className="flex justify-end gap-2 pt-2">
-                <Button type="button" variant="outline" size="sm" onClick={() => setIsEditModalOpen(false)} className="cursor-pointer">
-                  Cancel
-                </Button>
-                <Button type="submit" size="sm" disabled={updateDealMutation.isPending} className="bg-blue-600 text-white font-semibold cursor-pointer">
-                  {updateDealMutation.isPending ? 'Saving...' : 'Save Changes'}
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setIsEditModalOpen(false)} className="cursor-pointer">
+                Cancel
+              </Button>
+              <Button type="submit" size="sm" disabled={updateDealMutation.isPending} className="bg-blue-600 text-white font-semibold cursor-pointer">
+                {updateDealMutation.isPending ? 'Saving...' : 'Save Changes'}
+              </Button>
+            </div>
+          </form>
+        </ModalShell>
       )}
 
       {/* DELETE CONFIRM MODAL */}

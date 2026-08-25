@@ -23,6 +23,7 @@ import {
   ListTodo
 } from 'lucide-react';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { ModalShell } from '@/components/common/modal-shell';
 import {
   useMeetingQuery,
   useMeetingAiSummaryQuery,
@@ -444,110 +445,106 @@ export default function MeetingDetailPage() {
 
       {/* Edit Modal */}
       {isEditModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Video className="w-5 h-5 text-indigo-600" />
-                Edit Meeting Details
-              </h3>
-              <button onClick={() => setIsEditModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
+        <ModalShell
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+          size="md"
+          title={
+            <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <Video className="w-5 h-5 text-indigo-600" />
+              Edit Meeting Details
+            </h3>
+          }
+        >
+          <form onSubmit={handleSaveEdit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Meeting Title *</label>
+              <input
+                type="text"
+                required
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+              />
             </div>
 
-            <form onSubmit={handleSaveEdit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Meeting Title *</label>
-                <input
-                  type="text"
-                  required
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Meeting Room URL</label>
+              <input
+                type="url"
+                value={meetingLink}
+                onChange={(e) => setMeetingLink(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Meeting Room URL</label>
-                <input
-                  type="url"
-                  value={meetingLink}
-                  onChange={(e) => setMeetingLink(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={() => setIsEditModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={updateMutation.isPending}
-                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
-                >
-                  {updateMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  Save Changes
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3 pt-2">
+              <button type="button" onClick={() => setIsEditModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={updateMutation.isPending}
+                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
+              >
+                {updateMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                Save Changes
+              </button>
+            </div>
+          </form>
+        </ModalShell>
       )}
 
       {/* Reschedule Modal */}
       {isRescheduleModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Clock className="w-5 h-5 text-indigo-600" />
-                Reschedule Meeting
-              </h3>
-              <button onClick={() => setIsRescheduleModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
+        <ModalShell
+          isOpen={isRescheduleModalOpen}
+          onClose={() => setIsRescheduleModalOpen(false)}
+          size="md"
+          title={
+            <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <Clock className="w-5 h-5 text-indigo-600" />
+              Reschedule Meeting
+            </h3>
+          }
+        >
+          <form onSubmit={handleRescheduleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">New Start Time</label>
+              <input
+                type="datetime-local"
+                required
+                value={newStartTime}
+                onChange={(e) => setNewStartTime(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+              />
             </div>
 
-            <form onSubmit={handleRescheduleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">New Start Time</label>
-                <input
-                  type="datetime-local"
-                  required
-                  value={newStartTime}
-                  onChange={(e) => setNewStartTime(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">New End Time</label>
+              <input
+                type="datetime-local"
+                value={newEndTime}
+                onChange={(e) => setNewEndTime(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">New End Time</label>
-                <input
-                  type="datetime-local"
-                  value={newEndTime}
-                  onChange={(e) => setNewEndTime(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={() => setIsRescheduleModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={rescheduleMutation.isPending}
-                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
-                >
-                  {rescheduleMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  Confirm Reschedule
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3 pt-2">
+              <button type="button" onClick={() => setIsRescheduleModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={rescheduleMutation.isPending}
+                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
+              >
+                {rescheduleMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                Confirm Reschedule
+              </button>
+            </div>
+          </form>
+        </ModalShell>
       )}
 
       {/* Delete Confirm Modal */}

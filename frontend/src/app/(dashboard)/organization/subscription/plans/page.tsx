@@ -181,7 +181,7 @@ function SubscriptionPlansContent() {
         {/* PLANS GRID */}
         {!isPlansLoading && !isPlansError && activePlans.length > 0 && (
           <div className="space-y-6 lg:space-y-8 w-full">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 lg:gap-5 xl:gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 lg:gap-5 xl:gap-6">
               {activePlans.map((plan) => {
                 const isSelected = selectedPlanSlug === plan.slug;
                 const isCurrent =

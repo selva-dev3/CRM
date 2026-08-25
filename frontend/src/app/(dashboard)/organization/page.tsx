@@ -14,7 +14,6 @@ import {
   Trash2,
   RefreshCw,
   Sparkles,
-  X,
   AlertCircle,
   CheckCircle2,
   ShieldCheck,
@@ -42,6 +41,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { DataTable, type DataTableColumn, type TableActionOption } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { ModalShell } from '@/components/common/modal-shell';
 import { PERMISSIONS } from '@/lib/permissions';
 import {
   useOrganizationsQuery,
@@ -578,7 +578,7 @@ export default function OrganizationPage() {
             Manage multi-tenant organizations, domains, seat limits & enterprise subscription tiers
           </p>
         </div>
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
           <Link
             href="/settings"
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 font-semibold text-xs transition shadow-xs cursor-pointer"
@@ -591,7 +591,7 @@ export default function OrganizationPage() {
             onClick={handleOpenInviteMemberModal}
             size="default"
             variant="primary"
-            className="shadow-saas-sm px-4 text-button cursor-pointer"
+            className="shadow-saas-sm px-4 text-button cursor-pointer w-full sm:w-auto"
             disabled={!canInviteOrganization}
           >
             <UserPlus className="w-4 h-4 mr-2" />
@@ -603,7 +603,7 @@ export default function OrganizationPage() {
               onClick={handleOpenCreateModal}
               size="default"
               variant="primary"
-              className="shadow-saas-sm px-4 text-button cursor-pointer"
+              className="shadow-saas-sm px-4 text-button cursor-pointer w-full sm:w-auto"
             >
               <Plus className="w-4 h-4 mr-2" />
               + Create Organization
@@ -696,430 +696,402 @@ export default function OrganizationPage() {
       />
 
       {/* INVITE ORGANIZATION MODAL DIALOG */}
-      {isInviteOrgModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-[#111827]/60 backdrop-blur-xs animate-in fade-in-50">
-          <div className="relative w-full max-w-lg bg-white rounded-modal border border-[#E5E7EB] shadow-saas-lg overflow-hidden text-[#111827] flex flex-col max-h-[90vh]">
-            {/* Modal Header */}
-            <div className="p-5 sm:p-6 border-b border-[#E5E7EB] bg-[#F9FAFB] flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-btn bg-[#2563EB] flex items-center justify-center text-white shadow-saas-sm">
-                  <UserPlus className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-subheading font-semibold text-[#111827]">
-                    Invite Organization
-                  </h3>
-                  <p className="text-caption text-[#6B7280]">
-                    Provision a new tenant organization and invite its admin
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsInviteOrgModalOpen(false)}
-                className="p-1.5 rounded-btn text-[#6B7280] hover:text-[#111827] hover:bg-[#F3F4F6] transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+      <ModalShell
+        isOpen={isInviteOrgModalOpen}
+        onClose={() => setIsInviteOrgModalOpen(false)}
+        size="lg"
+        title={
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-btn bg-[#2563EB] flex items-center justify-center text-white shadow-saas-sm shrink-0">
+              <UserPlus className="w-5 h-5" />
             </div>
-
-            {/* Modal Body */}
-            <form onSubmit={handleInviteOrgSubmit} className="p-5 sm:p-6 space-y-4 overflow-y-auto">
-              {inviteErrorMessage && (
-                <div className="p-4 rounded-btn bg-[#DC2626]/10 border border-[#DC2626]/20 text-[#DC2626] text-body font-medium flex items-center gap-2">
-                  <AlertCircle className="w-5 h-5 shrink-0" />
-                  <span>{inviteErrorMessage}</span>
-                </div>
-              )}
-
-              <div>
-                <Label htmlFor="invite-email">Email Address <span className="text-[#DC2626]">*</span></Label>
-                <Input
-                  id="invite-email"
-                  type="email"
-                  required
-                  placeholder="e.g. admin@acme.com"
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                />
-                <p className="text-caption text-[#6B7280] mt-1">
-                  The invitee becomes the initial admin of a brand-new organization.
-                </p>
-              </div>
-
-              <div>
-                <Label htmlFor="invite-full-name">Full Name <span className="text-[#DC2626]">*</span></Label>
-                <Input
-                  id="invite-full-name"
-                  type="text"
-                  required
-                  placeholder="e.g. Jane Smith"
-                  value={inviteFullName}
-                  onChange={(e) => setInviteFullName(e.target.value)}
-                />
-              </div>
-
-              {/* Modal Actions */}
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#E5E7EB]">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setIsInviteOrgModalOpen(false)}
-                  className="cursor-pointer"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  variant="primary"
-                  disabled={inviteNewOrgMutation.isPending}
-                  className="cursor-pointer shadow-saas-sm"
-                >
-                  {inviteNewOrgMutation.isPending ? 'Sending Invitation...' : 'Send Invitation'}
-                </Button>
-              </div>
-            </form>
+            <div>
+              <h3 className="text-subheading font-semibold text-[#111827]">
+                Invite Organization
+              </h3>
+              <p className="text-caption text-[#6B7280]">
+                Provision a new tenant organization and invite its admin
+              </p>
+            </div>
           </div>
-        </div>
-      )}
+        }
+      >
+        <form onSubmit={handleInviteOrgSubmit} className="space-y-4">
+          {inviteErrorMessage && (
+            <div className="p-4 rounded-btn bg-[#DC2626]/10 border border-[#DC2626]/20 text-[#DC2626] text-body font-medium flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 shrink-0" />
+              <span>{inviteErrorMessage}</span>
+            </div>
+          )}
+
+          <div>
+            <Label htmlFor="invite-email">Email Address <span className="text-[#DC2626]">*</span></Label>
+            <Input
+              id="invite-email"
+              type="email"
+              required
+              placeholder="e.g. admin@acme.com"
+              value={inviteEmail}
+              onChange={(e) => setInviteEmail(e.target.value)}
+            />
+            <p className="text-caption text-[#6B7280] mt-1">
+              The invitee becomes the initial admin of a brand-new organization.
+            </p>
+          </div>
+
+          <div>
+            <Label htmlFor="invite-full-name">Full Name <span className="text-[#DC2626]">*</span></Label>
+            <Input
+              id="invite-full-name"
+              type="text"
+              required
+              placeholder="e.g. Jane Smith"
+              value={inviteFullName}
+              onChange={(e) => setInviteFullName(e.target.value)}
+            />
+          </div>
+
+          {/* Modal Actions */}
+          <div className="pt-4 border-t border-[#E5E7EB] flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsInviteOrgModalOpen(false)}
+              className="cursor-pointer"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={inviteNewOrgMutation.isPending}
+              className="cursor-pointer shadow-saas-sm"
+            >
+              {inviteNewOrgMutation.isPending ? 'Sending Invitation...' : 'Send Invitation'}
+            </Button>
+          </div>
+        </form>
+      </ModalShell>
 
       {/* CREATE ORGANIZATION MODAL DIALOG */}
-      {isCreateModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-[#111827]/60 backdrop-blur-xs animate-in fade-in-50">
-          <div className="relative w-full max-w-2xl bg-white rounded-modal border border-[#E5E7EB] shadow-saas-lg overflow-hidden text-[#111827] flex flex-col max-h-[90vh]">
-            {/* Modal Header */}
-            <div className="p-5 sm:p-6 border-b border-[#E5E7EB] bg-[#F9FAFB] flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-btn bg-[#2563EB] flex items-center justify-center text-white shadow-saas-sm">
-                  <Building className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-subheading font-semibold text-[#111827]">
-                    Create New Organization
-                  </h3>
-                  <p className="text-caption text-[#6B7280]">
-                    Add a new enterprise organization tenant
-                  </p>
-                </div>
+      <ModalShell
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        size="2xl"
+        title={
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-btn bg-[#2563EB] flex items-center justify-center text-white shadow-saas-sm shrink-0">
+                <Building className="w-5 h-5" />
               </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleAutofillDemo}
-                  className="text-caption font-medium gap-1.5 cursor-pointer px-3"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-[#2563EB] animate-pulse" />
-                  <span>Auto-fill Demo</span>
-                </Button>
-                <button
-                  type="button"
-                  onClick={() => setIsCreateModalOpen(false)}
-                  className="p-1.5 rounded-btn text-[#6B7280] hover:text-[#111827] hover:bg-[#F3F4F6] transition cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+              <div>
+                <h3 className="text-subheading font-semibold text-[#111827]">
+                  Create New Organization
+                </h3>
+                <p className="text-caption text-[#6B7280]">
+                  Add a new enterprise organization tenant
+                </p>
               </div>
             </div>
-
-            {/* Modal Body */}
-            <form onSubmit={handleCreateSubmit} className="p-5 sm:p-6 space-y-4 overflow-y-auto">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="create-name">Organization Name <span className="text-[#DC2626]">*</span></Label>
-                  <Input
-                    id="create-name"
-                    required
-                    placeholder="e.g. Acme Enterprise Ltd"
-                    value={formName}
-                    onChange={(e) => {
-                      setFormName(e.target.value);
-                      if (!formSlug) setFormSlug(e.target.value.toLowerCase().replace(/\s+/g, '-'));
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="create-slug">Slug Identifier</Label>
-                  <Input
-                    id="create-slug"
-                    placeholder="e.g. acme-enterprise"
-                    value={formSlug}
-                    onChange={(e) => setFormSlug(e.target.value)}
-                    className="font-mono"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="create-email">Official Email</Label>
-                  <Input
-                    id="create-email"
-                    type="email"
-                    placeholder="e.g. info@acme.com"
-                    value={formEmail}
-                    onChange={(e) => setFormEmail(e.target.value)}
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="create-phone">Phone Number</Label>
-                  <Input
-                    id="create-phone"
-                    placeholder="e.g. +91 9876543210"
-                    value={formPhone}
-                    onChange={(e) => setFormPhone(e.target.value)}
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="create-domain">Custom Domain</Label>
-                  <Input
-                    id="create-domain"
-                    placeholder="e.g. acme.crm.com"
-                    value={formDomain}
-                    onChange={(e) => setFormDomain(e.target.value)}
-                    className="font-mono text-caption"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="create-industry">Industry Sector</Label>
-                  <Input
-                    id="create-industry"
-                    placeholder="e.g. Information Technology"
-                    value={formIndustry}
-                    onChange={(e) => setFormIndustry(e.target.value)}
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="create-country">Country</Label>
-                  <Input
-                    id="create-country"
-                    placeholder="e.g. India"
-                    value={formCountry}
-                    onChange={(e) => setFormCountry(e.target.value)}
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="create-city">City</Label>
-                  <Input
-                    id="create-city"
-                    placeholder="e.g. Chennai"
-                    value={formCity}
-                    onChange={(e) => setFormCity(e.target.value)}
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="create-plan">Subscription Plan</Label>
-                  <select
-                    id="create-plan"
-                    value="Free"
-                    disabled
-                    className="w-full h-10 rounded-btn border border-[#E5E7EB] bg-[#F9FAFB] px-3 text-body font-medium text-[#111827] cursor-not-allowed opacity-90"
-                  >
-                    <option value="Free">Free Plan (Default)</option>
-                  </select>
-                  <p className="text-caption text-[#6B7280] mt-1">All new organizations start on the Free Plan by default.</p>
-                </div>
-
-                <div>
-                  <Label htmlFor="create-users">User Seats Limit</Label>
-                  <Input
-                    id="create-users"
-                    type="number"
-                    value={3}
-                    disabled
-                    className="bg-[#F9FAFB] cursor-not-allowed font-mono opacity-90"
-                  />
-                  <p className="text-caption text-[#6B7280] mt-1">Free Plan includes 3 user seats by default.</p>
-                </div>
-              </div>
-
-              {/* Modal Actions */}
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#E5E7EB]">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setIsCreateModalOpen(false)}
-                  className="cursor-pointer"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  variant="primary"
-                  disabled={createOrgMutation.isPending}
-                  className="cursor-pointer shadow-saas-sm"
-                >
-                  {createOrgMutation.isPending ? 'Creating...' : 'Create Organization'}
-                </Button>
-              </div>
-            </form>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleAutofillDemo}
+              className="text-caption font-medium gap-1.5 cursor-pointer px-3"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-[#2563EB] animate-pulse" />
+              <span>Auto-fill Demo</span>
+            </Button>
           </div>
-        </div>
-      )}
+        }
+      >
+        <form onSubmit={handleCreateSubmit} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="create-name">Organization Name <span className="text-[#DC2626]">*</span></Label>
+              <Input
+                id="create-name"
+                required
+                placeholder="e.g. Acme Enterprise Ltd"
+                value={formName}
+                onChange={(e) => {
+                  setFormName(e.target.value);
+                  if (!formSlug) setFormSlug(e.target.value.toLowerCase().replace(/\s+/g, '-'));
+                }}
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="create-slug">Slug Identifier</Label>
+              <Input
+                id="create-slug"
+                placeholder="e.g. acme-enterprise"
+                value={formSlug}
+                onChange={(e) => setFormSlug(e.target.value)}
+                className="font-mono"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="create-email">Official Email</Label>
+              <Input
+                id="create-email"
+                type="email"
+                placeholder="e.g. info@acme.com"
+                value={formEmail}
+                onChange={(e) => setFormEmail(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="create-phone">Phone Number</Label>
+              <Input
+                id="create-phone"
+                placeholder="e.g. +91 9876543210"
+                value={formPhone}
+                onChange={(e) => setFormPhone(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="create-domain">Custom Domain</Label>
+              <Input
+                id="create-domain"
+                placeholder="e.g. acme.crm.com"
+                value={formDomain}
+                onChange={(e) => setFormDomain(e.target.value)}
+                className="font-mono text-caption"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="create-industry">Industry Sector</Label>
+              <Input
+                id="create-industry"
+                placeholder="e.g. Information Technology"
+                value={formIndustry}
+                onChange={(e) => setFormIndustry(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="create-country">Country</Label>
+              <Input
+                id="create-country"
+                placeholder="e.g. India"
+                value={formCountry}
+                onChange={(e) => setFormCountry(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="create-city">City</Label>
+              <Input
+                id="create-city"
+                placeholder="e.g. Chennai"
+                value={formCity}
+                onChange={(e) => setFormCity(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="create-plan">Subscription Plan</Label>
+              <select
+                id="create-plan"
+                value="Free"
+                disabled
+                className="w-full h-10 rounded-btn border border-[#E5E7EB] bg-[#F9FAFB] px-3 text-body font-medium text-[#111827] cursor-not-allowed opacity-90"
+              >
+                <option value="Free">Free Plan (Default)</option>
+              </select>
+              <p className="text-caption text-[#6B7280] mt-1">All new organizations start on the Free Plan by default.</p>
+            </div>
+
+            <div>
+              <Label htmlFor="create-users">User Seats Limit</Label>
+              <Input
+                id="create-users"
+                type="number"
+                value={3}
+                disabled
+                className="bg-[#F9FAFB] cursor-not-allowed font-mono opacity-90"
+              />
+              <p className="text-caption text-[#6B7280] mt-1">Free Plan includes 3 user seats by default.</p>
+            </div>
+          </div>
+
+          {/* Modal Actions */}
+          <div className="pt-4 border-t border-[#E5E7EB] flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsCreateModalOpen(false)}
+              className="cursor-pointer"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={createOrgMutation.isPending}
+              className="cursor-pointer shadow-saas-sm"
+            >
+              {createOrgMutation.isPending ? 'Creating...' : 'Create Organization'}
+            </Button>
+          </div>
+        </form>
+      </ModalShell>
 
       {/* EDIT ORGANIZATION MODAL DIALOG */}
       {orgToEdit && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-[#111827]/60 backdrop-blur-xs animate-in fade-in-50">
-          <div className="relative w-full max-w-2xl bg-white rounded-modal border border-[#E5E7EB] shadow-saas-lg overflow-hidden text-[#111827] flex flex-col max-h-[90vh]">
-            {/* Modal Header */}
-            <div className="p-5 sm:p-6 border-b border-[#E5E7EB] bg-[#F9FAFB] flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-btn bg-[#2563EB] flex items-center justify-center text-white shadow-saas-sm">
-                  <Pencil className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-subheading font-semibold text-[#111827]">
-                    Edit Organization Details
-                  </h3>
-                  <p className="text-caption text-[#6B7280]">
-                    Update settings for "{orgToEdit.name}"
-                  </p>
-                </div>
+        <ModalShell
+          isOpen={!!orgToEdit}
+          onClose={() => setOrgToEdit(null)}
+          size="2xl"
+          title={
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-btn bg-[#2563EB] flex items-center justify-center text-white shadow-saas-sm shrink-0">
+                <Pencil className="w-5 h-5" />
               </div>
-              <button
-                type="button"
-                onClick={() => setOrgToEdit(null)}
-                className="p-1.5 rounded-btn text-[#6B7280] hover:text-[#111827] hover:bg-[#F3F4F6] transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div>
+                <h3 className="text-subheading font-semibold text-[#111827]">
+                  Edit Organization Details
+                </h3>
+                <p className="text-caption text-[#6B7280]">
+                  Update settings for "{orgToEdit.name}"
+                </p>
+              </div>
+            </div>
+          }
+        >
+          <form onSubmit={handleEditSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="edit-name">Organization Name <span className="text-[#DC2626]">*</span></Label>
+                <Input
+                  id="edit-name"
+                  required
+                  value={formName}
+                  onChange={(e) => setFormName(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="edit-slug">Slug Identifier</Label>
+                <Input
+                  id="edit-slug"
+                  value={formSlug}
+                  onChange={(e) => setFormSlug(e.target.value)}
+                  className="font-mono"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="edit-email">Official Email</Label>
+                <Input
+                  id="edit-email"
+                  type="email"
+                  value={formEmail}
+                  onChange={(e) => setFormEmail(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="edit-phone">Phone Number</Label>
+                <Input
+                  id="edit-phone"
+                  value={formPhone}
+                  onChange={(e) => setFormPhone(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="edit-domain">Custom Domain</Label>
+                <Input
+                  id="edit-domain"
+                  value={formDomain}
+                  onChange={(e) => setFormDomain(e.target.value)}
+                  className="font-mono text-caption"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="edit-industry">Industry Sector</Label>
+                <Input
+                  id="edit-industry"
+                  value={formIndustry}
+                  onChange={(e) => setFormIndustry(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="edit-country">Country</Label>
+                <Input
+                  id="edit-country"
+                  value={formCountry}
+                  onChange={(e) => setFormCountry(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="edit-city">City</Label>
+                <Input
+                  id="edit-city"
+                  value={formCity}
+                  onChange={(e) => setFormCity(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="edit-plan">Subscription Plan</Label>
+                <select
+                  id="edit-plan"
+                  value={formPlan}
+                  onChange={(e) => setFormPlan(e.target.value)}
+                  className="w-full h-10 rounded-btn border border-[#E5E7EB] bg-white px-3 text-body font-medium text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
+                >
+                  <option value="Free">Free Plan</option>
+                  <option value="Starter">Starter Plan</option>
+                  <option value="Professional">Professional Plan</option>
+                  <option value="Business">Business Plan</option>
+                  <option value="Enterprise">Enterprise Plan</option>
+                </select>
+              </div>
+
+              <div>
+                <Label htmlFor="edit-users">User Seats Limit</Label>
+                <Input
+                  id="edit-users"
+                  type="number"
+                  min={1}
+                  value={formMaxUsers}
+                  onChange={(e) => setFormMaxUsers(Number(e.target.value))}
+                />
+              </div>
             </div>
 
-            {/* Modal Body */}
-            <form onSubmit={handleEditSubmit} className="p-5 sm:p-6 space-y-4 overflow-y-auto">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="edit-name">Organization Name <span className="text-[#DC2626]">*</span></Label>
-                  <Input
-                    id="edit-name"
-                    required
-                    value={formName}
-                    onChange={(e) => setFormName(e.target.value)}
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="edit-slug">Slug Identifier</Label>
-                  <Input
-                    id="edit-slug"
-                    value={formSlug}
-                    onChange={(e) => setFormSlug(e.target.value)}
-                    className="font-mono"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="edit-email">Official Email</Label>
-                  <Input
-                    id="edit-email"
-                    type="email"
-                    value={formEmail}
-                    onChange={(e) => setFormEmail(e.target.value)}
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="edit-phone">Phone Number</Label>
-                  <Input
-                    id="edit-phone"
-                    value={formPhone}
-                    onChange={(e) => setFormPhone(e.target.value)}
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="edit-domain">Custom Domain</Label>
-                  <Input
-                    id="edit-domain"
-                    value={formDomain}
-                    onChange={(e) => setFormDomain(e.target.value)}
-                    className="font-mono text-caption"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="edit-industry">Industry Sector</Label>
-                  <Input
-                    id="edit-industry"
-                    value={formIndustry}
-                    onChange={(e) => setFormIndustry(e.target.value)}
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="edit-country">Country</Label>
-                  <Input
-                    id="edit-country"
-                    value={formCountry}
-                    onChange={(e) => setFormCountry(e.target.value)}
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="edit-city">City</Label>
-                  <Input
-                    id="edit-city"
-                    value={formCity}
-                    onChange={(e) => setFormCity(e.target.value)}
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="edit-plan">Subscription Plan</Label>
-                  <select
-                    id="edit-plan"
-                    value={formPlan}
-                    onChange={(e) => setFormPlan(e.target.value)}
-                    className="w-full h-10 rounded-btn border border-[#E5E7EB] bg-white px-3 text-body font-medium text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
-                  >
-                    <option value="Free">Free Plan</option>
-                    <option value="Starter">Starter Plan</option>
-                    <option value="Professional">Professional Plan</option>
-                    <option value="Business">Business Plan</option>
-                    <option value="Enterprise">Enterprise Plan</option>
-                  </select>
-                </div>
-
-                <div>
-                  <Label htmlFor="edit-users">User Seats Limit</Label>
-                  <Input
-                    id="edit-users"
-                    type="number"
-                    min={1}
-                    value={formMaxUsers}
-                    onChange={(e) => setFormMaxUsers(Number(e.target.value))}
-                  />
-                </div>
-              </div>
-
-              {/* Modal Actions */}
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#E5E7EB]">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setOrgToEdit(null)}
-                  className="cursor-pointer"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  variant="primary"
-                  disabled={updateOrgMutation.isPending}
-                  className="cursor-pointer shadow-saas-sm"
-                >
-                  {updateOrgMutation.isPending ? 'Saving...' : 'Save Changes'}
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
+            {/* Modal Actions */}
+            <div className="pt-4 border-t border-[#E5E7EB] flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setOrgToEdit(null)}
+                className="cursor-pointer"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={updateOrgMutation.isPending}
+                className="cursor-pointer shadow-saas-sm"
+              >
+                {updateOrgMutation.isPending ? 'Saving...' : 'Save Changes'}
+              </Button>
+            </div>
+          </form>
+        </ModalShell>
       )}
 
       {/* CONFIRM DELETE MODAL */}

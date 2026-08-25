@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { DataTable, DataTableColumn } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { ModalShell } from '@/components/common/modal-shell';
 import { CustomSelect } from '@/components/common/custom-select';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
@@ -239,9 +240,7 @@ export default function ReportsPage() {
     { id: 'total_leads', header: 'Total Leads', className: 'text-center', cell: (row) => <span className="font-semibold">{row.total_leads}</span> },
     { id: 'converted_leads', header: 'Converted Leads', className: 'text-center', cell: (row) => <span className="font-bold text-emerald-600">{row.converted_leads}</span> },
     { id: 'conversion_rate', header: 'Conversion Rate (%)', className: 'text-center', cell: (row) => <span className="font-extrabold text-indigo-600">{row.conversion_rate}%</span> },
-    { id: 'avg_lead_score', header: 'Avg Lead Score', className: 'text-center', cell: (row) => <span className="font-semibold">{row.avg_lead_score}</span> },
-    { id: 'cac', header: 'CAC ($)', className: 'text-right', cell: (row) => <span className="font-mono text-slate-600">${row.cac}</span> },
-    { id: 'roi_ratio', header: 'ROI Ratio', className: 'text-center', cell: (row) => <span className="font-bold text-purple-600">{row.roi_ratio}x</span> }
+    { id: 'avg_lead_score', header: 'Avg Lead Score', className: 'text-center', cell: (row) => <span className="font-semibold">{row.avg_lead_score}</span> }
   ];
 
   const leaderboardColumns: DataTableColumn<any>[] = [
@@ -763,131 +762,127 @@ export default function ReportsPage() {
 
       {/* Custom Report Query Builder Modal */}
       {isCustomModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-4 sm:p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[calc(100vh-2rem)] overflow-y-auto">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h3 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Plus className="w-5 h-5 text-indigo-600 shrink-0" />
-                <span>Custom Query Builder</span>
-              </h3>
-              <button onClick={() => setIsCustomModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
+        <ModalShell
+          isOpen={isCustomModalOpen}
+          onClose={() => setIsCustomModalOpen(false)}
+          size="md"
+          title={
+            <h3 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+              <Plus className="w-5 h-5 text-indigo-600 shrink-0" />
+              <span>Custom Query Builder</span>
+            </h3>
+          }
+        >
+          <form onSubmit={handleCreateCustomSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Report Name *</label>
+              <input
+                type="text"
+                required
+                value={customReportName}
+                onChange={(e) => setCustomReportName(e.target.value)}
+                placeholder="e.g. Q3 Enterprise Deals Analysis"
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+              />
             </div>
 
-            <form onSubmit={handleCreateCustomSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Report Name *</label>
-                <input
-                  type="text"
-                  required
-                  value={customReportName}
-                  onChange={(e) => setCustomReportName(e.target.value)}
-                  placeholder="e.g. Q3 Enterprise Deals Analysis"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Filter Rule Query</label>
+              <input
+                type="text"
+                value={customFilters}
+                onChange={(e) => setCustomFilters(e.target.value)}
+                placeholder="e.g. Enterprise Tier Only"
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Filter Rule Query</label>
-                <input
-                  type="text"
-                  value={customFilters}
-                  onChange={(e) => setCustomFilters(e.target.value)}
-                  placeholder="e.g. Enterprise Tier Only"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 pt-2">
-                <button type="button" onClick={() => setIsCustomModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600 w-full sm:w-auto cursor-pointer">
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={createCustomMutation.isPending}
-                  className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50 w-full sm:w-auto"
-                >
-                  {createCustomMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
-                  <span>Save Custom Report</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 pt-2">
+              <button type="button" onClick={() => setIsCustomModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600 w-full sm:w-auto cursor-pointer">
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={createCustomMutation.isPending}
+                className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50 w-full sm:w-auto"
+              >
+                {createCustomMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
+                <span>Save Custom Report</span>
+              </button>
+            </div>
+          </form>
+        </ModalShell>
       )}
 
       {/* Schedule Automated Delivery Modal */}
       {isScheduleModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-4 sm:p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[calc(100vh-2rem)] overflow-y-auto">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h3 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Mail className="w-5 h-5 text-purple-600 shrink-0" />
-                <span>Schedule Automated Email Report</span>
-              </h3>
-              <button onClick={() => setIsScheduleModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
+        <ModalShell
+          isOpen={isScheduleModalOpen}
+          onClose={() => setIsScheduleModalOpen(false)}
+          size="md"
+          title={
+            <h3 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+              <Mail className="w-5 h-5 text-purple-600 shrink-0" />
+              <span>Schedule Automated Email Report</span>
+            </h3>
+          }
+        >
+          <form onSubmit={handleScheduleEmailSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Target Report</label>
+              <CustomSelect
+                value={scheduleReportType}
+                onChange={setScheduleReportType}
+                color="purple"
+                options={[
+                  { value: 'sales-performance', label: 'Sales Performance' },
+                  { value: 'pipeline-velocity', label: 'Pipeline Velocity' },
+                  { value: 'win-loss-ratio', label: 'Win/Loss Ratio' },
+                  { value: 'revenue-forecasting', label: 'Revenue Forecast' },
+                ]}
+              />
             </div>
 
-            <form onSubmit={handleScheduleEmailSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Target Report</label>
-                <CustomSelect
-                  value={scheduleReportType}
-                  onChange={setScheduleReportType}
-                  color="purple"
-                  options={[
-                    { value: 'sales-performance', label: 'Sales Performance' },
-                    { value: 'pipeline-velocity', label: 'Pipeline Velocity' },
-                    { value: 'win-loss-ratio', label: 'Win/Loss Ratio' },
-                    { value: 'revenue-forecasting', label: 'Revenue Forecast' },
-                  ]}
-                />
-              </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Recipient Email Address *</label>
+              <input
+                type="email"
+                required
+                value={scheduleEmail}
+                onChange={(e) => setScheduleEmail(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Recipient Email Address *</label>
-                <input
-                  type="email"
-                  required
-                  value={scheduleEmail}
-                  onChange={(e) => setScheduleEmail(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
-                />
-              </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Delivery Frequency</label>
+              <CustomSelect
+                value={scheduleFrequency}
+                onChange={setScheduleFrequency}
+                color="purple"
+                options={[
+                  { value: 'Daily', label: 'Daily' },
+                  { value: 'Weekly', label: 'Weekly' },
+                  { value: 'Monthly', label: 'Monthly' },
+                ]}
+              />
+            </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Delivery Frequency</label>
-                <CustomSelect
-                  value={scheduleFrequency}
-                  onChange={setScheduleFrequency}
-                  color="purple"
-                  options={[
-                    { value: 'Daily', label: 'Daily' },
-                    { value: 'Weekly', label: 'Weekly' },
-                    { value: 'Monthly', label: 'Monthly' },
-                  ]}
-                />
-              </div>
-
-              <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 pt-2">
-                <button type="button" onClick={() => setIsScheduleModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600 w-full sm:w-auto cursor-pointer">
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={scheduleEmailMutation.isPending}
-                  className="flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50 w-full sm:w-auto"
-                >
-                  {scheduleEmailMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
-                  <span>Schedule Delivery</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 pt-2">
+              <button type="button" onClick={() => setIsScheduleModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600 w-full sm:w-auto cursor-pointer">
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={scheduleEmailMutation.isPending}
+                className="flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50 w-full sm:w-auto"
+              >
+                {scheduleEmailMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
+                <span>Schedule Delivery</span>
+              </button>
+            </div>
+          </form>
+        </ModalShell>
       )}
 
       {/* Confirm Delete Custom Report Modal */}

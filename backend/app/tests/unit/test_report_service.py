@@ -1,10 +1,10 @@
-from app.core.errors import ForbiddenError
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
+
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import APIException, NotFoundError
+from app.core.errors import APIException, ForbiddenError, NotFoundError
 from app.models.user import User
 from app.repositories.report_repository import ReportRepository
 from app.services.report_service import ReportService, compute_next_run, today_str
@@ -108,6 +108,12 @@ async def test_win_loss_report_ratio():
         return_value=[("Software", 5, 1, 50000.0, 5000.0)]
     )
     repo.top_loss_reason = AsyncMock(return_value="Budget Constraint")
+    repo.loss_reason_by_industry = AsyncMock(
+        return_value=[
+            ("Software", "Missing champion", 2),
+            ("Software", "Budget Constraint", 3),
+        ]
+    )
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
     user = _make_user(org_id="org-1")
@@ -119,7 +125,32 @@ async def test_win_loss_report_ratio():
     assert result["metrics"]["total_won_deals"] == 7
     assert result["metrics"]["top_loss_reason"] == "Budget Constraint"
     assert result["metrics"]["table_rows"][0]["segment"] == "Software"
+    # Industry row reports its own modal reason, not the org-wide one.
     assert result["metrics"]["table_rows"][0]["primary_loss_reason"] == "Budget Constraint"
+
+
+@pytest.mark.asyncio
+async def test_win_loss_industry_reasons_are_not_copied_across_segments():
+    repo = ReportRepository()
+    repo.count_deals_in_stage = AsyncMock(side_effect=[1, 1])
+    repo.top_loss_reason = AsyncMock(return_value="Budget Constraint")
+    repo.win_loss_by_industry = AsyncMock(
+        return_value=[("Manufacturing", 1, 0, 100.0, 0.0), ("Retail", 0, 1, 0.0, 50.0)]
+    )
+    repo.loss_reason_by_industry = AsyncMock(
+        return_value=[("Retail", "Pricing", 1)]
+    )
+    service = ReportService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+    user = _make_user(org_id="org-1")
+
+    result = await service.get_win_loss_report(db, current_user=user)
+
+    rows = {r["segment"]: r for r in result["metrics"]["table_rows"]}
+    # Manufacturing has no recorded reasons: must be null, never another
+    # industry's (or the org-wide) reason.
+    assert rows["Manufacturing"]["primary_loss_reason"] is None
+    assert rows["Retail"]["primary_loss_reason"] == "Pricing"
 
 
 @pytest.mark.asyncio
@@ -128,6 +159,7 @@ async def test_win_loss_report_without_recorded_reasons():
     repo.count_deals_in_stage = AsyncMock(side_effect=[7, 3])
     repo.win_loss_by_industry = AsyncMock(return_value=[])
     repo.top_loss_reason = AsyncMock(return_value=None)
+    repo.loss_reason_by_industry = AsyncMock(return_value=[])
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
     user = _make_user(org_id="org-1")
@@ -647,24 +679,24 @@ def test_today_str_format():
 
 
 def test_compute_next_run_daily_and_weekly():
-    base = datetime(2026, 3, 10, 12, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 3, 10, 12, 0, tzinfo=UTC)
     daily = compute_next_run("Daily", base)
-    assert daily == datetime(2026, 3, 11, 12, 0, tzinfo=timezone.utc)
+    assert daily == datetime(2026, 3, 11, 12, 0, tzinfo=UTC)
 
     weekly = compute_next_run("Weekly", base)
-    assert weekly == datetime(2026, 3, 17, 12, 0, tzinfo=timezone.utc)
+    assert weekly == datetime(2026, 3, 17, 12, 0, tzinfo=UTC)
 
 
 def test_compute_next_run_monthly_calendar_arithmetic():
     # Jan 31 -> Feb 28 (clamps to last day of Feb)
-    jan31 = datetime(2026, 1, 31, 10, 0, tzinfo=timezone.utc)
+    jan31 = datetime(2026, 1, 31, 10, 0, tzinfo=UTC)
     feb_run = compute_next_run("Monthly", jan31)
     assert feb_run.year == 2026
     assert feb_run.month == 2
     assert feb_run.day == 28
 
     # Dec 15 -> Jan 15 of next year
-    dec15 = datetime(2026, 12, 15, 10, 0, tzinfo=timezone.utc)
+    dec15 = datetime(2026, 12, 15, 10, 0, tzinfo=UTC)
     jan_run = compute_next_run("Monthly", dec15)
     assert jan_run.year == 2027
     assert jan_run.month == 1
@@ -737,6 +769,7 @@ async def test_export_csv_reflects_requested_report_rows(monkeypatch):
         return_value=[("Software", 5, 1, 50000.0, 5000.0)]
     )
     repo.top_loss_reason = AsyncMock(return_value="Budget Constraint")
+    repo.loss_reason_by_industry = AsyncMock(return_value=[])
     repo.create_export = AsyncMock(return_value=Row(id="exp-wl", download_url=None, s3_key="exports/org-1/x.csv"))
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)

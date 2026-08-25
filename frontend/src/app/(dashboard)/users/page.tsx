@@ -12,7 +12,6 @@ import {
   Trash2, 
   RefreshCw, 
   Sparkles, 
-  X, 
   AlertCircle, 
   CheckCircle2, 
   UserPlus, 
@@ -37,6 +36,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { DataTable, type DataTableColumn, type TableActionOption } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { ModalShell } from '@/components/common/modal-shell';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { 
   useUsersQuery, 
@@ -527,7 +527,7 @@ export default function UsersPage() {
             Manage team members, roles, organization access & invitations
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <PermissionGate permission="users:create">
             <Button
               type="button"
@@ -557,7 +557,7 @@ export default function UsersPage() {
       </div>
 
       {/* Tabs Navigation Bar */}
-      <div className="flex items-center gap-2 border-b border-[#E5E7EB] pb-3">
+      <div className="flex items-center gap-2 flex-wrap border-b border-[#E5E7EB] pb-3">
         <button
           type="button"
           onClick={() => setActiveTab('all')}
@@ -718,212 +718,192 @@ export default function UsersPage() {
       )}
 
       {/* INVITE USER MODAL DIALOG */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-[#111827]/60 backdrop-blur-xs animate-in fade-in-50">
-          <div className="relative w-full max-w-lg bg-white rounded-modal border border-[#E5E7EB] shadow-saas-lg overflow-hidden text-[#111827] flex flex-col">
-            {/* Modal Header */}
-            <div className="p-5 sm:p-6 border-b border-[#E5E7EB] bg-[#F9FAFB] flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-btn bg-[#2563EB] flex items-center justify-center text-white shadow-saas-sm">
-                  <UserPlus className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-subheading font-semibold text-[#111827]">
-                    Invite Team Member
-                  </h3>
-                  <p className="text-caption text-[#6B7280]">
-                    Send account invite link and set permissions
-                  </p>
-                </div>
+      <ModalShell
+        isOpen={isModalOpen}
+        onClose={handleCloseModal}
+        size="lg"
+        title={
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-btn bg-[#2563EB] flex items-center justify-center text-white shadow-saas-sm shrink-0">
+                <UserPlus className="w-5 h-5" />
               </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleAutofill}
-                  className="text-caption font-medium gap-1.5 cursor-pointer px-3"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-[#2563EB] animate-pulse" />
-                  <span>Auto-fill Demo</span>
-                </Button>
-                <button
-                  type="button"
-                  onClick={handleCloseModal}
-                  className="p-1.5 rounded-btn text-[#6B7280] hover:text-[#111827] hover:bg-[#F3F4F6] transition cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+              <div>
+                <h3 className="text-subheading font-semibold text-[#111827]">
+                  Invite Team Member
+                </h3>
+                <p className="text-caption text-[#6B7280]">
+                  Send account invite link and set permissions
+                </p>
               </div>
             </div>
-
-            {/* Modal Body */}
-            <form onSubmit={handleInviteUser} className="p-5 sm:p-6 space-y-4">
-              <div>
-                <Label htmlFor="name">Full Name</Label>
-                <Input
-                  id="name"
-                  type="text"
-                  placeholder="e.g. Alex Rivera"
-                  value={userName}
-                  onChange={(e) => setUserName(e.target.value)}
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="email">Email Address <span className="text-[#DC2626]">*</span></Label>
-                <Input
-                  id="email"
-                  type="email"
-                  required
-                  placeholder="e.g. alex@company.com"
-                  value={userEmail}
-                  onChange={(e) => setUserEmail(e.target.value)}
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="role">User Role <span className="text-[#DC2626]">*</span></Label>
-                <RoleSearchCombobox
-                  id="role"
-                  value={userRole}
-                  onChange={setUserRole}
-                  placeholder="Search and select a role..."
-                />
-              </div>
-
-              {/* Modal Footer */}
-              <div className="pt-4 border-t border-[#E5E7EB] flex items-center justify-end gap-3">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleCloseModal}
-                  className="text-button font-medium cursor-pointer"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  variant="primary"
-                  className="shadow-saas-sm text-button font-medium cursor-pointer"
-                >
-                  Send Invitation
-                </Button>
-              </div>
-            </form>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleAutofill}
+              className="text-caption font-medium gap-1.5 cursor-pointer px-3"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-[#2563EB] animate-pulse" />
+              <span>Auto-fill Demo</span>
+            </Button>
           </div>
-        </div>
-      )}
+        }
+      >
+        <form onSubmit={handleInviteUser} className="space-y-4">
+          <div>
+            <Label htmlFor="name">Full Name</Label>
+            <Input
+              id="name"
+              type="text"
+              placeholder="e.g. Alex Rivera"
+              value={userName}
+              onChange={(e) => setUserName(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="email">Email Address <span className="text-[#DC2626]">*</span></Label>
+            <Input
+              id="email"
+              type="email"
+              required
+              placeholder="e.g. alex@company.com"
+              value={userEmail}
+              onChange={(e) => setUserEmail(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="role">User Role <span className="text-[#DC2626]">*</span></Label>
+            <RoleSearchCombobox
+              id="role"
+              value={userRole}
+              onChange={setUserRole}
+              placeholder="Search and select a role..."
+            />
+          </div>
+
+          {/* Modal Footer */}
+          <div className="pt-4 border-t border-[#E5E7EB] flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleCloseModal}
+              className="text-button font-medium cursor-pointer"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              className="shadow-saas-sm text-button font-medium cursor-pointer"
+            >
+              Send Invitation
+            </Button>
+          </div>
+        </form>
+      </ModalShell>
 
       {/* CREATE USER DIRECT MODAL DIALOG */}
-      {isCreateModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-[#111827]/60 backdrop-blur-xs animate-in fade-in-50">
-          <div className="relative w-full max-w-lg bg-white rounded-modal border border-[#E5E7EB] shadow-saas-lg overflow-hidden text-[#111827] flex flex-col">
-            {/* Modal Header */}
-            <div className="p-5 sm:p-6 border-b border-[#E5E7EB] bg-[#F9FAFB] flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-btn bg-[#2563EB] flex items-center justify-center text-white shadow-saas-sm">
-                  <Plus className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-subheading font-semibold text-[#111827]">
-                    Create New User Account
-                  </h3>
-                  <p className="text-caption text-[#6B7280]">
-                    Directly provision a new team member account
-                  </p>
-                </div>
+      <ModalShell
+        isOpen={isCreateModalOpen}
+        onClose={handleCloseCreateModal}
+        size="lg"
+        title={
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-btn bg-[#2563EB] flex items-center justify-center text-white shadow-saas-sm shrink-0">
+                <Plus className="w-5 h-5" />
               </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleAutofillCreate}
-                  className="text-caption font-medium gap-1.5 cursor-pointer px-3"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-[#2563EB] animate-pulse" />
-                  <span>Auto-fill Demo</span>
-                </Button>
-                <button
-                  type="button"
-                  onClick={handleCloseCreateModal}
-                  className="p-1.5 rounded-btn text-[#6B7280] hover:text-[#111827] hover:bg-[#F3F4F6] transition cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+              <div>
+                <h3 className="text-subheading font-semibold text-[#111827]">
+                  Create New User Account
+                </h3>
+                <p className="text-caption text-[#6B7280]">
+                  Directly provision a new team member account
+                </p>
               </div>
             </div>
-
-            {/* Modal Body */}
-            <form onSubmit={handleCreateUserSubmit} className="p-5 sm:p-6 space-y-4">
-              <div>
-                <Label htmlFor="create-name">Full Name <span className="text-[#DC2626]">*</span></Label>
-                <Input
-                  id="create-name"
-                  type="text"
-                  required
-                  placeholder="e.g. Alex Rivera"
-                  value={createName}
-                  onChange={(e) => setCreateName(e.target.value)}
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="create-email">Email Address <span className="text-[#DC2626]">*</span></Label>
-                <Input
-                  id="create-email"
-                  type="email"
-                  required
-                  placeholder="e.g. alex@company.com"
-                  value={createEmail}
-                  onChange={(e) => setCreateEmail(e.target.value)}
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="create-password">Password</Label>
-                <Input
-                  id="create-password"
-                  type="password"
-                  placeholder="Defaults to Password123!"
-                  value={createPassword}
-                  onChange={(e) => setCreatePassword(e.target.value)}
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="create-role">User Role <span className="text-[#DC2626]">*</span></Label>
-                <RoleSearchCombobox
-                  id="create-role"
-                  value={createRole}
-                  onChange={setCreateRole}
-                  placeholder="Search and select a role..."
-                />
-              </div>
-
-              {/* Modal Footer */}
-              <div className="pt-4 border-t border-[#E5E7EB] flex items-center justify-end gap-3">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleCloseCreateModal}
-                  className="text-button font-medium cursor-pointer"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  variant="primary"
-                  className="shadow-saas-sm text-button font-medium cursor-pointer"
-                >
-                  Create User Account
-                </Button>
-              </div>
-            </form>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleAutofillCreate}
+              className="text-caption font-medium gap-1.5 cursor-pointer px-3"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-[#2563EB] animate-pulse" />
+              <span>Auto-fill Demo</span>
+            </Button>
           </div>
-        </div>
-      )}
+        }
+      >
+        <form onSubmit={handleCreateUserSubmit} className="space-y-4">
+          <div>
+            <Label htmlFor="create-name">Full Name <span className="text-[#DC2626]">*</span></Label>
+            <Input
+              id="create-name"
+              type="text"
+              required
+              placeholder="e.g. Alex Rivera"
+              value={createName}
+              onChange={(e) => setCreateName(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="create-email">Email Address <span className="text-[#DC2626]">*</span></Label>
+            <Input
+              id="create-email"
+              type="email"
+              required
+              placeholder="e.g. alex@company.com"
+              value={createEmail}
+              onChange={(e) => setCreateEmail(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="create-password">Password</Label>
+            <Input
+              id="create-password"
+              type="password"
+              placeholder="Defaults to Password123!"
+              value={createPassword}
+              onChange={(e) => setCreatePassword(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="create-role">User Role <span className="text-[#DC2626]">*</span></Label>
+            <RoleSearchCombobox
+              id="create-role"
+              value={createRole}
+              onChange={setCreateRole}
+              placeholder="Search and select a role..."
+            />
+          </div>
+
+          {/* Modal Footer */}
+          <div className="pt-4 border-t border-[#E5E7EB] flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleCloseCreateModal}
+              className="text-button font-medium cursor-pointer"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              className="shadow-saas-sm text-button font-medium cursor-pointer"
+            >
+              Create User Account
+            </Button>
+          </div>
+        </form>
+      </ModalShell>
 
       {/* DELETE USER CONFIRMATION MODAL */}
       <ConfirmModal

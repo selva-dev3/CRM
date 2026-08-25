@@ -19,6 +19,7 @@ import {
   Inbox
 } from 'lucide-react';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { ModalShell } from '@/components/common/modal-shell';
 import {
   useNotificationsQuery,
   useUnreadCountQuery,
@@ -258,7 +259,7 @@ export default function NotificationsPage() {
       {/* Notifications Feed Container */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden space-y-4 p-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-slate-100">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={() => setActiveTab('all')}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
@@ -369,146 +370,142 @@ export default function NotificationsPage() {
 
       {/* Broadcast System Alert Modal */}
       {isAlertModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Send className="w-5 h-5 text-indigo-600" />
-                Broadcast System Alert
-              </h3>
-              <button onClick={() => setIsAlertModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
+        <ModalShell
+          isOpen={isAlertModalOpen}
+          onClose={() => setIsAlertModalOpen(false)}
+          size="md"
+          title={
+            <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <Send className="w-5 h-5 text-indigo-600" />
+              Broadcast System Alert
+            </h3>
+          }
+        >
+          <form onSubmit={handleSendAlertSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Alert Title *</label>
+              <input
+                type="text"
+                required
+                value={alertTitle}
+                onChange={(e) => setAlertTitle(e.target.value)}
+                placeholder="e.g. Scheduled System Maintenance"
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+              />
             </div>
 
-            <form onSubmit={handleSendAlertSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Alert Title *</label>
-                <input
-                  type="text"
-                  required
-                  value={alertTitle}
-                  onChange={(e) => setAlertTitle(e.target.value)}
-                  placeholder="e.g. Scheduled System Maintenance"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Alert Message *</label>
+              <textarea
+                required
+                rows={3}
+                value={alertMessage}
+                onChange={(e) => setAlertMessage(e.target.value)}
+                placeholder="e.g. System upgrade will occur tonight at 02:00 UTC."
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Alert Message *</label>
-                <textarea
-                  required
-                  rows={3}
-                  value={alertMessage}
-                  onChange={(e) => setAlertMessage(e.target.value)}
-                  placeholder="e.g. System upgrade will occur tonight at 02:00 UTC."
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={() => setIsAlertModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={sendAlertMutation.isPending}
-                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
-                >
-                  {sendAlertMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  Broadcast Alert
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3 pt-2">
+              <button type="button" onClick={() => setIsAlertModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={sendAlertMutation.isPending}
+                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
+              >
+                {sendAlertMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                Broadcast Alert
+              </button>
+            </div>
+          </form>
+        </ModalShell>
       )}
 
       {/* Delivery Preferences Modal */}
       {isPreferencesModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Settings className="w-5 h-5 text-slate-700" />
-                Notification Delivery Preferences
-              </h3>
-              <button onClick={() => setIsPreferencesModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
+        <ModalShell
+          isOpen={isPreferencesModalOpen}
+          onClose={() => setIsPreferencesModalOpen(false)}
+          size="md"
+          title={
+            <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <Settings className="w-5 h-5 text-slate-700" />
+              Notification Delivery Preferences
+            </h3>
+          }
+        >
+          <form onSubmit={handleSavePreferencesSubmit} className="space-y-4">
+            <div className="space-y-3">
+              <label className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200 cursor-pointer">
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
+                  <Mail className="w-4 h-4 text-indigo-600" />
+                  <span>Email Notifications</span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={prefEmail}
+                  onChange={(e) => setPrefEmail(e.target.checked)}
+                  className="h-4 w-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                />
+              </label>
+
+              <label className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200 cursor-pointer">
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
+                  <Smartphone className="w-4 h-4 text-purple-600" />
+                  <span>WebPush Browser Push Alerts</span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={prefWebpush}
+                  onChange={(e) => setPrefWebpush(e.target.checked)}
+                  className="h-4 w-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                />
+              </label>
+
+              <label className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200 cursor-pointer">
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
+                  <MessageSquare className="w-4 h-4 text-emerald-600" />
+                  <span>Slack Channel Webhook Alerts</span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={prefSlack}
+                  onChange={(e) => setPrefSlack(e.target.checked)}
+                  className="h-4 w-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                />
+              </label>
             </div>
 
-            <form onSubmit={handleSavePreferencesSubmit} className="space-y-4">
-              <div className="space-y-3">
-                <label className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200 cursor-pointer">
-                  <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
-                    <Mail className="w-4 h-4 text-indigo-600" />
-                    <span>Email Notifications</span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={prefEmail}
-                    onChange={(e) => setPrefEmail(e.target.checked)}
-                    className="h-4 w-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
-                  />
-                </label>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Email Digest Frequency</label>
+              <select
+                value={prefDigest}
+                onChange={(e) => setPrefDigest(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="Realtime">Realtime Immediate</option>
+                <option value="Daily">Daily Digest</option>
+                <option value="Weekly">Weekly Summary</option>
+              </select>
+            </div>
 
-                <label className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200 cursor-pointer">
-                  <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
-                    <Smartphone className="w-4 h-4 text-purple-600" />
-                    <span>WebPush Browser Push Alerts</span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={prefWebpush}
-                    onChange={(e) => setPrefWebpush(e.target.checked)}
-                    className="h-4 w-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
-                  />
-                </label>
-
-                <label className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200 cursor-pointer">
-                  <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
-                    <MessageSquare className="w-4 h-4 text-emerald-600" />
-                    <span>Slack Channel Webhook Alerts</span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={prefSlack}
-                    onChange={(e) => setPrefSlack(e.target.checked)}
-                    className="h-4 w-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
-                  />
-                </label>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Email Digest Frequency</label>
-                <select
-                  value={prefDigest}
-                  onChange={(e) => setPrefDigest(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="Realtime">Realtime Immediate</option>
-                  <option value="Daily">Daily Digest</option>
-                  <option value="Weekly">Weekly Summary</option>
-                </select>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={() => setIsPreferencesModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={updatePrefsMutation.isPending}
-                  className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
-                >
-                  {updatePrefsMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  Save Preferences
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3 pt-2">
+              <button type="button" onClick={() => setIsPreferencesModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={updatePrefsMutation.isPending}
+                className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
+              >
+                {updatePrefsMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                Save Preferences
+              </button>
+            </div>
+          </form>
+        </ModalShell>
       )}
 
       {/* Confirm Delete Modal */}

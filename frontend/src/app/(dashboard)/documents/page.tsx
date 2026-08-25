@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { ModalShell } from '@/components/common/modal-shell';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
 import {
@@ -317,100 +318,94 @@ export default function DocumentsPage() {
       />
 
       {/* Upload File Modal */}
-      {isUploadModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-5">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <UploadCloud className="w-5 h-5 text-indigo-600" />
-                Upload Document to MinIO S3
-              </h2>
-              <button onClick={() => setIsUploadModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleUploadSubmit} className="space-y-4">
-              <div
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setIsDragging(true);
-                }}
-                onDragLeave={() => setIsDragging(false)}
-                onDrop={handleDrop}
-                onClick={() => fileInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-colors ${
-                  isDragging ? 'border-indigo-500 bg-indigo-50' : 'border-slate-300 hover:border-indigo-400 bg-slate-50'
-                }`}
-              >
-                <input ref={fileInputRef} type="file" onChange={handleFileChange} className="hidden" />
-                <UploadCloud className="w-10 h-10 text-indigo-600 mx-auto mb-2" />
-                <p className="text-xs font-bold text-slate-800">
-                  {selectedFile ? selectedFile.name : 'Click or drag & drop file to upload'}
-                </p>
-                {selectedFile ? (
-                  <p className="text-[11px] text-emerald-600 font-semibold mt-1">
-                    {formatFileSize(selectedFile.size)} - Selected
-                  </p>
-                ) : (
-                  <p className="text-[11px] text-slate-400 mt-1">PDF, DOCX, XLSX, PNG, JPG up to 50MB</p>
-                )}
-              </div>
-
-              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
-                <button type="button" onClick={() => setIsUploadModalOpen(false)} className="px-4 py-2 text-sm font-medium text-slate-600">
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={!selectedFile || uploadMutation.isPending}
-                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg font-medium text-sm cursor-pointer shadow-sm disabled:opacity-50"
-                >
-                  {uploadMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                  Start Upload
-                </button>
-              </div>
-            </form>
+      <ModalShell
+        isOpen={isUploadModalOpen}
+        onClose={() => setIsUploadModalOpen(false)}
+        size="lg"
+        title={
+          <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <UploadCloud className="w-5 h-5 text-indigo-600" />
+            Upload Document to MinIO S3
+          </h2>
+        }
+      >
+        <form onSubmit={handleUploadSubmit} className="space-y-4">
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              setIsDragging(true);
+            }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
+            className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-colors ${
+              isDragging ? 'border-indigo-500 bg-indigo-50' : 'border-slate-300 hover:border-indigo-400 bg-slate-50'
+            }`}
+          >
+            <input ref={fileInputRef} type="file" onChange={handleFileChange} className="hidden" />
+            <UploadCloud className="w-10 h-10 text-indigo-600 mx-auto mb-2" />
+            <p className="text-xs font-bold text-slate-800">
+              {selectedFile ? selectedFile.name : 'Click or drag & drop file to upload'}
+            </p>
+            {selectedFile ? (
+              <p className="text-[11px] text-emerald-600 font-semibold mt-1">
+                {formatFileSize(selectedFile.size)} - Selected
+              </p>
+            ) : (
+              <p className="text-[11px] text-slate-400 mt-1">PDF, DOCX, XLSX, PNG, JPG up to 50MB</p>
+            )}
           </div>
-        </div>
-      )}
+
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-3 border-t border-slate-100">
+            <button type="button" onClick={() => setIsUploadModalOpen(false)} className="px-4 py-2 text-sm font-medium text-slate-600">
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={!selectedFile || uploadMutation.isPending}
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg font-medium text-sm cursor-pointer shadow-sm disabled:opacity-50"
+            >
+              {uploadMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+              Start Upload
+            </button>
+          </div>
+        </form>
+      </ModalShell>
 
       {/* Download Presigned URL Modal */}
       {presignedUrlResult && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Download className="w-5 h-5 text-indigo-600" />
-                Secure Presigned Download Link
-              </h3>
-              <button onClick={() => setPresignedUrlResult(null)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
+        <ModalShell
+          isOpen={!!presignedUrlResult}
+          onClose={() => setPresignedUrlResult(null)}
+          size="md"
+          title={
+            <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <Download className="w-5 h-5 text-indigo-600" />
+              Secure Presigned Download Link
+            </h3>
+          }
+        >
+          <div className="space-y-3">
+            <p className="text-xs text-slate-600 font-medium">
+              Presigned S3 link generated for <strong className="text-slate-900">{presignedUrlResult.filename}</strong> (Expires in 60m):
+            </p>
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-[11px] text-slate-700 break-all">
+              {presignedUrlResult.download_url}
             </div>
 
-            <div className="space-y-3">
-              <p className="text-xs text-slate-600 font-medium">
-                Presigned S3 link generated for <strong className="text-slate-900">{presignedUrlResult.filename}</strong> (Expires in 60m):
-              </p>
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-[11px] text-slate-700 break-all">
-                {presignedUrlResult.download_url}
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <a
-                  href={presignedUrlResult.download_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold shadow-xs"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  Open / Download File
-                </a>
-              </div>
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
+              <a
+                href={presignedUrlResult.download_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold shadow-xs"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                Open / Download File
+              </a>
             </div>
           </div>
-        </div>
+        </ModalShell>
       )}
 
       {/* Confirm Delete Modal */}

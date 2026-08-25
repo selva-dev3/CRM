@@ -195,7 +195,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   if (isAuthenticated === null) {
     return (
-      <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 text-slate-900 space-y-4">
+      <div className="h-dvh w-full flex flex-col items-center justify-center bg-slate-50 text-slate-900 space-y-4">
         <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
         <p className="text-sm text-slate-900 font-bold">Verifying Session Token...</p>
       </div>

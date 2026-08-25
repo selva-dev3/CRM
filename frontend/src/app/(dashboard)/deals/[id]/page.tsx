@@ -22,14 +22,14 @@ import {
   CheckCircle2,
   AlertCircle,
   Calendar,
-  Search,
-  X
+  Search
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { ModalShell } from '@/components/common/modal-shell';
 import {
   useDealQuery,
   useUpdateDealMutation,
@@ -533,7 +533,7 @@ export default function DealDetailsPage() {
           ) : (
             <div className="space-y-2">
               {products.map((prod: any, idx: number) => (
-                <div key={idx} className="p-4 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between hover:border-slate-300 transition">
+                <div key={idx} className="p-4 bg-white rounded-xl border border-slate-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:border-slate-300 transition">
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm shrink-0">
                       <Package className="w-5 h-5" />
@@ -701,242 +701,238 @@ export default function DealDetailsPage() {
 
       {/* EDIT DEAL MODAL */}
       {isEditModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
-          <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                <Edit className="w-5 h-5 text-blue-600" />
-                <span>Edit Sales Deal</span>
-              </h3>
-              <button type="button" onClick={() => setIsEditModalOpen(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
+        <ModalShell
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+          size="md"
+          title={
+            <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+              <Edit className="w-5 h-5 text-blue-600" />
+              <span>Edit Sales Deal</span>
+            </h3>
+          }
+        >
+          <form onSubmit={handleEditSubmit} className="space-y-4 text-xs">
+            <div className="space-y-1">
+              <Label className="font-semibold text-slate-700">Deal Title</Label>
+              <Input
+                type="text"
+                value={formTitle}
+                onChange={(e) => setFormTitle(e.target.value)}
+                className="h-9 text-xs"
+              />
             </div>
 
-            <form onSubmit={handleEditSubmit} className="space-y-4 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Deal Title</Label>
+                <Label className="font-semibold text-slate-700">Amount ($)</Label>
                 <Input
-                  type="text"
-                  value={formTitle}
-                  onChange={(e) => setFormTitle(e.target.value)}
+                  type="number"
+                  value={formAmount}
+                  onChange={(e) => setFormAmount(e.target.value !== '' ? Number(e.target.value) : '')}
                   className="h-9 text-xs"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">Amount ($)</Label>
-                  <Input
-                    type="number"
-                    value={formAmount}
-                    onChange={(e) => setFormAmount(e.target.value !== '' ? Number(e.target.value) : '')}
-                    className="h-9 text-xs"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">Pipeline Stage</Label>
-                  <select
-                    value={formStage}
-                    onChange={(e) => setFormStage(e.target.value)}
-                    className="w-full h-9 rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-                  >
-                    {STAGES.map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">Win Probability (%)</Label>
-                  <Input
-                    type="number"
-                    value={formProbability}
-                    onChange={(e) => setFormProbability(e.target.value !== '' ? Number(e.target.value) : '')}
-                    className="h-9 text-xs"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">Assigned Sales Rep</Label>
-                  <select
-                    value={formAssignedTo}
-                    onChange={(e) => setFormAssignedTo(e.target.value)}
-                    className="w-full h-9 rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-                  >
-                    <option value="">-- Select Sales Rep --</option>
-                    {users.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.name || u.email} ({u.email})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <Button type="button" variant="outline" size="sm" onClick={() => setIsEditModalOpen(false)} className="cursor-pointer">
-                  Cancel
-                </Button>
-                <Button type="submit" size="sm" disabled={updateDealMutation.isPending} className="bg-blue-600 text-white font-semibold cursor-pointer">
-                  {updateDealMutation.isPending ? 'Saving...' : 'Save Changes'}
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ADD PRODUCT MODAL */}
-      {isAddProductModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
-          <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                <Package className="w-5 h-5 text-blue-600" />
-                <span>Add Product Item to Deal</span>
-              </h3>
-              <button type="button" onClick={() => setIsAddProductModalOpen(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                const prodName = customProductName.trim() || productSearchQuery.trim();
-                if (!selectedProductId && !prodName) {
-                  setErrorMessage('Please search, select, or type a product name.');
-                  return;
-                }
-                addProductMutation.mutate({
-                  product_id: selectedProductId || `custom-${Date.now()}`,
-                  custom_name: prodName,
-                  quantity: Number(productQuantity) || 1,
-                  unit_price: productUnitPrice !== '' ? Number(productUnitPrice) : 0,
-                });
-              }}
-              className="space-y-4 text-xs"
-            >
-              {/* Type / Search Product Combobox */}
-              <div className="space-y-1 relative">
-                <Label className="font-semibold text-slate-700">Search Catalog or Type Custom Product</Label>
-                <div className="relative">
-                  <Input
-                    type="text"
-                    placeholder="Type product name or search catalog..."
-                    value={productSearchQuery}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setProductSearchQuery(val);
-                      setCustomProductName(val);
-                      const match = catalogProducts.find((p) => p.name.toLowerCase() === val.toLowerCase());
-                      if (match) {
-                        setSelectedProductId(match.id);
-                        setProductUnitPrice(match.price);
-                      } else {
-                        setSelectedProductId('');
-                      }
-                    }}
-                    className="h-9 text-xs pl-8"
-                  />
-                  <Search className="w-4 h-4 text-slate-400 absolute left-2.5 top-2.5 pointer-events-none" />
-                </div>
-
-                {/* Filtered Dropdown Suggestions */}
-                {productSearchQuery.trim().length > 0 && (
-                  <div className="max-h-40 overflow-y-auto border border-slate-200 rounded-lg bg-white shadow-md divide-y divide-slate-100 z-10 relative mt-1">
-                    {catalogProducts
-                      .filter((p) => p.name.toLowerCase().includes(productSearchQuery.toLowerCase()) || p.sku?.toLowerCase().includes(productSearchQuery.toLowerCase()))
-                      .map((p) => (
-                        <div
-                          key={p.id}
-                          onClick={() => {
-                            setSelectedProductId(p.id);
-                            setCustomProductName(p.name);
-                            setProductSearchQuery(p.name);
-                            setProductUnitPrice(p.price);
-                          }}
-                          className={`p-2 hover:bg-blue-50 cursor-pointer flex items-center justify-between transition ${
-                            selectedProductId === p.id ? 'bg-blue-50/80 font-bold text-blue-700' : 'text-slate-700'
-                          }`}
-                        >
-                          <div>
-                            <div className="font-medium text-xs text-slate-900">{p.name}</div>
-                            <div className="text-[10px] text-slate-400">SKU: {p.sku || 'N/A'}</div>
-                          </div>
-                          <span className="font-bold text-blue-600 text-xs">${p.price?.toLocaleString()}</span>
-                        </div>
-                      ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Select from dropdown as alternative */}
               <div className="space-y-1">
-                <Label className="font-semibold text-slate-500 text-[11px]">Or select directly from full catalog</Label>
+                <Label className="font-semibold text-slate-700">Pipeline Stage</Label>
                 <select
-                  value={selectedProductId}
-                  onChange={(e) => {
-                    const pid = e.target.value;
-                    setSelectedProductId(pid);
-                    const found = catalogProducts.find((p) => p.id === pid);
-                    if (found) {
-                      setProductUnitPrice(found.price);
-                      setCustomProductName(found.name);
-                      setProductSearchQuery(found.name);
-                    }
-                  }}
+                  value={formStage}
+                  onChange={(e) => setFormStage(e.target.value)}
                   className="w-full h-9 rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
                 >
-                  <option value="">-- Or Choose Catalog Product --</option>
-                  {catalogProducts.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} ({p.sku}) - ${p.price?.toLocaleString()}
+                  {STAGES.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
                     </option>
                   ))}
                 </select>
               </div>
+            </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">Quantity</Label>
-                  <Input
-                    type="number"
-                    min="1"
-                    value={productQuantity}
-                    onChange={(e) => setProductQuantity(Number(e.target.value) || 1)}
-                    className="h-9 text-xs"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">Unit Price ($)</Label>
-                  <Input
-                    type="number"
-                    value={productUnitPrice}
-                    onChange={(e) => setProductUnitPrice(e.target.value !== '' ? Number(e.target.value) : '')}
-                    className="h-9 text-xs"
-                  />
-                </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="font-semibold text-slate-700">Win Probability (%)</Label>
+                <Input
+                  type="number"
+                  value={formProbability}
+                  onChange={(e) => setFormProbability(e.target.value !== '' ? Number(e.target.value) : '')}
+                  className="h-9 text-xs"
+                />
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
-                <Button type="button" variant="outline" size="sm" onClick={() => setIsAddProductModalOpen(false)} className="cursor-pointer">
-                  Cancel
-                </Button>
-                <Button type="submit" size="sm" disabled={addProductMutation.isPending} className="bg-blue-600 text-white font-semibold cursor-pointer">
-                  {addProductMutation.isPending ? 'Adding...' : 'Add to Deal'}
-                </Button>
+              <div className="space-y-1">
+                <Label className="font-semibold text-slate-700">Assigned Sales Rep</Label>
+                <select
+                  value={formAssignedTo}
+                  onChange={(e) => setFormAssignedTo(e.target.value)}
+                  className="w-full h-9 rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                >
+                  <option value="">-- Select Sales Rep --</option>
+                  {users.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name || u.email} ({u.email})
+                    </option>
+                  ))}
+                </select>
               </div>
-            </form>
-          </div>
-        </div>
+            </div>
+
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setIsEditModalOpen(false)} className="cursor-pointer">
+                Cancel
+              </Button>
+              <Button type="submit" size="sm" disabled={updateDealMutation.isPending} className="bg-blue-600 text-white font-semibold cursor-pointer">
+                {updateDealMutation.isPending ? 'Saving...' : 'Save Changes'}
+              </Button>
+            </div>
+          </form>
+        </ModalShell>
+      )}
+
+      {/* ADD PRODUCT MODAL */}
+      {isAddProductModalOpen && (
+        <ModalShell
+          isOpen={isAddProductModalOpen}
+          onClose={() => setIsAddProductModalOpen(false)}
+          size="md"
+          title={
+            <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+              <Package className="w-5 h-5 text-blue-600" />
+              <span>Add Product Item to Deal</span>
+            </h3>
+          }
+        >
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const prodName = customProductName.trim() || productSearchQuery.trim();
+              if (!selectedProductId && !prodName) {
+                setErrorMessage('Please search, select, or type a product name.');
+                return;
+              }
+              addProductMutation.mutate({
+                product_id: selectedProductId || `custom-${Date.now()}`,
+                custom_name: prodName,
+                quantity: Number(productQuantity) || 1,
+                unit_price: productUnitPrice !== '' ? Number(productUnitPrice) : 0,
+              });
+            }}
+            className="space-y-4 text-xs"
+          >
+            {/* Type / Search Product Combobox */}
+            <div className="space-y-1 relative">
+              <Label className="font-semibold text-slate-700">Search Catalog or Type Custom Product</Label>
+              <div className="relative">
+                <Input
+                  type="text"
+                  placeholder="Type product name or search catalog..."
+                  value={productSearchQuery}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setProductSearchQuery(val);
+                    setCustomProductName(val);
+                    const match = catalogProducts.find((p) => p.name.toLowerCase() === val.toLowerCase());
+                    if (match) {
+                      setSelectedProductId(match.id);
+                      setProductUnitPrice(match.price);
+                    } else {
+                      setSelectedProductId('');
+                    }
+                  }}
+                  className="h-9 text-xs pl-8"
+                />
+                <Search className="w-4 h-4 text-slate-400 absolute left-2.5 top-2.5 pointer-events-none" />
+              </div>
+
+              {/* Filtered Dropdown Suggestions */}
+              {productSearchQuery.trim().length > 0 && (
+                <div className="max-h-40 overflow-y-auto border border-slate-200 rounded-lg bg-white shadow-md divide-y divide-slate-100 z-10 relative mt-1">
+                  {catalogProducts
+                    .filter((p) => p.name.toLowerCase().includes(productSearchQuery.toLowerCase()) || p.sku?.toLowerCase().includes(productSearchQuery.toLowerCase()))
+                    .map((p) => (
+                      <div
+                        key={p.id}
+                        onClick={() => {
+                          setSelectedProductId(p.id);
+                          setCustomProductName(p.name);
+                          setProductSearchQuery(p.name);
+                          setProductUnitPrice(p.price);
+                        }}
+                        className={`p-2 hover:bg-blue-50 cursor-pointer flex items-center justify-between transition ${
+                          selectedProductId === p.id ? 'bg-blue-50/80 font-bold text-blue-700' : 'text-slate-700'
+                        }`}
+                      >
+                        <div>
+                          <div className="font-medium text-xs text-slate-900">{p.name}</div>
+                          <div className="text-[10px] text-slate-400">SKU: {p.sku || 'N/A'}</div>
+                        </div>
+                        <span className="font-bold text-blue-600 text-xs">${p.price?.toLocaleString()}</span>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+
+            {/* Select from dropdown as alternative */}
+            <div className="space-y-1">
+              <Label className="font-semibold text-slate-500 text-[11px]">Or select directly from full catalog</Label>
+              <select
+                value={selectedProductId}
+                onChange={(e) => {
+                  const pid = e.target.value;
+                  setSelectedProductId(pid);
+                  const found = catalogProducts.find((p) => p.id === pid);
+                  if (found) {
+                    setProductUnitPrice(found.price);
+                    setCustomProductName(found.name);
+                    setProductSearchQuery(found.name);
+                  }
+                }}
+                className="w-full h-9 rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+              >
+                <option value="">-- Or Choose Catalog Product --</option>
+                {catalogProducts.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.sku}) - ${p.price?.toLocaleString()}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="font-semibold text-slate-700">Quantity</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={productQuantity}
+                  onChange={(e) => setProductQuantity(Number(e.target.value) || 1)}
+                  className="h-9 text-xs"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="font-semibold text-slate-700">Unit Price ($)</Label>
+                <Input
+                  type="number"
+                  value={productUnitPrice}
+                  onChange={(e) => setProductUnitPrice(e.target.value !== '' ? Number(e.target.value) : '')}
+                  className="h-9 text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setIsAddProductModalOpen(false)} className="cursor-pointer">
+                Cancel
+              </Button>
+              <Button type="submit" size="sm" disabled={addProductMutation.isPending} className="bg-blue-600 text-white font-semibold cursor-pointer">
+                {addProductMutation.isPending ? 'Adding...' : 'Add to Deal'}
+              </Button>
+            </div>
+          </form>
+        </ModalShell>
       )}
 
       {/* DELETE CONFIRM MODAL */}

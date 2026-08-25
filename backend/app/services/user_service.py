@@ -1,5 +1,3 @@
-from typing import Optional
-
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,7 +37,7 @@ def user_to_dict(user: User) -> dict:
 class UserService:
     """Business logic for the User/Invitation domain."""
 
-    def __init__(self, repository: Optional[UserRepository] = None) -> None:
+    def __init__(self, repository: UserRepository | None = None) -> None:
         self.repository = repository or UserRepository()
         self.role_repository = RoleRepository()
         self.organization_repository = OrganizationRepository()
@@ -125,7 +123,7 @@ class UserService:
         return role_val
 
     async def list_users(
-        self, db: AsyncSession, *, page: int, limit: int, search: Optional[str]
+        self, db: AsyncSession, *, page: int, limit: int, search: str | None
     ) -> list[dict]:
         users = await self.repository.list(db, page=page, limit=limit, search=search)
         role_ids = {u.role for u in users if u.role}
@@ -143,12 +141,16 @@ class UserService:
             for u in users
         ]
 
-    async def create_user(self, db: AsyncSession, payload: UserCreate, *, current_user: User) -> dict:
+    async def create_user(
+        self, db: AsyncSession, payload: UserCreate, *, current_user: User
+    ) -> dict:
         # The organization is derived exclusively from the authenticated user —
         # never from a client-supplied organization_id.
         org_id = await self._resolve_current_org(db, current_user)
 
-        role = await self._resolve_assignable_role(db, org_id, payload.role, current_user=current_user)
+        role = await self._resolve_assignable_role(
+            db, org_id, payload.role, current_user=current_user
+        )
         user = await self.repository.create(
             db,
             data={
@@ -180,14 +182,16 @@ class UserService:
         return user_to_dict(user)
 
     async def upload_avatar(
-        self, db: AsyncSession, *, file, filename: str, content_type: Optional[str]
+        self, db: AsyncSession, *, file, filename: str, content_type: str | None
     ) -> dict:
         user = await self.repository.get_first(db)
         if not user:
             raise NotFoundError(message="User not found")
         try:
             object_name = f"avatars/{user.id}_{filename}"
-            s3_key = s3_service.upload_file(file, object_name=object_name, content_type=content_type)
+            s3_key = s3_service.upload_file(
+                file, object_name=object_name, content_type=content_type
+            )
             avatar_url = s3_service.generate_presigned_url(s3_key)
             user.avatar_url = avatar_url
             await db.commit()
@@ -206,7 +210,9 @@ class UserService:
         # the Invite Team Member form no longer accepts an organization field.
         org_id = await self._resolve_current_org(db, current_user)
 
-        role = await self._resolve_assignable_role(db, org_id, payload.role, current_user=current_user)
+        role = await self._resolve_assignable_role(
+            db, org_id, payload.role, current_user=current_user
+        )
         role_id = role.id
         role_name = role.name
         invitation_responses = []
@@ -268,7 +274,7 @@ class UserService:
             ) from e
 
     async def list_user_invitations(
-        self, db: AsyncSession, *, token: Optional[str], status_filter: Optional[str]
+        self, db: AsyncSession, *, token: str | None, status_filter: str | None
     ) -> list[dict]:
         invitations = await self.repository.list_invitations(
             db, token=token, status_filter=status_filter
@@ -464,7 +470,7 @@ class UserService:
         return []
 
     async def assign_user_team(
-        self, db: AsyncSession, *, user_id: str, team_id: str, team_name: Optional[str]
+        self, db: AsyncSession, *, user_id: str, team_id: str, team_name: str | None
     ) -> dict:
         await self.require_user(db, user_id)
         name = team_name if team_name else team_id
@@ -496,8 +502,21 @@ class UserService:
         await self.require_user(db, user_id)
         return {"message": f"Temporary password sent to user {user_id}", "status": "success"}
 
-    async def get_user_quota(self, db: AsyncSession, user_id: str) -> dict:
+    async def _require_same_org_user(
+        self, db: AsyncSession, user_id: str, current_user: User
+    ) -> User:
+        """Fetch a user and enforce that it belongs to the caller's organization.
+
+        Returns 404 (not 403) for cross-org ids so callers cannot probe for
+        the existence of users in other organizations.
+        """
         user = await self.require_user(db, user_id)
+        if getattr(current_user, "organization_id", None) != user.organization_id:
+            raise NotFoundError(message=f"User '{user_id}' not found")
+        return user
+
+    async def get_user_quota(self, db: AsyncSession, user_id: str, *, current_user: User) -> dict:
+        user = await self._require_same_org_user(db, user_id, current_user)
         quota = await self.repository.get_quota(db, user_id)
         target = float(quota.target_amount) if quota else None
         achieved = await self.repository.total_won_revenue(db, user_id)
@@ -507,8 +526,10 @@ class UserService:
             "achieved_amount": round(achieved, 2),
         }
 
-    async def set_user_quota(self, db: AsyncSession, *, user_id: str, target_amount: float) -> dict:
-        user = await self.require_user(db, user_id)
+    async def set_user_quota(
+        self, db: AsyncSession, *, user_id: str, target_amount: float, current_user: User
+    ) -> dict:
+        user = await self._require_same_org_user(db, user_id, current_user)
         if target_amount < 0:
             raise APIException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

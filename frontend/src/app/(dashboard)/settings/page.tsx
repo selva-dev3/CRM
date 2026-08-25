@@ -20,7 +20,6 @@ import {
   Cpu,
   Mail,
   RefreshCw,
-  X,
   FileSpreadsheet,
   Building,
   Layers,
@@ -34,6 +33,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { CustomSelect } from '@/components/common/custom-select';
+import { ModalShell } from '@/components/common/modal-shell';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
 import {
@@ -776,190 +776,184 @@ export default function SettingsPage() {
 
       {/* CREATE CUSTOM FIELD MODAL */}
       {isFieldModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
-          <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl p-4 sm:p-6 space-y-4 max-h-[calc(100vh-2rem)] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-slate-900 text-sm sm:text-base flex items-center gap-2">
-                <Sliders className="w-5 h-5 text-blue-600 shrink-0" />
-                <span>Create Custom Field</span>
-              </h3>
-              <button type="button" onClick={() => setIsFieldModalOpen(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer p-1">
-                <X className="w-5 h-5" />
-              </button>
+        <ModalShell
+          isOpen={isFieldModalOpen}
+          onClose={() => setIsFieldModalOpen(false)}
+          size="md"
+          title={
+            <h3 className="font-bold text-slate-900 text-sm sm:text-base flex items-center gap-2">
+              <Sliders className="w-5 h-5 text-blue-600 shrink-0" />
+              <span>Create Custom Field</span>
+            </h3>
+          }
+        >
+          <form onSubmit={handleCreateCustomField} className="space-y-4 text-xs">
+            <div className="space-y-1">
+              <Label className="font-semibold text-slate-700">Target Entity</Label>
+              <CustomSelect
+                value={fieldEntityType}
+                onChange={setFieldEntityType}
+                options={[
+                  { value: 'Lead', label: 'Lead' },
+                  { value: 'Contact', label: 'Contact' },
+                  { value: 'Deal', label: 'Deal' },
+                  { value: 'Company', label: 'Company' },
+                ]}
+              />
             </div>
 
-            <form onSubmit={handleCreateCustomField} className="space-y-4 text-xs">
-              <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Target Entity</Label>
-                <CustomSelect
-                  value={fieldEntityType}
-                  onChange={setFieldEntityType}
-                  options={[
-                    { value: 'Lead', label: 'Lead' },
-                    { value: 'Contact', label: 'Contact' },
-                    { value: 'Deal', label: 'Deal' },
-                    { value: 'Company', label: 'Company' },
-                  ]}
-                />
-              </div>
+            <div className="space-y-1">
+              <Label className="font-semibold text-slate-700">Display Label</Label>
+              <Input
+                type="text"
+                placeholder="e.g. Revenue Bracket"
+                value={fieldLabel}
+                onChange={(e) => setFieldLabel(e.target.value)}
+                className="h-9 text-xs"
+              />
+            </div>
 
-              <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Display Label</Label>
-                <Input
-                  type="text"
-                  placeholder="e.g. Revenue Bracket"
-                  value={fieldLabel}
-                  onChange={(e) => setFieldLabel(e.target.value)}
-                  className="h-9 text-xs"
-                />
-              </div>
+            <div className="space-y-1">
+              <Label className="font-semibold text-slate-700">Field Key (API Name)</Label>
+              <Input
+                type="text"
+                placeholder="e.g. annual_revenue_bracket"
+                value={fieldName}
+                onChange={(e) => setFieldName(e.target.value)}
+                className="h-9 text-xs font-mono"
+              />
+            </div>
 
-              <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Field Key (API Name)</Label>
-                <Input
-                  type="text"
-                  placeholder="e.g. annual_revenue_bracket"
-                  value={fieldName}
-                  onChange={(e) => setFieldName(e.target.value)}
-                  className="h-9 text-xs font-mono"
-                />
-              </div>
+            <div className="space-y-1">
+              <Label className="font-semibold text-slate-700">Data Type</Label>
+              <CustomSelect
+                value={fieldType}
+                onChange={setFieldType}
+                options={[
+                  { value: 'text', label: 'Text String' },
+                  { value: 'number', label: 'Number' },
+                  { value: 'select', label: 'Dropdown Select' },
+                  { value: 'boolean', label: 'Boolean Checkbox' },
+                ]}
+              />
+            </div>
 
-              <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Data Type</Label>
-                <CustomSelect
-                  value={fieldType}
-                  onChange={setFieldType}
-                  options={[
-                    { value: 'text', label: 'Text String' },
-                    { value: 'number', label: 'Number' },
-                    { value: 'select', label: 'Dropdown Select' },
-                    { value: 'boolean', label: 'Boolean Checkbox' },
-                  ]}
-                />
-              </div>
-
-              <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-2">
-                <Button type="button" variant="outline" size="sm" onClick={() => setIsFieldModalOpen(false)} className="w-full sm:w-auto cursor-pointer">
-                  Cancel
-                </Button>
-                <Button type="submit" size="sm" disabled={createCustomFieldMutation.isPending} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold w-full sm:w-auto cursor-pointer">
-                  {createCustomFieldMutation.isPending ? 'Creating...' : 'Create Field'}
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setIsFieldModalOpen(false)} className="w-full sm:w-auto cursor-pointer">
+                Cancel
+              </Button>
+              <Button type="submit" size="sm" disabled={createCustomFieldMutation.isPending} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold w-full sm:w-auto cursor-pointer">
+                {createCustomFieldMutation.isPending ? 'Creating...' : 'Create Field'}
+              </Button>
+            </div>
+          </form>
+        </ModalShell>
       )}
 
       {/* CREATE WEBHOOK MODAL */}
       {isWebhookModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
-          <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl p-4 sm:p-6 space-y-4 max-h-[calc(100vh-2rem)] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-slate-900 text-sm sm:text-base flex items-center gap-2">
-                <WebhookIcon className="w-5 h-5 text-blue-600 shrink-0" />
-                <span>Register Outgoing Webhook</span>
-              </h3>
-              <button type="button" onClick={() => setIsWebhookModalOpen(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer p-1">
-                <X className="w-5 h-5" />
-              </button>
+        <ModalShell
+          isOpen={isWebhookModalOpen}
+          onClose={() => setIsWebhookModalOpen(false)}
+          size="md"
+          title={
+            <h3 className="font-bold text-slate-900 text-sm sm:text-base flex items-center gap-2">
+              <WebhookIcon className="w-5 h-5 text-blue-600 shrink-0" />
+              <span>Register Outgoing Webhook</span>
+            </h3>
+          }
+        >
+          <form onSubmit={handleCreateWebhook} className="space-y-4 text-xs">
+            <div className="space-y-1">
+              <Label className="font-semibold text-slate-700">Target Webhook Endpoint URL</Label>
+              <Input
+                type="url"
+                placeholder="https://hooks.zapier.com/hooks/catch/..."
+                value={webhookUrl}
+                onChange={(e) => setWebhookUrl(e.target.value)}
+                className="h-9 text-xs font-mono"
+              />
             </div>
 
-            <form onSubmit={handleCreateWebhook} className="space-y-4 text-xs">
-              <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Target Webhook Endpoint URL</Label>
-                <Input
-                  type="url"
-                  placeholder="https://hooks.zapier.com/hooks/catch/..."
-                  value={webhookUrl}
-                  onChange={(e) => setWebhookUrl(e.target.value)}
-                  className="h-9 text-xs font-mono"
-                />
-              </div>
+            <div className="space-y-1">
+              <Label className="font-semibold text-slate-700">Subscribed Events (Comma-separated)</Label>
+              <Input
+                type="text"
+                placeholder="lead.created, deal.won, contact.updated"
+                value={webhookEvents}
+                onChange={(e) => setWebhookEvents(e.target.value)}
+                className="h-9 text-xs font-mono"
+              />
+            </div>
 
-              <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Subscribed Events (Comma-separated)</Label>
-                <Input
-                  type="text"
-                  placeholder="lead.created, deal.won, contact.updated"
-                  value={webhookEvents}
-                  onChange={(e) => setWebhookEvents(e.target.value)}
-                  className="h-9 text-xs font-mono"
-                />
-              </div>
-
-              <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-2">
-                <Button type="button" variant="outline" size="sm" onClick={() => setIsWebhookModalOpen(false)} className="w-full sm:w-auto cursor-pointer">
-                  Cancel
-                </Button>
-                <Button type="submit" size="sm" disabled={createWebhookMutation.isPending} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold w-full sm:w-auto cursor-pointer">
-                  {createWebhookMutation.isPending ? 'Registering...' : 'Register Webhook'}
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setIsWebhookModalOpen(false)} className="w-full sm:w-auto cursor-pointer">
+                Cancel
+              </Button>
+              <Button type="submit" size="sm" disabled={createWebhookMutation.isPending} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold w-full sm:w-auto cursor-pointer">
+                {createWebhookMutation.isPending ? 'Registering...' : 'Register Webhook'}
+              </Button>
+            </div>
+          </form>
+        </ModalShell>
       )}
 
       {/* CREATE SLA MODAL */}
       {isSlaModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
-          <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl p-4 sm:p-6 space-y-4 max-h-[calc(100vh-2rem)] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-slate-900 text-sm sm:text-base flex items-center gap-2">
-                <Clock className="w-5 h-5 text-blue-600 shrink-0" />
-                <span>Create SLA Policy</span>
-              </h3>
-              <button type="button" onClick={() => setIsSlaModalOpen(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer p-1">
-                <X className="w-5 h-5" />
-              </button>
+        <ModalShell
+          isOpen={isSlaModalOpen}
+          onClose={() => setIsSlaModalOpen(false)}
+          size="md"
+          title={
+            <h3 className="font-bold text-slate-900 text-sm sm:text-base flex items-center gap-2">
+              <Clock className="w-5 h-5 text-blue-600 shrink-0" />
+              <span>Create SLA Policy</span>
+            </h3>
+          }
+        >
+          <form onSubmit={handleCreateSla} className="space-y-4 text-xs">
+            <div className="space-y-1">
+              <Label className="font-semibold text-slate-700">Policy Name</Label>
+              <Input
+                type="text"
+                placeholder="e.g. High Priority Response SLA"
+                value={slaName}
+                onChange={(e) => setSlaName(e.target.value)}
+                className="h-9 text-xs"
+              />
             </div>
 
-            <form onSubmit={handleCreateSla} className="space-y-4 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Policy Name</Label>
+                <Label className="font-semibold text-slate-700">Response Target (Hours)</Label>
                 <Input
-                  type="text"
-                  placeholder="e.g. High Priority Response SLA"
-                  value={slaName}
-                  onChange={(e) => setSlaName(e.target.value)}
+                  type="number"
+                  value={slaResponseTime}
+                  onChange={(e) => setSlaResponseTime(e.target.value)}
                   className="h-9 text-xs"
                 />
               </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">Response Target (Hours)</Label>
-                  <Input
-                    type="number"
-                    value={slaResponseTime}
-                    onChange={(e) => setSlaResponseTime(e.target.value)}
-                    className="h-9 text-xs"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="font-semibold text-slate-700">Resolution Target (Hours)</Label>
-                  <Input
-                    type="number"
-                    value={slaResolutionTime}
-                    onChange={(e) => setSlaResolutionTime(e.target.value)}
-                    className="h-9 text-xs"
-                  />
-                </div>
+              <div className="space-y-1">
+                <Label className="font-semibold text-slate-700">Resolution Target (Hours)</Label>
+                <Input
+                  type="number"
+                  value={slaResolutionTime}
+                  onChange={(e) => setSlaResolutionTime(e.target.value)}
+                  className="h-9 text-xs"
+                />
               </div>
+            </div>
 
-              <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-2">
-                <Button type="button" variant="outline" size="sm" onClick={() => setIsSlaModalOpen(false)} className="w-full sm:w-auto cursor-pointer">
-                  Cancel
-                </Button>
-                <Button type="submit" size="sm" disabled={createSlaMutation.isPending} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold w-full sm:w-auto cursor-pointer">
-                  {createSlaMutation.isPending ? 'Creating...' : 'Create SLA Policy'}
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setIsSlaModalOpen(false)} className="w-full sm:w-auto cursor-pointer">
+                Cancel
+              </Button>
+              <Button type="submit" size="sm" disabled={createSlaMutation.isPending} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold w-full sm:w-auto cursor-pointer">
+                {createSlaMutation.isPending ? 'Creating...' : 'Create SLA Policy'}
+              </Button>
+            </div>
+          </form>
+        </ModalShell>
       )}
 
       {/* CONFIRM DELETE ITEM MODAL */}

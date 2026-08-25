@@ -27,6 +27,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui';
+import { ModalShell } from '@/components/common/modal-shell';
 import { 
   useDashboardKpisQuery,
   useSalesFunnelQuery,
@@ -452,54 +453,52 @@ export default function DashboardPage() {
 
       {/* CUSTOM WIDGETS LAYOUT MODAL */}
       {isWidgetModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <SlidersHorizontal className="w-4 h-4 text-indigo-600" />
-                Customize Dashboard Widgets
-              </h3>
-              <button onClick={() => setIsWidgetModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+        <ModalShell
+          isOpen={isWidgetModalOpen}
+          onClose={() => setIsWidgetModalOpen(false)}
+          size="md"
+          title={
+            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <SlidersHorizontal className="w-4 h-4 text-indigo-600" />
+              Customize Dashboard Widgets
+            </h3>
+          }
+        >
+          <p className="text-xs text-slate-500">
+            Enable or disable widgets layout fetched live from `/api/v1/dashboard/custom-widgets`:
+          </p>
 
-            <p className="text-xs text-slate-500">
-              Enable or disable widgets layout fetched live from `/api/v1/dashboard/custom-widgets`:
-            </p>
-
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {widgets.map((w) => (
-                <div key={w.id} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl">
-                  <span className="text-xs font-bold text-slate-800">{w.title}</span>
-                  <input
-                    type="checkbox"
-                    defaultChecked={w.enabled}
-                    className="w-4 h-4 accent-indigo-600 rounded cursor-pointer"
-                  />
-                </div>
-              ))}
-            </div>
-
-            <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
-              <button 
-                type="button" 
-                onClick={() => setIsWidgetModalOpen(false)} 
-                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveWidgetPreferences}
-                disabled={saveWidgetsMutation.isPending}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer shadow-xs disabled:opacity-50"
-              >
-                Save Layout
-              </button>
-            </div>
+          <div className="space-y-2 max-h-60 overflow-y-auto mt-4">
+            {widgets.map((w) => (
+              <div key={w.id} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                <span className="text-xs font-bold text-slate-800">{w.title}</span>
+                <input
+                  type="checkbox"
+                  defaultChecked={w.enabled}
+                  className="w-4 h-4 accent-indigo-600 rounded cursor-pointer"
+                />
+              </div>
+            ))}
           </div>
-        </div>
+
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3 pt-3 border-t border-slate-100 mt-4">
+            <button
+              type="button"
+              onClick={() => setIsWidgetModalOpen(false)}
+              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveWidgetPreferences}
+              disabled={saveWidgetsMutation.isPending}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer shadow-xs disabled:opacity-50"
+            >
+              Save Layout
+            </button>
+          </div>
+        </ModalShell>
       )}
     </div>
   );
