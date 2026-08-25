@@ -16,9 +16,11 @@ export interface QuoteItem {
   total_amount: number;
   status: string;
   created_at: string;
+  deal_id?: string;
 }
 
 export interface QuoteCreatePayload {
+  deal_id: string;
   quote_number?: string;
   items?: QuoteLineItem[];
   total_amount: number;

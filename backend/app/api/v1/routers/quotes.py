@@ -3,9 +3,10 @@ from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.db.session import get_db
-from app.models import Quote
-from app.api.v1.deps import get_valid_org_id, require_permission
+from app.models import Quote, User
+from app.api.v1.deps import get_current_user, require_permission
 from app.schemas.crm_schemas import QuoteResponse, QuoteBase, MessageResponse, BulkDeleteRequest, BulkActionResponse, InvoiceResponse
+from app.services.quote_service import quote_service
 
 router = APIRouter()
 
@@ -15,54 +16,26 @@ async def list_quotes(
     limit: int = 20,
     status_filter: Optional[str] = Query(None, alias="status"),
     search: Optional[str] = Query(None),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    try:
-        stmt = select(Quote)
-        if status_filter and status_filter.strip():
-            stmt = stmt.where(Quote.status == status_filter.strip())
-        if search and search.strip():
-            stmt = stmt.where(Quote.quote_number.ilike(f"%{search.strip()}%"))
-        stmt = stmt.order_by(Quote.created_at.desc()).offset((page - 1) * limit).limit(limit)
-        res = await db.execute(stmt)
-        quotes = res.scalars().all()
-        return [
-            {
-                "id": q.id,
-                "quote_number": q.quote_number or f"QUO-{q.id[:6]}",
-                "items": [],
-                "total_amount": q.total_amount or 0.0,
-                "status": q.status or "Draft",
-                "created_at": str(q.created_at)
-            } for q in quotes
-        ]
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+    organization_id = await quote_service.resolve_organization_id(db, current_user)
+    return await quote_service.list_quotes(
+        db,
+        organization_id=organization_id,
+        page=page,
+        limit=limit,
+        status=status_filter,
+        search=search,
+    )
 
 @router.post("", response_model=QuoteResponse, status_code=status.HTTP_201_CREATED, summary="Create new sales quote / proposal", dependencies=[Depends(require_permission("quotes:create"))])
-async def create_quote(payload: QuoteBase, db: AsyncSession = Depends(get_db)):
-    try:
-        org_id = await get_valid_org_id(db)
-        q = Quote(
-            organization_id=org_id,
-            quote_number=payload.quote_number or f"QUO-{int(datetime.now().timestamp() if 'datetime' in globals() else 1001)}",
-            total_amount=payload.total_amount or 0.0,
-            status=payload.status or "Draft"
-        )
-        db.add(q)
-        await db.commit()
-        await db.refresh(q)
-        return {
-            "id": q.id,
-            "quote_number": q.quote_number,
-            "items": payload.items or [],
-            "total_amount": q.total_amount,
-            "status": q.status,
-            "created_at": str(q.created_at)
-        }
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to create quote: {str(e)}")
+async def create_quote(
+    payload: QuoteBase,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await quote_service.create_quote(db, payload=payload, current_user=current_user)
 
 @router.get("/export/csv", summary="Export quotes list as CSV", dependencies=[Depends(require_permission("quotes:read"))])
 async def export_quotes_csv(db: AsyncSession = Depends(get_db)):
@@ -86,61 +59,36 @@ async def bulk_delete_quotes(payload: BulkDeleteRequest, db: AsyncSession = Depe
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-@router.get("/{quote_id}", summary="Get quote details by ID", dependencies=[Depends(require_permission("quotes:read"))])
-async def get_quote(quote_id: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(Quote).where(Quote.id == quote_id))
-    q = res.scalars().first()
-    if not q:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Quote '{quote_id}' not found")
-    return {
-        "id": q.id,
-        "quote_number": q.quote_number or f"QUO-{q.id[:6]}",
-        "items": [
-            {"name": "Enterprise CRM License", "quantity": 10, "unit_price": 1200.0, "total": 12000.0},
-            {"name": "Dedicated Onboarding", "quantity": 1, "unit_price": 3000.0, "total": 3000.0}
-        ],
-        "total_amount": q.total_amount or 15000.0,
-        "status": q.status or "Draft",
-        "created_at": str(q.created_at)
-    }
+@router.get("/{quote_id}", response_model=QuoteResponse, summary="Get quote details by ID", dependencies=[Depends(require_permission("quotes:read"))])
+async def get_quote(
+    quote_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await quote_service.resolve_organization_id(db, current_user)
+    return await quote_service.get_quote(db, quote_id=quote_id, organization_id=organization_id)
 
-@router.put("/{quote_id}", summary="Update quote details", dependencies=[Depends(require_permission("quotes:update"))])
-async def update_quote(quote_id: str, payload: QuoteBase, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(Quote).where(Quote.id == quote_id))
-    q = res.scalars().first()
-    if not q:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Quote '{quote_id}' not found")
-    try:
-        if payload.quote_number: q.quote_number = payload.quote_number
-        if payload.total_amount is not None: q.total_amount = payload.total_amount
-        if payload.status: q.status = payload.status
-        await db.commit()
-        await db.refresh(q)
-        return {
-            "id": q.id,
-            "quote_number": q.quote_number,
-            "items": payload.items or [],
-            "total_amount": q.total_amount,
-            "status": q.status,
-            "created_at": str(q.created_at)
-        }
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+@router.put("/{quote_id}", response_model=QuoteResponse, summary="Update quote details", dependencies=[Depends(require_permission("quotes:update"))])
+async def update_quote(
+    quote_id: str,
+    payload: QuoteBase,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await quote_service.resolve_organization_id(db, current_user)
+    return await quote_service.update_quote(
+        db, quote_id=quote_id, payload=payload, organization_id=organization_id
+    )
 
 @router.delete("/{quote_id}", response_model=MessageResponse, summary="Delete quote by ID", dependencies=[Depends(require_permission("quotes:delete"))])
-async def delete_quote(quote_id: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(Quote).where(Quote.id == quote_id))
-    q = res.scalars().first()
-    if not q:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Quote '{quote_id}' not found")
-    try:
-        await db.delete(q)
-        await db.commit()
-        return {"message": f"Quote {quote_id} deleted successfully", "status": "success"}
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+async def delete_quote(
+    quote_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await quote_service.resolve_organization_id(db, current_user)
+    await quote_service.delete_quote(db, quote_id=quote_id, organization_id=organization_id)
+    return {"message": f"Quote {quote_id} deleted successfully", "status": "success"}
 
 @router.post("/{quote_id}/send", response_model=MessageResponse, summary="Send quote proposal email to client", dependencies=[Depends(require_permission("quotes:send"))])
 async def send_quote_email(quote_id: str, recipient_email: str = Query(...), db: AsyncSession = Depends(get_db)):

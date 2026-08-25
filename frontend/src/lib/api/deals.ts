@@ -31,16 +31,10 @@ export interface DealUpdatePayload {
 
 // API Functions
 export async function fetchDealsApi(page = 1, limit = 20, stage?: string, search?: string): Promise<DealItem[]> {
-  try {
-    const query = new URLSearchParams({ page: String(page), limit: String(limit) });
-    if (stage) query.append('stage', stage);
-    if (search) query.append('search', search);
-    const data = await apiClient.get<DealItem[]>(`/deals?${query.toString()}`);
-    if (Array.isArray(data)) return data;
-  } catch (error) {
-    console.error('Failed to fetch deals:', error);
-  }
-  return [];
+  const query = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (stage) query.append('stage', stage);
+  if (search) query.append('search', search);
+  return apiClient.get<DealItem[]>(`/deals?${query.toString()}`);
 }
 
 export async function createDealApi(payload: DealCreatePayload): Promise<DealItem> {

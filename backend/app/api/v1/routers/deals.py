@@ -20,6 +20,7 @@ from app.schemas.crm_schemas import (
 )
 from app.services.deal_service import deal_service
 from app.services.invoice_service import invoice_service
+from app.services.org_service import organization_service
 
 router = APIRouter()
 
@@ -31,8 +32,10 @@ async def list_deals(
     stage: Optional[str] = None,
     search: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    return await deal_service.list_deals(db, page=page, limit=limit, search=search, stage=stage)
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await deal_service.list_deals(db, organization_id=organization_id, page=page, limit=limit, search=search, stage=stage)
 
 
 @router.post(
@@ -187,8 +190,13 @@ async def add_deal_note(
 
 
 @router.get("/{deal_id}/quotes", response_model=List[QuoteResponse], summary="List quotes created for deal", dependencies=[Depends(require_permission("deals:read"))])
-async def get_deal_quotes(deal_id: str, db: AsyncSession = Depends(get_db)):
-    return await deal_service.get_deal_quotes(db, deal_id)
+async def get_deal_quotes(
+    deal_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await deal_service.get_deal_quotes(db, deal_id, organization_id)
 
 
 @router.post("/{deal_id}/predict-win-rate", summary="AI prediction for deal win probability using OpenAI", dependencies=[Depends(require_permission("deals:update"))])

@@ -16,6 +16,7 @@ from app.schemas.crm_schemas import DealCreate, DealUpdate
 from app.services.note_service import note_service
 from app.services.notification_service import notification_service
 from app.services.org_service import organization_service
+from app.repositories.quote_repository import quote_repository
 
 logger = get_logger(__name__)
 
@@ -98,13 +99,14 @@ class DealService:
         self,
         db: AsyncSession,
         *,
-        page: int,
-        limit: int,
+        organization_id: str | None = None,
+        page: int = 1,
+        limit: int = 20,
         search: str | None = None,
         stage: str | None = None,
     ) -> list[dict]:
         deals = await self.repository.list(
-            db, page=page, limit=limit, search=search, stage=stage
+            db, organization_id=organization_id or "", page=page, limit=limit, search=search, stage=stage
         )
         return [deal_to_dict(d) for d in deals]
 
@@ -464,9 +466,24 @@ class DealService:
             current_user=current_user,
         )
 
-    async def get_deal_quotes(self, db: AsyncSession, deal_id: str) -> list:
-        await self.require_deal(db, deal_id)
-        return []
+    async def get_deal_quotes(self, db: AsyncSession, deal_id: str, organization_id: str) -> list[dict]:
+        deal = await self.repository.get_by_id(db, deal_id)
+        if not deal or deal.organization_id != organization_id:
+            raise NotFoundError(message=f"Deal '{deal_id}' not found")
+        quotes = await quote_repository.list_by_deal(
+            db, deal_id=deal_id, organization_id=organization_id
+        )
+        return [
+            {
+                "id": quote.id,
+                "deal_id": quote.deal_id,
+                "quote_number": quote.quote_number,
+                "total_amount": quote.total_amount,
+                "status": quote.status,
+                "created_at": str(quote.created_at) if quote.created_at else None,
+            }
+            for quote in quotes
+        ]
 
     async def predict_deal_win_rate(self, db: AsyncSession, deal_id: str) -> dict:
         d = await self.require_deal(db, deal_id)

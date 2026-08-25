@@ -17,12 +17,13 @@ class DealRepository:
         self,
         db: AsyncSession,
         *,
+        organization_id: str,
         page: int,
         limit: int,
         search: Optional[str] = None,
         stage: Optional[str] = None,
     ) -> list[Deal]:
-        stmt = select(Deal)
+        stmt = select(Deal).where(Deal.organization_id == organization_id)
         if search and search.strip():
             stmt = stmt.where(Deal.title.ilike(f"%{search.strip()}%"))
         if stage:

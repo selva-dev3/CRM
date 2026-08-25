@@ -529,6 +529,7 @@ class QuoteCreate(BaseModel):
 
 class QuoteResponse(BaseModel):
     id: str
+    deal_id: Optional[str] = None
     quote_number: str
     total_amount: float
     status: str

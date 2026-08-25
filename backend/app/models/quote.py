@@ -1,6 +1,5 @@
 from sqlalchemy import String, DateTime, Float, Integer, Text, ForeignKey, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from typing import Optional
 import uuid
 from app.db.base import Base
 
@@ -9,7 +8,7 @@ class Quote(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     organization_id: Mapped[str] = mapped_column(String, ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
-    deal_id: Mapped[Optional[str]] = mapped_column(String, ForeignKey("deals.id", ondelete="SET NULL"), index=True)
+    deal_id: Mapped[str] = mapped_column(String, ForeignKey("deals.id", ondelete="SET NULL"), index=True)
     quote_number: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
     total_amount: Mapped[float] = mapped_column(Float, default=0.0)
     status: Mapped[str] = mapped_column(String(50), default="Draft", index=True)
