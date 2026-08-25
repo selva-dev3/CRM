@@ -16,7 +16,7 @@ export interface QuoteItem {
   total_amount: number;
   status: string;
   created_at: string;
-  deal_id?: string;
+  deal_id?: string | null;
 }
 
 export interface QuoteCreatePayload {
@@ -245,6 +245,7 @@ export function useConvertQuoteToInvoiceMutation(options?: UseMutationOptions<In
   return useMutation<InvoiceConversionResponse, Error, string>({
     mutationFn: convertQuoteToInvoiceApi,
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['quotes'] });
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
     },
     ...options,

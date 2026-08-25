@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.quote import Quote
 from app.repositories.deal_repository import DealRepository
 from app.repositories.quote_repository import QuoteRepository
+from app.schemas.crm_schemas import QuoteResponse
 
 
 def result_with(*, first=None, all_rows=None, rowcount=None):
@@ -138,3 +139,27 @@ async def test_legacy_null_deal_quote_can_be_loaded():
 
     assert loaded is quote
     assert loaded.deal_id is None
+
+
+def test_quote_deal_id_model_contract_is_nullable_set_null_and_indexed():
+    deal_id = Quote.__table__.c.deal_id
+
+    assert deal_id.nullable is True
+    assert {foreign_key.ondelete for foreign_key in deal_id.foreign_keys} == {"SET NULL"}
+    assert any(
+        [column.name for column in index.columns] == ["deal_id"]
+        for index in Quote.__table__.indexes
+    )
+
+
+def test_quote_response_exposes_nullable_deal_id():
+    response = QuoteResponse(
+        id="legacy-quote",
+        deal_id=None,
+        quote_number="LEGACY-1",
+        total_amount=100,
+        status="Draft",
+        created_at="2026-08-01",
+    )
+
+    assert response.deal_id is None
