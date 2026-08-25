@@ -92,7 +92,9 @@ async def test_get_user_raises_not_found_when_missing():
     db = AsyncMock(spec=AsyncSession)
 
     with pytest.raises(NotFoundError):
-        await service.get_user(db, "missing-user")
+        await service.get_user(
+            db, "missing-user", current_user=_make_user(id="admin", email="admin@crm.com")
+        )
 
 
 @pytest.mark.asyncio
@@ -280,7 +282,9 @@ async def test_delete_user_protects_superadmin():
     db = AsyncMock(spec=AsyncSession)
 
     with pytest.raises(APIException) as exc_info:
-        await service.delete_user(db, "user-1")
+        await service.delete_user(
+            db, "user-1", current_user=_make_user(id="admin", email="admin@crm.com")
+        )
     assert exc_info.value.status_code == 403
 
 
@@ -293,7 +297,9 @@ async def test_deactivate_user_protects_superadmin():
     db = AsyncMock(spec=AsyncSession)
 
     with pytest.raises(APIException) as exc_info:
-        await service.deactivate_user(db, "user-1")
+        await service.deactivate_user(
+            db, "user-1", current_user=_make_user(id="admin", email="admin@crm.com")
+        )
     assert exc_info.value.status_code == 403
 
 
@@ -306,7 +312,9 @@ async def test_bulk_delete_skips_superadmin():
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.bulk_delete_users(db, ["u1", "u2"])
+    result = await service.bulk_delete_users(
+        db, ["u1", "u2"], current_user=_make_user(id="admin", email="admin@crm.com")
+    )
 
     assert result["affected_count"] == 1
 

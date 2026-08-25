@@ -1,6 +1,5 @@
 import json
 import os
-from typing import Optional
 
 import httpx
 from fastapi import status
@@ -39,7 +38,7 @@ def deal_to_dict(d: Deal) -> dict:
 class DealService:
     """Business logic for the Deal domain."""
 
-    def __init__(self, repository: Optional[DealRepository] = None) -> None:
+    def __init__(self, repository: DealRepository | None = None) -> None:
         self.repository = repository or DealRepository()
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
@@ -63,8 +62,8 @@ class DealService:
         *,
         page: int,
         limit: int,
-        search: Optional[str] = None,
-        stage: Optional[str] = None,
+        search: str | None = None,
+        stage: str | None = None,
     ) -> list[dict]:
         deals = await self.repository.list(
             db, page=page, limit=limit, search=search, stage=stage
@@ -72,7 +71,7 @@ class DealService:
         return [deal_to_dict(d) for d in deals]
 
     async def create_deal(
-        self, db: AsyncSession, payload: DealCreate, current_user: Optional[User]
+        self, db: AsyncSession, payload: DealCreate, current_user: User | None
     ) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
 
@@ -261,7 +260,7 @@ class DealService:
         return {"message": f"Deal {deal_id} moved to {stage}", "status": "success"}
 
     async def mark_deal_won(
-        self, db: AsyncSession, deal_id: str, final_amount: Optional[float]
+        self, db: AsyncSession, deal_id: str, final_amount: float | None
     ) -> dict:
         d = await self.require_deal(db, deal_id)
         d.stage = "Closed Won"
@@ -355,8 +354,8 @@ class DealService:
         deal_id: str,
         product_id: str,
         quantity: int,
-        unit_price: Optional[float],
-        custom_name: Optional[str],
+        unit_price: float | None,
+        custom_name: str | None,
     ) -> dict:
         p = await self.repository.get_product(db, product_id)
 
@@ -411,7 +410,7 @@ class DealService:
         return await note_service.get_notes_by_entity(db, entity_type="deal", entity_id=deal_id)
 
     async def add_deal_note(
-        self, db: AsyncSession, *, deal_id: str, content: Optional[str], current_user: User
+        self, db: AsyncSession, *, deal_id: str, content: str | None, current_user: User
     ) -> dict:
         return await note_service.add_for_entity(
             db,

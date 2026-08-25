@@ -1,4 +1,3 @@
-from app.core.config import settings
 
 class AIService:
     @staticmethod

@@ -1,6 +1,8 @@
-from app.core.config import settings
+import html
+
 import requests
 
+from app.core.config import settings
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -71,7 +73,9 @@ def send_reset_password_email(
 ) -> bool:
     """Sends password reset HTML email via Brevo API."""
 
-    reset_url = f"{settings.FRONTEND_URL}/reset-password?token={token}"
+    reset_url = html.escape(
+        f"{settings.FRONTEND_URL}/reset-password?token={token}", quote=True
+    )
     subject = f"{settings.PROJECT_NAME} - Password Reset Request"
 
     html_content = f"""

@@ -1,5 +1,4 @@
-from datetime import date, datetime, timezone
-from typing import Optional
+from datetime import UTC, date, datetime
 
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,21 +11,21 @@ from app.services.notification_service import notification_service
 from app.services.org_service import organization_service
 
 
-def parse_datetime(val: Optional[str]) -> Optional[datetime]:
+def parse_datetime(val: str | None) -> datetime | None:
     if not val or not str(val).strip():
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
     val_str = str(val).strip()
     try:
         return datetime.fromisoformat(val_str.replace("Z", "+00:00"))
     except Exception:
         try:
             d = date.fromisoformat(val_str)
-            return datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
+            return datetime(d.year, d.month, d.day, tzinfo=UTC)
         except Exception:
-            return datetime.now(timezone.utc)
+            return datetime.now(UTC)
 
 
-def meeting_to_dict(meeting: Meeting, attendees: Optional[list[str]] = None) -> dict:
+def meeting_to_dict(meeting: Meeting, attendees: list[str] | None = None) -> dict:
     return {
         "id": meeting.id,
         "title": meeting.title,
@@ -43,7 +42,7 @@ def meeting_to_dict(meeting: Meeting, attendees: Optional[list[str]] = None) -> 
 class MeetingService:
     """Business logic for the Meeting domain."""
 
-    def __init__(self, repository: Optional[MeetingRepository] = None) -> None:
+    def __init__(self, repository: MeetingRepository | None = None) -> None:
         self.repository = repository or MeetingRepository()
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
@@ -61,7 +60,7 @@ class MeetingService:
         *,
         page: int,
         limit: int,
-        search: Optional[str] = None,
+        search: str | None = None,
     ) -> list[dict]:
         meetings = await self.repository.list(db, page=page, limit=limit, search=search)
         return [meeting_to_dict(m) for m in meetings]
@@ -74,7 +73,7 @@ class MeetingService:
         return meeting_to_dict(meeting, attendees)
 
     async def schedule_meeting(
-        self, db: AsyncSession, payload: MeetingCreate, current_user: Optional[User] = None
+        self, db: AsyncSession, payload: MeetingCreate, current_user: User | None = None
     ) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
         data = {

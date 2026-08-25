@@ -1,13 +1,13 @@
 import json
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 from fastapi import status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import APIException, NotFoundError
+from app.core.errors import APIException
 from app.core.logging import get_logger
 from app.models import Integration, User
 from app.repositories.integration_repository import IntegrationRepository
@@ -60,7 +60,7 @@ _SLACK_EVENT_TITLES = {
 class IntegrationService:
     """Business logic for the Integration domain."""
 
-    def __init__(self, repository: Optional[IntegrationRepository] = None) -> None:
+    def __init__(self, repository: IntegrationRepository | None = None) -> None:
         self.repository = repository or IntegrationRepository()
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
@@ -88,7 +88,7 @@ class IntegrationService:
             return []
 
     # --- Zapier ---
-    async def get_zapier_config(self, db: AsyncSession, current_user: Optional[User]) -> dict:
+    async def get_zapier_config(self, db: AsyncSession, current_user: User | None) -> dict:
         try:
             org_id = await self.repository.resolve_org_id(db, current_user)
             integration = await db.scalar(
@@ -126,7 +126,7 @@ class IntegrationService:
                 return {}
         return {}
 
-    async def connect_zapier(self, db: AsyncSession, payload: ZapierConnectPayload, current_user: Optional[User]) -> dict:
+    async def connect_zapier(self, db: AsyncSession, payload: ZapierConnectPayload, current_user: User | None) -> dict:
         org_id = await self.repository.resolve_org_id(db, current_user)
         if not payload.webhook_url:
             raise APIException(status_code=400, message="Webhook URL is required.")
@@ -168,7 +168,7 @@ class IntegrationService:
             await db.rollback()
             raise APIException(status_code=500, message=str(e)) from e
 
-    async def test_zapier_connection(self, db: AsyncSession, current_user: Optional[User]) -> dict:
+    async def test_zapier_connection(self, db: AsyncSession, current_user: User | None) -> dict:
         org_id = await self.repository.resolve_org_id(db, current_user)
         integration = await self.repository.get_connected_by_provider(db, org_id, "zapier")
         if integration is None:
@@ -189,7 +189,7 @@ class IntegrationService:
             await self.repository.commit(db)
             raise APIException(status_code=500, message=f"Failed to send Zapier test payload: {str(e)}") from e
 
-    async def trigger_zapier_event(self, db: AsyncSession, payload: Any, current_user: Optional[User]) -> dict:
+    async def trigger_zapier_event(self, db: AsyncSession, payload: Any, current_user: User | None) -> dict:
         org_id = await self.repository.resolve_org_id(db, current_user)
         integration = await self.repository.get_connected_by_provider(db, org_id, "zapier")
         if integration is None:
@@ -239,7 +239,7 @@ class IntegrationService:
         return {"message": "HubSpot schema field mapping rules updated", "status": "success"}
 
     # --- Slack ---
-    async def get_slack_config(self, db: AsyncSession, current_user: Optional[User]) -> dict:
+    async def get_slack_config(self, db: AsyncSession, current_user: User | None) -> dict:
         org_id = await self.repository.resolve_org_id(db, current_user)
         integration = await self.repository.get_by_provider(db, org_id, "slack")
         if integration is None:
@@ -258,7 +258,7 @@ class IntegrationService:
             "last_synced": integration.last_synced.isoformat() if integration.last_synced else None,
         }
 
-    async def connect_slack(self, db: AsyncSession, payload: SlackConnectRequest, current_user: Optional[User]) -> dict:
+    async def connect_slack(self, db: AsyncSession, payload: SlackConnectRequest, current_user: User | None) -> dict:
         org_id = await self.repository.resolve_org_id(db, current_user)
         if not payload.webhook_url:
             raise APIException(status_code=400, message="Slack webhook URL is required.")
@@ -315,7 +315,7 @@ class IntegrationService:
             await db.rollback()
             raise APIException(status_code=500, message=f"Failed to connect Slack: {str(e)}") from e
 
-    async def update_slack_events(self, db: AsyncSession, payload: SlackEventsUpdateRequest, current_user: Optional[User]) -> dict:
+    async def update_slack_events(self, db: AsyncSession, payload: SlackEventsUpdateRequest, current_user: User | None) -> dict:
         org_id = await self.repository.resolve_org_id(db, current_user)
         integration = await self.repository.get_by_provider(db, org_id, "slack")
         if integration is None:
@@ -327,7 +327,7 @@ class IntegrationService:
         await db.refresh(integration)
         return {"message": "Slack enabled events updated.", "status": "success", "events": valid_events}
 
-    async def test_slack_connection(self, db: AsyncSession, current_user: Optional[User]) -> dict:
+    async def test_slack_connection(self, db: AsyncSession, current_user: User | None) -> dict:
         org_id = await self.repository.resolve_org_id(db, current_user)
         integration = await self.repository.get_connected_by_provider(db, org_id, "slack")
         if integration is None:
@@ -398,7 +398,7 @@ class IntegrationService:
         except Exception:
             return
 
-    async def trigger_slack_event(self, db: AsyncSession, payload: SlackEventPayload, current_user: Optional[User]) -> dict:
+    async def trigger_slack_event(self, db: AsyncSession, payload: SlackEventPayload, current_user: User | None) -> dict:
         org_id = await self.repository.resolve_org_id(db, current_user)
         integration = await self.repository.get_connected_by_provider(db, org_id, "slack")
         if integration is None:
@@ -456,7 +456,7 @@ class IntegrationService:
         except Exception as e:
             logger.warning("Slack auto-notification for event '%s' (org %s) failed: %s", event_name, org_id, e)
 
-    async def disconnect_slack(self, db: AsyncSession, current_user: Optional[User]) -> dict:
+    async def disconnect_slack(self, db: AsyncSession, current_user: User | None) -> dict:
         org_id = await self.repository.resolve_org_id(db, current_user)
         integration = await self.repository.get_by_provider(db, org_id, "slack")
         if integration is None:
@@ -496,7 +496,7 @@ class IntegrationService:
             await db.rollback()
             raise APIException(status_code=500, message=f"Failed to disconnect Slack: {str(e)}") from e
 
-    async def send_slack_notification(self, db: AsyncSession, payload: SlackNotifyPayload, current_user: Optional[User]) -> dict:
+    async def send_slack_notification(self, db: AsyncSession, payload: SlackNotifyPayload, current_user: User | None) -> dict:
         org_id = await self.repository.resolve_org_id(db, current_user)
         integration = await self.repository.get_connected_by_provider(db, org_id, "slack")
         if integration is None:
@@ -524,7 +524,7 @@ class IntegrationService:
             raise APIException(status_code=500, message=f"Failed to send Slack notification: {str(e)}") from e
 
     # --- Stripe / OAuth / misc ---
-    async def handle_stripe_webhook(self, event_type: Optional[str], payload_event_type: Optional[str]) -> dict:
+    async def handle_stripe_webhook(self, event_type: str | None, payload_event_type: str | None) -> dict:
         ev = payload_event_type or event_type or "payment_intent.succeeded"
         return {"message": f"Stripe billing webhook event '{ev}' processed", "status": "success"}
 
@@ -541,11 +541,11 @@ class IntegrationService:
             {"id": "sync-3", "integration_name": "HubSpot Migration", "status": "COMPLETED", "records_synced": 150, "timestamp": "2026-08-07T08:45:00Z"},
         ]
 
-    async def retry_failed_sync(self, job_id: Optional[str], payload_job_id: Optional[str]) -> dict:
+    async def retry_failed_sync(self, job_id: str | None, payload_job_id: str | None) -> dict:
         jid = payload_job_id or job_id or "job-1"
         return {"message": f"Retry job queued for sync execution '{jid}'", "status": "success"}
 
-    async def save_custom_provider_key(self, provider_name: Optional[str], payload_provider_name: Optional[str]) -> dict:
+    async def save_custom_provider_key(self, provider_name: str | None, payload_provider_name: str | None) -> dict:
         pname = payload_provider_name or provider_name or "Custom Integration"
         return {"message": f"Secret API credentials configured for provider '{pname}'", "status": "success"}
 
@@ -559,7 +559,7 @@ class IntegrationService:
             logger.warning("Unable to load integration status for '%s'", name)
         return {"name": name.capitalize(), "is_connected": False, "last_synced": None}
 
-    async def connect_integration(self, db: AsyncSession, name: str, current_user: Optional[User]) -> dict:
+    async def connect_integration(self, db: AsyncSession, name: str, current_user: User | None) -> dict:
         try:
             i = await self.repository.get_by_name_like(db, name)
             org_id = await self.repository.resolve_org_id(db, current_user)

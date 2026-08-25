@@ -1,5 +1,4 @@
-from datetime import date, datetime, timezone
-from typing import Optional
+from datetime import UTC, date, datetime
 
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,18 +9,18 @@ from app.repositories.calendar_repository import CalendarRepository
 from app.schemas.crm_schemas import CalendarEventCreatePayload
 
 
-def parse_datetime(val: Optional[str]) -> datetime:
+def parse_datetime(val: str | None) -> datetime:
     if not val or not str(val).strip():
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
     val_str = str(val).strip()
     try:
         return datetime.fromisoformat(val_str.replace("Z", "+00:00"))
     except Exception:
         try:
             d = date.fromisoformat(val_str)
-            return datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
+            return datetime(d.year, d.month, d.day, tzinfo=UTC)
         except Exception:
-            return datetime.now(timezone.utc)
+            return datetime.now(UTC)
 
 
 def event_to_dict(event: CalendarEventModel) -> dict:
@@ -38,7 +37,7 @@ def event_to_dict(event: CalendarEventModel) -> dict:
 class CalendarService:
     """Business logic for the CalendarEventModel domain."""
 
-    def __init__(self, repository: Optional[CalendarRepository] = None) -> None:
+    def __init__(self, repository: CalendarRepository | None = None) -> None:
         self.repository = repository or CalendarRepository()
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
@@ -54,7 +53,7 @@ class CalendarService:
         self,
         db: AsyncSession,
         *,
-        search: Optional[str] = None,
+        search: str | None = None,
     ) -> list[dict]:
         events = await self.repository.list_events(db, search=search)
         return [event_to_dict(e) for e in events]
@@ -118,7 +117,7 @@ class CalendarService:
         await self._commit(db, "Failed to delete calendar event")
         return {"message": f"Event {event_id} deleted successfully", "status": "success"}
 
-    async def get_availability(self, user_id: Optional[str], date_: Optional[str]) -> dict:
+    async def get_availability(self, user_id: str | None, date_: str | None) -> dict:
         return {
             "user_id": user_id or "default-user",
             "date": date_ or str(datetime.now().date()),

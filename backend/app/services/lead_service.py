@@ -1,6 +1,6 @@
+import asyncio
 import io
 from datetime import datetime
-from typing import Optional
 
 from fastapi import UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,7 +50,7 @@ def lead_to_dict(lead: Lead) -> dict:
 
 
 class LeadService:
-    def __init__(self, repository: Optional[LeadRepository] = None) -> None:
+    def __init__(self, repository: LeadRepository | None = None) -> None:
         self.repository = repository or LeadRepository()
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
@@ -66,8 +66,8 @@ class LeadService:
         *,
         page: int,
         limit: int,
-        search: Optional[str] = None,
-        lead_status: Optional[str] = None,
+        search: str | None = None,
+        lead_status: str | None = None,
     ) -> list[dict]:
         leads = await self.repository.list_leads(
             db, page=page, limit=limit, search=search, status=lead_status
@@ -81,8 +81,8 @@ class LeadService:
         return lead_to_dict(lead)
 
     async def _resolve_organization_id(
-        self, db: AsyncSession, org_id: Optional[str], current_user: Optional[User] = None
-    ) -> Optional[str]:
+        self, db: AsyncSession, org_id: str | None, current_user: User | None = None
+    ) -> str | None:
         if org_id and await self.repository.get_organization(db, org_id):
             user_org = current_user.organization_id if current_user else None
             if user_org and user_org != org_id:
@@ -98,14 +98,14 @@ class LeadService:
         first = await self.repository.get_first_organization(db)
         return first.id if first else None
 
-    async def _resolve_assigned_to(self, db: AsyncSession, assigned_to: Optional[str]) -> Optional[str]:
+    async def _resolve_assigned_to(self, db: AsyncSession, assigned_to: str | None) -> str | None:
         if not assigned_to:
             return None
         user = await self.repository.get_user(db, assigned_to)
         return assigned_to if user else None
 
     async def create_lead(
-        self, db: AsyncSession, payload: LeadCreate, current_user: Optional[User] = None
+        self, db: AsyncSession, payload: LeadCreate, current_user: User | None = None
     ) -> dict:
         org_id = await self._resolve_organization_id(db, payload.organization_id, current_user)
         assigned_to = await self._resolve_assigned_to(db, payload.assigned_to)
@@ -596,7 +596,7 @@ class LeadService:
         if not attachment:
             raise NotFoundError(message="Document attachment record not found")
 
-        file_bytes: Optional[bytes] = None
+        file_bytes: bytes | None = None
         possible_keys = [f"leads/{lead_id}/{attachment.filename}", attachment.filename]
         if attachment.file_url:
             clean_url = attachment.file_url.split("?")[0]
@@ -632,8 +632,13 @@ class LeadService:
         file_size = len(contents)
         object_name = f"leads/{lead_id}/{file.filename}"
 
-        s3_key = s3_service.upload_file(io.BytesIO(contents), object_name=object_name, content_type=file.content_type)
-        presigned_url = s3_service.generate_presigned_url(s3_key)
+        s3_key = await asyncio.to_thread(
+            s3_service.upload_file,
+            io.BytesIO(contents),
+            object_name=object_name,
+            content_type=file.content_type,
+        )
+        presigned_url = await asyncio.to_thread(s3_service.generate_presigned_url, s3_key)
 
         attachment = await self.repository.create_attachment(
             db,

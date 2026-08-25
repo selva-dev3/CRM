@@ -1,6 +1,6 @@
-import json
+import asyncio
 import uuid
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import status
 from fastapi.concurrency import run_in_threadpool
@@ -70,7 +70,7 @@ def _stripe_to_dict(obj: Any) -> dict:
         return {}
     if isinstance(obj, dict):
         return obj
-    if hasattr(obj, "to_dict") and callable(getattr(obj, "to_dict")):
+    if hasattr(obj, "to_dict") and callable(obj.to_dict):
         try:
             res = obj.to_dict()
             if isinstance(res, dict):
@@ -123,7 +123,7 @@ def org_to_dict(org: Organization, members_count: int = 1) -> dict:
 class OrganizationDomainService:
     """Business logic for the Organization domain (CRUD, subscription, branding)."""
 
-    def __init__(self, repository: Optional[OrganizationRepository] = None) -> None:
+    def __init__(self, repository: OrganizationRepository | None = None) -> None:
         self.repository = repository or OrganizationRepository()
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
@@ -136,7 +136,7 @@ class OrganizationDomainService:
             ) from e
 
     async def get_or_create_default_org(
-        self, db: AsyncSession, current_user: Optional[User] = None
+        self, db: AsyncSession, current_user: User | None = None
     ) -> Organization:
         if current_user and getattr(current_user, "organization_id", None):
             user_org = await self.repository.get_by_id(db, current_user.organization_id)
@@ -173,7 +173,7 @@ class OrganizationDomainService:
         return sub
 
     def _plan_to_info(
-        self, db_plan: Optional[SubscriptionPlan], org: Optional[Organization] = None
+        self, db_plan: SubscriptionPlan | None, org: Organization | None = None
     ) -> dict:
         if db_plan:
             return {
@@ -286,7 +286,7 @@ class OrganizationDomainService:
                 message=f"Failed to create organization: {str(e)}",
             ) from e
 
-    async def get_organization(self, db: AsyncSession, current_user: Optional[User]) -> dict:
+    async def get_organization(self, db: AsyncSession, current_user: User | None) -> dict:
         org = await self.get_or_create_default_org(db, current_user)
         members_count = await self.repository.count_members(db, org.id)
         return org_to_dict(org, members_count=members_count)
@@ -304,7 +304,7 @@ class OrganizationDomainService:
         return result
 
     async def list_members(
-        self, db: AsyncSession, current_user: Optional[User]
+        self, db: AsyncSession, current_user: User | None
     ) -> list[dict]:
         org = await self.get_or_create_default_org(db, current_user)
         users = await self.repository.list_members(db, org.id)
@@ -343,7 +343,7 @@ class OrganizationDomainService:
         return {"message": f"User {user_id} removed from organization", "status": "success"}
 
     async def get_subscription(
-        self, db: AsyncSession, current_user: Optional[User]
+        self, db: AsyncSession, current_user: User | None
     ) -> dict:
         org = await self.get_or_create_default_org(db, current_user)
         subscription = await self.get_or_create_subscription(db, org)
@@ -418,11 +418,11 @@ class OrganizationDomainService:
         self,
         db: AsyncSession,
         plan_slug: str,
-        org_id: Optional[str] = None,
-        current_user: Optional[User] = None,
+        org_id: str | None = None,
+        current_user: User | None = None,
     ) -> dict:
         # Resolve target organization
-        org: Optional[Organization] = None
+        org: Organization | None = None
         if org_id:
             org = await self.repository.get_by_id(db, org_id)
             if not org:
@@ -538,8 +538,8 @@ class OrganizationDomainService:
         self,
         db: AsyncSession,
         session_id: str,
-        org_id: Optional[str] = None,
-        current_user: Optional[User] = None,
+        org_id: str | None = None,
+        current_user: User | None = None,
     ) -> dict:
         if not session_id or not session_id.strip():
             raise APIException(
@@ -548,7 +548,7 @@ class OrganizationDomainService:
             )
 
         # Resolve organization and verify user access
-        org: Optional[Organization] = None
+        org: Organization | None = None
         if org_id:
             org = await self.repository.get_by_id(db, org_id)
             if not org:
@@ -621,9 +621,7 @@ class OrganizationDomainService:
         # Check DB synchronization state
         subscription = await self.repository.get_subscription(db, org.id)
         db_synced = False
-        if subscription and getattr(subscription, "checkout_session_id", None) == session_id:
-            db_synced = True
-        elif org.plan and plan_slug and org.plan.lower() == plan_slug.lower():
+        if subscription and getattr(subscription, "checkout_session_id", None) == session_id or org.plan and plan_slug and org.plan.lower() == plan_slug.lower():
             db_synced = True
 
         clean_slug = plan_slug.strip().lower()
@@ -663,9 +661,9 @@ class OrganizationDomainService:
         db: AsyncSession,
         organization_id: str,
         plan_slug: str,
-        stripe_session_id: Optional[str] = None,
-        stripe_customer_id: Optional[str] = None,
-        stripe_subscription_id: Optional[str] = None,
+        stripe_session_id: str | None = None,
+        stripe_customer_id: str | None = None,
+        stripe_subscription_id: str | None = None,
     ) -> dict:
         org = await self.repository.get_by_id(db, organization_id)
         if not org:
@@ -721,7 +719,7 @@ class OrganizationDomainService:
         return {"message": f"Organization upgraded to {org.plan} successfully", "status": "success"}
 
     async def handle_stripe_subscription_webhook(
-        self, db: AsyncSession, payload_bytes: bytes, sig_header: Optional[str]
+        self, db: AsyncSession, payload_bytes: bytes, sig_header: str | None
     ) -> dict:
         if not settings.STRIPE_WEBHOOK_SECRET:
             logger.error("Stripe webhook received but STRIPE_WEBHOOK_SECRET is not configured.")
@@ -836,7 +834,7 @@ class OrganizationDomainService:
 
         return {"message": "Subscription resumed successfully", "status": "success"}
 
-    async def get_usage(self, db: AsyncSession, current_user: Optional[User]) -> dict:
+    async def get_usage(self, db: AsyncSession, current_user: User | None) -> dict:
         org = await self.get_or_create_default_org(db, current_user)
         subscription = await self.get_or_create_subscription(db, org)
 
@@ -859,18 +857,21 @@ class OrganizationDomainService:
         db: AsyncSession,
         *,
         logo_file,
-        primary_color: Optional[str],
-        current_user: Optional[User],
+        primary_color: str | None,
+        current_user: User | None,
     ) -> dict:
         org = await self.get_or_create_default_org(db, current_user)
         try:
             logo_url = org.logo_url
             if logo_file:
                 object_name = f"branding/{org.id}_{logo_file.filename}"
-                s3_key = s3_service.upload_file(
-                    logo_file.file, object_name=object_name, content_type=logo_file.content_type
+                s3_key = await asyncio.to_thread(
+                    s3_service.upload_file,
+                    logo_file.file,
+                    object_name=object_name,
+                    content_type=logo_file.content_type,
                 )
-                logo_url = s3_service.generate_presigned_url(s3_key)
+                logo_url = await asyncio.to_thread(s3_service.generate_presigned_url, s3_key)
                 org.logo_url = logo_url
 
             setting = await self.repository.get_setting(db, org.id)
@@ -904,7 +905,7 @@ class OrganizationDomainService:
             ) from e
 
     async def verify_domain(
-        self, db: AsyncSession, *, domain: str, current_user: Optional[User]
+        self, db: AsyncSession, *, domain: str, current_user: User | None
     ) -> dict:
         org = await self.get_or_create_default_org(db, current_user)
         org.domain = domain
@@ -922,7 +923,7 @@ class OrganizationDomainService:
         }
 
     async def list_organization_domains(
-        self, db: AsyncSession, current_user: Optional[User]
+        self, db: AsyncSession, current_user: User | None
     ) -> list[dict]:
         org = await self.get_or_create_default_org(db, current_user)
         if org.domain:
@@ -937,7 +938,7 @@ class OrganizationDomainService:
         return []
 
     async def get_organization_audit_logs(
-        self, db: AsyncSession, current_user: Optional[User]
+        self, db: AsyncSession, current_user: User | None
     ) -> list[dict]:
         org = await self.get_or_create_default_org(db, current_user)
         logs = await self.repository.list_audit_logs(db, org.id, limit=20)

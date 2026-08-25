@@ -49,6 +49,8 @@ class ReportRepository:
             select(UserQuota.user_id, UserQuota.target_amount).where(
                 UserQuota.organization_id == org_id
             )
+            # Stable insertion order -> deterministic float summation order.
+            .order_by(UserQuota.user_id.asc())
         )
         return {user_id: float(amount) for user_id, amount in res.all()}
 
@@ -70,7 +72,9 @@ class ReportRepository:
             .where(Deal.organization_id == org_id)
             .group_by(User.id, User.name, User.role)
             .order_by(
-                func.sum(case((Deal.stage == CLOSED_WON_STAGE, Deal.amount), else_=0.0)).desc()
+                func.sum(case((Deal.stage == CLOSED_WON_STAGE, Deal.amount), else_=0.0)).desc(),
+                User.name.asc(),
+                User.id.asc(),
             )
             .limit(limit)
         )
@@ -92,6 +96,8 @@ class ReportRepository:
             )
             .where(Deal.organization_id == org_id, Deal.stage.not_in(OPEN_STAGES_EXCLUSION))
             .group_by(Deal.stage)
+            # Deterministic output order for exports/reports (run-to-run stable).
+            .order_by(Deal.stage.asc())
         )
         res = await db.execute(query)
         return list(res.all())
@@ -141,6 +147,7 @@ class ReportRepository:
             .join(Company, Deal.company_id == Company.id)
             .where(Deal.organization_id == org_id)
             .group_by(Company.industry)
+            .order_by(Company.industry.asc())
             .limit(limit)
         )
         res = await db.execute(query)
@@ -181,6 +188,7 @@ class ReportRepository:
                 func.length(Deal.loss_reason) > 0,
             )
             .group_by(Company.industry, Deal.loss_reason)
+            .order_by(Company.industry.asc(), Deal.loss_reason.asc())
             .limit(limit)
         )
         res = await db.execute(query)
@@ -199,6 +207,7 @@ class ReportRepository:
             )
             .where(Lead.organization_id == org_id)
             .group_by(Lead.source)
+            .order_by(Lead.source.asc())
             .limit(limit)
         )
         res = await db.execute(query)
@@ -223,7 +232,11 @@ class ReportRepository:
             .where(Deal.organization_id == org_id)
             .group_by(User.id, User.name, User.email, User.role)
             .order_by(
-                func.sum(case((Deal.stage == CLOSED_WON_STAGE, Deal.amount), else_=0.0)).desc()
+                func.sum(case((Deal.stage == CLOSED_WON_STAGE, Deal.amount), else_=0.0)).desc(),
+                # Unique tiebreakers keep ranks and the "Top Performer"
+                # badge stable when revenues tie.
+                User.name.asc(),
+                User.id.asc(),
             )
             .limit(limit)
         )
@@ -336,6 +349,7 @@ class ReportRepository:
             .join(Deal, Deal.assigned_to == User.id)
             .where(Deal.organization_id == org_id)
             .group_by(User.id, User.name, User.role)
+            .order_by(User.name.asc(), User.id.asc())
             .limit(limit)
         )
         res = await db.execute(query)
