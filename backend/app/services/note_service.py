@@ -1,4 +1,3 @@
-from typing import Optional
 
 from fastapi import status
 from sqlalchemy import select
@@ -28,7 +27,7 @@ class NoteService:
     entity-scoped note endpoints (contacts, companies, etc.).
     """
 
-    def __init__(self, repository: Optional[NoteRepository] = None) -> None:
+    def __init__(self, repository: NoteRepository | None = None) -> None:
         self.repository = repository or NoteRepository()
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
@@ -53,8 +52,8 @@ class NoteService:
         *,
         page: int,
         limit: int,
-        entity_type: Optional[str] = None,
-        search: Optional[str] = None,
+        entity_type: str | None = None,
+        search: str | None = None,
     ) -> list[dict]:
         notes = await self.repository.list(
             db, page=page, limit=limit, entity_type=entity_type, search=search
@@ -135,7 +134,7 @@ class NoteService:
         *,
         entity_type: str,
         entity_id: str,
-        created_by_default: Optional[str] = None,
+        created_by_default: str | None = None,
     ) -> list[dict]:
         notes = await self.repository.list_by_entity(db, entity_type=entity_type, entity_id=entity_id)
         return [

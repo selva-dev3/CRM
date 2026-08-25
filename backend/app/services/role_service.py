@@ -1,13 +1,17 @@
 import json
 from datetime import datetime
-from typing import Optional
 
 from fastapi import status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, ForbiddenError, NotFoundError
-from app.core.permissions import ensure_can_assign_role, is_super_admin_role, is_super_admin_role_name, is_super_admin_user
+from app.core.permissions import (
+    ensure_can_assign_role,
+    is_super_admin_role,
+    is_super_admin_role_name,
+    is_super_admin_user,
+)
 from app.models import Role, User, UserRole
 from app.repositories.role_repository import RoleRepository
 from app.schemas.crm_schemas import PermissionCreate, RoleCreate, RoleUpdate
@@ -159,7 +163,7 @@ def role_to_dict(role: Role, permissions: list, created_at: str = "2026-08-05") 
 class RoleService:
     """Business logic for the Role/Permission domain."""
 
-    def __init__(self, repository: Optional[RoleRepository] = None) -> None:
+    def __init__(self, repository: RoleRepository | None = None) -> None:
         self.repository = repository or RoleRepository()
 
     async def _commit(self, db: AsyncSession, error_message: str, status_code: int = status.HTTP_400_BAD_REQUEST) -> None:
@@ -215,7 +219,7 @@ class RoleService:
 
     # --- List roles ---
     async def list_roles(
-        self, db: AsyncSession, search: Optional[str] = None, org_id: Optional[str] = None
+        self, db: AsyncSession, search: str | None = None, org_id: str | None = None
     ) -> list[dict]:
         default_ids = await self._get_default_role_ids(db)
         all_db_keys = await self.repository.get_permission_keys(db)
@@ -357,7 +361,7 @@ class RoleService:
 
     # --- List assignable roles ---
     async def list_assignable_roles(
-        self, db: AsyncSession, search: Optional[str] = None, org_id: Optional[str] = None
+        self, db: AsyncSession, search: str | None = None, org_id: str | None = None
     ) -> list[dict]:
         """Roles that may be assigned to users (Create/Invite/Edit/Assign flows).
 

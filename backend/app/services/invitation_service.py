@@ -1,39 +1,38 @@
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Optional, List, Tuple
+from datetime import UTC, datetime, timedelta
+
 from fastapi import HTTPException, status
+from sqlalchemy import asc, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_, desc, asc
 
 from app.core.config import settings
-from app.core.security import get_password_hash, create_access_token
 from app.core.permissions import ensure_can_assign_role, is_super_admin_role, is_super_admin_user
-from app.api.v1.deps import get_valid_org_id
+from app.core.security import create_access_token, get_password_hash
 from app.models import (
+    AuditLog,
     Organization,
+    OrganizationInvitation,
     OrganizationSetting,
     OrganizationSubscription,
-    SubscriptionPlan,
-    OrganizationInvitation,
     Role,
+    SubscriptionPlan,
     User,
-    AuditLog
 )
 from app.schemas.organization_invitation_schemas import (
-    SuperAdminOrgCreateRequest,
-    OrganizationInviteRequest,
     AcceptInvitationRequest,
+    CreateOrganizationInvitationRequest,
+    InvitationListResponse,
     InvitationResponse,
     InvitationStatusResponse,
-    InvitationListResponse,
-    SuperAdminOrgResponse,
     InviteUserResponse,
-    CreateOrganizationInvitationRequest,
-    NewOrganizationInviteResponse
+    NewOrganizationInviteResponse,
+    OrganizationInviteRequest,
+    SuperAdminOrgCreateRequest,
+    SuperAdminOrgResponse,
 )
 from app.services.email_service import (
     send_organization_onboarding_invite_email,
-    send_user_invite_email
+    send_user_invite_email,
 )
 
 DEFAULT_PLANS_FALLBACK = {
@@ -45,7 +44,7 @@ DEFAULT_PLANS_FALLBACK = {
 }
 
 
-def _build_invitation_response(inv: OrganizationInvitation, org_name: Optional[str] = None) -> InvitationResponse:
+def _build_invitation_response(inv: OrganizationInvitation, org_name: str | None = None) -> InvitationResponse:
     invite_url = f"{settings.FRONTEND_URL}/accept-invite/organization/{inv.token}"
     expires_str = inv.expires_at.isoformat() if inv.expires_at else ""
     accepted_str = inv.accepted_at.isoformat() if inv.accepted_at else None
@@ -146,10 +145,10 @@ async def create_superadmin_organization_flow(
         max_users=plan_info["max_users"],
         storage_limit_gb=plan_info["max_storage_gb"],
         ai_credits=plan_info["ai_credits"],
-        started_at=datetime.now(timezone.utc),
-        current_period_start=datetime.now(timezone.utc),
-        current_period_end=datetime.now(timezone.utc) + timedelta(days=30),
-        expires_at=datetime.now(timezone.utc) + timedelta(days=365)
+        started_at=datetime.now(UTC),
+        current_period_start=datetime.now(UTC),
+        current_period_end=datetime.now(UTC) + timedelta(days=30),
+        expires_at=datetime.now(UTC) + timedelta(days=365)
     )
     db.add(sub)
     await db.flush()
@@ -176,7 +175,7 @@ async def create_superadmin_organization_flow(
 
     # 4. Create Invitation
     token = f"inv_{uuid.uuid4().hex}"
-    expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
+    expires_at = datetime.now(UTC) + timedelta(hours=24)
 
     invitation = OrganizationInvitation(
         id=str(uuid.uuid4()),
@@ -242,7 +241,7 @@ async def create_superadmin_organization_flow(
 
 
 async def _resolve_invitation_role(
-    db: AsyncSession, current_user: User, role_value: Optional[str] = "Admin"
+    db: AsyncSession, current_user: User, role_value: str | None = "Admin"
 ) -> Role:
     """Resolve and authorize the role attached to an organization invitation.
 
@@ -351,7 +350,7 @@ async def create_new_organization_invitation(
 
     # 4. Reuse a pending invitation for this email (no duplicates); otherwise create one
     token = f"inv_{uuid.uuid4().hex}"
-    expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
+    expires_at = datetime.now(UTC) + timedelta(hours=24)
 
     existing_inv = await db.scalar(
         select(OrganizationInvitation).where(
@@ -474,7 +473,7 @@ async def create_organization_user_invitation(
         )
     )
     token = f"inv_{uuid.uuid4().hex}"
-    expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
+    expires_at = datetime.now(UTC) + timedelta(hours=24)
 
     if existing_inv:
         existing_inv.token = token
@@ -548,9 +547,9 @@ async def get_and_validate_invitation_by_token(
             detail="Invitation has already been accepted."
         )
 
-    now_utc = datetime.now(timezone.utc)
+    now_utc = datetime.now(UTC)
     if inv.expires_at and inv.expires_at.tzinfo is None:
-        inv_expires = inv.expires_at.replace(tzinfo=timezone.utc)
+        inv_expires = inv.expires_at.replace(tzinfo=UTC)
     else:
         inv_expires = inv.expires_at
 
@@ -711,7 +710,7 @@ async def accept_organization_invitation(
 
     # 4. Update Invitation Record
     inv.status = "Accepted"
-    inv.accepted_at = datetime.now(timezone.utc)
+    inv.accepted_at = datetime.now(UTC)
 
     # 5. Audit Log
     audit = AuditLog(
@@ -771,7 +770,7 @@ async def resend_organization_invitation(
 
     new_token = f"inv_{uuid.uuid4().hex}"
     inv.token = new_token
-    inv.expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
+    inv.expires_at = datetime.now(UTC) + timedelta(hours=24)
     inv.status = "Pending"
 
     audit = AuditLog(
@@ -830,8 +829,8 @@ async def cancel_organization_invitation(
 
 async def list_organization_invitations(
     db: AsyncSession,
-    search: Optional[str] = None,
-    status_filter: Optional[str] = None,
+    search: str | None = None,
+    status_filter: str | None = None,
     page: int = 1,
     limit: int = 20,
     sort_by: str = "created_at"

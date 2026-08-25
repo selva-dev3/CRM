@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -123,9 +125,12 @@ class UserService:
         return role_val
 
     async def list_users(
-        self, db: AsyncSession, *, page: int, limit: int, search: str | None
+        self, db: AsyncSession, *, page: int, limit: int, search: str | None, current_user: User
     ) -> list[dict]:
-        users = await self.repository.list(db, page=page, limit=limit, search=search)
+        org_id = await self._resolve_current_org(db, current_user)
+        users = await self.repository.list(
+            db, page=page, limit=limit, search=search, organization_id=org_id
+        )
         role_ids = {u.role for u in users if u.role}
         role_map = await self.repository.role_name_map(db, role_ids)
         return [
@@ -189,10 +194,10 @@ class UserService:
             raise NotFoundError(message="User not found")
         try:
             object_name = f"avatars/{user.id}_{filename}"
-            s3_key = s3_service.upload_file(
-                file, object_name=object_name, content_type=content_type
+            s3_key = await asyncio.to_thread(
+                s3_service.upload_file, file, object_name=object_name, content_type=content_type
             )
-            avatar_url = s3_service.generate_presigned_url(s3_key)
+            avatar_url = await asyncio.to_thread(s3_service.generate_presigned_url, s3_key)
             user.avatar_url = avatar_url
             await db.commit()
             return {"message": "Avatar uploaded to MinIO S3 successfully", "status": "success"}
@@ -274,10 +279,11 @@ class UserService:
             ) from e
 
     async def list_user_invitations(
-        self, db: AsyncSession, *, token: str | None, status_filter: str | None
+        self, db: AsyncSession, *, token: str | None, status_filter: str | None, current_user: User
     ) -> list[dict]:
+        org_id = await self._resolve_current_org(db, current_user)
         invitations = await self.repository.list_invitations(
-            db, token=token, status_filter=status_filter
+            db, token=token, status_filter=status_filter, organization_id=org_id
         )
         role_map = await self.repository.role_name_map(
             db, {inv.role for inv in invitations if inv.role}
@@ -394,13 +400,14 @@ class UserService:
                 message=f"Failed to accept invitation: {str(e)}",
             ) from e
 
-    async def get_user(self, db: AsyncSession, user_id: str) -> dict:
-        return user_to_dict(await self.require_user(db, user_id))
+    async def get_user(self, db: AsyncSession, user_id: str, *, current_user: User) -> dict:
+        user = await self._require_same_org_user(db, user_id, current_user)
+        return user_to_dict(user)
 
     async def update_user(
         self, db: AsyncSession, user_id: str, payload: UserUpdate, *, current_user: User
     ) -> dict:
-        user = await self.require_user(db, user_id)
+        user = await self._require_same_org_user(db, user_id, current_user)
         if payload.name:
             user.name = payload.name
         if payload.role:
@@ -411,8 +418,8 @@ class UserService:
         await self._commit(db, "Failed to update user")
         return user_to_dict(user)
 
-    async def delete_user(self, db: AsyncSession, user_id: str) -> dict:
-        user = await self.require_user(db, user_id)
+    async def delete_user(self, db: AsyncSession, user_id: str, *, current_user: User) -> dict:
+        user = await self._require_same_org_user(db, user_id, current_user)
         if user.email.lower() == PROTECTED_SUPERADMIN_EMAIL:
             raise APIException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -430,8 +437,8 @@ class UserService:
             "status": "success",
         }
 
-    async def activate_user(self, db: AsyncSession, user_id: str) -> dict:
-        user = await self.require_user(db, user_id)
+    async def activate_user(self, db: AsyncSession, user_id: str, *, current_user: User) -> dict:
+        user = await self._require_same_org_user(db, user_id, current_user)
         user.is_active = True
         await self._commit(db, "Failed to activate user")
         return {
@@ -443,8 +450,8 @@ class UserService:
             "status": "success",
         }
 
-    async def deactivate_user(self, db: AsyncSession, user_id: str) -> dict:
-        user = await self.require_user(db, user_id)
+    async def deactivate_user(self, db: AsyncSession, user_id: str, *, current_user: User) -> dict:
+        user = await self._require_same_org_user(db, user_id, current_user)
         if user.email.lower() == PROTECTED_SUPERADMIN_EMAIL:
             raise APIException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -461,27 +468,46 @@ class UserService:
             "status": "success",
         }
 
-    async def get_user_activities(self, db: AsyncSession, user_id: str) -> list:
-        await self.require_user(db, user_id)
+    async def get_user_activities(
+        self, db: AsyncSession, user_id: str, *, current_user: User
+    ) -> list:
+        await self._require_same_org_user(db, user_id, current_user)
         return []
 
-    async def get_user_teams(self, db: AsyncSession, user_id: str) -> list:
-        await self.require_user(db, user_id)
+    async def get_user_teams(self, db: AsyncSession, user_id: str, *, current_user: User) -> list:
+        await self._require_same_org_user(db, user_id, current_user)
         return []
 
     async def assign_user_team(
-        self, db: AsyncSession, *, user_id: str, team_id: str, team_name: str | None
+        self,
+        db: AsyncSession,
+        *,
+        user_id: str,
+        team_id: str,
+        team_name: str | None,
+        current_user: User,
     ) -> dict:
-        await self.require_user(db, user_id)
+        await self._require_same_org_user(db, user_id, current_user)
         name = team_name if team_name else team_id
         return {"message": f"User assigned to team '{name}' successfully", "status": "success"}
 
-    async def remove_user_team(self, db: AsyncSession, *, user_id: str, team_id: str) -> dict:
-        await self.require_user(db, user_id)
+    async def remove_user_team(
+        self, db: AsyncSession, *, user_id: str, team_id: str, current_user: User
+    ) -> dict:
+        await self._require_same_org_user(db, user_id, current_user)
         return {"message": f"User {user_id} removed from team {team_id}", "status": "success"}
 
-    async def bulk_delete_users(self, db: AsyncSession, ids: list[str]) -> dict:
-        users = await self.repository.list_by_ids(db, ids)
+    async def bulk_delete_users(
+        self, db: AsyncSession, ids: list[str], *, current_user: User
+    ) -> dict:
+        # Tenant scope: only ids belonging to the caller's organization may be
+        # deleted; foreign-org ids are ignored entirely (not an error, matching
+        # idempotent bulk semantics).
+        users = [
+            item
+            for item in await self.repository.list_by_ids(db, ids)
+            if item.organization_id == current_user.organization_id
+        ]
         deleted_count = 0
         for item in users:
             if item.email.lower() == PROTECTED_SUPERADMIN_EMAIL:
@@ -494,12 +520,16 @@ class UserService:
             "message": "Users deleted successfully (Protected users skipped)",
         }
 
-    async def get_user_effective_permissions(self, db: AsyncSession, user_id: str) -> dict:
-        await self.require_user(db, user_id)
+    async def get_user_effective_permissions(
+        self, db: AsyncSession, user_id: str, *, current_user: User
+    ) -> dict:
+        await self._require_same_org_user(db, user_id, current_user)
         return {"user_id": user_id, "permissions": ["leads:all", "deals:all", "contacts:all"]}
 
-    async def admin_reset_user_password(self, db: AsyncSession, user_id: str) -> dict:
-        await self.require_user(db, user_id)
+    async def admin_reset_user_password(
+        self, db: AsyncSession, user_id: str, *, current_user: User
+    ) -> dict:
+        await self._require_same_org_user(db, user_id, current_user)
         return {"message": f"Temporary password sent to user {user_id}", "status": "success"}
 
     async def _require_same_org_user(
@@ -544,8 +574,10 @@ class UserService:
         await self._commit(db, "Failed to assign quota")
         return {"message": f"Quota ${target_amount} assigned to {user_id}", "status": "success"}
 
-    async def get_user_scorecard(self, db: AsyncSession, user_id: str) -> dict:
-        await self.require_user(db, user_id)
+    async def get_user_scorecard(
+        self, db: AsyncSession, user_id: str, *, current_user: User
+    ) -> dict:
+        await self._require_same_org_user(db, user_id, current_user)
         return {"user_id": user_id, "win_rate": 0.0, "avg_deal_size": 0.0, "calls_made": 0}
 
 

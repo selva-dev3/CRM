@@ -1,5 +1,5 @@
+import asyncio
 from datetime import datetime
-from typing import Optional
 
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,7 +26,7 @@ def call_to_dict(call: CallLog) -> dict:
 class CallService:
     """Business logic for the CallLog domain."""
 
-    def __init__(self, repository: Optional[CallRepository] = None) -> None:
+    def __init__(self, repository: CallRepository | None = None) -> None:
         self.repository = repository or CallRepository()
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
@@ -44,8 +44,8 @@ class CallService:
         *,
         page: int,
         limit: int,
-        search: Optional[str] = None,
-        call_type: Optional[str] = None,
+        search: str | None = None,
+        call_type: str | None = None,
     ) -> list[dict]:
         calls = await self.repository.list(
             db, page=page, limit=limit, search=search, call_type=call_type
@@ -103,7 +103,9 @@ class CallService:
     async def get_recording(self, db: AsyncSession, call_id: str) -> dict:
         call = await self.require_call(db, call_id)
         try:
-            recording_url = s3_service.generate_presigned_url(f"recordings/{call_id}.mp3")
+            recording_url = await asyncio.to_thread(
+                s3_service.generate_presigned_url, f"recordings/{call_id}.mp3"
+            )
         except Exception:
             recording_url = f"https://api.crm.com/audio/recordings/{call_id}.mp3"
         return {

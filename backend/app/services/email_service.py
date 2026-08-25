@@ -1,6 +1,8 @@
-from app.core.config import settings
+import html
+
 import requests
 
+from app.core.config import settings
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -71,7 +73,14 @@ def send_reset_password_email(
 ) -> bool:
     """Sends password reset HTML email via Brevo API."""
 
-    reset_url = f"{settings.FRONTEND_URL}/reset-password?token={token}"
+    reset_url = html.escape(
+        f"{settings.FRONTEND_URL}/reset-password?token={token}", quote=True
+    )
+    # Dynamic values interpolated into HTML below are escaped once here
+    # (defense in depth: names/tokens may contain user-supplied characters).
+    user_name_escaped = html.escape(str(user_name))
+    token_escaped = html.escape(token)
+    project_name = html.escape(settings.PROJECT_NAME)
     subject = f"{settings.PROJECT_NAME} - Password Reset Request"
 
     html_content = f"""
@@ -89,11 +98,11 @@ def send_reset_password_email(
         <div class="container">
             <h2>Password Reset Request</h2>
 
-            <p>Hello {user_name},</p>
+            <p>Hello {user_name_escaped},</p>
 
             <p>
                 We received a request to reset your password for
-                <strong>{settings.PROJECT_NAME}</strong>.
+                <strong>{project_name}</strong>.
             </p>
 
             <p>
@@ -110,12 +119,12 @@ def send_reset_password_email(
             <p>Reset Token:</p>
 
             <code style="background:#f3f4f6;padding:6px 12px;border-radius:4px;">
-                {token}
+                {token_escaped}
             </code>
 
             <div class="footer">
                 <p>If you didn't request this reset, ignore this email.</p>
-                <p>&copy; 2026 {settings.PROJECT_NAME}</p>
+                <p>&copy; 2026 {project_name}</p>
             </div>
 
         </div>
@@ -153,6 +162,11 @@ def send_user_invite_email(
     if not invite_url:
         invite_url = f"{settings.FRONTEND_URL}/accept-invite"
 
+    # Dynamic values interpolated into HTML below are escaped once here.
+    invite_url_escaped = html.escape(invite_url, quote=True)
+    role_escaped = html.escape(str(role))
+    project_name = html.escape(settings.PROJECT_NAME)
+
     subject = f"You're Invited to Join {settings.PROJECT_NAME}"
 
     html_content = f"""
@@ -174,9 +188,9 @@ def send_user_invite_email(
 
             <p>
                 You have been invited to join
-                <strong>{settings.PROJECT_NAME}</strong>
+                <strong>{project_name}</strong>
                 as a
-                <strong>{role}</strong>.
+                <strong>{role_escaped}</strong>.
             </p>
 
             <p>
@@ -184,7 +198,7 @@ def send_user_invite_email(
                 and complete your account setup.
             </p>
 
-            <a href="{invite_url}" class="btn">
+            <a href="{invite_url_escaped}" class="btn">
                 Accept Invitation
             </a>
 
@@ -192,8 +206,8 @@ def send_user_invite_email(
 
             <p>If the button doesn't work, use this link:</p>
 
-            <a href="{invite_url}">
-                {invite_url}
+            <a href="{invite_url_escaped}">
+                {invite_url_escaped}
             </a>
 
             <div class="footer">
@@ -203,7 +217,7 @@ def send_user_invite_email(
                 </p>
 
                 <p>
-                    &copy; 2026 {settings.PROJECT_NAME}. All rights reserved.
+                    &copy; 2026 {project_name}. All rights reserved.
                 </p>
             </div>
         </div>
@@ -245,6 +259,15 @@ def send_organization_onboarding_invite_email(
     invite_url = f"{settings.FRONTEND_URL}/accept-invite?token={token}"
     subject = f"Welcome to {organization_name} on {settings.PROJECT_NAME} - Complete Your Admin Setup"
 
+    # Dynamic values interpolated into HTML below are escaped once here.
+    invite_url_escaped = html.escape(invite_url, quote=True)
+    admin_name_escaped = html.escape(str(admin_name))
+    organization_name_escaped = html.escape(str(organization_name))
+    plan_name_escaped = html.escape(str(plan_name))
+    admin_email_escaped = html.escape(email_to, quote=True)
+    expires_at_escaped = html.escape(str(expires_at_str))
+    project_name = html.escape(settings.PROJECT_NAME)
+
     html_content = f"""
     <!DOCTYPE html>
     <html>
@@ -262,22 +285,22 @@ def send_organization_onboarding_invite_email(
     <body>
         <div class="container">
             <div class="header">
-                <h2 style="color: #1e293b; margin: 0;">{settings.PROJECT_NAME}</h2>
+                <h2 style="color: #1e293b; margin: 0;">{project_name}</h2>
                 <p style="color: #64748b; margin-top: 4px; font-size: 14px;">Enterprise CRM Organization Onboarding</p>
             </div>
 
-            <p style="font-size: 16px; color: #334155;">Hello <strong>{admin_name}</strong>,</p>
+            <p style="font-size: 16px; color: #334155;">Hello <strong>{admin_name_escaped}</strong>,</p>
 
             <p style="font-size: 15px; color: #475569; line-height: 1.5;">
-                An enterprise organization <strong>{organization_name}</strong> has been successfully provisioned for you on
-                <strong>{settings.PROJECT_NAME}</strong>.
+                An enterprise organization <strong>{organization_name_escaped}</strong> has been successfully provisioned for you on
+                <strong>{project_name}</strong>.
             </p>
 
             <div class="info-box">
-                <div style="margin-bottom: 8px;"><strong>Organization:</strong> {organization_name}</div>
-                <div style="margin-bottom: 8px;"><strong>Subscription Plan:</strong> <span class="badge">{plan_name}</span></div>
-                <div style="margin-bottom: 8px;"><strong>Admin Email:</strong> {email_to}</div>
-                <div><strong>Invitation Expiry:</strong> {expires_at_str}</div>
+                <div style="margin-bottom: 8px;"><strong>Organization:</strong> {organization_name_escaped}</div>
+                <div style="margin-bottom: 8px;"><strong>Subscription Plan:</strong> <span class="badge">{plan_name_escaped}</span></div>
+                <div style="margin-bottom: 8px;"><strong>Admin Email:</strong> {admin_email_escaped}</div>
+                <div><strong>Invitation Expiry:</strong> {expires_at_escaped}</div>
             </div>
 
             <p style="font-size: 15px; color: #475569;">
@@ -285,14 +308,14 @@ def send_organization_onboarding_invite_email(
             </p>
 
             <div style="text-align: center;">
-                <a href="{invite_url}" class="btn">
+                <a href="{invite_url_escaped}" class="btn">
                     Accept Invitation & Activate Account
                 </a>
             </div>
 
             <br>
             <p style="font-size: 13px; color: #64748b;">Or copy and paste this link into your browser:</p>
-            <p style="font-size: 12px; word-break: break-all; color: #2563eb;"><a href="{invite_url}">{invite_url}</a></p>
+            <p style="font-size: 12px; word-break: break-all; color: #2563eb;"><a href="{invite_url_escaped}">{invite_url_escaped}</a></p>
 
             <div class="footer">
                 <p>If you were not expecting this invitation, please contact support.</p>
@@ -332,6 +355,13 @@ def send_magic_link_email(
     """Sends Passwordless Magic Link HTML email via Brevo API."""
 
     magic_url = f"{settings.FRONTEND_URL}/magic-link?token={token}"
+
+    # Dynamic values interpolated into HTML below are escaped once here.
+    magic_url_escaped = html.escape(magic_url, quote=True)
+    user_name_escaped = html.escape(str(user_name))
+    token_escaped = html.escape(token)
+    project_name = html.escape(settings.PROJECT_NAME)
+
     subject = f"{settings.PROJECT_NAME} - Your Passwordless Login Link"
 
     html_content = f"""
@@ -350,15 +380,15 @@ def send_magic_link_email(
 
             <h2>Passwordless Magic Link Login</h2>
 
-            <p>Hello {user_name},</p>
+            <p>Hello {user_name_escaped},</p>
 
             <p>
                 Click the button below to log in to your
-                <strong>{settings.PROJECT_NAME}</strong>
+                <strong>{project_name}</strong>
                 account instantly without entering a password.
             </p>
 
-            <a href="{magic_url}" class="btn">
+            <a href="{magic_url_escaped}" class="btn">
                 Log In to CRM
             </a>
 
@@ -366,8 +396,8 @@ def send_magic_link_email(
 
             <p>If the button doesn't work, use this link:</p>
 
-            <a href="{magic_url}">
-                {magic_url}
+            <a href="{magic_url_escaped}">
+                {magic_url_escaped}
             </a>
 
             <br><br>
@@ -375,7 +405,7 @@ def send_magic_link_email(
             <p>Magic Token:</p>
 
             <code style="background:#f3f4f6;padding:6px 12px;border-radius:4px;font-size:16px;">
-                {token}
+                {token_escaped}
             </code>
 
             <div class="footer">
@@ -385,7 +415,7 @@ def send_magic_link_email(
                 </p>
 
                 <p>
-                    &copy; 2026 {settings.PROJECT_NAME}. All rights reserved.
+                    &copy; 2026 {project_name}. All rights reserved.
                 </p>
             </div>
 

@@ -1,4 +1,3 @@
-from typing import Optional
 
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,7 +28,7 @@ def company_to_dict(company: Company) -> dict:
 class CompanyService:
     """Business logic for the Company domain."""
 
-    def __init__(self, repository: Optional[CompanyRepository] = None) -> None:
+    def __init__(self, repository: CompanyRepository | None = None) -> None:
         self.repository = repository or CompanyRepository()
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
@@ -42,7 +41,7 @@ class CompanyService:
             ) from e
 
     @staticmethod
-    def _parse_employee_count(emp_raw: Optional[object]) -> Optional[int]:
+    def _parse_employee_count(emp_raw: object | None) -> int | None:
         if emp_raw is None:
             return None
         try:
@@ -56,7 +55,7 @@ class CompanyService:
         *,
         page: int,
         limit: int,
-        search: Optional[str] = None,
+        search: str | None = None,
     ) -> list[dict]:
         companies = await self.repository.list(db, page=page, limit=limit, search=search)
         return [company_to_dict(c) for c in companies]
@@ -68,7 +67,7 @@ class CompanyService:
         return company_to_dict(company)
 
     async def create_company(
-        self, db: AsyncSession, payload: CompanyCreate, current_user: Optional[User] = None
+        self, db: AsyncSession, payload: CompanyCreate, current_user: User | None = None
     ) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
         website = getattr(payload, "website", None) or getattr(payload, "domain", None)

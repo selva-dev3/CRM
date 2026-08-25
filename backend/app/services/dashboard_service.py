@@ -1,5 +1,4 @@
 import json
-from typing import Optional
 
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,8 +13,8 @@ class DashboardService:
 
     def __init__(
         self,
-        repository: Optional[DashboardRepository] = None,
-        setting_repository: Optional[SettingRepository] = None,
+        repository: DashboardRepository | None = None,
+        setting_repository: SettingRepository | None = None,
     ) -> None:
         self.repository = repository or DashboardRepository()
         self.setting_repository = setting_repository or SettingRepository()

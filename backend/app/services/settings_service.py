@@ -1,7 +1,6 @@
 import csv
 import io
 import urllib.parse
-from typing import Optional
 
 from fastapi import status
 from sqlalchemy import text
@@ -22,7 +21,7 @@ class SettingsService:
     (audit logs, custom fields, webhooks, SLA policies, database reset).
     """
 
-    def __init__(self, repository: Optional[SettingRepository] = None) -> None:
+    def __init__(self, repository: SettingRepository | None = None) -> None:
         self.repository = repository or SettingRepository()
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
@@ -34,7 +33,7 @@ class SettingsService:
                 status_code=status.HTTP_400_BAD_REQUEST, message=error_message
             ) from e
 
-    async def _resolve_org_id(self, db: AsyncSession, current_user: Optional[User] = None) -> str:
+    async def _resolve_org_id(self, db: AsyncSession, current_user: User | None = None) -> str:
         return await organization_service.resolve_valid_org_id(db, current_user)
 
     async def _get_setting_value(
@@ -56,7 +55,7 @@ class SettingsService:
             await db.rollback()
 
     async def get_system_settings(
-        self, db: AsyncSession, current_user: Optional[User] = None
+        self, db: AsyncSession, current_user: User | None = None
     ) -> dict:
         org_name = "Enterprise Organization"
 
@@ -84,7 +83,7 @@ class SettingsService:
         }
 
     async def update_system_settings(
-        self, db: AsyncSession, payload: SystemSettings, current_user: Optional[User] = None
+        self, db: AsyncSession, payload: SystemSettings, current_user: User | None = None
     ) -> SystemSettings:
         if current_user and getattr(current_user, "organization_id", None) and payload.organization_name:
             org = await organization_service.repository.get_by_id(db, current_user.organization_id)
@@ -110,7 +109,7 @@ class SettingsService:
         return payload
 
     @staticmethod
-    def _resolve_username(user_name: Optional[str], user_email: Optional[str], user_id: Optional[str]) -> str:
+    def _resolve_username(user_name: str | None, user_email: str | None, user_id: str | None) -> str:
         return (
             user_name
             or user_email
@@ -161,7 +160,7 @@ class SettingsService:
             }
 
     async def list_custom_fields(
-        self, db: AsyncSession, entity_type: Optional[str] = None
+        self, db: AsyncSession, entity_type: str | None = None
     ) -> list[dict]:
         try:
             fields = await self.repository.list_custom_fields(db, entity_type=entity_type)
@@ -208,7 +207,7 @@ class SettingsService:
         return {"message": f"Custom field {field_id} deleted", "status": "success"}
 
     async def list_webhooks(
-        self, db: AsyncSession, current_user: Optional[User] = None
+        self, db: AsyncSession, current_user: User | None = None
     ) -> list[dict]:
         try:
             org_id = await self._resolve_org_id(db, current_user)
@@ -231,9 +230,9 @@ class SettingsService:
         self,
         db: AsyncSession,
         *,
-        target_url: Optional[str],
+        target_url: str | None,
         events: list[str],
-        current_user: Optional[User] = None,
+        current_user: User | None = None,
     ) -> dict:
         if not target_url:
             raise APIException(
@@ -263,7 +262,7 @@ class SettingsService:
         return {"message": f"Test ping payload sent to webhook {webhook_id}", "status": "success"}
 
     async def list_sla_policies(
-        self, db: AsyncSession, current_user: Optional[User] = None
+        self, db: AsyncSession, current_user: User | None = None
     ) -> list[dict]:
         try:
             org_id = await self._resolve_org_id(db, current_user)
@@ -291,7 +290,7 @@ class SettingsService:
         name: str,
         response_time_hours: int,
         resolution_time_hours: int,
-        current_user: Optional[User] = None,
+        current_user: User | None = None,
     ) -> dict:
         org_id = await self._resolve_org_id(db, current_user)
         data = {

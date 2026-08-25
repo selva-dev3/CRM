@@ -1,5 +1,4 @@
 from datetime import date, datetime
-from typing import Optional
 
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,7 +12,7 @@ from app.services.notification_service import notification_service
 from app.services.org_service import organization_service
 
 
-def parse_datetime(val: Optional[str]) -> Optional[datetime]:
+def parse_datetime(val: str | None) -> datetime | None:
     if not val or not str(val).strip():
         return None
     val_str = str(val).strip()
@@ -43,7 +42,7 @@ def task_to_dict(task: Task) -> dict:
 class TaskService:
     """Business logic for the Task domain."""
 
-    def __init__(self, repository: Optional[TaskRepository] = None) -> None:
+    def __init__(self, repository: TaskRepository | None = None) -> None:
         self.repository = repository or TaskRepository()
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
@@ -56,7 +55,7 @@ class TaskService:
             ) from e
 
     async def _resolve_user_id(
-        self, db: AsyncSession, assigned_input: Optional[str] = None
+        self, db: AsyncSession, assigned_input: str | None = None
     ) -> str:
         if assigned_input and str(assigned_input).strip():
             value = str(assigned_input).strip()
@@ -77,8 +76,8 @@ class TaskService:
         *,
         page: int,
         limit: int,
-        status: Optional[str] = None,
-        priority: Optional[str] = None,
+        status: str | None = None,
+        priority: str | None = None,
     ) -> list[dict]:
         tasks = await self.repository.list(
             db, page=page, limit=limit, status=status, priority=priority
@@ -92,7 +91,7 @@ class TaskService:
         return task_to_dict(task)
 
     async def create_task(
-        self, db: AsyncSession, payload: TaskCreate, current_user: Optional[User] = None
+        self, db: AsyncSession, payload: TaskCreate, current_user: User | None = None
     ) -> dict:
         due_dt = parse_datetime(payload.due_date)
         assigned_user = await self._resolve_user_id(db, payload.assigned_to)

@@ -35,8 +35,11 @@ async def list_users(
     limit: int = Query(20, ge=1, le=100),
     search: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    return await user_service.list_users(db, page=page, limit=limit, search=search)
+    return await user_service.list_users(
+        db, page=page, limit=limit, search=search, current_user=current_user
+    )
 
 
 @router.post(
@@ -105,8 +108,11 @@ async def list_user_invitations(
     token: str | None = Query(None),
     status_filter: str | None = Query(None, alias="status"),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    return await user_service.list_user_invitations(db, token=token, status_filter=status_filter)
+    return await user_service.list_user_invitations(
+        db, token=token, status_filter=status_filter, current_user=current_user
+    )
 
 
 @router.get(
@@ -119,8 +125,11 @@ async def list_user_invitations_all(
     token: str | None = Query(None),
     status_filter: str | None = Query(None, alias="status"),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    return await user_service.list_user_invitations(db, token=token, status_filter=status_filter)
+    return await user_service.list_user_invitations(
+        db, token=token, status_filter=status_filter, current_user=current_user
+    )
 
 
 @router.get(
@@ -147,8 +156,12 @@ async def accept_user_invitation(payload: AcceptInviteRequest, db: AsyncSession 
     summary="Get user details by ID",
     dependencies=[Depends(require_permission("users:read"))],
 )
-async def get_user(user_id: str, db: AsyncSession = Depends(get_db)):
-    return await user_service.get_user(db, user_id)
+async def get_user(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await user_service.get_user(db, user_id, current_user=current_user)
 
 
 @router.put(
@@ -172,8 +185,12 @@ async def update_user(
     summary="Delete user by ID (Protected against superadmin@gmail.com deletion)",
     dependencies=[Depends(require_permission("users:delete"))],
 )
-async def delete_user(user_id: str, db: AsyncSession = Depends(get_db)):
-    return await user_service.delete_user(db, user_id)
+async def delete_user(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await user_service.delete_user(db, user_id, current_user=current_user)
 
 
 @router.post(
@@ -182,8 +199,12 @@ async def delete_user(user_id: str, db: AsyncSession = Depends(get_db)):
     summary="Activate user account",
     dependencies=[Depends(require_permission("users:update"))],
 )
-async def activate_user(user_id: str, db: AsyncSession = Depends(get_db)):
-    return await user_service.activate_user(db, user_id)
+async def activate_user(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await user_service.activate_user(db, user_id, current_user=current_user)
 
 
 @router.post(
@@ -192,8 +213,12 @@ async def activate_user(user_id: str, db: AsyncSession = Depends(get_db)):
     summary="Deactivate user account",
     dependencies=[Depends(require_permission("users:update"))],
 )
-async def deactivate_user(user_id: str, db: AsyncSession = Depends(get_db)):
-    return await user_service.deactivate_user(db, user_id)
+async def deactivate_user(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await user_service.deactivate_user(db, user_id, current_user=current_user)
 
 
 @router.get(
@@ -201,8 +226,12 @@ async def deactivate_user(user_id: str, db: AsyncSession = Depends(get_db)):
     summary="Get user activity timeline",
     dependencies=[Depends(require_permission("users:read"))],
 )
-async def get_user_activities(user_id: str, db: AsyncSession = Depends(get_db)):
-    return await user_service.get_user_activities(db, user_id)
+async def get_user_activities(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await user_service.get_user_activities(db, user_id, current_user=current_user)
 
 
 @router.get(
@@ -210,8 +239,12 @@ async def get_user_activities(user_id: str, db: AsyncSession = Depends(get_db)):
     summary="Get user team memberships",
     dependencies=[Depends(require_permission("users:read"))],
 )
-async def get_user_teams(user_id: str, db: AsyncSession = Depends(get_db)):
-    return await user_service.get_user_teams(db, user_id)
+async def get_user_teams(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await user_service.get_user_teams(db, user_id, current_user=current_user)
 
 
 @router.post(
@@ -225,9 +258,14 @@ async def assign_user_team(
     team_id: str,
     team_name: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     return await user_service.assign_user_team(
-        db, user_id=user_id, team_id=team_id, team_name=team_name
+        db,
+        user_id=user_id,
+        team_id=team_id,
+        team_name=team_name,
+        current_user=current_user,
     )
 
 
@@ -237,8 +275,15 @@ async def assign_user_team(
     summary="Remove user from team",
     dependencies=[Depends(require_permission("users:roles"))],
 )
-async def remove_user_team(user_id: str, team_id: str, db: AsyncSession = Depends(get_db)):
-    return await user_service.remove_user_team(db, user_id=user_id, team_id=team_id)
+async def remove_user_team(
+    user_id: str,
+    team_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await user_service.remove_user_team(
+        db, user_id=user_id, team_id=team_id, current_user=current_user
+    )
 
 
 @router.post(
@@ -247,8 +292,12 @@ async def remove_user_team(user_id: str, team_id: str, db: AsyncSession = Depend
     summary="Bulk delete users (Filters out protected superadmin@gmail.com)",
     dependencies=[Depends(require_permission("users:delete"))],
 )
-async def bulk_delete_users(payload: BulkDeleteRequest, db: AsyncSession = Depends(get_db)):
-    return await user_service.bulk_delete_users(db, payload.ids)
+async def bulk_delete_users(
+    payload: BulkDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await user_service.bulk_delete_users(db, payload.ids, current_user=current_user)
 
 
 @router.get(
@@ -275,8 +324,12 @@ async def import_users_csv(db: AsyncSession = Depends(get_db)):
     summary="List effective permissions for specific user",
     dependencies=[Depends(require_permission("users:roles"))],
 )
-async def get_user_effective_permissions(user_id: str, db: AsyncSession = Depends(get_db)):
-    return await user_service.get_user_effective_permissions(db, user_id)
+async def get_user_effective_permissions(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await user_service.get_user_effective_permissions(db, user_id, current_user=current_user)
 
 
 @router.post(
@@ -285,8 +338,12 @@ async def get_user_effective_permissions(user_id: str, db: AsyncSession = Depend
     summary="Admin trigger forced user password reset",
     dependencies=[Depends(require_permission("users:update"))],
 )
-async def admin_reset_user_password(user_id: str, db: AsyncSession = Depends(get_db)):
-    return await user_service.admin_reset_user_password(db, user_id)
+async def admin_reset_user_password(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await user_service.admin_reset_user_password(db, user_id, current_user=current_user)
 
 
 @router.get(
@@ -324,5 +381,9 @@ async def set_user_quota(
     summary="Get detailed performance scorecard for user",
     dependencies=[Depends(require_permission("users:read"))],
 )
-async def get_user_scorecard(user_id: str, db: AsyncSession = Depends(get_db)):
-    return await user_service.get_user_scorecard(db, user_id)
+async def get_user_scorecard(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await user_service.get_user_scorecard(db, user_id, current_user=current_user)

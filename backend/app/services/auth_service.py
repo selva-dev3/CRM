@@ -1,12 +1,16 @@
 import logging
-from typing import List, Optional
 
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, NotFoundError
 from app.core.permissions import is_super_admin_role, is_super_admin_role_name
-from app.core.security import create_access_token, generate_random_code, get_password_hash, verify_password
+from app.core.security import (
+    create_access_token,
+    generate_random_code,
+    get_password_hash,
+    verify_password,
+)
 from app.models import User
 from app.repositories.auth_repository import AuthRepository
 from app.schemas.crm_schemas import (
@@ -26,7 +30,7 @@ logger = logging.getLogger(__name__)
 class AuthService:
     """Business logic for authentication, registration, SSO, 2FA and sessions."""
 
-    def __init__(self, repository: Optional[AuthRepository] = None) -> None:
+    def __init__(self, repository: AuthRepository | None = None) -> None:
         self.repository = repository or AuthRepository()
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
@@ -62,7 +66,7 @@ class AuthService:
 
     async def get_user_permissions(
         self, db: AsyncSession, user: User, resolved_role_name: str = ""
-    ) -> List[str]:
+    ) -> list[str]:
         """Resolve a user's effective permission keys from the RBAC tables.
 
         Permissions are derived exclusively from the relationship graph

@@ -1,7 +1,9 @@
+from typing import BinaryIO
+
 import boto3
 from botocore.client import Config
 from botocore.exceptions import ClientError
-from typing import BinaryIO, Optional
+
 from app.core.config import settings
 
 
@@ -12,6 +14,10 @@ class S3Service:
         self.secret_key = settings.AWS_SECRET_ACCESS_KEY
         self.region = settings.AWS_REGION
         self.bucket_name = settings.AWS_S3_BUCKET
+        # Bucket existence is checked once per process, not on every upload:
+        # the old behavior issued a blocking head_bucket round-trip before
+        # each upload and silently swallowed failures.
+        self._bucket_verified = False
 
         # Configure boto3 client for MinIO (path-style addressing + S3v4 signature) using central Settings
         self.s3_client = boto3.client(
@@ -28,15 +34,23 @@ class S3Service:
 
     def _ensure_bucket_exists(self):
         """Ensures the S3 bucket exists before performing operations."""
+        if self._bucket_verified:
+            return
         try:
             self.s3_client.head_bucket(Bucket=self.bucket_name)
+            self._bucket_verified = True
         except Exception:
             try:
                 self.s3_client.create_bucket(Bucket=self.bucket_name)
-            except Exception:
-                pass
+                self._bucket_verified = True
+            except Exception as create_exc:
+                # Never silently continue: uploads into a missing bucket
+                # would otherwise fail later with confusing errors.
+                raise RuntimeError(
+                    f"S3 bucket '{self.bucket_name}' is unavailable and could not be created"
+                ) from create_exc
 
-    def upload_file(self, file_obj: BinaryIO, object_name: str, content_type: Optional[str] = None) -> str:
+    def upload_file(self, file_obj: BinaryIO, object_name: str, content_type: str | None = None) -> str:
         """Uploads a file object to MinIO S3 bucket and returns the object key."""
         self._ensure_bucket_exists()
         extra_args = {}
