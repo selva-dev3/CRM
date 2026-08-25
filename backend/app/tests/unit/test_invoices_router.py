@@ -1,79 +1,103 @@
-from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.routers.invoices import mark_invoice_paid
-from app.models import Invoice
+from app.api.v1.routers.invoices import create_invoice, mark_invoice_paid
+from app.core.errors import ForbiddenError
 from app.schemas.crm_schemas import InvoiceBase
 from app.services.integration_service import integration_service
+from app.services.invoice_service import DealNotClosedWonError, invoice_service
 
 
-def _make_invoice(**overrides) -> Invoice:
-    defaults = {
-        "id": "inv-1",
-        "organization_id": "org-1",
-        "invoice_number": "INV-1001",
-        "amount": 1200.0,
-        "status": "Unpaid",
-        "due_date": datetime(2026, 9, 1, tzinfo=UTC),
-    }
-    defaults.update(overrides)
-    return Invoice(**defaults)
-
-
-@pytest.mark.asyncio
-async def test_mark_invoice_paid_fires_invoice_paid_event(monkeypatch):
-    inv = _make_invoice()
-    res = MagicMock()
-    res.scalars.return_value.first.return_value = inv
-    db = AsyncMock(spec=AsyncSession)
-    db.execute = AsyncMock(return_value=res)
-
-    notify = AsyncMock()
-    monkeypatch.setattr(integration_service, "notify_slack_event", notify)
-
-    result = await mark_invoice_paid("inv-1", "Bank Transfer", db)
-
-    assert result["status"] == "success"
-    assert inv.status == "Paid"
-    db.commit.assert_awaited_once()
-    notify.assert_awaited_once()
-    kwargs = notify.await_args.kwargs
-    assert kwargs["event_name"] == "invoice.paid"
-    assert kwargs["org_id"] == "org-1"
-    assert kwargs["data"]["amount"] == 1200.0
-    assert kwargs["data"]["status"] == "Paid"
-
-
-@pytest.mark.asyncio
-async def test_create_invoice_fires_invoice_created_event(monkeypatch):
-    db = AsyncMock(spec=AsyncSession)
-    db.add = MagicMock()
-    db.commit = AsyncMock()
-    db.refresh = AsyncMock(side_effect=lambda x: setattr(x, "id", "inv-new"))
-
-    from app.api.v1.routers import invoices as invoices_router
-
-    monkeypatch.setattr(
-        invoices_router, "get_valid_org_id", AsyncMock(return_value="org-1")
-    )
-    notify = AsyncMock()
-    monkeypatch.setattr(integration_service, "notify_slack_event", notify)
-
-    payload = InvoiceBase(
+def _payload() -> InvoiceBase:
+    return InvoiceBase(
         deal_id="deal-1",
-        invoice_number="INV-200",
         amount=900.0,
         status="Draft",
         due_date="2026-09-01",
     )
-    result = await invoices_router.create_invoice(payload, db)
+
+
+@pytest.fixture(autouse=True)
+def patched_notify(monkeypatch):
+    monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())
+
+
+@pytest.mark.asyncio
+async def test_create_invoice_rejects_deal_not_closed_won(monkeypatch):
+    db = AsyncMock(spec=AsyncSession)
+    monkeypatch.setattr(
+        invoice_service,
+        "create_invoice_from_deal",
+        AsyncMock(side_effect=DealNotClosedWonError(message="Deal is not Closed Won")),
+    )
+
+    with pytest.raises(DealNotClosedWonError):
+        await create_invoice(_payload(), db, current_user=None)
+
+
+@pytest.mark.asyncio
+async def test_create_invoice_delegates_to_service_with_deal_id(monkeypatch):
+    db = AsyncMock(spec=AsyncSession)
+    created = {
+        "id": "inv-new",
+        "invoice_number": "INV-200",
+        "deal_id": "deal-1",
+        "amount": 900.0,
+        "status": "Draft",
+        "due_date": "2026-09-01",
+        "items": [],
+    }
+    spy = AsyncMock(return_value=created)
+    monkeypatch.setattr(invoice_service, "create_invoice_from_deal", spy)
+
+    result = await create_invoice(_payload(), db, current_user=None)
 
     assert result["id"] == "inv-new"
-    notify.assert_awaited_once()
-    kwargs = notify.await_args.kwargs
-    assert kwargs["event_name"] == "invoice.created"
-    assert kwargs["org_id"] == "org-1"
-    assert kwargs["data"]["amount"] == 900.0
+    assert result["status"] == "Draft"
+    spy.assert_awaited_once()
+    args = spy.await_args.args
+    assert args[1] == "deal-1"
+
+
+@pytest.mark.asyncio
+async def test_mark_invoice_paid_scopes_by_organization(monkeypatch):
+    db = AsyncMock(spec=AsyncSession)
+    resolve = AsyncMock(return_value="org-1")
+    mark_paid = AsyncMock(return_value={"id": "inv-1", "status": "Paid"})
+    monkeypatch.setattr(invoice_service, "resolve_organization_id", resolve)
+    monkeypatch.setattr(invoice_service, "mark_paid", mark_paid)
+
+    result = await mark_invoice_paid("inv-1", "Bank Transfer", db, current_user=None)
+
+    assert result["status"] == "success"
+    resolve.assert_awaited_once()
+    kwargs = mark_paid.await_args.kwargs
+    assert kwargs["invoice_id"] == "inv-1"
+    assert kwargs["organization_id"] == "org-1"
+    assert kwargs["payment_method"] == "Bank Transfer"
+
+
+@pytest.mark.asyncio
+async def test_missing_permission_raises_forbidden():
+    """Route dependencies enforce RBAC keys via require_permission (invoices:create)."""
+    from app.api.v1.deps import require_permission
+
+    dependency = require_permission("invoices:create")
+
+    class _MissingKeysUser:
+        pass
+
+    async def _no_keys(db, user):
+        return []
+
+    import app.services.auth_service as auth_module
+
+    original = auth_module.auth_service.get_user_permissions
+    auth_module.auth_service.get_user_permissions = _no_keys
+    try:
+        with pytest.raises(ForbiddenError):
+            await dependency(current_user=_MissingKeysUser(), db=None)
+    finally:
+        auth_module.auth_service.get_user_permissions = original

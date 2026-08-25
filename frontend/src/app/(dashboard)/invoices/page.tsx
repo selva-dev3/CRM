@@ -49,6 +49,7 @@ import {
   InvoiceItem,
   InvoiceCreatePayload
 } from '@/lib/api/invoices';
+import { useDealsQuery } from '@/lib/api/deals';
 
 export default function InvoicesPage() {
   const router = useRouter();
@@ -71,6 +72,7 @@ export default function InvoicesPage() {
   const [invoiceToDelete, setInvoiceToDelete] = useState<InvoiceItem | null>(null);
 
   // Invoice Form states
+  const [formDealId, setFormDealId] = useState('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [amount, setAmount] = useState('14500');
   const [dueDate, setDueDate] = useState('2026-09-01');
@@ -104,6 +106,8 @@ export default function InvoicesPage() {
 
   const { data: overdueInvoices = [] } = useOverdueInvoicesQuery();
   const { data: recurringSchedules = [] } = useRecurringInvoicesQuery();
+  // Only Closed Won deals are invoiceable (backend enforces the same rule).
+  const { data: closedWonDeals = [] } = useDealsQuery(1, 100, 'Closed Won');
 
   // Mutations
   const createInvoiceMutation = useCreateInvoiceMutation();
@@ -119,6 +123,7 @@ export default function InvoicesPage() {
   const importCsvMutation = useImportInvoicesCsvMutation();
 
   const resetInvoiceForm = () => {
+    setFormDealId('');
     setInvoiceNumber('');
     setAmount('14500');
     setDueDate('2026-09-01');
@@ -142,25 +147,35 @@ export default function InvoicesPage() {
 
   const handleSaveInvoiceSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const payload: InvoiceCreatePayload = {
-      invoice_number: invoiceNumber.trim() || `INV-2026-${Math.floor(1000 + Math.random() * 9000)}`,
-      amount: parseFloat(amount || '0'),
-      due_date: dueDate,
-      status: status,
-    };
 
     try {
       if (editingInvoice) {
+        const payload: InvoiceCreatePayload = {
+          deal_id: editingInvoice.deal_id || '',
+          invoice_number: invoiceNumber.trim(),
+          amount: parseFloat(amount || '0'),
+          due_date: dueDate,
+          status: status,
+        };
         await updateInvoiceMutation.mutateAsync({ id: editingInvoice.id, payload });
         setSuccessMessage(`Invoice "${editingInvoice.invoice_number}" updated.`);
       } else {
-        await createInvoiceMutation.mutateAsync(payload);
-        setSuccessMessage('New invoice generated successfully.');
+        if (!formDealId) {
+          setErrorMessage('Select a Closed Won deal to generate an invoice.');
+          return;
+        }
+        const payload: InvoiceCreatePayload = {
+          deal_id: formDealId,
+          due_date: dueDate,
+        };
+        const created = await createInvoiceMutation.mutateAsync(payload);
+        setSuccessMessage(`Invoice '${created.invoice_number}' generated as Draft.`);
       }
       setIsInvoiceModalOpen(false);
       resetInvoiceForm();
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to save invoice.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to save invoice.';
+      setErrorMessage(message);
     }
   };
 
@@ -530,50 +545,79 @@ export default function InvoicesPage() {
           }
         >
           <form onSubmit={handleSaveInvoiceSubmit} className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                Invoice Reference Number
-              </label>
-              <input
-                type="text"
-                value={invoiceNumber}
-                onChange={(e) => setInvoiceNumber(e.target.value)}
-                placeholder="e.g. INV-2026-001"
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none font-mono"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {!editingInvoice && (
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                  Invoice Amount (USD) *
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  required
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                  Payment Status
+                  Closed Won Deal *
                 </label>
                 <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value)}
+                  required
+                  value={formDealId}
+                  onChange={(e) => setFormDealId(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
                 >
-                  <option value="Draft">Draft</option>
-                  <option value="Pending">Pending</option>
-                  <option value="Paid">Paid</option>
-                  <option value="Overdue">Overdue</option>
+                  <option value="">-- Select a Closed Won deal --</option>
+                  {closedWonDeals.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.title} (${d.amount ? d.amount.toLocaleString() : '0'})
+                    </option>
+                  ))}
                 </select>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Invoices are generated from Closed Won deals. Amount and line items are derived
+                  from the deal.
+                </p>
               </div>
-            </div>
+            )}
+
+            {editingInvoice && (
+              <>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                    Invoice Reference Number
+                  </label>
+                  <input
+                    type="text"
+                    value={invoiceNumber}
+                    onChange={(e) => setInvoiceNumber(e.target.value)}
+                    placeholder="e.g. INV-2026-001"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none font-mono"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                      Invoice Amount (USD) *
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      required
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                      Payment Status
+                    </label>
+                    <select
+                      value={status}
+                      onChange={(e) => setStatus(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+                    >
+                      <option value="Draft">Draft</option>
+                      <option value="Pending">Pending</option>
+                      <option value="Paid">Paid</option>
+                      <option value="Overdue">Overdue</option>
+                    </select>
+                  </div>
+                </div>
+              </>
+            )}
 
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">

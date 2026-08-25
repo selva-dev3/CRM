@@ -535,24 +535,46 @@ class QuoteResponse(BaseModel):
     created_at: str
 
 # 17. Invoice Schemas
+class InvoiceItemSchema(BaseModel):
+    id: str
+    product_id: str
+    description: Optional[str] = None
+    quantity: int = 1
+    unit_price: float = 0.0
+    discount_percent: float = 0.0
+    tax_percent: float = 0.0
+
 class InvoiceBase(BaseModel):
     deal_id: str
-    invoice_number: str
-    amount: float
-    status: str = "Unpaid"
-    due_date: str
+    invoice_number: Optional[str] = None
+    amount: float = 0.0
+    status: str = "Draft"
+    due_date: Optional[str] = None
 
 class InvoiceCreate(BaseModel):
     deal_id: str
-    amount: float
-    due_date: str
+    amount: Optional[float] = None
+    due_date: Optional[str] = None
 
 class InvoiceResponse(BaseModel):
     id: str
     invoice_number: str
-    amount: float
+    deal_id: Optional[str] = None
+    company_id: Optional[str] = None
+    contact_id: Optional[str] = None
+    currency: str = "USD"
+    amount: float = 0.0
+    subtotal: float = 0.0
+    discount_total: float = 0.0
+    tax_total: float = 0.0
+    paid_amount: float = 0.0
     status: str
-    due_date: str
+    due_date: Optional[str] = None
+    notes: Optional[str] = None
+    sent_at: Optional[str] = None
+    stripe_checkout_url: Optional[str] = None
+    created_at: Optional[str] = None
+    items: List[InvoiceItemSchema] = []
 
 # 18. Notification Schemas
 class NotificationItem(BaseModel):

@@ -22,6 +22,9 @@ import {
   CheckCircle2,
   AlertCircle,
   Calendar,
+  Loader2,
+  Lock,
+  Receipt,
   Search
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -30,6 +33,8 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
+import { PermissionGate } from '@/components/common/permission-gate';
+import { PERMISSIONS } from '@/lib/permissions';
 import {
   useDealQuery,
   useUpdateDealMutation,
@@ -47,6 +52,7 @@ import {
   cloneDealApi,
   getDealCommissionApi
 } from '@/lib/api/deals';
+import { useDealInvoicesQuery, useConvertDealToInvoiceMutation } from '@/lib/api/invoices';
 import { useUsersQuery } from '@/lib/api/users';
 import { useProductsQuery } from '@/lib/api/products';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -126,6 +132,24 @@ export default function DealDetailsPage() {
   const deleteDealMutation = useDeleteDealMutation();
   const markWonMutation = useMarkDealWonMutation();
   const markLostMutation = useMarkDealLostMutation();
+
+  // Invoice lifecycle (available once the deal is Closed Won)
+  const isClosedWon = deal?.stage === 'Closed Won';
+  const { data: dealInvoices = [] } = useDealInvoicesQuery(dealId);
+  const dealInvoice = dealInvoices.length > 0 ? dealInvoices[0] : null;
+  const convertToInvoiceMutation = useConvertDealToInvoiceMutation();
+
+  const handleCreateInvoice = async () => {
+    if (!deal) return;
+    try {
+      setErrorMessage(null);
+      const invoice = await convertToInvoiceMutation.mutateAsync(dealId);
+      setSuccessMessage(`Invoice '${invoice.invoice_number}' created as Draft.`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to create invoice.';
+      setErrorMessage(message);
+    }
+  };
 
   const addProductMutation = useMutation({
     mutationFn: (payload: { product_id: string; quantity: number; unit_price?: number; custom_name?: string }) =>
@@ -313,6 +337,46 @@ export default function DealDetailsPage() {
             <Trophy className="w-3.5 h-3.5" />
             <span>Mark Won</span>
           </Button>
+
+          {isClosedWon && !dealInvoice && (
+            <PermissionGate permission={PERMISSIONS.INVOICES.CREATE}>
+              <Button
+                size="sm"
+                onClick={handleCreateInvoice}
+                disabled={convertToInvoiceMutation.isPending}
+                title="Generate a Draft invoice from this Closed Won deal"
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {convertToInvoiceMutation.isPending ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Receipt className="w-3.5 h-3.5" />
+                )}
+                <span>Create Invoice</span>
+              </Button>
+            </PermissionGate>
+          )}
+
+          {!isClosedWon && (
+            <span
+              title="Invoices can only be created after the deal is Closed Won"
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 border border-slate-200 text-[11px] font-medium text-slate-500"
+            >
+              <Lock className="w-3 h-3" />
+              <span>Invoice available after Closed Won</span>
+            </span>
+          )}
+
+          {dealInvoice && (
+            <Link
+              href={`/invoices/${dealInvoice.id}`}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 transition font-semibold text-xs cursor-pointer"
+            >
+              <Receipt className="w-3.5 h-3.5" />
+              <span>View Invoice</span>
+              <span className="font-mono text-[11px]">{dealInvoice.invoice_number}</span>
+            </Link>
+          )}
 
           <Button
             size="sm"

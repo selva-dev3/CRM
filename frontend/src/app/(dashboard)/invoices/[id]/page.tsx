@@ -310,6 +310,37 @@ export default function InvoiceDetailPage() {
               </div>
             </div>
 
+            {/* Line Items (present on invoices generated from a Closed Won deal) */}
+            {invoice.items && invoice.items.length > 0 && (
+              <div className="space-y-2 pb-2">
+                <span className="text-xs font-bold text-slate-800 uppercase tracking-wider block">Line Items</span>
+                <div className="overflow-x-auto -mx-1">
+                  <table className="w-full text-xs min-w-[420px]">
+                    <thead>
+                      <tr className="text-left text-slate-400 uppercase tracking-wider">
+                        <th className="py-2 px-1 font-semibold">Description</th>
+                        <th className="py-2 px-1 font-semibold text-right">Qty</th>
+                        <th className="py-2 px-1 font-semibold text-right">Unit Price</th>
+                        <th className="py-2 px-1 font-semibold text-right">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {invoice.items.map((item) => (
+                        <tr key={item.id} className="text-slate-700">
+                          <td className="py-2 px-1 font-medium">{item.description || item.product_id}</td>
+                          <td className="py-2 px-1 text-right">{item.quantity}</td>
+                          <td className="py-2 px-1 text-right">${(item.unit_price || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          <td className="py-2 px-1 text-right font-bold text-slate-900">
+                            ${((item.quantity || 0) * (item.unit_price || 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
             <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
               <span className="text-xs font-bold text-slate-800 uppercase tracking-wider block">Stripe Online Payment URL</span>
               <a

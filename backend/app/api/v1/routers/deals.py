@@ -12,12 +12,14 @@ from app.schemas.crm_schemas import (
     DealCreate,
     DealResponse,
     DealUpdate,
+    InvoiceResponse,
     MessageResponse,
     NoteResponse,
     ProductResponse,
     QuoteResponse,
 )
 from app.services.deal_service import deal_service
+from app.services.invoice_service import invoice_service
 
 router = APIRouter()
 
@@ -202,3 +204,42 @@ async def clone_deal(deal_id: str, new_title: str, db: AsyncSession = Depends(ge
 @router.get("/{deal_id}/commission", summary="Calculate sales rep commission split for deal", dependencies=[Depends(require_permission("deals:read"))])
 async def get_deal_commission(deal_id: str, db: AsyncSession = Depends(get_db)):
     return await deal_service.get_deal_commission(db, deal_id)
+
+
+@router.post(
+    "/{deal_id}/invoice",
+    response_model=InvoiceResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create an invoice from a Closed Won deal (idempotent)",
+    dependencies=[Depends(require_permission("invoices:create"))],
+)
+async def create_invoice_from_deal(
+    deal_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Convert a Closed Won deal into a Draft invoice.
+
+    Business rule: normal invoices can only be created once the deal is
+    'Closed Won'. Totals are computed server-side from the deal's billable
+    line items; repeated calls return the existing invoice (unique index
+    enforced at DB level).
+    """
+    return await invoice_service.create_invoice_from_deal(db, deal_id, current_user)
+
+
+@router.get(
+    "/{deal_id}/invoices",
+    response_model=List[InvoiceResponse],
+    summary="List invoices created from this deal",
+    dependencies=[Depends(require_permission("deals:read"))],
+)
+async def get_deal_invoices(
+    deal_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await invoice_service.resolve_organization_id(db, current_user)
+    return await invoice_service.list_invoices_for_deal(
+        db, deal_id=deal_id, organization_id=organization_id
+    )

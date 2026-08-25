@@ -1,19 +1,41 @@
 ﻿import { useQuery, useMutation, useQueryClient, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
 
+export interface InvoiceLineItem {
+  id: string;
+  product_id: string;
+  description?: string | null;
+  quantity: number;
+  unit_price: number;
+  discount_percent: number;
+  tax_percent: number;
+}
+
 export interface InvoiceItem {
   id: string;
   invoice_number: string;
+  deal_id?: string | null;
+  company_id?: string | null;
+  contact_id?: string | null;
+  currency?: string;
   amount: number;
+  subtotal?: number;
+  discount_total?: number;
+  tax_total?: number;
+  paid_amount?: number;
   status: string;
-  due_date: string;
-  stripe_checkout_url?: string;
-  created_at: string;
+  due_date?: string | null;
+  notes?: string | null;
+  sent_at?: string | null;
+  stripe_checkout_url?: string | null;
+  created_at?: string | null;
+  items?: InvoiceLineItem[];
 }
 
 export interface InvoiceCreatePayload {
+  deal_id: string;
   invoice_number?: string;
-  amount: number;
+  amount?: number;
   status?: string;
   due_date?: string;
 }
@@ -86,6 +108,19 @@ export async function fetchInvoiceApi(invoiceId: string): Promise<InvoiceItem> {
   return apiClient.get<InvoiceItem>(`/invoices/${invoiceId}`);
 }
 
+export async function convertDealToInvoiceApi(dealId: string): Promise<InvoiceItem> {
+  return apiClient.post<InvoiceItem>(`/deals/${dealId}/invoice`);
+}
+
+export async function fetchDealInvoicesApi(dealId: string): Promise<InvoiceItem[]> {
+  try {
+    const data = await apiClient.get<InvoiceItem[]>(`/deals/${dealId}/invoices`);
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function updateInvoiceApi(invoiceId: string, payload: InvoiceCreatePayload): Promise<InvoiceItem> {
   return apiClient.put<InvoiceItem>(`/invoices/${invoiceId}`, payload);
 }
@@ -136,6 +171,27 @@ export function useInvoiceQuery(invoiceId: string, options?: Omit<UseQueryOption
     queryKey: ['invoices', invoiceId],
     queryFn: () => fetchInvoiceApi(invoiceId),
     enabled: !!invoiceId,
+    ...options,
+  });
+}
+
+export function useDealInvoicesQuery(dealId: string) {
+  return useQuery<InvoiceItem[]>({
+    queryKey: ['invoices', 'deal', dealId],
+    queryFn: () => fetchDealInvoicesApi(dealId),
+    enabled: !!dealId,
+    staleTime: 1000 * 60 * 2,
+  });
+}
+
+export function useConvertDealToInvoiceMutation(options?: UseMutationOptions<InvoiceItem, Error, string>) {
+  const queryClient = useQueryClient();
+  return useMutation<InvoiceItem, Error, string>({
+    mutationFn: (dealId) => convertDealToInvoiceApi(dealId),
+    onSuccess: (invoice, dealId) => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['invoices', 'deal', dealId] });
+    },
     ...options,
   });
 }
