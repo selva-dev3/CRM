@@ -6,8 +6,13 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import User
+from app.models.rbac import Role
 from app.schemas.organization_invitation_schemas import OrganizationInviteRequest
 from app.services.invitation_service import create_organization_user_invitation
+
+
+def _make_role() -> Role:
+    return Role(id="role-1", name="role-1")
 
 
 def _make_user(**overrides) -> User:
@@ -45,6 +50,12 @@ async def test_create_organization_user_invitation_uses_current_user_org(monkeyp
     monkeypatch.setattr(
         "app.services.invitation_service.send_user_invite_email", lambda **kwargs: None
     )
+    # Role resolution is DB-backed since the RBAC hardening; stub it so this
+    # test stays focused on org derivation from the authenticated user.
+    monkeypatch.setattr(
+        "app.services.invitation_service._resolve_invitation_role",
+        AsyncMock(return_value=_make_role()),
+    )
 
     payload = OrganizationInviteRequest(email="new@crm.com", role="role-1")
     result = await create_organization_user_invitation(db, payload, current_user)
@@ -66,6 +77,10 @@ async def test_create_organization_user_invitation_ignores_client_organization_i
 
     monkeypatch.setattr(
         "app.services.invitation_service.send_user_invite_email", lambda **kwargs: None
+    )
+    monkeypatch.setattr(
+        "app.services.invitation_service._resolve_invitation_role",
+        AsyncMock(return_value=_make_role()),
     )
 
     # organization_id is not part of the request contract anymore; even if a
@@ -116,6 +131,10 @@ async def test_create_organization_user_invitation_rejects_existing_active_user(
 
     monkeypatch.setattr(
         "app.services.invitation_service.send_user_invite_email", lambda **kwargs: None
+    )
+    monkeypatch.setattr(
+        "app.services.invitation_service._resolve_invitation_role",
+        AsyncMock(return_value=_make_role()),
     )
 
     payload = OrganizationInviteRequest(email="taken@crm.com", role="role-1")
