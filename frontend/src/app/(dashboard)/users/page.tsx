@@ -639,7 +639,8 @@ export default function UsersPage() {
             <div className="flex items-center gap-2">
               {/* Bulk Actions Dropdown */}
               <DropdownMenu>
-                <DropdownMenuTrigger className="h-10 px-4 border border-[#E5E7EB] bg-white hover:bg-[#F9FAFB] text-[#374151] font-medium rounded-btn text-button inline-flex items-center gap-2 cursor-pointer shadow-saas-sm">
+                <DropdownMenuTrigger asChild>
+                <Button type="button" variant="outline" className="w-full gap-2 text-button font-medium sm:w-auto">
                   <Sliders className="w-4 h-4 text-[#2563EB]" />
                   <span>Bulk Actions</span>
                   {selectedIds.size > 0 && (
@@ -648,7 +649,8 @@ export default function UsersPage() {
                     </span>
                   )}
                   <ChevronDown className="w-4 h-4 text-[#9CA3AF]" />
-                </DropdownMenuTrigger>
+                </Button>
+              </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-52">
                   <DropdownMenuLabel className="text-badge font-semibold text-[#111827]">
                     {selectedIds.size > 0 ? `Bulk Actions (${selectedIds.size} selected)` : 'Select users below to apply'}
@@ -664,8 +666,10 @@ export default function UsersPage() {
                       <span>Bulk Deactivate ({selectedIds.size})</span>
                     </DropdownMenuItem>
                   </PermissionGate>
+                  <DropdownMenuSeparator />
                   <PermissionGate permission="users:delete">
                     <DropdownMenuItem
+                      variant="destructive"
                       disabled={selectedIds.size === 0}
                       onClick={handleBulkDelete}
                       className={`cursor-pointer text-button font-medium ${selectedIds.size === 0 ? 'opacity-50 cursor-not-allowed' : 'text-[#DC2626] hover:bg-[#DC2626]/10'}`}

@@ -1,5 +1,7 @@
 ﻿'use client';
 
+import { ActionMenu } from '@/components/common/action-menu';
+import { Button } from '@/components/ui/button';
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
@@ -307,32 +309,16 @@ export default function MeetingsPage() {
       id: 'actions',
       header: 'ACTIONS',
       cell: (item) => (
-        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-          <button
-            onClick={() => router.push(`/meetings/${item.id}`)}
-            title="View Details & AI Transcript"
-            className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-md transition-colors cursor-pointer"
-          >
-            <FileText className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => {
-              setRescheduleMeeting(item);
-              setNewStartTime(item.start_time ? item.start_time.substring(0, 16) : '');
-            }}
-            title="Reschedule Meeting"
-            className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-md transition-colors cursor-pointer"
-          >
-            <Clock className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setMeetingToDelete(item)}
-            title="Cancel Meeting"
-            className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
-        </div>
+        <ActionMenu
+          iconOnly
+          label="Open meeting actions"
+          onTriggerClick={(event) => event.stopPropagation()}
+          actions={[
+            { label: 'View details & transcript', icon: <FileText className="w-4 h-4 text-indigo-600" />, onSelect: () => router.push(`/meetings/${item.id}`) },
+            { label: 'Reschedule meeting', icon: <Clock className="w-4 h-4 text-amber-500" />, onSelect: () => { setRescheduleMeeting(item); setNewStartTime(item.start_time ? item.start_time.substring(0, 16) : ''); } },
+            { label: 'Cancel meeting', icon: <Trash2 className="w-4 h-4" />, variant: 'destructive', onSelect: () => setMeetingToDelete(item) },
+          ]}
+        />
       ),
     },
   ];
@@ -346,7 +332,7 @@ export default function MeetingsPage() {
             <CheckCircle2 className="w-5 h-5 text-emerald-600" />
             <span className="truncate max-w-2xl">{successMessage}</span>
           </div>
-          <button onClick={() => setSuccessMessage(null)} className="text-emerald-600 hover:text-emerald-800">
+          <button type="button" aria-label="Dismiss success message" onClick={() => setSuccessMessage(null)} className="text-emerald-600 hover:text-emerald-800">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -358,7 +344,7 @@ export default function MeetingsPage() {
             <AlertCircle className="w-5 h-5 text-rose-600" />
             <span>{errorMessage}</span>
           </div>
-          <button onClick={() => setErrorMessage(null)} className="text-rose-600 hover:text-rose-800">
+          <button type="button" aria-label="Dismiss error message" onClick={() => setErrorMessage(null)} className="text-rose-600 hover:text-rose-800">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -374,43 +360,17 @@ export default function MeetingsPage() {
           <p className="text-slate-500 text-sm mt-0.5">Schedule meetings with Zoom/Teams integration & AI transcript summaries</p>
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <button
-            onClick={() => setIsZoomModalOpen(true)}
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer"
-          >
-            <Video className="w-4 h-4 text-blue-600" />
-            Zoom Link
-          </button>
-
-          <button
-            onClick={() => setIsTeamsModalOpen(true)}
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer"
-          >
-            <Share2 className="w-4 h-4 text-indigo-600" />
-            Teams Link
-          </button>
-
-          <button
-            onClick={handleExportIcal}
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer"
-          >
-            <Download className="w-4 h-4 text-slate-500" />
-            Export iCal
-          </button>
-
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
           <PermissionGate permission={PERMISSIONS.MEETINGS.CREATE}>
-            <button
-              onClick={() => {
-                resetCreateForm();
-                setIsCreateModalOpen(true);
-              }}
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors shadow-sm cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              Schedule Meeting
-            </button>
+            <Button onClick={() => { resetCreateForm(); setIsCreateModalOpen(true); }} className="w-full gap-2 text-xs font-semibold sm:w-auto">
+              <Plus className="w-4 h-4" />Schedule Meeting
+            </Button>
           </PermissionGate>
+          <ActionMenu label="More" className="w-full text-xs font-semibold sm:w-auto" actions={[
+            { label: 'Create Zoom link', icon: <Video className="w-4 h-4 text-blue-600" />, onSelect: () => setIsZoomModalOpen(true) },
+            { label: 'Create Teams link', icon: <Share2 className="w-4 h-4 text-indigo-600" />, onSelect: () => setIsTeamsModalOpen(true) },
+            { label: 'Export iCal', icon: <Download className="w-4 h-4 text-slate-500" />, onSelect: handleExportIcal },
+          ]} />
         </div>
       </div>
 
@@ -429,7 +389,7 @@ export default function MeetingsPage() {
         searchPlaceholder="Search meeting title..."
         toolbarActions={
           selectedIds.size > 0 ? (
-            <div className="flex items-center gap-2 bg-indigo-50 px-3 py-1 rounded-lg border border-indigo-200">
+            <div className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1 sm:w-auto">
               <span className="text-xs font-semibold text-indigo-700">{selectedIds.size} selected</span>
               <button
                 onClick={handleBulkCancel}

@@ -130,7 +130,7 @@ export default function CallDetailPage() {
             <CheckCircle2 className="w-5 h-5 text-emerald-600" />
             <span>{successMessage}</span>
           </div>
-          <button onClick={() => setSuccessMessage(null)} className="text-emerald-600 hover:text-emerald-800">
+          <button type="button" aria-label="Dismiss success message" onClick={() => setSuccessMessage(null)} className="text-emerald-600 hover:text-emerald-800">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -142,7 +142,7 @@ export default function CallDetailPage() {
             <AlertCircle className="w-5 h-5 text-rose-600" />
             <span>{errorMessage}</span>
           </div>
-          <button onClick={() => setErrorMessage(null)} className="text-rose-600 hover:text-rose-800">
+          <button type="button" aria-label="Dismiss error message" onClick={() => setErrorMessage(null)} className="text-rose-600 hover:text-rose-800">
             <X className="w-4 h-4" />
           </button>
         </div>

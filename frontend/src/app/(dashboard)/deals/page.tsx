@@ -25,6 +25,7 @@ import {
   ArrowRight,
   TrendingUp
 } from 'lucide-react';
+import { ActionMenu } from '@/components/common/action-menu';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -350,7 +351,7 @@ export default function DealsPage() {
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
 
           <PermissionGate permission={PERMISSIONS.DEALS.CREATE}>
             <Button
@@ -366,30 +367,25 @@ export default function DealsPage() {
             </Button>
           </PermissionGate>
 
-          <PermissionGate permission={PERMISSIONS.DEALS.EXPORT}>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleExportCsv}
-              className="border-slate-300 font-semibold text-xs gap-1 cursor-pointer"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Export CSV</span>
-            </Button>
-          </PermissionGate>
-
-          <PermissionGate permission={PERMISSIONS.DEALS.IMPORT}>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleImportCsv}
-              disabled={importCsvMutation.isPending}
-              className="border-slate-300 font-semibold text-xs gap-1 cursor-pointer"
-            >
-              <Upload className="w-3.5 h-3.5 text-blue-600" />
-              <span>Import CSV</span>
-            </Button>
-          </PermissionGate>
+          <ActionMenu
+            label="More"
+            className="h-8 text-xs font-semibold"
+            actions={[
+              {
+                label: 'Export CSV',
+                permission: PERMISSIONS.DEALS.EXPORT,
+                icon: <FileSpreadsheet className="w-4 h-4 text-emerald-600" />,
+                onSelect: handleExportCsv,
+              },
+              {
+                label: 'Import CSV',
+                permission: PERMISSIONS.DEALS.IMPORT,
+                icon: <Upload className="w-4 h-4 text-blue-600" />,
+                disabled: importCsvMutation.isPending,
+                onSelect: handleImportCsv,
+              },
+            ]}
+          />
 
           {selectedIds.size > 0 && (
             <PermissionGate permission={PERMISSIONS.DEALS.BULK_DELETE}>

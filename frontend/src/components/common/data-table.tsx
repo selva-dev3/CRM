@@ -1,13 +1,15 @@
 ﻿'use client';
 
 import { Fragment, type ReactNode, useCallback, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, Clock, ListFilter, MoreHorizontal, Pencil, Search, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Clock, ListFilter, Pencil, Search, X } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { Avatar } from '@/components/common/avatar';
 import { EmptyState } from '@/components/common/empty-state';
+import { ActionMenu } from '@/components/common/action-menu';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import { PermissionKey } from '@/lib/permissions';
 
 import { Input } from '@/components/ui/input';
@@ -20,7 +22,17 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuCheckboxItem } from '../ui/dropdown-menu';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 // ---------------------------------------------------------------------------
 // Column definition
@@ -526,30 +538,20 @@ export function DataTable<TItem>({
                       return (
                         <TableCell className={cn('px-4', actionVariant === 'inline' ? 'w-[100px] text-right' : 'w-[80px] text-center')}>
                           {actionVariant === 'menu' ? (
-                            <DropdownMenu>
-                              <DropdownMenuTrigger
-                                className="h-11 w-11 -m-1.5 p-0 border-0 bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg cursor-pointer"
-                                onClick={(e: React.MouseEvent) => e.stopPropagation()}
-                              >
-                                <MoreHorizontal className="h-4 w-4 mx-auto" />
-                                <span className="sr-only">Open menu</span>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="w-36">
-                                {resolvedActions.map((action) => (
-                                  <PermissionGate key={action.label} permission={action.permission}>
-                                    <DropdownMenuItem
-                                      onClick={(e: React.MouseEvent) => {
-                                        e.stopPropagation();
-                                        action.onClick(item);
-                                      }}
-                                    >
-                                      {action.icon}
-                                      <span>{action.label}</span>
-                                    </DropdownMenuItem>
-                                  </PermissionGate>
-                                ))}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
+                            <ActionMenu
+                              iconOnly
+                              label="Open row actions"
+                              className="-m-1.5 border-0 bg-transparent text-slate-600 shadow-none hover:bg-slate-100 hover:text-slate-900"
+                              contentClassName="w-44"
+                              onTriggerClick={(event) => event.stopPropagation()}
+                              actions={resolvedActions.map((action) => ({
+                                label: action.label,
+                                icon: action.icon,
+                                permission: action.permission,
+                                variant: action.variant,
+                                onSelect: () => action.onClick(item),
+                              }))}
+                            />
                           ) : (
                             <div className="flex justify-end gap-1">
                               {resolvedActions.map((action) => (
@@ -561,7 +563,12 @@ export function DataTable<TItem>({
                                       e.stopPropagation();
                                       action.onClick(item);
                                     }}
-                                    className="h-11 -my-1.5 px-2 text-xs font-bold text-slate-700 hover:text-slate-900 hover:bg-slate-100"
+                                    className={cn(
+                                      "h-11 -my-1.5 px-2 text-xs font-bold",
+                                      action.variant === 'destructive'
+                                        ? 'text-rose-600 hover:bg-rose-50 hover:text-rose-700'
+                                        : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900',
+                                    )}
                                   >
                                     {action.icon ? action.icon : <Pencil className="h-3.5 w-3.5 mr-1" />}
                                     {action.label}
@@ -603,7 +610,7 @@ export function DataTable<TItem>({
             Page {pageIndex + 1} of {pageCount}
             {totalRecords !== undefined && ` Â· ${totalRecords} records`}
           </span>
-          <div className="flex items-center gap-2">
+          <ButtonGroup aria-label="Pagination controls">
             <Button
               variant="outline"
               size="sm"
@@ -624,7 +631,7 @@ export function DataTable<TItem>({
               Next
               <ChevronRight className="h-4 w-4 ml-1" />
             </Button>
-          </div>
+          </ButtonGroup>
         </div>
       )}
 
@@ -683,11 +690,11 @@ function DataTableToolbar({
   onToggleColumn,
 }: DataTableToolbarProps): React.JSX.Element {
   return (
-    <div className="sticky top-0 z-20 flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-4 py-3">
-      {leftActions && <div className="flex items-center gap-2">{leftActions}</div>}
+    <div className="sticky top-0 z-20 flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-3 sm:px-4">
+      {leftActions && <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">{leftActions}</div>}
 
       {onSearchChange && (
-        <div className="relative min-w-0 flex-1 w-full sm:max-w-xs">
+        <div className="relative order-first min-w-0 w-full sm:order-none sm:flex-1 sm:max-w-xs">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
           <Input
             type="text"
@@ -711,9 +718,11 @@ function DataTableToolbar({
 
       {filters?.map((filter) => (
         <DropdownMenu key={filter.value}>
-          <DropdownMenuTrigger className="h-9 px-3 py-1.5 border border-slate-300 bg-slate-50 hover:bg-slate-100 rounded-lg text-xs font-bold text-slate-900 inline-flex items-center gap-1.5 cursor-pointer">
+          <DropdownMenuTrigger asChild>
+          <Button type="button" variant="outline" size="sm" className="h-9 gap-1.5 bg-slate-50 text-xs font-bold text-slate-900">
             <ListFilter className="h-3.5 w-3.5 text-slate-500" />
             <span>{filter.label}</span>
+          </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-44">
             {filter.options.map((option) => (
@@ -731,9 +740,11 @@ function DataTableToolbar({
 
       {statusFilter && (
         <DropdownMenu>
-          <DropdownMenuTrigger className="h-9 px-3 py-1.5 border border-slate-300 bg-slate-50 hover:bg-slate-100 rounded-lg text-xs font-bold text-slate-900 inline-flex items-center gap-1.5 cursor-pointer">
+          <DropdownMenuTrigger asChild>
+          <Button type="button" variant="outline" size="sm" className="h-9 gap-1.5 bg-slate-50 text-xs font-bold text-slate-900">
             <Clock className="h-3.5 w-3.5 text-slate-500" />
             <span className="font-extrabold capitalize">{statusFilter.value || 'Status'}</span>
+          </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-40">
             <DropdownMenuRadioGroup
@@ -756,9 +767,11 @@ function DataTableToolbar({
 
       {sortOptions && (
         <DropdownMenu>
-          <DropdownMenuTrigger className="h-9 px-3 py-1.5 border border-slate-300 bg-slate-50 hover:bg-slate-100 rounded-lg text-xs font-bold text-slate-900 inline-flex items-center gap-1.5 cursor-pointer">
+          <DropdownMenuTrigger asChild>
+          <Button type="button" variant="outline" size="sm" className="h-9 gap-1.5 bg-slate-50 text-xs font-bold text-slate-900">
             <ChevronDown className="h-3.5 w-3.5 text-slate-500" />
             <span>{sortOptions.options.find((o) => o.value === sortOptions.value)?.label ?? 'Sort'}</span>
+          </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-40">
             <DropdownMenuRadioGroup
@@ -779,7 +792,7 @@ function DataTableToolbar({
         </DropdownMenu>
       )}
 
-      <div className="flex-1" />
+      <div className="hidden flex-1 sm:block" />
 
       {hasActiveFilters && onClearFilters && (
         <Button variant="ghost" size="sm" className="h-9 gap-1.5 text-xs font-bold text-rose-600 hover:bg-rose-50" onClick={onClearFilters}>
@@ -790,9 +803,11 @@ function DataTableToolbar({
 
       {hasHideableColumns && (
         <DropdownMenu>
-          <DropdownMenuTrigger className="h-9 px-3 py-1.5 border border-slate-300 bg-slate-50 hover:bg-slate-100 rounded-lg text-xs font-bold text-slate-900 inline-flex items-center gap-1.5 cursor-pointer">
+          <DropdownMenuTrigger asChild>
+          <Button type="button" variant="outline" size="sm" className="h-9 gap-1.5 bg-slate-50 text-xs font-bold text-slate-900">
             <ListFilter className="h-3.5 w-3.5" />
             <span>Columns</span>
+          </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-44">
             <DropdownMenuLabel className="text-xs font-bold text-slate-900">Toggle columns</DropdownMenuLabel>
@@ -801,7 +816,7 @@ function DataTableToolbar({
               <DropdownMenuCheckboxItem
                 key={col.id}
                 checked={!hiddenColumns.has(col.id)}
-                onClick={() => onToggleColumn(col.id)}
+                onCheckedChange={() => onToggleColumn(col.id)}
                 className="cursor-pointer text-xs font-bold text-slate-900"
               >
                 {typeof col.header === 'string' ? col.header : col.id}
@@ -811,7 +826,7 @@ function DataTableToolbar({
         </DropdownMenu>
       )}
 
-      {toolbarActions && <div className="flex items-center gap-2">{toolbarActions}</div>}
+      {toolbarActions && <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto">{toolbarActions}</div>}
     </div>
   );
 }

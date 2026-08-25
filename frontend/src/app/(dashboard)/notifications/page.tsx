@@ -189,7 +189,7 @@ export default function NotificationsPage() {
             <CheckCircle2 className="w-5 h-5 text-emerald-600" />
             <span className="truncate max-w-2xl">{successMessage}</span>
           </div>
-          <button onClick={() => setSuccessMessage(null)} className="text-emerald-600 hover:text-emerald-800">
+          <button type="button" aria-label="Dismiss success message" onClick={() => setSuccessMessage(null)} className="text-emerald-600 hover:text-emerald-800">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -201,7 +201,7 @@ export default function NotificationsPage() {
             <AlertCircle className="w-5 h-5 text-rose-600" />
             <span>{errorMessage}</span>
           </div>
-          <button onClick={() => setErrorMessage(null)} className="text-rose-600 hover:text-rose-800">
+          <button type="button" aria-label="Dismiss error message" onClick={() => setErrorMessage(null)} className="text-rose-600 hover:text-rose-800">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -280,7 +280,7 @@ export default function NotificationsPage() {
           </div>
 
           {selectedIds.size > 0 && (
-            <div className="flex items-center gap-2 bg-indigo-50 px-3 py-1 rounded-lg border border-indigo-200">
+            <div className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1 sm:w-auto">
               <span className="text-xs font-semibold text-indigo-700">{selectedIds.size} selected</span>
               <button
                 onClick={handleBulkDelete}

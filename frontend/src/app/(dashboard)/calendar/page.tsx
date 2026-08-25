@@ -1,5 +1,7 @@
 'use client';
 
+import { ActionMenu } from '@/components/common/action-menu';
+import { Button } from '@/components/ui/button';
 import React, { useState, useEffect } from 'react';
 import {
   Calendar as CalendarIcon,
@@ -251,26 +253,15 @@ export default function CalendarPage() {
       id: 'actions',
       header: 'ACTIONS',
       cell: (item) => (
-        <div className="flex items-center gap-2">
-          <PermissionGate permission={PERMISSIONS.CALENDAR.WRITE}>
-            <button
-              onClick={() => handleOpenEditModal(item)}
-              title="Edit Event"
-              className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-md transition-colors cursor-pointer"
-            >
-              <Edit className="w-4 h-4" />
-            </button>
-          </PermissionGate>
-          <PermissionGate permission={PERMISSIONS.CALENDAR.WRITE}>
-            <button
-              onClick={() => setEventToDelete(item)}
-              title="Delete Event"
-              className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </PermissionGate>
-        </div>
+        <ActionMenu
+          iconOnly
+          label="Open event actions"
+          onTriggerClick={(event) => event.stopPropagation()}
+          actions={[
+            { label: 'Edit event', permission: PERMISSIONS.CALENDAR.WRITE, icon: <Edit className="w-4 h-4 text-indigo-600" />, onSelect: () => handleOpenEditModal(item) },
+            { label: 'Delete event', permission: PERMISSIONS.CALENDAR.WRITE, icon: <Trash2 className="w-4 h-4" />, variant: 'destructive', onSelect: () => setEventToDelete(item) },
+          ]}
+        />
       ),
     },
   ];
@@ -284,7 +275,7 @@ export default function CalendarPage() {
             <CheckCircle2 className="w-5 h-5 text-emerald-600" />
             <span>{successMessage}</span>
           </div>
-          <button onClick={() => setSuccessMessage(null)} className="text-emerald-600 hover:text-emerald-800">
+          <button type="button" aria-label="Dismiss success message" onClick={() => setSuccessMessage(null)} className="text-emerald-600 hover:text-emerald-800">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -296,7 +287,7 @@ export default function CalendarPage() {
             <AlertCircle className="w-5 h-5 text-rose-600" />
             <span>{errorMessage}</span>
           </div>
-          <button onClick={() => setErrorMessage(null)} className="text-rose-600 hover:text-rose-800">
+          <button type="button" aria-label="Dismiss error message" onClick={() => setErrorMessage(null)} className="text-rose-600 hover:text-rose-800">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -314,42 +305,17 @@ export default function CalendarPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap w-full sm:w-auto">
-          <button
-            onClick={handleSyncGoogle}
-            disabled={syncGoogleMutation.isPending}
-            className="flex items-center justify-center gap-1.5 sm:gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer disabled:opacity-50 flex-1 sm:flex-initial min-w-[110px] sm:min-w-0"
-          >
-            {syncGoogleMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : <Globe className="w-4 h-4 text-blue-600 shrink-0" />}
-            <span>Sync Google</span>
-          </button>
-
-          <button
-            onClick={handleSyncOutlook}
-            disabled={syncOutlookMutation.isPending}
-            className="flex items-center justify-center gap-1.5 sm:gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer disabled:opacity-50 flex-1 sm:flex-initial min-w-[110px] sm:min-w-0"
-          >
-            {syncOutlookMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : <RefreshCw className="w-4 h-4 text-indigo-600 shrink-0" />}
-            <span>Sync Outlook</span>
-          </button>
-
-          <button
-            onClick={() => setIsRecurringModalOpen(true)}
-            className="flex items-center justify-center gap-1.5 sm:gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer flex-1 sm:flex-initial min-w-[120px] sm:min-w-0"
-          >
-            <Repeat className="w-4 h-4 text-amber-500 shrink-0" />
-            <span>Recurring Rule</span>
-          </button>
-
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
           <PermissionGate permission={PERMISSIONS.CALENDAR.WRITE}>
-            <button
-              onClick={handleOpenCreateModal}
-              className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-xs sm:text-sm transition-colors shadow-sm cursor-pointer w-full sm:w-auto"
-            >
-              <Plus className="w-4 h-4 shrink-0" />
-              <span>Create Event</span>
-            </button>
+            <Button onClick={handleOpenCreateModal} className="w-full gap-2 text-xs font-semibold sm:w-auto">
+              <Plus className="w-4 h-4" /><span>Create Event</span>
+            </Button>
           </PermissionGate>
+          <ActionMenu label="More" className="w-full text-xs font-semibold sm:w-auto" actions={[
+            { label: 'Sync Google', icon: syncGoogleMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Globe className="w-4 h-4 text-blue-600" />, disabled: syncGoogleMutation.isPending, onSelect: handleSyncGoogle },
+            { label: 'Sync Outlook', icon: syncOutlookMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4 text-indigo-600" />, disabled: syncOutlookMutation.isPending, onSelect: handleSyncOutlook },
+            { label: 'Recurring rule', icon: <Repeat className="w-4 h-4 text-amber-500" />, onSelect: () => setIsRecurringModalOpen(true) },
+          ]} />
         </div>
       </div>
 

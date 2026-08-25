@@ -24,7 +24,9 @@ import {
   Percent,
   Filter
 } from 'lucide-react';
+import { ActionMenu } from '@/components/common/action-menu';
 import { DataTable, DataTableColumn } from '@/components/common/data-table';
+import { Button } from '@/components/ui/button';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
 import { CustomSelect } from '@/components/common/custom-select';
@@ -375,7 +377,7 @@ export default function ReportsPage() {
             <CheckCircle2 className="w-5 h-5 text-emerald-600" />
             <span>{successMessage}</span>
           </div>
-          <button onClick={() => setSuccessMessage(null)} className="text-emerald-600 hover:text-emerald-800">
+          <button type="button" aria-label="Dismiss success message" onClick={() => setSuccessMessage(null)} className="text-emerald-600 hover:text-emerald-800">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -387,7 +389,7 @@ export default function ReportsPage() {
             <AlertCircle className="w-5 h-5 text-rose-600" />
             <span>{errorMessage}</span>
           </div>
-          <button onClick={() => setErrorMessage(null)} className="text-rose-600 hover:text-rose-800">
+          <button type="button" aria-label="Dismiss error message" onClick={() => setErrorMessage(null)} className="text-rose-600 hover:text-rose-800">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -405,48 +407,43 @@ export default function ReportsPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap w-full sm:w-auto">
-          <PermissionGate permission={PERMISSIONS.REPORTS.EXPORT}>
-            <button
-              onClick={handleExportCsv}
-              disabled={exportCsvMutation.isPending}
-              className="flex items-center justify-center gap-1.5 sm:gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg font-semibold text-xs transition-colors shadow-xs cursor-pointer disabled:opacity-50 flex-1 sm:flex-initial min-w-[120px] sm:min-w-0"
-            >
-              {exportCsvMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />}
-              <span>Export S3 CSV</span>
-            </button>
-          </PermissionGate>
-
-          <PermissionGate permission={PERMISSIONS.REPORTS.EXPORT}>
-            <button
-              onClick={handleExportPdf}
-              disabled={exportPdfMutation.isPending}
-              className="flex items-center justify-center gap-1.5 sm:gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg font-semibold text-xs transition-colors shadow-xs cursor-pointer disabled:opacity-50 flex-1 sm:flex-initial min-w-[100px] sm:min-w-0"
-            >
-              {exportPdfMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : <Download className="w-4 h-4 text-indigo-600 shrink-0" />}
-              <span>Export PDF</span>
-            </button>
-          </PermissionGate>
-
-          <PermissionGate permission={PERMISSIONS.REPORTS.SCHEDULE}>
-            <button
-              onClick={() => setIsScheduleModalOpen(true)}
-              className="flex items-center justify-center gap-1.5 sm:gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg font-semibold text-xs transition-colors shadow-xs cursor-pointer flex-1 sm:flex-initial min-w-[130px] sm:min-w-0"
-            >
-              <Mail className="w-4 h-4 text-purple-600 shrink-0" />
-              <span>Schedule Delivery</span>
-            </button>
-          </PermissionGate>
-
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
           <PermissionGate permission={PERMISSIONS.REPORTS.CREATE}>
-            <button
+            <Button
               onClick={() => setIsCustomModalOpen(true)}
-              className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-xs sm:text-sm transition-colors shadow-xs cursor-pointer w-full sm:w-auto"
+              className="w-full gap-2 text-xs font-semibold sm:w-auto"
             >
-              <Plus className="w-4 h-4 shrink-0" />
+              <Plus className="w-4 h-4" />
               <span>New Query Builder</span>
-            </button>
+            </Button>
           </PermissionGate>
+
+          <ActionMenu
+            label="More"
+            className="w-full text-xs font-semibold sm:w-auto"
+            actions={[
+              {
+                label: 'Export S3 CSV',
+                permission: PERMISSIONS.REPORTS.EXPORT,
+                icon: exportCsvMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4 text-emerald-600" />,
+                disabled: exportCsvMutation.isPending,
+                onSelect: handleExportCsv,
+              },
+              {
+                label: 'Export PDF',
+                permission: PERMISSIONS.REPORTS.EXPORT,
+                icon: exportPdfMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4 text-indigo-600" />,
+                disabled: exportPdfMutation.isPending,
+                onSelect: handleExportPdf,
+              },
+              {
+                label: 'Schedule delivery',
+                permission: PERMISSIONS.REPORTS.SCHEDULE,
+                icon: <Mail className="w-4 h-4 text-purple-600" />,
+                onSelect: () => setIsScheduleModalOpen(true),
+              },
+            ]}
+          />
         </div>
       </div>
 
