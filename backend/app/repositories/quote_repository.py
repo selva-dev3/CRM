@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Deal, Quote
+from app.models import Quote
 
 
 class QuoteRepository:
@@ -32,15 +32,10 @@ class QuoteRepository:
         self, db: AsyncSession, *, quote_id: str, organization_id: str
     ) -> Quote | None:
         result = await db.execute(
-            select(Quote).where(Quote.id == quote_id, Quote.organization_id == organization_id)
-        )
-        return result.scalars().first()
-
-    async def get_deal_scoped(
-        self, db: AsyncSession, *, deal_id: str, organization_id: str
-    ) -> Deal | None:
-        result = await db.execute(
-            select(Deal).where(Deal.id == deal_id, Deal.organization_id == organization_id)
+            select(Quote).where(
+                Quote.id == quote_id,
+                Quote.organization_id == organization_id,
+            )
         )
         return result.scalars().first()
 
@@ -49,7 +44,10 @@ class QuoteRepository:
     ) -> list[Quote]:
         result = await db.execute(
             select(Quote)
-            .where(Quote.deal_id == deal_id, Quote.organization_id == organization_id)
+            .where(
+                Quote.deal_id == deal_id,
+                Quote.organization_id == organization_id,
+            )
             .order_by(Quote.created_at.desc())
         )
         return list(result.scalars().all())
@@ -59,8 +57,27 @@ class QuoteRepository:
         db.add(quote)
         return quote
 
-    async def delete(self, db: AsyncSession, quote: Quote) -> None:
-        await db.delete(quote)
+    async def delete_scoped(self, db: AsyncSession, *, quote_id: str, organization_id: str) -> bool:
+        result = await db.execute(
+            delete(Quote).where(
+                Quote.id == quote_id,
+                Quote.organization_id == organization_id,
+            )
+        )
+        return bool(result.rowcount)
+
+    async def bulk_delete_scoped(
+        self, db: AsyncSession, *, quote_ids: list[str], organization_id: str
+    ) -> int:
+        if not quote_ids:
+            return 0
+        result = await db.execute(
+            delete(Quote).where(
+                Quote.id.in_(quote_ids),
+                Quote.organization_id == organization_id,
+            )
+        )
+        return int(result.rowcount or 0)
 
 
 quote_repository = QuoteRepository()

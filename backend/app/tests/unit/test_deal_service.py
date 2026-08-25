@@ -1,16 +1,16 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import NotFoundError
-from app.models import User
 from app.models.deal import Deal
 from app.repositories.deal_repository import DealRepository
 from app.schemas.crm_schemas import DealCreate, DealUpdate
 from app.services.deal_service import DealService, deal_to_dict
 from app.services.integration_service import integration_service
+from app.services.quote_service import QuoteService
 
 
 def _make_deal(**overrides) -> Deal:
@@ -24,7 +24,7 @@ def _make_deal(**overrides) -> Deal:
         "assigned_to": "user-1",
         "company_id": None,
         "contact_id": None,
-        "created_at": datetime(2026, 8, 1, tzinfo=timezone.utc),
+        "created_at": datetime(2026, 8, 1, tzinfo=UTC),
     }
     defaults.update(overrides)
     return Deal(**defaults)
@@ -194,9 +194,7 @@ async def test_add_deal_product_recalculates_amount():
     deal = _make_deal()
     repo = DealRepository()
     repo.get_product = AsyncMock(return_value=None)
-    repo.create_product = AsyncMock(
-        return_value=type("P", (), {"id": "prod-1", "price": 500.0})()
-    )
+    repo.create_product = AsyncMock(return_value=type("P", (), {"id": "prod-1", "price": 500.0})())
     repo.get_deal_product = AsyncMock(return_value=None)
     repo.create_deal_product = AsyncMock()
     repo.list_deal_products = AsyncMock(
@@ -334,9 +332,7 @@ async def test_update_deal_fires_probability_changed_event(monkeypatch):
 @pytest.mark.asyncio
 async def test_predict_win_rate_fallback_for_closed_won():
     repo = DealRepository()
-    repo.get_by_id = AsyncMock(
-        return_value=_make_deal(stage="Closed Won", probability=50.0)
-    )
+    repo.get_by_id = AsyncMock(return_value=_make_deal(stage="Closed Won", probability=50.0))
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
@@ -348,3 +344,37 @@ async def test_predict_win_rate_fallback_for_closed_won():
 
     assert result["predicted_probability"] == 100.0
     assert result["model"] == "crm-sales-analytics-engine"
+
+
+@pytest.mark.asyncio
+async def test_get_deal_quotes_uses_scoped_deal_and_quote_service():
+    repo = DealRepository()
+    repo.get_by_id_scoped = AsyncMock(return_value=_make_deal())
+    quotes = AsyncMock(spec=QuoteService)
+    quotes.list_quotes_for_deal.return_value = [{"id": "quote-1"}]
+    service = DealService(repository=repo, quote_service_instance=quotes)
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.get_deal_quotes(db, "deal-1", "org-1")
+
+    assert result == [{"id": "quote-1"}]
+    repo.get_by_id_scoped.assert_awaited_once_with(db, deal_id="deal-1", organization_id="org-1")
+    quotes.list_quotes_for_deal.assert_awaited_once_with(
+        db, deal_id="deal-1", organization_id="org-1"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("deal_id", ["foreign-deal", "missing-deal"])
+async def test_get_deal_quotes_hides_foreign_and_missing_deals(deal_id):
+    repo = DealRepository()
+    repo.get_by_id_scoped = AsyncMock(return_value=None)
+    quotes = AsyncMock(spec=QuoteService)
+    service = DealService(repository=repo, quote_service_instance=quotes)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(NotFoundError):
+        await service.get_deal_quotes(db, deal_id, "org-1")
+
+    repo.get_by_id_scoped.assert_awaited_once_with(db, deal_id=deal_id, organization_id="org-1")
+    quotes.list_quotes_for_deal.assert_not_awaited()

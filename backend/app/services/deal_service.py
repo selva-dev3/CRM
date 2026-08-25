@@ -16,7 +16,7 @@ from app.schemas.crm_schemas import DealCreate, DealUpdate
 from app.services.note_service import note_service
 from app.services.notification_service import notification_service
 from app.services.org_service import organization_service
-from app.repositories.quote_repository import quote_repository
+from app.services.quote_service import QuoteService, quote_service
 
 logger = get_logger(__name__)
 
@@ -52,8 +52,13 @@ def deal_to_dict(d: Deal) -> dict:
 class DealService:
     """Business logic for the Deal domain."""
 
-    def __init__(self, repository: DealRepository | None = None) -> None:
+    def __init__(
+        self,
+        repository: DealRepository | None = None,
+        quote_service_instance: QuoteService | None = None,
+    ) -> None:
         self.repository = repository or DealRepository()
+        self.quote_service = quote_service_instance or quote_service
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
         try:
@@ -81,7 +86,9 @@ class DealService:
                 code="INVALID_DEAL_STAGE",
             )
 
-    async def _guard_closed_won_transition(self, db: AsyncSession, deal: Deal, new_stage: str) -> None:
+    async def _guard_closed_won_transition(
+        self, db: AsyncSession, deal: Deal, new_stage: str
+    ) -> None:
         """Deals with an existing invoice must stay Closed Won (financial auditability)."""
         if deal.stage != DEAL_STAGE_CLOSED_WON or new_stage == DEAL_STAGE_CLOSED_WON:
             return
@@ -106,7 +113,12 @@ class DealService:
         stage: str | None = None,
     ) -> list[dict]:
         deals = await self.repository.list(
-            db, organization_id=organization_id or "", page=page, limit=limit, search=search, stage=stage
+            db,
+            organization_id=organization_id or "",
+            page=page,
+            limit=limit,
+            search=search,
+            stage=stage,
         )
         return [deal_to_dict(d) for d in deals]
 
@@ -182,9 +194,7 @@ class DealService:
         deals = await self.repository.list_all(db)
         board: dict = {}
         for d in deals:
-            board.setdefault(d.stage, []).append(
-                {"id": d.id, "title": d.title, "amount": d.amount}
-            )
+            board.setdefault(d.stage, []).append({"id": d.id, "title": d.title, "amount": d.amount})
         return board
 
     async def get_win_loss_analytics(self) -> dict:
@@ -231,9 +241,12 @@ class DealService:
         if payload.probability is not None:
             d.probability = payload.probability
 
-        if payload.assigned_to is not None and payload.assigned_to not in ("null", "None", ""):
-            if await self.repository.user_exists(db, payload.assigned_to):
-                d.assigned_to = payload.assigned_to
+        if (
+            payload.assigned_to is not None
+            and payload.assigned_to not in ("null", "None", "")
+            and await self.repository.user_exists(db, payload.assigned_to)
+        ):
+            d.assigned_to = payload.assigned_to
 
         if payload.company_id is not None:
             if payload.company_id in ("null", "None", ""):
@@ -466,24 +479,17 @@ class DealService:
             current_user=current_user,
         )
 
-    async def get_deal_quotes(self, db: AsyncSession, deal_id: str, organization_id: str) -> list[dict]:
-        deal = await self.repository.get_by_id(db, deal_id)
-        if not deal or deal.organization_id != organization_id:
-            raise NotFoundError(message=f"Deal '{deal_id}' not found")
-        quotes = await quote_repository.list_by_deal(
+    async def get_deal_quotes(
+        self, db: AsyncSession, deal_id: str, organization_id: str
+    ) -> list[dict]:
+        deal = await self.repository.get_by_id_scoped(
             db, deal_id=deal_id, organization_id=organization_id
         )
-        return [
-            {
-                "id": quote.id,
-                "deal_id": quote.deal_id,
-                "quote_number": quote.quote_number,
-                "total_amount": quote.total_amount,
-                "status": quote.status,
-                "created_at": str(quote.created_at) if quote.created_at else None,
-            }
-            for quote in quotes
-        ]
+        if not deal:
+            raise NotFoundError(message=f"Deal '{deal_id}' not found")
+        return await self.quote_service.list_quotes_for_deal(
+            db, deal_id=deal_id, organization_id=organization_id
+        )
 
     async def predict_deal_win_rate(self, db: AsyncSession, deal_id: str) -> dict:
         d = await self.require_deal(db, deal_id)
