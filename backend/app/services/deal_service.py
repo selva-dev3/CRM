@@ -6,17 +6,30 @@ from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.errors import APIException, NotFoundError
+from app.core.errors import APIException, ConflictError, NotFoundError
 from app.core.logging import get_logger
 from app.models import User
 from app.models.deal import Deal
 from app.repositories.deal_repository import DealRepository
+from app.repositories.invoice_repository import invoice_repository
 from app.schemas.crm_schemas import DealCreate, DealUpdate
 from app.services.note_service import note_service
 from app.services.notification_service import notification_service
 from app.services.org_service import organization_service
 
 logger = get_logger(__name__)
+
+# Canonical pipeline stages (mirrors dashboard_service and the frontend STAGES constant).
+DEAL_STAGE_CLOSED_WON = "Closed Won"
+DEAL_STAGE_CLOSED_LOST = "Closed Lost"
+CANONICAL_DEAL_STAGES = [
+    "Prospecting",
+    "Qualification",
+    "Proposal",
+    "Negotiation",
+    DEAL_STAGE_CLOSED_WON,
+    DEAL_STAGE_CLOSED_LOST,
+]
 
 
 def deal_to_dict(d: Deal) -> dict:
@@ -55,6 +68,31 @@ class DealService:
         if not deal:
             raise NotFoundError(message=f"Deal '{deal_id}' not found")
         return deal
+
+    async def _validate_stage(self, db: AsyncSession, stage: str) -> None:
+        """Allow canonical stages plus stages configured by the organization."""
+        if stage in CANONICAL_DEAL_STAGES:
+            return
+        configured_stages = await self.repository.list_stages(db)
+        if stage not in {s.name for s in configured_stages}:
+            raise APIException(
+                message=f"Invalid deal stage '{stage}'.",
+                code="INVALID_DEAL_STAGE",
+            )
+
+    async def _guard_closed_won_transition(self, db: AsyncSession, deal: Deal, new_stage: str) -> None:
+        """Deals with an existing invoice must stay Closed Won (financial auditability)."""
+        if deal.stage != DEAL_STAGE_CLOSED_WON or new_stage == DEAL_STAGE_CLOSED_WON:
+            return
+        invoice = await invoice_repository.get_by_deal(db, deal.id)
+        if invoice is not None:
+            raise ConflictError(
+                message=(
+                    f"Deal '{deal.title}' already has invoice "
+                    f"'{invoice.invoice_number}' and cannot leave 'Closed Won'."
+                ),
+                code="DEAL_HAS_INVOICE",
+            )
 
     async def list_deals(
         self,
@@ -164,8 +202,10 @@ class DealService:
         return {"affected_count": len(deals), "message": "Deals deleted successfully"}
 
     async def bulk_update_stage(self, db: AsyncSession, ids: list[str], stage: str) -> dict:
+        await self._validate_stage(db, stage)
         deals = await self.repository.list_by_ids(db, ids)
         for deal in deals:
+            await self._guard_closed_won_transition(db, deal, stage)
             deal.stage = stage
         await self._commit(db, "Failed to bulk update deal stage")
         return {"affected_count": len(deals), "message": f"Updated stage to {stage}"}
@@ -179,12 +219,13 @@ class DealService:
         prev_amount = d.amount
         prev_probability = d.probability
 
+        if payload.stage is not None:
+            await self._validate_stage(db, payload.stage)
+            await self._guard_closed_won_transition(db, d, payload.stage)
         if payload.title is not None:
             d.title = payload.title
         if payload.amount is not None:
             d.amount = payload.amount
-        if payload.stage is not None:
-            d.stage = payload.stage
         if payload.probability is not None:
             d.probability = payload.probability
 
@@ -246,6 +287,8 @@ class DealService:
 
     async def update_deal_stage(self, db: AsyncSession, deal_id: str, stage: str) -> dict:
         d = await self.require_deal(db, deal_id)
+        await self._validate_stage(db, stage)
+        await self._guard_closed_won_transition(db, d, stage)
         d.stage = stage
         await self._commit(db, "Failed to update deal stage")
         await notification_service.notify(
@@ -263,7 +306,7 @@ class DealService:
         self, db: AsyncSession, deal_id: str, final_amount: float | None
     ) -> dict:
         d = await self.require_deal(db, deal_id)
-        d.stage = "Closed Won"
+        d.stage = DEAL_STAGE_CLOSED_WON
         d.probability = 100.0
         if final_amount:
             d.amount = final_amount
@@ -281,7 +324,8 @@ class DealService:
 
     async def mark_deal_lost(self, db: AsyncSession, deal_id: str, reason: str) -> dict:
         d = await self.require_deal(db, deal_id)
-        d.stage = "Closed Lost"
+        await self._guard_closed_won_transition(db, d, DEAL_STAGE_CLOSED_LOST)
+        d.stage = DEAL_STAGE_CLOSED_LOST
         d.probability = 0.0
         # Persist the caller-supplied reason so win/loss and churn reports can
         # aggregate real loss reasons instead of placeholders.
