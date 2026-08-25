@@ -72,6 +72,7 @@ async def test_get_user_allows_same_org():
         ),
         lambda s, db, admin: s.get_user_effective_permissions(db, "user-1", current_user=admin),
         lambda s, db, admin: s.admin_reset_user_password(db, "user-1", current_user=admin),
+        lambda s, db, admin: s.get_user_scorecard(db, "user-1", current_user=admin),
     ],
 )
 async def test_every_user_endpoint_rejects_cross_org_with_404(call):
@@ -115,6 +116,134 @@ async def test_bulk_delete_skips_foreign_org_ids():
     deleted_ids = [call.args[1].id for call in repo.delete.await_args_list]
     assert deleted_ids == ["u-same"]
     assert result["affected_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_scorecard_allows_same_org():
+    service, _ = _service_with_target(_make_user())
+    result = await service.get_user_scorecard(
+        AsyncMock(spec=AsyncSession), "user-1", current_user=_admin()
+    )
+    assert result["user_id"] == "user-1"
+
+
+def _active_org(org_id: str):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(id=org_id, status="active", is_active=True)
+
+
+def _org_scoped_service(list_result):
+    """Service whose repo returns `list_result` for org-scoped list calls and
+    records the organization_id filter it received."""
+
+    repo = UserRepository()
+    seen = {}
+
+    async def fake_list(db, **kwargs):
+        seen.update(kwargs)
+        return [u for u in list_result if u.organization_id == kwargs["organization_id"]]
+
+    repo.list = fake_list
+
+    async def fake_list_invitations(db, **kwargs):
+        seen.update(kwargs)
+        return [i for i in list_result if i.organization_id == kwargs["organization_id"]]
+
+    repo.list_invitations = fake_list_invitations
+    repo.role_name_map = AsyncMock(return_value={})
+    service = UserService(repository=repo)
+    service.organization_repository.get_by_id = AsyncMock(return_value=_active_org("org-1"))
+    return service, seen
+
+
+@pytest.mark.asyncio
+async def test_list_users_is_org_scoped_and_pagination_preserved():
+
+    same1 = _make_user(id="u1")
+    same2 = _make_user(id="u2", email="bob@crm.com")
+    foreign = _make_user(id="u3", email="eve@evil.com", organization_id="org-other")
+
+    service, seen = _org_scoped_service([same1, same2, foreign])
+
+    result = await service.list_users(
+        AsyncMock(spec=AsyncSession), page=1, limit=50, search=None, current_user=_admin()
+    )
+
+    # Repository was called with the CALLER's org id, pagination intact.
+    assert seen["organization_id"] == "org-1"
+    assert seen["page"] == 1 and seen["limit"] == 50
+    # Foreign-org user is never returned.
+    ids = [u["id"] for u in result]
+    assert ids == ["u1", "u2"]
+    assert all(u["organization_id"] == "org-1" for u in result)
+
+
+@pytest.mark.asyncio
+async def test_list_users_search_remains_org_scoped():
+    same = _make_user(id="u1", name="Zeta")
+    foreign_match = _make_user(id="u9", name="Zeta9", organization_id="org-other")
+    service, seen = _org_scoped_service([same, foreign_match])
+    # Simulate the repository applying search AFTER org filter.
+    repo_list_original = service.repository.list
+
+    async def searched(db, *, page, limit, search, organization_id):
+        rows = await repo_list_original(
+            db, page=page, limit=limit, search=search, organization_id=organization_id
+        )
+        return [r for r in rows if search.lower() in r.name.lower()]
+
+    service.repository.list = searched
+
+    result = await service.list_users(
+        AsyncMock(spec=AsyncSession),
+        page=1,
+        limit=20,
+        search="zeta",
+        current_user=_admin(),
+    )
+
+    assert seen["organization_id"] == "org-1"
+    assert [u["id"] for u in result] == ["u1"]
+
+
+@pytest.mark.asyncio
+async def test_list_invitations_is_org_scoped():
+    from types import SimpleNamespace
+
+    same = SimpleNamespace(
+        id="inv-1",
+        email="a@crm.com",
+        role="Sales Executive",
+        status="pending",
+        organization_id="org-1",
+        created_at=None,
+    )
+    foreign = SimpleNamespace(
+        id="inv-2",
+        email="secret@other.com",
+        role="Sales Executive",
+        status="pending",
+        organization_id="org-other",
+        created_at=None,
+    )
+
+    service, seen = _org_scoped_service([same, foreign])
+    service.repository.role_name_map = AsyncMock(
+        return_value={"Sales Executive": "Sales Executive"}
+    )
+
+    result = await service.list_user_invitations(
+        AsyncMock(spec=AsyncSession),
+        token=None,
+        status_filter=None,
+        current_user=_admin(),
+    )
+
+    assert seen["organization_id"] == "org-1"
+    emails = [inv["email"] for inv in result]
+    assert emails == ["a@crm.com"]
+    assert not any("other.com" in e for e in emails)
 
 
 @pytest.mark.asyncio

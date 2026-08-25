@@ -40,11 +40,26 @@ def deliver_due_scheduled_reports():
       Phase C (short txn): advance ``next_run`` only when the update still
         matches this worker's exact claim token; on any failure just clear
         the claim so the next sweep retries naturally.
+      Lost-claim reconcile: if Phase C matches zero rows the email has
+        already been sent — the schedule MUST NOT stay due or the next
+        sweep would email it again. A second update, guarded on "no live
+        claim held" (never on our stale token), advances ``next_run`` and
+        clears the claim. If another worker actively holds the claim we
+        leave its state untouched and report ``lost_claim``.
+
+    Delivery semantics are AT-LEAST-ONCE, not exactly-once: if delivery
+    succeeds at the provider but the claim is lost to a worker that then
+    delivers the same schedule *before* our reconcile runs, a duplicate
+    email is possible. Exactly-once would require a per-(schedule, run)
+    delivery record written transactionally with the send — a follow-up.
 
     There is intentionally NO Celery-level retry on this task: the hourly
     beat schedule plus per-schedule claim-clearing already provides retry-
     until-success semantics, and stacking a second retry mechanism would
-    risk duplicate emails.
+    risk duplicate emails. Note: a permanently failing recipient/provider
+    rejection currently retries once per sweep indefinitely; dead-letter
+    handling (failure counters / schedule disabling) is a follow-up that
+    needs schema support and provider error classification.
     """
     return asyncio.run(_deliver_due_reports())
 
@@ -62,7 +77,7 @@ async def _deliver_due_reports() -> dict:
             "Scheduled report delivery skipped entirely: BREVO_API_KEY is not "
             "configured; due schedules were left untouched and will be retried."
         )
-        return {"delivered": 0, "failed": 0, "skipped_unconfigured": True}
+        return {"delivered": 0, "failed": 0, "lost_claim": 0, "skipped_unconfigured": True}
 
     now = datetime.now(UTC)
 
@@ -83,11 +98,11 @@ async def _deliver_due_reports() -> dict:
 
     delivered = 0
     failed = 0
+    lost_claim = 0
     for sched_id in due_ids:
         outcome = await _deliver_one(
             db_factory=AsyncSessionLocal,
             sched_id=sched_id,
-            now=now,
             build_csv=report_service.build_report_csv_for_organization,
             upload=s3_service.upload_file,
             presign=s3_service.generate_presigned_url,
@@ -98,10 +113,17 @@ async def _deliver_due_reports() -> dict:
             delivered += 1
         elif outcome == "failed":
             failed += 1
+        elif outcome == "lost_claim":
+            lost_claim += 1
         # "skipped" (claimed by another worker) counts as neither.
 
-    logger.info("Scheduled report delivery finished: delivered=%s failed=%s", delivered, failed)
-    return {"delivered": delivered, "failed": failed}
+    logger.info(
+        "Scheduled report delivery finished: delivered=%s failed=%s lost_claim=%s",
+        delivered,
+        failed,
+        lost_claim,
+    )
+    return {"delivered": delivered, "failed": failed, "lost_claim": lost_claim}
 
 
 def _claimable_condition(now: datetime):
@@ -115,7 +137,6 @@ async def _deliver_one(
     *,
     db_factory,
     sched_id: str,
-    now: datetime,
     build_csv,
     upload,
     presign,
@@ -124,12 +145,21 @@ async def _deliver_one(
 ) -> str:
     """Claim, process, and finalize a single schedule.
 
-    Returns "delivered", "skipped" (claim already held elsewhere), or
-    "failed" (delivery error; claim released for the next sweep).
+    Returns "delivered", "skipped" (claim already held elsewhere),
+    "failed" (delivery error; claim released for the next sweep), or
+    "lost_claim" (email was sent but our claim token was gone before
+    finalization — ``next_run`` is advanced by a reconcile guarded on no
+    live claim, so the next sweep cannot re-send).
+
+    Every claim/lease calculation uses a fresh ``datetime.now(UTC)``
+    captured HERE, per schedule — never the stale sweep-level timestamp,
+    which would shrink the effective lease (and skew the next_run base)
+    for schedules processed late in a slow sweep.
     """
     from app.models.report import ScheduledReport
 
     # --- Phase B1: atomic claim (single UPDATE, no gap for another worker) ---
+    now = datetime.now(UTC)
     claim_until = now + _CLAIM_TTL
     async with db_factory() as db:
         res = await db.execute(
@@ -193,7 +223,8 @@ async def _deliver_one(
             to_email=sched_email,
             subject=f"Scheduled report: {sched_type}",
             html_content=(
-                f"<p>Your scheduled <strong>{sched_type}</strong> report is ready.</p>"
+                f"<p>Your scheduled <strong>{html.escape(str(sched_type), quote=True)}</strong> "
+                f"report is ready.</p>"
                 f'<p><a href="{html.escape(download_url, quote=True)}">Download the CSV</a> '
                 f"(link valid for 24 hours).</p>"
             ),
@@ -218,10 +249,37 @@ async def _deliver_one(
             )
             await db.commit()
         if res.rowcount == 0:
-            logger.warning(
-                "Delivered schedule %s but lost its claim; leaving newer state untouched",
+            # The email WAS sent but our exact claim token is gone (claim
+            # expired + re-claimed elsewhere, or cleared by a crash/retry).
+            # Leaving next_run untouched would make the next sweep deliver
+            # the same report again, so attempt a reconcile — but ONLY when
+            # no other worker holds a live claim (never overwrite an active
+            # claim; that worker owns the schedule's state now).
+            reconcile_time = datetime.now(UTC)
+            async with db_factory() as db:
+                rec = await db.execute(
+                    update(ScheduledReport)
+                    .where(
+                        ScheduledReport.id == sched_id,
+                        ScheduledReport.next_run == current_next,
+                        _claimable_condition(reconcile_time),
+                    )
+                    .values(next_run=compute_next(sched_frequency, base), claimed_until=None)
+                )
+                await db.commit()
+            if rec.rowcount > 0:
+                logger.warning(
+                    "Delivered schedule %s after losing its claim; reconciled "
+                    "next_run so it will not be delivered twice",
+                    sched_id,
+                )
+                return "lost_claim"
+            logger.error(
+                "Delivered schedule %s but another worker holds a live claim; "
+                "leaving its state untouched (duplicate email possible)",
                 sched_id,
             )
+            return "lost_claim"
         return "delivered"
 
     except Exception:

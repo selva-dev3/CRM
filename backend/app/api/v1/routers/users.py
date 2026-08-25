@@ -35,8 +35,11 @@ async def list_users(
     limit: int = Query(20, ge=1, le=100),
     search: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    return await user_service.list_users(db, page=page, limit=limit, search=search)
+    return await user_service.list_users(
+        db, page=page, limit=limit, search=search, current_user=current_user
+    )
 
 
 @router.post(
@@ -105,8 +108,11 @@ async def list_user_invitations(
     token: str | None = Query(None),
     status_filter: str | None = Query(None, alias="status"),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    return await user_service.list_user_invitations(db, token=token, status_filter=status_filter)
+    return await user_service.list_user_invitations(
+        db, token=token, status_filter=status_filter, current_user=current_user
+    )
 
 
 @router.get(
@@ -119,8 +125,11 @@ async def list_user_invitations_all(
     token: str | None = Query(None),
     status_filter: str | None = Query(None, alias="status"),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    return await user_service.list_user_invitations(db, token=token, status_filter=status_filter)
+    return await user_service.list_user_invitations(
+        db, token=token, status_filter=status_filter, current_user=current_user
+    )
 
 
 @router.get(
@@ -372,5 +381,9 @@ async def set_user_quota(
     summary="Get detailed performance scorecard for user",
     dependencies=[Depends(require_permission("users:read"))],
 )
-async def get_user_scorecard(user_id: str, db: AsyncSession = Depends(get_db)):
-    return await user_service.get_user_scorecard(db, user_id)
+async def get_user_scorecard(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await user_service.get_user_scorecard(db, user_id, current_user=current_user)

@@ -26,13 +26,16 @@ def upgrade() -> None:
         "scheduled_reports",
         sa.Column("claimed_until", sa.DateTime(timezone=True), nullable=True),
     )
-    # Partial index: the sweep only scans claimable rows; keep it tiny.
+    # Plain index on next_run: the sweep's due scan filters next_run first.
+    # NOTE: a PARTIAL index ("WHERE claimed_until IS NULL OR
+    # claimed_until < now()") is not possible here — now() is volatile and
+    # PostgreSQL rejects functions that are not IMMUTABLE in index
+    # predicates, and SQLite has no now(). The claimability filter stays in
+    # the sweep's WHERE clause; this index just keeps the next_run scan cheap.
     op.create_index(
         "ix_scheduled_reports_claimable",
         "scheduled_reports",
         ["next_run"],
-        postgresql_where=sa.text("claimed_until IS NULL OR claimed_until < now()"),
-        sqlite_where=sa.text("claimed_until IS NULL OR claimed_until < now()"),
     )
 
 

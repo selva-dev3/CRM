@@ -125,9 +125,12 @@ class UserService:
         return role_val
 
     async def list_users(
-        self, db: AsyncSession, *, page: int, limit: int, search: str | None
+        self, db: AsyncSession, *, page: int, limit: int, search: str | None, current_user: User
     ) -> list[dict]:
-        users = await self.repository.list(db, page=page, limit=limit, search=search)
+        org_id = await self._resolve_current_org(db, current_user)
+        users = await self.repository.list(
+            db, page=page, limit=limit, search=search, organization_id=org_id
+        )
         role_ids = {u.role for u in users if u.role}
         role_map = await self.repository.role_name_map(db, role_ids)
         return [
@@ -276,10 +279,11 @@ class UserService:
             ) from e
 
     async def list_user_invitations(
-        self, db: AsyncSession, *, token: str | None, status_filter: str | None
+        self, db: AsyncSession, *, token: str | None, status_filter: str | None, current_user: User
     ) -> list[dict]:
+        org_id = await self._resolve_current_org(db, current_user)
         invitations = await self.repository.list_invitations(
-            db, token=token, status_filter=status_filter
+            db, token=token, status_filter=status_filter, organization_id=org_id
         )
         role_map = await self.repository.role_name_map(
             db, {inv.role for inv in invitations if inv.role}
@@ -570,8 +574,10 @@ class UserService:
         await self._commit(db, "Failed to assign quota")
         return {"message": f"Quota ${target_amount} assigned to {user_id}", "status": "success"}
 
-    async def get_user_scorecard(self, db: AsyncSession, user_id: str) -> dict:
-        await self.require_user(db, user_id)
+    async def get_user_scorecard(
+        self, db: AsyncSession, user_id: str, *, current_user: User
+    ) -> dict:
+        await self._require_same_org_user(db, user_id, current_user)
         return {"user_id": user_id, "win_rate": 0.0, "avg_deal_size": 0.0, "calls_made": 0}
 
 

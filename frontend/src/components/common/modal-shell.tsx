@@ -33,6 +33,11 @@ export interface ModalShellProps {
   /** Optional footer rendered below children — only use when actions do NOT need form context. */
   footer?: ReactNode;
   size?: ModalSize;
+  /**
+   * Accessible name for the dialog. Required context when no `title` is
+   * given; falls back to a generic label so the dialog is never unnamed.
+   */
+  ariaLabel?: string;
 }
 
 /**
@@ -54,6 +59,7 @@ export function ModalShell({
   children,
   footer,
   size = 'md',
+  ariaLabel,
 }: ModalShellProps): React.JSX.Element | null {
   const panelRef = useRef<HTMLDivElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
@@ -115,30 +121,46 @@ export function ModalShell({
 
   if (!isOpen) return null;
 
+  // The dismiss control must exist INDEPENDENTLY of the title: title-less
+  // dialogs get a floating close button so pointer and screen-reader users
+  // always have a visible way out (Escape alone is not discoverable).
+  const closeButton = (
+    <button
+      type="button"
+      onClick={onClose}
+      aria-label="Close dialog"
+      className={
+        title
+          ? 'p-1 -m-1 text-slate-400 hover:text-slate-700 rounded-lg transition cursor-pointer shrink-0'
+          : 'absolute right-3 top-3 p-1 -m-1 text-slate-400 hover:text-slate-700 rounded-lg transition cursor-pointer shrink-0'
+      }
+    >
+      <X className="w-5 h-5" />
+    </button>
+  );
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
+        // Accessible name: explicit ariaLabel wins; otherwise fall back to a
+        // generic name when there is no title to derive one from.
+        aria-label={ariaLabel ?? (title ? undefined : 'Dialog')}
         tabIndex={-1}
         className={`relative w-full ${SIZE_CLASSES[size]} bg-white rounded-2xl border border-slate-300 shadow-2xl p-4 sm:p-6 text-slate-900 max-h-[calc(100vh-2rem)] overflow-y-auto outline-none`}
       >
-        {title && (
+        {title ? (
           <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3">
             <div className="min-w-0 break-words">{title}</div>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close dialog"
-              className="p-1 -m-1 text-slate-400 hover:text-slate-700 rounded-lg transition cursor-pointer shrink-0"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            {closeButton}
           </div>
+        ) : (
+          closeButton
         )}
 
-        <div className={title ? 'pt-4' : undefined}>{children}</div>
+        <div className={title ? 'pt-4' : 'pt-2'}>{children}</div>
 
         {footer && (
           <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">

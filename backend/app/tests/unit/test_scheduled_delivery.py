@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.workers import tasks as tasks_module
-from app.workers.tasks import _deliver_due_reports
+from app.workers.tasks import _deliver_due_reports, _deliver_one
 
 
 class _FakeResult:
@@ -45,11 +45,11 @@ class _FakeSession:
         self.commits += 1
 
 
-def _row(id="s1", email="ops@acme.test", freq="Daily", due=True):
+def _row(id="s1", email="ops@acme.test", freq="Daily", due=True, report_type="win-loss-ratio"):
     return {
         "id": id,
         "organization_id": "org-1",
-        "report_type": "win-loss-ratio",
+        "report_type": report_type,
         "email": email,
         "frequency": freq,
         "next_run": (
@@ -131,7 +131,7 @@ async def test_successful_delivery_advances_next_run_and_clears_claim(
 
     result = await _deliver_due_reports()
 
-    assert result == {"delivered": 1, "failed": 0}
+    assert result == {"delivered": 1, "failed": 0, "lost_claim": 0}
     finalize_stmt = str(finalize_sess.executed[0]).lower()
     # Finalize is conditional on the exact claim token and clears it.
     assert "claimed_until" in finalize_stmt
@@ -155,7 +155,7 @@ async def test_failed_email_does_not_advance_next_run_releases_claim_and_cleans_
 
     result = await _deliver_due_reports()
 
-    assert result == {"delivered": 0, "failed": 1}
+    assert result == {"delivered": 0, "failed": 1, "lost_claim": 0}
     # Orphan CSV from the failed send was removed.
     assert len(infra["deleted"]) == 1
     # Claim released so the next sweep retries; next_run untouched.
@@ -177,26 +177,121 @@ async def test_claim_taken_elsewhere_is_skipped(monkeypatch):
     _install_common_stubs(monkeypatch, infra)
 
     result = await _deliver_due_reports()
-    assert result == {"delivered": 0, "failed": 0}
+    assert result == {"delivered": 0, "failed": 0, "lost_claim": 0}
     # No email attempted and no object uploaded.
     assert not infra["sent"] and not infra["uploaded"]
 
 
 @pytest.mark.asyncio
-async def test_finalize_guard_zero_rowcount_does_not_crash(monkeypatch):
-    """If another worker re-claimed between send and finalize, the guarded
-    update matches 0 rows; the sweep must log and continue, not overwrite."""
+async def test_lost_claim_after_send_reconciles_next_run(monkeypatch):
+    """Email sent, claim token gone, NO live foreign claim -> reconcile must
+    advance next_run so the next sweep cannot deliver the same report again,
+    and the outcome must be reported honestly as lost_claim."""
     row = _row()
 
     phase_a = _FakeSession([_FakeResult(rows=[(row["id"],)])])
     claim_sess = _FakeSession([_FakeResult(rows=[_claim_row_tuple(row)], rowcount=1)])
-    finalize_sess = _FakeSession([_FakeResult(rowcount=0)])
-    _wire_sweep(monkeypatch, phase_a, [claim_sess, finalize_sess])
+    # Session order per schedule: B1 claim -> B2 CSV (never executes) ->
+    # Phase C finalize (token mismatch) -> lost-claim reconcile.
+    csv_sess = _FakeSession([])
+    finalize_sess = _FakeSession([_FakeResult(rowcount=0)])  # token mismatch
+    reconcile_sess = _FakeSession([_FakeResult(rowcount=1)])
+    _wire_sweep(
+        monkeypatch,
+        phase_a,
+        [claim_sess, csv_sess, finalize_sess, reconcile_sess],
+    )
 
-    _install_common_stubs(monkeypatch, {"sent": {}, "uploaded": {}, "deleted": {}})
+    infra = {"sent": {}, "uploaded": {}, "deleted": {}}
+    _install_common_stubs(monkeypatch, infra)
 
     result = await _deliver_due_reports()
-    assert result["delivered"] == 1
+
+    assert result == {"delivered": 0, "failed": 0, "lost_claim": 1}
+    # Email went out exactly once and nothing was treated as failure.
+    assert infra["sent"]["to"] == row["email"]
+    reconcile_stmt = str(reconcile_sess.executed[0]).lower()
+    # Reconcile is guarded: only when next_run is untouched AND no live claim.
+    assert "next_run" in reconcile_stmt
+    assert "claimed_until" in reconcile_stmt
+    assert reconcile_sess.commits == 1
+
+
+@pytest.mark.asyncio
+async def test_lost_claim_with_live_foreign_claim_leaves_state_and_never_crashes(
+    monkeypatch,
+):
+    """Email sent, claim lost to ANOTHER worker's live claim -> reconcile
+    matches zero rows; state stays untouched and lost_claim is reported."""
+    row = _row()
+
+    phase_a = _FakeSession([_FakeResult(rows=[(row["id"],)])])
+    claim_sess = _FakeSession([_FakeResult(rows=[_claim_row_tuple(row)], rowcount=1)])
+    csv_sess = _FakeSession([])
+    finalize_sess = _FakeSession([_FakeResult(rowcount=0)])  # token mismatch
+    reconcile_sess = _FakeSession([_FakeResult(rowcount=0)])  # live foreign claim
+    _wire_sweep(
+        monkeypatch,
+        phase_a,
+        [claim_sess, csv_sess, finalize_sess, reconcile_sess],
+    )
+
+    infra = {"sent": {}, "uploaded": {}, "deleted": {}}
+    _install_common_stubs(monkeypatch, infra)
+
+    result = await _deliver_due_reports()
+
+    assert result == {"delivered": 0, "failed": 0, "lost_claim": 1}
+    assert infra["sent"]["to"] == row["email"]
+    # No orphan cleanup: delivery actually happened.
+    assert not infra["deleted"]
+
+
+@pytest.mark.asyncio
+async def test_deliver_one_claims_with_fresh_per_schedule_timestamp(monkeypatch):
+    """Issue 8: the sweep captured one `now` before its loop and reused it for
+    every schedule's lease. _deliver_one must capture its OWN timestamp so a
+    schedule processed late in a slow sweep still gets a full _CLAIM_TTL
+    lease. Simulate a clock advancing 1h per read: the claim written must be
+    based on _deliver_one's own read (T0), not any earlier sweep time."""
+    t0 = datetime(2026, 8, 25, 10, 0, tzinfo=UTC)
+    reads = {"n": 0}
+
+    class _AdvancingDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):  # type: ignore[override]
+            reads["n"] += 1
+            # First read = T0 (the per-schedule claim moment). Any later read
+            # is an hour later. A stale sweep-level value would be hours
+            # BEFORE T0 — never produced by this clock.
+            return t0 + timedelta(hours=reads["n"] - 1)
+
+    monkeypatch.setattr(tasks_module, "datetime", _AdvancingDateTime)
+
+    row = _row()
+    claim_sess = _FakeSession([_FakeResult(rows=[_claim_row_tuple(row)], rowcount=1)])
+    finalize_sess = _FakeSession([_FakeResult(rowcount=1)])
+    sessions = [claim_sess, finalize_sess]
+    db_factory = lambda: sessions.pop(0) if len(sessions) > 1 else sessions[-1]  # noqa: E731
+
+    outcome = await _deliver_one(
+        db_factory=db_factory,
+        sched_id=row["id"],
+        build_csv=AsyncMock(return_value="csv"),
+        upload=lambda *a, **kw: "exports/k.csv",
+        presign=lambda key, expiration_seconds=3600: f"https://s3.example/{key}?a=b",
+        send_email=lambda **kw: True,
+        compute_next=lambda freq, b: b + timedelta(days=1),
+    )
+
+    assert outcome == "delivered"
+    assert reads["n"] == 1  # exactly one fresh read drives the whole claim
+    claim_params = list(claim_sess.executed[0].compile().params.values())
+    # The lease written is exactly T0 + TTL — i.e. computed from the fresh,
+    # per-schedule timestamp rather than any earlier sweep-level value.
+    assert any(p == t0 + timedelta(minutes=30) for p in claim_params), sorted(
+        (str(p) for p in claim_params), key=str
+    )
 
 
 @pytest.mark.asyncio
@@ -207,8 +302,8 @@ async def test_unconfigured_brevo_key_skips_everything(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_html_body_escapes_presigned_url(monkeypatch):
-    row = _row()
+async def test_html_body_escapes_report_type_and_presigned_url(monkeypatch):
+    row = _row(report_type="win/loss <script>")
 
     phase_a = _FakeSession([_FakeResult(rows=[(row["id"],)])])
     claim_sess = _FakeSession([_FakeResult(rows=[_claim_row_tuple(row)], rowcount=1)])
@@ -238,3 +333,8 @@ async def test_html_body_escapes_presigned_url(monkeypatch):
     await _deliver_due_reports()
     # Raw '&' must be escaped inside the href attribute.
     assert "&amp;" in captured["html"]
+    # Report type is interpolated as HTML: must be escaped (defense in depth).
+    assert "&lt;script&gt;" in captured["html"]
+    assert "<script>" not in captured["html"]
+    # No double-escaping of already-safe static text.
+    assert captured["html"].count("report is ready") == 1

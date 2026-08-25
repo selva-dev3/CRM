@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Any
 
 import httpx
-from fastapi import status
+from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
