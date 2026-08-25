@@ -1,4 +1,3 @@
-from typing import Optional
 
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,7 +10,7 @@ from app.schemas.crm_schemas import AIGenerateEmailRequest
 class AIDomainService:
     """Business logic for AI-assisted features."""
 
-    def __init__(self, repository: Optional[AIRepository] = None) -> None:
+    def __init__(self, repository: AIRepository | None = None) -> None:
         self.repository = repository or AIRepository()
 
     async def evaluate_lead_score(self, db: AsyncSession, lead_id: str) -> dict:
@@ -54,7 +53,7 @@ class AIDomainService:
             "factors": ["Proposal sent within 24h", "Executive sponsor present in meeting"],
         }
 
-    async def sales_assistant_chat(self, message: str, conversation_id: Optional[str] = None) -> dict:
+    async def sales_assistant_chat(self, message: str, conversation_id: str | None = None) -> dict:
         if not message:
             raise APIException(
                 status_code=status.HTTP_400_BAD_REQUEST, message="Message content is required"
@@ -98,7 +97,7 @@ class AIDomainService:
             "reason": "Prospect opened proposal in past 3 hours",
         }
 
-    async def enrich_company(self, company_name: str, domain: Optional[str] = None) -> dict:
+    async def enrich_company(self, company_name: str, domain: str | None = None) -> dict:
         if not company_name:
             raise APIException(
                 status_code=status.HTTP_400_BAD_REQUEST, message="Company name is required"

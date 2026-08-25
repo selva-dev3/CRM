@@ -1,4 +1,3 @@
-from typing import Optional
 
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -53,7 +52,7 @@ def template_list_to_dict(template: EmailTemplate) -> dict:
 class EmailDomainService:
     """Business logic for the Email / EmailTemplate domains."""
 
-    def __init__(self, repository: Optional[EmailRepository] = None) -> None:
+    def __init__(self, repository: EmailRepository | None = None) -> None:
         self.repository = repository or EmailRepository()
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
@@ -71,7 +70,7 @@ class EmailDomainService:
         *,
         page: int,
         limit: int,
-        search: Optional[str] = None,
+        search: str | None = None,
     ) -> list[dict]:
         emails = await self.repository.list_emails(
             db, page=page, limit=limit, search=search

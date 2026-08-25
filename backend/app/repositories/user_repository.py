@@ -46,8 +46,11 @@ class UserRepository:
         page: int,
         limit: int,
         search: str | None = None,
+        organization_id: str | None = None,
     ) -> list[User]:
         stmt = select(User)
+        if organization_id:
+            stmt = stmt.where(User.organization_id == organization_id)
         cleaned_search = (
             search.strip() if search and isinstance(search, str) and search.strip() else None
         )
@@ -110,8 +113,11 @@ class UserRepository:
         *,
         token: str | None = None,
         status_filter: str | None = None,
+        organization_id: str | None = None,
     ) -> builtins.list[UserInvitation]:
         stmt = select(UserInvitation)
+        if organization_id:
+            stmt = stmt.where(UserInvitation.organization_id == organization_id)
         if token and token.strip():
             stmt = stmt.where(UserInvitation.token == token.strip())
         elif status_filter and status_filter.strip():

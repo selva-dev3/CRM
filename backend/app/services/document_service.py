@@ -3,9 +3,8 @@ import io
 import os
 import re
 import uuid
-from typing import Any, Optional
 
-from fastapi import status, UploadFile
+from fastapi import UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -40,7 +39,7 @@ _FILENAME_SAFE_RE = re.compile(r"[^A-Za-z0-9._-]+")
 _CONTROL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f]")
 
 
-def _sanitize_filename(raw: Optional[str]) -> str:
+def _sanitize_filename(raw: str | None) -> str:
     """Reduce a client-supplied filename to a safe basename.
 
     - strips any path components
@@ -68,14 +67,14 @@ def _split_extension(filename: str) -> tuple[str, str]:
     return filename, ext
 
 
-def _normalize_mime_type(content_type: Optional[str]) -> Optional[str]:
+def _normalize_mime_type(content_type: str | None) -> str | None:
     if not content_type:
         return None
     primary = content_type.split(";", 1)[0].strip().lower()
     return primary or None
 
 
-def _validate_upload(filename: str, content_type: Optional[str], declared_size: Optional[int]) -> None:
+def _validate_upload(filename: str, content_type: str | None, declared_size: int | None) -> None:
     """Reject unsupported files BEFORE any S3 I/O.
 
     Returns silently on success; raises APIException with a 400/422 on failure.
@@ -153,7 +152,7 @@ async def _generate_fresh_url(s3_key: str) -> str:
         ) from exc
 
 
-async def _safe_delete_s3(s3_key: Optional[str], document_id: str) -> None:
+async def _safe_delete_s3(s3_key: str | None, document_id: str) -> None:
     """Best-effort S3 deletion logged but never raised."""
     if not s3_key:
         return
@@ -182,10 +181,10 @@ def document_to_dict(document: Document, download_url: str = "") -> dict:
 class DocumentService:
     """Business logic for the Document domain with strict multi-tenant isolation."""
 
-    def __init__(self, repository: Optional[DocumentRepository] = None) -> None:
+    def __init__(self, repository: DocumentRepository | None = None) -> None:
         self.repository = repository or DocumentRepository()
 
-    def _resolve_auth(self, current_user: Optional[User]) -> tuple[str, str]:
+    def _resolve_auth(self, current_user: User | None) -> tuple[str, str]:
         org_id = current_user.organization_id if current_user and getattr(current_user, "organization_id", None) else None
         user_id = current_user.id if current_user and getattr(current_user, "id", None) else None
 
@@ -211,8 +210,8 @@ class DocumentService:
         *,
         page: int,
         limit: int,
-        search: Optional[str] = None,
-        current_user: Optional[User] = None,
+        search: str | None = None,
+        current_user: User | None = None,
     ) -> list[dict]:
         org_id, _ = self._resolve_auth(current_user)
         documents = await self.repository.list_documents(
@@ -226,7 +225,7 @@ class DocumentService:
         return out
 
     async def upload_document(
-        self, db: AsyncSession, file: UploadFile, current_user: Optional[User] = None
+        self, db: AsyncSession, file: UploadFile, current_user: User | None = None
     ) -> dict:
         org_id, user_id = self._resolve_auth(current_user)
 
@@ -235,7 +234,7 @@ class DocumentService:
         max_size = int(getattr(settings, "MAX_DOCUMENT_UPLOAD_SIZE", 0) or 0)
 
         try:
-            declared_size: Optional[int] = getattr(file, "size", None)
+            declared_size: int | None = getattr(file, "size", None)
         except Exception:
             declared_size = None
 
@@ -304,7 +303,7 @@ class DocumentService:
         }
 
     async def get_document(
-        self, db: AsyncSession, document_id: str, current_user: Optional[User] = None
+        self, db: AsyncSession, document_id: str, current_user: User | None = None
     ) -> dict:
         org_id, _ = self._resolve_auth(current_user)
         document = await self.repository.get_document(db, document_id, org_id)
@@ -315,7 +314,7 @@ class DocumentService:
         return document_to_dict(document, download_url=download_url)
 
     async def download_document(
-        self, db: AsyncSession, document_id: str, current_user: Optional[User] = None
+        self, db: AsyncSession, document_id: str, current_user: User | None = None
     ) -> dict:
         org_id, _ = self._resolve_auth(current_user)
         document = await self.repository.get_document(db, document_id, org_id)
@@ -337,7 +336,7 @@ class DocumentService:
         return {"download_url": url, "filename": document.filename, "expires_in": 3600}
 
     async def delete_document(
-        self, db: AsyncSession, document_id: str, current_user: Optional[User] = None
+        self, db: AsyncSession, document_id: str, current_user: User | None = None
     ) -> dict:
         org_id, _ = self._resolve_auth(current_user)
         document = await self.repository.get_document(db, document_id, org_id)
@@ -363,7 +362,7 @@ class DocumentService:
         return {"message": f"Document {document_id} deleted", "status": "success"}
 
     async def bulk_delete(
-        self, db: AsyncSession, ids: list[str], current_user: Optional[User] = None
+        self, db: AsyncSession, ids: list[str], current_user: User | None = None
     ) -> dict:
         org_id, _ = self._resolve_auth(current_user)
         documents = await self.repository.list_by_ids(db, ids, org_id)

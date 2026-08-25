@@ -1,4 +1,3 @@
-from typing import Optional
 
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,7 +32,7 @@ def contact_to_dict(contact: Contact) -> dict:
 class ContactService:
     """Business logic for the Contact domain."""
 
-    def __init__(self, repository: Optional[ContactRepository] = None) -> None:
+    def __init__(self, repository: ContactRepository | None = None) -> None:
         self.repository = repository or ContactRepository()
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
@@ -51,7 +50,7 @@ class ContactService:
         *,
         page: int,
         limit: int,
-        search: Optional[str],
+        search: str | None,
         current_user: User,
     ) -> list[dict]:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
@@ -72,10 +71,10 @@ class ContactService:
 
     async def _build_name_parts(
         self,
-        raw_name: Optional[str],
-        first_name: Optional[str],
-        last_name: Optional[str],
-        email: Optional[str],
+        raw_name: str | None,
+        first_name: str | None,
+        last_name: str | None,
+        email: str | None,
     ) -> tuple[str, str, str]:
         full_name = (raw_name or "").strip()
         if not full_name and (first_name or last_name):

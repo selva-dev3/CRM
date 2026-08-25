@@ -1,8 +1,9 @@
 'use client';
 
 import React, { ReactNode } from 'react';
-import { AlertCircle, AlertTriangle, Loader2, Trash2, X } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Loader2, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ModalShell } from '@/components/common/modal-shell';
 
 export interface ConfirmModalProps {
   isOpen: boolean;
@@ -18,6 +19,15 @@ export interface ConfirmModalProps {
   icon?: ReactNode;
 }
 
+/**
+ * Confirmation dialog for destructive/important actions.
+ *
+ * Built on ModalShell so every confirm dialog inherits the shared
+ * accessibility contract (role="dialog", Escape-to-close, focus trap and
+ * focus restore) plus the responsive scroll-safe layout. The public API is
+ * unchanged from the original hand-rolled version; delete flows keep
+ * passing the same props.
+ */
 export function ConfirmModal({
   isOpen,
   onClose,
@@ -31,8 +41,6 @@ export function ConfirmModal({
   isLoading = false,
   icon,
 }: ConfirmModalProps): React.JSX.Element | null {
-  if (!isOpen) return null;
-
   const variantStyles = {
     danger: {
       iconBg: 'bg-rose-100 text-rose-600',
@@ -54,32 +62,22 @@ export function ConfirmModal({
   const style = variantStyles[variant];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50">
-      <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-300 shadow-2xl p-4 sm:p-6 space-y-4 text-slate-900 max-h-[calc(100vh-2rem)] overflow-y-auto">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${style.iconBg}`}>
-              {icon || style.defaultIcon}
-            </div>
-            <div className="min-w-0 flex-1">
-              <h3 className="text-sm sm:text-base font-bold text-slate-900 break-words">{title}</h3>
-              {description && <p className="text-xs text-slate-500">{description}</p>}
-            </div>
+    <ModalShell
+      isOpen={isOpen}
+      onClose={onClose}
+      title={
+        <div className="flex items-center gap-3">
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${style.iconBg}`}>
+            {icon || style.defaultIcon}
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isLoading}
-            className="p-1 text-slate-400 hover:text-slate-700 rounded-lg transition cursor-pointer shrink-0"
-            aria-label="Close dialog"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="min-w-0">
+            <h3 className="text-sm sm:text-base font-bold text-slate-900 break-words">{title}</h3>
+            {description && <p className="text-xs text-slate-500">{description}</p>}
+          </div>
         </div>
-
-        {message && <div className="text-xs font-medium text-slate-700 break-words">{message}</div>}
-
-        <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
+      }
+      footer={
+        <>
           <Button
             type="button"
             variant="outline"
@@ -106,8 +104,12 @@ export function ConfirmModal({
               confirmText
             )}
           </Button>
-        </div>
-      </div>
-    </div>
+        </>
+      }
+    >
+      {message && (
+        <div className="text-xs font-medium text-slate-700 break-words -mt-1">{message}</div>
+      )}
+    </ModalShell>
   );
 }
