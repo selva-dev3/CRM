@@ -29,6 +29,7 @@ import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
+import { useDealsQuery } from '@/lib/api/deals';
 import {
   useQuotesQuery,
   useCreateQuoteMutation,
@@ -68,6 +69,7 @@ export default function QuotesPage() {
   const [quoteNumber, setQuoteNumber] = useState('');
   const [totalAmount, setTotalAmount] = useState('15000');
   const [status, setStatus] = useState('Draft');
+  const [dealId, setDealId] = useState('');
 
   // Toast / Alert notifications
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -83,6 +85,8 @@ export default function QuotesPage() {
   }, [searchTerm]);
 
   // Queries
+  const { data: deals = [], isLoading: isDealsLoading, isError: isDealsError } = useDealsQuery(1, 100);
+
   const { data: quotes = [], isLoading: isQuotesLoading } = useQuotesQuery({
     page,
     limit,
@@ -104,6 +108,7 @@ export default function QuotesPage() {
     setQuoteNumber('');
     setTotalAmount('15000');
     setStatus('Draft');
+    setDealId('');
     setEditingQuote(null);
   };
 
@@ -117,12 +122,22 @@ export default function QuotesPage() {
     setQuoteNumber(q.quote_number);
     setTotalAmount(String(q.total_amount || 0));
     setStatus(q.status || 'Draft');
+    setDealId(q.deal_id || '');
     setIsQuoteModalOpen(true);
   };
 
   const handleSaveQuoteSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!editingQuote && !dealId) {
+      setErrorMessage('Select a deal before creating the quote.');
+      return;
+    }
+    if (editingQuote && !dealId) {
+      setErrorMessage('This quote is missing its associated deal. Select a deal before saving.');
+      return;
+    }
     const payload: QuoteCreatePayload = {
+      deal_id: dealId,
       quote_number: quoteNumber.trim() || `QUO-2026-${Math.floor(1000 + Math.random() * 9000)}`,
       total_amount: parseFloat(totalAmount || '0'),
       status: status,
@@ -495,6 +510,40 @@ export default function QuotesPage() {
               />
             </div>
 
+            <div>
+              <label htmlFor="quote-deal" className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                Deal *
+              </label>
+              {isDealsLoading ? (
+                <div className="flex items-center gap-2 rounded-lg border border-slate-300 bg-slate-50 px-3.5 py-2 text-sm text-slate-500">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading deals...
+                </div>
+              ) : isDealsError ? (
+                <p className="rounded-lg border border-rose-200 bg-rose-50 px-3.5 py-2 text-sm text-rose-700">
+                  Deals could not be loaded. Close and try again.
+                </p>
+              ) : deals.length === 0 ? (
+                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2 text-sm text-amber-700">
+                  No deals are available for quote creation.
+                </p>
+              ) : (
+                <select
+                  id="quote-deal"
+                  required
+                  value={dealId}
+                  onChange={(e) => setDealId(e.target.value)}
+                  className="w-full min-w-0 bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+                >
+                  <option value="">Select a deal</option>
+                  {deals.map((deal) => (
+                    <option key={deal.id} value={deal.id}>
+                      {deal.title} · {deal.stage} · ${deal.amount.toLocaleString()}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
@@ -532,7 +581,7 @@ export default function QuotesPage() {
               </button>
               <button
                 type="submit"
-                disabled={createQuoteMutation.isPending || updateQuoteMutation.isPending}
+                disabled={createQuoteMutation.isPending || updateQuoteMutation.isPending || isDealsLoading || deals.length === 0 || !dealId}
                 className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg font-medium text-sm cursor-pointer shadow-sm disabled:opacity-50"
               >
                 {(createQuoteMutation.isPending || updateQuoteMutation.isPending) && (

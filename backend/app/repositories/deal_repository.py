@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
-
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,12 +15,13 @@ class DealRepository:
         self,
         db: AsyncSession,
         *,
+        organization_id: str,
         page: int,
         limit: int,
-        search: Optional[str] = None,
-        stage: Optional[str] = None,
+        search: str | None = None,
+        stage: str | None = None,
     ) -> list[Deal]:
-        stmt = select(Deal)
+        stmt = select(Deal).where(Deal.organization_id == organization_id)
         if search and search.strip():
             stmt = stmt.where(Deal.title.ilike(f"%{search.strip()}%"))
         if stage:
@@ -35,8 +34,19 @@ class DealRepository:
         result = await db.execute(select(Deal).order_by(Deal.created_at.desc()))
         return list(result.scalars().all())
 
-    async def get_by_id(self, db: AsyncSession, deal_id: str) -> Optional[Deal]:
+    async def get_by_id(self, db: AsyncSession, deal_id: str) -> Deal | None:
         result = await db.execute(select(Deal).where(Deal.id == deal_id))
+        return result.scalars().first()
+
+    async def get_by_id_scoped(
+        self, db: AsyncSession, *, deal_id: str, organization_id: str
+    ) -> Deal | None:
+        result = await db.execute(
+            select(Deal).where(
+                Deal.id == deal_id,
+                Deal.organization_id == organization_id,
+            )
+        )
         return result.scalars().first()
 
     async def list_by_ids(self, db: AsyncSession, ids: list[str]) -> list[Deal]:
@@ -55,7 +65,7 @@ class DealRepository:
         result = await db.execute(select(User.id).where(User.id == user_id).limit(1))
         return result.scalars().first() is not None
 
-    async def first_user_id(self, db: AsyncSession) -> Optional[str]:
+    async def first_user_id(self, db: AsyncSession) -> str | None:
         result = await db.execute(select(User.id).limit(1))
         return result.scalars().first()
 
@@ -82,7 +92,7 @@ class DealRepository:
 
     async def get_deal_product(
         self, db: AsyncSession, *, deal_id: str, product_id: str
-    ) -> Optional[DealProduct]:
+    ) -> DealProduct | None:
         result = await db.execute(
             select(DealProduct).where(
                 DealProduct.deal_id == deal_id, DealProduct.product_id == product_id
@@ -106,11 +116,11 @@ class DealRepository:
     async def delete_deal_product(self, db: AsyncSession, dp: DealProduct) -> None:
         await db.delete(dp)
 
-    async def get_product(self, db: AsyncSession, product_id: str) -> Optional[Product]:
+    async def get_product(self, db: AsyncSession, product_id: str) -> Product | None:
         result = await db.execute(select(Product).where(Product.id == product_id))
         return result.scalars().first()
 
-    async def get_product_by_name(self, db: AsyncSession, name: str) -> Optional[Product]:
+    async def get_product_by_name(self, db: AsyncSession, name: str) -> Product | None:
         result = await db.execute(select(Product).where(Product.name.ilike(name)).limit(1))
         return result.scalars().first()
 
