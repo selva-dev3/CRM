@@ -28,6 +28,7 @@ import {
   Check
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
+import { Button } from '@/components/ui/button';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
 import { PermissionGate } from '@/components/common/permission-gate';
@@ -551,8 +552,10 @@ export default function RolesPage() {
         return (
           <div onClick={(e) => e.stopPropagation()}>
             <DropdownMenu>
-              <DropdownMenuTrigger className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer text-slate-500 hover:text-slate-900 border border-transparent hover:border-slate-200 outline-none">
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="ghost" size="icon-sm" aria-label="Open role actions">
                 <MoreHorizontal className="w-4 h-4" />
+              </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-52">
                 <PermissionGate permission="roles:update">
@@ -615,6 +618,7 @@ export default function RolesPage() {
                     <>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
+                        variant="destructive"
                         onClick={(e) => {
                           e.stopPropagation();
                           setRoleToDelete(item);
@@ -644,7 +648,7 @@ export default function RolesPage() {
             <CheckCircle2 className="w-5 h-5 text-emerald-600" />
             <span className="truncate max-w-2xl">{successMessage}</span>
           </div>
-          <button onClick={() => setSuccessMessage(null)} className="text-emerald-600 hover:text-emerald-800">
+          <button type="button" aria-label="Dismiss success message" onClick={() => setSuccessMessage(null)} className="text-emerald-600 hover:text-emerald-800">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -656,7 +660,7 @@ export default function RolesPage() {
             <AlertCircle className="w-5 h-5 text-rose-600" />
             <span>{errorMessage}</span>
           </div>
-          <button onClick={() => setErrorMessage(null)} className="text-rose-600 hover:text-rose-800">
+          <button type="button" aria-label="Dismiss error message" onClick={() => setErrorMessage(null)} className="text-rose-600 hover:text-rose-800">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -743,7 +747,7 @@ export default function RolesPage() {
         searchPlaceholder="Search role name or description..."
         toolbarActions={
           selectedIds.size > 0 ? (
-            <div className="flex items-center gap-2 bg-indigo-50 px-3 py-1 rounded-lg border border-indigo-200">
+            <div className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1 sm:w-auto">
               <span className="text-xs font-semibold text-indigo-700">{selectedIds.size} selected</span>
               <button
                 onClick={handleBulkDelete}

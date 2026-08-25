@@ -1,5 +1,7 @@
 ﻿'use client';
 
+import { ActionMenu } from '@/components/common/action-menu';
+import { Button } from '@/components/ui/button';
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
@@ -303,64 +305,17 @@ export default function QuotesPage() {
       id: 'actions',
       header: 'ACTIONS',
       cell: (item) => (
-        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-          <PermissionGate permission={PERMISSIONS.QUOTES.SEND}>
-            <button
-              onClick={() => {
-                setSendModalQuote(item);
-                setRecipientEmailInput('client@company.com');
-                setIsSendEmailModalOpen(true);
-              }}
-              title="Send Proposal Email"
-              className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md transition-colors cursor-pointer"
-            >
-              <Send className="w-4 h-4" />
-            </button>
-          </PermissionGate>
-
-          {item.status !== 'Accepted' ? (
-            <PermissionGate permission={PERMISSIONS.QUOTES.APPROVE}>
-              <button
-                onClick={() => handleAcceptQuote(item)}
-                title="Mark as Accepted"
-                className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors cursor-pointer"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-              </button>
-            </PermissionGate>
-          ) : (
-            <PermissionGate permission={PERMISSIONS.QUOTES.CREATE}>
-              <button
-                onClick={() => handleConvertToInvoice(item)}
-                title="Convert to Invoice"
-                className="p-1.5 text-purple-600 hover:bg-purple-50 rounded-md transition-colors cursor-pointer flex items-center gap-1 text-xs font-semibold"
-              >
-                <Receipt className="w-4 h-4" />
-                Invoice
-              </button>
-            </PermissionGate>
-          )}
-
-          <PermissionGate permission={PERMISSIONS.QUOTES.UPDATE}>
-            <button
-              onClick={() => handleOpenEditModal(item)}
-              title="Edit Quote"
-              className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-md transition-colors cursor-pointer"
-            >
-              <Edit className="w-4 h-4" />
-            </button>
-          </PermissionGate>
-
-          <PermissionGate permission={PERMISSIONS.QUOTES.DELETE}>
-            <button
-              onClick={() => setQuoteToDelete(item)}
-              title="Delete Quote"
-              className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
-            >
-            <Trash2 className="w-4 h-4" />
-          </button>
-          </PermissionGate>
-        </div>
+        <ActionMenu
+          iconOnly
+          label="Open quote actions"
+          onTriggerClick={(event) => event.stopPropagation()}
+          actions={[
+            { label: 'Send proposal email', permission: PERMISSIONS.QUOTES.SEND, icon: <Send className="w-4 h-4 text-blue-600" />, onSelect: () => { setSendModalQuote(item); setRecipientEmailInput('client@company.com'); setIsSendEmailModalOpen(true); } },
+            ...(item.status !== 'Accepted' ? [{ label: 'Mark as accepted', permission: PERMISSIONS.QUOTES.APPROVE, icon: <CheckCircle2 className="w-4 h-4 text-emerald-600" />, onSelect: () => handleAcceptQuote(item) }] : [{ label: 'Convert to invoice', permission: PERMISSIONS.QUOTES.CREATE, icon: <Receipt className="w-4 h-4 text-purple-600" />, onSelect: () => handleConvertToInvoice(item) }]),
+            { label: 'Edit quote', permission: PERMISSIONS.QUOTES.UPDATE, icon: <Edit className="w-4 h-4 text-indigo-600" />, onSelect: () => handleOpenEditModal(item) },
+            { label: 'Delete quote', permission: PERMISSIONS.QUOTES.DELETE, icon: <Trash2 className="w-4 h-4" />, variant: 'destructive', onSelect: () => setQuoteToDelete(item) },
+          ]}
+        />
       ),
     },
   ];
@@ -374,7 +329,7 @@ export default function QuotesPage() {
             <CheckCircle2 className="w-5 h-5 text-emerald-600" />
             <span className="truncate max-w-2xl">{successMessage}</span>
           </div>
-          <button onClick={() => setSuccessMessage(null)} className="text-emerald-600 hover:text-emerald-800">
+          <button type="button" aria-label="Dismiss success message" onClick={() => setSuccessMessage(null)} className="text-emerald-600 hover:text-emerald-800">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -386,7 +341,7 @@ export default function QuotesPage() {
             <AlertCircle className="w-5 h-5 text-rose-600" />
             <span>{errorMessage}</span>
           </div>
-          <button onClick={() => setErrorMessage(null)} className="text-rose-600 hover:text-rose-800">
+          <button type="button" aria-label="Dismiss error message" onClick={() => setErrorMessage(null)} className="text-rose-600 hover:text-rose-800">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -402,33 +357,16 @@ export default function QuotesPage() {
           <p className="text-slate-500 text-sm mt-0.5">Create, send, track client approvals, generate PDF reports & convert quotes directly to invoices</p>
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <button
-            onClick={handleExportCsv}
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer"
-          >
-            <Download className="w-4 h-4 text-slate-600" />
-            Export CSV
-          </button>
-
-          <button
-            onClick={handleImportCsv}
-            disabled={importCsvMutation.isPending}
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer disabled:opacity-50"
-          >
-            {importCsvMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4 text-indigo-600" />}
-            Import CSV
-          </button>
-
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
           <PermissionGate permission={PERMISSIONS.QUOTES.CREATE}>
-          <button
-            onClick={handleOpenCreateModal}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors shadow-sm cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            Create Quote
-          </button>
-        </PermissionGate>
+            <Button onClick={handleOpenCreateModal} className="w-full gap-2 text-xs font-semibold sm:w-auto">
+              <Plus className="w-4 h-4" />Create Quote
+            </Button>
+          </PermissionGate>
+          <ActionMenu label="More" className="w-full text-xs font-semibold sm:w-auto" actions={[
+            { label: 'Export CSV', icon: <Download className="w-4 h-4 text-slate-600" />, onSelect: handleExportCsv },
+            { label: 'Import CSV', icon: importCsvMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4 text-indigo-600" />, disabled: importCsvMutation.isPending, onSelect: handleImportCsv },
+          ]} />
         </div>
       </div>
 
@@ -460,7 +398,7 @@ export default function QuotesPage() {
             </select>
 
             {selectedIds.size > 0 && (
-              <div className="flex items-center gap-2 bg-indigo-50 px-3 py-1 rounded-lg border border-indigo-200">
+              <div className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1 sm:w-auto">
                 <span className="text-xs font-semibold text-indigo-700">{selectedIds.size} selected</span>
                 <PermissionGate permission={PERMISSIONS.QUOTES.DELETE}>
                   <button

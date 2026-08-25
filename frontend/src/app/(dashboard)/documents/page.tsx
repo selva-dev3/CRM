@@ -1,5 +1,6 @@
 ﻿'use client';
 
+import { ActionMenu } from '@/components/common/action-menu';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Folder,
@@ -205,25 +206,15 @@ export default function DocumentsPage() {
       id: 'actions',
       header: 'ACTIONS',
       cell: (item) => (
-        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-          <button
-            onClick={() => handleDownloadClick(item)}
-            title="Download S3 File"
-            className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors cursor-pointer flex items-center gap-1 text-xs font-semibold"
-          >
-            <Download className="w-4 h-4" />
-            Download
-          </button>
-          <PermissionGate permission={PERMISSIONS.DOCUMENTS.DELETE}>
-            <button
-              onClick={() => setDocumentToDelete(item)}
-              title="Delete Document"
-              className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </PermissionGate>
-        </div>
+        <ActionMenu
+          iconOnly
+          label="Open document actions"
+          onTriggerClick={(event) => event.stopPropagation()}
+          actions={[
+            { label: 'Download', icon: <Download className="w-4 h-4 text-indigo-600" />, onSelect: () => handleDownloadClick(item) },
+            { label: 'Delete document', permission: PERMISSIONS.DOCUMENTS.DELETE, icon: <Trash2 className="w-4 h-4" />, variant: 'destructive', onSelect: () => setDocumentToDelete(item) },
+          ]}
+        />
       ),
     },
   ];
@@ -237,7 +228,7 @@ export default function DocumentsPage() {
             <CheckCircle2 className="w-5 h-5 text-emerald-600" />
             <span className="truncate max-w-2xl">{successMessage}</span>
           </div>
-          <button onClick={() => setSuccessMessage(null)} className="text-emerald-600 hover:text-emerald-800">
+          <button type="button" aria-label="Dismiss success message" onClick={() => setSuccessMessage(null)} className="text-emerald-600 hover:text-emerald-800">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -249,7 +240,7 @@ export default function DocumentsPage() {
             <AlertCircle className="w-5 h-5 text-rose-600" />
             <span>{errorMessage}</span>
           </div>
-          <button onClick={() => setErrorMessage(null)} className="text-rose-600 hover:text-rose-800">
+          <button type="button" aria-label="Dismiss error message" onClick={() => setErrorMessage(null)} className="text-rose-600 hover:text-rose-800">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -295,7 +286,7 @@ export default function DocumentsPage() {
         searchPlaceholder="Search filename..."
         toolbarActions={
           selectedIds.size > 0 ? (
-            <div className="flex items-center gap-2 bg-indigo-50 px-3 py-1 rounded-lg border border-indigo-200">
+            <div className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1 sm:w-auto">
               <span className="text-xs font-semibold text-indigo-700">{selectedIds.size} selected</span>
               <PermissionGate permission={PERMISSIONS.DOCUMENTS.DELETE}>
                 <button

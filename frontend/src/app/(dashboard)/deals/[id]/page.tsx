@@ -27,6 +27,7 @@ import {
   Receipt,
   Search
 } from 'lucide-react';
+import { ActionMenu } from '@/components/common/action-menu';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -328,7 +329,7 @@ export default function DealDetailsPage() {
         </div>
 
         {/* Action Header Buttons */}
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
           <Button
             size="sm"
             onClick={handleMarkWon}
@@ -378,55 +379,38 @@ export default function DealDetailsPage() {
             </Link>
           )}
 
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleMarkLost}
-            className="border-rose-300 text-rose-600 hover:bg-rose-50 font-semibold text-xs gap-1.5 cursor-pointer"
-          >
-            <XCircle className="w-3.5 h-3.5" />
-            <span>Mark Lost</span>
-          </Button>
-
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handlePredictWinRate}
-            className="border-indigo-300 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 font-semibold text-xs gap-1.5 cursor-pointer"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-            <span>AI Predict</span>
-          </Button>
-
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleCloneDeal}
-            className="border-slate-300 font-semibold text-xs gap-1.5 cursor-pointer"
-          >
-            <Copy className="w-3.5 h-3.5 text-indigo-600" />
-            <span>Clone</span>
-          </Button>
-
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={openEditModal}
-            className="border-slate-300 font-semibold text-xs gap-1.5 cursor-pointer"
-          >
-            <Edit className="w-3.5 h-3.5 text-blue-600" />
-            <span>Edit</span>
-          </Button>
-
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setIsDeleteModalOpen(true)}
-            className="border-rose-300 text-rose-600 hover:bg-rose-50 font-semibold text-xs gap-1.5 cursor-pointer"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            <span>Delete</span>
-          </Button>
+          <ActionMenu
+            label="More"
+            className="h-8 text-xs font-semibold"
+            actions={[
+              {
+                label: 'Mark lost',
+                icon: <XCircle className="w-4 h-4 text-rose-600" />,
+                onSelect: handleMarkLost,
+              },
+              {
+                label: 'AI predict',
+                icon: <Sparkles className="w-4 h-4 text-indigo-600" />,
+                onSelect: handlePredictWinRate,
+              },
+              {
+                label: 'Clone deal',
+                icon: <Copy className="w-4 h-4 text-indigo-600" />,
+                onSelect: handleCloneDeal,
+              },
+              {
+                label: 'Edit deal',
+                icon: <Edit className="w-4 h-4 text-blue-600" />,
+                onSelect: openEditModal,
+              },
+              {
+                label: 'Delete deal',
+                icon: <Trash2 className="w-4 h-4" />,
+                variant: 'destructive',
+                onSelect: () => setIsDeleteModalOpen(true),
+              },
+            ]}
+          />
         </div>
       </div>
 

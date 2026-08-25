@@ -24,6 +24,7 @@ import {
   Search,
   Check
 } from 'lucide-react';
+import { ActionMenu } from '@/components/common/action-menu';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -313,7 +314,7 @@ export default function ContactDetailsPage() {
           <span>Back to Contact Directory</span>
         </Link>
 
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
           <Button
             size="sm"
             variant="outline"
@@ -327,25 +328,23 @@ export default function ContactDetailsPage() {
             <span>{contact.is_starred ? 'Unstar Contact' : 'Star Contact'}</span>
           </Button>
 
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={openEditModal}
-            className="border-slate-300 font-semibold text-xs gap-1.5 cursor-pointer"
-          >
-            <Edit className="w-4 h-4 text-blue-600" />
-            <span>Edit Profile</span>
-          </Button>
-
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setIsDeleteModalOpen(true)}
-            className="border-rose-200 text-rose-600 hover:bg-rose-50 font-semibold text-xs gap-1.5 cursor-pointer"
-          >
-            <Trash2 className="w-4 h-4" />
-            <span>Delete</span>
-          </Button>
+          <ActionMenu
+            label="More"
+            className="h-8 text-xs font-semibold"
+            actions={[
+              {
+                label: 'Edit profile',
+                icon: <Edit className="w-4 h-4 text-blue-600" />,
+                onSelect: openEditModal,
+              },
+              {
+                label: 'Delete contact',
+                icon: <Trash2 className="w-4 h-4" />,
+                variant: 'destructive',
+                onSelect: () => setIsDeleteModalOpen(true),
+              },
+            ]}
+          />
         </div>
       </div>
 

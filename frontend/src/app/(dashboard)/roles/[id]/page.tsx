@@ -24,7 +24,9 @@ import {
   ChevronDown,
   Check
 } from 'lucide-react';
+import { ActionMenu } from '@/components/common/action-menu';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { Button } from '@/components/ui/button';
 import { ModalShell } from '@/components/common/modal-shell';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { PermissionGate } from '@/components/common/permission-gate';
@@ -433,58 +435,46 @@ export default function RoleDetailPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap w-full sm:w-auto">
-          <PermissionGate permission="roles:update">
-            {(role.name.toLowerCase().includes('super') || role.name.toLowerCase() === 'super_admin' || role.id === 'sys-admin') && !isDefault && (
-              <button
-                onClick={handleSetDefault}
-                disabled={setDefaultMutation.isPending}
-                className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs cursor-pointer transition-colors disabled:opacity-50 flex-1 sm:flex-initial min-w-[140px] sm:min-w-0"
-              >
-                {setDefaultMutation.isPending ? (
-                  <Loader2 className="w-4 h-4 animate-spin text-amber-500 shrink-0" />
-                ) : (
-                  <Star className="w-4 h-4 text-amber-500 fill-amber-400/20 shrink-0" />
-                )}
-                <span>Set Registration Default</span>
-              </button>
-            )}
-          </PermissionGate>
-
-          <PermissionGate permission="roles:create">
-            <button
-              onClick={() => {
-                setCloneNewName(`${role.name} Copy`);
-                setIsCloneModalOpen(true);
-              }}
-              className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg text-xs font-semibold shadow-xs cursor-pointer flex-1 sm:flex-initial min-w-[100px] sm:min-w-0"
-            >
-              <Copy className="w-4 h-4 text-indigo-600 shrink-0" />
-              <span>Clone Role</span>
-            </button>
-          </PermissionGate>
-
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
           <PermissionGate permission="users:roles">
-            <button
+            <Button
               onClick={() => setIsAssignModalOpen(true)}
-              className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer shadow-xs flex-1 sm:flex-initial min-w-[110px] sm:min-w-0"
+              className="w-full gap-2 text-xs font-semibold sm:w-auto"
             >
-              <UserCheck className="w-4 h-4 shrink-0" />
+              <UserCheck className="w-4 h-4" />
               <span>Assign to User</span>
-            </button>
+            </Button>
           </PermissionGate>
 
-          <PermissionGate permission="roles:delete">
-            {!role.is_system_role && !isDefault && role.type !== 'default' && (
-              <button
-                onClick={() => setIsDeleteModalOpen(true)}
-                className="flex items-center justify-center gap-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3 py-2 rounded-lg text-xs font-semibold shadow-xs cursor-pointer flex-1 sm:flex-initial min-w-[90px] sm:min-w-0"
-              >
-                <Trash2 className="w-4 h-4 shrink-0" />
-                <span>Delete Role</span>
-              </button>
-            )}
-          </PermissionGate>
+          <ActionMenu
+            label="More"
+            className="w-full text-xs font-semibold sm:w-auto"
+            actions={[
+              ...((role.name.toLowerCase().includes('super') || role.name.toLowerCase() === 'super_admin' || role.id === 'sys-admin') && !isDefault ? [{
+                label: 'Set registration default',
+                permission: 'roles:update' as const,
+                icon: setDefaultMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin text-amber-500" /> : <Star className="w-4 h-4 text-amber-500" />,
+                disabled: setDefaultMutation.isPending,
+                onSelect: handleSetDefault,
+              }] : []),
+              {
+                label: 'Clone role',
+                permission: 'roles:create',
+                icon: <Copy className="w-4 h-4 text-indigo-600" />,
+                onSelect: () => {
+                  setCloneNewName(`${role.name} Copy`);
+                  setIsCloneModalOpen(true);
+                },
+              },
+              ...(!role.is_system_role && !isDefault && role.type !== 'default' ? [{
+                label: 'Delete role',
+                permission: 'roles:delete' as const,
+                icon: <Trash2 className="w-4 h-4" />,
+                variant: 'destructive' as const,
+                onSelect: () => setIsDeleteModalOpen(true),
+              }] : []),
+            ]}
+          />
         </div>
       </div>
 
@@ -495,7 +485,7 @@ export default function RoleDetailPage() {
             <CheckCircle2 className="w-5 h-5 text-emerald-600" />
             <span>{successMessage}</span>
           </div>
-          <button onClick={() => setSuccessMessage(null)} className="text-emerald-600 hover:text-emerald-800">
+          <button type="button" aria-label="Dismiss success message" onClick={() => setSuccessMessage(null)} className="text-emerald-600 hover:text-emerald-800">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -507,7 +497,7 @@ export default function RoleDetailPage() {
             <AlertCircle className="w-5 h-5 text-rose-600" />
             <span>{errorMessage}</span>
           </div>
-          <button onClick={() => setErrorMessage(null)} className="text-rose-600 hover:text-rose-800">
+          <button type="button" aria-label="Dismiss error message" onClick={() => setErrorMessage(null)} className="text-rose-600 hover:text-rose-800">
             <X className="w-4 h-4" />
           </button>
         </div>

@@ -22,6 +22,7 @@ import {
   ChevronDown,
   Check
 } from 'lucide-react';
+import { ActionMenu } from '@/components/common/action-menu';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -447,7 +448,7 @@ export default function ContactsPage() {
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
           <PermissionGate permission={PERMISSIONS.CONTACTS.CREATE}>
             <Button
               size="sm"
@@ -462,42 +463,31 @@ export default function ContactsPage() {
             </Button>
           </PermissionGate>
 
-          <PermissionGate permission={PERMISSIONS.CONTACTS.EXPORT}>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleExportCsv}
-              className="border-slate-300 font-semibold text-xs gap-1 cursor-pointer"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Export CSV</span>
-            </Button>
-          </PermissionGate>
-
-          <PermissionGate permission={PERMISSIONS.CONTACTS.IMPORT}>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleImportCsv}
-              disabled={importCsvMutation.isPending}
-              className="border-slate-300 font-semibold text-xs gap-1 cursor-pointer"
-            >
-              <Upload className="w-3.5 h-3.5 text-blue-600" />
-              <span>Import CSV</span>
-            </Button>
-          </PermissionGate>
-
-          <PermissionGate permission={PERMISSIONS.CONTACTS.UPDATE}>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setIsMergeModalOpen(true)}
-              className="border-slate-300 font-semibold text-xs gap-1 cursor-pointer"
-            >
-              <GitMerge className="w-3.5 h-3.5 text-purple-600" />
-              <span>Merge</span>
-            </Button>
-          </PermissionGate>
+          <ActionMenu
+            label="More"
+            className="h-8 text-xs font-semibold"
+            actions={[
+              {
+                label: 'Export CSV',
+                permission: PERMISSIONS.CONTACTS.EXPORT,
+                icon: <FileSpreadsheet className="w-4 h-4 text-emerald-600" />,
+                onSelect: handleExportCsv,
+              },
+              {
+                label: 'Import CSV',
+                permission: PERMISSIONS.CONTACTS.IMPORT,
+                icon: <Upload className="w-4 h-4 text-blue-600" />,
+                disabled: importCsvMutation.isPending,
+                onSelect: handleImportCsv,
+              },
+              {
+                label: 'Merge contacts',
+                permission: PERMISSIONS.CONTACTS.UPDATE,
+                icon: <GitMerge className="w-4 h-4 text-purple-600" />,
+                onSelect: () => setIsMergeModalOpen(true),
+              },
+            ]}
+          />
 
           {selectedIds.size > 0 && (
             <PermissionGate permission={PERMISSIONS.CONTACTS.BULK_DELETE}>

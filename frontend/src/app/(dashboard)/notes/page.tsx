@@ -1,5 +1,6 @@
 ﻿'use client';
 
+import { ActionMenu } from '@/components/common/action-menu';
 import React, { useState, useEffect } from 'react';
 import {
   FileText,
@@ -228,31 +229,16 @@ export default function NotesPage() {
       id: 'actions',
       header: 'ACTIONS',
       cell: (item) => (
-        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-          <button
-            onClick={() => handleTogglePin(item)}
-            title={item.is_pinned ? 'Unpin Note' : 'Pin Note'}
-            className={`p-1.5 rounded-md transition-colors cursor-pointer ${
-              item.is_pinned ? 'text-amber-600 hover:bg-amber-50' : 'text-slate-400 hover:text-amber-500 hover:bg-slate-100'
-            }`}
-          >
-            {item.is_pinned ? <PinOff className="w-4 h-4" /> : <Pin className="w-4 h-4" />}
-          </button>
-          <button
-            onClick={() => handleOpenEditModal(item)}
-            title="Edit Note"
-            className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-md transition-colors cursor-pointer"
-          >
-            <Edit className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setNoteToDelete(item)}
-            title="Delete Note"
-            className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
-        </div>
+        <ActionMenu
+          iconOnly
+          label="Open note actions"
+          onTriggerClick={(event) => event.stopPropagation()}
+          actions={[
+            { label: item.is_pinned ? 'Unpin note' : 'Pin note', icon: item.is_pinned ? <PinOff className="w-4 h-4 text-amber-600" /> : <Pin className="w-4 h-4 text-amber-600" />, onSelect: () => handleTogglePin(item) },
+            { label: 'Edit note', icon: <Edit className="w-4 h-4 text-indigo-600" />, onSelect: () => handleOpenEditModal(item) },
+            { label: 'Delete note', icon: <Trash2 className="w-4 h-4" />, variant: 'destructive', onSelect: () => setNoteToDelete(item) },
+          ]}
+        />
       ),
     },
   ];
@@ -266,7 +252,7 @@ export default function NotesPage() {
             <CheckCircle2 className="w-5 h-5 text-emerald-600" />
             <span className="truncate max-w-2xl">{successMessage}</span>
           </div>
-          <button onClick={() => setSuccessMessage(null)} className="text-emerald-600 hover:text-emerald-800">
+          <button type="button" aria-label="Dismiss success message" onClick={() => setSuccessMessage(null)} className="text-emerald-600 hover:text-emerald-800">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -278,7 +264,7 @@ export default function NotesPage() {
             <AlertCircle className="w-5 h-5 text-rose-600" />
             <span>{errorMessage}</span>
           </div>
-          <button onClick={() => setErrorMessage(null)} className="text-rose-600 hover:text-rose-800">
+          <button type="button" aria-label="Dismiss error message" onClick={() => setErrorMessage(null)} className="text-rose-600 hover:text-rose-800">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -357,7 +343,7 @@ export default function NotesPage() {
         searchPlaceholder="Search notes content..."
         toolbarActions={
           selectedIds.size > 0 ? (
-            <div className="flex items-center gap-2 bg-indigo-50 px-3 py-1 rounded-lg border border-indigo-200">
+            <div className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1 sm:w-auto">
               <span className="text-xs font-semibold text-indigo-700">{selectedIds.size} selected</span>
               <button
                 onClick={handleBulkDelete}

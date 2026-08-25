@@ -21,7 +21,9 @@ import {
   Zap,
   Percent
 } from 'lucide-react';
+import { ActionMenu } from '@/components/common/action-menu';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { Button } from '@/components/ui/button';
 import { ModalShell } from '@/components/common/modal-shell';
 import {
   useInvoiceQuery,
@@ -183,71 +185,77 @@ export default function InvoiceDetailPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <button
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+          <Button
             onClick={handleStripeCheckout}
             disabled={stripeCheckoutMutation.isPending}
-            className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer shadow-xs disabled:opacity-50"
+            className="w-full gap-2 bg-purple-600 text-xs font-semibold hover:bg-purple-700 sm:w-auto"
           >
             {stripeCheckoutMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
             Stripe Checkout
-          </button>
+          </Button>
 
-          {pdfData?.pdf_url && (
-            <a
-              href={pdfData.pdf_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg text-xs font-semibold shadow-xs"
-            >
-              <Download className="w-4 h-4 text-indigo-600" />
-              Download PDF
-            </a>
-          )}
-
-          <button
+          <Button
             onClick={() => setIsSendEmailModalOpen(true)}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer shadow-xs"
+            className="w-full gap-2 text-xs font-semibold sm:w-auto"
           >
             <Send className="w-4 h-4" />
             Send Email
-          </button>
+          </Button>
 
           {s !== 'Paid' && (
-            <>
-              <button
-                onClick={handleSendReminder}
-                className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg text-xs font-semibold shadow-xs cursor-pointer"
-              >
-                <BellRing className="w-4 h-4 text-amber-500" />
-                Send Reminder
-              </button>
-
-              <button
-                onClick={handleMarkPaid}
-                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer shadow-xs"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                Mark Paid
-              </button>
-            </>
+            <Button
+              onClick={handleMarkPaid}
+              className="w-full gap-2 bg-emerald-600 text-xs font-semibold hover:bg-emerald-700 sm:w-auto"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              Mark Paid
+            </Button>
           )}
 
-          <button
-            onClick={() => setIsCreditMemoModalOpen(true)}
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg text-xs font-semibold shadow-xs cursor-pointer"
-          >
-            <Percent className="w-4 h-4 text-purple-600" />
-            Credit Memo
-          </button>
+          {pdfData?.pdf_url && (
+            <Button asChild variant="outline" className="w-full gap-2 text-xs font-semibold sm:w-auto">
+              <a href={pdfData.pdf_url} target="_blank" rel="noopener noreferrer">
+                <Download className="w-4 h-4 text-indigo-600" />
+                Download PDF
+              </a>
+            </Button>
+          )}
 
-          <button
-            onClick={() => setIsDeleteModalOpen(true)}
-            className="flex items-center gap-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3 py-2 rounded-lg text-xs font-semibold shadow-xs cursor-pointer"
-          >
-            <Trash2 className="w-4 h-4" />
-            Delete
-          </button>
+          <ActionMenu
+            label="More"
+            className="w-full text-xs font-semibold sm:w-auto"
+            actions={s !== 'Paid' ? [
+              {
+                label: 'Send reminder',
+                icon: <BellRing className="w-4 h-4 text-amber-500" />,
+                onSelect: handleSendReminder,
+              },
+              {
+                label: 'Issue credit memo',
+                icon: <Percent className="w-4 h-4 text-purple-600" />,
+                onSelect: () => setIsCreditMemoModalOpen(true),
+              },
+              {
+                label: 'Delete invoice',
+                icon: <Trash2 className="w-4 h-4" />,
+                variant: 'destructive',
+                onSelect: () => setIsDeleteModalOpen(true),
+              },
+            ] : [
+              {
+                label: 'Issue credit memo',
+                icon: <Percent className="w-4 h-4 text-purple-600" />,
+                onSelect: () => setIsCreditMemoModalOpen(true),
+              },
+              {
+                label: 'Delete invoice',
+                icon: <Trash2 className="w-4 h-4" />,
+                variant: 'destructive',
+                onSelect: () => setIsDeleteModalOpen(true),
+              },
+            ]}
+          />
         </div>
       </div>
 
@@ -258,7 +266,7 @@ export default function InvoiceDetailPage() {
             <CheckCircle2 className="w-5 h-5 text-emerald-600" />
             <span>{successMessage}</span>
           </div>
-          <button onClick={() => setSuccessMessage(null)} className="text-emerald-600 hover:text-emerald-800">
+          <button type="button" aria-label="Dismiss success message" onClick={() => setSuccessMessage(null)} className="text-emerald-600 hover:text-emerald-800">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -270,7 +278,7 @@ export default function InvoiceDetailPage() {
             <AlertCircle className="w-5 h-5 text-rose-600" />
             <span>{errorMessage}</span>
           </div>
-          <button onClick={() => setErrorMessage(null)} className="text-rose-600 hover:text-rose-800">
+          <button type="button" aria-label="Dismiss error message" onClick={() => setErrorMessage(null)} className="text-rose-600 hover:text-rose-800">
             <X className="w-4 h-4" />
           </button>
         </div>

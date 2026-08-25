@@ -1,5 +1,7 @@
 ﻿'use client';
 
+import { ActionMenu } from '@/components/common/action-menu';
+import { Button } from '@/components/ui/button';
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
@@ -340,63 +342,18 @@ export default function InvoicesPage() {
       id: 'actions',
       header: 'ACTIONS',
       cell: (item) => (
-        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-          <PermissionGate permission={PERMISSIONS.INVOICES.PAYMENT}>
-            <button
-              onClick={() => handleStripeCheckout(item)}
-              title="Pay via Stripe Checkout"
-              className="p-1.5 text-purple-600 hover:bg-purple-50 rounded-md transition-colors cursor-pointer flex items-center gap-1 text-xs font-semibold"
-            >
-              <CreditCard className="w-4 h-4 text-purple-600" />
-              Stripe
-            </button>
-          </PermissionGate>
-
-          <PermissionGate permission={PERMISSIONS.INVOICES.SEND}>
-            <button
-              onClick={() => {
-                setSendModalInvoice(item);
-                setIsSendModalOpen(true);
-              }}
-              title="Email Invoice PDF & Payment Link"
-              className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md transition-colors cursor-pointer"
-            >
-              <Send className="w-4 h-4" />
-            </button>
-          </PermissionGate>
-
-          {item.status !== 'Paid' && (
-            <PermissionGate permission={PERMISSIONS.INVOICES.PAYMENT}>
-              <button
-                onClick={() => handleMarkPaid(item)}
-                title="Mark as Paid"
-                className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors cursor-pointer"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-              </button>
-            </PermissionGate>
-          )}
-
-          <PermissionGate permission={PERMISSIONS.INVOICES.UPDATE}>
-            <button
-              onClick={() => handleOpenEditModal(item)}
-              title="Edit Invoice"
-              className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-md transition-colors cursor-pointer"
-            >
-              <Edit className="w-4 h-4" />
-            </button>
-          </PermissionGate>
-
-          <PermissionGate permission={PERMISSIONS.INVOICES.DELETE}>
-            <button
-              onClick={() => setInvoiceToDelete(item)}
-              title="Delete Invoice"
-              className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </PermissionGate>
-        </div>
+        <ActionMenu
+          iconOnly
+          label="Open invoice actions"
+          onTriggerClick={(event) => event.stopPropagation()}
+          actions={[
+            { label: 'Stripe checkout', permission: PERMISSIONS.INVOICES.PAYMENT, icon: <CreditCard className="w-4 h-4 text-purple-600" />, onSelect: () => handleStripeCheckout(item) },
+            { label: 'Send invoice email', permission: PERMISSIONS.INVOICES.SEND, icon: <Send className="w-4 h-4 text-blue-600" />, onSelect: () => { setSendModalInvoice(item); setIsSendModalOpen(true); } },
+            ...(item.status !== 'Paid' ? [{ label: 'Mark as paid', permission: PERMISSIONS.INVOICES.PAYMENT, icon: <CheckCircle2 className="w-4 h-4 text-emerald-600" />, onSelect: () => handleMarkPaid(item) }] : []),
+            { label: 'Edit invoice', permission: PERMISSIONS.INVOICES.UPDATE, icon: <Edit className="w-4 h-4 text-indigo-600" />, onSelect: () => handleOpenEditModal(item) },
+            { label: 'Delete invoice', permission: PERMISSIONS.INVOICES.DELETE, icon: <Trash2 className="w-4 h-4" />, variant: 'destructive', onSelect: () => setInvoiceToDelete(item) },
+          ]}
+        />
       ),
     },
   ];
@@ -410,7 +367,7 @@ export default function InvoicesPage() {
             <CheckCircle2 className="w-5 h-5 text-emerald-600" />
             <span className="truncate max-w-2xl">{successMessage}</span>
           </div>
-          <button onClick={() => setSuccessMessage(null)} className="text-emerald-600 hover:text-emerald-800">
+          <button type="button" aria-label="Dismiss success message" onClick={() => setSuccessMessage(null)} className="text-emerald-600 hover:text-emerald-800">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -422,7 +379,7 @@ export default function InvoicesPage() {
             <AlertCircle className="w-5 h-5 text-rose-600" />
             <span>{errorMessage}</span>
           </div>
-          <button onClick={() => setErrorMessage(null)} className="text-rose-600 hover:text-rose-800">
+          <button type="button" aria-label="Dismiss error message" onClick={() => setErrorMessage(null)} className="text-rose-600 hover:text-rose-800">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -438,41 +395,17 @@ export default function InvoicesPage() {
           <p className="text-slate-500 text-sm mt-0.5">Generate invoices, automated recurring billing, Stripe checkout links, credit memos & reminders</p>
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <button
-            onClick={handleExportCsv}
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer"
-          >
-            <Download className="w-4 h-4 text-slate-600" />
-            Export CSV
-          </button>
-
-          <button
-            onClick={handleImportCsv}
-            disabled={importCsvMutation.isPending}
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer disabled:opacity-50"
-          >
-            {importCsvMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4 text-indigo-600" />}
-            Import CSV
-          </button>
-
-          <button
-            onClick={() => setIsRecurringModalOpen(true)}
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer"
-          >
-            <Repeat className="w-4 h-4 text-amber-500" />
-            Recurring Schedule
-          </button>
-
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
           <PermissionGate permission={PERMISSIONS.INVOICES.CREATE}>
-          <button
-            onClick={handleOpenCreateModal}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors shadow-sm cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            Generate Invoice
-          </button>
-        </PermissionGate>
+            <Button onClick={handleOpenCreateModal} className="w-full gap-2 text-xs font-semibold sm:w-auto">
+              <Plus className="w-4 h-4" />Generate Invoice
+            </Button>
+          </PermissionGate>
+          <ActionMenu label="More" className="w-full text-xs font-semibold sm:w-auto" actions={[
+            { label: 'Export CSV', icon: <Download className="w-4 h-4 text-slate-600" />, onSelect: handleExportCsv },
+            { label: 'Import CSV', icon: importCsvMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4 text-indigo-600" />, disabled: importCsvMutation.isPending, onSelect: handleImportCsv },
+            { label: 'Recurring schedule', icon: <Repeat className="w-4 h-4 text-amber-500" />, onSelect: () => setIsRecurringModalOpen(true) },
+          ]} />
         </div>
       </div>
 
@@ -504,7 +437,7 @@ export default function InvoicesPage() {
             </select>
 
             {selectedIds.size > 0 && (
-              <div className="flex items-center gap-2 bg-indigo-50 px-3 py-1 rounded-lg border border-indigo-200">
+              <div className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1 sm:w-auto">
                 <span className="text-xs font-semibold text-indigo-700">{selectedIds.size} selected</span>
                 <button
                   onClick={handleBulkRemind}
