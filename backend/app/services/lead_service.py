@@ -1,11 +1,13 @@
 import asyncio
 import io
+import uuid
 from datetime import datetime
 
 from fastapi import UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import APIException, NotFoundError
+from app.core.config import settings
+from app.core.errors import APIException, ForbiddenError, NotFoundError
 from app.models import Lead, User
 from app.repositories.lead_repository import LeadRepository
 from app.schemas.crm_schemas import (
@@ -16,11 +18,23 @@ from app.schemas.crm_schemas import (
     LeadUpdate,
     TaskCreate,
 )
+from app.services.document_service import (
+    _normalize_mime_type,
+    _read_upload_with_limit,
+    _sanitize_filename,
+    _split_extension,
+    _validate_upload,
+)
 from app.services.notification_service import notification_service
 from app.services.s3_service import s3_service
 
 LEAD_SOURCES = ["Website", "LinkedIn", "Referral", "Cold Call", "Event", "Partner"]
 LEAD_STATUSES = ["New", "Contacted", "Qualified", "Unqualified", "Converted"]
+
+
+def _read_s3_object(key: str) -> bytes:
+    s3_obj = s3_service.s3_client.get_object(Bucket=s3_service.bucket_name, Key=key)
+    return s3_obj["Body"].read()
 
 
 def lead_to_dict(lead: Lead) -> dict:
@@ -74,6 +88,15 @@ class LeadService:
         )
         return [lead_to_dict(lead) for lead in leads]
 
+    async def count_leads(
+        self,
+        db: AsyncSession,
+        *,
+        search: str | None = None,
+        lead_status: str | None = None,
+    ) -> int:
+        return await self.repository.count_leads(db, search=search, status=lead_status)
+
     async def get_lead(self, db: AsyncSession, lead_id: str) -> dict:
         lead = await self.repository.get_by_id(db, lead_id)
         if not lead:
@@ -98,17 +121,24 @@ class LeadService:
         first = await self.repository.get_first_organization(db)
         return first.id if first else None
 
-    async def _resolve_assigned_to(self, db: AsyncSession, assigned_to: str | None) -> str | None:
+    async def _resolve_assigned_to(
+        self, db: AsyncSession, assigned_to: str | None, organization_id: str | None
+    ) -> str | None:
         if not assigned_to:
             return None
         user = await self.repository.get_user(db, assigned_to)
-        return assigned_to if user else None
+        if not user or not organization_id or user.organization_id != organization_id:
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Assignee must be an existing user in the lead's organization.",
+            )
+        return assigned_to
 
     async def create_lead(
         self, db: AsyncSession, payload: LeadCreate, current_user: User | None = None
     ) -> dict:
         org_id = await self._resolve_organization_id(db, payload.organization_id, current_user)
-        assigned_to = await self._resolve_assigned_to(db, payload.assigned_to)
+        assigned_to = await self._resolve_assigned_to(db, payload.assigned_to, org_id)
         data = {
             "organization_id": org_id,
             "title": payload.title,
@@ -154,11 +184,27 @@ class LeadService:
         )
         return lead_to_dict(lead)
 
-    async def update_lead(self, db: AsyncSession, lead_id: str, payload: LeadUpdate) -> dict:
-        lead = await self.repository.get_by_id(db, lead_id)
+    async def update_lead(
+        self, db: AsyncSession, lead_id: str, payload: LeadUpdate, current_user: User
+    ) -> dict:
+        organization_id = getattr(current_user, "organization_id", None)
+        if not organization_id:
+            raise ForbiddenError(message="Organization context is required.")
+
+        lead = await self.repository.get_by_id_for_org(db, lead_id, organization_id)
         if not lead:
             raise NotFoundError(message=f"Lead '{lead_id}' not found")
-        for field, value in payload.model_dump(exclude_unset=True).items():
+
+        updates = payload.model_dump(exclude_unset=True)
+        requested_org = updates.pop("organization_id", organization_id)
+        if requested_org != organization_id:
+            raise ForbiddenError(message="A lead cannot be moved to another organization.")
+        if "assigned_to" in updates:
+            updates["assigned_to"] = await self._resolve_assigned_to(
+                db, updates["assigned_to"], organization_id
+            )
+
+        for field, value in updates.items():
             setattr(lead, field, value)
         await self._commit(db, "Failed to update lead")
         await notification_service.notify(
@@ -199,13 +245,24 @@ class LeadService:
         return {"affected_count": len(leads), "message": f"Successfully archived {len(leads)} lead(s)"}
 
     async def bulk_update_status(self, db: AsyncSession, ids: list[str], status_value: str) -> dict:
+        if not ids:
+            return {"affected_count": 0, "message": "No lead IDs provided"}
+
+        normalized_statuses = {lead_status.lower(): lead_status for lead_status in LEAD_STATUSES}
+        canonical_status = normalized_statuses.get(status_value.strip().lower())
+        if not canonical_status:
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message=f"Unsupported lead status '{status_value}'.",
+            )
+
         leads = await self.repository.list_by_ids(db, ids)
         for lead in leads:
-            lead.status = status_value
+            lead.status = canonical_status
         await self._commit(db, "Bulk status update failed")
         return {
             "affected_count": len(leads),
-            "message": f"Status updated to {status_value}",
+            "message": f"Status updated to {canonical_status}",
         }
 
     async def check_duplicate(self, db: AsyncSession, email: str) -> dict:
@@ -590,9 +647,16 @@ class LeadService:
         return output
 
     async def download_document(
-        self, db: AsyncSession, lead_id: str, document_id: str
+        self, db: AsyncSession, lead_id: str, document_id: str, current_user: User
     ) -> tuple[bytes, str, str]:
-        attachment = await self.repository.get_attachment(db, document_id)
+        organization_id = getattr(current_user, "organization_id", None)
+        if not organization_id:
+            raise ForbiddenError(message="Organization context is required.")
+        lead = await self.repository.get_by_id_for_org(db, lead_id, organization_id)
+        if not lead:
+            raise NotFoundError(message=f"Lead '{lead_id}' not found")
+
+        attachment = await self.repository.get_attachment_for_lead(db, document_id, lead_id)
         if not attachment:
             raise NotFoundError(message="Document attachment record not found")
 
@@ -603,50 +667,63 @@ class LeadService:
             if "leads/" in clean_url:
                 possible_keys.insert(0, "leads/" + clean_url.split("leads/")[-1])
 
-        for key in possible_keys:
+        last_error: Exception | None = None
+        for key in dict.fromkeys(possible_keys):
             try:
-                s3_obj = s3_service.s3_client.get_object(Bucket=s3_service.bucket_name, Key=key)
-                file_bytes = s3_obj["Body"].read()
+                file_bytes = await asyncio.to_thread(_read_s3_object, key)
                 if file_bytes:
                     break
-            except Exception:
-                continue
+            except Exception as exc:
+                last_error = exc
 
         if not file_bytes:
-            fallback_text = (
-                f"Document File: {attachment.filename}\nLead ID: {lead_id}\n"
-                f"Uploaded Date: {getattr(attachment, 'uploaded_at', getattr(attachment, 'created_at', 'N/A'))}\n\n"
-                "Note: The file content in S3 storage is currently missing or unavailable."
-            )
-            file_bytes = fallback_text.encode("utf-8")
+            raise APIException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                message="Document content is unavailable. Please try again later.",
+            ) from last_error
 
         return file_bytes, attachment.mime_type or "application/octet-stream", attachment.filename
 
     async def upload_document(
-        self, db: AsyncSession, lead_id: str, file: UploadFile
+        self, db: AsyncSession, lead_id: str, file: UploadFile, current_user: User
     ) -> dict:
-        lead = await self.repository.get_by_id(db, lead_id)
+        organization_id = getattr(current_user, "organization_id", None)
+        if not organization_id:
+            raise ForbiddenError(message="Organization context is required.")
+        lead = await self.repository.get_by_id_for_org(db, lead_id, organization_id)
         if not lead:
             raise NotFoundError(message=f"Lead '{lead_id}' not found")
-        contents = await file.read()
-        file_size = len(contents)
-        object_name = f"leads/{lead_id}/{file.filename}"
 
-        s3_key = await asyncio.to_thread(
-            s3_service.upload_file,
-            io.BytesIO(contents),
-            object_name=object_name,
-            content_type=file.content_type,
-        )
-        presigned_url = await asyncio.to_thread(s3_service.generate_presigned_url, s3_key)
+        safe_filename = _sanitize_filename(file.filename)
+        _, extension = _split_extension(safe_filename)
+        max_size = int(getattr(settings, "MAX_DOCUMENT_UPLOAD_SIZE", 0) or 0)
+        declared_size = getattr(file, "size", None)
+        _validate_upload(safe_filename, file.content_type, declared_size)
+        contents = await _read_upload_with_limit(file, max_size)
+        file_size = len(contents)
+        object_name = f"leads/{lead_id}/{uuid.uuid4().hex}{extension}"
+
+        try:
+            s3_key = await asyncio.to_thread(
+                s3_service.upload_file,
+                io.BytesIO(contents),
+                object_name=object_name,
+                content_type=_normalize_mime_type(file.content_type),
+            )
+            presigned_url = await asyncio.to_thread(s3_service.generate_presigned_url, s3_key)
+        except Exception as exc:
+            raise APIException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                message="Failed to upload document to storage. Please try again later.",
+            ) from exc
 
         attachment = await self.repository.create_attachment(
             db,
             lead_id=lead_id,
-            filename=file.filename or "unnamed",
+            filename=safe_filename,
             file_url=presigned_url,
             file_size=file_size,
-            mime_type=file.content_type,
+            mime_type=_normalize_mime_type(file.content_type),
         )
         await self._commit(db, "Failed to upload lead document")
         await db.refresh(attachment)

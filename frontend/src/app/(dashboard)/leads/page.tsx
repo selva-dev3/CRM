@@ -28,10 +28,8 @@ import {
 } from 'lucide-react';
 import { 
   Button, 
-  Card, 
   Label, 
   Input, 
-  Badge, 
   Alert, 
   AlertDescription,
   DropdownMenu,
@@ -43,6 +41,7 @@ import {
 } from '@/components/ui';
 import { DataTable, DataTableColumn, TableActionOption } from '@/components/common/data-table';
 import { ModalShell } from '@/components/common/modal-shell';
+import { ConfirmModal } from '@/components/common/confirm-modal';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
 import { 
@@ -61,11 +60,39 @@ import { useOrganizationsQuery } from '@/lib/api/organizations';
 import { useCompaniesQuery } from '@/lib/api/companies';
 import { useUsersQuery } from '@/lib/api/users';
 
+const LEAD_STATUS_OPTIONS = ['New', 'Contacted', 'Qualified', 'Unqualified', 'Converted'] as const;
+const LEAD_SOURCE_OPTIONS = ['Website', 'LinkedIn', 'Referral', 'Cold Call', 'Event', 'Partner'] as const;
+
+const STATUS_STYLES: Record<(typeof LEAD_STATUS_OPTIONS)[number], string> = {
+  New: 'bg-blue-50 text-blue-800 border-blue-200',
+  Contacted: 'bg-amber-50 text-amber-800 border-amber-200',
+  Qualified: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+  Unqualified: 'bg-slate-100 text-slate-800 border-slate-200',
+  Converted: 'bg-purple-50 text-purple-800 border-purple-200',
+};
+
+function canonicalLeadStatus(value: string): (typeof LEAD_STATUS_OPTIONS)[number] | null {
+  return LEAD_STATUS_OPTIONS.find((status) => status.toLowerCase() === value.trim().toLowerCase()) ?? null;
+}
+
+function formatLeadSource(value: string): string {
+  const trimmed = value.trim();
+  const canonical = LEAD_SOURCE_OPTIONS.find((source) => source.toLowerCase() === trimmed.toLowerCase());
+  if (canonical) return canonical;
+  if (/^https?:\/\//i.test(trimmed)) return 'Website';
+  return trimmed || 'Unknown';
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
 export default function LeadsPage() {
   const router = useRouter();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [leadToDelete, setLeadToDelete] = useState<Lead | null>(null);
+  const [bulkDeleteIds, setBulkDeleteIds] = useState<string[] | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [page, setPage] = useState(1);
@@ -75,12 +102,14 @@ export default function LeadsPage() {
 
   // Debounce search input to avoid refetching API on every single character typed
   useEffect(() => {
+    if (searchTerm === debouncedSearchTerm) return;
     const timer = setTimeout(() => {
       setDebouncedSearchTerm(searchTerm);
       setPage(1);
+      setSelectedIds(new Set());
     }, 250);
     return () => clearTimeout(timer);
-  }, [searchTerm]);
+  }, [searchTerm, debouncedSearchTerm]);
 
   // Modal Category Tab State
   const [activeModalTab, setActiveModalTab] = useState<'contact' | 'company' | 'location' | 'organization'>('contact');
@@ -112,12 +141,14 @@ export default function LeadsPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // TanStack Query Hooks for Leads, Organizations, Companies & Users API
-  const { data: leads = [], isLoading, isError, refetch } = useLeadsQuery({
+  const { data: leadsPage, isLoading, isError, error: leadsError, refetch } = useLeadsQuery({
     page,
     limit,
     search: debouncedSearchTerm || undefined,
     status: statusFilter || undefined,
   });
+  const leads = leadsPage?.items ?? [];
+  const totalLeads = leadsPage?.total ?? 0;
 
   const [userSearchTerm, setUserSearchTerm] = useState<string>('');
   const [debouncedUserSearchTerm, setDebouncedUserSearchTerm] = useState<string>('');
@@ -132,13 +163,6 @@ export default function LeadsPage() {
   const { data: organizations = [], isLoading: isOrgsLoading } = useOrganizationsQuery();
   const { data: companies = [], isLoading: isCompaniesLoading } = useCompaniesQuery();
   const { data: users = [], isLoading: isUsersLoading } = useUsersQuery(1, 100, debouncedUserSearchTerm || undefined);
-
-  // Auto-set initial organization ID when organizations data is loaded from API
-  useEffect(() => {
-    if (organizations.length > 0 && !organizationId) {
-      setOrganizationId(organizations[0].id);
-    }
-  }, [organizations, organizationId]);
 
   const [assigningLead, setAssigningLead] = useState<Lead | null>(null);
   const [selectedUserId, setSelectedUserId] = useState<string>('');
@@ -162,50 +186,62 @@ export default function LeadsPage() {
   };
 
   const handleToggleAllRows = (checked: boolean) => {
-    if (checked) {
-      setSelectedIds(new Set(leads.map((l) => l.id)));
-    } else {
-      setSelectedIds(new Set());
-    }
+    setSelectedIds((previous) => {
+      const next = new Set(previous);
+      for (const lead of leads) {
+        if (checked) next.add(lead.id);
+        else next.delete(lead.id);
+      }
+      return next;
+    });
   };
 
-  const handleBulkDelete = async () => {
-    if (selectedIds.size === 0) return;
+  const handleConfirmBulkDelete = async () => {
+    if (!bulkDeleteIds?.length) return;
     try {
-      const ids = Array.from(selectedIds);
-      await bulkDeleteMutation.mutateAsync(ids);
-      setSuccessMessage(`Successfully deleted ${ids.length} selected lead(s)!`);
+      setErrorMessage(null);
+      const result = await bulkDeleteMutation.mutateAsync(bulkDeleteIds);
+      setSuccessMessage(`Successfully deleted ${result.affected_count} selected lead(s).`);
       setSelectedIds(new Set());
+      setBulkDeleteIds(null);
+      if (page > 1 && totalLeads - result.affected_count <= (page - 1) * limit) {
+        setPage((current) => Math.max(1, current - 1));
+      }
       setTimeout(() => setSuccessMessage(null), 4000);
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Bulk delete failed. Please try again.');
+    } catch (error: unknown) {
+      setErrorMessage(getErrorMessage(error, 'Bulk delete failed. Please try again.'));
     }
   };
 
   const handleBulkArchive = async () => {
     if (selectedIds.size === 0) return;
     try {
+      setErrorMessage(null);
       const ids = Array.from(selectedIds);
-      await bulkArchiveMutation.mutateAsync(ids);
-      setSuccessMessage(`Successfully archived ${ids.length} selected lead(s)!`);
+      const result = await bulkArchiveMutation.mutateAsync(ids);
+      setSuccessMessage(`Successfully archived ${result.affected_count} selected lead(s).`);
       setSelectedIds(new Set());
       setTimeout(() => setSuccessMessage(null), 4000);
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Bulk archive failed. Please try again.');
+    } catch (error: unknown) {
+      setErrorMessage(getErrorMessage(error, 'Bulk archive failed. Please try again.'));
     }
   };
 
   const handleConfirmDelete = async () => {
     if (!leadToDelete) return;
     try {
+      setErrorMessage(null);
       await deleteLeadMutation.mutateAsync(leadToDelete.id);
       setSuccessMessage(`Lead "${leadToDelete.contact_name}" deleted successfully!`);
       setLeadToDelete(null);
+      if (page > 1 && totalLeads - 1 <= (page - 1) * limit) {
+        setPage((current) => Math.max(1, current - 1));
+      }
       setTimeout(() => {
         setSuccessMessage(null);
       }, 4000);
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to delete lead. Please try again.');
+    } catch (error: unknown) {
+      setErrorMessage(getErrorMessage(error, 'Failed to delete lead. Please try again.'));
     }
   };
 
@@ -355,8 +391,8 @@ export default function LeadsPage() {
       setTimeout(() => {
         setSuccessMessage(null);
       }, 4000);
-    } catch (err: any) {
-      setErrorMessage(err?.message || `Failed to ${editingLead ? 'update' : 'create'} lead. Please check API server.`);
+    } catch (error: unknown) {
+      setErrorMessage(getErrorMessage(error, `Failed to ${editingLead ? 'update' : 'create'} lead. Please check API server.`));
     }
   };
 
@@ -369,8 +405,8 @@ export default function LeadsPage() {
         className: 'min-w-[180px]',
         cell: (item: Lead) => (
           <div>
-            <span className="block text-xs font-black text-slate-900">{item.contact_name}</span>
-            <span className="text-[11px] font-semibold text-slate-500">{item.title}</span>
+            <span className="block text-table font-bold text-slate-900">{item.contact_name}</span>
+            <span className="text-caption font-medium text-slate-600">{item.title}</span>
           </div>
         ),
       },
@@ -379,7 +415,7 @@ export default function LeadsPage() {
         header: 'Company',
         className: 'min-w-[150px]',
         cell: (item: Lead) => (
-          <div className="flex items-center gap-1.5 font-bold text-xs text-slate-900">
+          <div className="flex items-center gap-1.5 text-table font-medium text-slate-900">
             <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
             <span className="truncate">{item.company}</span>
           </div>
@@ -390,13 +426,13 @@ export default function LeadsPage() {
         header: 'Email / Phone',
         className: 'min-w-[180px]',
         cell: (item: Lead) => (
-          <div className="text-xs font-bold text-slate-900 space-y-0.5">
+          <div className="text-table font-medium text-slate-900 space-y-0.5">
             <div className="flex items-center gap-1.5">
               <Mail className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
               <span className="truncate">{item.email}</span>
             </div>
             {item.phone && (
-              <div className="flex items-center gap-1.5 text-slate-500 text-[11px]">
+              <div className="flex items-center gap-1.5 text-caption text-slate-600">
                 <Phone className="w-3 h-3 shrink-0" />
                 <span>{item.phone}</span>
               </div>
@@ -408,25 +444,32 @@ export default function LeadsPage() {
         id: 'source',
         header: 'Source',
         className: 'min-w-[100px]',
-        cell: (item: Lead) => (
-          <span className="text-xs font-bold text-slate-800">{item.source}</span>
-        ),
+        cell: (item: Lead) => {
+          const formattedSource = formatLeadSource(item.source);
+          return (
+            <span className="text-table font-medium text-slate-800" title={formattedSource !== item.source ? item.source : undefined}>
+              {formattedSource}
+            </span>
+          );
+        },
       },
       {
         id: 'status',
         header: 'Status',
         className: 'min-w-[110px]',
-        cell: (item: Lead) => (
-          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-black border ${
-            item.status === 'New' ? 'bg-blue-50 text-blue-800 border-blue-200' :
-            item.status === 'Qualified' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
-            item.status === 'Contacted' ? 'bg-amber-50 text-amber-800 border-amber-200' :
-            'bg-slate-100 text-slate-800 border-slate-200'
-          }`}>
-            <span className="w-1.5 h-1.5 rounded-full bg-current mr-1.5" />
-            {item.status}
-          </span>
-        ),
+        cell: (item: Lead) => {
+          const canonicalStatus = canonicalLeadStatus(item.status);
+          const label = (canonicalStatus ?? item.status.trim()) || 'Unknown';
+          const statusStyle = canonicalStatus
+            ? STATUS_STYLES[canonicalStatus]
+            : 'bg-slate-100 text-slate-800 border-slate-200';
+          return (
+            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-badge font-semibold border ${statusStyle}`}>
+              <span className="w-1.5 h-1.5 rounded-full bg-current mr-1.5" />
+              {label}
+            </span>
+          );
+        },
       },
       {
         id: 'score',
@@ -434,7 +477,7 @@ export default function LeadsPage() {
         className: 'min-w-[100px] text-right',
         cell: (item: Lead) => (
           <div className="text-right">
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-purple-50 text-purple-800 border border-purple-200 text-[11px] font-black">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-purple-50 text-purple-800 border border-purple-200 text-badge font-semibold">
               <Sparkles className="w-3 h-3 text-purple-600" />
               {item.score ?? 75}/100
             </span>
@@ -450,8 +493,8 @@ export default function LeadsPage() {
       await archiveLeadMutation.mutateAsync(lead.id);
       setSuccessMessage(`Lead "${lead.contact_name}" archived successfully!`);
       setTimeout(() => setSuccessMessage(null), 4000);
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to archive lead.');
+    } catch (error: unknown) {
+      setErrorMessage(getErrorMessage(error, 'Failed to archive lead.'));
     }
   };
 
@@ -460,8 +503,8 @@ export default function LeadsPage() {
       await unarchiveLeadMutation.mutateAsync(lead.id);
       setSuccessMessage(`Lead "${lead.contact_name}" unarchived/restored successfully!`);
       setTimeout(() => setSuccessMessage(null), 4000);
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to unarchive lead.');
+    } catch (error: unknown) {
+      setErrorMessage(getErrorMessage(error, 'Failed to unarchive lead.'));
     }
   };
 
@@ -472,8 +515,8 @@ export default function LeadsPage() {
       setSuccessMessage(`Lead "${assigningLead.contact_name}" assigned successfully!`);
       setAssigningLead(null);
       setTimeout(() => setSuccessMessage(null), 4000);
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to assign lead.');
+    } catch (error: unknown) {
+      setErrorMessage(getErrorMessage(error, 'Failed to assign lead.'));
     }
   };
 
@@ -516,7 +559,10 @@ export default function LeadsPage() {
       variant: 'destructive',
       permission: PERMISSIONS.LEADS.DELETE,
       icon: <Trash2 className="w-3.5 h-3.5 mr-2 text-rose-600" />,
-      onClick: (item) => setLeadToDelete(item),
+      onClick: (item) => {
+        setErrorMessage(null);
+        setLeadToDelete(item);
+      },
     },
   ];
 
@@ -554,7 +600,7 @@ export default function LeadsPage() {
               <DropdownMenuSeparator />
               <PermissionGate permission={PERMISSIONS.LEADS.BULK_UPDATE}>
                 <DropdownMenuItem
-                  disabled={selectedIds.size === 0}
+                  disabled={selectedIds.size === 0 || bulkArchiveMutation.isPending}
                   onClick={handleBulkArchive}
                   className={`cursor-pointer text-button font-medium ${selectedIds.size === 0 ? 'opacity-50 cursor-not-allowed' : 'text-[#374151] hover:bg-[#F3F4F6]'}`}
                 >
@@ -566,8 +612,11 @@ export default function LeadsPage() {
               <PermissionGate permission={PERMISSIONS.LEADS.BULK_DELETE}>
                 <DropdownMenuItem
                   variant="destructive"
-                  disabled={selectedIds.size === 0}
-                  onClick={handleBulkDelete}
+                  disabled={selectedIds.size === 0 || bulkDeleteMutation.isPending}
+                  onSelect={() => {
+                    setErrorMessage(null);
+                    setBulkDeleteIds(Array.from(selectedIds));
+                  }}
                   className={`cursor-pointer text-button font-medium ${selectedIds.size === 0 ? 'opacity-50 cursor-not-allowed' : 'text-[#DC2626] hover:bg-[#DC2626]/10'}`}
                 >
                   <Trash2 className="w-4 h-4 mr-2 text-[#DC2626]" />
@@ -586,7 +635,7 @@ export default function LeadsPage() {
               className="shadow-saas-sm px-4 text-button cursor-pointer"
             >
               <Plus className="w-4 h-4 mr-2" />
-              + Add New Lead
+              Add New Lead
             </Button>
           </PermissionGate>
         </div>
@@ -598,6 +647,29 @@ export default function LeadsPage() {
           <CheckCircle2 className="h-4 w-4 text-emerald-600 mr-2" />
           <AlertDescription className="text-emerald-900 font-bold">
             {successMessage}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {(errorMessage || isError) && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-3 text-rose-900">
+            <span>
+              {errorMessage || (leadsError instanceof Error ? leadsError.message : 'Failed to load leads.')}
+            </span>
+            {isError && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => refetch()}
+                disabled={isLoading}
+                className="border-rose-300 bg-white text-rose-800 hover:bg-rose-100"
+              >
+                Try Again
+              </Button>
+            )}
           </AlertDescription>
         </Alert>
       )}
@@ -614,6 +686,7 @@ export default function LeadsPage() {
         selectedIds={selectedIds}
         onToggleRow={handleToggleRow}
         onToggleAllRows={handleToggleAllRows}
+        getSelectionLabel={(lead) => `Select ${lead.contact_name}`}
         showAvatar
         getAvatarData={(item) => ({ name: item.contact_name, color: '#4f46e5' })}
         actionVariant="menu"
@@ -621,12 +694,27 @@ export default function LeadsPage() {
         searchValue={searchTerm}
         onSearchChange={setSearchTerm}
         searchPlaceholder="Search lead, company..."
+        statusFilter={{
+          value: statusFilter,
+          options: [
+            { label: 'All statuses', value: '' },
+            ...LEAD_STATUS_OPTIONS.map((leadStatus) => ({ label: leadStatus, value: leadStatus })),
+          ],
+          onChange: (value) => {
+            setStatusFilter(value);
+            setPage(1);
+            setSelectedIds(new Set());
+          },
+        }}
         isLoading={isLoading}
         pagination={{
           pageIndex: page - 1,
-          pageCount: leads.length >= limit ? page + 1 : page,
-          onPageChange: (p) => setPage(p + 1),
-          totalRecords: (page - 1) * limit + leads.length,
+          pageCount: Math.max(1, Math.ceil(totalLeads / limit)),
+          onPageChange: (nextPage) => {
+            setPage(nextPage + 1);
+            setSelectedIds(new Set());
+          },
+          totalRecords: totalLeads,
         }}
         toolbarActions={
           <Button
@@ -634,6 +722,8 @@ export default function LeadsPage() {
             variant="outline"
             size="sm"
             onClick={() => refetch()}
+            disabled={isLoading}
+            aria-label="Refresh leads"
             className="border-slate-300 text-slate-900 font-bold hover:bg-slate-100 text-xs h-9"
           >
             <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isLoading ? 'animate-spin' : ''}`} />
@@ -1119,63 +1209,51 @@ export default function LeadsPage() {
         </ModalShell>
       )}
 
-      {/* DELETE CONFIRMATION MODAL DIALOG */}
-      {leadToDelete && (
-        <ModalShell
-          isOpen={!!leadToDelete}
-          onClose={() => setLeadToDelete(null)}
-          size="md"
-          title={
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-lg bg-rose-600 flex items-center justify-center text-white shrink-0">
-                <Trash2 className="w-4 h-4" />
-              </div>
-              <div className="min-w-0">
-                <h3 className="text-base font-black text-rose-950 break-words">Delete Sales Lead</h3>
-                <p className="text-xs font-bold text-rose-700 break-words">Confirm permanent lead removal</p>
-              </div>
+      <ConfirmModal
+        isOpen={!!leadToDelete}
+        onClose={() => {
+          if (!deleteLeadMutation.isPending) setLeadToDelete(null);
+        }}
+        onConfirm={handleConfirmDelete}
+        title="Delete Sales Lead"
+        description="This permanently removes the lead and cannot be undone."
+        confirmText="Delete Lead"
+        variant="danger"
+        isLoading={deleteLeadMutation.isPending}
+        message={
+          leadToDelete && (
+            <div className="space-y-3">
+              <p>
+                Delete <strong className="text-slate-900">{leadToDelete.contact_name}</strong> from{' '}
+                <strong className="text-slate-900">{leadToDelete.company}</strong>?
+              </p>
+              {errorMessage && <p className="font-semibold text-rose-700">{errorMessage}</p>}
             </div>
-          }
-        >
-          {/* Modal Content */}
-          <div className="space-y-4">
-            <p className="text-xs font-bold text-slate-700 leading-relaxed">
-              Are you sure you want to delete sales lead <span className="font-black text-slate-950">"{leadToDelete.contact_name}"</span> ({leadToDelete.company})?
-            </p>
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-[11px] font-bold">
-              âš ï¸ Warning: This action cannot be undone and will permanently remove this lead from the database.
-            </div>
+          )
+        }
+      />
 
-            {/* Modal Actions */}
-            <div className="pt-2 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setLeadToDelete(null)}
-                disabled={deleteLeadMutation.isPending}
-                className="border-slate-300 text-black font-bold hover:bg-slate-100 text-xs"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                onClick={handleConfirmDelete}
-                disabled={deleteLeadMutation.isPending}
-                className="bg-rose-600 hover:bg-rose-700 text-white font-bold shadow-sm text-xs px-5"
-              >
-                {deleteLeadMutation.isPending ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                    Deleting Lead...
-                  </>
-                ) : (
-                  'Delete Lead'
-                )}
-              </Button>
-            </div>
+      <ConfirmModal
+        isOpen={bulkDeleteIds !== null}
+        onClose={() => {
+          if (!bulkDeleteMutation.isPending) setBulkDeleteIds(null);
+        }}
+        onConfirm={handleConfirmBulkDelete}
+        title={`Delete ${bulkDeleteIds?.length ?? 0} Leads`}
+        description="This bulk action cannot be undone."
+        confirmText={`Delete ${bulkDeleteIds?.length ?? 0} Leads`}
+        variant="danger"
+        isLoading={bulkDeleteMutation.isPending}
+        message={
+          <div className="space-y-3">
+            <p>
+              Permanently delete all <strong className="text-slate-900">{bulkDeleteIds?.length ?? 0}</strong>{' '}
+              selected leads?
+            </p>
+            {errorMessage && <p className="font-semibold text-rose-700">{errorMessage}</p>}
           </div>
-        </ModalShell>
-      )}
+        }
+      />
 
       {/* ASSIGN LEAD MODAL DIALOG */}
       {assigningLead && (
@@ -1198,7 +1276,7 @@ export default function LeadsPage() {
           {/* Modal Content */}
           <div className="space-y-4">
             <p className="text-xs font-bold text-slate-700 leading-relaxed">
-              Assign sales lead <span className="font-black text-slate-950">"{assigningLead.contact_name}"</span> ({assigningLead.company}) to a team member:
+              Assign sales lead <span className="font-black text-slate-950">&ldquo;{assigningLead.contact_name}&rdquo;</span> ({assigningLead.company}) to a team member:
             </p>
 
             <div className="space-y-2">
@@ -1238,7 +1316,7 @@ export default function LeadsPage() {
                 >
                   <div className="flex items-center gap-2">
                     <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${selectedUserId === '' ? 'bg-white/20 text-white' : 'bg-slate-300 text-slate-700'}`}>
-                      ðŸš«
+                      <User className="h-3.5 w-3.5" aria-hidden="true" />
                     </div>
                     <span>Unassigned (No Owner)</span>
                   </div>
@@ -1247,7 +1325,7 @@ export default function LeadsPage() {
 
                 {users.length === 0 ? (
                   <div className="p-3 text-center text-xs font-bold text-slate-500">
-                    No team members match "{userSearchTerm}"
+                    No team members match &ldquo;{userSearchTerm}&rdquo;
                   </div>
                 ) : (
                   users.map((u) => {

@@ -64,6 +64,7 @@ import { useOrganizationsQuery } from '@/lib/api/organizations';
 import { useCompaniesQuery } from '@/lib/api/companies';
 import { useUsersQuery } from '@/lib/api/users';
 import { useQueryClient } from '@tanstack/react-query';
+import { BASE_URL } from '@/lib/api/client';
 
 export default function LeadDetailPage() {
   const params = useParams();
@@ -1116,7 +1117,7 @@ export default function LeadDetailPage() {
                             href={
                               d.download_url.startsWith('http') && !d.download_url.includes('.internal')
                                 ? d.download_url
-                                : `${(process.env.NEXT_PUBLIC_API_URL || 'https://crm-dev3.up.railway.app/api/v1').replace(/\/$/, '')}/leads/${leadId}/documents/${d.id}/download`
+                                : `${BASE_URL.replace(/\/$/, '')}/leads/${leadId}/documents/${d.id}/download`
                             }
                             target="_blank"
                             rel="noreferrer"
