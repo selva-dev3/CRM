@@ -1,9 +1,8 @@
-from typing import List
-
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user
+from app.core.auth_cookies import clear_auth_cookie, set_auth_cookie
 from app.db.session import get_db
 from app.models import User
 from app.schemas.crm_schemas import (
@@ -28,8 +27,16 @@ router = APIRouter()
 
 
 @router.post("/login", response_model=Token, summary="Authenticate user & return JWT token")
-async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
-    return await auth_service.login(db, payload)
+async def login(
+    payload: LoginRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await auth_service.login(db, payload)
+    set_auth_cookie(
+        response, result["access_token"], persistent=payload.remember_me
+    )
+    return result
 
 
 @router.get("/me", summary="Get current authenticated user info with DB role and permissions")
@@ -50,15 +57,23 @@ async def register(payload: RegisterRequest, db: AsyncSession = Depends(get_db))
 
 
 @router.post("/refresh-token", response_model=Token, summary="Refresh JWT access token")
-async def refresh_token(refresh_token: str, db: AsyncSession = Depends(get_db)):
-    return await auth_service.refresh_token(db, refresh_token)
+async def refresh_token(
+    refresh_token: str,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await auth_service.refresh_token(db, refresh_token)
+    set_auth_cookie(response, result["access_token"])
+    return result
 
 
 @router.post("/logout", response_model=MessageResponse, summary="Invalidate current session")
 async def logout(
+    response: Response,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    clear_auth_cookie(response)
     return {"message": "Logged out successfully", "status": "success"}
 
 
@@ -85,7 +100,12 @@ async def change_password(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await auth_service.change_password()
+    return await auth_service.change_password(
+        db,
+        current_user,
+        payload.old_password,
+        payload.new_password,
+    )
 
 
 @router.post("/2fa/setup", response_model=TwoFactorSetupResponse, summary="Setup 2FA TOTP secret & QR")
@@ -114,13 +134,25 @@ async def disable_2fa(
 
 
 @router.post("/oauth/google", response_model=Token, summary="Google OAuth SSO Login")
-async def google_oauth(payload: OAuthLoginRequest, db: AsyncSession = Depends(get_db)):
-    return await auth_service.google_oauth(db, payload)
+async def google_oauth(
+    payload: OAuthLoginRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await auth_service.google_oauth(db, payload)
+    set_auth_cookie(response, result["access_token"])
+    return result
 
 
 @router.post("/oauth/microsoft", response_model=Token, summary="Microsoft Azure AD SSO Login")
-async def microsoft_oauth(payload: OAuthLoginRequest, db: AsyncSession = Depends(get_db)):
-    return await auth_service.microsoft_oauth(db, payload)
+async def microsoft_oauth(
+    payload: OAuthLoginRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await auth_service.microsoft_oauth(db, payload)
+    set_auth_cookie(response, result["access_token"])
+    return result
 
 
 @router.get("/invitations/{token}", response_model=UserInvitationDetailsResponse, summary="Get user invitation details by token (Public endpoint)")
@@ -129,8 +161,14 @@ async def get_auth_invitation_details(token: str, db: AsyncSession = Depends(get
 
 
 @router.post("/accept-invite", summary="Accept user invitation, set password, and activate account (Public endpoint)")
-async def accept_auth_user_invitation(payload: AcceptInviteRequest, db: AsyncSession = Depends(get_db)):
-    return await auth_service.accept_auth_user_invitation(db, payload)
+async def accept_auth_user_invitation(
+    payload: AcceptInviteRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await auth_service.accept_auth_user_invitation(db, payload)
+    set_auth_cookie(response, result["access_token"])
+    return result
 
 
 @router.get("/sessions", summary="List active user sessions")
@@ -156,11 +194,17 @@ async def request_magic_link(email: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/magic-link/verify", response_model=Token, summary="Verify passwordless magic link token")
-async def verify_magic_link(token: str, db: AsyncSession = Depends(get_db)):
-    return await auth_service.verify_magic_link(db, token)
+async def verify_magic_link(
+    token: str,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await auth_service.verify_magic_link(db, token)
+    set_auth_cookie(response, result["access_token"])
+    return result
 
 
-@router.get("/api-keys", response_model=List[ApiKeyResponse], summary="List organization API keys")
+@router.get("/api-keys", response_model=list[ApiKeyResponse], summary="List organization API keys")
 async def list_api_keys(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),

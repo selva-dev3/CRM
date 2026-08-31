@@ -546,8 +546,7 @@ export function useAcceptInvitationMutation() {
   return useMutation({
     mutationFn: acceptInvitationApi,
     onSuccess: (data) => {
-      if (data.access_token) {
-        localStorage.setItem('token', data.access_token);
+      if (data.user) {
         localStorage.setItem('user', JSON.stringify(data.user));
         notifyAuthUserChanged();
       }
@@ -566,4 +565,3 @@ export function useInviteNewOrganizationMutation() {
     },
   });
 }
-

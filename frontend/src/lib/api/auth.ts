@@ -5,6 +5,7 @@ import { apiClient } from '@/lib/api/client';
 export interface LoginPayload {
   email: string;
   password: string;
+  rememberMe: boolean;
 }
 
 export interface LoginResponse {
@@ -22,6 +23,8 @@ export interface LoginResponse {
     permissions?: string[];
   };
 }
+
+export type CurrentUserResponse = NonNullable<LoginResponse['user']>;
 
 export interface RegisterPayload {
   name: string;
@@ -80,8 +83,17 @@ export async function loginApi(payload: LoginPayload): Promise<LoginResponse> {
     body: JSON.stringify({
       email: payload.email.trim(),
       password: payload.password,
+      remember_me: payload.rememberMe,
     }),
   });
+}
+
+export async function getCurrentUserApi(): Promise<CurrentUserResponse> {
+  return apiClient.get<CurrentUserResponse>('/auth/me');
+}
+
+export async function logoutApi(): Promise<void> {
+  await apiClient.post('/auth/logout');
 }
 
 export async function registerApi(payload: RegisterPayload): Promise<RegisterResponse> {

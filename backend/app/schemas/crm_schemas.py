@@ -1,6 +1,7 @@
+from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional, List, Dict, Any
-from datetime import datetime
+
 
 # Common Pagination & Generic Schemas
 class PaginationParams(BaseModel):
@@ -43,11 +44,12 @@ class Token(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+    remember_me: bool = True
 
 class RegisterRequest(BaseModel):
     name: str
     email: EmailStr
-    password: str
+    password: str = Field(min_length=8, max_length=72)
     organization_name: str
 
 class PasswordResetRequest(BaseModel):
@@ -58,8 +60,8 @@ class PasswordResetConfirmRequest(BaseModel):
     new_password: str = Field(min_length=8, max_length=72)
 
 class PasswordChangeRequest(BaseModel):
-    old_password: str
-    new_password: str
+    old_password: str = Field(min_length=1, max_length=72)
+    new_password: str = Field(min_length=8, max_length=72)
 
 class TwoFactorSetupResponse(BaseModel):
     secret: str

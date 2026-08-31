@@ -4,11 +4,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LoginForm } from './login-form';
 
 const mocks = vi.hoisted(() => ({
-  getSessionToken: vi.fn(),
+  getCurrentUserApi: vi.fn(),
   mutateAsync: vi.fn(),
   notifyAuthUserChanged: vi.fn(),
   replace: vi.fn(),
-  setSessionToken: vi.fn(),
   useLoginMutation: vi.fn(),
 }));
 
@@ -17,12 +16,8 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('@/lib/api', () => ({
+  getCurrentUserApi: mocks.getCurrentUserApi,
   useLoginMutation: () => mocks.useLoginMutation(),
-}));
-
-vi.mock('@/lib/api/client', () => ({
-  getSessionToken: mocks.getSessionToken,
-  setSessionToken: mocks.setSessionToken,
 }));
 
 vi.mock('@/hooks/use-has-permission', () => ({
@@ -34,7 +29,7 @@ describe('LoginForm', () => {
     vi.clearAllMocks();
     localStorage.clear();
     sessionStorage.clear();
-    mocks.getSessionToken.mockReturnValue(null);
+    mocks.getCurrentUserApi.mockRejectedValue(new Error('No active session'));
     mocks.useLoginMutation.mockReturnValue({
       isPending: false,
       mutateAsync: mocks.mutateAsync,
@@ -70,9 +65,9 @@ describe('LoginForm', () => {
       expect(mocks.mutateAsync).toHaveBeenCalledWith({
         email: 'alex@crm.com',
         password: 'secret',
+        rememberMe: true,
       });
     });
-    expect(mocks.setSessionToken).toHaveBeenCalledWith('access-token', true);
     expect(localStorage.getItem('user')).toContain('alex@crm.com');
     expect(sessionStorage.getItem('user')).toContain('alex@crm.com');
     expect(mocks.notifyAuthUserChanged).toHaveBeenCalledOnce();

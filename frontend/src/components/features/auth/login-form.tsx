@@ -22,8 +22,7 @@ import {
   Input,
 } from '@/components/ui';
 import { notifyAuthUserChanged } from '@/hooks/use-has-permission';
-import { useLoginMutation } from '@/lib/api';
-import { getSessionToken, setSessionToken } from '@/lib/api/client';
+import { getCurrentUserApi, useLoginMutation } from '@/lib/api';
 import { loginSchema } from '@/lib/validators';
 import { getAuthErrorMessage } from './auth-form-utils';
 
@@ -43,9 +42,15 @@ export function LoginForm() {
   });
 
   useEffect(() => {
-    if (getSessionToken()) {
-      router.replace('/dashboard');
-    }
+    let active = true;
+    void getCurrentUserApi()
+      .then(() => {
+        if (active) router.replace('/dashboard');
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
   }, [router]);
 
   const onSubmit = async (values: LoginFormValues) => {
@@ -55,12 +60,8 @@ export function LoginForm() {
       const data = await loginMutation.mutateAsync({
         email: values.email,
         password: values.password,
+        rememberMe: values.rememberMe,
       });
-      if (!data.access_token) {
-        throw new Error('The server did not return a valid session. Please try again.');
-      }
-
-      setSessionToken(data.access_token, values.rememberMe);
       if (data.user) {
         const serializedUser = JSON.stringify(data.user);
         sessionStorage.setItem('user', serializedUser);

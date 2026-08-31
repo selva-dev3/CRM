@@ -115,20 +115,17 @@ class AuthService:
                 status_code=status.HTTP_401_UNAUTHORIZED, message="Invalid email or password"
             )
 
+        valid_pass = False
         if user.hashed_password:
-            valid_pass = False
-            if user.hashed_password == payload.password:
-                valid_pass = True
-            else:
-                try:
-                    if verify_password(payload.password, user.hashed_password):
-                        valid_pass = True
-                except Exception:
-                    pass
-            if not valid_pass:
-                raise APIException(
-                    status_code=status.HTTP_401_UNAUTHORIZED, message="Invalid email or password"
-                )
+            try:
+                valid_pass = verify_password(payload.password, user.hashed_password)
+            except Exception:
+                logger.exception("Password verification failed for user %s", user.id)
+
+        if not valid_pass:
+            raise APIException(
+                status_code=status.HTTP_401_UNAUTHORIZED, message="Invalid email or password"
+            )
 
         access_token = create_access_token(user.id)
         user_role_name = await self.get_user_role_name(db, user)
@@ -180,8 +177,13 @@ class AuthService:
 
             try:
                 hashed_pwd = get_password_hash(payload.password)
-            except Exception:
-                hashed_pwd = payload.password
+            except Exception as e:
+                logger.exception("Password hashing failed during registration")
+                raise APIException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    code="PASSWORD_HASHING_FAILED",
+                    message="Unable to create account. Please try again later.",
+                ) from e
 
             user = await self.repository.create_user(
                 db,
@@ -281,7 +283,32 @@ class AuthService:
         await self._commit(db, "Unable to update password")
         return {"message": "Password updated successfully", "status": "success"}
 
-    async def change_password(self) -> dict:
+    async def change_password(
+        self,
+        db: AsyncSession,
+        current_user: User,
+        old_password: str,
+        new_password: str,
+    ) -> dict:
+        try:
+            old_password_valid = bool(current_user.hashed_password) and verify_password(
+                old_password, current_user.hashed_password
+            )
+        except Exception:
+            logger.exception("Password verification failed for user %s", current_user.id)
+            old_password_valid = False
+
+        if not old_password_valid:
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                code="INVALID_CURRENT_PASSWORD",
+                message="Current password is incorrect",
+            )
+
+        await self.repository.set_user_password(
+            current_user, get_password_hash(new_password)
+        )
+        await self._commit(db, "Unable to update password")
         return {"message": "Password changed successfully", "status": "success"}
 
     async def setup_2fa(self) -> dict:
