@@ -16,7 +16,7 @@ export function AIChatAssistant() {
   };
 
   return (
-    <div className="fixed bottom-6 right-6 z-50">
+    <div className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] z-50">
       {!isOpen ? (
         <button
           type="button"
@@ -28,7 +28,7 @@ export function AIChatAssistant() {
           <Sparkles className="w-6 h-6" />
         </button>
       ) : (
-        <div className="w-[calc(100vw-3rem)] max-w-80 sm:w-80 h-96 bg-gray-900 border border-gray-800 rounded-xl shadow-2xl flex flex-col p-4">
+        <div className="w-[calc(100vw-2rem)] max-w-80 sm:w-80 h-[min(24rem,calc(100dvh-2rem))] bg-gray-900 border border-gray-800 rounded-xl shadow-2xl flex flex-col p-4">
           <div className="flex justify-between items-center pb-2 border-b border-gray-800">
             <h3 className="font-semibold text-white flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-indigo-400" />
@@ -65,7 +65,8 @@ export function AIChatAssistant() {
                 }
               }}
               placeholder="Ask AI..."
-              className="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-1 text-sm text-white focus:outline-none"
+              aria-label="Message AI Sales Assistant"
+              className="min-w-0 flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-1 text-sm text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
             />
             <button
               type="button"

@@ -639,8 +639,12 @@ class CalendarEventResponse(BaseModel):
 class DashboardKPIs(BaseModel):
     total_leads: int
     deals_won_amount: float
+    pipeline_revenue: float
     win_rate_percentage: float
+    won_deals_count: int
+    closed_deals_count: int
     ai_lead_score_avg: float
+    scored_leads_count: int
     recent_activity: List[Dict[str, Any]]
 
 # 21. Integration Schemas

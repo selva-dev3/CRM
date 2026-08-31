@@ -4,8 +4,12 @@ import { apiClient } from '@/lib/api/client';
 export interface DashboardKPIs {
   total_leads: number;
   deals_won_amount: number;
+  pipeline_revenue: number;
   win_rate_percentage: number;
+  won_deals_count: number;
+  closed_deals_count: number;
   ai_lead_score_avg: number;
+  scored_leads_count: number;
   recent_activity?: Array<{ action: string; title: string; user: string; timestamp: string }>;
 }
 
@@ -40,6 +44,7 @@ export interface ActivitiesSummary {
   emails_sent: number;
   meetings_held: number;
   tasks_completed: number;
+  period_label: string;
 }
 
 export interface RecentDealItem {
@@ -61,7 +66,7 @@ export interface AiInsightItem {
 export interface DashboardAiInsights {
   summary: string;
   insights?: AiInsightItem[];
-  risk_deals?: any[];
+  risk_deals?: unknown[];
 }
 
 export interface CustomWidget {

@@ -8,12 +8,9 @@ import {
   Users, 
   DollarSign, 
   Sparkles, 
-  ArrowUpRight, 
   Briefcase, 
   CheckCircle2, 
-  Clock, 
   Plus,
-  Filter,
   BarChart3,
   PieChart,
   PhoneCall,
@@ -31,85 +28,145 @@ import { ModalShell } from '@/components/common/modal-shell';
 import { 
   useDashboardKpisQuery,
   useSalesFunnelQuery,
-  useRevenueChartQuery,
   useTopPerformersQuery,
   useLeadConversionsQuery,
   useActivitiesSummaryQuery,
   useRecentDealsQuery,
   useDashboardAiInsightsQuery,
   useCustomWidgetsQuery,
-  useSaveCustomWidgetsMutation
+  useSaveCustomWidgetsMutation,
+  type CustomWidget
 } from '@/lib/api/dashboard';
+
+function DashboardSectionError({
+  message,
+  onRetry,
+  className = '',
+}: {
+  message: string;
+  onRetry: () => void;
+  className?: string;
+}) {
+  return (
+    <div role="alert" className={`flex flex-col items-center justify-center gap-3 rounded-xl border border-rose-200 bg-rose-50 p-6 text-center ${className}`}>
+      <AlertCircle className="h-5 w-5 text-rose-600" />
+      <p className="text-sm font-medium text-rose-900">{message}</p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-600"
+      >
+        Try again
+      </button>
+    </div>
+  );
+}
 
 export default function DashboardPage() {
   const router = useRouter();
   const [isWidgetModalOpen, setIsWidgetModalOpen] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [widgetPreferences, setWidgetPreferences] = useState<CustomWidget[] | null>(null);
 
   // Queries fetching live data from backend APIs
-  const { data: kpis, isLoading: isKpisLoading, refetch: refetchKpis } = useDashboardKpisQuery();
-  const { data: salesFunnel = [] } = useSalesFunnelQuery();
-  const { data: revenueChart } = useRevenueChartQuery();
-  const { data: topPerformers = [] } = useTopPerformersQuery();
-  const { data: leadConversions = [] } = useLeadConversionsQuery();
-  const { data: activities } = useActivitiesSummaryQuery();
-  const { data: recentDeals = [] } = useRecentDealsQuery();
-  const { data: aiInsights } = useDashboardAiInsightsQuery();
-  const { data: widgets = [] } = useCustomWidgetsQuery();
+  const kpisQuery = useDashboardKpisQuery();
+  const salesFunnelQuery = useSalesFunnelQuery();
+  const topPerformersQuery = useTopPerformersQuery();
+  const leadConversionsQuery = useLeadConversionsQuery();
+  const activitiesQuery = useActivitiesSummaryQuery();
+  const recentDealsQuery = useRecentDealsQuery();
+  const aiInsightsQuery = useDashboardAiInsightsQuery();
+  const widgetsQuery = useCustomWidgetsQuery();
+
+  const { data: kpis } = kpisQuery;
+  const salesFunnel = salesFunnelQuery.data ?? [];
+  const topPerformers = topPerformersQuery.data ?? [];
+  const leadConversions = leadConversionsQuery.data ?? [];
+  const activities = activitiesQuery.data;
+  const recentDeals = recentDealsQuery.data ?? [];
+  const aiInsights = aiInsightsQuery.data;
+  const widgets = widgetsQuery.data ?? [];
 
   const saveWidgetsMutation = useSaveCustomWidgetsMutation();
 
+  const handleRefreshDashboard = async () => {
+    await Promise.all([
+      kpisQuery.refetch(),
+      salesFunnelQuery.refetch(),
+      topPerformersQuery.refetch(),
+      leadConversionsQuery.refetch(),
+      activitiesQuery.refetch(),
+      recentDealsQuery.refetch(),
+      aiInsightsQuery.refetch(),
+    ]);
+  };
+
   const handleSaveWidgetPreferences = async () => {
     try {
-      await saveWidgetsMutation.mutateAsync(widgets);
+      await saveWidgetsMutation.mutateAsync(widgetPreferences ?? widgets);
+      setErrorMsg(null);
       setSuccessMsg('Dashboard layout preferences saved.');
       setIsWidgetModalOpen(false);
       setTimeout(() => setSuccessMsg(null), 3000);
     } catch {
-      setSuccessMsg('Widget layout updated.');
-      setIsWidgetModalOpen(false);
-      setTimeout(() => setSuccessMsg(null), 3000);
+      setSuccessMsg(null);
+      setErrorMsg('Dashboard layout could not be saved. Please try again.');
     }
   };
 
-  const stats = [
+  const stats = kpis ? [
     {
       title: 'Total Active Leads',
-      value: (kpis?.total_leads ?? 1248).toLocaleString(),
-      change: '+12.5%',
+      value: kpis.total_leads.toLocaleString(),
+      context: 'Current active leads',
       icon: Users,
-      badge: 'High Intent',
+      badge: 'Active',
       iconColor: 'text-indigo-600',
       iconBg: 'bg-indigo-100',
+      contextColor: 'text-slate-600 bg-slate-100',
     },
     {
       title: 'Pipeline Revenue',
-      value: `$${(kpis?.deals_won_amount ?? 452000).toLocaleString(undefined, { minimumFractionDigits: 0 })}`,
-      change: '+18.2%',
+      value: `$${kpis.pipeline_revenue.toLocaleString(undefined, { minimumFractionDigits: 0 })}`,
+      context: 'Open opportunities',
       icon: DollarSign,
-      badge: 'Q3 Forecast',
+      badge: 'Open Pipeline',
       iconColor: 'text-emerald-600',
       iconBg: 'bg-emerald-100',
+      contextColor: 'text-slate-600 bg-slate-100',
     },
     {
       title: 'Avg Win Rate',
-      value: `${kpis?.win_rate_percentage ?? 64.2}%`,
-      change: '+3.4%',
+      value: kpis.closed_deals_count > 0 ? `${kpis.win_rate_percentage}%` : '—',
+      context: kpis.closed_deals_count > 0
+        ? `${kpis.won_deals_count} of ${kpis.closed_deals_count} closed won`
+        : 'No closed deals yet',
       icon: TrendingUp,
-      badge: 'Above Target',
+      badge: 'Closed Deals',
       iconColor: 'text-amber-600',
       iconBg: 'bg-amber-100',
+      contextColor: 'text-slate-600 bg-slate-100',
     },
     {
       title: 'AI Lead Score Avg',
-      value: `${kpis?.ai_lead_score_avg ?? 88}/100`,
-      change: 'Optimal',
+      value: kpis.scored_leads_count > 0 ? `${kpis.ai_lead_score_avg}/100` : '—',
+      context: kpis.scored_leads_count > 0
+        ? `Across ${kpis.scored_leads_count} scored leads`
+        : 'No scored leads yet',
       icon: Sparkles,
-      badge: 'AI Verified',
+      badge: kpis.scored_leads_count === 0
+        ? 'Not Scored'
+        : kpis.ai_lead_score_avg >= 70
+          ? 'Strong'
+          : 'Needs Attention',
       iconColor: 'text-purple-600',
       iconBg: 'bg-purple-100',
+      contextColor: kpis.scored_leads_count > 0 && kpis.ai_lead_score_avg < 70
+        ? 'text-amber-800 bg-amber-100'
+        : 'text-slate-600 bg-slate-100',
     },
-  ];
+  ] : [];
 
   return (
     <div className="space-y-6 pb-12">
@@ -125,28 +182,42 @@ export default function DashboardPage() {
           </button>
         </div>
       )}
+      {errorMsg && (
+        <div role="alert" className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-sm font-medium flex items-center justify-between shadow-sm">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{errorMsg}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setErrorMsg(null)}
+            className="p-1 text-rose-700 hover:text-rose-900 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-600"
+            aria-label="Dismiss error"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Page Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-4 border-b border-[#E5E7EB]">
         <div>
           <h1 className="text-page-title flex flex-wrap items-center gap-x-2 gap-y-1">
             <span>Sales & CRM Overview</span>
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-              Live APIs Connected
-            </span>
           </h1>
           <p className="text-caption mt-1">
-            Real-time executive metrics, sales pipeline stages, AI lead scoring & activities summary
+            Executive metrics, sales pipeline stages, lead scoring, and today&apos;s activities
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
-            onClick={() => refetchKpis()}
-            title="Refresh Live Data"
+            onClick={handleRefreshDashboard}
+            title="Refresh dashboard data"
+            disabled={kpisQuery.isFetching}
             className="flex items-center gap-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg text-xs font-semibold shadow-xs cursor-pointer"
           >
-            <RefreshCw className={`w-3.5 h-3.5 text-indigo-600 ${isKpisLoading ? 'animate-spin' : ''}`} />
-            <span>Refresh API</span>
+            <RefreshCw className={`w-3.5 h-3.5 text-indigo-600 ${kpisQuery.isFetching ? 'animate-spin' : ''}`} />
+            <span>Refresh Dashboard</span>
           </button>
           
           <button
@@ -166,10 +237,20 @@ export default function DashboardPage() {
 
       {/* Executive Metric Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
-        {stats.map((stat, idx) => {
+        {kpisQuery.isLoading && Array.from({ length: 4 }).map((_, idx) => (
+          <Card key={idx} className="h-[150px] animate-pulse bg-slate-100" aria-hidden="true" />
+        ))}
+        {kpisQuery.isError && (
+          <DashboardSectionError
+            className="sm:col-span-2 lg:col-span-4"
+            message="Executive metrics could not be loaded."
+            onRetry={() => void kpisQuery.refetch()}
+          />
+        )}
+        {stats.map((stat) => {
           const Icon = stat.icon;
           return (
-            <Card key={idx} className="relative overflow-hidden border border-[#E5E7EB] bg-white rounded-card shadow-saas-sm transition-all duration-200">
+            <Card key={stat.title} className="relative overflow-hidden border border-[#E5E7EB] bg-white rounded-card shadow-saas-sm transition-all duration-200">
               <div className="p-5">
                 <div className="flex items-center justify-between">
                   <div className={`w-10 h-10 rounded-btn ${stat.iconBg} flex items-center justify-center ${stat.iconColor}`}>
@@ -187,9 +268,8 @@ export default function DashboardPage() {
                     <h3 className="text-section-title">
                       {stat.value}
                     </h3>
-                    <span className="inline-flex items-center text-badge font-semibold text-[#16A34A] bg-[#16A34A]/10 px-2 py-0.5 rounded-btn">
-                      <ArrowUpRight className="w-3.5 h-3.5 mr-0.5" />
-                      {stat.change}
+                    <span className={`inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-btn ${stat.contextColor}`}>
+                      {stat.context}
                     </span>
                   </div>
                 </div>
@@ -200,14 +280,29 @@ export default function DashboardPage() {
       </div>
 
       {/* Daily Activities Summary Bar */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+        <div className="flex items-center justify-between px-2 pb-2">
+          <h2 className="text-sm font-bold text-slate-900">Activity Summary</h2>
+          <span className="text-xs font-medium text-slate-600">{activities?.period_label ?? 'Today'}</span>
+        </div>
+        {activitiesQuery.isLoading && (
+          <div className="h-16 rounded-xl bg-slate-100 animate-pulse" aria-hidden="true" />
+        )}
+        {activitiesQuery.isError && (
+          <DashboardSectionError
+            message="Today’s activity summary could not be loaded."
+            onRetry={() => void activitiesQuery.refetch()}
+          />
+        )}
+        {activities && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="flex items-center gap-3 p-2">
           <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold shrink-0">
             <PhoneCall className="w-4 h-4" />
           </div>
           <div>
-            <div className="text-xs text-slate-500 font-medium">Calls Completed</div>
-            <div className="text-lg font-black text-slate-900">{activities?.calls_completed ?? 34}</div>
+            <div className="text-xs text-slate-600 font-medium">Calls Completed</div>
+            <div className="text-lg font-black text-slate-900">{activities.calls_completed}</div>
           </div>
         </div>
 
@@ -216,8 +311,8 @@ export default function DashboardPage() {
             <Mail className="w-4 h-4" />
           </div>
           <div>
-            <div className="text-xs text-slate-500 font-medium">Emails Sent</div>
-            <div className="text-lg font-black text-slate-900">{activities?.emails_sent ?? 128}</div>
+            <div className="text-xs text-slate-600 font-medium">Emails Sent</div>
+            <div className="text-lg font-black text-slate-900">{activities.emails_sent}</div>
           </div>
         </div>
 
@@ -226,8 +321,8 @@ export default function DashboardPage() {
             <Video className="w-4 h-4" />
           </div>
           <div>
-            <div className="text-xs text-slate-500 font-medium">Meetings Held</div>
-            <div className="text-lg font-black text-slate-900">{activities?.meetings_held ?? 12}</div>
+            <div className="text-xs text-slate-600 font-medium">Meetings Held</div>
+            <div className="text-lg font-black text-slate-900">{activities.meetings_held}</div>
           </div>
         </div>
 
@@ -236,10 +331,12 @@ export default function DashboardPage() {
             <CheckSquare className="w-4 h-4" />
           </div>
           <div>
-            <div className="text-xs text-slate-500 font-medium">Tasks Finished</div>
-            <div className="text-lg font-black text-slate-900">{activities?.tasks_completed ?? 45}</div>
+            <div className="text-xs text-slate-600 font-medium">Tasks Finished</div>
+            <div className="text-lg font-black text-slate-900">{activities.tasks_completed}</div>
           </div>
         </div>
+        </div>
+        )}
       </div>
 
       {/* Analytics & Pipeline Visualizations Grid */}
@@ -261,11 +358,23 @@ export default function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent className="p-5 space-y-4">
-            {salesFunnel.map((item, idx) => {
-              const maxVal = Math.max(...salesFunnel.map((s) => s.value || 1), 1);
-              const percentage = Math.round(((item.value || 0) / maxVal) * 100);
+            {salesFunnelQuery.isLoading && (
+              <div className="h-48 rounded-xl bg-slate-100 animate-pulse" aria-hidden="true" />
+            )}
+            {salesFunnelQuery.isError && (
+              <DashboardSectionError
+                message="The sales funnel could not be loaded."
+                onRetry={() => void salesFunnelQuery.refetch()}
+              />
+            )}
+            {!salesFunnelQuery.isLoading && !salesFunnelQuery.isError && salesFunnel.length === 0 && (
+              <p className="py-12 text-center text-sm text-slate-600">No deals are available yet.</p>
+            )}
+            {salesFunnel.map((item) => {
+              const maxVal = Math.max(...salesFunnel.map((s) => s.value), 0);
+              const percentage = maxVal > 0 ? Math.round((item.value / maxVal) * 100) : 0;
               return (
-                <div key={idx} className="space-y-1.5">
+                <div key={item.stage} className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs font-bold text-slate-800">
                     <span>{item.stage} ({item.count} deals)</span>
                     <span className="text-indigo-700">${item.value ? item.value.toLocaleString() : '0'}</span>
@@ -273,7 +382,12 @@ export default function DashboardPage() {
                   <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
                     <div
                       className="bg-indigo-600 h-full rounded-full transition-all duration-500"
-                      style={{ width: `${Math.max(percentage, 8)}%` }}
+                      style={{ width: `${percentage}%` }}
+                      role="progressbar"
+                      aria-label={`${item.stage} pipeline value`}
+                      aria-valuemin={0}
+                      aria-valuemax={maxVal}
+                      aria-valuenow={item.value}
                     />
                   </div>
                 </div>
@@ -299,11 +413,23 @@ export default function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent className="p-5 space-y-4">
-            {leadConversions.map((channel, idx) => (
-              <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl">
+            {leadConversionsQuery.isLoading && (
+              <div className="h-48 rounded-xl bg-slate-100 animate-pulse" aria-hidden="true" />
+            )}
+            {leadConversionsQuery.isError && (
+              <DashboardSectionError
+                message="Lead channel data could not be loaded."
+                onRetry={() => void leadConversionsQuery.refetch()}
+              />
+            )}
+            {!leadConversionsQuery.isLoading && !leadConversionsQuery.isError && leadConversions.length === 0 && (
+              <p className="py-12 text-center text-sm text-slate-600">No lead-source data is available yet.</p>
+            )}
+            {leadConversions.map((channel) => (
+              <div key={channel.source} className="flex items-center justify-between gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl">
                 <div>
                   <div className="text-xs font-bold text-slate-900">{channel.source}</div>
-                  <div className="text-[11px] text-slate-500">{channel.leads} Total Leads - {channel.converted} Converted</div>
+                  <div className="text-xs text-slate-600">{channel.leads} total leads · {channel.converted} converted</div>
                 </div>
                 <div className="text-right">
                   <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-extrabold border border-emerald-200">
@@ -326,13 +452,27 @@ export default function DashboardPage() {
                 <Briefcase className="w-5 h-5 text-indigo-600" />
                 <span>Priority Opportunities Stream</span>
               </CardTitle>
-              <CardDescription>Live active deals from backend `/api/v1/dashboard/recent-deals`</CardDescription>
+              <CardDescription>Recently updated opportunities requiring attention</CardDescription>
             </div>
             <Link href="/deals" className="text-indigo-600 text-xs font-semibold hover:underline">
               View All Deals
             </Link>
           </CardHeader>
           <CardContent className="p-0">
+            {recentDealsQuery.isLoading && (
+              <div className="m-5 h-48 rounded-xl bg-slate-100 animate-pulse" aria-hidden="true" />
+            )}
+            {recentDealsQuery.isError && (
+              <DashboardSectionError
+                className="m-5"
+                message="Recent opportunities could not be loaded."
+                onRetry={() => void recentDealsQuery.refetch()}
+              />
+            )}
+            {!recentDealsQuery.isLoading && !recentDealsQuery.isError && recentDeals.length === 0 && (
+              <p className="p-12 text-center text-sm text-slate-600">No opportunities are available yet.</p>
+            )}
+            {recentDeals.length > 0 && (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm border-collapse">
                 <thead>
@@ -344,9 +484,9 @@ export default function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {recentDeals.map((deal, idx) => (
+                  {recentDeals.map((deal) => (
                     <tr 
-                      key={idx} 
+                      key={deal.deal_id}
                       onClick={() => router.push('/deals')}
                       className="hover:bg-slate-50/80 transition duration-150 cursor-pointer"
                     >
@@ -372,6 +512,7 @@ export default function DashboardPage() {
                 </tbody>
               </table>
             </div>
+            )}
           </CardContent>
         </Card>
 
@@ -387,15 +528,27 @@ export default function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent className="p-4 space-y-3">
-            {topPerformers.map((rep, idx) => (
-              <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl">
+            {topPerformersQuery.isLoading && (
+              <div className="h-48 rounded-xl bg-slate-100 animate-pulse" aria-hidden="true" />
+            )}
+            {topPerformersQuery.isError && (
+              <DashboardSectionError
+                message="The sales leaderboard could not be loaded."
+                onRetry={() => void topPerformersQuery.refetch()}
+              />
+            )}
+            {!topPerformersQuery.isLoading && !topPerformersQuery.isError && topPerformers.length === 0 && (
+              <p className="py-12 text-center text-sm text-slate-600">No closed-won sales are available yet.</p>
+            )}
+            {topPerformers.map((rep) => (
+              <div key={rep.name} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl">
                 <div className="flex items-center gap-3">
                   <div className="w-9 h-9 rounded-full bg-amber-100 border border-amber-200 text-amber-800 font-bold flex items-center justify-center text-xs shrink-0">
                     {rep.avatar || rep.name.substring(0, 2).toUpperCase()}
                   </div>
                   <div>
                     <div className="text-xs font-bold text-slate-900">{rep.name}</div>
-                    <div className="text-[11px] text-slate-500">{rep.deals_count} Deals Closed</div>
+                    <div className="text-xs text-slate-600">{rep.deals_count} deals won</div>
                   </div>
                 </div>
                 <div className="text-right font-extrabold text-emerald-700 text-xs">
@@ -408,6 +561,15 @@ export default function DashboardPage() {
       </div>
 
       {/* AI Recommendations & Insights Section */}
+      {aiInsightsQuery.isLoading && (
+        <Card className="h-36 animate-pulse bg-slate-100" aria-hidden="true" />
+      )}
+      {aiInsightsQuery.isError && (
+        <DashboardSectionError
+          message="AI pipeline insights could not be loaded."
+          onRetry={() => void aiInsightsQuery.refetch()}
+        />
+      )}
       {aiInsights && (
         <Card className="border border-indigo-100 bg-gradient-to-r from-indigo-50/60 via-white to-purple-50/40 shadow-xs p-6">
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -427,13 +589,13 @@ export default function DashboardPage() {
 
           {aiInsights.insights && aiInsights.insights.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4 pt-4 border-t border-indigo-100">
-              {aiInsights.insights.map((item, idx) => (
-                <div key={idx} className="p-3.5 rounded-xl bg-white border border-indigo-100 shadow-2xs flex items-start justify-between gap-2">
+              {aiInsights.insights.map((item) => (
+                <div key={item.title} className="p-3.5 rounded-xl bg-white border border-indigo-100 shadow-2xs flex items-start justify-between gap-2">
                   <div className="flex items-start gap-2.5">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                     <div>
                       <div className="text-xs font-bold text-slate-900">{item.title}</div>
-                      <div className="text-[11px] text-slate-500 mt-0.5">{item.description}</div>
+                      <div className="text-xs text-slate-600 mt-0.5">{item.description}</div>
                     </div>
                   </div>
                   {item.action && (
@@ -465,16 +627,34 @@ export default function DashboardPage() {
           }
         >
           <p className="text-xs text-slate-500">
-            Enable or disable widgets layout fetched live from `/api/v1/dashboard/custom-widgets`:
+            Choose which dashboard sections should be visible.
           </p>
 
           <div className="space-y-2 max-h-60 overflow-y-auto mt-4">
-            {widgets.map((w) => (
+            {widgetsQuery.isLoading && (
+              <div className="h-24 rounded-xl bg-slate-100 animate-pulse" aria-hidden="true" />
+            )}
+            {widgetsQuery.isError && (
+              <DashboardSectionError
+                message="Widget preferences could not be loaded."
+                onRetry={() => void widgetsQuery.refetch()}
+              />
+            )}
+            {!widgetsQuery.isLoading && !widgetsQuery.isError && (widgetPreferences ?? widgets).length === 0 && (
+              <p className="py-8 text-center text-sm text-slate-600">No configurable widgets are available.</p>
+            )}
+            {(widgetPreferences ?? widgets).map((w) => (
               <div key={w.id} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl">
-                <span className="text-xs font-bold text-slate-800">{w.title}</span>
+                <label htmlFor={`widget-${w.id}`} className="text-xs font-bold text-slate-800">{w.title}</label>
                 <input
+                  id={`widget-${w.id}`}
                   type="checkbox"
-                  defaultChecked={w.enabled}
+                  checked={w.enabled}
+                  onChange={(event) => {
+                    setWidgetPreferences((current) => (current ?? widgets).map((widget) => (
+                      widget.id === w.id ? { ...widget, enabled: event.target.checked } : widget
+                    )));
+                  }}
                   className="w-4 h-4 accent-indigo-600 rounded cursor-pointer"
                 />
               </div>
@@ -492,10 +672,10 @@ export default function DashboardPage() {
             <button
               type="button"
               onClick={handleSaveWidgetPreferences}
-              disabled={saveWidgetsMutation.isPending}
+              disabled={saveWidgetsMutation.isPending || widgetsQuery.isLoading || widgetsQuery.isError}
               className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer shadow-xs disabled:opacity-50"
             >
-              Save Layout
+              {saveWidgetsMutation.isPending ? 'Saving…' : 'Save Layout'}
             </button>
           </div>
         </ModalShell>
