@@ -326,7 +326,7 @@ export function DataTable<TItem>({
             <TableHeader>
               <TableRow>
                 {showCheckbox && <TableHead className="w-10 px-4" />}
-                {columns.map((col) => (
+                {visibleColumns.map((col) => (
                   <TableHead key={col.id} className={col.className}>
                     {col.header}
                   </TableHead>
@@ -343,7 +343,7 @@ export function DataTable<TItem>({
                       <Skeleton className="h-4 w-4" />
                     </TableCell>
                   )}
-                  {columns.map((col) => (
+                  {visibleColumns.map((col) => (
                     <TableCell key={col.id} className={col.className}>
                       <Skeleton className="h-4 w-full max-w-32" />
                     </TableCell>

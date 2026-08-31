@@ -124,8 +124,13 @@ async def get_lead(lead_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.put("/{lead_id}", response_model=LeadResponse, summary="Update lead by ID", dependencies=[Depends(require_permission("leads:update"))])
-async def update_lead(lead_id: str, payload: LeadUpdate, db: AsyncSession = Depends(get_db)):
-    return await lead_service.update_lead(db, lead_id, payload)
+async def update_lead(
+    lead_id: str,
+    payload: LeadUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await lead_service.update_lead(db, lead_id, payload, current_user)
 
 
 @router.delete("/{lead_id}", response_model=MessageResponse, summary="Delete lead by ID", dependencies=[Depends(require_permission("leads:delete"))])
@@ -204,10 +209,13 @@ async def get_lead_documents(lead_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.get("/{lead_id}/documents/{document_id}/download", summary="Download lead document file", dependencies=[Depends(require_permission("leads:read"))])
 async def download_lead_document(
-    lead_id: str, document_id: str, db: AsyncSession = Depends(get_db)
+    lead_id: str,
+    document_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     file_bytes, media_type, filename = await lead_service.download_document(
-        db, lead_id, document_id
+        db, lead_id, document_id, current_user
     )
     return StreamingResponse(
         iter([file_bytes]),
@@ -218,9 +226,12 @@ async def download_lead_document(
 
 @router.post("/{lead_id}/documents", response_model=DocumentResponse, summary="Attach document file to lead via MinIO S3", dependencies=[Depends(require_permission("leads:create"))])
 async def upload_lead_document(
-    lead_id: str, file: UploadFile = File(...), db: AsyncSession = Depends(get_db)
+    lead_id: str,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    return await lead_service.upload_document(db, lead_id, file)
+    return await lead_service.upload_document(db, lead_id, file, current_user)
 
 
 @router.post("/{lead_id}/archive", response_model=MessageResponse, summary="Archive lead", dependencies=[Depends(require_permission("leads:update"))])

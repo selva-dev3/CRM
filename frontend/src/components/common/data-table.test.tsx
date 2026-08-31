@@ -41,6 +41,50 @@ describe('DataTable selection', () => {
     expect(row).toHaveClass('bg-blue-50/80');
   });
 
+  it('keeps hidden columns out of the loading skeleton', async () => {
+    const user = userEvent.setup();
+    const hideableColumns: DataTableColumn<RowItem>[] = [
+      columns[0],
+      {
+        id: 'email',
+        header: 'Email',
+        cell: () => 'jane@example.com',
+        enableHiding: true,
+      },
+    ];
+
+    const { rerender } = render(
+      <DataTable
+        columns={hideableColumns}
+        data={[{ id: 'lead-1', name: 'Jane Doe' }]}
+        getRowKey={(item) => item.id}
+        emptyTitle="No rows"
+        emptyDescription="No rows found"
+        searchValue=""
+        onSearchChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('columnheader', { name: 'Email' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Columns' }));
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'Email' }));
+
+    rerender(
+      <DataTable
+        columns={hideableColumns}
+        data={[]}
+        getRowKey={(item) => item.id}
+        emptyTitle="No rows"
+        emptyDescription="No rows found"
+        searchValue=""
+        onSearchChange={vi.fn()}
+        isLoading
+      />,
+    );
+
+    expect(screen.queryByRole('columnheader', { name: 'Email' })).not.toBeInTheDocument();
+  });
+
   it('toggles selection without opening the row', async () => {
     const user = userEvent.setup();
     const onToggleRow = vi.fn();

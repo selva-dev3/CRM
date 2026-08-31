@@ -1,11 +1,25 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { apiClient, clearSessionToken } from './client';
+import { apiClient, BASE_URL, clearSessionToken, resolveApiBaseUrl } from './client';
 
 describe('apiClient cookie authentication', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     localStorage.clear();
     sessionStorage.clear();
+  });
+
+  it('uses a local backend fallback instead of an external production host', () => {
+    expect(BASE_URL).toBe('http://localhost:8000/api/v1');
+    expect(BASE_URL).not.toContain('railway.app');
+  });
+
+  it('requires an explicit API URL in production', () => {
+    expect(() => resolveApiBaseUrl(undefined, 'production')).toThrow(
+      'NEXT_PUBLIC_API_URL must be configured for production.',
+    );
+    expect(resolveApiBaseUrl(' https://api.example.com/v1 ', 'production')).toBe(
+      'https://api.example.com/v1',
+    );
   });
 
   it('includes credentials without exposing an Authorization token', async () => {

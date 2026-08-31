@@ -1,7 +1,19 @@
 // Central API Client for CRM Backend Integration (FastAPI)
-const DEFAULT_API_URL = 'https://crm-dev3.up.railway.app/api/v1';
+const DEFAULT_API_URL = 'http://localhost:8000/api/v1';
 
-export const BASE_URL = process.env.NEXT_PUBLIC_API_URL || DEFAULT_API_URL;
+export function resolveApiBaseUrl(
+  configuredUrl = process.env.NEXT_PUBLIC_API_URL,
+  environment = process.env.NODE_ENV,
+): string {
+  const normalizedUrl = configuredUrl?.trim();
+  if (normalizedUrl) return normalizedUrl;
+  if (environment === 'production') {
+    throw new Error('NEXT_PUBLIC_API_URL must be configured for production.');
+  }
+  return DEFAULT_API_URL;
+}
+
+export const BASE_URL = resolveApiBaseUrl();
 
 export function clearSessionToken(): void {
   if (typeof window === 'undefined') return;

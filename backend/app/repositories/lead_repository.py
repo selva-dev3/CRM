@@ -80,6 +80,17 @@ class LeadRepository:
         result = await db.execute(select(Lead).where(Lead.id == lead_id))
         return result.scalars().first()
 
+    async def get_by_id_for_org(
+        self, db: AsyncSession, lead_id: str, organization_id: str
+    ) -> Optional[Lead]:
+        result = await db.execute(
+            select(Lead).where(
+                Lead.id == lead_id,
+                Lead.organization_id == organization_id,
+            )
+        )
+        return result.scalars().first()
+
     async def list_by_ids(self, db: AsyncSession, ids: list[str]) -> list[Lead]:
         result = await db.execute(select(Lead).where(Lead.id.in_(ids)))
         return list(result.scalars().all())
@@ -118,6 +129,17 @@ class LeadRepository:
     ) -> Optional[LeadAttachment]:
         result = await db.execute(
             select(LeadAttachment).where(LeadAttachment.id == attachment_id)
+        )
+        return result.scalars().first()
+
+    async def get_attachment_for_lead(
+        self, db: AsyncSession, attachment_id: str, lead_id: str
+    ) -> Optional[LeadAttachment]:
+        result = await db.execute(
+            select(LeadAttachment).where(
+                LeadAttachment.id == attachment_id,
+                LeadAttachment.lead_id == lead_id,
+            )
         )
         return result.scalars().first()
 
