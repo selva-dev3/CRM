@@ -101,6 +101,7 @@ interface DataTableProps<TItem> {
   readonly selectedIds?: ReadonlySet<string>;
   readonly onToggleRow?: (item: TItem, checked: boolean) => void;
   readonly onToggleAllRows?: (checked: boolean) => void;
+  readonly getSelectionLabel?: (item: TItem) => string;
 
   // Avatar leading
   readonly showAvatar?: boolean;
@@ -176,6 +177,7 @@ export function DataTable<TItem>({
   selectedIds,
   onToggleRow,
   onToggleAllRows,
+  getSelectionLabel,
   // Avatar
   showAvatar = false,
   getAvatarData,
@@ -324,7 +326,7 @@ export function DataTable<TItem>({
             <TableHeader>
               <TableRow>
                 {showCheckbox && <TableHead className="w-10 px-4" />}
-                {columns.map((col) => (
+                {visibleColumns.map((col) => (
                   <TableHead key={col.id} className={col.className}>
                     {col.header}
                   </TableHead>
@@ -341,7 +343,7 @@ export function DataTable<TItem>({
                       <Skeleton className="h-4 w-4" />
                     </TableCell>
                   )}
-                  {columns.map((col) => (
+                  {visibleColumns.map((col) => (
                     <TableCell key={col.id} className={col.className}>
                       <Skeleton className="h-4 w-full max-w-32" />
                     </TableCell>
@@ -423,19 +425,24 @@ export function DataTable<TItem>({
           <TableHeader className="sticky top-0 z-10 bg-[#F9FAFB] border-b border-[#E5E7EB]">
             <TableRow className="border-b border-[#E5E7EB] hover:bg-transparent">
               {showCheckbox && (
-                <TableHead className="w-10 px-4 text-table font-semibold">
-                  <input
-                    type="checkbox"
-                    checked={allVisibleSelected}
-                    ref={(node) => {
-                      if (node) {
-                        node.indeterminate = someVisibleSelected;
-                      }
-                    }}
-                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => onToggleAllRows?.(event.target.checked)}
-                    aria-label="Select all rows"
-                    className="rounded border-[#E5E7EB] text-[#2563EB] focus:ring-[#2563EB]/20 cursor-pointer"
-                  />
+                <TableHead className="w-12 p-0 text-table font-semibold">
+                  <label
+                    className="mx-auto flex size-11 cursor-pointer items-center justify-center rounded-lg hover:bg-slate-100"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      ref={(node) => {
+                        if (node) {
+                          node.indeterminate = someVisibleSelected;
+                        }
+                      }}
+                      onChange={(event: React.ChangeEvent<HTMLInputElement>) => onToggleAllRows?.(event.target.checked)}
+                      aria-label="Select all rows"
+                      className="size-4 cursor-pointer rounded border-[#E5E7EB] text-[#2563EB] focus:ring-[#2563EB]/20"
+                    />
+                  </label>
                 </TableHead>
               )}
               {expandableRow && <TableHead className="w-10 px-4" aria-label="Expand row" />}
@@ -455,14 +462,21 @@ export function DataTable<TItem>({
             {displayData.map((item) => {
               const rowKey = getRowKey(item);
               const isExpanded = expandedRows.has(rowKey);
+              const isSelected = selectedIds?.has(rowKey) ?? false;
 
               return (
                 <Fragment key={rowKey}>
                   <TableRow
                     tabIndex={onRowClick ? 0 : undefined}
+                    aria-selected={showCheckbox ? isSelected : undefined}
                     className={cn(
                       'border-b border-[#E5E7EB] text-table transition-colors duration-150',
-                      onRowClick ? 'cursor-pointer hover:bg-[#F9FAFB]' : 'hover:bg-[#F9FAFB]/50',
+                      isSelected
+                        ? 'bg-blue-50/80 hover:bg-blue-50'
+                        : onRowClick
+                          ? 'cursor-pointer hover:bg-[#F9FAFB]'
+                          : 'hover:bg-[#F9FAFB]/50',
+                      onRowClick && 'cursor-pointer',
                     )}
                     onClick={() => onRowClick?.(item)}
                     onKeyDown={(event: React.KeyboardEvent<HTMLTableRowElement>) => {
@@ -474,14 +488,19 @@ export function DataTable<TItem>({
                     }}
                   >
                     {showCheckbox && (
-                      <TableCell className="w-10 px-4">
-                        <input
-                          type="checkbox"
-                          checked={selectedIds?.has(rowKey) ?? false}
-                          onClick={(event: React.MouseEvent<HTMLInputElement>) => event.stopPropagation()}
-                          onChange={(event: React.ChangeEvent<HTMLInputElement>) => onToggleRow?.(item, event.target.checked)}
-                          aria-label="Select row"
-                        />
+                      <TableCell className="w-12 p-0">
+                        <label
+                          className="mx-auto flex size-11 cursor-pointer items-center justify-center rounded-lg hover:bg-blue-100/70"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(event: React.ChangeEvent<HTMLInputElement>) => onToggleRow?.(item, event.target.checked)}
+                            aria-label={getSelectionLabel?.(item) ?? 'Select row'}
+                            className="size-4 cursor-pointer"
+                          />
+                        </label>
                       </TableCell>
                     )}
                     {expandableRow && (
@@ -608,7 +627,7 @@ export function DataTable<TItem>({
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-6 py-4 text-xs font-bold text-slate-700">
           <span>
             Page {pageIndex + 1} of {pageCount}
-            {totalRecords !== undefined && ` Â· ${totalRecords} records`}
+            {totalRecords !== undefined && ` · ${totalRecords} records`}
           </span>
           <ButtonGroup aria-label="Pagination controls">
             <Button
