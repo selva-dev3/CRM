@@ -1,9 +1,9 @@
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import CallLog, Deal, Email, Lead, Meeting, Organization, Task
+from app.models import CallLog, Deal, Email, Lead, Meeting, Organization, Task, User
 
 
 class DashboardRepository:
@@ -96,21 +96,39 @@ class DashboardRepository:
         self, db: AsyncSession, organization_id: str, limit: int = 5
     ) -> list[tuple]:
         result = await db.execute(
-            select(Deal.assigned_to, func.count(Deal.id), func.coalesce(func.sum(Deal.amount), 0.0))
+            select(User.name, func.count(Deal.id), func.coalesce(func.sum(Deal.amount), 0.0))
+            .join(
+                User,
+                and_(
+                    Deal.assigned_to == User.id,
+                    User.organization_id == organization_id,
+                ),
+            )
             .where(
                 Deal.organization_id == organization_id,
                 Deal.assigned_to.isnot(None),
                 Deal.stage == "Closed Won",
             )
-            .group_by(Deal.assigned_to)
+            .group_by(User.id, User.name)
             .order_by(func.sum(Deal.amount).desc())
             .limit(limit)
         )
         return list(result.all())
 
-    async def lead_source_counts(self, db: AsyncSession, organization_id: str) -> list[tuple]:
+    async def lead_source_conversions(self, db: AsyncSession, organization_id: str) -> list[tuple]:
+        converted = case(
+            (
+                Lead.status.ilike("%convert%") | Lead.status.ilike("%won%"),
+                1,
+            ),
+            else_=0,
+        )
         result = await db.execute(
-            select(Lead.source, func.count(Lead.id))
+            select(
+                Lead.source,
+                func.count(Lead.id),
+                func.coalesce(func.sum(converted), 0),
+            )
             .where(
                 Lead.organization_id == organization_id,
                 Lead.is_archived.is_(False),
@@ -118,19 +136,6 @@ class DashboardRepository:
             .group_by(Lead.source)
         )
         return list(result.all())
-
-    async def count_converted_leads_by_source(
-        self, db: AsyncSession, organization_id: str, source: str | None
-    ) -> int:
-        result = await db.execute(
-            select(func.count(Lead.id)).where(
-                Lead.organization_id == organization_id,
-                Lead.is_archived.is_(False),
-                Lead.source == source,
-                Lead.status.ilike("%convert%") | Lead.status.ilike("%won%"),
-            )
-        )
-        return result.scalar() or 0
 
     async def count_calls(
         self, db: AsyncSession, organization_id: str, start: datetime, end: datetime
@@ -184,14 +189,21 @@ class DashboardRepository:
 
     async def recent_deals(
         self, db: AsyncSession, organization_id: str, limit: int = 5
-    ) -> list[Deal]:
+    ) -> list[tuple[Deal, str | None]]:
         result = await db.execute(
-            select(Deal)
+            select(Deal, User.name)
+            .outerjoin(
+                User,
+                and_(
+                    Deal.assigned_to == User.id,
+                    User.organization_id == organization_id,
+                ),
+            )
             .where(Deal.organization_id == organization_id)
             .order_by(Deal.updated_at.desc())
             .limit(limit)
         )
-        return list(result.scalars().all())
+        return list(result.all())
 
     async def count_deals_and_sum(
         self, db: AsyncSession, organization_id: str

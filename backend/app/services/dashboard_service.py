@@ -51,9 +51,7 @@ class DashboardService:
             recent_activity.append(
                 {
                     "action": "New Lead Added",
-                    "title": f"{getattr(lead, 'first_name', '') or ''} {getattr(lead, 'last_name', '') or ''}".strip()
-                    or getattr(lead, "name", "")
-                    or lead.email,
+                    "title": lead.contact_name or lead.title or lead.email,
                     "user": "System API",
                     "timestamp": str(lead.created_at)[:16]
                     if getattr(lead, "created_at", None)
@@ -99,15 +97,14 @@ class DashboardService:
         return result
 
     async def get_revenue_chart(self, db: AsyncSession, organization_id: str) -> dict:
-        months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul"]
-        won_total = await self.repository.sum_won_deals(db, organization_id)
-        actual = (
-            [round(won_total * factor, 2) for factor in [0.1, 0.12, 0.15, 0.18, 0.2, 0.22, 0.25]]
-            if won_total > 0
-            else [0, 0, 0, 0, 0, 0, 0]
+        raise APIException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            code="METRIC_UNAVAILABLE",
+            message=(
+                "Monthly revenue is unavailable until closed-deal timestamps and "
+                "organization revenue targets are recorded."
+            ),
         )
-        target = [40000, 50000, 55000, 60000, 65000, 75000, 85000]
-        return {"months": months, "actual": actual, "target": target}
 
     async def get_top_performers(self, db: AsyncSession, organization_id: str) -> list[dict]:
         rows = await self.repository.top_performers(db, organization_id)
@@ -126,16 +123,13 @@ class DashboardService:
         return result
 
     async def get_lead_conversions(self, db: AsyncSession, organization_id: str) -> list[dict]:
-        rows = await self.repository.lead_source_counts(db, organization_id)
+        rows = await self.repository.lead_source_conversions(db, organization_id)
         grouped: dict[str, dict[str, int]] = {}
-        for source, lead_count in rows:
+        for source, lead_count, converted_count in rows:
             source_name = self._normalize_lead_source(source)
-            converted = await self.repository.count_converted_leads_by_source(
-                db, organization_id, source
-            )
             item = grouped.setdefault(source_name, {"leads": 0, "converted": 0})
             item["leads"] += lead_count
-            item["converted"] += converted
+            item["converted"] += converted_count
 
         return [
             {
@@ -188,10 +182,10 @@ class DashboardService:
                 "title": d.title,
                 "amount": float(d.amount or 0.0),
                 "stage": d.stage or "Prospecting",
-                "owner": d.assigned_to or "Unassigned",
-                "updated_at": str(d.created_at)[:10] if getattr(d, "created_at", None) else "Today",
+                "owner": owner_name or "Unassigned",
+                "updated_at": str(d.updated_at)[:10] if getattr(d, "updated_at", None) else "Today",
             }
-            for d in deals
+            for d, owner_name in deals
         ]
 
     async def get_ai_insights(self, db: AsyncSession, organization_id: str) -> dict:
@@ -225,7 +219,6 @@ class DashboardService:
         return [
             {"id": "w-kpis", "title": "Executive KPIs", "enabled": True},
             {"id": "w-funnel", "title": "Sales Stage Funnel", "enabled": True},
-            {"id": "w-revenue", "title": "Monthly Revenue Chart", "enabled": True},
             {"id": "w-top", "title": "Top Sales Performers", "enabled": True},
             {"id": "w-deals", "title": "Priority Deals", "enabled": True},
             {"id": "w-ai", "title": "AI Recommendations", "enabled": True},

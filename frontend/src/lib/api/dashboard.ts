@@ -19,12 +19,6 @@ export interface FunnelStageItem {
   value: number;
 }
 
-export interface RevenueChartData {
-  months: string[];
-  actual: number[];
-  target: number[];
-}
-
 export interface TopPerformerItem {
   name: string;
   deals_count: number;
@@ -92,10 +86,6 @@ export async function fetchSalesFunnelApi(): Promise<FunnelStageItem[]> {
   return apiClient.get<FunnelStageItem[]>('/dashboard/sales-funnel');
 }
 
-export async function fetchRevenueChartApi(): Promise<RevenueChartData> {
-  return apiClient.get<RevenueChartData>('/dashboard/revenue-chart');
-}
-
 export async function fetchTopPerformersApi(): Promise<TopPerformerItem[]> {
   return apiClient.get<TopPerformerItem[]>('/dashboard/top-performers');
 }
@@ -141,15 +131,6 @@ export function useSalesFunnelQuery(options?: Omit<UseQueryOptions<FunnelStageIt
   return useQuery<FunnelStageItem[]>({
     queryKey: ['dashboard', 'sales-funnel'],
     queryFn: fetchSalesFunnelApi,
-    staleTime: 1000 * 60 * 5,
-    ...options,
-  });
-}
-
-export function useRevenueChartQuery(options?: Omit<UseQueryOptions<RevenueChartData>, 'queryKey' | 'queryFn'>) {
-  return useQuery<RevenueChartData>({
-    queryKey: ['dashboard', 'revenue-chart'],
-    queryFn: fetchRevenueChartApi,
     staleTime: 1000 * 60 * 5,
     ...options,
   });

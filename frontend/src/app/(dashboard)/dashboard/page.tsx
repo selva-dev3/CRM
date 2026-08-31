@@ -105,6 +105,7 @@ export default function DashboardPage() {
   const handleSaveWidgetPreferences = async () => {
     try {
       await saveWidgetsMutation.mutateAsync(widgetPreferences ?? widgets);
+      await widgetsQuery.refetch();
       setErrorMsg(null);
       setSuccessMsg('Dashboard layout preferences saved.');
       setIsWidgetModalOpen(false);
@@ -168,6 +169,15 @@ export default function DashboardPage() {
     },
   ] : [];
 
+  const isWidgetEnabled = (id: string) => (
+    widgets.find((widget) => widget.id === id)?.enabled !== false
+  );
+  const showKpis = isWidgetEnabled('w-kpis');
+  const showFunnel = isWidgetEnabled('w-funnel');
+  const showTopPerformers = isWidgetEnabled('w-top');
+  const showRecentDeals = isWidgetEnabled('w-deals');
+  const showAiInsights = isWidgetEnabled('w-ai');
+
   return (
     <div className="space-y-6 pb-12">
       {/* Toast Feedback Banner */}
@@ -177,7 +187,12 @@ export default function DashboardPage() {
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>{successMsg}</span>
           </div>
-          <button onClick={() => setSuccessMsg(null)} className="text-emerald-700 hover:text-emerald-900">
+          <button
+            type="button"
+            onClick={() => setSuccessMsg(null)}
+            className="rounded p-1 text-emerald-700 hover:text-emerald-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+            aria-label="Dismiss success message"
+          >
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -236,6 +251,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Executive Metric Cards Grid */}
+      {showKpis && (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
         {kpisQuery.isLoading && Array.from({ length: 4 }).map((_, idx) => (
           <Card key={idx} className="h-[150px] animate-pulse bg-slate-100" aria-hidden="true" />
@@ -278,6 +294,7 @@ export default function DashboardPage() {
           );
         })}
       </div>
+      )}
 
       {/* Daily Activities Summary Bar */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
@@ -342,6 +359,7 @@ export default function DashboardPage() {
       {/* Analytics & Pipeline Visualizations Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Sales Stage Funnel */}
+        {showFunnel && (
         <Card className="lg:col-span-6 border border-slate-200 bg-white shadow-xs">
           <CardHeader className="pb-3 border-b border-slate-100">
             <div className="flex items-center justify-between">
@@ -395,9 +413,10 @@ export default function DashboardPage() {
             })}
           </CardContent>
         </Card>
+        )}
 
         {/* Lead Source Conversions */}
-        <Card className="lg:col-span-6 border border-slate-200 bg-white shadow-xs">
+        <Card className={`${showFunnel ? 'lg:col-span-6' : 'lg:col-span-12'} border border-slate-200 bg-white shadow-xs`}>
           <CardHeader className="pb-3 border-b border-slate-100">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -443,9 +462,11 @@ export default function DashboardPage() {
       </div>
 
       {/* Main Content Grid: Recent Opportunities & Top Performers */}
+      {(showRecentDeals || showTopPerformers) && (
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Recent Deals Table */}
-        <Card className="lg:col-span-8 border border-slate-200 bg-white shadow-xs">
+        {showRecentDeals && (
+        <Card className={`${showTopPerformers ? 'lg:col-span-8' : 'lg:col-span-12'} border border-slate-200 bg-white shadow-xs`}>
           <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-slate-100">
             <div>
               <CardTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">
@@ -485,16 +506,20 @@ export default function DashboardPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {recentDeals.map((deal) => (
-                    <tr 
+                    <tr
                       key={deal.deal_id}
-                      onClick={() => router.push('/deals')}
-                      className="hover:bg-slate-50/80 transition duration-150 cursor-pointer"
+                      className="hover:bg-slate-50/80 transition duration-150"
                     >
                       <td className="py-4 px-3 sm:px-6 font-semibold text-slate-900 flex items-center gap-3">
                         <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center font-bold text-indigo-600 text-xs shrink-0">
                           {deal.title.charAt(0)}
                         </div>
-                        <span className="truncate max-w-[200px]">{deal.title}</span>
+                        <Link
+                          href={`/deals/${deal.deal_id}`}
+                          className="truncate max-w-[200px] rounded text-indigo-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600"
+                        >
+                          {deal.title}
+                        </Link>
                       </td>
                       <td className="py-4 px-3 sm:px-6 font-bold text-emerald-700 tabular-nums">
                         ${deal.amount ? deal.amount.toLocaleString() : '0'}
@@ -515,9 +540,11 @@ export default function DashboardPage() {
             )}
           </CardContent>
         </Card>
+        )}
 
         {/* Top Sales Performers Leaderboard */}
-        <Card className="lg:col-span-4 border border-slate-200 bg-white shadow-xs">
+        {showTopPerformers && (
+        <Card className={`${showRecentDeals ? 'lg:col-span-4' : 'lg:col-span-12'} border border-slate-200 bg-white shadow-xs`}>
           <CardHeader className="pb-3 border-b border-slate-100">
             <div className="flex items-center gap-2">
               <Trophy className="w-5 h-5 text-amber-500" />
@@ -558,19 +585,21 @@ export default function DashboardPage() {
             ))}
           </CardContent>
         </Card>
+        )}
       </div>
+      )}
 
       {/* AI Recommendations & Insights Section */}
-      {aiInsightsQuery.isLoading && (
+      {showAiInsights && aiInsightsQuery.isLoading && (
         <Card className="h-36 animate-pulse bg-slate-100" aria-hidden="true" />
       )}
-      {aiInsightsQuery.isError && (
+      {showAiInsights && aiInsightsQuery.isError && (
         <DashboardSectionError
           message="AI pipeline insights could not be loaded."
           onRetry={() => void aiInsightsQuery.refetch()}
         />
       )}
-      {aiInsights && (
+      {showAiInsights && aiInsights && (
         <Card className="border border-indigo-100 bg-gradient-to-r from-indigo-50/60 via-white to-purple-50/40 shadow-xs p-6">
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div className="flex items-start gap-3">

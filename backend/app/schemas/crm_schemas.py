@@ -635,19 +635,7 @@ class CalendarEventResponse(BaseModel):
     event_type: str
     description: Optional[str] = None
 
-# 20. Dashboard KPI Schemas
-class DashboardKPIs(BaseModel):
-    total_leads: int
-    deals_won_amount: float
-    pipeline_revenue: float
-    win_rate_percentage: float
-    won_deals_count: int
-    closed_deals_count: int
-    ai_lead_score_avg: float
-    scored_leads_count: int
-    recent_activity: List[Dict[str, Any]]
-
-# 21. Integration Schemas
+# 20. Integration Schemas
 class IntegrationStatus(BaseModel):
     name: str
     is_connected: bool

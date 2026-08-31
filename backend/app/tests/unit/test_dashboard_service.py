@@ -1,10 +1,15 @@
+from datetime import UTC, datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import APIException
 from app.repositories.dashboard_repository import DashboardRepository
 from app.repositories.setting_repository import SettingRepository
+from app.schemas.dashboard import CustomWidgetSaveRequest
 from app.services.dashboard_service import DashboardService
 
 
@@ -40,6 +45,33 @@ async def test_get_kpis_computes_win_rate():
 
 
 @pytest.mark.asyncio
+async def test_get_kpis_uses_lead_contact_name_for_recent_activity():
+    repo = DashboardRepository()
+    repo.count_leads = AsyncMock(return_value=1)
+    repo.sum_pipeline_deals = AsyncMock(return_value=0.0)
+    repo.sum_won_deals = AsyncMock(return_value=0.0)
+    repo.count_closed_deals = AsyncMock(return_value=0)
+    repo.count_won_deals = AsyncMock(return_value=0)
+    repo.avg_lead_score = AsyncMock(return_value=0.0)
+    repo.count_scored_leads = AsyncMock(return_value=0)
+    repo.recent_leads = AsyncMock(
+        return_value=[
+            SimpleNamespace(
+                contact_name="Ada Lovelace",
+                title="CTO",
+                email="ada@example.com",
+                created_at=datetime(2026, 8, 31, 12, 30, tzinfo=UTC),
+            )
+        ]
+    )
+    service = _service_with(repo, SettingRepository())
+
+    result = await service.get_kpis(AsyncMock(spec=AsyncSession), "org-1")
+
+    assert result["recent_activity"][0]["title"] == "Ada Lovelace"
+
+
+@pytest.mark.asyncio
 async def test_get_sales_funnel_orders_standard_stages_first():
     repo = DashboardRepository()
     repo.deal_stage_totals = AsyncMock(
@@ -65,8 +97,9 @@ async def test_get_custom_widgets_returns_defaults_when_unset():
 
     result = await service.get_custom_widgets(db, "org-1")
 
-    assert len(result) == 6
+    assert len(result) == 5
     assert result[0]["id"] == "w-kpis"
+    assert all(widget["id"] != "w-revenue" for widget in result)
     setting_repo.get_by_key.assert_awaited_once_with(db, "dashboard_custom_widgets:org-1")
 
 
@@ -111,13 +144,51 @@ async def test_get_activities_summary_counts_each_metric():
 @pytest.mark.asyncio
 async def test_get_lead_conversions_merges_equivalent_urls():
     repo = DashboardRepository()
-    repo.lead_source_counts = AsyncMock(
-        return_value=[("https://Selv.in/", 2), ("https://selv.in", 3)]
+    repo.lead_source_conversions = AsyncMock(
+        return_value=[("https://Selv.in/", 2, 1), ("https://selv.in", 3, 2)]
     )
-    repo.count_converted_leads_by_source = AsyncMock(side_effect=[1, 2])
     service = _service_with(repo, SettingRepository())
     db = AsyncMock(spec=AsyncSession)
 
     result = await service.get_lead_conversions(db, "org-1")
 
     assert result == [{"source": "selv.in", "leads": 5, "converted": 3, "rate": 60.0}]
+    repo.lead_source_conversions.assert_awaited_once_with(db, "org-1")
+
+
+@pytest.mark.asyncio
+async def test_get_recent_deals_uses_owner_name_and_updated_timestamp():
+    repo = DashboardRepository()
+    updated_at = datetime(2026, 8, 31, 12, 30, tzinfo=UTC)
+    deal = SimpleNamespace(
+        id="deal-1",
+        title="Enterprise renewal",
+        amount=5000,
+        stage="Negotiation",
+        updated_at=updated_at,
+    )
+    repo.recent_deals = AsyncMock(return_value=[(deal, "Grace Hopper")])
+    service = _service_with(repo, SettingRepository())
+
+    result = await service.get_recent_deals(AsyncMock(spec=AsyncSession), "org-1")
+
+    assert result[0]["owner"] == "Grace Hopper"
+    assert result[0]["updated_at"] == "2026-08-31"
+
+
+@pytest.mark.asyncio
+async def test_revenue_chart_reports_missing_source_data():
+    service = _service_with(DashboardRepository(), SettingRepository())
+
+    with pytest.raises(APIException) as exc_info:
+        await service.get_revenue_chart(AsyncMock(spec=AsyncSession), "org-1")
+
+    assert exc_info.value.status_code == 501
+    assert exc_info.value.code == "METRIC_UNAVAILABLE"
+
+
+def test_custom_widget_request_rejects_malformed_payload():
+    with pytest.raises(ValidationError):
+        CustomWidgetSaveRequest.model_validate(
+            {"id": "not-a-widget-id", "title": "KPIs", "enabled": "yes", "extra": True}
+        )
