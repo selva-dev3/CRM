@@ -4,8 +4,12 @@ import { apiClient } from '@/lib/api/client';
 export interface DashboardKPIs {
   total_leads: number;
   deals_won_amount: number;
+  pipeline_revenue: number;
   win_rate_percentage: number;
+  won_deals_count: number;
+  closed_deals_count: number;
   ai_lead_score_avg: number;
+  scored_leads_count: number;
   recent_activity?: Array<{ action: string; title: string; user: string; timestamp: string }>;
 }
 
@@ -13,12 +17,6 @@ export interface FunnelStageItem {
   stage: string;
   count: number;
   value: number;
-}
-
-export interface RevenueChartData {
-  months: string[];
-  actual: number[];
-  target: number[];
 }
 
 export interface TopPerformerItem {
@@ -40,6 +38,7 @@ export interface ActivitiesSummary {
   emails_sent: number;
   meetings_held: number;
   tasks_completed: number;
+  period_label: string;
 }
 
 export interface RecentDealItem {
@@ -56,12 +55,13 @@ export interface AiInsightItem {
   description: string;
   type: 'high' | 'warning' | 'info';
   action?: string;
+  deal_id?: string;
 }
 
 export interface DashboardAiInsights {
   summary: string;
   insights?: AiInsightItem[];
-  risk_deals?: any[];
+  risk_deals?: unknown[];
 }
 
 export interface CustomWidget {
@@ -85,10 +85,6 @@ export async function fetchDashboardKpisApi(): Promise<DashboardKPIs> {
 
 export async function fetchSalesFunnelApi(): Promise<FunnelStageItem[]> {
   return apiClient.get<FunnelStageItem[]>('/dashboard/sales-funnel');
-}
-
-export async function fetchRevenueChartApi(): Promise<RevenueChartData> {
-  return apiClient.get<RevenueChartData>('/dashboard/revenue-chart');
 }
 
 export async function fetchTopPerformersApi(): Promise<TopPerformerItem[]> {
@@ -136,15 +132,6 @@ export function useSalesFunnelQuery(options?: Omit<UseQueryOptions<FunnelStageIt
   return useQuery<FunnelStageItem[]>({
     queryKey: ['dashboard', 'sales-funnel'],
     queryFn: fetchSalesFunnelApi,
-    staleTime: 1000 * 60 * 5,
-    ...options,
-  });
-}
-
-export function useRevenueChartQuery(options?: Omit<UseQueryOptions<RevenueChartData>, 'queryKey' | 'queryFn'>) {
-  return useQuery<RevenueChartData>({
-    queryKey: ['dashboard', 'revenue-chart'],
-    queryFn: fetchRevenueChartApi,
     staleTime: 1000 * 60 * 5,
     ...options,
   });
