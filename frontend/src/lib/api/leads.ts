@@ -76,6 +76,11 @@ export interface FetchLeadsParams {
   status?: string;
 }
 
+export interface LeadsPage {
+  items: Lead[];
+  total: number;
+}
+
 export interface LeadNoteItem {
   id: string;
   entity_type: string;
@@ -126,7 +131,7 @@ export interface LeadDocumentItem {
 // Raw API Functions
 // ---------------------------------------------------------------------------
 
-export async function fetchLeadsApi(params: FetchLeadsParams = {}): Promise<Lead[]> {
+export async function fetchLeadsApi(params: FetchLeadsParams = {}): Promise<LeadsPage> {
   const query = new URLSearchParams();
   const page = params.page ?? 1;
   const limit = params.limit ?? 15;
@@ -137,7 +142,15 @@ export async function fetchLeadsApi(params: FetchLeadsParams = {}): Promise<Lead
 
   const queryString = query.toString();
   const endpoint = `/leads${queryString ? `?${queryString}` : ''}`;
-  return apiClient.get<Lead[]>(endpoint);
+  const response = await apiClient.getWithMetadata<Lead[]>(endpoint);
+  const totalHeader = response.headers.get('X-Total-Count');
+  const total = totalHeader === null ? Number.NaN : Number.parseInt(totalHeader, 10);
+
+  if (!Number.isInteger(total) || total < 0) {
+    throw new Error('Leads response is missing valid pagination metadata.');
+  }
+
+  return { items: response.data, total };
 }
 
 export async function getLeadByIdApi(id: string): Promise<Lead> {

@@ -1,17 +1,17 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_db
 from app.api.v1.deps import get_current_user, require_permission
+from app.db.session import get_db
 from app.models import User
 from app.schemas.crm_schemas import (
     BulkActionResponse,
     BulkDeleteRequest,
-    CallLogResponse,
     CallLogBase,
+    CallLogResponse,
     DocumentResponse,
     EmailResponse,
     EmailSendRequest,
@@ -35,15 +35,19 @@ router = APIRouter()
 
 @router.get("", response_model=list[LeadResponse], summary="List all leads with pagination & search", dependencies=[Depends(require_permission("leads:read"))])
 async def list_leads(
+    response: Response,
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     search: Optional[str] = Query(None),
     lead_status: Optional[str] = Query(None, alias="status"),
     db: AsyncSession = Depends(get_db),
 ):
-    return await lead_service.list_leads(
+    leads = await lead_service.list_leads(
         db, page=page, limit=limit, search=search, lead_status=lead_status
     )
+    total = await lead_service.count_leads(db, search=search, lead_status=lead_status)
+    response.headers["X-Total-Count"] = str(total)
+    return leads
 
 
 @router.post("/bulk/delete", response_model=BulkActionResponse, summary="Bulk delete leads", dependencies=[Depends(require_permission("leads:bulk_delete"))])

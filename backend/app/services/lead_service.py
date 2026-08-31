@@ -74,6 +74,15 @@ class LeadService:
         )
         return [lead_to_dict(lead) for lead in leads]
 
+    async def count_leads(
+        self,
+        db: AsyncSession,
+        *,
+        search: str | None = None,
+        lead_status: str | None = None,
+    ) -> int:
+        return await self.repository.count_leads(db, search=search, status=lead_status)
+
     async def get_lead(self, db: AsyncSession, lead_id: str) -> dict:
         lead = await self.repository.get_by_id(db, lead_id)
         if not lead:

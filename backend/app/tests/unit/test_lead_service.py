@@ -59,6 +59,19 @@ async def test_list_leads_returns_serialized_dicts():
 
 
 @pytest.mark.asyncio
+async def test_count_leads_forwards_filters():
+    repo = LeadRepository()
+    repo.count_leads = AsyncMock(return_value=7)
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.count_leads(db, search="Acme", lead_status="New")
+
+    assert result == 7
+    repo.count_leads.assert_awaited_once_with(db, search="Acme", status="New")
+
+
+@pytest.mark.asyncio
 async def test_get_lead_raises_not_found_when_missing():
     repo = LeadRepository()
     repo.get_by_id = AsyncMock(return_value=None)

@@ -1,8 +1,9 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.models import (
     CallLog,
@@ -23,6 +24,27 @@ class LeadRepository:
     No business logic lives here.
     """
 
+    @staticmethod
+    def _list_filters(
+        *, search: str | None = None, status: str | None = None
+    ) -> list[ColumnElement[bool]]:
+        filters: list[ColumnElement[bool]] = []
+
+        if isinstance(search, str) and search.strip():
+            pattern = f"%{search.strip()}%"
+            filters.append(
+                Lead.contact_name.ilike(pattern)
+                | Lead.company.ilike(pattern)
+                | Lead.title.ilike(pattern)
+                | Lead.email.ilike(pattern)
+                | Lead.phone.ilike(pattern)
+            )
+
+        if isinstance(status, str) and status.strip():
+            filters.append(func.lower(Lead.status) == status.strip().lower())
+
+        return filters
+
     async def list_leads(
         self,
         db: AsyncSession,
@@ -32,24 +54,27 @@ class LeadRepository:
         search: Optional[str] = None,
         status: Optional[str] = None,
     ) -> list[Lead]:
-        stmt = select(Lead)
-
-        if isinstance(search, str) and search.strip():
-            pattern = f"%{search.strip()}%"
-            stmt = stmt.where(
-                Lead.contact_name.ilike(pattern)
-                | Lead.company.ilike(pattern)
-                | Lead.title.ilike(pattern)
-                | Lead.email.ilike(pattern)
-                | Lead.phone.ilike(pattern)
-            )
-
-        if isinstance(status, str) and status.strip():
-            stmt = stmt.where(Lead.status == status.strip())
-
-        stmt = stmt.offset((page - 1) * limit).limit(limit)
+        stmt = (
+            select(Lead)
+            .where(*self._list_filters(search=search, status=status))
+            .offset((page - 1) * limit)
+            .limit(limit)
+        )
         result = await db.execute(stmt)
         return list(result.scalars().all())
+
+    async def count_leads(
+        self,
+        db: AsyncSession,
+        *,
+        search: str | None = None,
+        status: str | None = None,
+    ) -> int:
+        stmt = select(func.count()).select_from(Lead).where(
+            *self._list_filters(search=search, status=status)
+        )
+        result = await db.execute(stmt)
+        return int(result.scalar_one())
 
     async def get_by_id(self, db: AsyncSession, lead_id: str) -> Optional[Lead]:
         result = await db.execute(select(Lead).where(Lead.id == lead_id))

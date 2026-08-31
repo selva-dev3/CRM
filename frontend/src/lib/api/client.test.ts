@@ -34,4 +34,20 @@ describe('apiClient cookie authentication', () => {
     expect(sessionStorage.getItem('token')).toBeNull();
     expect(localStorage.getItem('user')).toBeNull();
   });
+
+  it('returns response metadata when requested', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'X-Total-Count': '7' }),
+      json: vi.fn().mockResolvedValue([{ id: 'lead-1' }]),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await apiClient.getWithMetadata<Array<{ id: string }>>('/leads');
+
+    expect(response.data).toEqual([{ id: 'lead-1' }]);
+    expect(response.headers.get('X-Total-Count')).toBe('7');
+    expect(response.status).toBe(200);
+  });
 });

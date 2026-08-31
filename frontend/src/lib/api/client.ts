@@ -15,15 +15,22 @@ export function clearSessionToken(): void {
 export interface ApiClient {
   <T>(endpoint: string, options?: RequestInit): Promise<T>;
   get<T>(endpoint: string, options?: RequestInit): Promise<T>;
+  getWithMetadata<T>(endpoint: string, options?: RequestInit): Promise<ApiResponse<T>>;
   post<T>(endpoint: string, data?: unknown, options?: RequestInit): Promise<T>;
   put<T>(endpoint: string, data?: unknown, options?: RequestInit): Promise<T>;
   delete<T>(endpoint: string, options?: RequestInit): Promise<T>;
 }
 
-const mainClient = async function <T>(
+export interface ApiResponse<T> {
+  data: T;
+  headers: Headers;
+  status: number;
+}
+
+async function request<T>(
   endpoint: string,
   options: RequestInit = {}
-): Promise<T> {
+): Promise<ApiResponse<T>> {
   const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string>),
@@ -52,11 +59,30 @@ const mainClient = async function <T>(
     throw new Error(errorData.detail || errorData.message || 'An unexpected error occurred');
   }
 
-  return response.json();
+  return {
+    data: await response.json(),
+    headers: response.headers,
+    status: response.status,
+  };
+}
+
+const mainClient = async function <T>(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const response = await request<T>(endpoint, options);
+  return response.data;
 } as ApiClient;
 
 mainClient.get = function <T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   return mainClient<T>(endpoint, { ...options, method: 'GET' });
+};
+
+mainClient.getWithMetadata = function <T>(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<ApiResponse<T>> {
+  return request<T>(endpoint, { ...options, method: 'GET' });
 };
 
 mainClient.post = function <T>(endpoint: string, data?: unknown, options: RequestInit = {}): Promise<T> {
