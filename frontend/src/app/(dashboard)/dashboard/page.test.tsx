@@ -155,6 +155,43 @@ describe('DashboardPage', () => {
     expect(screen.getByText('Sales Stage Funnel')).toBeInTheDocument();
   });
 
+  it('opens the deal referenced by an AI insight', () => {
+    mocks.insights.mockReturnValue(queryResult({
+      summary: 'One opportunity needs attention.',
+      insights: [{
+        title: 'Follow up with Enterprise renewal',
+        description: 'High value opportunity.',
+        type: 'high',
+        action: 'Follow Up',
+        deal_id: 'deal-123',
+      }],
+      risk_deals: [],
+    }));
+
+    render(<DashboardPage />);
+    fireEvent.click(screen.getByRole('button', { name: 'Follow Up' }));
+
+    expect(mocks.routerPush).toHaveBeenCalledWith('/deals/deal-123');
+  });
+
+  it('falls back to the deals list for legacy AI insights without a deal id', () => {
+    mocks.insights.mockReturnValue(queryResult({
+      summary: 'One opportunity needs attention.',
+      insights: [{
+        title: 'Review pipeline',
+        description: 'Review the latest opportunities.',
+        type: 'info',
+        action: 'Follow Up',
+      }],
+      risk_deals: [],
+    }));
+
+    render(<DashboardPage />);
+    fireEvent.click(screen.getByRole('button', { name: 'Follow Up' }));
+
+    expect(mocks.routerPush).toHaveBeenCalledWith('/deals');
+  });
+
   it('provides an accessible success-message dismiss control', async () => {
     render(<DashboardPage />);
 

@@ -76,6 +76,7 @@ class AiInsightResponse(BaseModel):
     description: str
     type: Literal["high", "warning", "info"]
     action: str | None = None
+    deal_id: str | None = None
 
 
 class DashboardAiInsightsResponse(BaseModel):

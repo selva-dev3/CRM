@@ -14,6 +14,14 @@ from app.repositories.setting_repository import SettingRepository
 class DashboardService:
     """Business logic for dashboard aggregate data and widgets."""
 
+    DEFAULT_WIDGETS = [
+        {"id": "w-kpis", "title": "Executive KPIs", "enabled": True},
+        {"id": "w-funnel", "title": "Sales Stage Funnel", "enabled": True},
+        {"id": "w-top", "title": "Top Sales Performers", "enabled": True},
+        {"id": "w-deals", "title": "Priority Deals", "enabled": True},
+        {"id": "w-ai", "title": "AI Recommendations", "enabled": True},
+    ]
+
     def __init__(
         self,
         repository: DashboardRepository | None = None,
@@ -205,6 +213,7 @@ class DashboardService:
                     "description": f"High value opportunity worth ${recent_deal.amount:,.2f} currently in {recent_deal.stage} stage.",
                     "type": "high",
                     "action": "Follow Up",
+                    "deal_id": recent_deal.id,
                 }
             )
 
@@ -215,32 +224,35 @@ class DashboardService:
             db, f"dashboard_custom_widgets:{organization_id}"
         )
         if setting and setting.value:
-            return json.loads(setting.value)
-        return [
-            {"id": "w-kpis", "title": "Executive KPIs", "enabled": True},
-            {"id": "w-funnel", "title": "Sales Stage Funnel", "enabled": True},
-            {"id": "w-top", "title": "Top Sales Performers", "enabled": True},
-            {"id": "w-deals", "title": "Priority Deals", "enabled": True},
-            {"id": "w-ai", "title": "AI Recommendations", "enabled": True},
-        ]
+            try:
+                return json.loads(setting.value)
+            except ValueError:
+                # JSONDecodeError inherits from ValueError.
+                return [widget.copy() for widget in self.DEFAULT_WIDGETS]
+        return [widget.copy() for widget in self.DEFAULT_WIDGETS]
 
     async def save_custom_widgets(
         self, db: AsyncSession, organization_id: str, widgets: list[dict]
     ) -> dict:
         try:
-            await self.setting_repository.upsert(
-                db,
-                key=f"dashboard_custom_widgets:{organization_id}",
-                value=json.dumps(widgets),
-            )
-            await db.commit()
-            return {
-                "message": "Dashboard widget layout preferences saved to Database",
-                "status": "success",
-            }
-        except Exception as e:
-            await db.rollback()
-            raise APIException(status_code=status.HTTP_400_BAD_REQUEST, message=str(e)) from e
+            serialized_widgets = json.dumps(widgets)
+        except (TypeError, ValueError) as exc:
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                code="INVALID_WIDGET_PREFERENCES",
+                message="Dashboard widget preferences contain unsupported values.",
+            ) from exc
+
+        await self.setting_repository.upsert(
+            db,
+            key=f"dashboard_custom_widgets:{organization_id}",
+            value=serialized_widgets,
+        )
+        await db.commit()
+        return {
+            "message": "Dashboard widget layout preferences saved to Database",
+            "status": "success",
+        }
 
 
 dashboard_service = DashboardService()

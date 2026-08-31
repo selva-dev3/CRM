@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from pydantic import ValidationError
@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import APIException
 from app.repositories.dashboard_repository import DashboardRepository
 from app.repositories.setting_repository import SettingRepository
-from app.schemas.dashboard import CustomWidgetSaveRequest
+from app.schemas.dashboard import CustomWidgetSaveRequest, DashboardAiInsightsResponse
 from app.services.dashboard_service import DashboardService
 
 
@@ -104,6 +104,17 @@ async def test_get_custom_widgets_returns_defaults_when_unset():
 
 
 @pytest.mark.asyncio
+async def test_get_custom_widgets_returns_defaults_for_corrupt_json():
+    setting_repo = SettingRepository()
+    setting_repo.get_by_key = AsyncMock(return_value=SimpleNamespace(value="{not-json"))
+    service = _service_with(DashboardRepository(), setting_repo)
+
+    result = await service.get_custom_widgets(AsyncMock(spec=AsyncSession), "org-1")
+
+    assert result == DashboardService.DEFAULT_WIDGETS
+
+
+@pytest.mark.asyncio
 async def test_save_custom_widgets_persists_preferences():
     setting_repo = SettingRepository()
     setting_repo.upsert = AsyncMock()
@@ -118,6 +129,40 @@ async def test_save_custom_widgets_persists_preferences():
         key="dashboard_custom_widgets:org-1",
         value='[{"id": "w-kpis", "enabled": true}]',
     )
+
+
+@pytest.mark.asyncio
+async def test_save_custom_widgets_returns_generic_error_for_serialization_failure(monkeypatch):
+    setting_repo = SettingRepository()
+    setting_repo.upsert = AsyncMock()
+    service = _service_with(DashboardRepository(), setting_repo)
+
+    def fail_serialization(_widgets):
+        raise TypeError("internal serialization details")
+
+    monkeypatch.setattr("app.services.dashboard_service.json.dumps", fail_serialization)
+
+    with pytest.raises(APIException) as exc_info:
+        await service.save_custom_widgets(AsyncMock(spec=AsyncSession), "org-1", [])
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.code == "INVALID_WIDGET_PREFERENCES"
+    assert exc_info.value.message == "Dashboard widget preferences contain unsupported values."
+    assert "internal serialization details" not in exc_info.value.message
+    setting_repo.upsert.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_save_custom_widgets_does_not_mask_database_failure():
+    setting_repo = SettingRepository()
+    setting_repo.upsert = AsyncMock(side_effect=RuntimeError("database unavailable"))
+    service = _service_with(DashboardRepository(), setting_repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        await service.save_custom_widgets(db, "org-1", [])
+
+    db.rollback.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -174,6 +219,40 @@ async def test_get_recent_deals_uses_owner_name_and_updated_timestamp():
 
     assert result[0]["owner"] == "Grace Hopper"
     assert result[0]["updated_at"] == "2026-08-31"
+
+
+@pytest.mark.asyncio
+async def test_recent_deals_owner_join_excludes_inactive_users():
+    db = AsyncMock(spec=AsyncSession)
+    result = Mock()
+    result.all.return_value = []
+    db.execute.return_value = result
+
+    await DashboardRepository().recent_deals(db, "org-1")
+
+    query = str(db.execute.await_args.args[0])
+    assert "users.is_active IS true" in query
+
+
+@pytest.mark.asyncio
+async def test_ai_insight_includes_deal_identifier():
+    repo = DashboardRepository()
+    repo.count_leads = AsyncMock(return_value=1)
+    repo.count_deals_and_sum = AsyncMock(return_value=(1, 5000.0))
+    repo.top_deal = AsyncMock(
+        return_value=SimpleNamespace(
+            id="deal-1",
+            title="Enterprise renewal",
+            amount=5000.0,
+            stage="Negotiation",
+        )
+    )
+    service = _service_with(repo, SettingRepository())
+
+    result = await service.get_ai_insights(AsyncMock(spec=AsyncSession), "org-1")
+
+    assert result["insights"][0]["deal_id"] == "deal-1"
+    assert DashboardAiInsightsResponse.model_validate(result).insights[0].deal_id == "deal-1"
 
 
 @pytest.mark.asyncio

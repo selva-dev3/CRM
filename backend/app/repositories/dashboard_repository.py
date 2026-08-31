@@ -197,6 +197,7 @@ class DashboardRepository:
                 and_(
                     Deal.assigned_to == User.id,
                     User.organization_id == organization_id,
+                    User.is_active.is_(True),
                 ),
             )
             .where(Deal.organization_id == organization_id)

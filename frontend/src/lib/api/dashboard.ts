@@ -55,6 +55,7 @@ export interface AiInsightItem {
   description: string;
   type: 'high' | 'warning' | 'info';
   action?: string;
+  deal_id?: string;
 }
 
 export interface DashboardAiInsights {

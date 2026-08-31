@@ -81,6 +81,7 @@ export default function DashboardPage() {
 
   const { data: kpis } = kpisQuery;
   const salesFunnel = salesFunnelQuery.data ?? [];
+  const maxFunnelValue = Math.max(...salesFunnel.map((stage) => stage.value), 0);
   const topPerformers = topPerformersQuery.data ?? [];
   const leadConversions = leadConversionsQuery.data ?? [];
   const activities = activitiesQuery.data;
@@ -389,8 +390,9 @@ export default function DashboardPage() {
               <p className="py-12 text-center text-sm text-slate-600">No deals are available yet.</p>
             )}
             {salesFunnel.map((item) => {
-              const maxVal = Math.max(...salesFunnel.map((s) => s.value), 0);
-              const percentage = maxVal > 0 ? Math.round((item.value / maxVal) * 100) : 0;
+              const percentage = maxFunnelValue > 0
+                ? Math.round((item.value / maxFunnelValue) * 100)
+                : 0;
               return (
                 <div key={item.stage} className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs font-bold text-slate-800">
@@ -404,7 +406,7 @@ export default function DashboardPage() {
                       role="progressbar"
                       aria-label={`${item.stage} pipeline value`}
                       aria-valuemin={0}
-                      aria-valuemax={maxVal}
+                      aria-valuemax={maxFunnelValue}
                       aria-valuenow={item.value}
                     />
                   </div>
@@ -629,7 +631,7 @@ export default function DashboardPage() {
                   </div>
                   {item.action && (
                     <button 
-                      onClick={() => router.push('/deals')}
+                      onClick={() => router.push(item.deal_id ? `/deals/${item.deal_id}` : '/deals')}
                       className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold rounded-lg transition shrink-0"
                     >
                       {item.action}
