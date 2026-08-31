@@ -19,6 +19,8 @@ class DashboardKPIs(BaseModel):
     closed_deals_count: int = Field(ge=0)
     ai_lead_score_avg: float = Field(ge=0, le=100)
     scored_leads_count: int = Field(ge=0)
+    currency: str = Field(min_length=3, max_length=3)
+    locale: str = Field(min_length=2, max_length=20)
     recent_activity: list[RecentActivityResponse]
 
 

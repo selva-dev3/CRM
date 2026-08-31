@@ -58,6 +58,7 @@ class SettingsService:
         self, db: AsyncSession, current_user: User | None = None
     ) -> dict:
         org_name = "Enterprise Organization"
+        org = None
 
         if current_user and getattr(current_user, "organization_id", None):
             org = await organization_service.repository.get_by_id(db, current_user.organization_id)
@@ -69,7 +70,11 @@ class SettingsService:
             if org and org.name:
                 org_name = org.name
 
-        currency = await self._get_setting_value(db, "system_currency", "USD")
+        currency = (
+            org.currency
+            if org and org.currency
+            else await self._get_setting_value(db, "system_currency", "USD")
+        )
         timezone = await self._get_setting_value(db, "system_timezone", "UTC")
         smtp_enabled = await self._get_setting_value(db, "smtp_enabled", "true")
         ai_features_enabled = await self._get_setting_value(db, "ai_features_enabled", "true")
@@ -85,18 +90,20 @@ class SettingsService:
     async def update_system_settings(
         self, db: AsyncSession, payload: SystemSettings, current_user: User | None = None
     ) -> SystemSettings:
-        if current_user and getattr(current_user, "organization_id", None) and payload.organization_name:
+        org = None
+        if current_user and getattr(current_user, "organization_id", None):
             org = await organization_service.repository.get_by_id(db, current_user.organization_id)
-            if org:
-                org.name = payload.organization_name
-                await db.commit()
-        elif payload.organization_name:
+        else:
             org = await organization_service.repository.get_first(db)
-            if org:
-                org.name = payload.organization_name
-                await db.commit()
 
-        if payload.currency:
+        if org:
+            if payload.organization_name:
+                org.name = payload.organization_name
+            if payload.currency:
+                org.currency = payload.currency.upper()
+            await db.commit()
+
+        if payload.currency and not org:
             await self._set_setting_value(db, "system_currency", payload.currency)
         if payload.timezone:
             await self._set_setting_value(db, "system_timezone", payload.timezone)

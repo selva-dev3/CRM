@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -31,6 +32,58 @@ async def test_get_system_settings_returns_defaults(monkeypatch):
     assert result["timezone"] == "UTC"
     assert result["smtp_enabled"] is True
     assert result["ai_features_enabled"] is True
+
+
+@pytest.mark.asyncio
+async def test_get_system_settings_uses_authenticated_organization_currency(monkeypatch):
+    repo = SettingRepository()
+    repo.get_by_key = AsyncMock(return_value=None)
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    org = SimpleNamespace(name="Acme", currency="INR")
+    current_user = SimpleNamespace(organization_id="org-1")
+
+    from app.services.settings_service import organization_service
+
+    monkeypatch.setattr(organization_service.repository, "get_by_id", AsyncMock(return_value=org))
+
+    result = await service.get_system_settings(db, current_user)
+
+    assert result["organization_name"] == "Acme"
+    assert result["currency"] == "INR"
+
+
+@pytest.mark.asyncio
+async def test_update_system_settings_persists_currency_on_organization(monkeypatch):
+    repo = SettingRepository()
+    repo.upsert = AsyncMock()
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    org = SimpleNamespace(name="Acme", currency="USD")
+    current_user = SimpleNamespace(organization_id="org-1")
+
+    from app.services.settings_service import organization_service
+
+    monkeypatch.setattr(organization_service.repository, "get_by_id", AsyncMock(return_value=org))
+
+    from app.schemas.crm_schemas import SystemSettings
+
+    await service.update_system_settings(
+        db,
+        SystemSettings(
+            organization_name="Acme CRM",
+            currency="inr",
+            timezone="UTC",
+            smtp_enabled=True,
+            ai_features_enabled=True,
+        ),
+        current_user,
+    )
+
+    assert org.name == "Acme CRM"
+    assert org.currency == "INR"
+    db.commit.assert_awaited()
+    assert all(call.kwargs.get("key") != "system_currency" for call in repo.upsert.await_args_list)
 
 
 @pytest.mark.asyncio

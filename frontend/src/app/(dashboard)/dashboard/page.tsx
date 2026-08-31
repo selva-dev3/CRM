@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { 
@@ -68,6 +68,7 @@ export default function DashboardPage() {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [widgetPreferences, setWidgetPreferences] = useState<CustomWidget[] | null>(null);
+  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Queries fetching live data from backend APIs
   const kpisQuery = useDashboardKpisQuery();
@@ -89,7 +90,32 @@ export default function DashboardPage() {
   const aiInsights = aiInsightsQuery.data;
   const widgets = widgetsQuery.data ?? [];
 
+  const currencyFormatter = useMemo(() => {
+    if (!kpis) return null;
+    return new Intl.NumberFormat(kpis.locale, {
+      style: 'currency',
+      currency: kpis.currency,
+      maximumFractionDigits: 0,
+    });
+  }, [kpis]);
+
+  const formatCurrency = (value: number) => (
+    currencyFormatter?.format(value) ?? value.toLocaleString()
+  );
+
   const saveWidgetsMutation = useSaveCustomWidgetsMutation();
+
+  useEffect(() => () => {
+    if (successTimerRef.current) clearTimeout(successTimerRef.current);
+  }, []);
+
+  const dismissSuccessMessage = () => {
+    if (successTimerRef.current) {
+      clearTimeout(successTimerRef.current);
+      successTimerRef.current = null;
+    }
+    setSuccessMsg(null);
+  };
 
   const handleRefreshDashboard = async () => {
     await Promise.all([
@@ -110,7 +136,11 @@ export default function DashboardPage() {
       setErrorMsg(null);
       setSuccessMsg('Dashboard layout preferences saved.');
       setIsWidgetModalOpen(false);
-      setTimeout(() => setSuccessMsg(null), 3000);
+      if (successTimerRef.current) clearTimeout(successTimerRef.current);
+      successTimerRef.current = setTimeout(() => {
+        setSuccessMsg(null);
+        successTimerRef.current = null;
+      }, 3000);
     } catch {
       setSuccessMsg(null);
       setErrorMsg('Dashboard layout could not be saved. Please try again.');
@@ -130,7 +160,7 @@ export default function DashboardPage() {
     },
     {
       title: 'Pipeline Revenue',
-      value: `$${kpis.pipeline_revenue.toLocaleString(undefined, { minimumFractionDigits: 0 })}`,
+      value: formatCurrency(kpis.pipeline_revenue),
       context: 'Open opportunities',
       icon: DollarSign,
       badge: 'Open Pipeline',
@@ -190,7 +220,7 @@ export default function DashboardPage() {
           </div>
           <button
             type="button"
-            onClick={() => setSuccessMsg(null)}
+            onClick={dismissSuccessMessage}
             className="rounded p-1 text-emerald-700 hover:text-emerald-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
             aria-label="Dismiss success message"
           >
@@ -397,7 +427,7 @@ export default function DashboardPage() {
                 <div key={item.stage} className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs font-bold text-slate-800">
                     <span>{item.stage} ({item.count} deals)</span>
-                    <span className="text-indigo-700">${item.value ? item.value.toLocaleString() : '0'}</span>
+                    <span className="text-indigo-700">{formatCurrency(item.value)}</span>
                   </div>
                   <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
                     <div
@@ -524,7 +554,7 @@ export default function DashboardPage() {
                         </Link>
                       </td>
                       <td className="py-4 px-3 sm:px-6 font-bold text-emerald-700 tabular-nums">
-                        ${deal.amount ? deal.amount.toLocaleString() : '0'}
+                        {formatCurrency(deal.amount)}
                       </td>
                       <td className="py-4 px-3 sm:px-6">
                         <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">
@@ -581,7 +611,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
                 <div className="text-right font-extrabold text-emerald-700 text-xs">
-                  ${rep.revenue ? rep.revenue.toLocaleString() : '0'}
+                  {formatCurrency(rep.revenue)}
                 </div>
               </div>
             ))}

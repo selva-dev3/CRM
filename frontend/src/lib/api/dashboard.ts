@@ -10,7 +10,9 @@ export interface DashboardKPIs {
   closed_deals_count: number;
   ai_lead_score_avg: number;
   scored_leads_count: number;
-  recent_activity?: Array<{ action: string; title: string; user: string; timestamp: string }>;
+  currency: string;
+  locale: string;
+  recent_activity: Array<{ action: string; title: string; user: string; timestamp: string }>;
 }
 
 export interface FunnelStageItem {
@@ -75,12 +77,66 @@ export interface MessageResponse {
   status: string;
 }
 
+const KPI_NUMBER_FIELDS = [
+  'total_leads',
+  'deals_won_amount',
+  'pipeline_revenue',
+  'win_rate_percentage',
+  'won_deals_count',
+  'closed_deals_count',
+  'ai_lead_score_avg',
+  'scored_leads_count',
+] as const satisfies ReadonlyArray<keyof DashboardKPIs>;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+export function parseDashboardKpis(value: unknown): DashboardKPIs {
+  if (!isRecord(value)) {
+    throw new Error('Dashboard KPI response is invalid.');
+  }
+
+  const hasValidNumbers = KPI_NUMBER_FIELDS.every((field) => (
+    typeof value[field] === 'number' && Number.isFinite(value[field])
+  ));
+  const hasValidActivity = Array.isArray(value.recent_activity) && value.recent_activity.every(
+    (activity) => isRecord(activity)
+      && typeof activity.action === 'string'
+      && typeof activity.title === 'string'
+      && typeof activity.user === 'string'
+      && typeof activity.timestamp === 'string',
+  );
+
+  if (
+    !hasValidNumbers
+    || typeof value.currency !== 'string'
+    || value.currency.length !== 3
+    || typeof value.locale !== 'string'
+    || value.locale.length < 2
+    || !hasValidActivity
+  ) {
+    throw new Error('Dashboard KPI response is invalid.');
+  }
+
+  try {
+    new Intl.NumberFormat(value.locale, {
+      style: 'currency',
+      currency: value.currency,
+    }).format(0);
+  } catch {
+    throw new Error('Dashboard KPI response has invalid currency metadata.');
+  }
+
+  return value as unknown as DashboardKPIs;
+}
+
 // ---------------------------------------------------------------------------
 // API Client Functions
 // ---------------------------------------------------------------------------
 
 export async function fetchDashboardKpisApi(): Promise<DashboardKPIs> {
-  return apiClient.get<DashboardKPIs>('/dashboard/kpis');
+  return parseDashboardKpis(await apiClient.get<unknown>('/dashboard/kpis'));
 }
 
 export async function fetchSalesFunnelApi(): Promise<FunnelStageItem[]> {
@@ -121,7 +177,7 @@ export async function saveCustomWidgetsApi(widgets: CustomWidget[]): Promise<Mes
 
 export function useDashboardKpisQuery(options?: Omit<UseQueryOptions<DashboardKPIs>, 'queryKey' | 'queryFn'>) {
   return useQuery<DashboardKPIs>({
-    queryKey: ['dashboard', 'kpis'],
+    queryKey: ['dashboard', 'kpis', 'v2'],
     queryFn: fetchDashboardKpisApi,
     staleTime: 1000 * 60 * 5,
     ...options,
