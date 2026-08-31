@@ -53,6 +53,11 @@ export interface ResetPasswordPayload {
   new_password: string;
 }
 
+export interface ResetPasswordResponse {
+  message: string;
+  status: string;
+}
+
 export interface AcceptInvitePayload {
   token: string;
   name: string;
@@ -98,9 +103,10 @@ export async function forgotPasswordApi(payload: ForgotPasswordPayload): Promise
   });
 }
 
-export async function resetPasswordApi(payload: ResetPasswordPayload): Promise<{ message: string }> {
-  return apiClient<{ message: string }>(`/auth/reset-password?token=${payload.token}&new_password=${payload.new_password}`, {
+export async function resetPasswordApi(payload: ResetPasswordPayload): Promise<ResetPasswordResponse> {
+  return apiClient<ResetPasswordResponse>('/auth/reset-password', {
     method: 'POST',
+    body: JSON.stringify(payload),
   });
 }
 
@@ -135,6 +141,15 @@ export function useForgotPasswordMutation(
 ) {
   return useMutation<ForgotPasswordResponse, Error, ForgotPasswordPayload>({
     mutationFn: forgotPasswordApi,
+    ...options,
+  });
+}
+
+export function useResetPasswordMutation(
+  options?: UseMutationOptions<ResetPasswordResponse, Error, ResetPasswordPayload>
+) {
+  return useMutation<ResetPasswordResponse, Error, ResetPasswordPayload>({
+    mutationFn: resetPasswordApi,
     ...options,
   });
 }

@@ -1,8 +1,11 @@
 import logging
+from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.errors import APIException, NotFoundError
 from app.core.permissions import is_super_admin_role, is_super_admin_role_name
 from app.core.security import (
@@ -18,6 +21,7 @@ from app.schemas.crm_schemas import (
     ApiKeyCreate,
     LoginRequest,
     OAuthLoginRequest,
+    PasswordResetConfirmRequest,
     PasswordResetRequest,
     RegisterRequest,
     TwoFactorVerifyRequest,
@@ -219,20 +223,62 @@ class AuthService:
         }
 
     async def forgot_password(self, db: AsyncSession, payload: PasswordResetRequest) -> dict:
+        response = {
+            "message": "If an account exists for that email, a password reset link has been sent",
+            "status": "success",
+        }
         email_clean = payload.email.strip()
         user = await self.repository.get_user_by_email(db, email_clean)
         if not user:
-            raise NotFoundError(message="User with specified email not found")
+            return response
 
         reset_token = generate_random_code(14)
-        send_reset_password_email(email_to=user.email, token=reset_token, user_name=user.name)
-        return {"message": f"Password reset email sent to {payload.email}", "status": "success"}
+        token_digest = sha256(reset_token.encode("utf-8")).hexdigest()
+        expires_at = datetime.now(UTC) + timedelta(
+            minutes=settings.RESET_TOKEN_EXPIRE_MINUTES
+        )
 
-    async def reset_password(self, token: str, new_password: str) -> dict:
-        if not token or len(token) < 5:
+        await self.repository.invalidate_password_resets(db, user.id)
+        await self.repository.create_password_reset(
+            db,
+            user_id=user.id,
+            token_digest=token_digest,
+            expires_at=expires_at,
+        )
+        await self._commit(db, "Unable to create password reset request")
+
+        send_reset_password_email(email_to=user.email, token=reset_token, user_name=user.name)
+        return response
+
+    async def reset_password(
+        self,
+        db: AsyncSession,
+        payload: PasswordResetConfirmRequest,
+    ) -> dict:
+        token_digest = sha256(payload.token.strip().encode("utf-8")).hexdigest()
+        password_reset = await self.repository.get_active_password_reset(
+            db,
+            token_digest=token_digest,
+            now=datetime.now(UTC),
+        )
+        if not password_reset:
             raise APIException(
-                status_code=status.HTTP_400_BAD_REQUEST, message="Invalid or expired reset token"
+                status_code=status.HTTP_400_BAD_REQUEST,
+                code="INVALID_RESET_TOKEN",
+                message="This password reset link is invalid or has expired",
             )
+
+        user = await self.repository.get_user_by_id(db, password_reset.user_id)
+        if not user:
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                code="INVALID_RESET_TOKEN",
+                message="This password reset link is invalid or has expired",
+            )
+
+        await self.repository.set_user_password(user, get_password_hash(payload.new_password))
+        await self.repository.mark_password_reset_used(password_reset)
+        await self._commit(db, "Unable to update password")
         return {"message": "Password updated successfully", "status": "success"}
 
     async def change_password(self) -> dict:

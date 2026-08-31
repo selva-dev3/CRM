@@ -1,11 +1,13 @@
+from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     ApiKey,
     Organization,
+    PasswordReset,
     Permission,
     Role,
     RolePermission,
@@ -31,6 +33,56 @@ class AuthRepository:
         user = User(**data)
         db.add(user)
         return user
+
+    async def get_user_by_id(self, db: AsyncSession, user_id: str) -> Optional[User]:
+        return await db.get(User, user_id)
+
+    async def invalidate_password_resets(self, db: AsyncSession, user_id: str) -> None:
+        await db.execute(
+            update(PasswordReset)
+            .where(PasswordReset.user_id == user_id, PasswordReset.is_used.is_(False))
+            .values(is_used=True)
+        )
+
+    async def create_password_reset(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: str,
+        token_digest: str,
+        expires_at: datetime,
+    ) -> PasswordReset:
+        password_reset = PasswordReset(
+            user_id=user_id,
+            token=token_digest,
+            expires_at=expires_at,
+        )
+        db.add(password_reset)
+        return password_reset
+
+    async def get_active_password_reset(
+        self,
+        db: AsyncSession,
+        *,
+        token_digest: str,
+        now: datetime,
+    ) -> Optional[PasswordReset]:
+        result = await db.execute(
+            select(PasswordReset)
+            .where(
+                PasswordReset.token == token_digest,
+                PasswordReset.is_used.is_(False),
+                PasswordReset.expires_at > now,
+            )
+            .with_for_update()
+        )
+        return result.scalars().first()
+
+    async def set_user_password(self, user: User, hashed_password: str) -> None:
+        user.hashed_password = hashed_password
+
+    async def mark_password_reset_used(self, password_reset: PasswordReset) -> None:
+        password_reset.is_used = True
 
     async def get_first_org(self, db: AsyncSession) -> Optional[Organization]:
         result = await db.execute(select(Organization).limit(1))

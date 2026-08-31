@@ -15,8 +15,7 @@ import {
   Mail,
   User,
   Building2,
-  Loader2,
-  Globe
+  Loader2
 } from 'lucide-react';
 
 export default function RegisterPage() {
@@ -40,7 +39,7 @@ export default function RegisterPage() {
         router.push('/login');
       }, 1200);
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       setError(err.message || 'Registration failed. An account with this email may already exist.');
     },
   });
@@ -88,7 +87,7 @@ export default function RegisterPage() {
           Create your account
         </h2>
         <p className="text-xs text-slate-500">
-          Start your 14-day free trial. No credit card required.
+          Create your organization workspace and administrator account.
         </p>
       </div>
 
@@ -255,25 +254,17 @@ export default function RegisterPage() {
         >
           {registerMutation.isPending ? (
             <>
-              <Loader2 className="w-4 h-4 animate-spin mr-2" />
-              <span>Creating Account...</span>
+              <Loader2 className="w-4 h-4 animate-spin mr-2 text-white" />
+              <span className="text-white">Creating Account...</span>
             </>
           ) : (
             <>
-              <span>Create Account</span>
-              <ArrowRight className="w-4 h-4 ml-2" />
+              <span className="text-white">Create Account</span>
+              <ArrowRight className="w-4 h-4 ml-2 text-white" />
             </>
           )}
         </Button>
       </form>
-
-      {/* Backend API Indicator */}
-      <div className="pt-2 text-center">
-        <span className="inline-flex items-center space-x-1.5 text-[11px] text-slate-500">
-          <Globe className="w-3 h-3 text-emerald-600 animate-pulse" />
-          <span>Connected to Railway Production API: <code className="text-slate-700 font-mono">crm-dev3.up.railway.app</code></span>
-        </span>
-      </div>
 
       {/* Login Redirect Footer */}
       <div className="text-center text-xs text-slate-500 pt-4 border-t border-slate-100">

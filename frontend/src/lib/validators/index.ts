@@ -1,9 +1,27 @@
 import { z } from 'zod';
 
 export const loginSchema = z.object({
-  email: z.string().email('Invalid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  email: z.string().trim().min(1, 'Work email is required').email('Enter a valid email address'),
+  password: z.string().min(1, 'Password is required'),
+  rememberMe: z.boolean(),
 });
+
+export const forgotPasswordSchema = z.object({
+  email: z.string().trim().min(1, 'Work email is required').email('Enter a valid email address'),
+});
+
+export const resetPasswordSchema = z
+  .object({
+    newPassword: z
+      .string()
+      .min(8, 'Password must be at least 8 characters')
+      .max(72, 'Password must be 72 characters or fewer'),
+    confirmPassword: z.string().min(1, 'Confirm your new password'),
+  })
+  .refine((values) => values.newPassword === values.confirmPassword, {
+    message: 'Passwords do not match',
+    path: ['confirmPassword'],
+  });
 
 export const registerSchema = z.object({
   name: z.string().min(2, 'Name is required'),

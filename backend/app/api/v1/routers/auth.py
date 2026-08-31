@@ -14,6 +14,7 @@ from app.schemas.crm_schemas import (
     MessageResponse,
     OAuthLoginRequest,
     PasswordChangeRequest,
+    PasswordResetConfirmRequest,
     PasswordResetRequest,
     RegisterRequest,
     Token,
@@ -66,9 +67,16 @@ async def forgot_password(payload: PasswordResetRequest, db: AsyncSession = Depe
     return await auth_service.forgot_password(db, payload)
 
 
-@router.post("/reset-password", response_model=MessageResponse, summary="Reset password using 14-char token")
-async def reset_password(token: str, new_password: str, db: AsyncSession = Depends(get_db)):
-    return await auth_service.reset_password(token, new_password)
+@router.post(
+    "/reset-password",
+    response_model=MessageResponse,
+    summary="Reset password using a single-use token",
+)
+async def reset_password(
+    payload: PasswordResetConfirmRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    return await auth_service.reset_password(db, payload)
 
 
 @router.post("/change-password", response_model=MessageResponse, summary="Change current user password")

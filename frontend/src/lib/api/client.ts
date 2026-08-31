@@ -14,7 +14,11 @@ export function setSessionToken(token: string, remember: boolean = true): void {
   if (remember) {
     localStorage.setItem('token', token);
     document.cookie = `token=${token}; path=/; max-age=86400; SameSite=Lax`;
+    return;
   }
+
+  localStorage.removeItem('token');
+  document.cookie = 'token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
 }
 
 export function clearSessionToken(): void {
@@ -30,8 +34,8 @@ export function clearSessionToken(): void {
 export interface ApiClient {
   <T>(endpoint: string, options?: RequestInit): Promise<T>;
   get<T>(endpoint: string, options?: RequestInit): Promise<T>;
-  post<T>(endpoint: string, data?: any, options?: RequestInit): Promise<T>;
-  put<T>(endpoint: string, data?: any, options?: RequestInit): Promise<T>;
+  post<T>(endpoint: string, data?: unknown, options?: RequestInit): Promise<T>;
+  put<T>(endpoint: string, data?: unknown, options?: RequestInit): Promise<T>;
   delete<T>(endpoint: string, options?: RequestInit): Promise<T>;
 }
 
@@ -79,7 +83,7 @@ mainClient.get = function <T>(endpoint: string, options: RequestInit = {}): Prom
   return mainClient<T>(endpoint, { ...options, method: 'GET' });
 };
 
-mainClient.post = function <T>(endpoint: string, data?: any, options: RequestInit = {}): Promise<T> {
+mainClient.post = function <T>(endpoint: string, data?: unknown, options: RequestInit = {}): Promise<T> {
   const isFormData = typeof FormData !== 'undefined' && data instanceof FormData;
   return mainClient<T>(endpoint, {
     ...options,
@@ -88,7 +92,7 @@ mainClient.post = function <T>(endpoint: string, data?: any, options: RequestIni
   });
 };
 
-mainClient.put = function <T>(endpoint: string, data?: any, options: RequestInit = {}): Promise<T> {
+mainClient.put = function <T>(endpoint: string, data?: unknown, options: RequestInit = {}): Promise<T> {
   const isFormData = typeof FormData !== 'undefined' && data instanceof FormData;
   return mainClient<T>(endpoint, {
     ...options,

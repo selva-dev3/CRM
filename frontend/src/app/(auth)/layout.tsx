@@ -5,7 +5,7 @@ import { ShieldCheck, Sparkles, TrendingUp, Users, Zap } from 'lucide-react';
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen grid grid-cols-1 lg:grid-cols-12 bg-slate-50 text-slate-900 font-sans selection:bg-indigo-500 selection:text-white">
-      {/* Left Decorative Feature Panel (Salesforce/HubSpot Light Enterprise Theme) */}
+      {/* Left product panel */}
       <div className="hidden lg:flex lg:col-span-6 xl:col-span-7 relative flex-col justify-between p-12 bg-gradient-to-br from-indigo-900 via-indigo-950 to-slate-900 text-white overflow-hidden shadow-xl">
         {/* Background Ambient Glowing Orbs */}
         <div className="absolute -top-24 -left-24 w-96 h-96 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
@@ -24,7 +24,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
                 Enterprise CRM
               </span>
               <span className="text-[10px] tracking-wider uppercase font-semibold text-indigo-200">
-                Salesforce & HubSpot Style
+                Revenue intelligence workspace
               </span>
             </div>
           </Link>
@@ -34,15 +34,15 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         <div className="relative z-10 max-w-lg my-auto py-12">
           <div className="inline-flex items-center space-x-2 px-3 py-1.5 rounded-full bg-white/10 border border-white/20 text-indigo-100 text-xs font-medium mb-6 backdrop-blur-md">
             <Sparkles className="w-3.5 h-3.5 text-indigo-300" />
-            <span>Light Neutral Professional Design</span>
+            <span>Built for focused revenue teams</span>
           </div>
 
-          <h1 className="text-4xl xl:text-5xl font-black tracking-tight text-white leading-tight mb-6">
+          <p className="text-4xl xl:text-5xl font-black tracking-tight text-white leading-tight mb-6">
             Accelerate Deals & Close More Revenue with <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-200 via-white to-purple-200">Precision AI</span>
-          </h1>
+          </p>
 
           <p className="text-indigo-100/80 text-base leading-relaxed mb-8">
-            Designed for 8+ hours daily high-productivity use. Low eye-strain light neutral interface inspired by Salesforce & HubSpot.
+            Keep customer context, pipeline activity, and team workflows together in one secure workspace.
           </p>
 
           {/* Feature Highlights Grid */}
@@ -51,34 +51,42 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
               <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-indigo-200 mb-3">
                 <TrendingUp className="w-4 h-4" />
               </div>
-              <h4 className="text-sm font-semibold text-white">99.4% Win Rate AI</h4>
-              <p className="text-xs text-indigo-200/80 mt-1">Predictive lead scoring & conversion insights</p>
+              <h4 className="text-sm font-semibold text-white">AI-assisted insights</h4>
+              <p className="text-xs text-indigo-200/80 mt-1">Prioritize opportunities with clearer sales signals</p>
             </div>
 
             <div className="p-4 rounded-2xl bg-white/10 border border-white/15 backdrop-blur-sm">
               <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-indigo-200 mb-3">
                 <Users className="w-4 h-4" />
               </div>
-              <h4 className="text-sm font-semibold text-white">Multi-Tenant CRM</h4>
-              <p className="text-xs text-indigo-200/80 mt-1">Role-based access & organization routing</p>
+              <h4 className="text-sm font-semibold text-white">Multi-tenant controls</h4>
+              <p className="text-xs text-indigo-200/80 mt-1">Organize teams with role-based workspace access</p>
             </div>
           </div>
         </div>
 
-        {/* Bottom Footer Trust Badge */}
+        {/* Bottom security context */}
         <div className="relative z-10 pt-6 border-t border-white/10 flex items-center justify-between text-xs text-indigo-200/80">
           <div className="flex items-center space-x-2">
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <span>256-Bit SSL Encrypted & SOC2 Compliant</span>
+            <span>Secure account access</span>
           </div>
-          <span>API Connected: <code className="text-white font-mono">crm-dev3.up.railway.app</code></span>
+          <span>Role-based workspace protection</span>
         </div>
       </div>
 
       {/* Right Form Container */}
-      <div className="lg:col-span-6 xl:col-span-5 flex items-center justify-center p-6 sm:p-12 relative bg-slate-50">
-        <div className="w-full max-w-md space-y-8 bg-white p-4 sm:p-8 rounded-2xl border border-slate-200 shadow-xl shadow-slate-200/50">
-          {children}
+      <div className="lg:col-span-6 xl:col-span-5 flex items-center justify-center p-4 py-8 sm:p-12 relative bg-slate-50">
+        <div className="w-full max-w-md space-y-5">
+          <Link href="/" className="inline-flex items-center gap-2.5 lg:hidden">
+            <span className="flex size-10 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm">
+              <Zap className="size-5" aria-hidden="true" />
+            </span>
+            <span className="text-lg font-extrabold tracking-tight text-slate-900">Enterprise CRM</span>
+          </Link>
+          <div className="w-full space-y-8 bg-white p-5 sm:p-8 rounded-2xl border border-slate-200 shadow-xl shadow-slate-200/50">
+            {children}
+          </div>
         </div>
       </div>
     </div>
