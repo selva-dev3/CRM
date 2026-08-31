@@ -1,19 +1,14 @@
 ﻿import { useQuery, useMutation, UseQueryOptions } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import {
+  dashboardKpisSchema,
+  type DashboardKpisDto,
+} from '@/lib/validators/dashboard';
 
-export interface DashboardKPIs {
-  total_leads: number;
-  deals_won_amount: number;
-  pipeline_revenue: number;
-  win_rate_percentage: number;
-  won_deals_count: number;
-  closed_deals_count: number;
-  ai_lead_score_avg: number;
-  scored_leads_count: number;
-  currency: string;
-  locale: string;
-  recent_activity: Array<{ action: string; title: string; user: string; timestamp: string }>;
-}
+export type DashboardKPIs = DashboardKpisDto;
+
+export const DEFAULT_DASHBOARD_CURRENCY = 'INR';
+export const DEFAULT_DASHBOARD_LOCALE = 'en-IN';
 
 export interface FunnelStageItem {
   stage: string;
@@ -77,58 +72,21 @@ export interface MessageResponse {
   status: string;
 }
 
-const KPI_NUMBER_FIELDS = [
-  'total_leads',
-  'deals_won_amount',
-  'pipeline_revenue',
-  'win_rate_percentage',
-  'won_deals_count',
-  'closed_deals_count',
-  'ai_lead_score_avg',
-  'scored_leads_count',
-] as const satisfies ReadonlyArray<keyof DashboardKPIs>;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
 export function parseDashboardKpis(value: unknown): DashboardKPIs {
-  if (!isRecord(value)) {
+  const result = dashboardKpisSchema.safeParse(value);
+  if (!result.success) {
+    const hasCurrencyMetadataIssue = result.error.issues.some(
+      (issue) => issue.path[0] === 'currency' || issue.path[0] === 'locale',
+    );
+    const hasOtherIssue = result.error.issues.some(
+      (issue) => issue.path[0] !== 'currency' && issue.path[0] !== 'locale',
+    );
+    if (hasCurrencyMetadataIssue && !hasOtherIssue) {
+      throw new Error('Dashboard KPI response has invalid currency metadata.');
+    }
     throw new Error('Dashboard KPI response is invalid.');
   }
-
-  const hasValidNumbers = KPI_NUMBER_FIELDS.every((field) => (
-    typeof value[field] === 'number' && Number.isFinite(value[field])
-  ));
-  const hasValidActivity = Array.isArray(value.recent_activity) && value.recent_activity.every(
-    (activity) => isRecord(activity)
-      && typeof activity.action === 'string'
-      && typeof activity.title === 'string'
-      && typeof activity.user === 'string'
-      && typeof activity.timestamp === 'string',
-  );
-
-  if (
-    !hasValidNumbers
-    || typeof value.currency !== 'string'
-    || value.currency.length !== 3
-    || typeof value.locale !== 'string'
-    || value.locale.length < 2
-    || !hasValidActivity
-  ) {
-    throw new Error('Dashboard KPI response is invalid.');
-  }
-
-  try {
-    new Intl.NumberFormat(value.locale, {
-      style: 'currency',
-      currency: value.currency,
-    }).format(0);
-  } catch {
-    throw new Error('Dashboard KPI response has invalid currency metadata.');
-  }
-
-  return value as unknown as DashboardKPIs;
+  return result.data;
 }
 
 // ---------------------------------------------------------------------------

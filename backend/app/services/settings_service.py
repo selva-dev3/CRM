@@ -6,6 +6,7 @@ from fastapi import status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.currency import normalize_currency_code_or_default
 from app.core.errors import APIException
 from app.core.security import get_password_hash
 from app.models import Organization, User
@@ -70,10 +71,13 @@ class SettingsService:
             if org and org.name:
                 org_name = org.name
 
-        currency = (
+        stored_currency = (
             org.currency
             if org and org.currency
             else await self._get_setting_value(db, "system_currency", "USD")
+        )
+        currency = normalize_currency_code_or_default(
+            stored_currency, default="INR" if org else "USD"
         )
         timezone = await self._get_setting_value(db, "system_timezone", "UTC")
         smtp_enabled = await self._get_setting_value(db, "smtp_enabled", "true")
@@ -103,8 +107,6 @@ class SettingsService:
                 org.currency = payload.currency.upper()
             await db.commit()
 
-        if payload.currency and not org:
-            await self._set_setting_value(db, "system_currency", payload.currency)
         if payload.timezone:
             await self._set_setting_value(db, "system_timezone", payload.timezone)
 

@@ -158,7 +158,7 @@ async def test_save_custom_widgets_returns_generic_error_for_serialization_failu
 
 
 @pytest.mark.asyncio
-async def test_save_custom_widgets_does_not_mask_database_failure():
+async def test_save_custom_widgets_rolls_back_upsert_failure():
     setting_repo = SettingRepository()
     setting_repo.upsert = AsyncMock(side_effect=RuntimeError("database unavailable"))
     service = _service_with(DashboardRepository(), setting_repo)
@@ -167,7 +167,22 @@ async def test_save_custom_widgets_does_not_mask_database_failure():
     with pytest.raises(RuntimeError, match="database unavailable"):
         await service.save_custom_widgets(db, "org-1", [])
 
-    db.rollback.assert_not_awaited()
+    db.rollback.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_save_custom_widgets_rolls_back_commit_failure():
+    setting_repo = SettingRepository()
+    setting_repo.upsert = AsyncMock()
+    service = _service_with(DashboardRepository(), setting_repo)
+    db = AsyncMock(spec=AsyncSession)
+    db.commit.side_effect = RuntimeError("commit failed")
+
+    with pytest.raises(RuntimeError, match="commit failed"):
+        await service.save_custom_widgets(db, "org-1", [])
+
+    setting_repo.upsert.assert_awaited_once()
+    db.rollback.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -253,6 +268,20 @@ async def test_organization_currency_locale_is_normalized():
 
     assert currency == "USD"
     assert locale == "en-US"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stored_currency", ["$", "US Dollar", "   ", "USDX", None])
+async def test_organization_currency_locale_falls_back_for_invalid_currency(stored_currency):
+    db = AsyncMock(spec=AsyncSession)
+    result = Mock()
+    result.first.return_value = (stored_currency, "en-IN")
+    db.execute.return_value = result
+
+    currency, locale = await DashboardRepository().get_organization_currency_locale(db, "org-1")
+
+    assert currency == "INR"
+    assert locale == "en-IN"
 
 
 @pytest.mark.asyncio

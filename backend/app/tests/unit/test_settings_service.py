@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException
@@ -54,6 +55,24 @@ async def test_get_system_settings_uses_authenticated_organization_currency(monk
 
 
 @pytest.mark.asyncio
+async def test_get_system_settings_falls_back_for_invalid_organization_currency(monkeypatch):
+    repo = SettingRepository()
+    repo.get_by_key = AsyncMock(return_value=None)
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    org = SimpleNamespace(name="Acme", currency="US Dollar")
+    current_user = SimpleNamespace(organization_id="org-1")
+
+    from app.services.settings_service import organization_service
+
+    monkeypatch.setattr(organization_service.repository, "get_by_id", AsyncMock(return_value=org))
+
+    result = await service.get_system_settings(db, current_user)
+
+    assert result["currency"] == "INR"
+
+
+@pytest.mark.asyncio
 async def test_update_system_settings_persists_currency_on_organization(monkeypatch):
     repo = SettingRepository()
     repo.upsert = AsyncMock()
@@ -84,6 +103,47 @@ async def test_update_system_settings_persists_currency_on_organization(monkeypa
     assert org.currency == "INR"
     db.commit.assert_awaited()
     assert all(call.kwargs.get("key") != "system_currency" for call in repo.upsert.await_args_list)
+
+
+@pytest.mark.asyncio
+async def test_update_system_settings_does_not_write_legacy_currency_without_organization(
+    monkeypatch,
+):
+    repo = SettingRepository()
+    repo.upsert = AsyncMock()
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.schemas.crm_schemas import SystemSettings
+    from app.services.settings_service import organization_service
+
+    monkeypatch.setattr(organization_service.repository, "get_first", AsyncMock(return_value=None))
+
+    await service.update_system_settings(
+        db,
+        SystemSettings(
+            organization_name="Acme CRM",
+            currency="INR",
+            timezone="UTC",
+            smtp_enabled=True,
+            ai_features_enabled=True,
+        ),
+        None,
+    )
+
+    assert all(call.kwargs.get("key") != "system_currency" for call in repo.upsert.await_args_list)
+
+
+@pytest.mark.parametrize("currency", ["$", "US Dollar", "   ", "USDX"])
+def test_system_settings_rejects_invalid_currency(currency):
+    from app.schemas.crm_schemas import OrganizationCreate, OrganizationUpdate, SystemSettings
+
+    with pytest.raises(ValidationError):
+        SystemSettings(organization_name="Acme", currency=currency)
+    with pytest.raises(ValidationError):
+        OrganizationCreate(name="Acme", currency=currency)
+    with pytest.raises(ValidationError):
+        OrganizationUpdate(currency=currency)
 
 
 @pytest.mark.asyncio

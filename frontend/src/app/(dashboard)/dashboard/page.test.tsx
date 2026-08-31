@@ -30,6 +30,8 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('@/lib/api/dashboard', () => ({
+  DEFAULT_DASHBOARD_CURRENCY: 'INR',
+  DEFAULT_DASHBOARD_LOCALE: 'en-IN',
   useDashboardKpisQuery: () => mocks.kpis(),
   useSalesFunnelQuery: () => mocks.funnel(),
   useTopPerformersQuery: () => mocks.performers(),
@@ -131,6 +133,14 @@ describe('DashboardPage', () => {
     render(<DashboardPage />);
 
     expect(screen.getByText('₹1,200')).toBeInTheDocument();
+    expect(screen.getByText('₹5,000')).toBeInTheDocument();
+  });
+
+  it('keeps amounts currency-formatted while KPI metadata is loading', () => {
+    mocks.kpis.mockReturnValue(queryResult(undefined, { isLoading: true }));
+
+    render(<DashboardPage />);
+
     expect(screen.getByText('₹5,000')).toBeInTheDocument();
   });
 

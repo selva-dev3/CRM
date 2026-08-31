@@ -32,6 +32,12 @@ describe('dashboard KPI response validation', () => {
     expect(() => parseDashboardKpis(legacyKpis)).toThrow('Dashboard KPI response is invalid.');
   });
 
+  it('rejects an unknown three-letter currency code', () => {
+    expect(() => parseDashboardKpis({ ...validKpis, currency: 'XYZ' })).toThrow(
+      'Dashboard KPI response has invalid currency metadata.',
+    );
+  });
+
   it('turns an invalid API payload into a rejected query result', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,

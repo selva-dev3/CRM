@@ -35,6 +35,8 @@ import {
   useDashboardAiInsightsQuery,
   useCustomWidgetsQuery,
   useSaveCustomWidgetsMutation,
+  DEFAULT_DASHBOARD_CURRENCY,
+  DEFAULT_DASHBOARD_LOCALE,
   type CustomWidget
 } from '@/lib/api/dashboard';
 
@@ -91,17 +93,14 @@ export default function DashboardPage() {
   const widgets = widgetsQuery.data ?? [];
 
   const currencyFormatter = useMemo(() => {
-    if (!kpis) return null;
-    return new Intl.NumberFormat(kpis.locale, {
+    return new Intl.NumberFormat(kpis?.locale ?? DEFAULT_DASHBOARD_LOCALE, {
       style: 'currency',
-      currency: kpis.currency,
+      currency: kpis?.currency ?? DEFAULT_DASHBOARD_CURRENCY,
       maximumFractionDigits: 0,
     });
   }, [kpis]);
 
-  const formatCurrency = (value: number) => (
-    currencyFormatter?.format(value) ?? value.toLocaleString()
-  );
+  const formatCurrency = (value: number) => currencyFormatter.format(value);
 
   const saveWidgetsMutation = useSaveCustomWidgetsMutation();
 

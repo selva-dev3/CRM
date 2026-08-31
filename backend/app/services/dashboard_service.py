@@ -250,12 +250,16 @@ class DashboardService:
                 message="Dashboard widget preferences contain unsupported values.",
             ) from exc
 
-        await self.setting_repository.upsert(
-            db,
-            key=f"dashboard_custom_widgets:{organization_id}",
-            value=serialized_widgets,
-        )
-        await db.commit()
+        try:
+            await self.setting_repository.upsert(
+                db,
+                key=f"dashboard_custom_widgets:{organization_id}",
+                value=serialized_widgets,
+            )
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            raise
         return {
             "message": "Dashboard widget layout preferences saved to Database",
             "status": "success",

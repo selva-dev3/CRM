@@ -1,6 +1,8 @@
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
+from app.core.currency import normalize_currency_code
 
 
 # Common Pagination & Generic Schemas
@@ -225,7 +227,10 @@ class OrganizationBase(BaseModel):
     max_users: Optional[int] = 100
 
 class OrganizationCreate(OrganizationBase):
-    pass
+    @field_validator("currency", mode="before")
+    @classmethod
+    def validate_currency(cls, value: object) -> str | None:
+        return None if value is None else normalize_currency_code(value)
 
 class OrganizationUpdate(BaseModel):
     name: Optional[str] = None
@@ -251,6 +256,11 @@ class OrganizationUpdate(BaseModel):
     domain: Optional[str] = None
     plan: Optional[str] = None
     max_users: Optional[int] = None
+
+    @field_validator("currency", mode="before")
+    @classmethod
+    def validate_currency(cls, value: object) -> str | None:
+        return None if value is None else normalize_currency_code(value)
 
 class OrganizationResponse(OrganizationBase):
     id: str
@@ -709,3 +719,8 @@ class SystemSettings(BaseModel):
     timezone: str = "UTC"
     smtp_enabled: bool = True
     ai_features_enabled: bool = True
+
+    @field_validator("currency", mode="before")
+    @classmethod
+    def validate_currency(cls, value: object) -> str:
+        return normalize_currency_code(value)
