@@ -1,13 +1,16 @@
+from typing import Literal, Optional
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Optional
+
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Enterprise CRM API"
     API_V1_STR: str = "/api/v1"
     SECRET_KEY: str = "secret-key-for-jwt-token-hashing"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8 # 8 days
-    
+    AUTH_COOKIE_NAME: str = "token"
+
     # Database
     POSTGRES_SERVER: Optional[str] = None
     POSTGRES_USER: Optional[str] = None
@@ -78,6 +81,17 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+
+    @property
+    def auth_cookie_secure(self) -> bool:
+        return self.ENVIRONMENT.lower() not in {"development", "test"}
+
+    @property
+    def auth_cookie_samesite(self) -> Literal["lax", "none"]:
+        # The deployed frontend and API use different sites, which requires
+        # SameSite=None. Local HTTP development uses Lax because Secure cookies
+        # are intentionally unavailable there.
+        return "none" if self.auth_cookie_secure else "lax"
 
     model_config = SettingsConfigDict(
         case_sensitive=True,

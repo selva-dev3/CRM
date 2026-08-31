@@ -1,13 +1,20 @@
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock
+from datetime import datetime, timedelta, timezone
+from hashlib import sha256
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, NotFoundError
-from app.models import User, UserInvitation
+from app.models import PasswordReset, User, UserInvitation
 from app.repositories.auth_repository import AuthRepository
-from app.schemas.crm_schemas import LoginRequest, RegisterRequest, TwoFactorVerifyRequest
+from app.schemas.crm_schemas import (
+    LoginRequest,
+    PasswordResetConfirmRequest,
+    PasswordResetRequest,
+    RegisterRequest,
+    TwoFactorVerifyRequest,
+)
 from app.services.auth_service import AuthService
 
 
@@ -86,6 +93,64 @@ async def test_login_rejects_bad_password():
 
 
 @pytest.mark.asyncio
+async def test_login_never_accepts_plaintext_password_storage(monkeypatch):
+    user = _make_user(hashed_password="secret")
+    repo = AuthRepository()
+    repo.get_user_by_email = AsyncMock(return_value=user)
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    verifier = Mock(return_value=False)
+    monkeypatch.setattr("app.services.auth_service.verify_password", verifier)
+
+    with pytest.raises(APIException) as exc_info:
+        await service.login(
+            db, LoginRequest(email="alex@crm.com", password="secret")
+        )
+
+    assert exc_info.value.status_code == 401
+    verifier.assert_called_once_with("secret", "secret")
+
+
+@pytest.mark.asyncio
+async def test_login_logs_password_verification_failure(monkeypatch, caplog):
+    user = _make_user(hashed_password="malformed-hash")
+    repo = AuthRepository()
+    repo.get_user_by_email = AsyncMock(return_value=user)
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    def raise_verification_error(*_args):
+        raise ValueError("Invalid salt")
+
+    monkeypatch.setattr(
+        "app.services.auth_service.verify_password", raise_verification_error
+    )
+
+    with caplog.at_level("ERROR"), pytest.raises(APIException):
+        await service.login(
+            db, LoginRequest(email="alex@crm.com", password="secret")
+        )
+
+    assert "Password verification failed for user user-1" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_login_rejects_user_without_password_hash():
+    user = _make_user(hashed_password=None)
+    repo = AuthRepository()
+    repo.get_user_by_email = AsyncMock(return_value=user)
+    service = _service_with(repo)
+
+    with pytest.raises(APIException) as exc_info:
+        await service.login(
+            AsyncMock(spec=AsyncSession),
+            LoginRequest(email="alex@crm.com", password="secret"),
+        )
+
+    assert exc_info.value.status_code == 401
+
+
+@pytest.mark.asyncio
 async def test_login_raises_when_user_missing():
     repo = AuthRepository()
     repo.get_user_by_email = AsyncMock(return_value=None)
@@ -139,12 +204,90 @@ async def test_register_creates_org_and_user(monkeypatch):
 
     monkeypatch.setattr("app.services.auth_service.get_password_hash", lambda pwd: f"h-{pwd}")
 
-    result = await service.register(db, RegisterRequest(name="Alex", email="a@crm.com", password="secret", organization_name="Acme"))
+    result = await service.register(db, RegisterRequest(name="Alex", email="a@crm.com", password="password123", organization_name="Acme"))
 
     assert result["user_id"] == "user-1"
     assert result["org_id"] == "org-9"
-    created = repo.create_user.await_args.kwargs["data"]
-    assert created["hashed_password"] == "h-secret"
+    create_user_call = repo.create_user.await_args
+    assert create_user_call is not None
+    created = create_user_call.kwargs["data"]
+    assert created["hashed_password"] == "h-password123"
+
+
+@pytest.mark.asyncio
+async def test_register_rolls_back_when_password_hashing_fails(monkeypatch):
+    org = type("O", (), {"id": "org-9"})()
+    repo = AuthRepository()
+    repo.get_user_by_email = AsyncMock(return_value=None)
+    repo.create_org = AsyncMock(return_value=org)
+    repo.create_user = AsyncMock()
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    def raise_hashing_error(_password):
+        raise RuntimeError("bcrypt unavailable")
+
+    monkeypatch.setattr(
+        "app.services.auth_service.get_password_hash", raise_hashing_error
+    )
+
+    with pytest.raises(APIException) as exc_info:
+        await service.register(
+            db,
+            RegisterRequest(
+                name="Alex",
+                email="a@crm.com",
+                password="password123",
+                organization_name="Acme",
+            ),
+        )
+
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.code == "PASSWORD_HASHING_FAILED"
+    repo.create_user.assert_not_awaited()
+    db.rollback.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_change_password_verifies_hashes_and_commits(monkeypatch):
+    user = _make_user(hashed_password="old-hash")
+    repo = AuthRepository()
+    repo.set_user_password = AsyncMock()
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    verifier = Mock(return_value=True)
+    monkeypatch.setattr("app.services.auth_service.verify_password", verifier)
+    monkeypatch.setattr(
+        "app.services.auth_service.get_password_hash", lambda value: "new-hash"
+    )
+
+    result = await service.change_password(
+        db, user, "old-password", "new-password"
+    )
+
+    verifier.assert_called_once_with("old-password", "old-hash")
+    repo.set_user_password.assert_awaited_once_with(user, "new-hash")
+    db.commit.assert_awaited_once()
+    assert result["status"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_change_password_rejects_incorrect_current_password(monkeypatch):
+    user = _make_user(hashed_password="old-hash")
+    repo = AuthRepository()
+    repo.set_user_password = AsyncMock()
+    service = _service_with(repo)
+    monkeypatch.setattr(
+        "app.services.auth_service.verify_password", lambda *_args: False
+    )
+
+    with pytest.raises(APIException) as exc_info:
+        await service.change_password(
+            AsyncMock(spec=AsyncSession), user, "wrong-password", "new-password"
+        )
+
+    assert exc_info.value.code == "INVALID_CURRENT_PASSWORD"
+    repo.set_user_password.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -180,16 +323,113 @@ async def test_revoke_session_not_found():
 
 
 @pytest.mark.asyncio
-async def test_forgot_password_not_found():
+async def test_forgot_password_does_not_reveal_missing_account():
     repo = AuthRepository()
     repo.get_user_by_email = AsyncMock(return_value=None)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
-    from app.schemas.crm_schemas import PasswordResetRequest
+    result = await service.forgot_password(
+        db, PasswordResetRequest(email="ghost@crm.com")
+    )
 
-    with pytest.raises(NotFoundError):
-        await service.forgot_password(db, PasswordResetRequest(email="ghost@crm.com"))
+    assert result["status"] == "success"
+    assert "If an account exists" in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_forgot_password_persists_hashed_single_use_token(monkeypatch):
+    user = _make_user()
+    repo = AuthRepository()
+    repo.get_user_by_email = AsyncMock(return_value=user)
+    repo.invalidate_password_resets = AsyncMock()
+    repo.create_password_reset = AsyncMock()
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    raw_token = "ABCDEFGHIJKLMN"
+    send_email = Mock(return_value=True)
+
+    monkeypatch.setattr("app.services.auth_service.generate_random_code", lambda length: raw_token)
+    monkeypatch.setattr("app.services.auth_service.send_reset_password_email", send_email)
+
+    result = await service.forgot_password(
+        db, PasswordResetRequest(email="alex@crm.com")
+    )
+
+    repo.invalidate_password_resets.assert_awaited_once_with(db, user.id)
+    repo.create_password_reset.assert_awaited_once()
+    create_reset_call = repo.create_password_reset.await_args
+    assert create_reset_call is not None
+    create_kwargs = create_reset_call.kwargs
+    assert create_kwargs["token_digest"] == sha256(raw_token.encode("utf-8")).hexdigest()
+    assert create_kwargs["token_digest"] != raw_token
+    assert create_kwargs["expires_at"] > datetime.now(timezone.utc)
+    db.commit.assert_awaited_once()
+    send_email.assert_called_once_with(
+        email_to=user.email,
+        token=raw_token,
+        user_name=user.name,
+    )
+    assert result["status"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_reset_password_updates_hash_and_consumes_token(monkeypatch):
+    user = _make_user()
+    password_reset = PasswordReset(
+        id="reset-1",
+        user_id=user.id,
+        token="digest",
+        is_used=False,
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=30),
+    )
+    repo = AuthRepository()
+    repo.get_active_password_reset = AsyncMock(return_value=password_reset)
+    repo.get_user_by_id = AsyncMock(return_value=user)
+    repo.set_user_password = AsyncMock()
+    repo.mark_password_reset_used = AsyncMock()
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    token = "ABCDEFGHIJKLMN"
+
+    monkeypatch.setattr("app.services.auth_service.get_password_hash", lambda value: "new-hash")
+
+    result = await service.reset_password(
+        db,
+        PasswordResetConfirmRequest(token=token, new_password="new-password"),
+    )
+
+    active_reset_call = repo.get_active_password_reset.await_args
+    assert active_reset_call is not None
+    repo.get_active_password_reset.assert_awaited_once_with(
+        db,
+        token_digest=sha256(token.encode("utf-8")).hexdigest(),
+        now=active_reset_call.kwargs["now"],
+    )
+    repo.set_user_password.assert_awaited_once_with(user, "new-hash")
+    repo.mark_password_reset_used.assert_awaited_once_with(password_reset)
+    db.commit.assert_awaited_once()
+    assert result["status"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_reset_password_rejects_invalid_or_expired_token():
+    repo = AuthRepository()
+    repo.get_active_password_reset = AsyncMock(return_value=None)
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(APIException) as exc_info:
+        await service.reset_password(
+            db,
+            PasswordResetConfirmRequest(
+                token="ABCDEFGHIJKLMN",
+                new_password="new-password",
+            ),
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.code == "INVALID_RESET_TOKEN"
 
 
 @pytest.mark.asyncio

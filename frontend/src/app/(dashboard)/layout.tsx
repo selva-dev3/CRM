@@ -7,7 +7,8 @@ import { navigationSections, filterNavigationSections, getRoutePermission } from
 import { AIChatAssistant } from '@/components/features/ai/ai-chat-assistant';
 import { GlobalSearchModal } from '@/components/common/global-search-modal';
 import { NotificationBell } from '@/components/features/notifications/notification-bell';
-import { getSessionToken, clearSessionToken } from '@/lib/api/client';
+import { clearSessionToken } from '@/lib/api/client';
+import { getCurrentUserApi, logoutApi } from '@/lib/api';
 import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
 import { PERMISSIONS } from '@/lib/permissions';
 import { useHasPermission, notifyAuthUserChanged } from '@/hooks/use-has-permission';
@@ -163,14 +164,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const isForbidden = Boolean(requiredPermission) && !hasPermission(requiredPermission);
 
   useEffect(() => {
-    const token = getSessionToken();
-    if (!token) {
-      setIsAuthenticated(false);
-      router.push('/login');
-    } else {
-      setIsAuthenticated(true);
-    }
-  }, [router, pathname]);
+    let active = true;
+    void getCurrentUserApi()
+      .then((user) => {
+        if (!active) return;
+        sessionStorage.setItem('user', JSON.stringify(user));
+        setIsAuthenticated(true);
+        notifyAuthUserChanged();
+      })
+      .catch(() => {
+        if (!active) return;
+        setIsAuthenticated(false);
+        router.push('/login');
+      });
+    return () => {
+      active = false;
+    };
+  }, [router]);
 
   useEffect(() => {
     setIsMobileMenuOpen(false);
@@ -183,14 +193,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }));
   };
 
-  const handleLogout = () => {
-    clearSessionToken();
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('user');
-      sessionStorage.removeItem('user');
+  const handleLogout = async () => {
+    try {
+      await logoutApi();
+    } finally {
+      clearSessionToken();
       notifyAuthUserChanged();
+      router.push('/login');
     }
-    router.push('/login');
   };
 
   if (isAuthenticated === null) {

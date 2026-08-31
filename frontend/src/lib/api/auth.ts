@@ -5,6 +5,7 @@ import { apiClient } from '@/lib/api/client';
 export interface LoginPayload {
   email: string;
   password: string;
+  rememberMe: boolean;
 }
 
 export interface LoginResponse {
@@ -22,6 +23,8 @@ export interface LoginResponse {
     permissions?: string[];
   };
 }
+
+export type CurrentUserResponse = NonNullable<LoginResponse['user']>;
 
 export interface RegisterPayload {
   name: string;
@@ -53,6 +56,11 @@ export interface ResetPasswordPayload {
   new_password: string;
 }
 
+export interface ResetPasswordResponse {
+  message: string;
+  status: string;
+}
+
 export interface AcceptInvitePayload {
   token: string;
   name: string;
@@ -75,8 +83,17 @@ export async function loginApi(payload: LoginPayload): Promise<LoginResponse> {
     body: JSON.stringify({
       email: payload.email.trim(),
       password: payload.password,
+      remember_me: payload.rememberMe,
     }),
   });
+}
+
+export async function getCurrentUserApi(): Promise<CurrentUserResponse> {
+  return apiClient.get<CurrentUserResponse>('/auth/me');
+}
+
+export async function logoutApi(): Promise<void> {
+  await apiClient.post('/auth/logout');
 }
 
 export async function registerApi(payload: RegisterPayload): Promise<RegisterResponse> {
@@ -98,9 +115,10 @@ export async function forgotPasswordApi(payload: ForgotPasswordPayload): Promise
   });
 }
 
-export async function resetPasswordApi(payload: ResetPasswordPayload): Promise<{ message: string }> {
-  return apiClient<{ message: string }>(`/auth/reset-password?token=${payload.token}&new_password=${payload.new_password}`, {
+export async function resetPasswordApi(payload: ResetPasswordPayload): Promise<ResetPasswordResponse> {
+  return apiClient<ResetPasswordResponse>('/auth/reset-password', {
     method: 'POST',
+    body: JSON.stringify(payload),
   });
 }
 
@@ -135,6 +153,15 @@ export function useForgotPasswordMutation(
 ) {
   return useMutation<ForgotPasswordResponse, Error, ForgotPasswordPayload>({
     mutationFn: forgotPasswordApi,
+    ...options,
+  });
+}
+
+export function useResetPasswordMutation(
+  options?: UseMutationOptions<ResetPasswordResponse, Error, ResetPasswordPayload>
+) {
+  return useMutation<ResetPasswordResponse, Error, ResetPasswordPayload>({
+    mutationFn: resetPasswordApi,
     ...options,
   });
 }

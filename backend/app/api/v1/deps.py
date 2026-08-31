@@ -1,32 +1,35 @@
-from typing import Optional
-from fastapi import Depends, HTTPException, status, Query
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import jwt, JWTError
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import Depends, HTTPException, Query, Request, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jose import JWTError, jwt
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.errors import ForbiddenError
 from app.core.permissions import UserRole, check_permission
 from app.core.security import ALGORITHM
 from app.db.session import get_db
-from app.models import User, Organization
+from app.models import Organization, User
 from app.services.auth_service import auth_service
 
 # HTTP Bearer scheme auto-configured for FastAPI Swagger UI authentication
 security_scheme = HTTPBearer(auto_error=False)
 
 async def get_current_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme),
-    token_query: Optional[str] = Query(None, alias="token"),
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(security_scheme),
+    token_query: str | None = Query(None, alias="token"),
     db: AsyncSession = Depends(get_db)
 ) -> User:
-    """Dependency that validates JWT Bearer access token in Authorization header or ?token= query parameter.
-    Supports standard JWT tokens as well as dev/mock token strings.
+    """Validate a JWT supplied by Bearer header, HttpOnly cookie, or query string.
+
+    Legacy mock-token formats remain available only in development and test.
     """
     raw_token = None
     if credentials and credentials.credentials:
         raw_token = credentials.credentials.strip()
+    elif request.cookies.get(settings.AUTH_COOKIE_NAME):
+        raw_token = request.cookies[settings.AUTH_COOKIE_NAME].strip()
     elif token_query:
         raw_token = token_query.strip()
 
@@ -36,7 +39,7 @@ async def get_current_user(
             detail="Session token missing: Authorization Bearer header is required to access this endpoint",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     token = raw_token
     user_id = None
 
@@ -48,7 +51,8 @@ async def get_current_user(
         pass
 
     # 2. Fallback helper for mock/dev token formats (e.g. "jwt_token_<id>", email, or raw ID)
-    if not user_id:
+    allow_mock_tokens = settings.ENVIRONMENT.lower() in {"development", "test"}
+    if not user_id and allow_mock_tokens:
         if token.startswith("jwt_token_"):
             user_id = token.replace("jwt_token_", "")
         elif "@" in token:
@@ -70,11 +74,6 @@ async def get_current_user(
     res = await db.execute(select(User).where((User.id == user_id) | (User.email == user_id)))
     user = res.scalars().first()
 
-    # 4. Fallback if database reset occurred and token ID changed
-    if not user:
-        res_first = await db.execute(select(User).where(User.is_active == True).limit(1))
-        user = res_first.scalars().first()
-
     if not user or not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -84,16 +83,22 @@ async def get_current_user(
     return user
 
 async def get_current_user_optional(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme),
-    token_query: Optional[str] = Query(None, alias="token"),
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(security_scheme),
+    token_query: str | None = Query(None, alias="token"),
     db: AsyncSession = Depends(get_db)
-) -> Optional[User]:
+) -> User | None:
     try:
-        return await get_current_user(credentials=credentials, token_query=token_query, db=db)
+        return await get_current_user(
+            request=request,
+            credentials=credentials,
+            token_query=token_query,
+            db=db,
+        )
     except Exception:
         return None
 
-async def get_valid_org_id(db: AsyncSession, current_user: Optional[User] = None) -> str:
+async def get_valid_org_id(db: AsyncSession, current_user: User | None = None) -> str:
     """Helper function that guarantees a valid Organization foreign key exists in database."""
     if current_user and getattr(current_user, 'organization_id', None):
         user_org_id = current_user.organization_id

@@ -3,35 +3,20 @@ const DEFAULT_API_URL = 'https://crm-dev3.up.railway.app/api/v1';
 
 export const BASE_URL = process.env.NEXT_PUBLIC_API_URL || DEFAULT_API_URL;
 
-export function getSessionToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  return sessionStorage.getItem('token') || localStorage.getItem('token');
-}
-
-export function setSessionToken(token: string, remember: boolean = true): void {
-  if (typeof window === 'undefined') return;
-  sessionStorage.setItem('token', token);
-  if (remember) {
-    localStorage.setItem('token', token);
-    document.cookie = `token=${token}; path=/; max-age=86400; SameSite=Lax`;
-  }
-}
-
 export function clearSessionToken(): void {
   if (typeof window === 'undefined') return;
+  // Remove legacy browser-readable tokens during the HttpOnly-cookie migration.
   sessionStorage.removeItem('token');
   localStorage.removeItem('token');
   sessionStorage.removeItem('user');
   localStorage.removeItem('user');
-  document.cookie = 'token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
-  document.cookie = 'user=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
 }
 
 export interface ApiClient {
   <T>(endpoint: string, options?: RequestInit): Promise<T>;
   get<T>(endpoint: string, options?: RequestInit): Promise<T>;
-  post<T>(endpoint: string, data?: any, options?: RequestInit): Promise<T>;
-  put<T>(endpoint: string, data?: any, options?: RequestInit): Promise<T>;
+  post<T>(endpoint: string, data?: unknown, options?: RequestInit): Promise<T>;
+  put<T>(endpoint: string, data?: unknown, options?: RequestInit): Promise<T>;
   delete<T>(endpoint: string, options?: RequestInit): Promise<T>;
 }
 
@@ -39,8 +24,6 @@ const mainClient = async function <T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const token = getSessionToken();
-
   const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string>),
@@ -52,13 +35,10 @@ const mainClient = async function <T>(
     headers['Content-Type'] = 'application/json';
   }
 
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
   const response = await fetch(`${BASE_URL}${endpoint}`, {
     ...options,
     headers,
+    credentials: 'include',
   });
 
   if (!response.ok) {
@@ -79,7 +59,7 @@ mainClient.get = function <T>(endpoint: string, options: RequestInit = {}): Prom
   return mainClient<T>(endpoint, { ...options, method: 'GET' });
 };
 
-mainClient.post = function <T>(endpoint: string, data?: any, options: RequestInit = {}): Promise<T> {
+mainClient.post = function <T>(endpoint: string, data?: unknown, options: RequestInit = {}): Promise<T> {
   const isFormData = typeof FormData !== 'undefined' && data instanceof FormData;
   return mainClient<T>(endpoint, {
     ...options,
@@ -88,7 +68,7 @@ mainClient.post = function <T>(endpoint: string, data?: any, options: RequestIni
   });
 };
 
-mainClient.put = function <T>(endpoint: string, data?: any, options: RequestInit = {}): Promise<T> {
+mainClient.put = function <T>(endpoint: string, data?: unknown, options: RequestInit = {}): Promise<T> {
   const isFormData = typeof FormData !== 'undefined' && data instanceof FormData;
   return mainClient<T>(endpoint, {
     ...options,

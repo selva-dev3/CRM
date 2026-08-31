@@ -1,28 +1,30 @@
-from fastapi import APIRouter, Depends, Query, status
 from typing import Optional
+
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_db
 from app.api.v1.deps import get_current_user, require_permission
+from app.core.auth_cookies import set_auth_cookie
+from app.db.session import get_db
 from app.models import User
 from app.schemas.organization_invitation_schemas import (
-    OrganizationInviteRequest,
     AcceptInvitationRequest,
+    CreateOrganizationInvitationRequest,
+    InvitationListResponse,
     InvitationResponse,
     InvitationStatusResponse,
-    InvitationListResponse,
     InviteUserResponse,
-    CreateOrganizationInvitationRequest,
-    NewOrganizationInviteResponse
+    NewOrganizationInviteResponse,
+    OrganizationInviteRequest,
 )
 from app.services.invitation_service import (
+    accept_organization_invitation,
+    cancel_organization_invitation,
     create_new_organization_invitation,
     create_organization_user_invitation,
     get_and_validate_invitation_by_token,
-    accept_organization_invitation,
+    list_organization_invitations,
     resend_organization_invitation,
-    cancel_organization_invitation,
-    list_organization_invitations
 )
 
 router = APIRouter()
@@ -119,13 +121,16 @@ async def validate_invitation(
 async def accept_invitation(
     token: str,
     payload: AcceptInvitationRequest,
+    response: Response,
     db: AsyncSession = Depends(get_db)
 ):
     """
     Public endpoint: Accepts invitation, hashes password, activates Organization Admin user,
     writes audit log, and returns JWT access token.
     """
-    return await accept_organization_invitation(db, token, payload)
+    result = await accept_organization_invitation(db, token, payload)
+    set_auth_cookie(response, result["access_token"])
+    return result
 
 
 # 5. POST /api/v1/organizations/invitations/{id}/resend - Resend invitation (Protected)

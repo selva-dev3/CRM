@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
@@ -64,6 +64,27 @@ app = FastAPI(
 )
 
 register_exception_handlers(app)
+
+
+@app.middleware("http")
+async def validate_cookie_authenticated_origin(request: Request, call_next):
+    """Reject cross-site state changes authenticated only by the session cookie."""
+    unsafe_method = request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"}
+    uses_cookie_auth = bool(request.cookies.get(settings.AUTH_COOKIE_NAME)) and not bool(
+        request.headers.get("Authorization")
+    )
+    if unsafe_method and uses_cookie_auth:
+        origin = request.headers.get("Origin")
+        if origin not in settings.cors_origins_list:
+            return JSONResponse(
+                status_code=status.HTTP_403_FORBIDDEN,
+                content={
+                    "code": "CSRF_ORIGIN_REJECTED",
+                    "message": "Request origin is not allowed",
+                    "fields": None,
+                },
+            )
+    return await call_next(request)
 
 # CORS
 app.add_middleware(
