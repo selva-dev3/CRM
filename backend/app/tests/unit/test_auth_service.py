@@ -1,3 +1,7 @@
+import base64
+import hashlib
+import hmac
+import time
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from typing import Any
@@ -11,6 +15,7 @@ from app.models import MagicLinkToken, PasswordReset, RefreshToken, User, UserIn
 from app.repositories.auth_repository import AuthRepository
 from app.schemas.crm_schemas import (
     LoginRequest,
+    OAuthLoginRequest,
     PasswordResetConfirmRequest,
     PasswordResetRequest,
     RegisterRequest,
@@ -373,26 +378,71 @@ async def test_change_password_rejects_incorrect_current_password(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_verify_2fa_accepts_correct_code():
+async def test_2fa_setup_and_verification_use_user_secret():
+    user = _make_user()
     service = _service_with(AuthRepository())
-    assert await service.verify_2fa(TwoFactorVerifyRequest(code="123456")) is not None
+    db = AsyncMock(spec=AsyncSession)
+
+    setup = await service.setup_2fa(db, user)
+    assert len(setup["secret"]) == 32
+    assert user.two_factor_secret != setup["secret"]
+    assert user.two_factor_enabled is False
+
+    secret = base64.b32decode(setup["secret"] + "=" * (-len(setup["secret"]) % 8))
+    counter = int(time.time()) // 30
+    digest = hmac.new(secret, counter.to_bytes(8, "big"), hashlib.sha1).digest()
+    start = digest[-1] & 0x0F
+    code = f"{(int.from_bytes(digest[start : start + 4], 'big') & 0x7FFFFFFF) % 1_000_000:06d}"
+
+    assert await service.verify_2fa(db, user, TwoFactorVerifyRequest(code=code)) is not None
+    assert user.two_factor_enabled is True
 
     with pytest.raises(APIException) as exc_info:
-        await service.verify_2fa(TwoFactorVerifyRequest(code="000000"))
+        await service.verify_2fa(db, user, TwoFactorVerifyRequest(code="000000"))
     assert exc_info.value.status_code == 400
+
+    await service.disable_2fa(db, user)
+    assert user.two_factor_secret is None
+    assert user.two_factor_enabled is False
 
 
 @pytest.mark.asyncio
 async def test_google_oauth_requires_id_token():
     service = _service_with(AuthRepository())
 
-    from app.schemas.crm_schemas import OAuthLoginRequest
-
     with pytest.raises(APIException) as exc_info:
         await service.google_oauth(
             AsyncMock(spec=AsyncSession), OAuthLoginRequest(provider="google", id_token="")
         )
     assert exc_info.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_oauth_rejects_unverified_identity(monkeypatch):
+    repo: Any = AuthRepository()
+    service = _service_with(repo)
+    monkeypatch.setattr(
+        service,
+        "_verify_oauth_identity",
+        AsyncMock(side_effect=APIException(status_code=401, message="Invalid identity token")),
+    )
+    repo.get_first_user = AsyncMock()
+
+    with pytest.raises(APIException) as exc_info:
+        await service.google_oauth(
+            AsyncMock(spec=AsyncSession), OAuthLoginRequest(provider="google", id_token=TEST_CODE)
+        )
+    assert exc_info.value.status_code == 401
+    repo.get_first_user.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_current_user_me_requires_explicit_user():
+    service = _service_with(AuthRepository())
+
+    with pytest.raises(APIException) as exc_info:
+        await service.get_current_user_me(AsyncMock(spec=AsyncSession))
+    assert exc_info.value.status_code == 401
 
 
 @pytest.mark.asyncio

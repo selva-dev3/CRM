@@ -119,7 +119,7 @@ async def setup_2fa(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await auth_service.setup_2fa()
+    return await auth_service.setup_2fa(db, current_user)
 
 
 @router.post("/2fa/verify", response_model=MessageResponse, summary="Verify 2FA TOTP code")
@@ -128,7 +128,7 @@ async def verify_2fa(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await auth_service.verify_2fa(payload)
+    return await auth_service.verify_2fa(db, current_user, payload)
 
 
 @router.post("/2fa/disable", response_model=MessageResponse, summary="Disable 2FA authentication")
@@ -136,7 +136,7 @@ async def disable_2fa(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await auth_service.disable_2fa()
+    return await auth_service.disable_2fa(db, current_user)
 
 
 @router.post("/oauth/google", response_model=Token, summary="Google OAuth SSO Login")

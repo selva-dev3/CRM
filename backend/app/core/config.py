@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     MAGIC_LINK_EXPIRE_MINUTES: int = 15
     AUTH_COOKIE_NAME: str = "token"
+    GOOGLE_OAUTH_CLIENT_ID: str | None = None
+    MICROSOFT_OAUTH_CLIENT_ID: str | None = None
+    MICROSOFT_OAUTH_TENANT: str = "common"
 
     # Database
     POSTGRES_SERVER: str | None = None

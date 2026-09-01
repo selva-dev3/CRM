@@ -20,6 +20,8 @@ class User(Base):
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    two_factor_secret: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    two_factor_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), onupdate=func.now(), server_default=func.now()

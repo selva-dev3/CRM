@@ -19,6 +19,7 @@ def _create_token_table(
     table_name: str,
     token_index_name: str,
     token_constraint_name: str,
+    used_column_name: str,
 ) -> None:
     inspector = sa.inspect(op.get_bind())
     if table_name in inspector.get_table_names():
@@ -29,7 +30,7 @@ def _create_token_table(
         sa.Column("id", sa.String(), nullable=False),
         sa.Column("user_id", sa.String(), nullable=False),
         sa.Column("token", sa.String(length=64), nullable=False),
-        sa.Column("is_used", sa.Boolean(), nullable=False, server_default=sa.false()),
+        sa.Column(used_column_name, sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column(
             "created_at",
@@ -50,11 +51,13 @@ def upgrade() -> None:
         "refresh_tokens",
         "ix_refresh_tokens_token",
         "uq_refresh_tokens_token",
+        "is_revoked",
     )
     _create_token_table(
         "magic_link_tokens",
         "ix_magic_link_tokens_token",
         "uq_magic_link_tokens_token",
+        "is_used",
     )
 
 
