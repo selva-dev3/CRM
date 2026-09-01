@@ -44,6 +44,23 @@ async def test_list_roles_classifies_types():
 
 
 @pytest.mark.asyncio
+async def test_import_permissions_reports_failure_after_rollback():
+    repo: Any = RoleRepository()
+    repo.create_permission = AsyncMock(side_effect=RuntimeError("database unavailable"))
+    service = RoleService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(APIException) as exc_info:
+        await service.import_permissions_batch(
+            db, [PermissionCreate(key="users:read", name="Read Users")]
+        )
+
+    assert exc_info.value.status_code == 400
+    assert "No permissions were imported" in exc_info.value.message
+    db.rollback.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_list_roles_forwards_org_id_to_repository():
     repo: Any = RoleRepository()
     repo.get_setting = AsyncMock(return_value=None)

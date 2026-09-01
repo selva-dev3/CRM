@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     SECRET_KEY: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
+    MAGIC_LINK_EXPIRE_MINUTES: int = 15
     AUTH_COOKIE_NAME: str = "token"
 
     # Database

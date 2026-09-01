@@ -27,11 +27,6 @@ class ZapierEventPayload(BaseModel):
     payload: dict[str, Any] | None = None
 
 
-class StripeWebhookPayload(BaseModel):
-    event_type: str | None = "payment_intent.succeeded"
-    data: dict[str, Any] | None = {}
-
-
 class CustomApiKeyPayload(BaseModel):
     provider_name: str | None = "Custom Integration"
     api_key: str | None = ""
@@ -232,22 +227,6 @@ async def send_slack_notification(
     current_user: User | None = Depends(get_current_user_optional),
 ):
     return await integration_service.send_slack_notification(db, payload, current_user)
-
-
-@router.post(
-    "/stripe/webhook",
-    response_model=MessageResponse,
-    summary="Stripe incoming billing webhook handler",
-    dependencies=[Depends(require_permission("integrations:manage"))],
-)
-async def handle_stripe_webhook(
-    payload: StripeWebhookPayload | None = Body(None),
-    event_type: str | None = Query(None),
-    db: AsyncSession = Depends(get_db),
-):
-    return await integration_service.handle_stripe_webhook(
-        event_type, payload.event_type if payload else None
-    )
 
 
 @router.post(

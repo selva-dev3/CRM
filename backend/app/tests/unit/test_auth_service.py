@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, NotFoundError
-from app.models import PasswordReset, User, UserInvitation
+from app.models import MagicLinkToken, PasswordReset, RefreshToken, User, UserInvitation
 from app.repositories.auth_repository import AuthRepository
 from app.schemas.crm_schemas import (
     LoginRequest,
@@ -30,6 +30,7 @@ STORED_DIGEST = "digest"
 NEW_INPUT = "new-password"
 EXPECTED_ACCESS_VALUE = "token-user-1"
 EXPECTED_AUTH_SCHEME = "bearer"
+TEST_REFRESH_VALUE = "refresh"
 
 
 def _make_user(**overrides) -> User:
@@ -89,6 +90,84 @@ async def test_login_returns_token_and_user(monkeypatch):
     assert result["token_type"] == EXPECTED_AUTH_SCHEME
     assert result["user"]["role"] == "Admin"
     assert "deals:all" in result["user"]["permissions"]
+
+
+@pytest.mark.asyncio
+async def test_request_magic_link_persists_only_token_digest(monkeypatch):
+    user = _make_user()
+    repo: Any = AuthRepository()
+    repo.get_user_by_email = AsyncMock(return_value=user)
+    repo.invalidate_magic_links = AsyncMock()
+    repo.create_magic_link = AsyncMock()
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    send_email = Mock(return_value=True)
+    monkeypatch.setattr("app.services.auth_service.send_magic_link_email", send_email)
+    monkeypatch.setattr("app.services.auth_service.generate_random_code", lambda length: TEST_CODE)
+
+    result = await service.request_magic_link(db, user.email)
+
+    assert result["status"] == "success"
+    repo.create_magic_link.assert_awaited_once()
+    kwargs = repo.create_magic_link.await_args_list[-1].kwargs
+    assert kwargs["user_id"] == user.id
+    assert kwargs["token_digest"] == sha256(TEST_CODE.encode()).hexdigest()
+    assert kwargs["token_digest"] != TEST_CODE
+    send_email.assert_called_once_with(email_to=user.email, token=TEST_CODE, user_name=user.name)
+
+
+@pytest.mark.asyncio
+async def test_verify_magic_link_requires_active_persisted_token(monkeypatch):
+    repo: Any = AuthRepository()
+    repo.get_active_magic_link = AsyncMock(return_value=None)
+    repo.get_first_user = AsyncMock(return_value=None)
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(APIException) as exc_info:
+        await service.verify_magic_link(db, TEST_CODE)
+
+    assert exc_info.value.status_code == 401
+    repo.get_first_user.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_verify_magic_link_consumes_token_and_authenticates_owner(monkeypatch):
+    user = _make_user(id="magic-user")
+    magic_link = MagicLinkToken(
+        id="magic-1",
+        user_id=user.id,
+        token=sha256(TEST_CODE.encode()).hexdigest(),
+        expires_at=datetime.now(UTC) + timedelta(minutes=5),
+    )
+    repo: Any = AuthRepository()
+    repo.get_active_magic_link = AsyncMock(return_value=magic_link)
+    repo.get_user_by_id = AsyncMock(return_value=user)
+    repo.create_refresh_token = AsyncMock(return_value=RefreshToken())
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    monkeypatch.setattr("app.services.auth_service.create_access_token", lambda user_id: user_id)
+    monkeypatch.setattr("app.services.auth_service.generate_random_code", lambda length: "refresh")
+
+    result = await service.verify_magic_link(db, TEST_CODE)
+
+    assert result["access_token"] == user.id
+    assert result["refresh_token"] == TEST_REFRESH_VALUE
+    assert magic_link.is_used is True
+    repo.get_user_by_id.assert_awaited_once_with(db, user.id)
+
+
+@pytest.mark.asyncio
+async def test_refresh_token_rejects_unknown_value():
+    repo: Any = AuthRepository()
+    repo.get_active_refresh_token = AsyncMock(return_value=None)
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(APIException) as exc_info:
+        await service.refresh_token(db, "unknown-refresh-token")
+
+    assert exc_info.value.status_code == 401
 
 
 @pytest.mark.asyncio

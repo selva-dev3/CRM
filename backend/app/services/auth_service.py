@@ -46,6 +46,17 @@ class AuthService:
                 status_code=status.HTTP_400_BAD_REQUEST, message=error_message
             ) from e
 
+    async def _create_refresh_token(self, db: AsyncSession, user_id: str) -> str:
+        refresh_token = generate_random_code(48)
+        expires_at = datetime.now(UTC) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+        await self.repository.create_refresh_token(
+            db,
+            user_id=user_id,
+            token_digest=sha256(refresh_token.encode("utf-8")).hexdigest(),
+            expires_at=expires_at,
+        )
+        return refresh_token
+
     async def get_user_role_name(self, db: AsyncSession, user: User) -> str:
         """Resolve human-readable role name (e.g. 'Admin', 'Super Admin') for a user."""
         try:
@@ -128,6 +139,8 @@ class AuthService:
             )
 
         access_token = create_access_token(user.id)
+        refresh_token = await self._create_refresh_token(db, user.id)
+        await self._commit(db, "Unable to create refresh token")
         user_role_name = await self.get_user_role_name(db, user)
         user_permissions = await self.get_user_permissions(
             db, user, resolved_role_name=user_role_name
@@ -135,7 +148,7 @@ class AuthService:
 
         return {
             "access_token": access_token,
-            "refresh_token": f"refresh_{user.id}",
+            "refresh_token": refresh_token,
             "token_type": "bearer",
             "expires_in": 86400,
             "user": {
@@ -218,12 +231,27 @@ class AuthService:
             ) from e
 
     async def refresh_token(self, db: AsyncSession, refresh_token: str) -> dict:
-        user = await self.repository.get_first_user(db)
-        user_id = user.id if user else "usr-1"
-        access_token = create_access_token(user_id)
+        token_digest = sha256(refresh_token.strip().encode("utf-8")).hexdigest()
+        stored_token = await self.repository.get_active_refresh_token(
+            db, token_digest=token_digest, now=datetime.now(UTC)
+        )
+        if not stored_token:
+            raise APIException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                message="Invalid or expired refresh token",
+            )
+        user = await self.repository.get_user_by_id(db, stored_token.user_id)
+        if not user:
+            raise APIException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                message="Invalid or expired refresh token",
+            )
+        await self.repository.revoke_refresh_token(stored_token)
+        next_refresh_token = await self._create_refresh_token(db, user.id)
+        await self._commit(db, "Unable to rotate refresh token")
         return {
-            "access_token": access_token,
-            "refresh_token": refresh_token,
+            "access_token": create_access_token(user.id),
+            "refresh_token": next_refresh_token,
             "token_type": "bearer",
             "expires_in": 86400,
         }
@@ -329,10 +357,16 @@ class AuthService:
 
     async def _oauth_issue_token(self, db: AsyncSession, refresh_value: str) -> dict:
         user = await self.repository.get_first_user(db)
-        access_token = create_access_token(user.id if user else "usr-1")
+        if not user:
+            raise APIException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                message="Unable to resolve authenticated user",
+            )
+        refresh_token = await self._create_refresh_token(db, user.id)
+        await self._commit(db, "Unable to create refresh token")
         return {
-            "access_token": access_token,
-            "refresh_token": refresh_value,
+            "access_token": create_access_token(user.id),
+            "refresh_token": refresh_token,
             "token_type": "bearer",
             "expires_in": 86400,
         }
@@ -487,6 +521,15 @@ class AuthService:
             raise NotFoundError(message=f"User with email '{email_clean}' not found")
 
         magic_token = generate_random_code(14)
+        expires_at = datetime.now(UTC) + timedelta(minutes=settings.MAGIC_LINK_EXPIRE_MINUTES)
+        await self.repository.invalidate_magic_links(db, user.id)
+        await self.repository.create_magic_link(
+            db,
+            user_id=user.id,
+            token_digest=sha256(magic_token.encode("utf-8")).hexdigest(),
+            expires_at=expires_at,
+        )
+        await self._commit(db, "Unable to create magic link")
         send_magic_link_email(email_to=user.email, token=magic_token, user_name=user.name)
         return {"message": f"Magic link sent to {email_clean}", "status": "success"}
 
@@ -496,11 +539,27 @@ class AuthService:
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 message="Invalid or expired magic link token",
             )
-        user = await self.repository.get_first_user(db)
-        access_token = create_access_token(user.id if user else "usr-1")
+        token_digest = sha256(token.strip().encode("utf-8")).hexdigest()
+        magic_link = await self.repository.get_active_magic_link(
+            db, token_digest=token_digest, now=datetime.now(UTC)
+        )
+        if not magic_link:
+            raise APIException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                message="Invalid or expired magic link token",
+            )
+        user = await self.repository.get_user_by_id(db, magic_link.user_id)
+        if not user:
+            raise APIException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                message="Invalid or expired magic link token",
+            )
+        await self.repository.consume_magic_link(magic_link)
+        refresh_token = await self._create_refresh_token(db, user.id)
+        await self._commit(db, "Unable to complete magic link login")
         return {
-            "access_token": access_token,
-            "refresh_token": "magic_refresh",
+            "access_token": create_access_token(user.id),
+            "refresh_token": refresh_token,
             "token_type": "bearer",
             "expires_in": 86400,
         }

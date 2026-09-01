@@ -5,9 +5,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     ApiKey,
+    MagicLinkToken,
     Organization,
     PasswordReset,
     Permission,
+    RefreshToken,
     Role,
     RolePermission,
     User,
@@ -35,6 +37,87 @@ class AuthRepository:
 
     async def get_user_by_id(self, db: AsyncSession, user_id: str) -> User | None:
         return await db.get(User, user_id)
+
+    async def invalidate_magic_links(self, db: AsyncSession, user_id: str) -> None:
+        await db.execute(
+            update(MagicLinkToken)
+            .where(MagicLinkToken.user_id == user_id, MagicLinkToken.is_used.is_(False))
+            .values(is_used=True)
+        )
+
+    async def create_magic_link(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: str,
+        token_digest: str,
+        expires_at: datetime,
+    ) -> MagicLinkToken:
+        magic_link = MagicLinkToken(
+            user_id=user_id,
+            token=token_digest,
+            expires_at=expires_at,
+        )
+        db.add(magic_link)
+        return magic_link
+
+    async def get_active_magic_link(
+        self,
+        db: AsyncSession,
+        *,
+        token_digest: str,
+        now: datetime,
+    ) -> MagicLinkToken | None:
+        result = await db.execute(
+            select(MagicLinkToken)
+            .where(
+                MagicLinkToken.token == token_digest,
+                MagicLinkToken.is_used.is_(False),
+                MagicLinkToken.expires_at > now,
+            )
+            .with_for_update()
+        )
+        return result.scalars().first()
+
+    async def consume_magic_link(self, magic_link: MagicLinkToken) -> None:
+        magic_link.is_used = True
+
+    async def create_refresh_token(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: str,
+        token_digest: str,
+        expires_at: datetime,
+    ) -> RefreshToken:
+        refresh_token = RefreshToken(
+            user_id=user_id,
+            token=token_digest,
+            expires_at=expires_at,
+        )
+        db.add(refresh_token)
+        return refresh_token
+
+    async def get_active_refresh_token(
+        self,
+        db: AsyncSession,
+        *,
+        token_digest: str,
+        now: datetime,
+    ) -> RefreshToken | None:
+        result = await db.execute(
+            select(RefreshToken)
+            .where(
+                RefreshToken.token == token_digest,
+                RefreshToken.is_revoked.is_(False),
+                RefreshToken.expires_at > now,
+            )
+            .with_for_update()
+        )
+        return result.scalars().first()
+
+    async def revoke_refresh_token(self, refresh_token: RefreshToken) -> None:
+        refresh_token.is_revoked = True
 
     async def invalidate_password_resets(self, db: AsyncSession, user_id: str) -> None:
         await db.execute(

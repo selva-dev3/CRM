@@ -9,6 +9,7 @@ from app.models.ai import (
 from app.models.audit import ActivityLog, AuditLog
 from app.models.auth import (
     EmailVerification,
+    MagicLinkToken,
     OTPVerification,
     PasswordReset,
     RefreshToken,
@@ -79,6 +80,7 @@ __all__ = [
     "UserSession",
     "RefreshToken",
     "PasswordReset",
+    "MagicLinkToken",
     "EmailVerification",
     "OTPVerification",
     "Role",

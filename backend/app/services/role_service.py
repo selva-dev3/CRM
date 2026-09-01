@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import status
 from sqlalchemy import select
@@ -1011,12 +1011,12 @@ class RoleService:
                 "message": f"Successfully imported {count} permissions from JSON.",
                 "status": "success",
             }
-        except Exception:
+        except Exception as exc:
             await db.rollback()
-            return {
-                "message": f"Imported {len(payload)} permissions from JSON schema.",
-                "status": "success",
-            }
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Permission import failed. No permissions were imported.",
+            ) from exc
 
     # --- System roles ---
     async def list_system_roles(self, db: AsyncSession) -> list[dict]:
@@ -1029,7 +1029,7 @@ class RoleService:
                 if r:
                     perm_keys = await self._resolve_role_permission_keys(db, r, all_db_keys)
                     return [
-                        role_to_dict(r, perm_keys, str(getattr(r, "created_at", "2026-08-05")))
+                        role_to_dict(r, perm_keys, str(getattr(r, "created_at", datetime.now(UTC))))
                         | {"description": r.description or "Registration Default Role"}
                     ]
             roles = await self.repository.get_system_roles(db)
@@ -1038,7 +1038,7 @@ class RoleService:
                 for r in roles:
                     perm_keys = await self._resolve_role_permission_keys(db, r, all_db_keys)
                     result.append(
-                        role_to_dict(r, perm_keys, str(getattr(r, "created_at", "2026-08-05")))
+                        role_to_dict(r, perm_keys, str(getattr(r, "created_at", datetime.now(UTC))))
                         | {"description": r.description or "System Role"}
                     )
                 return result
@@ -1053,7 +1053,7 @@ class RoleService:
                 "description": "Registration Default Role",
                 "permissions": ["dashboard:read", "users:read", "leads:read"],
                 "is_system_role": True,
-                "created_at": "2026-08-05",
+                "created_at": datetime.now(UTC).isoformat(),
             }
         ]
 
