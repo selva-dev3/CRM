@@ -38,6 +38,12 @@ describe('dashboard KPI response validation', () => {
     );
   });
 
+  it('rejects malformed locale metadata before currency formatting', () => {
+    expect(() => parseDashboardKpis({ ...validKpis, locale: 'en_US' })).toThrow(
+      'Dashboard KPI response has invalid currency metadata.',
+    );
+  });
+
   it('turns an invalid API payload into a rejected query result', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,

@@ -104,8 +104,10 @@ class SettingsService:
             if payload.organization_name:
                 org.name = payload.organization_name
             if payload.currency:
-                org.currency = payload.currency.upper()
+                org.currency = payload.currency
             await db.commit()
+        elif payload.currency:
+            await self._set_setting_value(db, "system_currency", payload.currency)
 
         if payload.timezone:
             await self._set_setting_value(db, "system_timezone", payload.timezone)

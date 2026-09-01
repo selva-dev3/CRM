@@ -271,7 +271,7 @@ async def test_organization_currency_locale_is_normalized():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("stored_currency", ["$", "US Dollar", "   ", "USDX", None])
+@pytest.mark.parametrize("stored_currency", ["$", "US Dollar", "   ", "USDX", "XYZ", None])
 async def test_organization_currency_locale_falls_back_for_invalid_currency(stored_currency):
     db = AsyncMock(spec=AsyncSession)
     result = Mock()
@@ -282,6 +282,20 @@ async def test_organization_currency_locale_falls_back_for_invalid_currency(stor
 
     assert currency == "INR"
     assert locale == "en-IN"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stored_locale", [None, "", "en_US", "abcd"])
+async def test_organization_currency_locale_falls_back_for_invalid_locale(stored_locale):
+    db = AsyncMock(spec=AsyncSession)
+    result = Mock()
+    result.first.return_value = ("INR", stored_locale)
+    db.execute.return_value = result
+
+    currency, locale = await DashboardRepository().get_organization_currency_locale(db, "org-1")
+
+    assert currency == "INR"
+    assert locale == "en"
 
 
 @pytest.mark.asyncio

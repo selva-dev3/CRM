@@ -36,6 +36,26 @@ async def test_get_system_settings_returns_defaults(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_get_system_settings_uses_stored_currency_without_organization(monkeypatch):
+    repo = SettingRepository()
+    repo.get_by_key = AsyncMock(
+        side_effect=lambda _db, key: SimpleNamespace(value="EUR")
+        if key == "system_currency"
+        else None
+    )
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.services.settings_service import organization_service
+
+    monkeypatch.setattr(organization_service.repository, "get_first", AsyncMock(return_value=None))
+
+    result = await service.get_system_settings(db, None)
+
+    assert result["currency"] == "EUR"
+
+
+@pytest.mark.asyncio
 async def test_get_system_settings_uses_authenticated_organization_currency(monkeypatch):
     repo = SettingRepository()
     repo.get_by_key = AsyncMock(return_value=None)
@@ -106,7 +126,7 @@ async def test_update_system_settings_persists_currency_on_organization(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_update_system_settings_does_not_write_legacy_currency_without_organization(
+async def test_update_system_settings_persists_currency_without_organization(
     monkeypatch,
 ):
     repo = SettingRepository()
@@ -131,10 +151,10 @@ async def test_update_system_settings_does_not_write_legacy_currency_without_org
         None,
     )
 
-    assert all(call.kwargs.get("key") != "system_currency" for call in repo.upsert.await_args_list)
+    repo.upsert.assert_any_await(db, key="system_currency", value="INR")
 
 
-@pytest.mark.parametrize("currency", ["$", "US Dollar", "   ", "USDX"])
+@pytest.mark.parametrize("currency", ["$", "US Dollar", "   ", "USDX", "XYZ"])
 def test_system_settings_rejects_invalid_currency(currency):
     from app.schemas.crm_schemas import OrganizationCreate, OrganizationUpdate, SystemSettings
 

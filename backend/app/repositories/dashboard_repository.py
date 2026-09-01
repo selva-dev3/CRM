@@ -4,6 +4,7 @@ from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.currency import normalize_currency_code_or_default
+from app.core.locale import normalize_locale_or_default
 from app.models import CallLog, Deal, Email, Lead, Meeting, Organization, Task, User
 
 CLOSED_WON_STAGE = "Closed Won"
@@ -255,5 +256,5 @@ class DashboardRepository:
         if not row:
             return "INR", "en"
         currency = normalize_currency_code_or_default(row[0])
-        locale = str(row[1] or "en").strip()
+        locale = normalize_locale_or_default(row[1])
         return currency, locale
