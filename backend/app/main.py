@@ -35,9 +35,7 @@ async def lifespan(app: FastAPI):
         except Exception as e:  # pragma: no cover - startup failure path
             logger.error("Database initialization failed: %s", e)
     else:
-        logger.info(
-            "Production mode - skipping create_all(). Using Alembic migrations."
-        )
+        logger.info("Production mode - skipping create_all(). Using Alembic migrations.")
 
     # Sync standard permissions and ensure system Admin role holds them
     try:
@@ -48,7 +46,9 @@ async def lifespan(app: FastAPI):
             await RoleRepository().seed_permissions(session, ALL_STANDARD_PERMISSIONS)
         logger.info("Standard RBAC permissions and system Admin role synced successfully")
     except SQLAlchemyError:
-        logger.exception("Database error occurred while syncing standard RBAC permissions during startup")
+        logger.exception(
+            "Database error occurred while syncing standard RBAC permissions during startup"
+        )
 
     yield
 
@@ -85,6 +85,7 @@ async def validate_cookie_authenticated_origin(request: Request, call_next):
                 },
             )
     return await call_next(request)
+
 
 # CORS
 app.add_middleware(

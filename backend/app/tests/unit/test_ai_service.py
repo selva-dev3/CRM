@@ -1,3 +1,4 @@
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -30,7 +31,7 @@ def _make_company(**overrides) -> Company:
 
 @pytest.mark.asyncio
 async def test_evaluate_lead_score_uses_score():
-    repo = AIRepository()
+    repo: Any = AIRepository()
     repo.get_lead = AsyncMock(return_value=_make_lead(score=88.0))
     service = AIDomainService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -43,7 +44,7 @@ async def test_evaluate_lead_score_uses_score():
 
 @pytest.mark.asyncio
 async def test_evaluate_lead_score_not_found():
-    repo = AIRepository()
+    repo: Any = AIRepository()
     repo.get_lead = AsyncMock(return_value=None)
     service = AIDomainService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -54,7 +55,7 @@ async def test_evaluate_lead_score_not_found():
 
 @pytest.mark.asyncio
 async def test_batch_lead_scoring_counts():
-    repo = AIRepository()
+    repo: Any = AIRepository()
     repo.list_all_leads = AsyncMock(return_value=[_make_lead(), _make_lead(id="lead-2")])
     service = AIDomainService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -81,7 +82,7 @@ async def test_generate_email_interpolates_prompt():
 
 @pytest.mark.asyncio
 async def test_predict_deal_forecast_defaults():
-    repo = AIRepository()
+    repo: Any = AIRepository()
     repo.get_deal = AsyncMock(return_value=_make_deal(amount=None, probability=None))
     service = AIDomainService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -94,7 +95,7 @@ async def test_predict_deal_forecast_defaults():
 
 @pytest.mark.asyncio
 async def test_suggest_next_best_action_deal_missing():
-    repo = AIRepository()
+    repo: Any = AIRepository()
     repo.get_deal = AsyncMock(return_value=None)
     service = AIDomainService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -105,7 +106,7 @@ async def test_suggest_next_best_action_deal_missing():
 
 @pytest.mark.asyncio
 async def test_evaluate_icp_match():
-    repo = AIRepository()
+    repo: Any = AIRepository()
     repo.get_lead = AsyncMock(return_value=_make_lead(score=90.0))
     service = AIDomainService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -118,7 +119,7 @@ async def test_evaluate_icp_match():
 
 @pytest.mark.asyncio
 async def test_predict_churn_risk_not_found():
-    repo = AIRepository()
+    repo: Any = AIRepository()
     repo.get_company = AsyncMock(return_value=None)
     service = AIDomainService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -129,7 +130,7 @@ async def test_predict_churn_risk_not_found():
 
 @pytest.mark.asyncio
 async def test_optimize_pricing():
-    repo = AIRepository()
+    repo: Any = AIRepository()
     repo.get_deal = AsyncMock(return_value=_make_deal())
     service = AIDomainService(repository=repo)
     db = AsyncMock(spec=AsyncSession)

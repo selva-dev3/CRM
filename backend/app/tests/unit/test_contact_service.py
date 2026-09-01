@@ -1,3 +1,4 @@
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -47,7 +48,7 @@ def _service_with(repo: ContactRepository) -> ContactService:
 
 @pytest.mark.asyncio
 async def test_get_contact_raises_not_found_when_missing():
-    repo = ContactRepository()
+    repo: Any = ContactRepository()
     repo.get_by_id = AsyncMock(return_value=None)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -59,7 +60,7 @@ async def test_get_contact_raises_not_found_when_missing():
 @pytest.mark.asyncio
 async def test_create_contact_resolves_org_and_serializes(monkeypatch):
     contact = _make_contact()
-    repo = ContactRepository()
+    repo: Any = ContactRepository()
     repo.create = AsyncMock(return_value=contact)
     service = _service_with(repo)
     monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())
@@ -84,7 +85,7 @@ async def test_create_contact_resolves_org_and_serializes(monkeypatch):
 @pytest.mark.asyncio
 async def test_create_contact_fires_contact_created_event(monkeypatch):
     contact = _make_contact()
-    repo = ContactRepository()
+    repo: Any = ContactRepository()
     repo.create = AsyncMock(return_value=contact)
     service = _service_with(repo)
     notify = AsyncMock()
@@ -97,10 +98,12 @@ async def test_create_contact_fires_contact_created_event(monkeypatch):
         organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
     )
 
-    await service.create_contact(db, ContactCreate(name="Jane Doe", email="jane@acme.com"), _make_user())
+    await service.create_contact(
+        db, ContactCreate(name="Jane Doe", email="jane@acme.com"), _make_user()
+    )
 
     notify.assert_awaited_once()
-    kwargs = notify.await_args.kwargs
+    kwargs = notify.await_args_list[-1].kwargs
     assert kwargs["event_name"] == "contact.created"
     assert kwargs["org_id"] == "org-1"
     assert kwargs["data"]["email"] == "jane@acme.com"
@@ -110,7 +113,7 @@ async def test_create_contact_fires_contact_created_event(monkeypatch):
 @pytest.mark.asyncio
 async def test_update_contact_fires_contact_updated_event(monkeypatch):
     contact = _make_contact()
-    repo = ContactRepository()
+    repo: Any = ContactRepository()
     repo.get_by_id = AsyncMock(return_value=contact)
     service = _service_with(repo)
     notify = AsyncMock()
@@ -121,7 +124,7 @@ async def test_update_contact_fires_contact_updated_event(monkeypatch):
 
     assert contact.email == "jane@acme.io"
     notify.assert_awaited_once()
-    kwargs = notify.await_args.kwargs
+    kwargs = notify.await_args_list[-1].kwargs
     assert kwargs["event_name"] == "contact.updated"
     assert kwargs["org_id"] == "org-1"
     assert kwargs["data"]["email"] == "jane@acme.io"
@@ -129,7 +132,7 @@ async def test_update_contact_fires_contact_updated_event(monkeypatch):
 
 async def test_create_contact_defaults_name_from_email(monkeypatch):
     contact = _make_contact(name="jane", email="jane@acme.com")
-    repo = ContactRepository()
+    repo: Any = ContactRepository()
     repo.create = AsyncMock(return_value=contact)
     service = _service_with(repo)
     monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())
@@ -150,7 +153,7 @@ async def test_create_contact_defaults_name_from_email(monkeypatch):
 @pytest.mark.asyncio
 async def test_update_contact_merges_first_and_last_name():
     contact = _make_contact(name="Jane Doe")
-    repo = ContactRepository()
+    repo: Any = ContactRepository()
     repo.get_by_id = AsyncMock(return_value=contact)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -165,7 +168,7 @@ async def test_update_contact_merges_first_and_last_name():
 
 @pytest.mark.asyncio
 async def test_set_starred_requires_existing_contact():
-    repo = ContactRepository()
+    repo: Any = ContactRepository()
     repo.get_by_id = AsyncMock(return_value=None)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)

@@ -46,9 +46,8 @@ class ReportRepository:
 
     async def quotas_by_user(self, db: AsyncSession, org_id: str) -> dict[str, float]:
         res = await db.execute(
-            select(UserQuota.user_id, UserQuota.target_amount).where(
-                UserQuota.organization_id == org_id
-            )
+            select(UserQuota.user_id, UserQuota.target_amount)
+            .where(UserQuota.organization_id == org_id)
             # Stable insertion order -> deterministic float summation order.
             .order_by(UserQuota.user_id.asc())
         )

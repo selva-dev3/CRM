@@ -4,6 +4,7 @@ from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, NotFoundError
+from app.core.security import generate_random_code, get_password_hash
 from app.models import User
 from app.models.task import Task
 from app.repositories.task_repository import TaskRepository
@@ -54,9 +55,7 @@ class TaskService:
                 status_code=status.HTTP_400_BAD_REQUEST, message=error_message
             ) from e
 
-    async def _resolve_user_id(
-        self, db: AsyncSession, assigned_input: str | None = None
-    ) -> str:
+    async def _resolve_user_id(self, db: AsyncSession, assigned_input: str | None = None) -> str:
         if assigned_input and str(assigned_input).strip():
             value = str(assigned_input).strip()
             user = await self.repository.get_user_by_id_name_email(db, value)
@@ -67,7 +66,9 @@ class TaskService:
         if first_user:
             return first_user.id
 
-        user = await self.repository.create_system_user(db)
+        user = await self.repository.create_system_user(
+            db, hashed_password=get_password_hash(generate_random_code(32))
+        )
         return user.id
 
     async def list_tasks(

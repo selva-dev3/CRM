@@ -145,9 +145,7 @@ class NotificationService:
             candidates = [assigned_to] if assigned_to else []
         elif event_name in _ASSIGNEE_OR_ORG_EVENTS:
             candidates = (
-                [assigned_to]
-                if assigned_to
-                else await self._org_active_ids(db, organization_id)
+                [assigned_to] if assigned_to else await self._org_active_ids(db, organization_id)
             )
         else:
             candidates = await self._org_active_ids(db, organization_id)
@@ -317,10 +315,16 @@ class NotificationService:
         slack_notifications: bool = False,
         digest_frequency: str = "Daily",
     ) -> dict:
-        return {"message": "Notification delivery preferences updated successfully", "status": "success"}
+        return {
+            "message": "Notification delivery preferences updated successfully",
+            "status": "success",
+        }
 
     async def register_webpush_token(self, token: str, device_type: str = "Chrome Desktop") -> dict:
-        return {"message": f"WebPush browser token registered for {device_type}", "status": "success"}
+        return {
+            "message": f"WebPush browser token registered for {device_type}",
+            "status": "success",
+        }
 
     async def send_system_alert(
         self, db: AsyncSession, *, user_id: str, org_id: str, title: str, message: str
@@ -345,7 +349,10 @@ class NotificationService:
                     },
                 )
             await self.repository.commit(db)
-            return {"message": f"Broadcasted alert '{title}' to all active users", "status": "success"}
+            return {
+                "message": f"Broadcasted alert '{title}' to all active users",
+                "status": "success",
+            }
         except Exception as e:
             await db.rollback()
             logger.warning("System alert broadcast failed for org '%s': %s", org_id, e)
@@ -356,7 +363,10 @@ class NotificationService:
         for notification in notifications:
             await self.repository.delete_notification(db, notification)
         await self._commit(db, "Failed to bulk delete notifications")
-        return {"affected_count": len(notifications), "message": "Notifications deleted successfully"}
+        return {
+            "affected_count": len(notifications),
+            "message": "Notifications deleted successfully",
+        }
 
     async def mark_notification_read(
         self, db: AsyncSession, *, user_id: str, notification_id: str
@@ -370,12 +380,13 @@ class NotificationService:
             notification.is_read = True
             notification.read_at = datetime.now(UTC)
             await db.commit()
-            return {"message": f"Notification {notification_id} marked as read", "status": "success"}
+            return {
+                "message": f"Notification {notification_id} marked as read",
+                "status": "success",
+            }
         except Exception as e:
             await db.rollback()
-            raise APIException(
-                status_code=status.HTTP_400_BAD_REQUEST, message=str(e)
-            ) from e
+            raise APIException(status_code=status.HTTP_400_BAD_REQUEST, message=str(e)) from e
 
     async def delete_notification(
         self, db: AsyncSession, *, user_id: str, notification_id: str

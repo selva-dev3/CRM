@@ -1,4 +1,4 @@
-from typing import Optional, Sequence
+from collections.abc import Sequence
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,14 +15,12 @@ class EmailRepository:
         *,
         page: int,
         limit: int,
-        search: Optional[str] = None,
+        search: str | None = None,
     ) -> Sequence[Email]:
         stmt = select(Email)
         if search and search.strip():
             term = f"%{search.strip()}%"
-            stmt = stmt.where(
-                (Email.subject.ilike(term)) | (Email.to_email.ilike(term))
-            )
+            stmt = stmt.where((Email.subject.ilike(term)) | (Email.to_email.ilike(term)))
         stmt = stmt.order_by(Email.sent_at.desc()).offset((page - 1) * limit).limit(limit)
         res = await db.execute(stmt)
         return res.scalars().all()
@@ -50,7 +48,7 @@ class EmailRepository:
         db.add(template)
         return template
 
-    async def get_template(self, db: AsyncSession, template_id: str) -> Optional[EmailTemplate]:
+    async def get_template(self, db: AsyncSession, template_id: str) -> EmailTemplate | None:
         stmt = select(EmailTemplate).where(EmailTemplate.id == template_id)
         res = await db.execute(stmt)
         return res.scalars().first()

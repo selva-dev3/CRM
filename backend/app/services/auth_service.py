@@ -65,7 +65,7 @@ class AuthService:
             if raw_role:
                 return raw_role
         except Exception:
-            pass
+            logger.warning("Failed to resolve user role name", exc_info=True)
         return "Admin"
 
     async def get_user_permissions(
@@ -129,7 +129,9 @@ class AuthService:
 
         access_token = create_access_token(user.id)
         user_role_name = await self.get_user_role_name(db, user)
-        user_permissions = await self.get_user_permissions(db, user, resolved_role_name=user_role_name)
+        user_permissions = await self.get_user_permissions(
+            db, user, resolved_role_name=user_role_name
+        )
 
         return {
             "access_token": access_token,
@@ -152,7 +154,9 @@ class AuthService:
             raise NotFoundError(message="User profile not found")
 
         user_role_name = await self.get_user_role_name(db, user)
-        user_permissions = await self.get_user_permissions(db, user, resolved_role_name=user_role_name)
+        user_permissions = await self.get_user_permissions(
+            db, user, resolved_role_name=user_role_name
+        )
 
         return {
             "id": user.id,
@@ -236,9 +240,7 @@ class AuthService:
 
         reset_token = generate_random_code(14)
         token_digest = sha256(reset_token.encode("utf-8")).hexdigest()
-        expires_at = datetime.now(UTC) + timedelta(
-            minutes=settings.RESET_TOKEN_EXPIRE_MINUTES
-        )
+        expires_at = datetime.now(UTC) + timedelta(minutes=settings.RESET_TOKEN_EXPIRE_MINUTES)
 
         await self.repository.invalidate_password_resets(db, user.id)
         await self.repository.create_password_reset(
@@ -305,9 +307,7 @@ class AuthService:
                 message="Current password is incorrect",
             )
 
-        await self.repository.set_user_password(
-            current_user, get_password_hash(new_password)
-        )
+        await self.repository.set_user_password(current_user, get_password_hash(new_password))
         await self._commit(db, "Unable to update password")
         return {"message": "Password changed successfully", "status": "success"}
 
@@ -493,7 +493,8 @@ class AuthService:
     async def verify_magic_link(self, db: AsyncSession, token: str) -> dict:
         if not token or len(token) < 5:
             raise APIException(
-                status_code=status.HTTP_401_UNAUTHORIZED, message="Invalid or expired magic link token"
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                message="Invalid or expired magic link token",
             )
         user = await self.repository.get_first_user(db)
         access_token = create_access_token(user.id if user else "usr-1")
@@ -534,7 +535,12 @@ class AuthService:
                 },
             )
             await self._commit(db, "Failed to create API key")
-            return {"id": key.id, "name": key.name, "api_key": key.key_hash, "created_at": str(key.created_at)}
+            return {
+                "id": key.id,
+                "name": key.name,
+                "api_key": key.key_hash,
+                "created_at": str(key.created_at),
+            }
         except Exception as e:
             await db.rollback()
             raise APIException(status_code=status.HTTP_400_BAD_REQUEST, message=str(e)) from e

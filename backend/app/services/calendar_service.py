@@ -105,9 +105,7 @@ class CalendarService:
             return event_to_dict(event)
         except Exception as e:
             await db.rollback()
-            raise APIException(
-                status_code=status.HTTP_400_BAD_REQUEST, message=str(e)
-            ) from e
+            raise APIException(status_code=status.HTTP_400_BAD_REQUEST, message=str(e)) from e
 
     async def delete_calendar_event(self, db: AsyncSession, event_id: str) -> dict:
         event = await self.repository.get_event(db, event_id)
@@ -128,12 +126,25 @@ class CalendarService:
         return {"message": "Google Calendar 2-way sync completed successfully", "status": "success"}
 
     async def sync_outlook_calendar(self) -> dict:
-        return {"message": "Outlook Calendar 2-way sync completed successfully", "status": "success"}
+        return {
+            "message": "Outlook Calendar 2-way sync completed successfully",
+            "status": "success",
+        }
 
     async def list_recurring_events(self) -> list[dict]:
         return [
-            {"id": "rec-1", "title": "Weekly Team Sync", "rrule": "FREQ=WEEKLY;BYDAY=MO", "event_type": "Internal"},
-            {"id": "rec-2", "title": "Monthly Revenue Review", "rrule": "FREQ=MONTHLY;BYMONTHDAY=1", "event_type": "Executive"},
+            {
+                "id": "rec-1",
+                "title": "Weekly Team Sync",
+                "rrule": "FREQ=WEEKLY;BYDAY=MO",
+                "event_type": "Internal",
+            },
+            {
+                "id": "rec-2",
+                "title": "Monthly Revenue Review",
+                "rrule": "FREQ=MONTHLY;BYMONTHDAY=1",
+                "event_type": "Executive",
+            },
         ]
 
     async def create_recurring_event(self, title: str, rrule: str) -> dict:

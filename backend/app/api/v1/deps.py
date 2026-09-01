@@ -15,11 +15,12 @@ from app.services.auth_service import auth_service
 # HTTP Bearer scheme auto-configured for FastAPI Swagger UI authentication
 security_scheme = HTTPBearer(auto_error=False)
 
+
 async def get_current_user(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(security_scheme),
     token_query: str | None = Query(None, alias="token"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ) -> User:
     """Validate a JWT supplied by Bearer header, HttpOnly cookie, or query string.
 
@@ -82,11 +83,12 @@ async def get_current_user(
         )
     return user
 
+
 async def get_current_user_optional(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(security_scheme),
     token_query: str | None = Query(None, alias="token"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ) -> User | None:
     try:
         return await get_current_user(
@@ -98,9 +100,10 @@ async def get_current_user_optional(
     except Exception:
         return None
 
+
 async def get_valid_org_id(db: AsyncSession, current_user: User | None = None) -> str:
     """Helper function that guarantees a valid Organization foreign key exists in database."""
-    if current_user and getattr(current_user, 'organization_id', None):
+    if current_user and getattr(current_user, "organization_id", None):
         user_org_id = current_user.organization_id
         res = await db.execute(select(Organization).where(Organization.id == user_org_id))
         if res.scalars().first():
@@ -112,10 +115,7 @@ async def get_valid_org_id(db: AsyncSession, current_user: User | None = None) -
         return existing_org.id
 
     default_org = Organization(
-        id="org-1",
-        name="Default Organization",
-        slug="default-org",
-        status="active"
+        id="org-1", name="Default Organization", slug="default-org", status="active"
     )
     db.add(default_org)
     await db.commit()
@@ -124,6 +124,7 @@ async def get_valid_org_id(db: AsyncSession, current_user: User | None = None) -
 
 def require_role(*roles: UserRole):
     """Dependency factory enforcing that the authenticated user holds one of the given roles."""
+
     async def role_dependency(current_user: User = Depends(get_current_user)) -> User:
         if not check_permission(current_user.role, list(roles)):
             raise HTTPException(
@@ -142,6 +143,7 @@ def require_permission(permission: str):
     existing auth_service permission resolution. Raises 403/FORBIDDEN when the permission
     is missing.
     """
+
     async def permission_dependency(
         current_user: User = Depends(get_current_user),
         db: AsyncSession = Depends(get_db),

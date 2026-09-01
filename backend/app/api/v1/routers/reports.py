@@ -1,5 +1,3 @@
-from typing import List, Optional
-
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,8 +11,8 @@ from app.schemas.report_schemas import (
     CustomReportItem,
     ExportReportRequest,
     PdfExportResponse,
-    ScheduleReportCreate,
     ScheduledReportItem,
+    ScheduleReportCreate,
 )
 from app.services.report_service import report_service
 
@@ -179,7 +177,7 @@ async def get_quota_attainment_report(
 
 @router.get(
     "/custom-reports",
-    response_model=List[CustomReportItem],
+    response_model=list[CustomReportItem],
     summary="List saved custom report queries",
     dependencies=[Depends(require_permission("reports:read"))],
 )
@@ -189,7 +187,9 @@ async def list_custom_reports(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await report_service.list_custom_reports(db, current_user=current_user, limit=limit, offset=offset)
+    return await report_service.list_custom_reports(
+        db, current_user=current_user, limit=limit, offset=offset
+    )
 
 
 @router.post(
@@ -220,7 +220,9 @@ async def run_custom_report(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await report_service.run_custom_report(db, report_id=report_id, current_user=current_user)
+    return await report_service.run_custom_report(
+        db, report_id=report_id, current_user=current_user
+    )
 
 
 @router.delete(
@@ -302,14 +304,16 @@ async def schedule_report_email(
         db,
         report_type=payload.report_type,
         email=str(payload.email),
-        frequency=payload.frequency.value if hasattr(payload.frequency, "value") else str(payload.frequency),
+        frequency=payload.frequency.value
+        if hasattr(payload.frequency, "value")
+        else str(payload.frequency),
         current_user=current_user,
     )
 
 
 @router.get(
     "/scheduled",
-    response_model=List[ScheduledReportItem],
+    response_model=list[ScheduledReportItem],
     summary="List active scheduled automated report jobs",
     dependencies=[Depends(require_permission("reports:read"))],
 )
@@ -319,7 +323,9 @@ async def list_scheduled_reports(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await report_service.list_scheduled_reports(db, current_user=current_user, limit=limit, offset=offset)
+    return await report_service.list_scheduled_reports(
+        db, current_user=current_user, limit=limit, offset=offset
+    )
 
 
 @router.delete(

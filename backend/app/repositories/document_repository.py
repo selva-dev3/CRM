@@ -1,4 +1,4 @@
-from typing import Optional, Sequence
+from collections.abc import Sequence
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +16,7 @@ class DocumentRepository:
         org_id: str,
         page: int,
         limit: int,
-        search: Optional[str] = None,
+        search: str | None = None,
     ) -> Sequence[Document]:
         stmt = select(Document).where(Document.organization_id == org_id)
         if search and search.strip():
@@ -25,13 +25,19 @@ class DocumentRepository:
         res = await db.execute(stmt)
         return res.scalars().all()
 
-    async def list_by_ids(self, db: AsyncSession, ids: list[str], org_id: str) -> Sequence[Document]:
+    async def list_by_ids(
+        self, db: AsyncSession, ids: list[str], org_id: str
+    ) -> Sequence[Document]:
         stmt = select(Document).where(Document.id.in_(ids), Document.organization_id == org_id)
         res = await db.execute(stmt)
         return res.scalars().all()
 
-    async def get_document(self, db: AsyncSession, document_id: str, org_id: str) -> Optional[Document]:
-        stmt = select(Document).where(Document.id == document_id, Document.organization_id == org_id)
+    async def get_document(
+        self, db: AsyncSession, document_id: str, org_id: str
+    ) -> Document | None:
+        stmt = select(Document).where(
+            Document.id == document_id, Document.organization_id == org_id
+        )
         res = await db.execute(stmt)
         return res.scalars().first()
 

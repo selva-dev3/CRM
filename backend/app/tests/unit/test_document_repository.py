@@ -1,3 +1,4 @@
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -26,21 +27,23 @@ def _db_returning(value, method="scalars_first") -> AsyncMock:
 
 @pytest.mark.asyncio
 async def test_get_document_filters_by_org_and_returns_row():
-    repo = DocumentRepository()
-    doc = Document(id="doc-1", organization_id="org-1", filename="a.pdf", s3_key="documents/org-1/x.pdf")
+    repo: Any = DocumentRepository()
+    doc = Document(
+        id="doc-1", organization_id="org-1", filename="a.pdf", s3_key="documents/org-1/x.pdf"
+    )
     db = _db_returning(doc)
 
     found = await repo.get_document(db, "doc-1", "org-1")
 
     assert found is doc
-    stmt = db.execute.await_args.args[0]
+    stmt = db.execute.await_args_list[-1].args[0]
     sql = str(stmt)
     assert "organization_id" in sql
 
 
 @pytest.mark.asyncio
 async def test_get_document_returns_none_for_cross_org():
-    repo = DocumentRepository()
+    repo: Any = DocumentRepository()
     db = _db_returning(None)
 
     found = await repo.get_document(db, "doc-foreign", "org-other")
@@ -49,20 +52,20 @@ async def test_get_document_returns_none_for_cross_org():
 
 @pytest.mark.asyncio
 async def test_list_by_ids_scopes_to_org():
-    repo = DocumentRepository()
+    repo: Any = DocumentRepository()
     doc = Document(id="doc-1", organization_id="org-1", filename="a.pdf", s3_key="k")
     db = _db_returning([doc], method="scalars_all")
 
     rows = await repo.list_by_ids(db, ["doc-1"], "org-1")
 
     assert rows == [doc]
-    stmt = db.execute.await_args.args[0]
+    stmt = db.execute.await_args_list[-1].args[0]
     assert "organization_id" in str(stmt)
 
 
 @pytest.mark.asyncio
 async def test_create_document_persists_s3_key():
-    repo = DocumentRepository()
+    repo: Any = DocumentRepository()
     db = AsyncMock(spec=AsyncSession)
 
     doc = await repo.create_document(

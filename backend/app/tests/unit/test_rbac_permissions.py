@@ -130,7 +130,9 @@ async def test_get_user_permissions_grants_all_for_super_admin_role():
     repo.role_ids_for_user = AsyncMock(return_value=["sys-1"])
     repo.role_ids_by_name = AsyncMock(return_value=[])
     repo.permission_keys_for_roles = AsyncMock(return_value=["super_admin:manage"])
-    repo.roles_by_ids = AsyncMock(return_value=[type("R", (), {"id": "sys-1", "name": "Super Admin"})()])
+    repo.roles_by_ids = AsyncMock(
+        return_value=[type("R", (), {"id": "sys-1", "name": "Super Admin"})()]
+    )
     service = AuthService(repository=repo)
     user = _make_user(role="Super Admin")
     db = AsyncMock(spec=AsyncSession)
@@ -147,7 +149,9 @@ async def test_get_user_permissions_grants_all_when_resolved_role_is_super_admin
     repo.role_ids_for_user = AsyncMock(return_value=["sys-1"])
     repo.role_ids_by_name = AsyncMock(return_value=[])
     repo.permission_keys_for_roles = AsyncMock(return_value=["super_admin:manage"])
-    repo.roles_by_ids = AsyncMock(return_value=[type("R", (), {"id": "sys-1", "name": "super_admin"})()])
+    repo.roles_by_ids = AsyncMock(
+        return_value=[type("R", (), {"id": "sys-1", "name": "super_admin"})()]
+    )
     service = AuthService(repository=repo)
     user = _make_user(role="sys-1")
     db = AsyncMock(spec=AsyncSession)
@@ -284,7 +288,7 @@ def test_self_service_auth_endpoints_require_authentication():
         "/magic-link/verify",
     }
 
-    for route in (auth_router.router.routes or []):
+    for route in auth_router.router.routes or []:
         if not isinstance(route, APIRoute):
             continue
         path = route.path or ""
@@ -318,7 +322,14 @@ async def test_organization_subscription_passes_for_admin_with_billing_permissio
     result = await _run_permission_dependency(
         "organization:billing",
         admin_user,
-        ["organization:read", "organization:update", "organization:billing", "organization:branding", "organization:domains", "organization:audit"],
+        [
+            "organization:read",
+            "organization:update",
+            "organization:billing",
+            "organization:branding",
+            "organization:domains",
+            "organization:audit",
+        ],
     )
     assert result is admin_user
 
@@ -356,7 +367,9 @@ async def test_organization_sub_permissions_pass_for_super_admin():
     repo.role_ids_for_user = AsyncMock(return_value=["sa-1"])
     repo.role_ids_by_name = AsyncMock(return_value=[])
     repo.permission_keys_for_roles = AsyncMock(return_value=["super_admin:manage"])
-    repo.roles_by_ids = AsyncMock(return_value=[type("R", (), {"id": "sa-1", "name": "super_admin"})()])
+    repo.roles_by_ids = AsyncMock(
+        return_value=[type("R", (), {"id": "sa-1", "name": "super_admin"})()]
+    )
     service = AuthService(repository=repo)
     user = _make_user(role="super_admin")
     db = AsyncMock(spec=AsyncSession)
@@ -367,4 +380,3 @@ async def test_organization_sub_permissions_pass_for_super_admin():
     assert "organization:domains" in keys
     assert "organization:audit" in keys
     assert "users:create" in keys
-

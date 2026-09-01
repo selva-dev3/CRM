@@ -1,14 +1,18 @@
 import json
-import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.core.errors import APIException, NotFoundError
-from app.models import Organization, OrganizationSubscription, ProcessedWebhookEvent, SubscriptionPlan, User
+from app.models import (
+    Organization,
+    OrganizationSubscription,
+    ProcessedWebhookEvent,
+    SubscriptionPlan,
+    User,
+)
 from app.repositories.organization_repository import OrganizationRepository
 from app.services.organization_service import OrganizationDomainService
 
@@ -38,12 +42,15 @@ def org_service(mock_repo):
 # 1. CHECKOUT CREATION & VALIDATION TESTS
 # ==============================================================================
 
+
 @pytest.mark.asyncio
 async def test_create_checkout_missing_stripe_secret_key_fails_503(org_service, mock_db):
     """Test 2: Missing STRIPE_SECRET_KEY returns 503 without fake session."""
     mock_repo = org_service.repository
     mock_repo.get_by_id = AsyncMock(return_value=Organization(id="org-1", name="Acme Corp"))
-    starter_plan = SubscriptionPlan(id="p-1", name="Starter", slug="starter", price_monthly=999.0, is_active=True)
+    starter_plan = SubscriptionPlan(
+        id="p-1", name="Starter", slug="starter", price_monthly=999.0, is_active=True
+    )
     mock_repo.get_plan_by_slug = AsyncMock(return_value=starter_plan)
 
     with patch("app.core.config.settings.STRIPE_SECRET_KEY", None):
@@ -60,7 +67,9 @@ async def test_create_checkout_free_plan_rejected(org_service, mock_db):
     """Test 10: Free plan checkout is rejected with HTTP 400."""
     mock_repo = org_service.repository
     mock_repo.get_by_id = AsyncMock(return_value=Organization(id="org-1", name="Acme Corp"))
-    free_plan = SubscriptionPlan(id="p-0", name="Free", slug="free", price_monthly=0.0, is_active=True)
+    free_plan = SubscriptionPlan(
+        id="p-0", name="Free", slug="free", price_monthly=0.0, is_active=True
+    )
     mock_repo.get_plan_by_slug = AsyncMock(return_value=free_plan)
 
     with patch("app.core.config.settings.STRIPE_SECRET_KEY", "sk_test_123"):
@@ -98,9 +107,7 @@ async def test_create_checkout_inactive_plan(org_service, mock_db):
     mock_repo.get_plan_by_slug = AsyncMock(return_value=inactive_plan)
 
     with pytest.raises(APIException) as exc_info:
-        await org_service.create_subscription_checkout(
-            mock_db, plan_slug="legacy", org_id="org-1"
-        )
+        await org_service.create_subscription_checkout(mock_db, plan_slug="legacy", org_id="org-1")
     assert exc_info.value.status_code == status.HTTP_400_BAD_REQUEST
     assert "inactive" in exc_info.value.message
 
@@ -155,9 +162,10 @@ async def test_create_checkout_recurring_monthly_subscription_mode(org_service, 
     mock_stripe_session.id = "cs_test_12345"
     mock_stripe_session.url = "https://checkout.stripe.com/pay/cs_test_12345"
 
-    with patch("app.core.config.settings.STRIPE_SECRET_KEY", "sk_test_mock_key"), \
-         patch("stripe.checkout.Session.create", return_value=mock_stripe_session) as mock_create:
-
+    with (
+        patch("app.core.config.settings.STRIPE_SECRET_KEY", "sk_test_mock_key"),
+        patch("stripe.checkout.Session.create", return_value=mock_stripe_session) as mock_create,
+    ):
         result = await org_service.create_subscription_checkout(
             mock_db, plan_slug="starter", org_id="org-1", current_user=user
         )
@@ -190,12 +198,18 @@ async def test_create_checkout_generic_error_on_stripe_failure(org_service, mock
     """Test 11: Stripe exception is caught and generic 502 returned without leaking raw details."""
     mock_repo = org_service.repository
     mock_repo.get_by_id = AsyncMock(return_value=Organization(id="org-1", name="Acme Corp"))
-    starter_plan = SubscriptionPlan(id="p-1", name="Starter", slug="starter", price_monthly=999.0, is_active=True)
+    starter_plan = SubscriptionPlan(
+        id="p-1", name="Starter", slug="starter", price_monthly=999.0, is_active=True
+    )
     mock_repo.get_plan_by_slug = AsyncMock(return_value=starter_plan)
 
-    with patch("app.core.config.settings.STRIPE_SECRET_KEY", "sk_test_mock_key"), \
-         patch("stripe.checkout.Session.create", side_effect=Exception("Internal Stripe card error details sk_test_secret")):
-
+    with (
+        patch("app.core.config.settings.STRIPE_SECRET_KEY", "sk_test_mock_key"),
+        patch(
+            "stripe.checkout.Session.create",
+            side_effect=Exception("Internal Stripe card error details sk_test_secret"),
+        ),
+    ):
         with pytest.raises(APIException) as exc_info:
             await org_service.create_subscription_checkout(
                 mock_db, plan_slug="starter", org_id="org-1"
@@ -208,6 +222,7 @@ async def test_create_checkout_generic_error_on_stripe_failure(org_service, mock
 # ==============================================================================
 # 2. STRIPE WEBHOOK & TRANSACTIONAL UPGRADE TESTS
 # ==============================================================================
+
 
 @pytest.mark.asyncio
 async def test_webhook_missing_secret_fails_503_closed(org_service, mock_db):
@@ -224,14 +239,16 @@ async def test_webhook_missing_secret_fails_503_closed(org_service, mock_db):
 @pytest.mark.asyncio
 async def test_webhook_invalid_signature_rejected(org_service, mock_db):
     """Test 4: Invalid webhook signature is rejected with HTTP 400."""
-    with patch("app.core.config.settings.STRIPE_WEBHOOK_SECRET", "whsec_mock_secret"):
-        with patch("stripe.Webhook.construct_event", side_effect=Exception("Invalid signature")):
-            with pytest.raises(APIException) as exc_info:
-                await org_service.handle_stripe_subscription_webhook(
-                    mock_db, payload_bytes=b"{}", sig_header="bad_sig"
-                )
-            assert exc_info.value.status_code == status.HTTP_400_BAD_REQUEST
-            assert "signature" in exc_info.value.message
+    with (
+        patch("app.core.config.settings.STRIPE_WEBHOOK_SECRET", "whsec_mock_secret"),
+        patch("stripe.Webhook.construct_event", side_effect=Exception("Invalid signature")),
+        pytest.raises(APIException) as exc_info,
+    ):
+        await org_service.handle_stripe_subscription_webhook(
+            mock_db, payload_bytes=b"{}", sig_header="bad_sig"
+        )
+    assert exc_info.value.status_code == status.HTTP_400_BAD_REQUEST
+    assert "signature" in exc_info.value.message
 
 
 @pytest.mark.asyncio
@@ -282,11 +299,13 @@ async def test_webhook_successful_payment_upgrades_subscription(org_service, moc
         },
     }
 
-    with patch("app.core.config.settings.STRIPE_WEBHOOK_SECRET", "whsec_test"):
-        with patch("stripe.Webhook.construct_event", return_value=payload):
-            result = await org_service.handle_stripe_subscription_webhook(
-                mock_db, payload_bytes=json.dumps(payload).encode("utf-8"), sig_header="valid_sig"
-            )
+    with (
+        patch("app.core.config.settings.STRIPE_WEBHOOK_SECRET", "whsec_test"),
+        patch("stripe.Webhook.construct_event", return_value=payload),
+    ):
+        result = await org_service.handle_stripe_subscription_webhook(
+            mock_db, payload_bytes=json.dumps(payload).encode("utf-8"), sig_header="valid_sig"
+        )
 
     assert result["status"] == "success"
     # Verify DB updates
@@ -327,11 +346,13 @@ async def test_webhook_unpaid_or_failed_status_does_not_upgrade(org_service, moc
         },
     }
 
-    with patch("app.core.config.settings.STRIPE_WEBHOOK_SECRET", "whsec_test"):
-        with patch("stripe.Webhook.construct_event", return_value=payload):
-            result = await org_service.handle_stripe_subscription_webhook(
-                mock_db, payload_bytes=json.dumps(payload).encode("utf-8"), sig_header="valid_sig"
-            )
+    with (
+        patch("app.core.config.settings.STRIPE_WEBHOOK_SECRET", "whsec_test"),
+        patch("stripe.Webhook.construct_event", return_value=payload),
+    ):
+        result = await org_service.handle_stripe_subscription_webhook(
+            mock_db, payload_bytes=json.dumps(payload).encode("utf-8"), sig_header="valid_sig"
+        )
 
     assert result["status"] == "pending_or_unpaid"
     mock_repo.get_by_id.assert_not_called()
@@ -354,11 +375,13 @@ async def test_webhook_duplicate_event_is_idempotent(org_service, mock_db):
         "data": {"object": {"payment_status": "paid"}},
     }
 
-    with patch("app.core.config.settings.STRIPE_WEBHOOK_SECRET", "whsec_test"):
-        with patch("stripe.Webhook.construct_event", return_value=payload):
-            result = await org_service.handle_stripe_subscription_webhook(
-                mock_db, payload_bytes=json.dumps(payload).encode("utf-8"), sig_header="valid_sig"
-            )
+    with (
+        patch("app.core.config.settings.STRIPE_WEBHOOK_SECRET", "whsec_test"),
+        patch("stripe.Webhook.construct_event", return_value=payload),
+    ):
+        result = await org_service.handle_stripe_subscription_webhook(
+            mock_db, payload_bytes=json.dumps(payload).encode("utf-8"), sig_header="valid_sig"
+        )
 
     assert result["status"] == "ignored_duplicate"
     mock_repo.get_by_id.assert_not_called()
@@ -381,6 +404,7 @@ async def test_apply_upgrade_unknown_org_rejected_without_fallback(org_service, 
 # 3. BACKEND SESSION VERIFICATION TESTS
 # ==============================================================================
 
+
 @pytest.mark.asyncio
 async def test_verify_session_rejects_cross_tenant_access(org_service, mock_db):
     """Test 20: Verification validates organization ownership against session metadata."""
@@ -393,9 +417,10 @@ async def test_verify_session_rejects_cross_tenant_access(org_service, mock_db):
     mock_session.mode = "subscription"
     mock_session.payment_status = "paid"
 
-    with patch("app.core.config.settings.STRIPE_SECRET_KEY", "sk_test_123"), \
-         patch("stripe.checkout.Session.retrieve", return_value=mock_session):
-
+    with (
+        patch("app.core.config.settings.STRIPE_SECRET_KEY", "sk_test_123"),
+        patch("stripe.checkout.Session.retrieve", return_value=mock_session),
+    ):
         with pytest.raises(APIException) as exc_info:
             await org_service.verify_subscription_checkout(
                 mock_db, session_id="cs_test_session_1", org_id="org-1"
@@ -408,11 +433,20 @@ async def test_verify_session_self_heals_delayed_webhook_and_upgrades_db(org_ser
     """Test 19: Verification self-heals when Stripe is paid and updates DB synchronously if webhook is delayed."""
     mock_repo = org_service.repository
     org = Organization(id="org-1", name="Acme Corp", plan="Free", max_users=3)
-    subscription = OrganizationSubscription(id="s-1", organization_id="org-1", checkout_session_id=None)
+    subscription = OrganizationSubscription(
+        id="s-1", organization_id="org-1", checkout_session_id=None
+    )
     mock_repo.get_by_id = AsyncMock(return_value=org)
     mock_repo.get_subscription = AsyncMock(return_value=subscription)
     starter_plan = SubscriptionPlan(
-        id="p-1", name="Starter", slug="starter", price_monthly=999.0, max_users=10, max_storage_gb=20, ai_credits=500, is_active=True
+        id="p-1",
+        name="Starter",
+        slug="starter",
+        price_monthly=999.0,
+        max_users=10,
+        max_storage_gb=20,
+        ai_credits=500,
+        is_active=True,
     )
     mock_repo.get_plan_by_slug = AsyncMock(return_value=starter_plan)
     mock_repo.create_audit_log = AsyncMock()
@@ -425,9 +459,10 @@ async def test_verify_session_self_heals_delayed_webhook_and_upgrades_db(org_ser
     mock_session.customer = "cus_123"
     mock_session.subscription = "sub_123"
 
-    with patch("app.core.config.settings.STRIPE_SECRET_KEY", "sk_test_123"), \
-         patch("stripe.checkout.Session.retrieve", return_value=mock_session):
-
+    with (
+        patch("app.core.config.settings.STRIPE_SECRET_KEY", "sk_test_123"),
+        patch("stripe.checkout.Session.retrieve", return_value=mock_session),
+    ):
         result = await org_service.verify_subscription_checkout(
             mock_db, session_id="cs_test_session_1", org_id="org-1"
         )
@@ -444,10 +479,14 @@ async def test_verify_session_reports_completed_sync_when_db_updated(org_service
     """Test 19b: Verification returns db_synced=True when DB subscription already matches session."""
     mock_repo = org_service.repository
     org = Organization(id="org-1", name="Acme Corp", plan="Starter", max_users=10)
-    subscription = OrganizationSubscription(id="s-1", organization_id="org-1", checkout_session_id="cs_test_session_1")
+    subscription = OrganizationSubscription(
+        id="s-1", organization_id="org-1", checkout_session_id="cs_test_session_1"
+    )
     mock_repo.get_by_id = AsyncMock(return_value=org)
     mock_repo.get_subscription = AsyncMock(return_value=subscription)
-    starter_plan = SubscriptionPlan(id="p-1", name="Starter", slug="starter", price_monthly=999.0, is_active=True)
+    starter_plan = SubscriptionPlan(
+        id="p-1", name="Starter", slug="starter", price_monthly=999.0, is_active=True
+    )
     mock_repo.get_plan_by_slug = AsyncMock(return_value=starter_plan)
 
     mock_session = MagicMock()
@@ -456,9 +495,10 @@ async def test_verify_session_reports_completed_sync_when_db_updated(org_service
     mock_session.mode = "subscription"
     mock_session.payment_status = "paid"
 
-    with patch("app.core.config.settings.STRIPE_SECRET_KEY", "sk_test_123"), \
-         patch("stripe.checkout.Session.retrieve", return_value=mock_session):
-
+    with (
+        patch("app.core.config.settings.STRIPE_SECRET_KEY", "sk_test_123"),
+        patch("stripe.checkout.Session.retrieve", return_value=mock_session),
+    ):
         result = await org_service.verify_subscription_checkout(
             mock_db, session_id="cs_test_session_1", org_id="org-1"
         )
@@ -479,22 +519,28 @@ async def test_verify_session_with_real_stripe_object_no_key_error(org_service, 
     mock_repo.get_subscription = AsyncMock(
         return_value=OrganizationSubscription(id="s-1", checkout_session_id="cs_real_stripe_123")
     )
-    starter_plan = SubscriptionPlan(id="p-1", name="Starter", slug="starter", price_monthly=999.0, is_active=True)
+    starter_plan = SubscriptionPlan(
+        id="p-1", name="Starter", slug="starter", price_monthly=999.0, is_active=True
+    )
     mock_repo.get_plan_by_slug = AsyncMock(return_value=starter_plan)
 
     # Construct real StripeObject (which does not have a .get method)
-    real_session = stripe.StripeObject.construct_from({
-        "id": "cs_real_stripe_123",
-        "mode": "subscription",
-        "payment_status": "paid",
-        "customer": "cus_real_123",
-        "subscription": "sub_real_123",
-        "metadata": {"organization_id": "org-1", "plan_slug": "starter"}
-    }, "key")
+    real_session = stripe.StripeObject.construct_from(
+        {
+            "id": "cs_real_stripe_123",
+            "mode": "subscription",
+            "payment_status": "paid",
+            "customer": "cus_real_123",
+            "subscription": "sub_real_123",
+            "metadata": {"organization_id": "org-1", "plan_slug": "starter"},
+        },
+        "key",
+    )
 
-    with patch("app.core.config.settings.STRIPE_SECRET_KEY", "sk_test_123"), \
-         patch("stripe.checkout.Session.retrieve", return_value=real_session):
-
+    with (
+        patch("app.core.config.settings.STRIPE_SECRET_KEY", "sk_test_123"),
+        patch("stripe.checkout.Session.retrieve", return_value=real_session),
+    ):
         result = await org_service.verify_subscription_checkout(
             mock_db, session_id="cs_real_stripe_123", org_id="org-1"
         )
@@ -533,26 +579,30 @@ async def test_webhook_with_real_stripe_event_no_key_error(org_service, mock_db)
     mock_repo.create_audit_log = AsyncMock()
 
     # Construct real Stripe Event object
-    real_event = stripe.Event.construct_from({
-        "id": "evt_real_123",
-        "type": "checkout.session.completed",
-        "data": {
-            "object": {
-                "id": "cs_real_session_999",
-                "customer": "cus_real_999",
-                "subscription": "sub_real_999",
-                "payment_status": "paid",
-                "metadata": {
-                    "organization_id": "org-1",
-                    "plan_slug": "starter",
-                },
-            }
+    real_event = stripe.Event.construct_from(
+        {
+            "id": "evt_real_123",
+            "type": "checkout.session.completed",
+            "data": {
+                "object": {
+                    "id": "cs_real_session_999",
+                    "customer": "cus_real_999",
+                    "subscription": "sub_real_999",
+                    "payment_status": "paid",
+                    "metadata": {
+                        "organization_id": "org-1",
+                        "plan_slug": "starter",
+                    },
+                }
+            },
         },
-    }, "key")
+        "key",
+    )
 
-    with patch("app.core.config.settings.STRIPE_WEBHOOK_SECRET", "whsec_test"), \
-         patch("stripe.Webhook.construct_event", return_value=real_event):
-
+    with (
+        patch("app.core.config.settings.STRIPE_WEBHOOK_SECRET", "whsec_test"),
+        patch("stripe.Webhook.construct_event", return_value=real_event),
+    ):
         result = await org_service.handle_stripe_subscription_webhook(
             mock_db, payload_bytes=b"{}", sig_header="valid_sig"
         )
@@ -571,11 +621,22 @@ async def test_webhook_after_verify_fallback_is_idempotent(org_service, mock_db)
     # Organization already upgraded to Starter by verify fallback
     org = Organization(id="org-1", name="Acme Corp", plan="Starter", max_users=10)
     subscription = OrganizationSubscription(
-        id="sub-1", organization_id="org-1", plan_id="p-1", amount=999.0, status="active",
-        checkout_session_id="cs_session_already_synced"
+        id="sub-1",
+        organization_id="org-1",
+        plan_id="p-1",
+        amount=999.0,
+        status="active",
+        checkout_session_id="cs_session_already_synced",
     )
     starter_plan = SubscriptionPlan(
-        id="p-1", name="Starter", slug="starter", price_monthly=999.0, max_users=10, max_storage_gb=20, ai_credits=500, is_active=True
+        id="p-1",
+        name="Starter",
+        slug="starter",
+        price_monthly=999.0,
+        max_users=10,
+        max_storage_gb=20,
+        ai_credits=500,
+        is_active=True,
     )
 
     mock_repo.get_by_id = AsyncMock(return_value=org)
@@ -585,26 +646,30 @@ async def test_webhook_after_verify_fallback_is_idempotent(org_service, mock_db)
     mock_repo.record_processed_webhook_event = AsyncMock()
     mock_repo.create_audit_log = AsyncMock()
 
-    real_event = stripe.Event.construct_from({
-        "id": "evt_duplicate_webhook_123",
-        "type": "checkout.session.completed",
-        "data": {
-            "object": {
-                "id": "cs_session_already_synced",
-                "customer": "cus_123",
-                "subscription": "sub_123",
-                "payment_status": "paid",
-                "metadata": {
-                    "organization_id": "org-1",
-                    "plan_slug": "starter",
-                },
-            }
+    real_event = stripe.Event.construct_from(
+        {
+            "id": "evt_duplicate_webhook_123",
+            "type": "checkout.session.completed",
+            "data": {
+                "object": {
+                    "id": "cs_session_already_synced",
+                    "customer": "cus_123",
+                    "subscription": "sub_123",
+                    "payment_status": "paid",
+                    "metadata": {
+                        "organization_id": "org-1",
+                        "plan_slug": "starter",
+                    },
+                }
+            },
         },
-    }, "key")
+        "key",
+    )
 
-    with patch("app.core.config.settings.STRIPE_WEBHOOK_SECRET", "whsec_test"), \
-         patch("stripe.Webhook.construct_event", return_value=real_event):
-
+    with (
+        patch("app.core.config.settings.STRIPE_WEBHOOK_SECRET", "whsec_test"),
+        patch("stripe.Webhook.construct_event", return_value=real_event),
+    ):
         result = await org_service.handle_stripe_subscription_webhook(
             mock_db, payload_bytes=b"{}", sig_header="valid_sig"
         )
@@ -612,5 +677,3 @@ async def test_webhook_after_verify_fallback_is_idempotent(org_service, mock_db)
     assert result["status"] == "success"
     # No duplicate audit log created since DB was already up-to-date
     mock_repo.create_audit_log.assert_not_called()
-
-

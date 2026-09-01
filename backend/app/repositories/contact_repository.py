@@ -1,5 +1,3 @@
-from typing import Optional
-
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,7 +14,7 @@ class ContactRepository:
         organization_id: str,
         page: int,
         limit: int,
-        search: Optional[str] = None,
+        search: str | None = None,
     ) -> list[Contact]:
         stmt = select(Contact).where(Contact.organization_id == organization_id)
 
@@ -34,14 +32,14 @@ class ContactRepository:
         return list(result.scalars().all())
 
     async def list_starred(self, db: AsyncSession) -> list[Contact]:
-        result = await db.execute(select(Contact).where(Contact.is_starred == True))
+        result = await db.execute(select(Contact).where(Contact.is_starred))
         return list(result.scalars().all())
 
     async def list_by_company(self, db: AsyncSession, company_id: str) -> list[Contact]:
         result = await db.execute(select(Contact).where(Contact.company_id == company_id))
         return list(result.scalars().all())
 
-    async def get_by_id(self, db: AsyncSession, contact_id: str) -> Optional[Contact]:
+    async def get_by_id(self, db: AsyncSession, contact_id: str) -> Contact | None:
         result = await db.execute(select(Contact).where(Contact.id == contact_id))
         return result.scalars().first()
 

@@ -185,7 +185,11 @@ class DocumentService:
         self.repository = repository or DocumentRepository()
 
     def _resolve_auth(self, current_user: User | None) -> tuple[str, str]:
-        org_id = current_user.organization_id if current_user and getattr(current_user, "organization_id", None) else None
+        org_id = (
+            current_user.organization_id
+            if current_user and getattr(current_user, "organization_id", None)
+            else None
+        )
         user_id = current_user.id if current_user and getattr(current_user, "id", None) else None
 
         if not org_id or not user_id:

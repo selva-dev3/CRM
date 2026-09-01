@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from typing import Any, cast
+
 from sqlalchemy import delete, select
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Quote
@@ -58,11 +61,14 @@ class QuoteRepository:
         return quote
 
     async def delete_scoped(self, db: AsyncSession, *, quote_id: str, organization_id: str) -> bool:
-        result = await db.execute(
-            delete(Quote).where(
-                Quote.id == quote_id,
-                Quote.organization_id == organization_id,
-            )
+        result = cast(
+            CursorResult[Any],
+            await db.execute(
+                delete(Quote).where(
+                    Quote.id == quote_id,
+                    Quote.organization_id == organization_id,
+                )
+            ),
         )
         return bool(result.rowcount)
 
@@ -71,11 +77,14 @@ class QuoteRepository:
     ) -> int:
         if not quote_ids:
             return 0
-        result = await db.execute(
-            delete(Quote).where(
-                Quote.id.in_(quote_ids),
-                Quote.organization_id == organization_id,
-            )
+        result = cast(
+            CursorResult[Any],
+            await db.execute(
+                delete(Quote).where(
+                    Quote.id.in_(quote_ids),
+                    Quote.organization_id == organization_id,
+                )
+            ),
         )
         return int(result.rowcount or 0)
 

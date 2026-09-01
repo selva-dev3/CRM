@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
@@ -36,7 +37,7 @@ def _service_with(repo: DealRepository) -> DealService:
 
 @pytest.mark.asyncio
 async def test_list_deals_serializes_rows():
-    repo = DealRepository()
+    repo: Any = DealRepository()
     repo.list = AsyncMock(return_value=[_make_deal()])
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -51,7 +52,7 @@ async def test_list_deals_serializes_rows():
 
 @pytest.mark.asyncio
 async def test_get_deal_raises_not_found_when_missing():
-    repo = DealRepository()
+    repo: Any = DealRepository()
     repo.get_by_id = AsyncMock(return_value=None)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -63,7 +64,7 @@ async def test_get_deal_raises_not_found_when_missing():
 @pytest.mark.asyncio
 async def test_create_deal_falls_back_to_first_user(monkeypatch):
     deal = _make_deal()
-    repo = DealRepository()
+    repo: Any = DealRepository()
     repo.create = AsyncMock(return_value=deal)
     repo.user_exists = AsyncMock(return_value=False)
     repo.first_user_id = AsyncMock(return_value="user-1")
@@ -83,7 +84,7 @@ async def test_create_deal_falls_back_to_first_user(monkeypatch):
     result = await service.create_deal(db, payload, None)
 
     assert result["id"] == "deal-1"
-    created = repo.create.await_args.kwargs["data"]
+    created = repo.create.await_args_list[-1].kwargs["data"]
     assert created["assigned_to"] == "user-1"
     assert created["stage"] == "Qualification"
 
@@ -91,7 +92,7 @@ async def test_create_deal_falls_back_to_first_user(monkeypatch):
 @pytest.mark.asyncio
 async def test_create_deal_fires_deal_created_event(monkeypatch):
     deal = _make_deal()
-    repo = DealRepository()
+    repo: Any = DealRepository()
     repo.create = AsyncMock(return_value=deal)
     repo.user_exists = AsyncMock(return_value=False)
     repo.first_user_id = AsyncMock(return_value="user-1")
@@ -111,7 +112,7 @@ async def test_create_deal_fires_deal_created_event(monkeypatch):
     await service.create_deal(db, DealCreate(title="Acme Corp Deal", amount=25000.0), None)
 
     notify.assert_awaited_once()
-    kwargs = notify.await_args.kwargs
+    kwargs = notify.await_args_list[-1].kwargs
     assert kwargs["event_name"] == "deal.created"
     assert kwargs["org_id"] == "org-1"
     assert kwargs["data"]["amount"] == 25000.0
@@ -120,7 +121,7 @@ async def test_create_deal_fires_deal_created_event(monkeypatch):
 @pytest.mark.asyncio
 async def test_update_deal_nulls_company_on_sentinel():
     deal = _make_deal(company_id="comp-1")
-    repo = DealRepository()
+    repo: Any = DealRepository()
     repo.get_by_id = AsyncMock(return_value=deal)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -136,7 +137,7 @@ async def test_update_deal_nulls_company_on_sentinel():
 @pytest.mark.asyncio
 async def test_mark_deal_won_sets_stage_and_probability(monkeypatch):
     deal = _make_deal()
-    repo = DealRepository()
+    repo: Any = DealRepository()
     repo.get_by_id = AsyncMock(return_value=deal)
     service = _service_with(repo)
     monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())
@@ -153,7 +154,7 @@ async def test_mark_deal_won_sets_stage_and_probability(monkeypatch):
 @pytest.mark.asyncio
 async def test_mark_deal_won_fires_deal_won_event(monkeypatch):
     deal = _make_deal()
-    repo = DealRepository()
+    repo: Any = DealRepository()
     repo.get_by_id = AsyncMock(return_value=deal)
     service = _service_with(repo)
     notify = AsyncMock()
@@ -163,7 +164,7 @@ async def test_mark_deal_won_fires_deal_won_event(monkeypatch):
     await service.mark_deal_won(db, "deal-1", 30000.0)
 
     notify.assert_awaited_once()
-    kwargs = notify.await_args.kwargs
+    kwargs = notify.await_args_list[-1].kwargs
     assert kwargs["event_name"] == "deal.won"
     assert kwargs["org_id"] == "org-1"
     assert kwargs["data"]["amount"] == 30000.0
@@ -173,7 +174,7 @@ async def test_mark_deal_won_fires_deal_won_event(monkeypatch):
 @pytest.mark.asyncio
 async def test_mark_deal_lost_fires_deal_lost_event(monkeypatch):
     deal = _make_deal()
-    repo = DealRepository()
+    repo: Any = DealRepository()
     repo.get_by_id = AsyncMock(return_value=deal)
     service = _service_with(repo)
     notify = AsyncMock()
@@ -183,7 +184,7 @@ async def test_mark_deal_lost_fires_deal_lost_event(monkeypatch):
     await service.mark_deal_lost(db, "deal-1", "Budget cut")
 
     notify.assert_awaited_once()
-    kwargs = notify.await_args.kwargs
+    kwargs = notify.await_args_list[-1].kwargs
     assert kwargs["event_name"] == "deal.lost"
     assert kwargs["org_id"] == "org-1"
     assert kwargs["data"]["reason"] == "Budget cut"
@@ -192,7 +193,7 @@ async def test_mark_deal_lost_fires_deal_lost_event(monkeypatch):
 @pytest.mark.asyncio
 async def test_add_deal_product_recalculates_amount():
     deal = _make_deal()
-    repo = DealRepository()
+    repo: Any = DealRepository()
     repo.get_product = AsyncMock(return_value=None)
     repo.create_product = AsyncMock(return_value=type("P", (), {"id": "prod-1", "price": 500.0})())
     repo.get_deal_product = AsyncMock(return_value=None)
@@ -219,7 +220,7 @@ async def test_add_deal_product_recalculates_amount():
 
 @pytest.mark.asyncio
 async def test_get_deal_commission_calculates_ten_percent():
-    repo = DealRepository()
+    repo: Any = DealRepository()
     repo.get_by_id = AsyncMock(return_value=_make_deal(amount=50000.0))
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -239,7 +240,7 @@ def test_deal_to_dict_handles_missing_dates():
 @pytest.mark.asyncio
 async def test_assign_deal_fires_deal_assigned_event(monkeypatch):
     deal = _make_deal()
-    repo = DealRepository()
+    repo: Any = DealRepository()
     repo.get_by_id = AsyncMock(return_value=deal)
     service = _service_with(repo)
     notify = AsyncMock()
@@ -250,7 +251,7 @@ async def test_assign_deal_fires_deal_assigned_event(monkeypatch):
 
     assert result["status"] == "success"
     notify.assert_awaited_once()
-    kwargs = notify.await_args.kwargs
+    kwargs = notify.await_args_list[-1].kwargs
     assert kwargs["event_name"] == "deal.assigned"
     assert kwargs["org_id"] == "org-1"
     assert kwargs["data"]["assigned_to"] == "user-2"
@@ -259,7 +260,7 @@ async def test_assign_deal_fires_deal_assigned_event(monkeypatch):
 @pytest.mark.asyncio
 async def test_update_deal_stage_fires_deal_stage_changed_event(monkeypatch):
     deal = _make_deal()
-    repo = DealRepository()
+    repo: Any = DealRepository()
     repo.get_by_id = AsyncMock(return_value=deal)
     service = _service_with(repo)
     notify = AsyncMock()
@@ -270,7 +271,7 @@ async def test_update_deal_stage_fires_deal_stage_changed_event(monkeypatch):
 
     assert result["status"] == "success"
     notify.assert_awaited_once()
-    kwargs = notify.await_args.kwargs
+    kwargs = notify.await_args_list[-1].kwargs
     assert kwargs["event_name"] == "deal.stage_changed"
     assert kwargs["org_id"] == "org-1"
     assert kwargs["data"]["stage"] == "Proposal"
@@ -279,7 +280,7 @@ async def test_update_deal_stage_fires_deal_stage_changed_event(monkeypatch):
 @pytest.mark.asyncio
 async def test_update_deal_fires_amount_changed_event(monkeypatch):
     deal = _make_deal()
-    repo = DealRepository()
+    repo: Any = DealRepository()
     repo.get_by_id = AsyncMock(return_value=deal)
     service = _service_with(repo)
     notify = AsyncMock()
@@ -290,7 +291,7 @@ async def test_update_deal_fires_amount_changed_event(monkeypatch):
 
     assert deal.amount == 40000.0
     notify.assert_awaited_once()
-    kwargs = notify.await_args.kwargs
+    kwargs = notify.await_args_list[-1].kwargs
     assert kwargs["event_name"] == "deal.amount_changed"
     assert kwargs["org_id"] == "org-1"
     assert kwargs["data"]["old_amount"] == 25000.0
@@ -299,7 +300,7 @@ async def test_update_deal_fires_amount_changed_event(monkeypatch):
 @pytest.mark.asyncio
 async def test_update_deal_no_amount_event_when_unchanged(monkeypatch):
     deal = _make_deal()
-    repo = DealRepository()
+    repo: Any = DealRepository()
     repo.get_by_id = AsyncMock(return_value=deal)
     service = _service_with(repo)
     notify = AsyncMock()
@@ -314,7 +315,7 @@ async def test_update_deal_no_amount_event_when_unchanged(monkeypatch):
 @pytest.mark.asyncio
 async def test_update_deal_fires_probability_changed_event(monkeypatch):
     deal = _make_deal()
-    repo = DealRepository()
+    repo: Any = DealRepository()
     repo.get_by_id = AsyncMock(return_value=deal)
     service = _service_with(repo)
     notify = AsyncMock()
@@ -324,21 +325,21 @@ async def test_update_deal_fires_probability_changed_event(monkeypatch):
     await service.update_deal(db, "deal-1", DealUpdate(probability=80.0))
 
     notify.assert_awaited_once()
-    kwargs = notify.await_args.kwargs
+    kwargs = notify.await_args_list[-1].kwargs
     assert kwargs["event_name"] == "deal.probability_changed"
     assert kwargs["data"]["old_probability"] == 20.0
 
 
 @pytest.mark.asyncio
 async def test_predict_win_rate_fallback_for_closed_won():
-    repo = DealRepository()
+    repo: Any = DealRepository()
     repo.get_by_id = AsyncMock(return_value=_make_deal(stage="Closed Won", probability=50.0))
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
     from app.services.deal_service import note_service
 
-    note_service.get_notes_by_entity = AsyncMock(return_value=[])
+    cast(Any, note_service).get_notes_by_entity = AsyncMock(return_value=[])
 
     result = await service.predict_deal_win_rate(db, "deal-1")
 
@@ -348,7 +349,7 @@ async def test_predict_win_rate_fallback_for_closed_won():
 
 @pytest.mark.asyncio
 async def test_get_deal_quotes_uses_scoped_deal_and_quote_service():
-    repo = DealRepository()
+    repo: Any = DealRepository()
     repo.get_by_id_scoped = AsyncMock(return_value=_make_deal())
     quotes = AsyncMock(spec=QuoteService)
     quotes.list_quotes_for_deal.return_value = [{"id": "quote-1"}]
@@ -367,7 +368,7 @@ async def test_get_deal_quotes_uses_scoped_deal_and_quote_service():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("deal_id", ["foreign-deal", "missing-deal"])
 async def test_get_deal_quotes_hides_foreign_and_missing_deals(deal_id):
-    repo = DealRepository()
+    repo: Any = DealRepository()
     repo.get_by_id_scoped = AsyncMock(return_value=None)
     quotes = AsyncMock(spec=QuoteService)
     service = DealService(repository=repo, quote_service_instance=quotes)

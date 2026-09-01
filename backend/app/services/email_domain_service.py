@@ -1,4 +1,3 @@
-
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -72,9 +71,7 @@ class EmailDomainService:
         limit: int,
         search: str | None = None,
     ) -> list[dict]:
-        emails = await self.repository.list_emails(
-            db, page=page, limit=limit, search=search
-        )
+        emails = await self.repository.list_emails(db, page=page, limit=limit, search=search)
         return [email_to_dict(e) for e in emails]
 
     async def send_email(self, db: AsyncSession, payload: EmailSendRequest) -> dict:
@@ -123,8 +120,18 @@ class EmailDomainService:
         templates = await self.repository.list_templates(db)
         if not templates:
             return [
-                {"id": "tmpl-1", "name": "Cold Outreach Introduction", "subject": "Quick intro - {{company_name}}", "category": "Sales Outreach"},
-                {"id": "tmpl-2", "name": "Product Demo Followup", "subject": "Demo recap & next steps", "category": "Follow-up"},
+                {
+                    "id": "tmpl-1",
+                    "name": "Cold Outreach Introduction",
+                    "subject": "Quick intro - {{company_name}}",
+                    "category": "Sales Outreach",
+                },
+                {
+                    "id": "tmpl-2",
+                    "name": "Product Demo Followup",
+                    "subject": "Demo recap & next steps",
+                    "category": "Follow-up",
+                },
             ]
         return [template_list_to_dict(t) for t in templates]
 
@@ -205,7 +212,11 @@ class EmailDomainService:
 
     async def get_email_signatures(self) -> list[dict]:
         return [
-            {"id": "sig-1", "name": "Corporate Standard", "html": "<b>Best regards,</b><br/>Sales Team | Enterprise CRM"}
+            {
+                "id": "sig-1",
+                "name": "Corporate Standard",
+                "html": "<b>Best regards,</b><br/>Sales Team | Enterprise CRM",
+            }
         ]
 
     async def save_email_signature(self, name: str, html: str) -> dict:
@@ -215,8 +226,20 @@ class EmailDomainService:
         return {
             "thread_id": thread_id,
             "messages": [
-                {"from": "prospect@client.com", "to": "rep@company.com", "subject": "Re: Demo Meeting", "body": "Thanks, Thursday works great for us.", "timestamp": "2026-08-05T11:00:00Z"},
-                {"from": "rep@company.com", "to": "prospect@client.com", "subject": "Demo Meeting", "body": "Great, invite sent!", "timestamp": "2026-08-05T11:15:00Z"},
+                {
+                    "from": "prospect@client.com",
+                    "to": "rep@company.com",
+                    "subject": "Re: Demo Meeting",
+                    "body": "Thanks, Thursday works great for us.",
+                    "timestamp": "2026-08-05T11:00:00Z",
+                },
+                {
+                    "from": "rep@company.com",
+                    "to": "prospect@client.com",
+                    "subject": "Demo Meeting",
+                    "body": "Great, invite sent!",
+                    "timestamp": "2026-08-05T11:15:00Z",
+                },
             ],
         }
 

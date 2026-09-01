@@ -1,4 +1,5 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -24,7 +25,7 @@ def _make_org(**overrides) -> Organization:
         "plan": "Enterprise",
         "max_users": 100,
         "status": "active",
-        "created_at": datetime(2026, 8, 1, tzinfo=timezone.utc),
+        "created_at": datetime(2026, 8, 1, tzinfo=UTC),
     }
     defaults.update(overrides)
     return Organization(**defaults)
@@ -36,7 +37,7 @@ def _service_with(repo: OrganizationRepository) -> OrganizationDomainService:
 
 @pytest.mark.asyncio
 async def test_get_organization_by_id_not_found():
-    repo = OrganizationRepository()
+    repo: Any = OrganizationRepository()
     repo.get_by_id = AsyncMock(return_value=None)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -48,7 +49,7 @@ async def test_get_organization_by_id_not_found():
 @pytest.mark.asyncio
 async def test_create_organization_builds_slug_and_subscription():
     org = _make_org()
-    repo = OrganizationRepository()
+    repo: Any = OrganizationRepository()
     repo.get_by_slug = AsyncMock(return_value=None)
     repo.create = AsyncMock(return_value=org)
     repo.create_setting = AsyncMock()
@@ -62,7 +63,7 @@ async def test_create_organization_builds_slug_and_subscription():
 
     assert result["id"] == "org-1"
     assert repo.create.await_args is not None
-    created = repo.create.await_args.kwargs["data"]
+    created = repo.create.await_args_list[-1].kwargs["data"]
     assert created["slug"] == "acme-inc"
     assert created["domain"] == "acme-inc.crm.com"
     assert created["plan"] == "Enterprise"
@@ -73,7 +74,7 @@ async def test_create_organization_builds_slug_and_subscription():
 @pytest.mark.asyncio
 async def test_create_organization_disambiguates_slug_collision():
     org = _make_org()
-    repo = OrganizationRepository()
+    repo: Any = OrganizationRepository()
     repo.get_by_slug = AsyncMock(return_value=_make_org())
     repo.create = AsyncMock(return_value=org)
     repo.create_setting = AsyncMock()
@@ -86,14 +87,14 @@ async def test_create_organization_disambiguates_slug_collision():
     await service.create_organization(db, OrganizationCreate(name="Acme Inc"))
 
     assert repo.create.await_args is not None
-    created = repo.create.await_args.kwargs["data"]
+    created = repo.create.await_args_list[-1].kwargs["data"]
     assert created["slug"].startswith("acme-")
 
 
 @pytest.mark.asyncio
 async def test_get_organization_falls_back_to_default(monkeypatch):
     org = _make_org()
-    repo = OrganizationRepository()
+    repo: Any = OrganizationRepository()
     repo.get_first = AsyncMock(return_value=None)
     repo.get_or_create_default = AsyncMock(return_value=org)
     repo.count_members = AsyncMock(return_value=5)
@@ -114,7 +115,7 @@ async def test_upgrade_plan_sets_subscription_metadata():
         (),
         {"id": "sub-1", "plan_id": None, "amount": 0.0, "status": "active", "auto_renew": True},
     )()
-    repo = OrganizationRepository()
+    repo: Any = OrganizationRepository()
     repo.get_first = AsyncMock(return_value=org)
     repo.get_by_id = AsyncMock(return_value=org)
     repo.get_subscription = AsyncMock(return_value=None)
@@ -134,7 +135,7 @@ async def test_upgrade_plan_sets_subscription_metadata():
 
 @pytest.mark.asyncio
 async def test_list_subscription_plans_falls_back_to_defaults():
-    repo = OrganizationRepository()
+    repo: Any = OrganizationRepository()
     repo.list_active_plans = AsyncMock(return_value=[])
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -147,7 +148,7 @@ async def test_list_subscription_plans_falls_back_to_defaults():
 
 @pytest.mark.asyncio
 async def test_remove_member_missing_user_returns_message():
-    repo = OrganizationRepository()
+    repo: Any = OrganizationRepository()
     repo.get_user_by_id = AsyncMock(return_value=None)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -160,10 +161,8 @@ async def test_remove_member_missing_user_returns_message():
 @pytest.mark.asyncio
 async def test_get_usage_reports_limits():
     org = _make_org(plan="Business")
-    sub = type(
-        "S", (), {"storage_used_gb": 2.0, "status": "active", "plan_id": None}
-    )()
-    repo = OrganizationRepository()
+    sub = type("S", (), {"storage_used_gb": 2.0, "status": "active", "plan_id": None})()
+    repo: Any = OrganizationRepository()
     repo.get_first = AsyncMock(return_value=org)
     repo.get_subscription = AsyncMock(return_value=None)
     repo.get_plan_by_slug = AsyncMock(return_value=None)

@@ -5,6 +5,7 @@ belonging to their own organization; foreign-org ids must behave exactly
 like missing ones (404) so callers cannot probe other tenants' rosters.
 """
 
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
@@ -33,8 +34,8 @@ def _make_user(**overrides) -> User:
     return User(**defaults)
 
 
-def _service_with_target(target: User) -> tuple[UserService, UserRepository]:
-    repo = UserRepository()
+def _service_with_target(target: User) -> tuple[UserService, Any]:
+    repo: Any = UserRepository()
     repo.get_by_id = AsyncMock(return_value=target)
     return UserService(repository=repo), repo
 
@@ -102,7 +103,7 @@ async def test_bulk_delete_skips_foreign_org_ids():
     foreign = _make_user(id="u-foreign", email="foreign@crm.com", organization_id="org-other")
     protected = _make_user(id="u-super", email="superadmin@gmail.com")
 
-    repo = UserRepository()
+    repo: Any = UserRepository()
     repo.list_by_ids = AsyncMock(return_value=[same_org, foreign, protected])
     repo.delete = AsyncMock()
     service = UserService(repository=repo)
@@ -137,7 +138,7 @@ def _org_scoped_service(list_result):
     """Service whose repo returns `list_result` for org-scoped list calls and
     records the organization_id filter it received."""
 
-    repo = UserRepository()
+    repo: Any = UserRepository()
     seen = {}
 
     async def fake_list(db, **kwargs):
@@ -153,7 +154,9 @@ def _org_scoped_service(list_result):
     repo.list_invitations = fake_list_invitations
     repo.role_name_map = AsyncMock(return_value={})
     service = UserService(repository=repo)
-    service.organization_repository.get_by_id = AsyncMock(return_value=_active_org("org-1"))
+    cast(Any, service.organization_repository).get_by_id = AsyncMock(
+        return_value=_active_org("org-1")
+    )
     return service, seen
 
 
@@ -193,7 +196,7 @@ async def test_list_users_search_remains_org_scoped():
         )
         return [r for r in rows if search.lower() in r.name.lower()]
 
-    service.repository.list = searched
+    cast(Any, service.repository).list = searched
 
     result = await service.list_users(
         AsyncMock(spec=AsyncSession),
@@ -229,7 +232,7 @@ async def test_list_invitations_is_org_scoped():
     )
 
     service, seen = _org_scoped_service([same, foreign])
-    service.repository.role_name_map = AsyncMock(
+    cast(Any, service.repository).role_name_map = AsyncMock(
         return_value={"Sales Executive": "Sales Executive"}
     )
 

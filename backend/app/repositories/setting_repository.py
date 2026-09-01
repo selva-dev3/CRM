@@ -1,5 +1,3 @@
-from typing import Optional
-
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,7 +9,7 @@ class SettingRepository:
     (audit logs, custom fields, webhooks, SLA policies). No business logic here.
     """
 
-    async def get_by_key(self, db: AsyncSession, key: str) -> Optional[SystemSetting]:
+    async def get_by_key(self, db: AsyncSession, key: str) -> SystemSetting | None:
         result = await db.execute(select(SystemSetting).where(SystemSetting.key == key))
         return result.scalars().first()
 
@@ -29,7 +27,7 @@ class SettingRepository:
             .offset((page - 1) * limit)
             .limit(limit)
         )
-        return list(result.all())
+        return [row._tuple() for row in result.all()]
 
     async def list_audit_logs_export(self, db: AsyncSession, limit: int = 500) -> list[tuple]:
         result = await db.execute(
@@ -37,10 +35,10 @@ class SettingRepository:
             .outerjoin(User, AuditLog.user_id == User.id)
             .limit(limit)
         )
-        return list(result.all())
+        return [row._tuple() for row in result.all()]
 
     async def list_custom_fields(
-        self, db: AsyncSession, entity_type: Optional[str] = None
+        self, db: AsyncSession, entity_type: str | None = None
     ) -> list[CustomField]:
         stmt = select(CustomField)
         if entity_type:
@@ -53,7 +51,7 @@ class SettingRepository:
         db.add(field)
         return field
 
-    async def get_custom_field(self, db: AsyncSession, field_id: str) -> Optional[CustomField]:
+    async def get_custom_field(self, db: AsyncSession, field_id: str) -> CustomField | None:
         result = await db.execute(select(CustomField).where(CustomField.id == field_id))
         return result.scalars().first()
 
@@ -90,7 +88,7 @@ class SettingRepository:
         db.add(webhook)
         return webhook
 
-    async def get_webhook(self, db: AsyncSession, webhook_id: str) -> Optional[Webhook]:
+    async def get_webhook(self, db: AsyncSession, webhook_id: str) -> Webhook | None:
         result = await db.execute(select(Webhook).where(Webhook.id == webhook_id))
         return result.scalars().first()
 
@@ -114,10 +112,12 @@ class SettingRepository:
         db.add(sla)
         return sla
 
-    async def get_user_by_email(self, db: AsyncSession, email: str) -> Optional[User]:
+    async def get_user_by_email(self, db: AsyncSession, email: str) -> User | None:
         result = await db.execute(select(User).where(User.email == email))
         return result.scalars().first()
 
     async def list_table_names(self, db: AsyncSession) -> list[str]:
-        result = await db.execute(text("SELECT tablename FROM pg_tables WHERE schemaname = 'public';"))
+        result = await db.execute(
+            text("SELECT tablename FROM pg_tables WHERE schemaname = 'public';")
+        )
         return [row[0] for row in result.all()]

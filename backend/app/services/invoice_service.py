@@ -51,7 +51,7 @@ def invoice_to_dict(
     inv: Invoice,
     items: list[InvoiceItem] | None = None,
 ) -> dict:
-    data = {
+    data: dict[str, object] = {
         "id": inv.id,
         "invoice_number": inv.invoice_number or f"INV-{inv.id[:6]}",
         "deal_id": inv.deal_id,
@@ -132,7 +132,9 @@ class InvoiceService:
         return [invoice_to_dict(inv) for inv in invoices]
 
     async def get_invoice(self, db: AsyncSession, *, invoice_id: str, organization_id: str) -> dict:
-        invoice = await self.require_invoice(db, invoice_id=invoice_id, organization_id=organization_id)
+        invoice = await self.require_invoice(
+            db, invoice_id=invoice_id, organization_id=organization_id
+        )
         items = await self.repository.list_items(db, invoice.id)
         return invoice_to_dict(invoice, items)
 
@@ -226,9 +228,7 @@ class InvoiceService:
         )
         tax_total = round(
             sum(
-                line
-                * (1 - item["discount_percent"] / 100.0)
-                * (item["tax_percent"] / 100.0)
+                line * (1 - item["discount_percent"] / 100.0) * (item["tax_percent"] / 100.0)
                 for line, item in zip(line_subtotals, billable, strict=True)
             ),
             2,
@@ -285,7 +285,9 @@ class InvoiceService:
             ) from exc
         except Exception as exc:
             await db.rollback()
-            raise APIException(message="Failed to create invoice.", code="INVOICE_CREATE_FAILED") from exc
+            raise APIException(
+                message="Failed to create invoice.", code="INVOICE_CREATE_FAILED"
+            ) from exc
 
         await db.refresh(invoice)
         items = await self.repository.list_items(db, invoice.id)
@@ -333,7 +335,9 @@ class InvoiceService:
         status: str | None,
         due_date: datetime | None,
     ) -> dict:
-        invoice = await self.require_invoice(db, invoice_id=invoice_id, organization_id=organization_id)
+        invoice = await self.require_invoice(
+            db, invoice_id=invoice_id, organization_id=organization_id
+        )
         if amount is not None:
             invoice.amount = amount
         if status is not None:
@@ -350,8 +354,12 @@ class InvoiceService:
         items = await self.repository.list_items(db, invoice.id)
         return invoice_to_dict(invoice, items)
 
-    async def delete_invoice(self, db: AsyncSession, *, invoice_id: str, organization_id: str) -> Invoice:
-        invoice = await self.require_invoice(db, invoice_id=invoice_id, organization_id=organization_id)
+    async def delete_invoice(
+        self, db: AsyncSession, *, invoice_id: str, organization_id: str
+    ) -> Invoice:
+        invoice = await self.require_invoice(
+            db, invoice_id=invoice_id, organization_id=organization_id
+        )
         await self.repository.delete(db, invoice)
         await db.commit()
         return invoice
@@ -360,7 +368,9 @@ class InvoiceService:
         self, db: AsyncSession, *, invoice_id: str, organization_id: str, recipient_email: str
     ) -> dict:
         """Persist the send transition: Draft → Pending, stamping ``sent_at``."""
-        invoice = await self.require_invoice(db, invoice_id=invoice_id, organization_id=organization_id)
+        invoice = await self.require_invoice(
+            db, invoice_id=invoice_id, organization_id=organization_id
+        )
         if invoice.status == INVOICE_STATUS_DRAFT:
             invoice.status = INVOICE_STATUS_PENDING
         invoice.sent_at = datetime.now(UTC)
@@ -371,9 +381,13 @@ class InvoiceService:
     async def mark_paid(
         self, db: AsyncSession, *, invoice_id: str, organization_id: str, payment_method: str
     ) -> dict:
-        invoice = await self.require_invoice(db, invoice_id=invoice_id, organization_id=organization_id)
+        invoice = await self.require_invoice(
+            db, invoice_id=invoice_id, organization_id=organization_id
+        )
         if invoice.status == INVOICE_STATUS_PAID:
-            raise ConflictError(message="Invoice is already marked as Paid.", code="INVOICE_ALREADY_PAID")
+            raise ConflictError(
+                message="Invoice is already marked as Paid.", code="INVOICE_ALREADY_PAID"
+            )
         invoice.status = INVOICE_STATUS_PAID
         invoice.paid_amount = invoice.amount or 0.0
         await db.commit()

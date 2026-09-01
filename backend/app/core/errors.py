@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
@@ -19,9 +19,9 @@ class APIException(Exception):
         self,
         message: str,
         *,
-        code: Optional[str] = None,
-        fields: Optional[dict[str, Any]] = None,
-        status_code: Optional[int] = None,
+        code: str | None = None,
+        fields: dict[str, Any] | None = None,
+        status_code: int | None = None,
     ) -> None:
         super().__init__(message)
         self.message = message
@@ -51,29 +51,31 @@ class ForbiddenError(APIException):
     code = "FORBIDDEN"
 
 
-def _error_payload(
-    code: str, message: str, fields: Optional[dict[str, Any]] = None
-) -> dict[str, Any]:
+def _error_payload(code: str, message: str, fields: dict[str, Any] | None = None) -> dict[str, Any]:
     return {"code": code, "message": message, "fields": fields}
 
 
-async def _api_exception_handler(request: Request, exc: APIException) -> JSONResponse:
+async def _api_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    if not isinstance(exc, APIException):
+        raise TypeError("API exception handler received an unexpected exception type")
     return JSONResponse(
         status_code=exc.status_code,
         content=_error_payload(exc.code, exc.message, exc.fields),
     )
 
 
-async def _http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+async def _http_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    if not isinstance(exc, HTTPException):
+        raise TypeError("HTTP exception handler received an unexpected exception type")
     return JSONResponse(
         status_code=exc.status_code,
         content=_error_payload("HTTP_ERROR", str(exc.detail)),
     )
 
 
-async def _validation_exception_handler(
-    request: Request, exc: RequestValidationError
-) -> JSONResponse:
+async def _validation_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    if not isinstance(exc, RequestValidationError):
+        raise TypeError("Validation exception handler received an unexpected exception type")
     fields: dict[str, Any] = {}
     for err in exc.errors():
         loc = ".".join(str(part) for part in err.get("loc", []))
@@ -85,9 +87,7 @@ async def _validation_exception_handler(
 
 
 async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    logger.exception(
-        "Unhandled exception while handling %s %s", request.method, request.url.path
-    )
+    logger.exception("Unhandled exception while handling %s %s", request.method, request.url.path)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content=_error_payload(

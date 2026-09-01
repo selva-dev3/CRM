@@ -198,7 +198,8 @@ class UserService:
                 s3_service.upload_file, file, object_name=object_name, content_type=content_type
             )
             avatar_url = await asyncio.to_thread(s3_service.generate_presigned_url, s3_key)
-            user.avatar_url = avatar_url
+            profile = await self.repository.get_or_create_profile(db, user.id)
+            profile.avatar_url = avatar_url
             await db.commit()
             return {"message": "Avatar uploaded to MinIO S3 successfully", "status": "success"}
         except Exception as e:

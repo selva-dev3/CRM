@@ -1,4 +1,3 @@
-
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,7 +18,11 @@ class AIDomainService:
             raise NotFoundError(message=f"Lead with ID '{lead_id}' not found")
         return {
             "score": lead.score or 75.0,
-            "reasons": ["Company size fits ICP", "C-level executive contact", "High website activity"],
+            "reasons": [
+                "Company size fits ICP",
+                "C-level executive contact",
+                "High website activity",
+            ],
         }
 
     async def batch_lead_scoring(self, db: AsyncSession) -> dict:
@@ -39,9 +42,13 @@ class AIDomainService:
     async def improve_email(self, email_text: str, tone: str = "Professional") -> dict:
         if not email_text:
             raise APIException(
-                status_code=status.HTTP_400_BAD_REQUEST, message="Email text is required for improvement"
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Email text is required for improvement",
             )
-        return {"subject": "Follow up on our discussion", "body": f"[{tone} Polished]: {email_text}"}
+        return {
+            "subject": "Follow up on our discussion",
+            "body": f"[{tone} Polished]: {email_text}",
+        }
 
     async def predict_deal_forecast(self, db: AsyncSession, deal_id: str) -> dict:
         deal = await self.repository.get_deal(db, deal_id)
@@ -77,11 +84,14 @@ class AIDomainService:
     async def analyze_sentiment(self, text: str) -> dict:
         if not text:
             raise APIException(
-                status_code=status.HTTP_400_BAD_REQUEST, message="Text input is required for sentiment analysis"
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Text input is required for sentiment analysis",
             )
         return {"sentiment": "Positive", "polarity_score": 0.85, "urgency": "Medium"}
 
-    async def suggest_next_best_action(self, db: AsyncSession, entity_type: str, entity_id: str) -> dict:
+    async def suggest_next_best_action(
+        self, db: AsyncSession, entity_type: str, entity_id: str
+    ) -> dict:
         if entity_type.lower() == "lead":
             lead = await self.repository.get_lead(db, entity_id)
             if not lead:
@@ -117,7 +127,10 @@ class AIDomainService:
             )
         return {
             "objection": objection_text,
-            "talking_points": ["Highlight ROI within 60 days", "Offer flexible quarterly payment terms"],
+            "talking_points": [
+                "Highlight ROI within 60 days",
+                "Offer flexible quarterly payment terms",
+            ],
         }
 
     async def review_contract(self, contract_text: str) -> dict:
@@ -160,7 +173,11 @@ class AIDomainService:
         deal = await self.repository.get_deal(db, deal_id)
         if not deal:
             raise NotFoundError(message=f"Deal with ID '{deal_id}' not found")
-        return {"deal_id": deal_id, "recommended_discount_pct": 5.0, "probability_impact": "+10% win likelihood"}
+        return {
+            "deal_id": deal_id,
+            "recommended_discount_pct": 5.0,
+            "probability_impact": "+10% win likelihood",
+        }
 
     async def speech_to_text(self, audio_file_name: str = "meeting.mp3") -> dict:
         return {"text": "Audio transcription result placeholder...", "confidence": 0.95}

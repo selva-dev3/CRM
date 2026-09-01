@@ -15,11 +15,7 @@ logger = get_logger(__name__)
 # with e.g. "Enterprise CRM Support <noreply@yourdomain.com>".
 
 
-def send_email(
-    to_email: str,
-    subject: str,
-    html_content: str
-) -> bool:
+def send_email(to_email: str, subject: str, html_content: str) -> bool:
 
     url = "https://api.brevo.com/v3/smtp/email"
 
@@ -55,9 +51,7 @@ def send_email(
             logger.info(f"Email sent successfully to {to_email}")
             return True
 
-        logger.error(
-            f"Brevo Error {response.status_code}: {response.text}"
-        )
+        logger.error(f"Brevo Error {response.status_code}: {response.text}")
 
         return False
 
@@ -66,16 +60,10 @@ def send_email(
         return False
 
 
-def send_reset_password_email(
-    email_to: str,
-    token: str,
-    user_name: str = "User"
-) -> bool:
+def send_reset_password_email(email_to: str, token: str, user_name: str = "User") -> bool:
     """Sends password reset HTML email via Brevo API."""
 
-    reset_url = html.escape(
-        f"{settings.FRONTEND_URL}/reset-password?token={token}", quote=True
-    )
+    reset_url = html.escape(f"{settings.FRONTEND_URL}/reset-password?token={token}", quote=True)
     # Dynamic values interpolated into HTML below are escaped once here
     # (defense in depth: names/tokens may contain user-supplied characters).
     user_name_escaped = html.escape(str(user_name))
@@ -152,10 +140,9 @@ def send_reset_password_email(
         logger.exception(f"Password reset email error: {e}")
         return False
 
+
 def send_user_invite_email(
-    email_to: str,
-    role: str = "Member",
-    invite_url: str = None
+    email_to: str, role: str = "Member", invite_url: str | None = None
 ) -> bool:
     """Sends Organization User Invitation HTML email via Brevo API."""
 
@@ -228,11 +215,7 @@ def send_user_invite_email(
     try:
         logger.info("Sending invitation email to %s...", email_to)
 
-        success = send_email(
-            to_email=email_to,
-            subject=subject,
-            html_content=html_content
-        )
+        success = send_email(to_email=email_to, subject=subject, html_content=html_content)
 
         if success:
             logger.info(f"Invitation email sent successfully to {email_to}")
@@ -252,12 +235,14 @@ def send_organization_onboarding_invite_email(
     organization_name: str,
     plan_name: str,
     token: str,
-    expires_at_str: str = "24 Hours"
+    expires_at_str: str = "24 Hours",
 ) -> bool:
     """Sends SaaS Organization Onboarding & Admin Invitation email via Brevo API."""
 
     invite_url = f"{settings.FRONTEND_URL}/accept-invite?token={token}"
-    subject = f"Welcome to {organization_name} on {settings.PROJECT_NAME} - Complete Your Admin Setup"
+    subject = (
+        f"Welcome to {organization_name} on {settings.PROJECT_NAME} - Complete Your Admin Setup"
+    )
 
     # Dynamic values interpolated into HTML below are escaped once here.
     invite_url_escaped = html.escape(invite_url, quote=True)
@@ -329,11 +314,7 @@ def send_organization_onboarding_invite_email(
     try:
         logger.info("Sending organization onboarding email to %s...", email_to)
 
-        success = send_email(
-            to_email=email_to,
-            subject=subject,
-            html_content=html_content
-        )
+        success = send_email(to_email=email_to, subject=subject, html_content=html_content)
 
         if success:
             logger.info(f"Organization onboarding email sent successfully to {email_to}")
@@ -347,11 +328,7 @@ def send_organization_onboarding_invite_email(
         return False
 
 
-def send_magic_link_email(
-    email_to: str,
-    token: str,
-    user_name: str = "User"
-) -> bool:
+def send_magic_link_email(email_to: str, token: str, user_name: str = "User") -> bool:
     """Sends Passwordless Magic Link HTML email via Brevo API."""
 
     magic_url = f"{settings.FRONTEND_URL}/magic-link?token={token}"
@@ -427,11 +404,7 @@ def send_magic_link_email(
     try:
         logger.info("Sending magic link email to %s...", email_to)
 
-        success = send_email(
-            to_email=email_to,
-            subject=subject,
-            html_content=html_content
-        )
+        success = send_email(to_email=email_to, subject=subject, html_content=html_content)
 
         if success:
             logger.info(f"Magic link email sent successfully to {email_to}")

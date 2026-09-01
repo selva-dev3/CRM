@@ -1,4 +1,4 @@
-from typing import Optional, Sequence
+from collections.abc import Sequence
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,7 +9,7 @@ from app.models import Company, Deal, Lead
 class AIRepository:
     """Query layer for entities used by AI features — no business logic."""
 
-    async def get_lead(self, db: AsyncSession, lead_id: str) -> Optional[Lead]:
+    async def get_lead(self, db: AsyncSession, lead_id: str) -> Lead | None:
         res = await db.execute(select(Lead).where(Lead.id == lead_id))
         return res.scalars().first()
 
@@ -17,10 +17,10 @@ class AIRepository:
         res = await db.execute(select(Lead))
         return res.scalars().all()
 
-    async def get_deal(self, db: AsyncSession, deal_id: str) -> Optional[Deal]:
+    async def get_deal(self, db: AsyncSession, deal_id: str) -> Deal | None:
         res = await db.execute(select(Deal).where(Deal.id == deal_id))
         return res.scalars().first()
 
-    async def get_company(self, db: AsyncSession, company_id: str) -> Optional[Company]:
+    async def get_company(self, db: AsyncSession, company_id: str) -> Company | None:
         res = await db.execute(select(Company).where(Company.id == company_id))
         return res.scalars().first()

@@ -150,7 +150,7 @@ async def test_failed_email_does_not_advance_next_run_releases_claim_and_cleans_
     release_sess = _FakeSession([_FakeResult(rowcount=1)])
     _wire_sweep(monkeypatch, phase_a, [claim_sess, release_sess])
 
-    infra = {"sent": {}, "uploaded": {}, "deleted": {}}
+    infra: dict[str, dict[str, object]] = {"sent": {}, "uploaded": {}, "deleted": {}}
     _install_common_stubs(monkeypatch, infra, fail_send=True)
 
     result = await _deliver_due_reports()
@@ -173,7 +173,7 @@ async def test_claim_taken_elsewhere_is_skipped(monkeypatch):
     claim_sess = _FakeSession([_FakeResult(rows=[], rowcount=0)])
     _wire_sweep(monkeypatch, phase_a, [claim_sess])
 
-    infra = {"sent": {}, "uploaded": {}, "deleted": {}}
+    infra: dict[str, dict[str, object]] = {"sent": {}, "uploaded": {}, "deleted": {}}
     _install_common_stubs(monkeypatch, infra)
 
     result = await _deliver_due_reports()
@@ -202,7 +202,7 @@ async def test_lost_claim_after_send_reconciles_next_run(monkeypatch):
         [claim_sess, csv_sess, finalize_sess, reconcile_sess],
     )
 
-    infra = {"sent": {}, "uploaded": {}, "deleted": {}}
+    infra: dict[str, dict[str, object]] = {"sent": {}, "uploaded": {}, "deleted": {}}
     _install_common_stubs(monkeypatch, infra)
 
     result = await _deliver_due_reports()
@@ -236,7 +236,7 @@ async def test_lost_claim_with_live_foreign_claim_leaves_state_and_never_crashes
         [claim_sess, csv_sess, finalize_sess, reconcile_sess],
     )
 
-    infra = {"sent": {}, "uploaded": {}, "deleted": {}}
+    infra: dict[str, dict[str, object]] = {"sent": {}, "uploaded": {}, "deleted": {}}
     _install_common_stubs(monkeypatch, infra)
 
     result = await _deliver_due_reports()

@@ -1,4 +1,4 @@
-from typing import Optional, Sequence
+from collections.abc import Sequence
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,7 +13,7 @@ class CalendarRepository:
         self,
         db: AsyncSession,
         *,
-        search: Optional[str] = None,
+        search: str | None = None,
     ) -> Sequence[CalendarEventModel]:
         stmt = select(CalendarEventModel)
         if search and search.strip():
@@ -22,9 +22,7 @@ class CalendarRepository:
         res = await db.execute(stmt)
         return res.scalars().all()
 
-    async def get_event(
-        self, db: AsyncSession, event_id: str
-    ) -> Optional[CalendarEventModel]:
+    async def get_event(self, db: AsyncSession, event_id: str) -> CalendarEventModel | None:
         stmt = select(CalendarEventModel).where(CalendarEventModel.id == event_id)
         res = await db.execute(stmt)
         return res.scalars().first()

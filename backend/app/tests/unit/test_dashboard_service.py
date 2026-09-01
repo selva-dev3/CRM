@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -20,7 +21,7 @@ def _service_with(repo: DashboardRepository, setting_repo: SettingRepository) ->
 
 @pytest.mark.asyncio
 async def test_get_kpis_computes_win_rate():
-    repo = DashboardRepository()
+    repo: Any = DashboardRepository()
     repo.count_leads = AsyncMock(return_value=10)
     repo.sum_pipeline_deals = AsyncMock(return_value=12000.0)
     repo.sum_won_deals = AsyncMock(return_value=5000.0)
@@ -50,7 +51,7 @@ async def test_get_kpis_computes_win_rate():
 
 @pytest.mark.asyncio
 async def test_get_kpis_uses_lead_contact_name_for_recent_activity():
-    repo = DashboardRepository()
+    repo: Any = DashboardRepository()
     repo.count_leads = AsyncMock(return_value=1)
     repo.sum_pipeline_deals = AsyncMock(return_value=0.0)
     repo.sum_won_deals = AsyncMock(return_value=0.0)
@@ -78,7 +79,7 @@ async def test_get_kpis_uses_lead_contact_name_for_recent_activity():
 
 @pytest.mark.asyncio
 async def test_get_sales_funnel_orders_standard_stages_first():
-    repo = DashboardRepository()
+    repo: Any = DashboardRepository()
     repo.deal_stage_totals = AsyncMock(
         return_value=[("Closed Won", 3, 1000.0), ("Custom Stage", 1, 50.0)]
     )
@@ -95,7 +96,7 @@ async def test_get_sales_funnel_orders_standard_stages_first():
 
 @pytest.mark.asyncio
 async def test_get_custom_widgets_returns_defaults_when_unset():
-    setting_repo = SettingRepository()
+    setting_repo: Any = SettingRepository()
     setting_repo.get_by_key = AsyncMock(return_value=None)
     service = _service_with(DashboardRepository(), setting_repo)
     db = AsyncMock(spec=AsyncSession)
@@ -110,7 +111,7 @@ async def test_get_custom_widgets_returns_defaults_when_unset():
 
 @pytest.mark.asyncio
 async def test_get_custom_widgets_returns_defaults_for_corrupt_json():
-    setting_repo = SettingRepository()
+    setting_repo: Any = SettingRepository()
     setting_repo.get_by_key = AsyncMock(return_value=SimpleNamespace(value="{not-json"))
     service = _service_with(DashboardRepository(), setting_repo)
 
@@ -121,7 +122,7 @@ async def test_get_custom_widgets_returns_defaults_for_corrupt_json():
 
 @pytest.mark.asyncio
 async def test_save_custom_widgets_persists_preferences():
-    setting_repo = SettingRepository()
+    setting_repo: Any = SettingRepository()
     setting_repo.upsert = AsyncMock()
     service = _service_with(DashboardRepository(), setting_repo)
     db = AsyncMock(spec=AsyncSession)
@@ -138,7 +139,7 @@ async def test_save_custom_widgets_persists_preferences():
 
 @pytest.mark.asyncio
 async def test_save_custom_widgets_returns_generic_error_for_serialization_failure(monkeypatch):
-    setting_repo = SettingRepository()
+    setting_repo: Any = SettingRepository()
     setting_repo.upsert = AsyncMock()
     service = _service_with(DashboardRepository(), setting_repo)
 
@@ -159,7 +160,7 @@ async def test_save_custom_widgets_returns_generic_error_for_serialization_failu
 
 @pytest.mark.asyncio
 async def test_save_custom_widgets_rolls_back_upsert_failure():
-    setting_repo = SettingRepository()
+    setting_repo: Any = SettingRepository()
     setting_repo.upsert = AsyncMock(side_effect=RuntimeError("database unavailable"))
     service = _service_with(DashboardRepository(), setting_repo)
     db = AsyncMock(spec=AsyncSession)
@@ -172,7 +173,7 @@ async def test_save_custom_widgets_rolls_back_upsert_failure():
 
 @pytest.mark.asyncio
 async def test_save_custom_widgets_rolls_back_commit_failure():
-    setting_repo = SettingRepository()
+    setting_repo: Any = SettingRepository()
     setting_repo.upsert = AsyncMock()
     service = _service_with(DashboardRepository(), setting_repo)
     db = AsyncMock(spec=AsyncSession)
@@ -187,7 +188,7 @@ async def test_save_custom_widgets_rolls_back_commit_failure():
 
 @pytest.mark.asyncio
 async def test_get_activities_summary_counts_each_metric():
-    repo = DashboardRepository()
+    repo: Any = DashboardRepository()
     repo.get_organization_timezone = AsyncMock(return_value="UTC")
     repo.count_calls = AsyncMock(return_value=5)
     repo.count_emails = AsyncMock(return_value=8)
@@ -203,12 +204,12 @@ async def test_get_activities_summary_counts_each_metric():
     assert result["meetings_held"] == 2
     assert result["tasks_completed"] == 11
     assert result["period_label"] == "Today · UTC"
-    assert repo.count_calls.await_args.args[1] == "org-1"
+    assert repo.count_calls.await_args_list[-1].args[1] == "org-1"
 
 
 @pytest.mark.asyncio
 async def test_get_lead_conversions_merges_equivalent_urls():
-    repo = DashboardRepository()
+    repo: Any = DashboardRepository()
     repo.lead_source_conversions = AsyncMock(
         return_value=[("https://Selv.in/", 2, 1), ("https://selv.in", 3, 2)]
     )
@@ -223,7 +224,7 @@ async def test_get_lead_conversions_merges_equivalent_urls():
 
 @pytest.mark.asyncio
 async def test_get_recent_deals_uses_owner_name_and_updated_timestamp():
-    repo = DashboardRepository()
+    repo: Any = DashboardRepository()
     updated_at = datetime(2026, 8, 31, 12, 30, tzinfo=UTC)
     deal = SimpleNamespace(
         id="deal-1",
@@ -250,7 +251,7 @@ async def test_recent_deals_owner_join_excludes_inactive_users():
 
     await DashboardRepository().recent_deals(db, "org-1")
 
-    statement = db.execute.await_args.args[0]
+    statement = db.execute.await_args_list[-1].args[0]
     owner_join = statement.get_final_froms()[0]
     assert any(
         condition.compare(User.is_active.is_(True)) for condition in owner_join.onclause.clauses
@@ -266,14 +267,13 @@ async def test_recent_leads_excludes_archived_leads():
 
     await DashboardRepository().recent_leads(db, "org-1")
 
-    statement = db.execute.await_args.args[0]
+    statement = db.execute.await_args_list[-1].args[0]
     assert any(
         condition.compare(Lead.organization_id == "org-1")
         for condition in statement._where_criteria
     )
     assert any(
-        condition.compare(Lead.is_archived.is_(False))
-        for condition in statement._where_criteria
+        condition.compare(Lead.is_archived.is_(False)) for condition in statement._where_criteria
     )
 
 
@@ -320,7 +320,7 @@ async def test_organization_currency_locale_falls_back_for_invalid_locale(stored
 
 @pytest.mark.asyncio
 async def test_ai_insight_includes_deal_identifier():
-    repo = DashboardRepository()
+    repo: Any = DashboardRepository()
     repo.count_leads = AsyncMock(return_value=1)
     repo.count_deals_and_sum = AsyncMock(return_value=(1, 5000.0))
     repo.get_organization_currency_locale = AsyncMock(return_value=("INR", "en-IN"))

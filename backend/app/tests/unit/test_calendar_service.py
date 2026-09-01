@@ -1,4 +1,5 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -17,8 +18,8 @@ def _make_event(**overrides) -> CalendarEventModel:
         "user_id": "user-1",
         "title": "Demo Meeting",
         "description": None,
-        "start_time": datetime(2026, 8, 10, 10, 0, tzinfo=timezone.utc),
-        "end_time": datetime(2026, 8, 10, 11, 0, tzinfo=timezone.utc),
+        "start_time": datetime(2026, 8, 10, 10, 0, tzinfo=UTC),
+        "end_time": datetime(2026, 8, 10, 11, 0, tzinfo=UTC),
         "event_type": "Meeting",
     }
     defaults.update(overrides)
@@ -27,7 +28,7 @@ def _make_event(**overrides) -> CalendarEventModel:
 
 @pytest.mark.asyncio
 async def test_get_calendar_events_maps_rows():
-    repo = CalendarRepository()
+    repo: Any = CalendarRepository()
     repo.list_events = AsyncMock(return_value=[_make_event()])
     service = CalendarService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -41,17 +42,20 @@ async def test_get_calendar_events_maps_rows():
 @pytest.mark.asyncio
 async def test_create_calendar_event_resolves_user(monkeypatch):
     event = _make_event()
-    repo = CalendarRepository()
+    repo: Any = CalendarRepository()
     repo.resolve_user_id = AsyncMock(return_value="user-1")
     repo.create_event = AsyncMock(return_value=event)
     service = CalendarService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
     result = await service.create_calendar_event(
-        db, CalendarEventCreatePayload(title="Demo", start="2026-08-10T10:00:00Z", end="2026-08-10T11:00:00Z")
+        db,
+        CalendarEventCreatePayload(
+            title="Demo", start="2026-08-10T10:00:00Z", end="2026-08-10T11:00:00Z"
+        ),
     )
 
-    created = repo.create_event.await_args.kwargs["data"]
+    created = repo.create_event.await_args_list[-1].kwargs["data"]
     assert created["user_id"] == "user-1"
     assert created["title"] == "Demo"
     assert result["id"] == "evt-1"
@@ -60,7 +64,7 @@ async def test_create_calendar_event_resolves_user(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_get_calendar_event_not_found():
-    repo = CalendarRepository()
+    repo: Any = CalendarRepository()
     repo.get_event = AsyncMock(return_value=None)
     service = CalendarService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -72,7 +76,7 @@ async def test_get_calendar_event_not_found():
 @pytest.mark.asyncio
 async def test_update_calendar_event_partial():
     event = _make_event()
-    repo = CalendarRepository()
+    repo: Any = CalendarRepository()
     repo.get_event = AsyncMock(return_value=event)
     service = CalendarService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -91,7 +95,7 @@ async def test_update_calendar_event_partial():
 @pytest.mark.asyncio
 async def test_delete_calendar_event_commit():
     event = _make_event()
-    repo = CalendarRepository()
+    repo: Any = CalendarRepository()
     repo.get_event = AsyncMock(return_value=event)
     repo.delete_event = AsyncMock()
     service = CalendarService(repository=repo)

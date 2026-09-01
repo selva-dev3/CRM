@@ -1,6 +1,6 @@
 import asyncio
 import uuid
-from typing import Any
+from typing import Any, TypedDict
 
 from fastapi import status
 from fastapi.concurrency import run_in_threadpool
@@ -16,7 +16,18 @@ from app.services.s3_service import s3_service
 
 logger = get_logger(__name__)
 
-DEFAULT_PLANS = {
+
+class PlanInfo(TypedDict):
+    name: str
+    slug: str
+    price_monthly: int
+    max_users: int
+    max_storage_gb: int
+    ai_credits: int
+    features: str
+
+
+DEFAULT_PLANS: dict[str, PlanInfo] = {
     "free": {
         "name": "Free",
         "slug": "free",
@@ -76,9 +87,19 @@ def _stripe_to_dict(obj: Any) -> dict:
             if isinstance(res, dict):
                 return res
         except Exception:
-            pass
+            logger.debug("Stripe object conversion failed; using attribute fallback", exc_info=True)
     result = {}
-    for attr in ("id", "mode", "payment_status", "customer", "subscription", "metadata", "type", "data", "object"):
+    for attr in (
+        "id",
+        "mode",
+        "payment_status",
+        "customer",
+        "subscription",
+        "metadata",
+        "type",
+        "data",
+        "object",
+    ):
         val = getattr(obj, attr, None)
         if val is not None and not callable(val):
             result[attr] = val
@@ -185,8 +206,8 @@ class OrganizationDomainService:
                 "ai_credits": db_plan.ai_credits,
                 "features": db_plan.features or "",
             }
-        plan_slug = (org.plan.lower() if org and getattr(org, "plan", None) else "enterprise")
-        return DEFAULT_PLANS.get(plan_slug) or DEFAULT_PLANS["enterprise"]
+        plan_slug = org.plan.lower() if org and getattr(org, "plan", None) else "enterprise"
+        return dict(DEFAULT_PLANS.get(plan_slug) or DEFAULT_PLANS["enterprise"])
 
     async def _resolve_plan_info(self, db: AsyncSession, org: Organization) -> dict:
         subscription = await self.get_or_create_subscription(db, org)
@@ -250,9 +271,7 @@ class OrganizationDomainService:
                 },
             )
 
-            free_plan = await self.repository.get_plan_by_slug(
-                db, (payload.plan or "free").lower()
-            )
+            free_plan = await self.repository.get_plan_by_slug(db, (payload.plan or "free").lower())
             await self.repository.create_subscription(
                 db,
                 data={
@@ -303,9 +322,7 @@ class OrganizationDomainService:
             result.append(org_to_dict(org, members_count=m_count))
         return result
 
-    async def list_members(
-        self, db: AsyncSession, current_user: User | None
-    ) -> list[dict]:
+    async def list_members(self, db: AsyncSession, current_user: User | None) -> list[dict]:
         org = await self.get_or_create_default_org(db, current_user)
         users = await self.repository.list_members(db, org.id)
         if not users:
@@ -342,9 +359,7 @@ class OrganizationDomainService:
             }
         return {"message": f"User {user_id} removed from organization", "status": "success"}
 
-    async def get_subscription(
-        self, db: AsyncSession, current_user: User | None
-    ) -> dict:
+    async def get_subscription(self, db: AsyncSession, current_user: User | None) -> dict:
         org = await self.get_or_create_default_org(db, current_user)
         subscription = await self.get_or_create_subscription(db, org)
         plan_info = await self._resolve_plan_info(db, org)
@@ -366,9 +381,7 @@ class OrganizationDomainService:
                 else None
             ),
             "current_period_end": (
-                str(subscription.current_period_end)
-                if subscription.current_period_end
-                else None
+                str(subscription.current_period_end) if subscription.current_period_end else None
             ),
             "next_billing": (
                 str(subscription.next_billing) if subscription.next_billing else "2026-09-02"
@@ -428,15 +441,16 @@ class OrganizationDomainService:
             if not org:
                 raise NotFoundError(message=f"Organization with ID '{org_id}' not found.")
             # Verify user has access to this organization
-            if current_user and getattr(current_user, "organization_id", None):
-                if (
-                    current_user.organization_id != org_id
-                    and getattr(current_user, "role", "") not in ("Admin", "Superadmin")
-                ):
-                    raise APIException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        message="You do not have permission to manage billing for this organization.",
-                    )
+            if (
+                current_user
+                and getattr(current_user, "organization_id", None)
+                and current_user.organization_id != org_id
+                and getattr(current_user, "role", "") not in ("Admin", "Superadmin")
+            ):
+                raise APIException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    message="You do not have permission to manage billing for this organization.",
+                )
         else:
             org = await self.get_or_create_default_org(db, current_user)
 
@@ -460,8 +474,8 @@ class OrganizationDomainService:
             plan_name = db_plan.name
             price_monthly = float(db_plan.price_monthly)
         elif plan_info:
-            plan_name = plan_info.get("name", clean_slug.capitalize())
-            price_monthly = float(plan_info.get("price_monthly", 0.0))
+            plan_name = plan_info["name"]
+            price_monthly = float(plan_info["price_monthly"])
         else:
             plan_name = clean_slug.capitalize()
             price_monthly = 0.0
@@ -475,7 +489,9 @@ class OrganizationDomainService:
         unit_amount = int(round(price_monthly * 100))
 
         if not settings.STRIPE_SECRET_KEY:
-            logger.error("Stripe checkout creation requested but STRIPE_SECRET_KEY is not configured.")
+            logger.error(
+                "Stripe checkout creation requested but STRIPE_SECRET_KEY is not configured."
+            )
             raise APIException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 message="Billing provider is not configured.",
@@ -553,20 +569,23 @@ class OrganizationDomainService:
             org = await self.repository.get_by_id(db, org_id)
             if not org:
                 raise NotFoundError(message=f"Organization with ID '{org_id}' not found.")
-            if current_user and getattr(current_user, "organization_id", None):
-                if (
-                    current_user.organization_id != org_id
-                    and getattr(current_user, "role", "") not in ("Admin", "Superadmin")
-                ):
-                    raise APIException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        message="You do not have permission to verify billing for this organization.",
-                    )
+            if (
+                current_user
+                and getattr(current_user, "organization_id", None)
+                and current_user.organization_id != org_id
+                and getattr(current_user, "role", "") not in ("Admin", "Superadmin")
+            ):
+                raise APIException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    message="You do not have permission to verify billing for this organization.",
+                )
         else:
             org = await self.get_or_create_default_org(db, current_user)
 
         if not settings.STRIPE_SECRET_KEY:
-            logger.error("Stripe checkout verification requested but STRIPE_SECRET_KEY is not configured.")
+            logger.error(
+                "Stripe checkout verification requested but STRIPE_SECRET_KEY is not configured."
+            )
             raise APIException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 message="Billing provider is not configured.",
@@ -621,13 +640,27 @@ class OrganizationDomainService:
         # Check DB synchronization state
         subscription = await self.repository.get_subscription(db, org.id)
         db_synced = False
-        if subscription and getattr(subscription, "checkout_session_id", None) == session_id or org.plan and plan_slug and org.plan.lower() == plan_slug.lower():
+        if (
+            subscription
+            and getattr(subscription, "checkout_session_id", None) == session_id
+            or org.plan
+            and plan_slug
+            and org.plan.lower() == plan_slug.lower()
+        ):
             db_synced = True
 
         clean_slug = plan_slug.strip().lower()
         db_plan = await self.repository.get_plan_by_slug(db, clean_slug)
         plan_info = DEFAULT_PLANS.get(clean_slug)
-        plan_name = db_plan.name if db_plan else (plan_info.get("name", clean_slug.capitalize()) if plan_info else clean_slug.capitalize())
+        plan_name = (
+            db_plan.name
+            if db_plan
+            else (
+                plan_info.get("name", clean_slug.capitalize())
+                if plan_info
+                else clean_slug.capitalize()
+            )
+        )
 
         # If payment is verified by Stripe API but DB sync has not run yet (e.g. delayed webhook or delivery queue backlog),
         # perform canonical, idempotent server-side database synchronization immediately.
@@ -645,7 +678,11 @@ class OrganizationDomainService:
             db_synced = True
 
         status_str = "completed" if db_synced else "processing"
-        message_str = "Subscription activated successfully." if db_synced else "Payment verified. Subscription activation is still processing."
+        message_str = (
+            "Subscription activated successfully."
+            if db_synced
+            else "Payment verified. Subscription activation is still processing."
+        )
 
         return {
             "verified": True,
@@ -673,11 +710,29 @@ class OrganizationDomainService:
         clean_slug = plan_slug.strip().lower()
         db_plan = await self.repository.get_plan_by_slug(db, clean_slug)
         plan_info = DEFAULT_PLANS.get(clean_slug) or DEFAULT_PLANS["enterprise"]
-        target_plan_name = db_plan.name if db_plan else (str(plan_info.get("name", clean_slug.capitalize())) if plan_info else clean_slug.capitalize())
+        target_plan_name = (
+            db_plan.name
+            if db_plan
+            else (
+                str(plan_info.get("name", clean_slug.capitalize()))
+                if plan_info
+                else clean_slug.capitalize()
+            )
+        )
 
         # Idempotency guard: if subscription is already upgraded to target plan with this checkout_session_id, skip duplicate DB writes
-        if stripe_session_id and getattr(subscription, "checkout_session_id", None) == stripe_session_id and org.plan and org.plan.lower() == target_plan_name.lower():
-            logger.info("Subscription for organization %s already upgraded to %s with session %s. Skipping duplicate mutation.", organization_id, org.plan, stripe_session_id)
+        if (
+            stripe_session_id
+            and getattr(subscription, "checkout_session_id", None) == stripe_session_id
+            and org.plan
+            and org.plan.lower() == target_plan_name.lower()
+        ):
+            logger.info(
+                "Subscription for organization %s already upgraded to %s with session %s. Skipping duplicate mutation.",
+                organization_id,
+                org.plan,
+                stripe_session_id,
+            )
             return {"message": f"Organization already upgraded to {org.plan}", "status": "success"}
 
         if db_plan:
@@ -689,12 +744,12 @@ class OrganizationDomainService:
             org.plan = db_plan.name
             org.max_users = db_plan.max_users
         elif plan_info:
-            subscription.amount = float(plan_info.get("price_monthly", 0.0))
-            subscription.max_users = int(plan_info.get("max_users", 100))
-            subscription.storage_limit_gb = int(plan_info.get("max_storage_gb", 500))
-            subscription.ai_credits = int(plan_info.get("ai_credits", 0))
-            org.plan = str(plan_info.get("name", clean_slug.capitalize()))
-            org.max_users = int(plan_info.get("max_users", 100))
+            subscription.amount = float(plan_info["price_monthly"])
+            subscription.max_users = plan_info["max_users"]
+            subscription.storage_limit_gb = plan_info["max_storage_gb"]
+            subscription.ai_credits = plan_info["ai_credits"]
+            org.plan = plan_info["name"]
+            org.max_users = plan_info["max_users"]
 
         subscription.status = "active"
         subscription.auto_renew = True
@@ -752,10 +807,19 @@ class OrganizationDomainService:
         if event_id:
             existing_event = await self.repository.get_processed_webhook_event(db, event_id)
             if existing_event:
-                logger.info("Stripe webhook event %s already processed. Skipping duplicate.", event_id)
-                return {"status": "ignored_duplicate", "message": f"Event '{event_id}' already processed"}
+                logger.info(
+                    "Stripe webhook event %s already processed. Skipping duplicate.", event_id
+                )
+                return {
+                    "status": "ignored_duplicate",
+                    "message": f"Event '{event_id}' already processed",
+                }
 
-        if event_type in ("checkout.session.completed", "payment_intent.succeeded", "invoice.payment_succeeded"):
+        if event_type in (
+            "checkout.session.completed",
+            "payment_intent.succeeded",
+            "invoice.payment_succeeded",
+        ):
             data_dict = _stripe_to_dict(event_dict.get("data", {}))
             obj = _stripe_to_dict(data_dict.get("object", {}))
             payment_status = obj.get("payment_status", "paid")
@@ -765,7 +829,10 @@ class OrganizationDomainService:
                     obj.get("id"),
                     payment_status,
                 )
-                return {"status": "pending_or_unpaid", "message": f"Payment status is {payment_status}"}
+                return {
+                    "status": "pending_or_unpaid",
+                    "message": f"Payment status is {payment_status}",
+                }
 
             metadata = _stripe_to_dict(obj.get("metadata", {}))
             org_id = metadata.get("organization_id")
@@ -1017,9 +1084,7 @@ class OrganizationDomainService:
             return org_to_dict(org, members_count=m_count)
         except Exception as e:
             await db.rollback()
-            raise APIException(
-                status_code=status.HTTP_400_BAD_REQUEST, message=str(e)
-            ) from e
+            raise APIException(status_code=status.HTTP_400_BAD_REQUEST, message=str(e)) from e
 
     async def delete_organization_by_id(self, db: AsyncSession, org_id: str) -> dict:
         org = await self.repository.get_by_id(db, org_id)

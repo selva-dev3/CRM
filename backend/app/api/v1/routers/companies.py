@@ -1,5 +1,3 @@
-from typing import List, Optional
-
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,11 +24,16 @@ from app.services.note_service import note_service
 router = APIRouter()
 
 
-@router.get("", response_model=List[CompanyResponse], summary="List companies with pagination & search", dependencies=[Depends(require_permission("companies:read"))])
+@router.get(
+    "",
+    response_model=list[CompanyResponse],
+    summary="List companies with pagination & search",
+    dependencies=[Depends(require_permission("companies:read"))],
+)
 async def list_companies(
     page: int = 1,
     limit: int = 20,
-    search: Optional[str] = None,
+    search: str | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     return await company_service.list_companies(db, page=page, limit=limit, search=search)
@@ -51,81 +54,155 @@ async def create_company(
     return await company_service.create_company(db, payload, current_user)
 
 
-@router.post("/lookup-domain", summary="Enrich company profile using domain lookup", dependencies=[Depends(require_permission("companies:read"))])
+@router.post(
+    "/lookup-domain",
+    summary="Enrich company profile using domain lookup",
+    dependencies=[Depends(require_permission("companies:read"))],
+)
 async def lookup_company_domain(domain: str):
     return await company_service.lookup_domain(domain)
 
 
-@router.get("/export/csv", summary="Export companies as CSV", dependencies=[Depends(require_permission("companies:export"))])
+@router.get(
+    "/export/csv",
+    summary="Export companies as CSV",
+    dependencies=[Depends(require_permission("companies:export"))],
+)
 async def export_companies_csv():
     return await company_service.export_csv()
 
 
-@router.post("/import/csv", response_model=MessageResponse, summary="Import companies from CSV", dependencies=[Depends(require_permission("companies:import"))])
+@router.post(
+    "/import/csv",
+    response_model=MessageResponse,
+    summary="Import companies from CSV",
+    dependencies=[Depends(require_permission("companies:import"))],
+)
 async def import_companies_csv():
     return await company_service.import_csv()
 
 
-@router.post("/bulk-delete", response_model=BulkActionResponse, summary="Bulk delete companies", dependencies=[Depends(require_permission("companies:bulk_delete"))])
+@router.post(
+    "/bulk-delete",
+    response_model=BulkActionResponse,
+    summary="Bulk delete companies",
+    dependencies=[Depends(require_permission("companies:bulk_delete"))],
+)
 async def bulk_delete_companies(payload: BulkDeleteRequest, db: AsyncSession = Depends(get_db)):
     return await company_service.bulk_delete(db, payload.ids)
 
 
-@router.get("/{company_id}", response_model=CompanyResponse, summary="Get company details by ID", dependencies=[Depends(require_permission("companies:read"))])
+@router.get(
+    "/{company_id}",
+    response_model=CompanyResponse,
+    summary="Get company details by ID",
+    dependencies=[Depends(require_permission("companies:read"))],
+)
 async def get_company(company_id: str, db: AsyncSession = Depends(get_db)):
     return await company_service.get_company(db, company_id)
 
 
-@router.put("/{company_id}", response_model=CompanyResponse, summary="Update company details", dependencies=[Depends(require_permission("companies:update"))])
-async def update_company(company_id: str, payload: CompanyUpdate, db: AsyncSession = Depends(get_db)):
+@router.put(
+    "/{company_id}",
+    response_model=CompanyResponse,
+    summary="Update company details",
+    dependencies=[Depends(require_permission("companies:update"))],
+)
+async def update_company(
+    company_id: str, payload: CompanyUpdate, db: AsyncSession = Depends(get_db)
+):
     return await company_service.update_company(db, company_id, payload)
 
 
-@router.delete("/{company_id}", response_model=MessageResponse, summary="Delete company by ID", dependencies=[Depends(require_permission("companies:delete"))])
+@router.delete(
+    "/{company_id}",
+    response_model=MessageResponse,
+    summary="Delete company by ID",
+    dependencies=[Depends(require_permission("companies:delete"))],
+)
 async def delete_company(company_id: str, db: AsyncSession = Depends(get_db)):
     return await company_service.delete_company(db, company_id)
 
 
-@router.get("/{company_id}/contacts", response_model=List[ContactResponse], summary="List contacts working at company", dependencies=[Depends(require_permission("companies:read"))])
+@router.get(
+    "/{company_id}/contacts",
+    response_model=list[ContactResponse],
+    summary="List contacts working at company",
+    dependencies=[Depends(require_permission("companies:read"))],
+)
 async def get_company_contacts(company_id: str, db: AsyncSession = Depends(get_db)):
     return await company_service.get_company_contacts(db, company_id)
 
 
-@router.get("/{company_id}/deals", response_model=List[DealResponse], summary="List deals linked to company", dependencies=[Depends(require_permission("companies:read"))])
+@router.get(
+    "/{company_id}/deals",
+    response_model=list[DealResponse],
+    summary="List deals linked to company",
+    dependencies=[Depends(require_permission("companies:read"))],
+)
 async def get_company_deals(company_id: str, db: AsyncSession = Depends(get_db)):
     return await company_service.get_company_deals(db, company_id)
 
 
-@router.get("/{company_id}/hierarchy", summary="Get parent/child corporate structure", dependencies=[Depends(require_permission("companies:read"))])
+@router.get(
+    "/{company_id}/hierarchy",
+    summary="Get parent/child corporate structure",
+    dependencies=[Depends(require_permission("companies:read"))],
+)
 async def get_company_hierarchy(company_id: str, db: AsyncSession = Depends(get_db)):
     return await company_service.get_company_hierarchy(db, company_id)
 
 
-@router.post("/{company_id}/parent", response_model=MessageResponse, summary="Set parent company ID", dependencies=[Depends(require_permission("companies:update"))])
+@router.post(
+    "/{company_id}/parent",
+    response_model=MessageResponse,
+    summary="Set parent company ID",
+    dependencies=[Depends(require_permission("companies:update"))],
+)
 async def set_parent_company(company_id: str, parent_id: str, db: AsyncSession = Depends(get_db)):
     return await company_service.set_parent_company(db, company_id, parent_id)
 
 
-@router.get("/{company_id}/quotes", response_model=List[QuoteResponse], summary="List quotes generated for company", dependencies=[Depends(require_permission("companies:read"))])
+@router.get(
+    "/{company_id}/quotes",
+    response_model=list[QuoteResponse],
+    summary="List quotes generated for company",
+    dependencies=[Depends(require_permission("companies:read"))],
+)
 async def get_company_quotes(company_id: str, db: AsyncSession = Depends(get_db)):
     return await company_service.get_company_quotes(db, company_id)
 
 
-@router.get("/{company_id}/invoices", response_model=List[InvoiceResponse], summary="List invoices billed to company", dependencies=[Depends(require_permission("companies:read"))])
+@router.get(
+    "/{company_id}/invoices",
+    response_model=list[InvoiceResponse],
+    summary="List invoices billed to company",
+    dependencies=[Depends(require_permission("companies:read"))],
+)
 async def get_company_invoices(company_id: str, db: AsyncSession = Depends(get_db)):
     return await company_service.get_company_invoices(db, company_id)
 
 
-@router.get("/{company_id}/notes", response_model=List[NoteResponse], summary="List notes for company", dependencies=[Depends(require_permission("companies:read"))])
+@router.get(
+    "/{company_id}/notes",
+    response_model=list[NoteResponse],
+    summary="List notes for company",
+    dependencies=[Depends(require_permission("companies:read"))],
+)
 async def get_company_notes(company_id: str, db: AsyncSession = Depends(get_db)):
     return await note_service.list_for_entity(db, entity_type="company", entity_id=company_id)
 
 
-@router.post("/{company_id}/notes", response_model=NoteResponse, summary="Add note to company", dependencies=[Depends(require_permission("companies:create"))])
+@router.post(
+    "/{company_id}/notes",
+    response_model=NoteResponse,
+    summary="Add note to company",
+    dependencies=[Depends(require_permission("companies:create"))],
+)
 async def add_company_note(
     company_id: str,
-    content: Optional[str] = Query(None),
-    payload: Optional[dict] = None,
+    content: str | None = Query(None),
+    payload: dict | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -143,6 +220,11 @@ async def add_company_note(
     )
 
 
-@router.get("/{company_id}/documents", response_model=List[DocumentResponse], summary="List documents attached to company", dependencies=[Depends(require_permission("companies:read"))])
+@router.get(
+    "/{company_id}/documents",
+    response_model=list[DocumentResponse],
+    summary="List documents attached to company",
+    dependencies=[Depends(require_permission("companies:read"))],
+)
 async def get_company_documents(company_id: str, db: AsyncSession = Depends(get_db)):
     return await company_service.get_company_documents(db, company_id)
