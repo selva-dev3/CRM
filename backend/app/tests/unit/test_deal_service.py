@@ -1,10 +1,11 @@
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.errors import NotFoundError
 from app.models.deal import Deal
 from app.repositories.deal_repository import DealRepository
@@ -331,7 +332,7 @@ async def test_update_deal_fires_probability_changed_event(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_predict_win_rate_fallback_for_closed_won():
+async def test_predict_win_rate_fallback_for_closed_won(monkeypatch):
     repo: Any = DealRepository()
     repo.get_by_id = AsyncMock(return_value=_make_deal(stage="Closed Won", probability=50.0))
     service = _service_with(repo)
@@ -339,7 +340,12 @@ async def test_predict_win_rate_fallback_for_closed_won():
 
     from app.services.deal_service import note_service
 
-    cast(Any, note_service).get_notes_by_entity = AsyncMock(return_value=[])
+    async def empty_notes(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr(note_service, "get_notes_by_entity", empty_notes)
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
     result = await service.predict_deal_win_rate(db, "deal-1")
 
