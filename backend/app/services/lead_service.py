@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.errors import APIException, ForbiddenError, NotFoundError
+from app.core.security import generate_random_code, get_password_hash
 from app.models import Lead, User
 from app.repositories.lead_repository import LeadRepository
 from app.schemas.crm_schemas import (
@@ -72,7 +73,9 @@ class LeadService:
             await db.commit()
         except Exception as e:
             await db.rollback()
-            raise APIException(status_code=status.HTTP_400_BAD_REQUEST, message=error_message) from e
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST, message=error_message
+            ) from e
 
     async def list_leads(
         self,
@@ -115,7 +118,9 @@ class LeadService:
                 )
             return org_id
         if current_user and getattr(current_user, "organization_id", None):
-            user_org_record = await self.repository.get_organization(db, current_user.organization_id)
+            user_org_record = await self.repository.get_organization(
+                db, current_user.organization_id
+            )
             if user_org_record:
                 return user_org_record.id
         first = await self.repository.get_first_organization(db)
@@ -214,7 +219,12 @@ class LeadService:
             entity_type="lead",
             entity_id=lead.id,
             assigned_to=lead.assigned_to,
-            data={"id": lead.id, "title": lead.title, "company": lead.company, "status": lead.status},
+            data={
+                "id": lead.id,
+                "title": lead.title,
+                "company": lead.company,
+                "status": lead.status,
+            },
         )
         return lead_to_dict(lead)
 
@@ -233,7 +243,10 @@ class LeadService:
         for lead in leads:
             await self.repository.delete(db, lead)
         await self._commit(db, "Bulk delete failed")
-        return {"affected_count": len(leads), "message": f"Successfully deleted {len(leads)} lead(s)"}
+        return {
+            "affected_count": len(leads),
+            "message": f"Successfully deleted {len(leads)} lead(s)",
+        }
 
     async def bulk_archive(self, db: AsyncSession, ids: list[str]) -> dict:
         if not ids:
@@ -242,7 +255,10 @@ class LeadService:
         for lead in leads:
             lead.is_archived = True
         await self._commit(db, "Bulk archive failed")
-        return {"affected_count": len(leads), "message": f"Successfully archived {len(leads)} lead(s)"}
+        return {
+            "affected_count": len(leads),
+            "message": f"Successfully archived {len(leads)} lead(s)",
+        }
 
     async def bulk_update_status(self, db: AsyncSession, ids: list[str], status_value: str) -> dict:
         if not ids:
@@ -272,7 +288,9 @@ class LeadService:
             "matched_lead_id": duplicate.id if duplicate else None,
         }
 
-    async def convert_lead(self, db: AsyncSession, lead_id: str, payload: LeadConvertRequest) -> dict:
+    async def convert_lead(
+        self, db: AsyncSession, lead_id: str, payload: LeadConvertRequest
+    ) -> dict:
         await self.get_lead(db, lead_id)
         return {
             "message": "Lead converted successfully",
@@ -349,19 +367,27 @@ class LeadService:
             )
 
         lead_tag = f"[Lead:{lead_id}]"
-        for task in await self.repository.list_tasks(db, organization_id=lead.organization_id, lead_tag=lead_tag):
-            clean_desc = (task.description or "").replace(f"\n{lead_tag}", "").replace(lead_tag, "").strip()
+        for task in await self.repository.list_tasks(
+            db, organization_id=lead.organization_id, lead_tag=lead_tag
+        ):
+            clean_desc = (
+                (task.description or "").replace(f"\n{lead_tag}", "").replace(lead_tag, "").strip()
+            )
             timeline.append(
                 {
                     "id": f"task-{task.id}",
                     "event_type": "task_created",
                     "title": f"Task Created: {task.title}",
-                    "description": clean_desc if clean_desc else f"Priority: {task.priority}, Status: {task.status}",
+                    "description": clean_desc
+                    if clean_desc
+                    else f"Priority: {task.priority}, Status: {task.status}",
                     "timestamp": str(task.created_at),
                 }
             )
 
-        for email in await self.repository.list_emails(db, organization_id=lead.organization_id, lead_tag=lead_tag):
+        for email in await self.repository.list_emails(
+            db, organization_id=lead.organization_id, lead_tag=lead_tag
+        ):
             timeline.append(
                 {
                     "id": f"email-{email.id}",
@@ -374,7 +400,9 @@ class LeadService:
 
         contact_id = await self.repository.get_contact_id_by_email(db, lead.email)
         if contact_id:
-            for call in await self.repository.list_calls(db, organization_id=lead.organization_id, lead_tag=lead_tag):
+            for call in await self.repository.list_calls(
+                db, organization_id=lead.organization_id, lead_tag=lead_tag
+            ):
                 timeline.append(
                     {
                         "id": f"call-{call.id}",
@@ -392,7 +420,12 @@ class LeadService:
         user = await self.repository.get_first_user(db)
         if user:
             return user.id
-        user = await self.repository.create_user(db, email="system@crm.com", name="System User")
+        user = await self.repository.create_user(
+            db,
+            email="system@crm.com",
+            name="System User",
+            hashed_password=get_password_hash(generate_random_code(32)),
+        )
         await db.flush()
         user.organization_id = organization_id
         return user.id
@@ -421,7 +454,9 @@ class LeadService:
         if not lead:
             raise NotFoundError(message=f"Lead '{lead_id}' not found")
         created_by = await self._resolve_author(db, lead.organization_id)
-        note = await self.repository.create_note(db, lead_id=lead_id, content=content, created_by=created_by)
+        note = await self.repository.create_note(
+            db, lead_id=lead_id, content=content, created_by=created_by
+        )
         await self._commit(db, "Failed to add note")
         return {
             "id": note.id,
@@ -437,10 +472,14 @@ class LeadService:
         if not lead:
             raise NotFoundError(message=f"Lead '{lead_id}' not found")
         lead_tag = f"[Lead:{lead_id}]"
-        tasks = await self.repository.list_tasks(db, organization_id=lead.organization_id, lead_tag=lead_tag)
+        tasks = await self.repository.list_tasks(
+            db, organization_id=lead.organization_id, lead_tag=lead_tag
+        )
         output = []
         for task in tasks:
-            clean_desc = (task.description or "").replace(f"\n{lead_tag}", "").replace(lead_tag, "").strip()
+            clean_desc = (
+                (task.description or "").replace(f"\n{lead_tag}", "").replace(lead_tag, "").strip()
+            )
             output.append(
                 {
                     "id": task.id,
@@ -465,7 +504,12 @@ class LeadService:
             if first_user:
                 assigned_user_id = first_user.id
             else:
-                user = await self.repository.create_user(db, email="system@crm.com", name="System User")
+                user = await self.repository.create_user(
+                    db,
+                    email="system@crm.com",
+                    name="System User",
+                    hashed_password=get_password_hash(generate_random_code(32)),
+                )
                 await db.flush()
                 user.organization_id = lead.organization_id
                 assigned_user_id = user.id
@@ -527,7 +571,9 @@ class LeadService:
         if not lead:
             raise NotFoundError(message=f"Lead '{lead_id}' not found")
         lead_tag = f"[Lead:{lead_id}]"
-        emails = await self.repository.list_emails(db, organization_id=lead.organization_id, lead_tag=lead_tag)
+        emails = await self.repository.list_emails(
+            db, organization_id=lead.organization_id, lead_tag=lead_tag
+        )
         return [
             {
                 "id": email.id,
@@ -572,10 +618,14 @@ class LeadService:
         if not lead:
             raise NotFoundError(message=f"Lead '{lead_id}' not found")
         lead_tag = f"[Lead:{lead_id}]"
-        calls = await self.repository.list_calls(db, organization_id=lead.organization_id, lead_tag=lead_tag)
+        calls = await self.repository.list_calls(
+            db, organization_id=lead.organization_id, lead_tag=lead_tag
+        )
         output = []
         for call in calls:
-            clean_notes = (call.notes or "").replace(f"\n{lead_tag}", "").replace(lead_tag, "").strip()
+            clean_notes = (
+                (call.notes or "").replace(f"\n{lead_tag}", "").replace(lead_tag, "").strip()
+            )
             output.append(
                 {
                     "id": call.id,

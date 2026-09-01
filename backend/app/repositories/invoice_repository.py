@@ -15,7 +15,9 @@ class InvoiceRepository:
         self, db: AsyncSession, *, invoice_id: str, organization_id: str
     ) -> Invoice | None:
         result = await db.execute(
-            select(Invoice).where(Invoice.id == invoice_id, Invoice.organization_id == organization_id)
+            select(Invoice).where(
+                Invoice.id == invoice_id, Invoice.organization_id == organization_id
+            )
         )
         return result.scalars().first()
 
@@ -77,7 +79,9 @@ class InvoiceRepository:
         self, db: AsyncSession, *, product_id: str, organization_id: str
     ) -> Product | None:
         result = await db.execute(
-            select(Product).where(Product.id == product_id, Product.organization_id == organization_id)
+            select(Product).where(
+                Product.id == product_id, Product.organization_id == organization_id
+            )
         )
         return result.scalars().first()
 

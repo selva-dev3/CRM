@@ -1,4 +1,3 @@
-
 from fastapi import status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -84,7 +83,9 @@ class NoteService:
     async def get_notes_by_entity(
         self, db: AsyncSession, *, entity_type: str, entity_id: str
     ) -> list[dict]:
-        notes = await self.repository.list_by_entity(db, entity_type=entity_type, entity_id=entity_id)
+        notes = await self.repository.list_by_entity(
+            db, entity_type=entity_type, entity_id=entity_id
+        )
         return [note_to_dict(n) for n in notes]
 
     async def bulk_delete(self, db: AsyncSession, ids: list[str]) -> dict:
@@ -136,7 +137,9 @@ class NoteService:
         entity_id: str,
         created_by_default: str | None = None,
     ) -> list[dict]:
-        notes = await self.repository.list_by_entity(db, entity_type=entity_type, entity_id=entity_id)
+        notes = await self.repository.list_by_entity(
+            db, entity_type=entity_type, entity_id=entity_id
+        )
         return [
             {
                 "id": n.id,

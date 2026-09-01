@@ -1,9 +1,9 @@
-from enum import Enum
+from enum import StrEnum
 
 from app.core.errors import ForbiddenError
 
 
-class UserRole(str, Enum):
+class UserRole(StrEnum):
     SUPER_ADMIN = "Super Admin"
     ORG_ADMIN = "Organization Admin"
     SALES_MANAGER = "Sales Manager"
@@ -50,9 +50,7 @@ async def is_super_admin_user(db, user) -> bool:
 def ensure_can_assign_role(*, actor_is_super_admin: bool, target_is_super_admin: bool) -> None:
     """Centralized guard: only a super_admin actor may assign the super_admin role."""
     if target_is_super_admin and not actor_is_super_admin:
-        raise ForbiddenError(
-            message="Only super_admin users can assign the super_admin role."
-        )
+        raise ForbiddenError(message="Only super_admin users can assign the super_admin role.")
 
 
 def check_permission(user_role: str, required_roles: list[UserRole]) -> bool:

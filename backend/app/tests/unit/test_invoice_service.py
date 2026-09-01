@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -125,7 +126,7 @@ def patched_notify(monkeypatch):
     ],
 )
 async def test_conversion_rejected_before_closed_won(stage, patched_org):
-    repo = InvoiceRepository()
+    repo: Any = InvoiceRepository()
     repo.get_deal_scoped = AsyncMock(return_value=_make_deal(stage=stage))
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -136,7 +137,7 @@ async def test_conversion_rejected_before_closed_won(stage, patched_org):
 
 @pytest.mark.asyncio
 async def test_cross_tenant_deal_cannot_create_invoice(patched_org):
-    repo = InvoiceRepository()
+    repo: Any = InvoiceRepository()
     # Deal exists but belongs to another organization -> scoped lookup misses it.
     repo.get_deal_scoped = AsyncMock(return_value=None)
     service = _service_with(repo)
@@ -155,7 +156,7 @@ async def test_cross_tenant_deal_cannot_create_invoice(patched_org):
 async def test_conversion_maps_customer_and_line_items(patched_org):
     deal = _make_deal()
     product = _make_product()
-    repo = InvoiceRepository()
+    repo: Any = InvoiceRepository()
     repo.get_deal_scoped = AsyncMock(return_value=deal)
     repo.get_by_deal = AsyncMock(return_value=None)
     repo.list_deal_products = AsyncMock(return_value=[_make_deal_product()])
@@ -200,7 +201,7 @@ async def test_conversion_maps_customer_and_line_items(patched_org):
     assert result["items"][0]["quantity"] == 2
     assert result["items"][0]["unit_price"] == 500.0
 
-    created_kwargs = repo.create.await_args.kwargs["data"]
+    created_kwargs = repo.create.await_args_list[-1].kwargs["data"]
     assert created_kwargs["organization_id"] == "org-1"
     assert created_kwargs["status"] == INVOICE_STATUS_DRAFT
     assert created_kwargs["deal_id"] == "deal-1"
@@ -211,7 +212,7 @@ async def test_conversion_maps_customer_and_line_items(patched_org):
 @pytest.mark.asyncio
 async def test_conversion_computes_totals_server_side(patched_org):
     """Client-supplied numbers are ignored; totals derive from line items."""
-    repo = InvoiceRepository()
+    repo: Any = InvoiceRepository()
     repo.get_deal_scoped = AsyncMock(return_value=_make_deal())
     repo.get_by_deal = AsyncMock(return_value=None)
     repo.list_deal_products = AsyncMock(
@@ -233,7 +234,7 @@ async def test_conversion_computes_totals_server_side(patched_org):
 
     await service.create_invoice_from_deal(db, "deal-1", _make_user())
 
-    data = repo.create.await_args.kwargs["data"]
+    data = repo.create.await_args_list[-1].kwargs["data"]
     # subtotal = round(3*199.99 + 1*50.05, 2) = round(650.02, 2)
     assert data["subtotal"] == 650.02
     assert data["tax_total"] == 0.0
@@ -243,7 +244,7 @@ async def test_conversion_computes_totals_server_side(patched_org):
 
 @pytest.mark.asyncio
 async def test_creation_leaves_payment_state_unpaid(patched_org):
-    repo = InvoiceRepository()
+    repo: Any = InvoiceRepository()
     repo.get_deal_scoped = AsyncMock(return_value=_make_deal())
     repo.get_by_deal = AsyncMock(return_value=None)
     repo.list_deal_products = AsyncMock(return_value=[_make_deal_product()])
@@ -267,7 +268,7 @@ async def test_creation_leaves_payment_state_unpaid(patched_org):
 
 @pytest.mark.asyncio
 async def test_missing_customer_rejected(patched_org):
-    repo = InvoiceRepository()
+    repo: Any = InvoiceRepository()
     repo.get_deal_scoped = AsyncMock(return_value=_make_deal(company_id=None, contact_id=None))
     repo.get_by_deal = AsyncMock(return_value=None)
     service = _service_with(repo)
@@ -280,7 +281,7 @@ async def test_missing_customer_rejected(patched_org):
 
 @pytest.mark.asyncio
 async def test_no_billable_items_rejected(patched_org):
-    repo = InvoiceRepository()
+    repo: Any = InvoiceRepository()
     repo.get_deal_scoped = AsyncMock(return_value=_make_deal())
     repo.get_by_deal = AsyncMock(return_value=None)
     repo.list_deal_products = AsyncMock(return_value=[])
@@ -294,7 +295,7 @@ async def test_no_billable_items_rejected(patched_org):
 
 @pytest.mark.asyncio
 async def test_invalid_quantity_rejected(patched_org):
-    repo = InvoiceRepository()
+    repo: Any = InvoiceRepository()
     repo.get_deal_scoped = AsyncMock(return_value=_make_deal())
     repo.get_by_deal = AsyncMock(return_value=None)
     repo.list_deal_products = AsyncMock(return_value=[_make_deal_product(quantity=0)])
@@ -310,7 +311,7 @@ async def test_invalid_quantity_rejected(patched_org):
 @pytest.mark.asyncio
 async def test_cross_tenant_product_rejected(patched_org):
     """A product belonging to another organization cannot be invoiced."""
-    repo = InvoiceRepository()
+    repo: Any = InvoiceRepository()
     repo.get_deal_scoped = AsyncMock(return_value=_make_deal())
     repo.get_by_deal = AsyncMock(return_value=None)
     repo.list_deal_products = AsyncMock(return_value=[_make_deal_product()])
@@ -331,7 +332,7 @@ async def test_cross_tenant_product_rejected(patched_org):
 @pytest.mark.asyncio
 async def test_duplicate_conversion_returns_existing_invoice(patched_org):
     existing = _make_invoice()
-    repo = InvoiceRepository()
+    repo: Any = InvoiceRepository()
     repo.get_deal_scoped = AsyncMock(return_value=_make_deal())
     repo.get_by_deal = AsyncMock(return_value=existing)
     repo.list_items = AsyncMock(return_value=[])
@@ -350,7 +351,7 @@ async def test_duplicate_conversion_returns_existing_invoice(patched_org):
 async def test_concurrent_conversion_returns_existing_on_unique_violation(patched_org):
     """Second concurrent request loses the unique-index race and reuses the winner."""
     winner = _make_invoice()
-    repo = InvoiceRepository()
+    repo: Any = InvoiceRepository()
     repo.get_deal_scoped = AsyncMock(return_value=_make_deal())
     # 1st call (pre-check): none exists. 2nd call (post-conflict): the concurrent
     # request's invoice is already committed.
@@ -372,7 +373,7 @@ async def test_concurrent_conversion_returns_existing_on_unique_violation(patche
 
 @pytest.mark.asyncio
 async def test_unique_violation_without_winner_raises_conflict(patched_org):
-    repo = InvoiceRepository()
+    repo: Any = InvoiceRepository()
     repo.get_deal_scoped = AsyncMock(return_value=_make_deal())
     repo.get_by_deal = AsyncMock(return_value=None)
     repo.list_deal_products = AsyncMock(return_value=[_make_deal_product()])
@@ -391,7 +392,7 @@ async def test_unique_violation_without_winner_raises_conflict(patched_org):
 
 @pytest.mark.asyncio
 async def test_commit_failure_rolls_back_no_partial_invoice(patched_org):
-    repo = InvoiceRepository()
+    repo: Any = InvoiceRepository()
     repo.get_deal_scoped = AsyncMock(return_value=_make_deal())
     repo.get_by_deal = AsyncMock(return_value=None)
     repo.list_deal_products = AsyncMock(return_value=[_make_deal_product()])
@@ -419,7 +420,7 @@ async def test_line_items_use_flushed_invoice_id(patched_org):
     """Regression: Invoice.id is generated at flush time (Python-side default), so
     line items must not capture invoice.id before a flush. Found by live E2E QA:
     invoice_items.invoice_id arrived as NULL on real PostgreSQL."""
-    repo = InvoiceRepository()
+    repo: Any = InvoiceRepository()
     repo.get_deal_scoped = AsyncMock(return_value=_make_deal())
     repo.get_by_deal = AsyncMock(return_value=None)
     repo.list_deal_products = AsyncMock(return_value=[_make_deal_product()])
@@ -457,7 +458,7 @@ async def test_line_items_use_flushed_invoice_id(patched_org):
 @pytest.mark.asyncio
 async def test_send_promotes_draft_to_pending(patched_org):
     invoice = _make_invoice(status=INVOICE_STATUS_DRAFT)
-    repo = InvoiceRepository()
+    repo: Any = InvoiceRepository()
     repo.get_scoped = AsyncMock(return_value=invoice)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -473,12 +474,14 @@ async def test_send_promotes_draft_to_pending(patched_org):
 @pytest.mark.asyncio
 async def test_send_does_not_touch_overdue_or_paid(patched_org):
     invoice = _make_invoice(status="Overdue")
-    repo = InvoiceRepository()
+    repo: Any = InvoiceRepository()
     repo.get_scoped = AsyncMock(return_value=invoice)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
-    await service.mark_sent(db, invoice_id="inv-1", organization_id="org-1", recipient_email="a@b.com")
+    await service.mark_sent(
+        db, invoice_id="inv-1", organization_id="org-1", recipient_email="a@b.com"
+    )
 
     assert invoice.status == "Overdue"
     assert invoice.sent_at is not None
@@ -487,7 +490,7 @@ async def test_send_does_not_touch_overdue_or_paid(patched_org):
 @pytest.mark.asyncio
 async def test_mark_paid_sets_paid_amount_and_fires_event(patched_org):
     invoice = _make_invoice(status=INVOICE_STATUS_PENDING)
-    repo = InvoiceRepository()
+    repo: Any = InvoiceRepository()
     repo.get_scoped = AsyncMock(return_value=invoice)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -498,15 +501,15 @@ async def test_mark_paid_sets_paid_amount_and_fires_event(patched_org):
 
     assert invoice.status == INVOICE_STATUS_PAID
     assert invoice.paid_amount == 1000.0
-    notify = integration_service.notify_slack_event
-    kwargs = notify.await_args.kwargs
+    notify = cast(Any, integration_service).notify_slack_event
+    kwargs = notify.await_args_list[-1].kwargs
     assert kwargs["event_name"] == "invoice.paid"
 
 
 @pytest.mark.asyncio
 async def test_double_payment_rejected(patched_org):
     invoice = _make_invoice(status=INVOICE_STATUS_PAID, paid_amount=1000.0)
-    repo = InvoiceRepository()
+    repo: Any = InvoiceRepository()
     repo.get_scoped = AsyncMock(return_value=invoice)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -521,7 +524,7 @@ async def test_double_payment_rejected(patched_org):
 @pytest.mark.asyncio
 async def test_get_invoice_scoped_by_organization():
     invoice = _make_invoice()
-    repo = InvoiceRepository()
+    repo: Any = InvoiceRepository()
     repo.get_scoped = AsyncMock(return_value=invoice)
     repo.list_items = AsyncMock(return_value=[])
     service = _service_with(repo)
@@ -535,7 +538,7 @@ async def test_get_invoice_scoped_by_organization():
 
 @pytest.mark.asyncio
 async def test_get_invoice_other_org_returns_not_found():
-    repo = InvoiceRepository()
+    repo: Any = InvoiceRepository()
     repo.get_scoped = AsyncMock(return_value=None)
     service = _service_with(repo)
 

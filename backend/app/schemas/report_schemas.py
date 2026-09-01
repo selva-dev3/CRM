@@ -1,10 +1,9 @@
-from datetime import datetime
-from enum import Enum
-from typing import Any, Dict, List, Optional
+from enum import StrEnum
+
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
-class ReportTypeEnum(str, Enum):
+class ReportTypeEnum(StrEnum):
     SALES_PERFORMANCE = "sales-performance"
     PIPELINE_VELOCITY = "pipeline-velocity"
     WIN_LOSS_RATIO = "win-loss-ratio"
@@ -19,7 +18,7 @@ class ReportTypeEnum(str, Enum):
     QUOTA_ATTAINMENT = "quota-attainment"
 
 
-class ReportFrequencyEnum(str, Enum):
+class ReportFrequencyEnum(StrEnum):
     DAILY = "Daily"
     WEEKLY = "Weekly"
     MONTHLY = "Monthly"
@@ -28,8 +27,8 @@ class ReportFrequencyEnum(str, Enum):
 class CustomReportItem(BaseModel):
     id: str
     name: str
-    filters: Optional[str] = "All Accounts"
-    metrics_included: List[str] = Field(default_factory=list)
+    filters: str | None = "All Accounts"
+    metrics_included: list[str] = Field(default_factory=list)
     created_at: str
 
     model_config = ConfigDict(from_attributes=True)
@@ -37,7 +36,7 @@ class CustomReportItem(BaseModel):
 
 class CustomReportCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
-    filters: Optional[str] = None
+    filters: str | None = None
 
 
 class ScheduledReportItem(BaseModel):
@@ -45,7 +44,7 @@ class ScheduledReportItem(BaseModel):
     report_type: str
     email: str
     frequency: str
-    next_run: Optional[str] = None
+    next_run: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

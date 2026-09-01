@@ -1,5 +1,3 @@
-from typing import Optional
-
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,21 +36,18 @@ router = APIRouter()
     dependencies=[Depends(require_permission("invitations:read"))],
 )
 async def list_invitations(
-    search: Optional[str] = Query(None, description="Search by email or full name"),
-    status: Optional[str] = Query(None, description="Filter by status: Pending, Accepted, Expired, Cancelled"),
+    search: str | None = Query(None, description="Search by email or full name"),
+    status: str | None = Query(
+        None, description="Filter by status: Pending, Accepted, Expired, Cancelled"
+    ),
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     sort_by: str = Query("created_at", description="Sort by created_at, email, status"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     return await list_organization_invitations(
-        db=db,
-        search=search,
-        status_filter=status,
-        page=page,
-        limit=limit,
-        sort_by=sort_by
+        db=db, search=search, status_filter=status, page=page, limit=limit, sort_by=sort_by
     )
 
 
@@ -67,7 +62,7 @@ async def list_invitations(
 async def invite_user(
     payload: OrganizationInviteRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     return await create_organization_user_invitation(db, payload, current_user)
 
@@ -91,7 +86,7 @@ async def invite_user(
 async def invite_new_organization(
     payload: CreateOrganizationInvitationRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     return await create_new_organization_invitation(db, payload, current_user)
 
@@ -100,12 +95,9 @@ async def invite_new_organization(
 @router.get(
     "/{token}",
     response_model=InvitationStatusResponse,
-    summary="Validate Invitation Token (Public)"
+    summary="Validate Invitation Token (Public)",
 )
-async def validate_invitation(
-    token: str,
-    db: AsyncSession = Depends(get_db)
-):
+async def validate_invitation(token: str, db: AsyncSession = Depends(get_db)):
     """
     Public endpoint: Validates invitation token, expiration, status, and organization status.
     Returns 410 if expired, 400 if accepted/cancelled, 403 if organization/subscription inactive.
@@ -114,15 +106,12 @@ async def validate_invitation(
 
 
 # 4. POST /api/v1/organizations/invitations/{token}/accept - Accept invitation (PUBLIC)
-@router.post(
-    "/{token}/accept",
-    summary="Accept Invitation & Complete Registration (Public)"
-)
+@router.post("/{token}/accept", summary="Accept Invitation & Complete Registration (Public)")
 async def accept_invitation(
     token: str,
     payload: AcceptInvitationRequest,
     response: Response,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Public endpoint: Accepts invitation, hashes password, activates Organization Admin user,
@@ -141,9 +130,7 @@ async def accept_invitation(
     dependencies=[Depends(require_permission("invitations:resend"))],
 )
 async def resend_invitation(
-    id: str,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     return await resend_organization_invitation(db, invitation_id=id, current_user=current_user)
 
@@ -155,8 +142,6 @@ async def resend_invitation(
     dependencies=[Depends(require_permission("invitations:revoke"))],
 )
 async def cancel_invitation(
-    id: str,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     return await cancel_organization_invitation(db, invitation_id=id, current_user=current_user)

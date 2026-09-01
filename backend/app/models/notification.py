@@ -1,14 +1,19 @@
-from sqlalchemy import String, Boolean, DateTime, Text, ForeignKey, func
-from sqlalchemy.orm import Mapped, mapped_column
 import uuid
 from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func
+from sqlalchemy.orm import Mapped, mapped_column
+
 from app.db.base import Base
+
 
 class Notification(Base):
     __tablename__ = "notifications"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[str] = mapped_column(
+        String, ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
     organization_id: Mapped[str] = mapped_column(
         String, ForeignKey("organizations.id", ondelete="CASCADE"), index=True
     )

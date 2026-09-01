@@ -1,16 +1,18 @@
 from pydantic import BaseModel, EmailStr
-from typing import Optional
+
 
 class LeadBase(BaseModel):
     title: str
     company: str
     contact_name: str
     email: EmailStr
-    phone: Optional[str] = None
+    phone: str | None = None
     status: str = "New"
+
 
 class LeadCreate(LeadBase):
     pass
+
 
 class LeadResponse(LeadBase):
     id: str

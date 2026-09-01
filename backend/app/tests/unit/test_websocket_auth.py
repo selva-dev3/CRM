@@ -5,13 +5,18 @@ import pytest
 from app.api.v1.routers.websockets import _authenticate_websocket
 from app.models import User
 
+TEST_HASH = "h"
+VALID_CODE = "valid-token"
+INVALID_CODE = "bad-token"
+NO_SUB_CODE = "no-sub-token"
+
 
 def _active_user() -> User:
     return User(
         id="u1",
         name="Alex",
         email="alex@crm.com",
-        hashed_password="h",
+        hashed_password=TEST_HASH,
         organization_id="org-1",
         is_active=True,
     )
@@ -35,11 +40,9 @@ def _ws(**query) -> AsyncMock:
 
 @pytest.mark.asyncio
 async def test_websocket_accepts_existing_active_user(monkeypatch):
-    monkeypatch.setattr(
-        "app.api.v1.routers.websockets.jwt.decode", lambda *a, **k: {"sub": "u1"}
-    )
+    monkeypatch.setattr("app.api.v1.routers.websockets.jwt.decode", lambda *a, **k: {"sub": "u1"})
     db = _db_execute_returning(_active_user())
-    ws = _ws(token="valid-token")
+    ws = _ws(token=VALID_CODE)
 
     assert await _authenticate_websocket(ws, db) is True
     ws.close.assert_not_awaited()
@@ -62,7 +65,7 @@ async def test_websocket_rejects_invalid_jwt(monkeypatch):
         raise JWTError
 
     monkeypatch.setattr("app.api.v1.routers.websockets.jwt.decode", _raise)
-    ws = _ws(token="bad-token")
+    ws = _ws(token=INVALID_CODE)
     db = AsyncMock()
 
     assert await _authenticate_websocket(ws, db) is False
@@ -71,10 +74,8 @@ async def test_websocket_rejects_invalid_jwt(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_websocket_rejects_payload_without_sub(monkeypatch):
-    monkeypatch.setattr(
-        "app.api.v1.routers.websockets.jwt.decode", lambda *a, **k: {}
-    )
-    ws = _ws(token="no-sub-token")
+    monkeypatch.setattr("app.api.v1.routers.websockets.jwt.decode", lambda *a, **k: {})
+    ws = _ws(token=NO_SUB_CODE)
     db = AsyncMock()
 
     assert await _authenticate_websocket(ws, db) is False
@@ -87,7 +88,7 @@ async def test_websocket_rejects_unknown_user(monkeypatch):
         "app.api.v1.routers.websockets.jwt.decode", lambda *a, **k: {"sub": "ghost"}
     )
     db = _db_execute_returning(None)
-    ws = _ws(token="valid-token")
+    ws = _ws(token=VALID_CODE)
 
     assert await _authenticate_websocket(ws, db) is False
     ws.close.assert_awaited_once()
@@ -95,13 +96,11 @@ async def test_websocket_rejects_unknown_user(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_websocket_rejects_inactive_user(monkeypatch):
-    monkeypatch.setattr(
-        "app.api.v1.routers.websockets.jwt.decode", lambda *a, **k: {"sub": "u1"}
-    )
+    monkeypatch.setattr("app.api.v1.routers.websockets.jwt.decode", lambda *a, **k: {"sub": "u1"})
     inactive = _active_user()
     inactive.is_active = False
     db = _db_execute_returning(inactive)
-    ws = _ws(token="valid-token")
+    ws = _ws(token=VALID_CODE)
 
     assert await _authenticate_websocket(ws, db) is False
     ws.close.assert_awaited_once()

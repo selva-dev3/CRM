@@ -1,8 +1,17 @@
+import base64
+import hashlib
+import hmac
 import logging
+import secrets
+import time
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
+from urllib.parse import quote
 
+import httpx
+from cryptography.fernet import Fernet, InvalidToken
 from fastapi import status
+from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -46,6 +55,17 @@ class AuthService:
                 status_code=status.HTTP_400_BAD_REQUEST, message=error_message
             ) from e
 
+    async def _create_refresh_token(self, db: AsyncSession, user_id: str) -> str:
+        refresh_token = generate_random_code(48)
+        expires_at = datetime.now(UTC) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+        await self.repository.create_refresh_token(
+            db,
+            user_id=user_id,
+            token_digest=sha256(refresh_token.encode("utf-8")).hexdigest(),
+            expires_at=expires_at,
+        )
+        return refresh_token
+
     async def get_user_role_name(self, db: AsyncSession, user: User) -> str:
         """Resolve human-readable role name (e.g. 'Admin', 'Super Admin') for a user."""
         try:
@@ -65,7 +85,7 @@ class AuthService:
             if raw_role:
                 return raw_role
         except Exception:
-            pass
+            logger.warning("Failed to resolve user role name", exc_info=True)
         return "Admin"
 
     async def get_user_permissions(
@@ -128,12 +148,16 @@ class AuthService:
             )
 
         access_token = create_access_token(user.id)
+        refresh_token = await self._create_refresh_token(db, user.id)
+        await self._commit(db, "Unable to create refresh token")
         user_role_name = await self.get_user_role_name(db, user)
-        user_permissions = await self.get_user_permissions(db, user, resolved_role_name=user_role_name)
+        user_permissions = await self.get_user_permissions(
+            db, user, resolved_role_name=user_role_name
+        )
 
         return {
             "access_token": access_token,
-            "refresh_token": f"refresh_{user.id}",
+            "refresh_token": refresh_token,
             "token_type": "bearer",
             "expires_in": 86400,
             "user": {
@@ -147,12 +171,16 @@ class AuthService:
         }
 
     async def get_current_user_me(self, db: AsyncSession, user: User | None = None) -> dict:
-        user = user or await self.repository.get_first_user(db)
         if not user:
-            raise NotFoundError(message="User profile not found")
+            raise APIException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                message="Authenticated user is required",
+            )
 
         user_role_name = await self.get_user_role_name(db, user)
-        user_permissions = await self.get_user_permissions(db, user, resolved_role_name=user_role_name)
+        user_permissions = await self.get_user_permissions(
+            db, user, resolved_role_name=user_role_name
+        )
 
         return {
             "id": user.id,
@@ -214,12 +242,27 @@ class AuthService:
             ) from e
 
     async def refresh_token(self, db: AsyncSession, refresh_token: str) -> dict:
-        user = await self.repository.get_first_user(db)
-        user_id = user.id if user else "usr-1"
-        access_token = create_access_token(user_id)
+        token_digest = sha256(refresh_token.strip().encode("utf-8")).hexdigest()
+        stored_token = await self.repository.get_active_refresh_token(
+            db, token_digest=token_digest, now=datetime.now(UTC)
+        )
+        if not stored_token:
+            raise APIException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                message="Invalid or expired refresh token",
+            )
+        user = await self.repository.get_user_by_id(db, stored_token.user_id)
+        if not user:
+            raise APIException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                message="Invalid or expired refresh token",
+            )
+        await self.repository.revoke_refresh_token(stored_token)
+        next_refresh_token = await self._create_refresh_token(db, user.id)
+        await self._commit(db, "Unable to rotate refresh token")
         return {
-            "access_token": access_token,
-            "refresh_token": refresh_token,
+            "access_token": create_access_token(user.id),
+            "refresh_token": next_refresh_token,
             "token_type": "bearer",
             "expires_in": 86400,
         }
@@ -236,9 +279,7 @@ class AuthService:
 
         reset_token = generate_random_code(14)
         token_digest = sha256(reset_token.encode("utf-8")).hexdigest()
-        expires_at = datetime.now(UTC) + timedelta(
-            minutes=settings.RESET_TOKEN_EXPIRE_MINUTES
-        )
+        expires_at = datetime.now(UTC) + timedelta(minutes=settings.RESET_TOKEN_EXPIRE_MINUTES)
 
         await self.repository.invalidate_password_resets(db, user.id)
         await self.repository.create_password_reset(
@@ -305,34 +346,132 @@ class AuthService:
                 message="Current password is incorrect",
             )
 
-        await self.repository.set_user_password(
-            current_user, get_password_hash(new_password)
-        )
+        await self.repository.set_user_password(current_user, get_password_hash(new_password))
         await self._commit(db, "Unable to update password")
         return {"message": "Password changed successfully", "status": "success"}
 
-    async def setup_2fa(self) -> dict:
+    @staticmethod
+    def _two_factor_cipher() -> Fernet:
+        key = base64.urlsafe_b64encode(hashlib.sha256(settings.SECRET_KEY.encode()).digest())
+        return Fernet(key)
+
+    async def setup_2fa(self, db: AsyncSession, user: User) -> dict:
+        secret = base64.b32encode(secrets.token_bytes(20)).decode("ascii").rstrip("=")
+        user.two_factor_secret = self._two_factor_cipher().encrypt(secret.encode()).decode("ascii")
+        user.two_factor_enabled = False
+        await self._commit(db, "Unable to save 2FA setup")
+        label = quote(f"CRM:{user.email}")
+        issuer = quote("Enterprise CRM")
+        otp_uri = f"otpauth://totp/{label}?secret={secret}&issuer={issuer}"
         return {
-            "secret": "JBSWY3DPEHPK3PXP",
-            "qr_code_url": "https://api.qrserver.com/v1/create-qr-code/?data=otpauth://totp/CRM:user",
+            "secret": secret,
+            "qr_code_url": f"https://api.qrserver.com/v1/create-qr-code/?data={quote(otp_uri)}",
         }
 
-    async def verify_2fa(self, payload: TwoFactorVerifyRequest) -> dict:
-        if payload.code != "123456":
+    async def verify_2fa(
+        self, db: AsyncSession, user: User, payload: TwoFactorVerifyRequest
+    ) -> dict:
+        if not user.two_factor_secret or not payload.code.isdigit() or len(payload.code) != 6:
             raise APIException(
                 status_code=status.HTTP_400_BAD_REQUEST, message="Invalid 2FA authentication code"
             )
+        try:
+            secret = self._two_factor_cipher().decrypt(user.two_factor_secret.encode()).decode()
+        except (InvalidToken, ValueError) as exc:
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST, message="Invalid 2FA configuration"
+            ) from exc
+
+        key = base64.b32decode(secret + "=" * (-len(secret) % 8), casefold=True)
+        counter = int(time.time()) // 30
+        expected_codes = []
+        for offset in (-1, 0, 1):
+            digest = hmac.new(key, (counter + offset).to_bytes(8, "big"), hashlib.sha1).digest()
+            start = digest[-1] & 0x0F
+            value = int.from_bytes(digest[start : start + 4], "big") & 0x7FFFFFFF
+            expected_codes.append(f"{value % 1_000_000:06d}")
+        if not any(hmac.compare_digest(payload.code, code) for code in expected_codes):
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST, message="Invalid 2FA authentication code"
+            )
+        user.two_factor_enabled = True
+        await self._commit(db, "Unable to save 2FA verification")
         return {"message": "2FA verified successfully", "status": "success"}
 
-    async def disable_2fa(self) -> dict:
+    async def disable_2fa(self, db: AsyncSession, user: User) -> dict:
+        user.two_factor_secret = None
+        user.two_factor_enabled = False
+        await self._commit(db, "Unable to disable 2FA")
         return {"message": "2FA disabled successfully", "status": "success"}
 
-    async def _oauth_issue_token(self, db: AsyncSession, refresh_value: str) -> dict:
-        user = await self.repository.get_first_user(db)
-        access_token = create_access_token(user.id if user else "usr-1")
+    async def _verify_oauth_identity(self, provider: str, id_token: str) -> dict:
+        if provider == "google":
+            client_id = settings.GOOGLE_OAUTH_CLIENT_ID
+            if not client_id:
+                raise APIException(status_code=503, message="Google OAuth is not configured")
+            try:
+                async with httpx.AsyncClient(timeout=5) as client:
+                    response = await client.get(
+                        "https://oauth2.googleapis.com/tokeninfo", params={"id_token": id_token}
+                    )
+                response.raise_for_status()
+                claims = response.json()
+            except (httpx.HTTPError, ValueError) as exc:
+                raise APIException(status_code=401, message="Invalid Google identity token") from exc
+            if claims.get("aud") != client_id or claims.get("iss") not in {
+                "accounts.google.com",
+                "https://accounts.google.com",
+            }:
+                raise APIException(status_code=401, message="Invalid Google identity token")
+        elif provider == "microsoft":
+            client_id = settings.MICROSOFT_OAUTH_CLIENT_ID
+            if not client_id:
+                raise APIException(status_code=503, message="Microsoft OAuth is not configured")
+            discovery_url = (
+                f"https://login.microsoftonline.com/{settings.MICROSOFT_OAUTH_TENANT}"
+                "/v2.0/.well-known/openid-configuration"
+            )
+            try:
+                async with httpx.AsyncClient(timeout=5) as client:
+                    metadata_response = await client.get(discovery_url)
+                    metadata_response.raise_for_status()
+                    metadata = metadata_response.json()
+                    jwks_response = await client.get(metadata["jwks_uri"])
+                    jwks_response.raise_for_status()
+                    jwks = jwks_response.json()
+                header = jwt.get_unverified_header(id_token)
+                key = next(key for key in jwks["keys"] if key.get("kid") == header.get("kid"))
+                claims = jwt.decode(id_token, key, algorithms=["RS256"], audience=client_id)
+            except (httpx.HTTPError, KeyError, StopIteration, JWTError, ValueError) as exc:
+                raise APIException(
+                    status_code=401, message="Invalid Microsoft identity token"
+                ) from exc
+            issuer = str(claims.get("iss", ""))
+            if not issuer.startswith("https://login.microsoftonline.com/") or not issuer.endswith(
+                "/v2.0"
+            ):
+                raise APIException(status_code=401, message="Invalid Microsoft identity token")
+        else:
+            raise APIException(status_code=400, message="Unsupported OAuth provider")
+
+        email = claims.get("email") or claims.get("preferred_username")
+        if not email or claims.get("email_verified", True) is not True:
+            raise APIException(status_code=401, message="OAuth identity has no verified email")
+        return {"email": str(email).lower()}
+
+    async def _oauth_issue_token(self, db: AsyncSession, provider: str, id_token: str) -> dict:
+        identity = await self._verify_oauth_identity(provider, id_token)
+        user = await self.repository.get_user_by_email(db, identity["email"])
+        if not user or not user.is_active:
+            raise APIException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                message="No active CRM account is linked to this OAuth identity",
+            )
+        refresh_token = await self._create_refresh_token(db, user.id)
+        await self._commit(db, "Unable to create refresh token")
         return {
-            "access_token": access_token,
-            "refresh_token": refresh_value,
+            "access_token": create_access_token(user.id),
+            "refresh_token": refresh_token,
             "token_type": "bearer",
             "expires_in": 86400,
         }
@@ -342,14 +481,14 @@ class AuthService:
             raise APIException(
                 status_code=status.HTTP_400_BAD_REQUEST, message="Authorization code is required"
             )
-        return await self._oauth_issue_token(db, "google_refresh")
+        return await self._oauth_issue_token(db, "google", payload.id_token)
 
     async def microsoft_oauth(self, db: AsyncSession, payload: OAuthLoginRequest) -> dict:
         if not payload.id_token:
             raise APIException(
                 status_code=status.HTTP_400_BAD_REQUEST, message="Authorization code is required"
             )
-        return await self._oauth_issue_token(db, "ms_refresh")
+        return await self._oauth_issue_token(db, "microsoft", payload.id_token)
 
     async def get_auth_invitation_details(self, db: AsyncSession, token: str) -> dict:
         inv = await self.repository.get_invitation_by_token(db, token)
@@ -487,19 +626,45 @@ class AuthService:
             raise NotFoundError(message=f"User with email '{email_clean}' not found")
 
         magic_token = generate_random_code(14)
+        expires_at = datetime.now(UTC) + timedelta(minutes=settings.MAGIC_LINK_EXPIRE_MINUTES)
+        await self.repository.invalidate_magic_links(db, user.id)
+        await self.repository.create_magic_link(
+            db,
+            user_id=user.id,
+            token_digest=sha256(magic_token.encode("utf-8")).hexdigest(),
+            expires_at=expires_at,
+        )
+        await self._commit(db, "Unable to create magic link")
         send_magic_link_email(email_to=user.email, token=magic_token, user_name=user.name)
         return {"message": f"Magic link sent to {email_clean}", "status": "success"}
 
     async def verify_magic_link(self, db: AsyncSession, token: str) -> dict:
         if not token or len(token) < 5:
             raise APIException(
-                status_code=status.HTTP_401_UNAUTHORIZED, message="Invalid or expired magic link token"
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                message="Invalid or expired magic link token",
             )
-        user = await self.repository.get_first_user(db)
-        access_token = create_access_token(user.id if user else "usr-1")
+        token_digest = sha256(token.strip().encode("utf-8")).hexdigest()
+        magic_link = await self.repository.get_active_magic_link(
+            db, token_digest=token_digest, now=datetime.now(UTC)
+        )
+        if not magic_link:
+            raise APIException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                message="Invalid or expired magic link token",
+            )
+        user = await self.repository.get_user_by_id(db, magic_link.user_id)
+        if not user:
+            raise APIException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                message="Invalid or expired magic link token",
+            )
+        await self.repository.consume_magic_link(magic_link)
+        refresh_token = await self._create_refresh_token(db, user.id)
+        await self._commit(db, "Unable to complete magic link login")
         return {
-            "access_token": access_token,
-            "refresh_token": "magic_refresh",
+            "access_token": create_access_token(user.id),
+            "refresh_token": refresh_token,
             "token_type": "bearer",
             "expires_in": 86400,
         }
@@ -534,7 +699,12 @@ class AuthService:
                 },
             )
             await self._commit(db, "Failed to create API key")
-            return {"id": key.id, "name": key.name, "api_key": key.key_hash, "created_at": str(key.created_at)}
+            return {
+                "id": key.id,
+                "name": key.name,
+                "api_key": key.key_hash,
+                "created_at": str(key.created_at),
+            }
         except Exception as e:
             await db.rollback()
             raise APIException(status_code=status.HTTP_400_BAD_REQUEST, message=str(e)) from e

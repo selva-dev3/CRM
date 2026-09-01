@@ -47,8 +47,8 @@ async def test_quote_action_routes_resolve_org_and_delegate(
     await getattr(quotes, route_name)("quote-1", db=db, current_user=user, **extra)
 
     resolve.assert_awaited_once_with(db, user)
-    assert action.await_args.kwargs["quote_id"] == "quote-1"
-    assert action.await_args.kwargs["organization_id"] == "org-1"
+    assert action.await_args_list[-1].kwargs["quote_id"] == "quote-1"
+    assert action.await_args_list[-1].kwargs["organization_id"] == "org-1"
 
 
 @pytest.mark.asyncio
@@ -70,8 +70,8 @@ async def test_quote_action_routes_preserve_cross_tenant_and_missing_not_found(
     with pytest.raises(NotFoundError):
         await getattr(quotes, route_name)(quote_id, db=db, current_user=user, **extra)
 
-    assert action.await_args.kwargs["quote_id"] == quote_id
-    assert action.await_args.kwargs["organization_id"] == "org-1"
+    assert action.await_args_list[-1].kwargs["quote_id"] == quote_id
+    assert action.await_args_list[-1].kwargs["organization_id"] == "org-1"
 
 
 @pytest.mark.asyncio

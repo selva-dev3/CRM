@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Optional
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -51,8 +50,8 @@ class LeadRepository:
         *,
         page: int,
         limit: int,
-        search: Optional[str] = None,
-        status: Optional[str] = None,
+        search: str | None = None,
+        status: str | None = None,
     ) -> list[Lead]:
         stmt = (
             select(Lead)
@@ -70,19 +69,21 @@ class LeadRepository:
         search: str | None = None,
         status: str | None = None,
     ) -> int:
-        stmt = select(func.count()).select_from(Lead).where(
-            *self._list_filters(search=search, status=status)
+        stmt = (
+            select(func.count())
+            .select_from(Lead)
+            .where(*self._list_filters(search=search, status=status))
         )
         result = await db.execute(stmt)
         return int(result.scalar_one())
 
-    async def get_by_id(self, db: AsyncSession, lead_id: str) -> Optional[Lead]:
+    async def get_by_id(self, db: AsyncSession, lead_id: str) -> Lead | None:
         result = await db.execute(select(Lead).where(Lead.id == lead_id))
         return result.scalars().first()
 
     async def get_by_id_for_org(
         self, db: AsyncSession, lead_id: str, organization_id: str
-    ) -> Optional[Lead]:
+    ) -> Lead | None:
         result = await db.execute(
             select(Lead).where(
                 Lead.id == lead_id,
@@ -95,7 +96,7 @@ class LeadRepository:
         result = await db.execute(select(Lead).where(Lead.id.in_(ids)))
         return list(result.scalars().all())
 
-    async def get_by_email(self, db: AsyncSession, email: str) -> Optional[Lead]:
+    async def get_by_email(self, db: AsyncSession, email: str) -> Lead | None:
         result = await db.execute(select(Lead).where(Lead.email == email))
         return result.scalars().first()
 
@@ -119,22 +120,16 @@ class LeadRepository:
         return note
 
     async def list_attachments(self, db: AsyncSession, lead_id: str) -> list[LeadAttachment]:
-        result = await db.execute(
-            select(LeadAttachment).where(LeadAttachment.lead_id == lead_id)
-        )
+        result = await db.execute(select(LeadAttachment).where(LeadAttachment.lead_id == lead_id))
         return list(result.scalars().all())
 
-    async def get_attachment(
-        self, db: AsyncSession, attachment_id: str
-    ) -> Optional[LeadAttachment]:
-        result = await db.execute(
-            select(LeadAttachment).where(LeadAttachment.id == attachment_id)
-        )
+    async def get_attachment(self, db: AsyncSession, attachment_id: str) -> LeadAttachment | None:
+        result = await db.execute(select(LeadAttachment).where(LeadAttachment.id == attachment_id))
         return result.scalars().first()
 
     async def get_attachment_for_lead(
         self, db: AsyncSession, attachment_id: str, lead_id: str
-    ) -> Optional[LeadAttachment]:
+    ) -> LeadAttachment | None:
         result = await db.execute(
             select(LeadAttachment).where(
                 LeadAttachment.id == attachment_id,
@@ -150,8 +145,8 @@ class LeadRepository:
         lead_id: str,
         filename: str,
         file_url: str,
-        file_size: Optional[int],
-        mime_type: Optional[str],
+        file_size: int | None,
+        mime_type: str | None,
     ) -> LeadAttachment:
         attachment = LeadAttachment(
             lead_id=lead_id,
@@ -180,7 +175,7 @@ class LeadRepository:
         *,
         organization_id: str,
         title: str,
-        description: Optional[str],
+        description: str | None,
         priority: str,
         status: str,
         due_date: datetime,
@@ -250,7 +245,7 @@ class LeadRepository:
         contact_id: str,
         call_type: str,
         duration_seconds: int,
-        notes: Optional[str],
+        notes: str | None,
     ) -> CallLog:
         call = CallLog(
             organization_id=organization_id,
@@ -262,19 +257,19 @@ class LeadRepository:
         db.add(call)
         return call
 
-    async def get_organization(self, db: AsyncSession, org_id: str) -> Optional[Organization]:
+    async def get_organization(self, db: AsyncSession, org_id: str) -> Organization | None:
         result = await db.execute(select(Organization).where(Organization.id == org_id))
         return result.scalars().first()
 
-    async def get_first_organization(self, db: AsyncSession) -> Optional[Organization]:
+    async def get_first_organization(self, db: AsyncSession) -> Organization | None:
         result = await db.execute(select(Organization).limit(1))
         return result.scalars().first()
 
-    async def get_user(self, db: AsyncSession, user_id: str) -> Optional[User]:
+    async def get_user(self, db: AsyncSession, user_id: str) -> User | None:
         result = await db.execute(select(User).where(User.id == user_id))
         return result.scalars().first()
 
-    async def get_first_user(self, db: AsyncSession) -> Optional[User]:
+    async def get_first_user(self, db: AsyncSession) -> User | None:
         result = await db.execute(select(User).limit(1))
         return result.scalars().first()
 
@@ -282,18 +277,18 @@ class LeadRepository:
         result = await db.execute(select(User))
         return list(result.scalars().all())
 
-    async def create_user(self, db: AsyncSession, *, email: str, name: str) -> User:
+    async def create_user(
+        self, db: AsyncSession, *, email: str, name: str, hashed_password: str
+    ) -> User:
         user = User(
             email=email,
-            hashed_password="hashed_password_placeholder",
+            hashed_password=hashed_password,
             name=name,
         )
         db.add(user)
         return user
 
-    async def get_contact_id_by_email(
-        self, db: AsyncSession, email: str
-    ) -> Optional[str]:
+    async def get_contact_id_by_email(self, db: AsyncSession, email: str) -> str | None:
         result = await db.execute(select(Contact.id).where(Contact.email == email).limit(1))
         return result.scalars().first()
 

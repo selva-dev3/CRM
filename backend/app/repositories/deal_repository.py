@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import builtins
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,7 +22,7 @@ class DealRepository:
         limit: int,
         search: str | None = None,
         stage: str | None = None,
-    ) -> list[Deal]:
+    ) -> builtins.list[Deal]:
         stmt = select(Deal).where(Deal.organization_id == organization_id)
         if search and search.strip():
             stmt = stmt.where(Deal.title.ilike(f"%{search.strip()}%"))
@@ -30,7 +32,7 @@ class DealRepository:
         result = await db.execute(stmt)
         return list(result.scalars().all())
 
-    async def list_all(self, db: AsyncSession) -> list[Deal]:
+    async def list_all(self, db: AsyncSession) -> builtins.list[Deal]:
         result = await db.execute(select(Deal).order_by(Deal.created_at.desc()))
         return list(result.scalars().all())
 
@@ -49,7 +51,7 @@ class DealRepository:
         )
         return result.scalars().first()
 
-    async def list_by_ids(self, db: AsyncSession, ids: list[str]) -> list[Deal]:
+    async def list_by_ids(self, db: AsyncSession, ids: builtins.list[str]) -> builtins.list[Deal]:
         result = await db.execute(select(Deal).where(Deal.id.in_(ids)))
         return list(result.scalars().all())
 
@@ -77,7 +79,7 @@ class DealRepository:
         result = await db.execute(select(Contact.id).where(Contact.id == contact_id).limit(1))
         return result.scalars().first() is not None
 
-    async def list_stages(self, db: AsyncSession) -> list[DealStage]:
+    async def list_stages(self, db: AsyncSession) -> builtins.list[DealStage]:
         result = await db.execute(select(DealStage).order_by(DealStage.order_index))
         return list(result.scalars().all())
 
@@ -100,7 +102,9 @@ class DealRepository:
         )
         return result.scalars().first()
 
-    async def list_deal_products(self, db: AsyncSession, deal_id: str) -> list[DealProduct]:
+    async def list_deal_products(
+        self, db: AsyncSession, deal_id: str
+    ) -> builtins.list[DealProduct]:
         result = await db.execute(select(DealProduct).where(DealProduct.deal_id == deal_id))
         return list(result.scalars().all())
 

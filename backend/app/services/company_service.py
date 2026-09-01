@@ -1,4 +1,3 @@
-
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -43,6 +42,8 @@ class CompanyService:
     @staticmethod
     def _parse_employee_count(emp_raw: object | None) -> int | None:
         if emp_raw is None:
+            return None
+        if not isinstance(emp_raw, (str, bytes, bytearray, int, float)):
             return None
         try:
             return int(emp_raw)
@@ -174,9 +175,7 @@ class CompanyService:
         await self.require_company(db, company_id)
         return {"parent_company": None, "subsidiaries": []}
 
-    async def set_parent_company(
-        self, db: AsyncSession, company_id: str, parent_id: str
-    ) -> dict:
+    async def set_parent_company(self, db: AsyncSession, company_id: str, parent_id: str) -> dict:
         await self.require_company(db, company_id)
         return {
             "message": f"Set parent {parent_id} for company {company_id}",

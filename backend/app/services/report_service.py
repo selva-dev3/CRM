@@ -850,7 +850,7 @@ class ReportService:
         if report_type_value not in VALID_REPORT_TYPES:
             raise APIException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                message=f"Invalid report type '{report_type_value}'. Valid types: {sorted(list(VALID_REPORT_TYPES))}",
+                message=f"Invalid report type '{report_type_value}'. Valid types: {sorted(VALID_REPORT_TYPES)}",
             )
 
         target_org = await self._resolve_org_id(db, org_id, current_user)
@@ -993,7 +993,7 @@ class ReportService:
         writer = csv.writer(buf, quoting=csv.QUOTE_ALL)
         header: list[str] = []
         for row in rows:
-            for key in row.keys():
+            for key in row:
                 if key not in header:
                     header.append(key)
         if header:
@@ -1016,7 +1016,7 @@ class ReportService:
         if report_type_value not in VALID_REPORT_TYPES:
             raise APIException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                message=f"Invalid report type '{report_type_value}'. Valid types: {sorted(list(VALID_REPORT_TYPES))}",
+                message=f"Invalid report type '{report_type_value}'. Valid types: {sorted(VALID_REPORT_TYPES)}",
             )
         payload = await self._build_report_payload(
             db, report_type_value, None, target_org=target_org
@@ -1036,7 +1036,7 @@ class ReportService:
         if report_type_value not in VALID_REPORT_TYPES:
             raise APIException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                message=f"Invalid report type '{report_type_value}'. Valid types: {sorted(list(VALID_REPORT_TYPES))}",
+                message=f"Invalid report type '{report_type_value}'. Valid types: {sorted(VALID_REPORT_TYPES)}",
             )
 
         target_org = await self._resolve_org_id(db, org_id, current_user)
@@ -1119,14 +1119,14 @@ class ReportService:
         if clean_freq not in VALID_FREQUENCIES:
             raise APIException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                message=f"Invalid frequency '{frequency}'. Must be one of: {sorted(list(VALID_FREQUENCIES))}",
+                message=f"Invalid frequency '{frequency}'. Must be one of: {sorted(VALID_FREQUENCIES)}",
             )
 
         report_type_value = _normalize_report_type(report_type)
         if report_type_value not in VALID_REPORT_TYPES:
             raise APIException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                message=f"Invalid report type '{report_type_value}'. Valid types: {sorted(list(VALID_REPORT_TYPES))}",
+                message=f"Invalid report type '{report_type_value}'. Valid types: {sorted(VALID_REPORT_TYPES)}",
             )
 
         target_org = await self._resolve_org_id(db, org_id, current_user)

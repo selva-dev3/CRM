@@ -1,5 +1,6 @@
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import TypedDict
 
 from fastapi import HTTPException, status
 from sqlalchemy import asc, desc, func, or_, select
@@ -35,16 +36,63 @@ from app.services.email_service import (
     send_user_invite_email,
 )
 
-DEFAULT_PLANS_FALLBACK = {
-    "free": {"name": "Free", "slug": "free", "price_monthly": 0, "max_users": 3, "max_storage_gb": 5, "ai_credits": 50},
-    "starter": {"name": "Starter", "slug": "starter", "price_monthly": 999, "max_users": 10, "max_storage_gb": 20, "ai_credits": 200},
-    "professional": {"name": "Professional", "slug": "professional", "price_monthly": 2999, "max_users": 25, "max_storage_gb": 50, "ai_credits": 500},
-    "business": {"name": "Business", "slug": "business", "price_monthly": 7999, "max_users": 50, "max_storage_gb": 100, "ai_credits": 1000},
-    "enterprise": {"name": "Enterprise", "slug": "enterprise", "price_monthly": 19999, "max_users": 100, "max_storage_gb": 500, "ai_credits": -1}
+
+class InvitationPlanInfo(TypedDict):
+    name: str
+    slug: str
+    price_monthly: int
+    max_users: int
+    max_storage_gb: int
+    ai_credits: int
+
+
+DEFAULT_PLANS_FALLBACK: dict[str, InvitationPlanInfo] = {
+    "free": {
+        "name": "Free",
+        "slug": "free",
+        "price_monthly": 0,
+        "max_users": 3,
+        "max_storage_gb": 5,
+        "ai_credits": 50,
+    },
+    "starter": {
+        "name": "Starter",
+        "slug": "starter",
+        "price_monthly": 999,
+        "max_users": 10,
+        "max_storage_gb": 20,
+        "ai_credits": 200,
+    },
+    "professional": {
+        "name": "Professional",
+        "slug": "professional",
+        "price_monthly": 2999,
+        "max_users": 25,
+        "max_storage_gb": 50,
+        "ai_credits": 500,
+    },
+    "business": {
+        "name": "Business",
+        "slug": "business",
+        "price_monthly": 7999,
+        "max_users": 50,
+        "max_storage_gb": 100,
+        "ai_credits": 1000,
+    },
+    "enterprise": {
+        "name": "Enterprise",
+        "slug": "enterprise",
+        "price_monthly": 19999,
+        "max_users": 100,
+        "max_storage_gb": 500,
+        "ai_credits": -1,
+    },
 }
 
 
-def _build_invitation_response(inv: OrganizationInvitation, org_name: str | None = None) -> InvitationResponse:
+def _build_invitation_response(
+    inv: OrganizationInvitation, org_name: str | None = None
+) -> InvitationResponse:
     invite_url = f"{settings.FRONTEND_URL}/accept-invite/organization/{inv.token}"
     expires_str = inv.expires_at.isoformat() if inv.expires_at else ""
     accepted_str = inv.accepted_at.isoformat() if inv.accepted_at else None
@@ -63,13 +111,12 @@ def _build_invitation_response(inv: OrganizationInvitation, org_name: str | None
         expires_at=expires_str,
         accepted_at=accepted_str,
         created_at=created_str,
-        invite_url=invite_url
+        invite_url=invite_url,
     )
 
 
 async def create_superadmin_organization_flow(
-    db: AsyncSession,
-    payload: SuperAdminOrgCreateRequest
+    db: AsyncSession, payload: SuperAdminOrgCreateRequest
 ) -> SuperAdminOrgResponse:
     """Super Admin onboarding flow:
     1. Create Organization
@@ -87,7 +134,7 @@ async def create_superadmin_organization_flow(
     if existing_user and existing_user.is_active:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"User with email '{payload.admin_email}' is already registered and active."
+            detail=f"User with email '{payload.admin_email}' is already registered and active.",
         )
 
     # 1. Create Organization
@@ -97,7 +144,9 @@ async def create_superadmin_organization_flow(
     if existing_slug:
         slug = f"{slug_base}-{uuid.uuid4().hex[:4]}"
 
-    domain = payload.domain.strip() if (payload.domain and payload.domain.strip()) else f"{slug}.crm.com"
+    domain = (
+        payload.domain.strip() if (payload.domain and payload.domain.strip()) else f"{slug}.crm.com"
+    )
 
     plan_slug_clean = (payload.plan_slug or "enterprise").lower()
     plan_info = DEFAULT_PLANS_FALLBACK.get(plan_slug_clean, DEFAULT_PLANS_FALLBACK["enterprise"])
@@ -113,7 +162,7 @@ async def create_superadmin_organization_flow(
         plan=plan_info["name"],
         max_users=plan_info["max_users"],
         status="active",
-        is_active=True
+        is_active=True,
     )
     db.add(org)
     await db.flush()
@@ -124,7 +173,7 @@ async def create_superadmin_organization_flow(
         organization_id=org.id,
         timezone="Asia/Kolkata",
         currency="INR",
-        language="en"
+        language="en",
     )
     db.add(settings_obj)
 
@@ -148,7 +197,7 @@ async def create_superadmin_organization_flow(
         started_at=datetime.now(UTC),
         current_period_start=datetime.now(UTC),
         current_period_end=datetime.now(UTC) + timedelta(days=30),
-        expires_at=datetime.now(UTC) + timedelta(days=365)
+        expires_at=datetime.now(UTC) + timedelta(days=365),
     )
     db.add(sub)
     await db.flush()
@@ -168,7 +217,7 @@ async def create_superadmin_organization_flow(
             role="Admin",
             organization_id=org.id,
             is_active=False,
-            is_verified=False
+            is_verified=False,
         )
         db.add(pending_user)
         await db.flush()
@@ -186,7 +235,7 @@ async def create_superadmin_organization_flow(
         subscription_id=sub.id,
         token=token,
         status="Pending",
-        expires_at=expires_at
+        expires_at=expires_at,
     )
     db.add(invitation)
 
@@ -196,7 +245,7 @@ async def create_superadmin_organization_flow(
         organization_id=org.id,
         user_id=pending_user.id,
         action="SUPERADMIN_CREATE_ORGANIZATION",
-        details=f"Super Admin created organization '{org.name}' ({plan_info['name']} Plan) and sent admin invitation to '{payload.admin_email}'."
+        details=f"Super Admin created organization '{org.name}' ({plan_info['name']} Plan) and sent admin invitation to '{payload.admin_email}'.",
     )
     db.add(audit)
 
@@ -212,7 +261,7 @@ async def create_superadmin_organization_flow(
         organization_name=org.name,
         plan_name=plan_info["name"],
         token=token,
-        expires_at_str="24 Hours"
+        expires_at_str="24 Hours",
     )
 
     inv_resp = _build_invitation_response(invitation, org.name)
@@ -226,17 +275,17 @@ async def create_superadmin_organization_flow(
             "email": org.email,
             "status": org.status,
             "plan": org.plan,
-            "max_users": org.max_users
+            "max_users": org.max_users,
         },
         subscription={
             "id": sub.id,
             "plan": plan_info["name"],
             "status": sub.status,
             "amount": sub.amount,
-            "max_users": sub.max_users
+            "max_users": sub.max_users,
         },
         invitation=inv_resp,
-        message=f"Organization '{org.name}' created successfully. Onboarding invitation email sent to {payload.admin_email}."
+        message=f"Organization '{org.name}' created successfully. Onboarding invitation email sent to {payload.admin_email}.",
     )
 
 
@@ -251,9 +300,7 @@ async def _resolve_invitation_role(
     """
     role_str = (role_value or "").strip() or "Admin"
     role = await db.scalar(
-        select(Role).where(
-            (Role.id == role_str) | (func.lower(Role.name) == role_str.lower())
-        )
+        select(Role).where((Role.id == role_str) | (func.lower(Role.name) == role_str.lower()))
     )
     if not role:
         role = await db.scalar(
@@ -274,9 +321,7 @@ async def _resolve_invitation_role(
 
 
 async def create_new_organization_invitation(
-    db: AsyncSession,
-    payload: CreateOrganizationInvitationRequest,
-    current_user: User
+    db: AsyncSession, payload: CreateOrganizationInvitationRequest, current_user: User
 ) -> NewOrganizationInviteResponse:
     """Invite Organization flow.
 
@@ -421,9 +466,7 @@ async def create_new_organization_invitation(
 
 
 async def create_organization_user_invitation(
-    db: AsyncSession,
-    payload: OrganizationInviteRequest,
-    current_user: User
+    db: AsyncSession, payload: OrganizationInviteRequest, current_user: User
 ) -> InviteUserResponse:
     """Invite new users via email returning only token, invite_url, and success message.
 
@@ -447,10 +490,13 @@ async def create_organization_user_invitation(
         )
     if getattr(org, "status", "active") != "active" or not getattr(org, "is_active", True):
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Organization is inactive or disabled."
+            status_code=status.HTTP_403_FORBIDDEN, detail="Organization is inactive or disabled."
         )
-    sub = await db.scalar(select(OrganizationSubscription).where(OrganizationSubscription.organization_id == target_org_id))
+    sub = await db.scalar(
+        select(OrganizationSubscription).where(
+            OrganizationSubscription.organization_id == target_org_id
+        )
+    )
 
     # Resolve & authorize the requested role (super_admin only assignable by a super_admin actor)
     role = await _resolve_invitation_role(db, current_user, payload.role or "Admin")
@@ -462,14 +508,14 @@ async def create_organization_user_invitation(
     if existing_user and existing_user.is_active:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"User with email '{payload.email}' is already an active user."
+            detail=f"User with email '{payload.email}' is already an active user.",
         )
 
     # Check for existing pending invitation for this email
     existing_inv = await db.scalar(
         select(OrganizationInvitation).where(
             func.lower(OrganizationInvitation.email) == email_clean,
-            OrganizationInvitation.status == "Pending"
+            OrganizationInvitation.status == "Pending",
         )
     )
     token = f"inv_{uuid.uuid4().hex}"
@@ -492,7 +538,7 @@ async def create_organization_user_invitation(
             subscription_id=sub.id if sub else None,
             token=token,
             status="Pending",
-            expires_at=expires_at
+            expires_at=expires_at,
         )
         db.add(invitation)
 
@@ -503,7 +549,7 @@ async def create_organization_user_invitation(
         user_id=current_user.id if current_user else None,
         action="CREATE_INVITATION",
         ip_address=None,
-        details=f"Invitation sent to '{payload.email}'."
+        details=f"Invitation sent to '{payload.email}'.",
     )
     db.add(audit)
 
@@ -515,15 +561,12 @@ async def create_organization_user_invitation(
     send_user_invite_email(email_to=email_clean, role=role_name, invite_url=invite_url)
 
     return InviteUserResponse(
-        token=token,
-        invite_url=invite_url,
-        message=f"Invitation sent successfully to {email_clean}"
+        token=token, invite_url=invite_url, message=f"Invitation sent successfully to {email_clean}"
     )
 
 
 async def get_and_validate_invitation_by_token(
-    db: AsyncSession,
-    token: str
+    db: AsyncSession, token: str
 ) -> InvitationStatusResponse:
     """Validate invitation token."""
     inv = await db.scalar(
@@ -531,20 +574,17 @@ async def get_and_validate_invitation_by_token(
     )
     if not inv:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Invitation token not found or invalid."
+            status_code=status.HTTP_404_NOT_FOUND, detail="Invitation token not found or invalid."
         )
 
     if inv.status == "Cancelled":
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invitation has been cancelled."
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invitation has been cancelled."
         )
 
     if inv.status == "Accepted":
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invitation has already been accepted."
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invitation has already been accepted."
         )
 
     now_utc = datetime.now(UTC)
@@ -557,18 +597,18 @@ async def get_and_validate_invitation_by_token(
         inv.status = "Expired"
         await db.commit()
         raise HTTPException(
-            status_code=status.HTTP_410_GONE,
-            detail="Invitation token has expired."
+            status_code=status.HTTP_410_GONE, detail="Invitation token has expired."
         )
 
     # Organization Check if already assigned
     org_dict = None
     if inv.organization_id:
         org = await db.scalar(select(Organization).where(Organization.id == inv.organization_id))
-        if org and (getattr(org, "status", "active") != "active" or not getattr(org, "is_active", True)):
+        if org and (
+            getattr(org, "status", "active") != "active" or not getattr(org, "is_active", True)
+        ):
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Organization is inactive."
+                status_code=status.HTTP_403_FORBIDDEN, detail="Organization is inactive."
             )
         if org:
             org_dict = {
@@ -577,7 +617,7 @@ async def get_and_validate_invitation_by_token(
                 "slug": org.slug,
                 "domain": org.domain,
                 "plan": org.plan,
-                "status": org.status
+                "status": org.status,
             }
 
     return InvitationStatusResponse(
@@ -587,18 +627,16 @@ async def get_and_validate_invitation_by_token(
         role=inv.role_id or "Admin",
         expires_at=inv_expires.isoformat(),
         status=inv.status,
-        is_valid=True
+        is_valid=True,
     )
 
 
 async def accept_organization_invitation(
-    db: AsyncSession,
-    token: str,
-    payload: AcceptInvitationRequest
+    db: AsyncSession, token: str, payload: AcceptInvitationRequest
 ) -> dict:
     """Accept invitation, collect organization details, auto-generate Organization & Org ID upon acceptance, hash password, activate user account, and return JWT token."""
     # 1. Validate invitation token
-    inv_status = await get_and_validate_invitation_by_token(db, token)
+    await get_and_validate_invitation_by_token(db, token)
 
     inv = await db.scalar(
         select(OrganizationInvitation).where(OrganizationInvitation.token == token.strip())
@@ -638,7 +676,11 @@ async def accept_organization_invitation(
         org_name = requested_org_name if requested_org_name else f"{full_name}'s Organization"
         slug_base = org_name.lower().replace(" ", "-")
         slug = f"{slug_base}-{uuid.uuid4().hex[:4]}"
-        domain = payload.domain.strip() if (payload.domain and payload.domain.strip()) else f"{slug}.crm.com"
+        domain = (
+            payload.domain.strip()
+            if (payload.domain and payload.domain.strip())
+            else f"{slug}.crm.com"
+        )
 
         org = Organization(
             id=auto_org_id,
@@ -653,7 +695,7 @@ async def accept_organization_invitation(
             status="active",
             is_active=True,
             plan="Free",
-            max_users=3
+            max_users=3,
         )
         db.add(org)
         await db.flush()
@@ -663,7 +705,7 @@ async def accept_organization_invitation(
             organization_id=org.id,
             timezone="Asia/Kolkata",
             currency="INR",
-            language="en"
+            language="en",
         )
         db.add(settings_obj)
 
@@ -675,7 +717,7 @@ async def accept_organization_invitation(
             amount=0.0,
             currency="INR",
             max_users=3,
-            storage_limit_gb=5
+            storage_limit_gb=5,
         )
         db.add(sub)
         await db.flush()
@@ -703,7 +745,7 @@ async def accept_organization_invitation(
             role=inv.role_id or "Admin",
             organization_id=org.id,
             is_active=True,
-            is_verified=True
+            is_verified=True,
         )
         db.add(user)
         await db.flush()
@@ -719,7 +761,7 @@ async def accept_organization_invitation(
         user_id=user.id,
         action="ACCEPT_INVITATION",
         ip_address=None,
-        details=f"Invitation accepted by '{user.email}' and Organization '{org.name}' ({org.id}) activated."
+        details=f"Invitation accepted by '{user.email}' and Organization '{org.name}' ({org.id}) activated.",
     )
     db.add(audit)
 
@@ -738,23 +780,21 @@ async def accept_organization_invitation(
             "email": user.email,
             "role": user.role,
             "organization_id": user.organization_id,
-            "is_active": user.is_active
+            "is_active": user.is_active,
         },
         "organization": {
             "id": org.id,
             "name": org.name,
             "slug": org.slug,
             "domain": org.domain,
-            "plan": org.plan
+            "plan": org.plan,
         },
-        "message": f"Invitation accepted! Organization '{org.name}' created with ID '{org.id}' and account activated successfully."
+        "message": f"Invitation accepted! Organization '{org.name}' created with ID '{org.id}' and account activated successfully.",
     }
 
 
 async def resend_organization_invitation(
-    db: AsyncSession,
-    invitation_id: str,
-    current_user: User
+    db: AsyncSession, invitation_id: str, current_user: User
 ) -> InvitationResponse:
     """Generate new token, expire old token, send email again."""
     inv = await db.scalar(
@@ -764,7 +804,10 @@ async def resend_organization_invitation(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invitation not found.")
 
     if inv.status == "Accepted":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot resend an already accepted invitation.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot resend an already accepted invitation.",
+        )
 
     org = await db.scalar(select(Organization).where(Organization.id == inv.organization_id))
 
@@ -778,7 +821,7 @@ async def resend_organization_invitation(
         organization_id=inv.organization_id,
         user_id=current_user.id,
         action="RESEND_INVITATION",
-        details=f"Resent invitation email to '{inv.email}' by '{current_user.email}'."
+        details=f"Resent invitation email to '{inv.email}' by '{current_user.email}'.",
     )
     db.add(audit)
 
@@ -791,16 +834,14 @@ async def resend_organization_invitation(
         organization_name=org.name if org else "CRM Organization",
         plan_name="Enterprise",
         token=new_token,
-        expires_at_str="24 Hours"
+        expires_at_str="24 Hours",
     )
 
     return _build_invitation_response(inv, org.name if org else None)
 
 
 async def cancel_organization_invitation(
-    db: AsyncSession,
-    invitation_id: str,
-    current_user: User
+    db: AsyncSession, invitation_id: str, current_user: User
 ) -> dict:
     """Cancel an invitation."""
     inv = await db.scalar(
@@ -810,7 +851,10 @@ async def cancel_organization_invitation(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invitation not found.")
 
     if inv.status == "Accepted":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot cancel an already accepted invitation.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot cancel an already accepted invitation.",
+        )
 
     inv.status = "Cancelled"
 
@@ -819,12 +863,15 @@ async def cancel_organization_invitation(
         organization_id=inv.organization_id,
         user_id=current_user.id,
         action="CANCEL_INVITATION",
-        details=f"Cancelled invitation for '{inv.email}' by '{current_user.email}'."
+        details=f"Cancelled invitation for '{inv.email}' by '{current_user.email}'.",
     )
     db.add(audit)
 
     await db.commit()
-    return {"message": f"Invitation for '{inv.email}' cancelled successfully.", "status": "Cancelled"}
+    return {
+        "message": f"Invitation for '{inv.email}' cancelled successfully.",
+        "status": "Cancelled",
+    }
 
 
 async def list_organization_invitations(
@@ -833,7 +880,7 @@ async def list_organization_invitations(
     status_filter: str | None = None,
     page: int = 1,
     limit: int = 20,
-    sort_by: str = "created_at"
+    sort_by: str = "created_at",
 ) -> InvitationListResponse:
     """List invitations with search, status filter, pagination, and sorting."""
     query = select(OrganizationInvitation)
@@ -843,12 +890,14 @@ async def list_organization_invitations(
         query = query.where(
             or_(
                 OrganizationInvitation.email.ilike(term),
-                OrganizationInvitation.full_name.ilike(term)
+                OrganizationInvitation.full_name.ilike(term),
             )
         )
 
     if status_filter and status_filter.strip() and status_filter.lower() != "all":
-        query = query.where(func.lower(OrganizationInvitation.status) == status_filter.strip().lower())
+        query = query.where(
+            func.lower(OrganizationInvitation.status) == status_filter.strip().lower()
+        )
 
     # Count total
     count_query = select(func.count()).select_from(query.subquery())
@@ -871,12 +920,17 @@ async def list_organization_invitations(
     invitations = res.scalars().all()
 
     # Pre-fetch organization names
-    org_ids = list(set([inv.organization_id for inv in invitations if inv.organization_id]))
+    org_ids = list({inv.organization_id for inv in invitations if inv.organization_id})
     org_map = {}
     if org_ids:
         orgs_res = await db.execute(select(Organization).where(Organization.id.in_(org_ids)))
         org_map = {o.id: o.name for o in orgs_res.scalars().all()}
 
-    items = [_build_invitation_response(inv, org_map.get(inv.organization_id)) for inv in invitations]
+    items = [
+        _build_invitation_response(
+            inv, org_map.get(inv.organization_id) if inv.organization_id else None
+        )
+        for inv in invitations
+    ]
 
     return InvitationListResponse(total=total, invitations=items)

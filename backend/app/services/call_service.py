@@ -133,15 +133,34 @@ class CallService:
         }
 
     async def get_dispositions(self) -> list[str]:
-        return ["Connected", "Left Voicemail", "No Answer", "Busy", "Wrong Number", "Scheduled Meeting"]
+        return [
+            "Connected",
+            "Left Voicemail",
+            "No Answer",
+            "Busy",
+            "Wrong Number",
+            "Scheduled Meeting",
+        ]
 
     async def create_disposition(self, name: str) -> dict:
         return {"message": f"Disposition '{name}' created", "status": "success"}
 
     async def get_rep_stats(self) -> list[dict]:
         return [
-            {"rep": "System Admin", "total_calls": 42, "connected": 30, "voicemails": 8, "total_duration": 4800},
-            {"rep": "Sales Representative", "total_calls": 28, "connected": 20, "voicemails": 5, "total_duration": 3200},
+            {
+                "rep": "System Admin",
+                "total_calls": 42,
+                "connected": 30,
+                "voicemails": 8,
+                "total_duration": 4800,
+            },
+            {
+                "rep": "Sales Representative",
+                "total_calls": 28,
+                "connected": 20,
+                "voicemails": 5,
+                "total_duration": 3200,
+            },
         ]
 
     async def log_voicemail_drop(self, contact_id: str, voicemail_template_id: str) -> dict:

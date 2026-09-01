@@ -1,3 +1,4 @@
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -30,7 +31,7 @@ def _service_with(repo: CompanyRepository) -> CompanyService:
 
 @pytest.mark.asyncio
 async def test_get_company_raises_not_found_when_missing():
-    repo = CompanyRepository()
+    repo: Any = CompanyRepository()
     repo.get_by_id = AsyncMock(return_value=None)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -42,7 +43,7 @@ async def test_get_company_raises_not_found_when_missing():
 @pytest.mark.asyncio
 async def test_create_company_serializes_domain_and_size(monkeypatch):
     company = _make_company()
-    repo = CompanyRepository()
+    repo: Any = CompanyRepository()
     repo.create = AsyncMock(return_value=company)
     service = _service_with(repo)
     monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())
@@ -66,7 +67,7 @@ async def test_create_company_serializes_domain_and_size(monkeypatch):
 @pytest.mark.asyncio
 async def test_create_company_fires_company_created_event(monkeypatch):
     company = _make_company()
-    repo = CompanyRepository()
+    repo: Any = CompanyRepository()
     repo.create = AsyncMock(return_value=company)
     service = _service_with(repo)
     notify = AsyncMock()
@@ -82,7 +83,7 @@ async def test_create_company_fires_company_created_event(monkeypatch):
     await service.create_company(db, CompanyCreate(name="Acme Inc"))
 
     notify.assert_awaited_once()
-    kwargs = notify.await_args.kwargs
+    kwargs = notify.await_args_list[-1].kwargs
     assert kwargs["event_name"] == "company.created"
     assert kwargs["org_id"] == "org-1"
     assert kwargs["data"]["name"] == "Acme Inc"
@@ -91,7 +92,7 @@ async def test_create_company_fires_company_created_event(monkeypatch):
 @pytest.mark.asyncio
 async def test_update_company_fires_company_updated_event(monkeypatch):
     company = _make_company()
-    repo = CompanyRepository()
+    repo: Any = CompanyRepository()
     repo.get_by_id = AsyncMock(return_value=company)
     service = _service_with(repo)
     notify = AsyncMock()
@@ -101,7 +102,7 @@ async def test_update_company_fires_company_updated_event(monkeypatch):
     await service.update_company(db, "cmp-1", CompanyUpdate(industry="Fintech"))
 
     notify.assert_awaited_once()
-    kwargs = notify.await_args.kwargs
+    kwargs = notify.await_args_list[-1].kwargs
     assert kwargs["event_name"] == "company.updated"
     assert kwargs["org_id"] == "org-1"
     assert kwargs["data"]["industry"] == "Fintech"
@@ -117,7 +118,7 @@ async def test_employee_count_parse_handles_invalid_input():
 
 @pytest.mark.asyncio
 async def test_get_company_deals_requires_existing_company():
-    repo = CompanyRepository()
+    repo: Any = CompanyRepository()
     repo.get_by_id = AsyncMock(return_value=None)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)

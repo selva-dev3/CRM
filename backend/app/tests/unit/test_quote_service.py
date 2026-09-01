@@ -1,3 +1,4 @@
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -54,10 +55,10 @@ def make_quote(**overrides) -> Quote:
 
 def make_service(
     *, quote: Quote | None = None, deal: Deal | None = None
-) -> tuple[QuoteService, QuoteRepository, DealRepository]:
-    quote_repository = QuoteRepository()
+) -> tuple[QuoteService, Any, Any]:
+    quote_repository: Any = QuoteRepository()
     quote_repository.get_scoped = AsyncMock(return_value=quote)
-    deal_repository = DealRepository()
+    deal_repository: Any = DealRepository()
     deal_repository.get_by_id_scoped = AsyncMock(return_value=deal)
     return (
         QuoteService(
@@ -85,7 +86,7 @@ async def test_create_quote_scopes_deal_and_persists_relationship(monkeypatch):
     deal_repository.get_by_id_scoped.assert_awaited_once_with(
         db, deal_id="deal-1", organization_id="org-1"
     )
-    assert repository.create.await_args.kwargs["data"]["deal_id"] == "deal-1"
+    assert repository.create.await_args_list[-1].kwargs["data"]["deal_id"] == "deal-1"
     assert result["deal_id"] == "deal-1"
 
 

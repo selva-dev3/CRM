@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 import pytest
@@ -24,7 +24,7 @@ def _make_user(**overrides) -> User:
         "role": "role-1",
         "organization_id": "org-1",
         "is_active": True,
-        "created_at": datetime(2026, 8, 1, tzinfo=timezone.utc),
+        "created_at": datetime(2026, 8, 1, tzinfo=UTC),
     }
     defaults.update(overrides)
     return User(**defaults)

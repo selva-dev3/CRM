@@ -40,9 +40,7 @@ class SettingsService:
     async def _resolve_org_id(self, db: AsyncSession, current_user: User | None = None) -> str:
         return await organization_service.resolve_valid_org_id(db, current_user)
 
-    async def _get_setting_value(
-        self, db: AsyncSession, key: str, default_val: str
-    ) -> str:
+    async def _get_setting_value(self, db: AsyncSession, key: str, default_val: str) -> str:
         try:
             setting = await self.repository.get_by_key(db, key)
             if setting and setting.value is not None:
@@ -63,9 +61,7 @@ class SettingsService:
     async def _stage_setting_value(self, db: AsyncSession, key: str, val: str) -> None:
         await self.repository.upsert(db, key=key, value=val)
 
-    async def get_system_settings(
-        self, db: AsyncSession, current_user: User | None = None
-    ) -> dict:
+    async def get_system_settings(self, db: AsyncSession, current_user: User | None = None) -> dict:
         org_name = "Enterprise Organization"
         org = None
 
@@ -146,7 +142,9 @@ class SettingsService:
         return payload
 
     @staticmethod
-    def _resolve_username(user_name: str | None, user_email: str | None, user_id: str | None) -> str:
+    def _resolve_username(
+        user_name: str | None, user_email: str | None, user_id: str | None
+    ) -> str:
         return (
             user_name
             or user_email
@@ -243,9 +241,7 @@ class SettingsService:
             await db.rollback()
         return {"message": f"Custom field {field_id} deleted", "status": "success"}
 
-    async def list_webhooks(
-        self, db: AsyncSession, current_user: User | None = None
-    ) -> list[dict]:
+    async def list_webhooks(self, db: AsyncSession, current_user: User | None = None) -> list[dict]:
         try:
             org_id = await self._resolve_org_id(db, current_user)
             webhooks = await self.repository.list_webhooks(db, organization_id=org_id)
@@ -364,7 +360,9 @@ class SettingsService:
                 await db.execute(text(f"TRUNCATE TABLE {tables_str} RESTART IDENTITY CASCADE;"))
                 await db.flush()
 
-            org = Organization(name="Primary System Organization", domain="crm.com", plan="Enterprise")
+            org = Organization(
+                name="Primary System Organization", domain="crm.com", plan="Enterprise"
+            )
             db.add(org)
             await db.flush()
 

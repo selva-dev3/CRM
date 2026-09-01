@@ -1,4 +1,5 @@
 from unittest.mock import AsyncMock
+
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,6 +25,8 @@ from app.schemas.report_schemas import (
 )
 from app.services.report_service import report_service
 
+TEST_HASH = "hash"
+
 
 def _make_user(org_id="org-test", user_id="user-1"):
     return User(
@@ -32,7 +35,7 @@ def _make_user(org_id="org-test", user_id="user-1"):
         name="Test User",
         organization_id=org_id,
         role="Admin",
-        hashed_password="hash",
+        hashed_password=TEST_HASH,
     )
 
 
@@ -40,11 +43,13 @@ def _make_user(org_id="org-test", user_id="user-1"):
 async def test_get_sales_performance_router_passes_current_user(monkeypatch):
     user = _make_user(org_id="org-99")
     db = AsyncMock(spec=AsyncSession)
-    mock_service_call = AsyncMock(return_value={
-        "report_type": "Sales Performance",
-        "metrics": {"total_revenue": 100.0, "monthly_target": 200.0, "table_rows": []},
-        "generated_at": "2026-08-23",
-    })
+    mock_service_call = AsyncMock(
+        return_value={
+            "report_type": "Sales Performance",
+            "metrics": {"total_revenue": 100.0, "monthly_target": 200.0, "table_rows": []},
+            "generated_at": "2026-08-23",
+        }
+    )
     monkeypatch.setattr(report_service, "get_sales_performance_report", mock_service_call)
 
     res = await get_sales_performance_report(current_user=user, db=db)
@@ -168,4 +173,3 @@ async def test_list_scheduled_reports_with_pagination(monkeypatch):
     res = await list_scheduled_reports(limit=30, offset=5, current_user=user, db=db)
     assert res == []
     mock_list.assert_awaited_once_with(db, current_user=user, limit=30, offset=5)
-

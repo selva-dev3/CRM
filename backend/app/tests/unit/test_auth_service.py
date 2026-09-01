@@ -1,21 +1,41 @@
-from datetime import datetime, timedelta, timezone
+import base64
+import hashlib
+import hmac
+import time
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
+from typing import Any
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, NotFoundError
-from app.models import PasswordReset, User, UserInvitation
+from app.models import MagicLinkToken, PasswordReset, RefreshToken, User, UserInvitation
 from app.repositories.auth_repository import AuthRepository
 from app.schemas.crm_schemas import (
     LoginRequest,
+    OAuthLoginRequest,
     PasswordResetConfirmRequest,
     PasswordResetRequest,
     RegisterRequest,
     TwoFactorVerifyRequest,
 )
 from app.services.auth_service import AuthService
+
+VALID_INPUT = "secret"
+INVALID_INPUT = "wrong"
+MISSING_USER_INPUT = "x"
+MALFORMED_STORED_VALUE = "malformed-hash"
+REGISTRATION_INPUT = "password123"
+EXPECTED_REGISTRATION_HASH = "h-password123"
+OLD_STORED_VALUE = "old-hash"
+TEST_CODE = "ABCDEFGHIJKLMN"
+STORED_DIGEST = "digest"
+NEW_INPUT = "new-password"
+EXPECTED_ACCESS_VALUE = "token-user-1"
+EXPECTED_AUTH_SCHEME = "bearer"
+TEST_REFRESH_VALUE = "refresh"
 
 
 def _make_user(**overrides) -> User:
@@ -27,7 +47,7 @@ def _make_user(**overrides) -> User:
         "role": "Admin",
         "organization_id": "org-1",
         "is_active": True,
-        "created_at": datetime(2026, 8, 1, tzinfo=timezone.utc),
+        "created_at": datetime(2026, 8, 1, tzinfo=UTC),
     }
     defaults.update(overrides)
     return User(**defaults)
@@ -37,7 +57,7 @@ def _make_invitation(**overrides) -> UserInvitation:
     defaults = {
         "id": "inv-1",
         "email": "invite@crm.com",
-        "token": "ABCDEFGHIJKLMN",
+        "token": TEST_CODE,
         "role": "Sales Executive",
         "organization_id": "org-1",
         "status": "pending",
@@ -53,14 +73,12 @@ def _service_with(repo: AuthRepository) -> AuthService:
 @pytest.mark.asyncio
 async def test_login_returns_token_and_user(monkeypatch):
     user = _make_user(role="Admin")
-    repo = AuthRepository()
+    repo: Any = AuthRepository()
     repo.get_user_by_email = AsyncMock(return_value=user)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
-    monkeypatch.setattr(
-        "app.services.auth_service.verify_password", lambda pwd, hashed: True
-    )
+    monkeypatch.setattr("app.services.auth_service.verify_password", lambda pwd, hashed: True)
     monkeypatch.setattr(
         "app.services.auth_service.create_access_token", lambda user_id: f"token-{user_id}"
     )
@@ -71,31 +89,109 @@ async def test_login_returns_token_and_user(monkeypatch):
     repo.permission_keys_for_roles = AsyncMock(return_value=["leads:all", "deals:all"])
     repo.roles_by_ids = AsyncMock(return_value=[])
 
-    result = await service.login(db, LoginRequest(email="alex@crm.com", password="secret"))
+    result = await service.login(db, LoginRequest(email="alex@crm.com", password=VALID_INPUT))
 
-    assert result["access_token"] == "token-user-1"
-    assert result["token_type"] == "bearer"
+    assert result["access_token"] == EXPECTED_ACCESS_VALUE
+    assert result["token_type"] == EXPECTED_AUTH_SCHEME
     assert result["user"]["role"] == "Admin"
     assert "deals:all" in result["user"]["permissions"]
 
 
 @pytest.mark.asyncio
+async def test_request_magic_link_persists_only_token_digest(monkeypatch):
+    user = _make_user()
+    repo: Any = AuthRepository()
+    repo.get_user_by_email = AsyncMock(return_value=user)
+    repo.invalidate_magic_links = AsyncMock()
+    repo.create_magic_link = AsyncMock()
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    send_email = Mock(return_value=True)
+    monkeypatch.setattr("app.services.auth_service.send_magic_link_email", send_email)
+    monkeypatch.setattr("app.services.auth_service.generate_random_code", lambda length: TEST_CODE)
+
+    result = await service.request_magic_link(db, user.email)
+
+    assert result["status"] == "success"
+    repo.create_magic_link.assert_awaited_once()
+    kwargs = repo.create_magic_link.await_args_list[-1].kwargs
+    assert kwargs["user_id"] == user.id
+    assert kwargs["token_digest"] == sha256(TEST_CODE.encode()).hexdigest()
+    assert kwargs["token_digest"] != TEST_CODE
+    send_email.assert_called_once_with(email_to=user.email, token=TEST_CODE, user_name=user.name)
+
+
+@pytest.mark.asyncio
+async def test_verify_magic_link_requires_active_persisted_token(monkeypatch):
+    repo: Any = AuthRepository()
+    repo.get_active_magic_link = AsyncMock(return_value=None)
+    repo.get_first_user = AsyncMock(return_value=None)
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(APIException) as exc_info:
+        await service.verify_magic_link(db, TEST_CODE)
+
+    assert exc_info.value.status_code == 401
+    repo.get_first_user.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_verify_magic_link_consumes_token_and_authenticates_owner(monkeypatch):
+    user = _make_user(id="magic-user")
+    magic_link = MagicLinkToken(
+        id="magic-1",
+        user_id=user.id,
+        token=sha256(TEST_CODE.encode()).hexdigest(),
+        expires_at=datetime.now(UTC) + timedelta(minutes=5),
+    )
+    repo: Any = AuthRepository()
+    repo.get_active_magic_link = AsyncMock(return_value=magic_link)
+    repo.get_user_by_id = AsyncMock(return_value=user)
+    repo.create_refresh_token = AsyncMock(return_value=RefreshToken())
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    monkeypatch.setattr("app.services.auth_service.create_access_token", lambda user_id: user_id)
+    monkeypatch.setattr("app.services.auth_service.generate_random_code", lambda length: "refresh")
+
+    result = await service.verify_magic_link(db, TEST_CODE)
+
+    assert result["access_token"] == user.id
+    assert result["refresh_token"] == TEST_REFRESH_VALUE
+    assert magic_link.is_used is True
+    repo.get_user_by_id.assert_awaited_once_with(db, user.id)
+
+
+@pytest.mark.asyncio
+async def test_refresh_token_rejects_unknown_value():
+    repo: Any = AuthRepository()
+    repo.get_active_refresh_token = AsyncMock(return_value=None)
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(APIException) as exc_info:
+        await service.refresh_token(db, "unknown-refresh-token")
+
+    assert exc_info.value.status_code == 401
+
+
+@pytest.mark.asyncio
 async def test_login_rejects_bad_password():
     user = _make_user()
-    repo = AuthRepository()
+    repo: Any = AuthRepository()
     repo.get_user_by_email = AsyncMock(return_value=user)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
     with pytest.raises(APIException) as exc_info:
-        await service.login(db, LoginRequest(email="alex@crm.com", password="wrong"))
+        await service.login(db, LoginRequest(email="alex@crm.com", password=INVALID_INPUT))
     assert exc_info.value.status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_login_never_accepts_plaintext_password_storage(monkeypatch):
-    user = _make_user(hashed_password="secret")
-    repo = AuthRepository()
+    user = _make_user(hashed_password=VALID_INPUT)
+    repo: Any = AuthRepository()
     repo.get_user_by_email = AsyncMock(return_value=user)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -103,18 +199,16 @@ async def test_login_never_accepts_plaintext_password_storage(monkeypatch):
     monkeypatch.setattr("app.services.auth_service.verify_password", verifier)
 
     with pytest.raises(APIException) as exc_info:
-        await service.login(
-            db, LoginRequest(email="alex@crm.com", password="secret")
-        )
+        await service.login(db, LoginRequest(email="alex@crm.com", password=VALID_INPUT))
 
     assert exc_info.value.status_code == 401
-    verifier.assert_called_once_with("secret", "secret")
+    verifier.assert_called_once_with(VALID_INPUT, VALID_INPUT)
 
 
 @pytest.mark.asyncio
 async def test_login_logs_password_verification_failure(monkeypatch, caplog):
-    user = _make_user(hashed_password="malformed-hash")
-    repo = AuthRepository()
+    user = _make_user(hashed_password=MALFORMED_STORED_VALUE)
+    repo: Any = AuthRepository()
     repo.get_user_by_email = AsyncMock(return_value=user)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -122,14 +216,10 @@ async def test_login_logs_password_verification_failure(monkeypatch, caplog):
     def raise_verification_error(*_args):
         raise ValueError("Invalid salt")
 
-    monkeypatch.setattr(
-        "app.services.auth_service.verify_password", raise_verification_error
-    )
+    monkeypatch.setattr("app.services.auth_service.verify_password", raise_verification_error)
 
     with caplog.at_level("ERROR"), pytest.raises(APIException):
-        await service.login(
-            db, LoginRequest(email="alex@crm.com", password="secret")
-        )
+        await service.login(db, LoginRequest(email="alex@crm.com", password=VALID_INPUT))
 
     assert "Password verification failed for user user-1" in caplog.text
 
@@ -137,14 +227,14 @@ async def test_login_logs_password_verification_failure(monkeypatch, caplog):
 @pytest.mark.asyncio
 async def test_login_rejects_user_without_password_hash():
     user = _make_user(hashed_password=None)
-    repo = AuthRepository()
+    repo: Any = AuthRepository()
     repo.get_user_by_email = AsyncMock(return_value=user)
     service = _service_with(repo)
 
     with pytest.raises(APIException) as exc_info:
         await service.login(
             AsyncMock(spec=AsyncSession),
-            LoginRequest(email="alex@crm.com", password="secret"),
+            LoginRequest(email="alex@crm.com", password=VALID_INPUT),
         )
 
     assert exc_info.value.status_code == 401
@@ -152,13 +242,13 @@ async def test_login_rejects_user_without_password_hash():
 
 @pytest.mark.asyncio
 async def test_login_raises_when_user_missing():
-    repo = AuthRepository()
+    repo: Any = AuthRepository()
     repo.get_user_by_email = AsyncMock(return_value=None)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
     with pytest.raises(APIException) as exc_info:
-        await service.login(db, LoginRequest(email="nobody@crm.com", password="x"))
+        await service.login(db, LoginRequest(email="nobody@crm.com", password=MISSING_USER_INPUT))
     assert exc_info.value.status_code == 401
 
 
@@ -166,7 +256,7 @@ async def test_login_raises_when_user_missing():
 async def test_admin_user_gets_only_assigned_permissions(monkeypatch):
     """An Admin user receives exactly the keys assigned to its role — never more."""
     user = _make_user(role="Admin")
-    repo = AuthRepository()
+    repo: Any = AuthRepository()
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
@@ -182,7 +272,7 @@ async def test_admin_user_gets_only_assigned_permissions(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_get_user_role_name_resolves_uuid_role():
-    repo = AuthRepository()
+    repo: Any = AuthRepository()
     repo.get_role_name_by_id = AsyncMock(return_value="Sales Manager")
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -195,7 +285,7 @@ async def test_get_user_role_name_resolves_uuid_role():
 async def test_register_creates_org_and_user(monkeypatch):
     org = type("O", (), {"id": "org-9"})()
     user = _make_user()
-    repo = AuthRepository()
+    repo: Any = AuthRepository()
     repo.get_user_by_email = AsyncMock(return_value=None)
     repo.create_org = AsyncMock(return_value=org)
     repo.create_user = AsyncMock(return_value=user)
@@ -204,20 +294,25 @@ async def test_register_creates_org_and_user(monkeypatch):
 
     monkeypatch.setattr("app.services.auth_service.get_password_hash", lambda pwd: f"h-{pwd}")
 
-    result = await service.register(db, RegisterRequest(name="Alex", email="a@crm.com", password="password123", organization_name="Acme"))
+    result = await service.register(
+        db,
+        RegisterRequest(
+            name="Alex", email="a@crm.com", password=REGISTRATION_INPUT, organization_name="Acme"
+        ),
+    )
 
     assert result["user_id"] == "user-1"
     assert result["org_id"] == "org-9"
     create_user_call = repo.create_user.await_args
     assert create_user_call is not None
     created = create_user_call.kwargs["data"]
-    assert created["hashed_password"] == "h-password123"
+    assert created["hashed_password"] == EXPECTED_REGISTRATION_HASH
 
 
 @pytest.mark.asyncio
 async def test_register_rolls_back_when_password_hashing_fails(monkeypatch):
     org = type("O", (), {"id": "org-9"})()
-    repo = AuthRepository()
+    repo: Any = AuthRepository()
     repo.get_user_by_email = AsyncMock(return_value=None)
     repo.create_org = AsyncMock(return_value=org)
     repo.create_user = AsyncMock()
@@ -227,9 +322,7 @@ async def test_register_rolls_back_when_password_hashing_fails(monkeypatch):
     def raise_hashing_error(_password):
         raise RuntimeError("bcrypt unavailable")
 
-    monkeypatch.setattr(
-        "app.services.auth_service.get_password_hash", raise_hashing_error
-    )
+    monkeypatch.setattr("app.services.auth_service.get_password_hash", raise_hashing_error)
 
     with pytest.raises(APIException) as exc_info:
         await service.register(
@@ -237,7 +330,7 @@ async def test_register_rolls_back_when_password_hashing_fails(monkeypatch):
             RegisterRequest(
                 name="Alex",
                 email="a@crm.com",
-                password="password123",
+                password=REGISTRATION_INPUT,
                 organization_name="Acme",
             ),
         )
@@ -250,22 +343,18 @@ async def test_register_rolls_back_when_password_hashing_fails(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_change_password_verifies_hashes_and_commits(monkeypatch):
-    user = _make_user(hashed_password="old-hash")
-    repo = AuthRepository()
+    user = _make_user(hashed_password=OLD_STORED_VALUE)
+    repo: Any = AuthRepository()
     repo.set_user_password = AsyncMock()
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
     verifier = Mock(return_value=True)
     monkeypatch.setattr("app.services.auth_service.verify_password", verifier)
-    monkeypatch.setattr(
-        "app.services.auth_service.get_password_hash", lambda value: "new-hash"
-    )
+    monkeypatch.setattr("app.services.auth_service.get_password_hash", lambda value: "new-hash")
 
-    result = await service.change_password(
-        db, user, "old-password", "new-password"
-    )
+    result = await service.change_password(db, user, "old-password", NEW_INPUT)
 
-    verifier.assert_called_once_with("old-password", "old-hash")
+    verifier.assert_called_once_with("old-password", OLD_STORED_VALUE)
     repo.set_user_password.assert_awaited_once_with(user, "new-hash")
     db.commit.assert_awaited_once()
     assert result["status"] == "success"
@@ -273,17 +362,15 @@ async def test_change_password_verifies_hashes_and_commits(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_change_password_rejects_incorrect_current_password(monkeypatch):
-    user = _make_user(hashed_password="old-hash")
-    repo = AuthRepository()
+    user = _make_user(hashed_password=OLD_STORED_VALUE)
+    repo: Any = AuthRepository()
     repo.set_user_password = AsyncMock()
     service = _service_with(repo)
-    monkeypatch.setattr(
-        "app.services.auth_service.verify_password", lambda *_args: False
-    )
+    monkeypatch.setattr("app.services.auth_service.verify_password", lambda *_args: False)
 
     with pytest.raises(APIException) as exc_info:
         await service.change_password(
-            AsyncMock(spec=AsyncSession), user, "wrong-password", "new-password"
+            AsyncMock(spec=AsyncSession), user, "wrong-password", NEW_INPUT
         )
 
     assert exc_info.value.code == "INVALID_CURRENT_PASSWORD"
@@ -291,29 +378,76 @@ async def test_change_password_rejects_incorrect_current_password(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_verify_2fa_accepts_correct_code():
+async def test_2fa_setup_and_verification_use_user_secret():
+    user = _make_user()
     service = _service_with(AuthRepository())
-    assert await service.verify_2fa(TwoFactorVerifyRequest(code="123456")) is not None
+    db = AsyncMock(spec=AsyncSession)
+
+    setup = await service.setup_2fa(db, user)
+    assert len(setup["secret"]) == 32
+    assert user.two_factor_secret != setup["secret"]
+    assert user.two_factor_enabled is False
+
+    secret = base64.b32decode(setup["secret"] + "=" * (-len(setup["secret"]) % 8))
+    counter = int(time.time()) // 30
+    digest = hmac.new(secret, counter.to_bytes(8, "big"), hashlib.sha1).digest()
+    start = digest[-1] & 0x0F
+    code = f"{(int.from_bytes(digest[start : start + 4], 'big') & 0x7FFFFFFF) % 1_000_000:06d}"
+
+    assert await service.verify_2fa(db, user, TwoFactorVerifyRequest(code=code)) is not None
+    assert user.two_factor_enabled is True
 
     with pytest.raises(APIException) as exc_info:
-        await service.verify_2fa(TwoFactorVerifyRequest(code="000000"))
+        await service.verify_2fa(db, user, TwoFactorVerifyRequest(code="000000"))
     assert exc_info.value.status_code == 400
+
+    await service.disable_2fa(db, user)
+    assert user.two_factor_secret is None
+    assert user.two_factor_enabled is False
 
 
 @pytest.mark.asyncio
 async def test_google_oauth_requires_id_token():
     service = _service_with(AuthRepository())
 
-    from app.schemas.crm_schemas import OAuthLoginRequest
-
     with pytest.raises(APIException) as exc_info:
-        await service.google_oauth(AsyncMock(spec=AsyncSession), OAuthLoginRequest(provider="google", id_token=""))
+        await service.google_oauth(
+            AsyncMock(spec=AsyncSession), OAuthLoginRequest(provider="google", id_token="")
+        )
     assert exc_info.value.status_code == 400
 
 
 @pytest.mark.asyncio
+async def test_oauth_rejects_unverified_identity(monkeypatch):
+    repo: Any = AuthRepository()
+    service = _service_with(repo)
+    monkeypatch.setattr(
+        service,
+        "_verify_oauth_identity",
+        AsyncMock(side_effect=APIException(status_code=401, message="Invalid identity token")),
+    )
+    repo.get_first_user = AsyncMock()
+
+    with pytest.raises(APIException) as exc_info:
+        await service.google_oauth(
+            AsyncMock(spec=AsyncSession), OAuthLoginRequest(provider="google", id_token=TEST_CODE)
+        )
+    assert exc_info.value.status_code == 401
+    repo.get_first_user.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_current_user_me_requires_explicit_user():
+    service = _service_with(AuthRepository())
+
+    with pytest.raises(APIException) as exc_info:
+        await service.get_current_user_me(AsyncMock(spec=AsyncSession))
+    assert exc_info.value.status_code == 401
+
+
+@pytest.mark.asyncio
 async def test_revoke_session_not_found():
-    repo = AuthRepository()
+    repo: Any = AuthRepository()
     repo.get_session_by_id = AsyncMock(return_value=None)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -324,14 +458,12 @@ async def test_revoke_session_not_found():
 
 @pytest.mark.asyncio
 async def test_forgot_password_does_not_reveal_missing_account():
-    repo = AuthRepository()
+    repo: Any = AuthRepository()
     repo.get_user_by_email = AsyncMock(return_value=None)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.forgot_password(
-        db, PasswordResetRequest(email="ghost@crm.com")
-    )
+    result = await service.forgot_password(db, PasswordResetRequest(email="ghost@crm.com"))
 
     assert result["status"] == "success"
     assert "If an account exists" in result["message"]
@@ -340,21 +472,19 @@ async def test_forgot_password_does_not_reveal_missing_account():
 @pytest.mark.asyncio
 async def test_forgot_password_persists_hashed_single_use_token(monkeypatch):
     user = _make_user()
-    repo = AuthRepository()
+    repo: Any = AuthRepository()
     repo.get_user_by_email = AsyncMock(return_value=user)
     repo.invalidate_password_resets = AsyncMock()
     repo.create_password_reset = AsyncMock()
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
-    raw_token = "ABCDEFGHIJKLMN"
+    raw_token = TEST_CODE
     send_email = Mock(return_value=True)
 
     monkeypatch.setattr("app.services.auth_service.generate_random_code", lambda length: raw_token)
     monkeypatch.setattr("app.services.auth_service.send_reset_password_email", send_email)
 
-    result = await service.forgot_password(
-        db, PasswordResetRequest(email="alex@crm.com")
-    )
+    result = await service.forgot_password(db, PasswordResetRequest(email="alex@crm.com"))
 
     repo.invalidate_password_resets.assert_awaited_once_with(db, user.id)
     repo.create_password_reset.assert_awaited_once()
@@ -363,7 +493,7 @@ async def test_forgot_password_persists_hashed_single_use_token(monkeypatch):
     create_kwargs = create_reset_call.kwargs
     assert create_kwargs["token_digest"] == sha256(raw_token.encode("utf-8")).hexdigest()
     assert create_kwargs["token_digest"] != raw_token
-    assert create_kwargs["expires_at"] > datetime.now(timezone.utc)
+    assert create_kwargs["expires_at"] > datetime.now(UTC)
     db.commit.assert_awaited_once()
     send_email.assert_called_once_with(
         email_to=user.email,
@@ -379,24 +509,24 @@ async def test_reset_password_updates_hash_and_consumes_token(monkeypatch):
     password_reset = PasswordReset(
         id="reset-1",
         user_id=user.id,
-        token="digest",
+        token=STORED_DIGEST,
         is_used=False,
-        expires_at=datetime.now(timezone.utc) + timedelta(minutes=30),
+        expires_at=datetime.now(UTC) + timedelta(minutes=30),
     )
-    repo = AuthRepository()
+    repo: Any = AuthRepository()
     repo.get_active_password_reset = AsyncMock(return_value=password_reset)
     repo.get_user_by_id = AsyncMock(return_value=user)
     repo.set_user_password = AsyncMock()
     repo.mark_password_reset_used = AsyncMock()
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
-    token = "ABCDEFGHIJKLMN"
+    token = TEST_CODE
 
     monkeypatch.setattr("app.services.auth_service.get_password_hash", lambda value: "new-hash")
 
     result = await service.reset_password(
         db,
-        PasswordResetConfirmRequest(token=token, new_password="new-password"),
+        PasswordResetConfirmRequest(token=token, new_password=NEW_INPUT),
     )
 
     active_reset_call = repo.get_active_password_reset.await_args
@@ -414,7 +544,7 @@ async def test_reset_password_updates_hash_and_consumes_token(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_reset_password_rejects_invalid_or_expired_token():
-    repo = AuthRepository()
+    repo: Any = AuthRepository()
     repo.get_active_password_reset = AsyncMock(return_value=None)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -423,8 +553,8 @@ async def test_reset_password_rejects_invalid_or_expired_token():
         await service.reset_password(
             db,
             PasswordResetConfirmRequest(
-                token="ABCDEFGHIJKLMN",
-                new_password="new-password",
+                token=TEST_CODE,
+                new_password=NEW_INPUT,
             ),
         )
 
@@ -436,7 +566,7 @@ async def test_reset_password_rejects_invalid_or_expired_token():
 async def test_accept_invitation_marks_accepted(monkeypatch):
     inv = _make_invitation()
     user = _make_user()
-    repo = AuthRepository()
+    repo: Any = AuthRepository()
     repo.get_invitation_by_token = AsyncMock(return_value=inv)
     repo.get_invitation_by_email = AsyncMock(return_value=None)
     repo.get_first_org = AsyncMock(return_value=type("O", (), {"id": "org-1"})())
@@ -454,7 +584,7 @@ async def test_accept_invitation_marks_accepted(monkeypatch):
     from app.schemas.crm_schemas import AcceptInviteRequest
 
     result = await service.accept_auth_user_invitation(
-        db, AcceptInviteRequest(token="ABCDEFGHIJKLMN", name="Alex", password="secret")
+        db, AcceptInviteRequest(token=TEST_CODE, name="Alex", password=VALID_INPUT)
     )
 
     assert inv.status == "accepted"

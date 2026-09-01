@@ -1,4 +1,3 @@
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import User
@@ -11,9 +10,7 @@ class OrganizationService:
     def __init__(self, repository: OrganizationRepository | None = None) -> None:
         self.repository = repository or OrganizationRepository()
 
-    async def resolve_valid_org_id(
-        self, db: AsyncSession, current_user: User | None = None
-    ) -> str:
+    async def resolve_valid_org_id(self, db: AsyncSession, current_user: User | None = None) -> str:
         if current_user and getattr(current_user, "organization_id", None):
             org = await self.repository.get_by_id(db, current_user.organization_id)
             if org:

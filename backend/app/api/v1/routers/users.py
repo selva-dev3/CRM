@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, File, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
@@ -76,6 +76,11 @@ async def update_my_profile(payload: UserProfileUpdate, db: AsyncSession = Depen
     "/me/avatar", response_model=MessageResponse, summary="Upload user avatar picture to MinIO S3"
 )
 async def upload_avatar(file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
+    if not file.filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded avatar must include a filename",
+        )
     return await user_service.upload_avatar(
         db, file=file.file, filename=file.filename, content_type=file.content_type
     )

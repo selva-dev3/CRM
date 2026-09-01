@@ -1,14 +1,15 @@
 from datetime import datetime
-from typing import Optional
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     ApiKey,
+    MagicLinkToken,
     Organization,
     PasswordReset,
     Permission,
+    RefreshToken,
     Role,
     RolePermission,
     User,
@@ -21,11 +22,11 @@ from app.models import (
 class AuthRepository:
     """DB query layer for the Auth domain. No business logic here."""
 
-    async def get_user_by_email(self, db: AsyncSession, email: str) -> Optional[User]:
+    async def get_user_by_email(self, db: AsyncSession, email: str) -> User | None:
         result = await db.execute(select(User).where(User.email.ilike(email)))
         return result.scalars().first()
 
-    async def get_first_user(self, db: AsyncSession) -> Optional[User]:
+    async def get_first_user(self, db: AsyncSession) -> User | None:
         result = await db.execute(select(User).limit(1))
         return result.scalars().first()
 
@@ -34,8 +35,89 @@ class AuthRepository:
         db.add(user)
         return user
 
-    async def get_user_by_id(self, db: AsyncSession, user_id: str) -> Optional[User]:
+    async def get_user_by_id(self, db: AsyncSession, user_id: str) -> User | None:
         return await db.get(User, user_id)
+
+    async def invalidate_magic_links(self, db: AsyncSession, user_id: str) -> None:
+        await db.execute(
+            update(MagicLinkToken)
+            .where(MagicLinkToken.user_id == user_id, MagicLinkToken.is_used.is_(False))
+            .values(is_used=True)
+        )
+
+    async def create_magic_link(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: str,
+        token_digest: str,
+        expires_at: datetime,
+    ) -> MagicLinkToken:
+        magic_link = MagicLinkToken(
+            user_id=user_id,
+            token=token_digest,
+            expires_at=expires_at,
+        )
+        db.add(magic_link)
+        return magic_link
+
+    async def get_active_magic_link(
+        self,
+        db: AsyncSession,
+        *,
+        token_digest: str,
+        now: datetime,
+    ) -> MagicLinkToken | None:
+        result = await db.execute(
+            select(MagicLinkToken)
+            .where(
+                MagicLinkToken.token == token_digest,
+                MagicLinkToken.is_used.is_(False),
+                MagicLinkToken.expires_at > now,
+            )
+            .with_for_update()
+        )
+        return result.scalars().first()
+
+    async def consume_magic_link(self, magic_link: MagicLinkToken) -> None:
+        magic_link.is_used = True
+
+    async def create_refresh_token(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: str,
+        token_digest: str,
+        expires_at: datetime,
+    ) -> RefreshToken:
+        refresh_token = RefreshToken(
+            user_id=user_id,
+            token=token_digest,
+            expires_at=expires_at,
+        )
+        db.add(refresh_token)
+        return refresh_token
+
+    async def get_active_refresh_token(
+        self,
+        db: AsyncSession,
+        *,
+        token_digest: str,
+        now: datetime,
+    ) -> RefreshToken | None:
+        result = await db.execute(
+            select(RefreshToken)
+            .where(
+                RefreshToken.token == token_digest,
+                RefreshToken.is_revoked.is_(False),
+                RefreshToken.expires_at > now,
+            )
+            .with_for_update()
+        )
+        return result.scalars().first()
+
+    async def revoke_refresh_token(self, refresh_token: RefreshToken) -> None:
+        refresh_token.is_revoked = True
 
     async def invalidate_password_resets(self, db: AsyncSession, user_id: str) -> None:
         await db.execute(
@@ -66,7 +148,7 @@ class AuthRepository:
         *,
         token_digest: str,
         now: datetime,
-    ) -> Optional[PasswordReset]:
+    ) -> PasswordReset | None:
         result = await db.execute(
             select(PasswordReset)
             .where(
@@ -84,7 +166,7 @@ class AuthRepository:
     async def mark_password_reset_used(self, password_reset: PasswordReset) -> None:
         password_reset.is_used = True
 
-    async def get_first_org(self, db: AsyncSession) -> Optional[Organization]:
+    async def get_first_org(self, db: AsyncSession) -> Organization | None:
         result = await db.execute(select(Organization).limit(1))
         return result.scalars().first()
 
@@ -93,17 +175,15 @@ class AuthRepository:
         db.add(org)
         return org
 
-    async def get_invitation_by_token(
-        self, db: AsyncSession, token: str
-    ) -> Optional[UserInvitation]:
+    async def get_invitation_by_token(self, db: AsyncSession, token: str) -> UserInvitation | None:
         result = await db.execute(
             select(UserInvitation).where(UserInvitation.token == token.strip())
         )
         return result.scalars().first()
 
     async def get_invitation_by_email(
-        self, db: AsyncSession, email: str, *, status: Optional[str] = None
-    ) -> Optional[UserInvitation]:
+        self, db: AsyncSession, email: str, *, status: str | None = None
+    ) -> UserInvitation | None:
         stmt = select(UserInvitation).where(UserInvitation.email.ilike(email))
         if status:
             stmt = stmt.where(UserInvitation.status == status)
@@ -111,7 +191,7 @@ class AuthRepository:
         return result.scalars().first()
 
     async def list_invitations_by_email(
-        self, db: AsyncSession, email: str, *, exclude_id: Optional[str] = None
+        self, db: AsyncSession, email: str, *, exclude_id: str | None = None
     ) -> list[UserInvitation]:
         stmt = select(UserInvitation).where(UserInvitation.email.ilike(email))
         if exclude_id:
@@ -119,11 +199,11 @@ class AuthRepository:
         result = await db.execute(stmt)
         return list(result.scalars().all())
 
-    async def get_role_name_by_id(self, db: AsyncSession, role_id: str) -> Optional[str]:
+    async def get_role_name_by_id(self, db: AsyncSession, role_id: str) -> str | None:
         result = await db.execute(select(Role.name).where(Role.id == role_id))
         return result.scalars().first()
 
-    async def get_user_role_id(self, db: AsyncSession, user_id: str) -> Optional[str]:
+    async def get_user_role_id(self, db: AsyncSession, user_id: str) -> str | None:
         result = await db.execute(select(UserRole.role_id).where(UserRole.user_id == user_id))
         return result.scalars().first()
 
@@ -157,7 +237,7 @@ class AuthRepository:
         result = await db.execute(select(UserSession).limit(10))
         return list(result.scalars().all())
 
-    async def get_session_by_id(self, db: AsyncSession, session_id: str) -> Optional[UserSession]:
+    async def get_session_by_id(self, db: AsyncSession, session_id: str) -> UserSession | None:
         result = await db.execute(select(UserSession).where(UserSession.id == session_id))
         return result.scalars().first()
 

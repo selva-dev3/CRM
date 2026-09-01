@@ -1,4 +1,5 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -19,7 +20,7 @@ def _make_call(**overrides) -> CallLog:
         "call_type": "Outbound",
         "duration_seconds": 120,
         "notes": "Discussed pricing",
-        "timestamp": datetime(2026, 8, 1, tzinfo=timezone.utc),
+        "timestamp": datetime(2026, 8, 1, tzinfo=UTC),
     }
     defaults.update(overrides)
     return CallLog(**defaults)
@@ -31,7 +32,7 @@ def _service_with(repo: CallRepository) -> CallService:
 
 @pytest.mark.asyncio
 async def test_get_call_raises_not_found_when_missing():
-    repo = CallRepository()
+    repo: Any = CallRepository()
     repo.get_by_id = AsyncMock(return_value=None)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -43,7 +44,7 @@ async def test_get_call_raises_not_found_when_missing():
 @pytest.mark.asyncio
 async def test_log_call_resolves_org_and_serializes(monkeypatch):
     call = _make_call()
-    repo = CallRepository()
+    repo: Any = CallRepository()
     repo.create = AsyncMock(return_value=call)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -75,7 +76,7 @@ async def test_trigger_outbound_returns_initiating_status():
 
 @pytest.mark.asyncio
 async def test_get_sentiment_requires_existing_call():
-    repo = CallRepository()
+    repo: Any = CallRepository()
     repo.get_by_id = AsyncMock(return_value=None)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)

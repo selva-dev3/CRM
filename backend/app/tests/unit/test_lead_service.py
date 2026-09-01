@@ -1,6 +1,7 @@
 import asyncio
 import io
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -61,7 +62,7 @@ def _make_user(**overrides) -> User:
 
 @pytest.mark.asyncio
 async def test_list_leads_returns_serialized_dicts():
-    repo = LeadRepository()
+    repo: Any = LeadRepository()
     repo.list_leads = AsyncMock(return_value=[_make_lead()])
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -77,7 +78,7 @@ async def test_list_leads_returns_serialized_dicts():
 
 @pytest.mark.asyncio
 async def test_count_leads_forwards_filters():
-    repo = LeadRepository()
+    repo: Any = LeadRepository()
     repo.count_leads = AsyncMock(return_value=7)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -90,7 +91,7 @@ async def test_count_leads_forwards_filters():
 
 @pytest.mark.asyncio
 async def test_get_lead_raises_not_found_when_missing():
-    repo = LeadRepository()
+    repo: Any = LeadRepository()
     repo.get_by_id = AsyncMock(return_value=None)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -102,7 +103,7 @@ async def test_get_lead_raises_not_found_when_missing():
 @pytest.mark.asyncio
 async def test_create_lead_resolves_org_and_serializes(monkeypatch):
     lead = _make_lead()
-    repo = LeadRepository()
+    repo: Any = LeadRepository()
     repo.create = AsyncMock(return_value=lead)
     repo.get_organization = AsyncMock(return_value=object())
     repo.get_user = AsyncMock(return_value=None)
@@ -110,7 +111,9 @@ async def test_create_lead_resolves_org_and_serializes(monkeypatch):
     monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())
     db = AsyncMock(spec=AsyncSession)
 
-    payload = LeadCreate(title="Acme Corp", company="Acme Inc", contact_name="Jane Doe", email="jane@acme.com")
+    payload = LeadCreate(
+        title="Acme Corp", company="Acme Inc", contact_name="Jane Doe", email="jane@acme.com"
+    )
     result = await service.create_lead(db, payload)
 
     assert result["id"] == "lead-1"
@@ -121,7 +124,7 @@ async def test_create_lead_resolves_org_and_serializes(monkeypatch):
 @pytest.mark.asyncio
 async def test_create_lead_fires_lead_created_event(monkeypatch):
     lead = _make_lead()
-    repo = LeadRepository()
+    repo: Any = LeadRepository()
     repo.create = AsyncMock(return_value=lead)
     repo.get_organization = AsyncMock(return_value=object())
     repo.get_user = AsyncMock(return_value=None)
@@ -130,11 +133,13 @@ async def test_create_lead_fires_lead_created_event(monkeypatch):
     monkeypatch.setattr(integration_service, "notify_slack_event", notify)
     db = AsyncMock(spec=AsyncSession)
 
-    payload = LeadCreate(title="Acme Corp", company="Acme Inc", contact_name="Jane Doe", email="jane@acme.com")
+    payload = LeadCreate(
+        title="Acme Corp", company="Acme Inc", contact_name="Jane Doe", email="jane@acme.com"
+    )
     await service.create_lead(db, payload)
 
     notify.assert_awaited_once()
-    kwargs = notify.await_args.kwargs
+    kwargs = notify.await_args_list[-1].kwargs
     assert kwargs["event_name"] == "lead.created"
     assert kwargs["org_id"] == "org-1"
     assert kwargs["data"]["id"] == "lead-1"
@@ -144,7 +149,7 @@ async def test_create_lead_fires_lead_created_event(monkeypatch):
 @pytest.mark.asyncio
 async def test_update_lead_only_applies_provided_fields(monkeypatch):
     lead = _make_lead()
-    repo = LeadRepository()
+    repo: Any = LeadRepository()
     repo.get_by_id_for_org = AsyncMock(return_value=lead)
     service = _service_with(repo)
     monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())
@@ -152,9 +157,7 @@ async def test_update_lead_only_applies_provided_fields(monkeypatch):
 
     from app.schemas.crm_schemas import LeadUpdate
 
-    result = await service.update_lead(
-        db, "lead-1", LeadUpdate(status="Qualified"), _make_user()
-    )
+    result = await service.update_lead(db, "lead-1", LeadUpdate(status="Qualified"), _make_user())
 
     assert result["status"] == "Qualified"
     assert lead.status == "Qualified"
@@ -165,7 +168,7 @@ async def test_update_lead_only_applies_provided_fields(monkeypatch):
 @pytest.mark.asyncio
 async def test_update_lead_fires_lead_updated_event(monkeypatch):
     lead = _make_lead()
-    repo = LeadRepository()
+    repo: Any = LeadRepository()
     repo.get_by_id_for_org = AsyncMock(return_value=lead)
     service = _service_with(repo)
     notify = AsyncMock()
@@ -177,7 +180,7 @@ async def test_update_lead_fires_lead_updated_event(monkeypatch):
     await service.update_lead(db, "lead-1", LeadUpdate(status="Qualified"), _make_user())
 
     notify.assert_awaited_once()
-    kwargs = notify.await_args.kwargs
+    kwargs = notify.await_args_list[-1].kwargs
     assert kwargs["event_name"] == "lead.updated"
     assert kwargs["org_id"] == "org-1"
     assert kwargs["data"]["status"] == "Qualified"
@@ -186,7 +189,7 @@ async def test_update_lead_fires_lead_updated_event(monkeypatch):
 @pytest.mark.asyncio
 async def test_update_lead_rejects_organization_transfer():
     lead = _make_lead()
-    repo = LeadRepository()
+    repo: Any = LeadRepository()
     repo.get_by_id_for_org = AsyncMock(return_value=lead)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -207,7 +210,7 @@ async def test_update_lead_rejects_organization_transfer():
 @pytest.mark.asyncio
 async def test_update_lead_rejects_assignee_from_another_organization():
     lead = _make_lead()
-    repo = LeadRepository()
+    repo: Any = LeadRepository()
     repo.get_by_id_for_org = AsyncMock(return_value=lead)
     repo.get_user = AsyncMock(return_value=_make_user(id="usr-2", organization_id="org-2"))
     service = _service_with(repo)
@@ -216,16 +219,14 @@ async def test_update_lead_rejects_assignee_from_another_organization():
     from app.schemas.crm_schemas import LeadUpdate
 
     with pytest.raises(APIException, match="Assignee must be"):
-        await service.update_lead(
-            db, "lead-1", LeadUpdate(assigned_to="usr-2"), _make_user()
-        )
+        await service.update_lead(db, "lead-1", LeadUpdate(assigned_to="usr-2"), _make_user())
 
     db.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_bulk_update_status_returns_early_for_empty_ids():
-    repo = LeadRepository()
+    repo: Any = LeadRepository()
     repo.list_by_ids = AsyncMock()
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -239,7 +240,7 @@ async def test_bulk_update_status_returns_early_for_empty_ids():
 
 @pytest.mark.asyncio
 async def test_bulk_update_status_rejects_unknown_status():
-    repo = LeadRepository()
+    repo: Any = LeadRepository()
     repo.list_by_ids = AsyncMock()
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -254,7 +255,7 @@ async def test_bulk_update_status_rejects_unknown_status():
 @pytest.mark.asyncio
 async def test_bulk_update_status_stores_canonical_status():
     lead = _make_lead()
-    repo = LeadRepository()
+    repo: Any = LeadRepository()
     repo.list_by_ids = AsyncMock(return_value=[lead])
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -267,7 +268,7 @@ async def test_bulk_update_status_stores_canonical_status():
 
 @pytest.mark.asyncio
 async def test_download_document_rejects_attachment_from_another_lead():
-    repo = LeadRepository()
+    repo: Any = LeadRepository()
     repo.get_by_id_for_org = AsyncMock(return_value=_make_lead())
     repo.get_attachment_for_lead = AsyncMock(return_value=None)
     service = _service_with(repo)
@@ -286,7 +287,7 @@ async def test_download_document_reads_s3_off_event_loop(monkeypatch):
         file_url="",
         mime_type="application/pdf",
     )
-    repo = LeadRepository()
+    repo: Any = LeadRepository()
     repo.get_by_id_for_org = AsyncMock(return_value=_make_lead())
     repo.get_attachment_for_lead = AsyncMock(return_value=attachment)
     service = _service_with(repo)
@@ -306,7 +307,7 @@ async def test_download_document_reads_s3_off_event_loop(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_upload_document_rejects_oversize_before_s3(monkeypatch):
-    repo = LeadRepository()
+    repo: Any = LeadRepository()
     repo.get_by_id_for_org = AsyncMock(return_value=_make_lead())
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -329,7 +330,7 @@ async def test_upload_document_rejects_oversize_before_s3(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_upload_document_rejects_unsupported_content_type(monkeypatch):
-    repo = LeadRepository()
+    repo: Any = LeadRepository()
     repo.get_by_id_for_org = AsyncMock(return_value=_make_lead())
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -351,7 +352,7 @@ async def test_upload_document_rejects_unsupported_content_type(monkeypatch):
 @pytest.mark.asyncio
 async def test_assign_lead_fires_lead_assigned_event(monkeypatch):
     lead = _make_lead()
-    repo = LeadRepository()
+    repo: Any = LeadRepository()
     repo.get_by_id = AsyncMock(return_value=lead)
     service = _service_with(repo)
     notify = AsyncMock()
@@ -361,7 +362,7 @@ async def test_assign_lead_fires_lead_assigned_event(monkeypatch):
     await service.assign_lead(db, "lead-1", "usr-9")
 
     notify.assert_awaited_once()
-    kwargs = notify.await_args.kwargs
+    kwargs = notify.await_args_list[-1].kwargs
     assert kwargs["event_name"] == "lead.assigned"
     assert kwargs["org_id"] == "org-1"
     assert kwargs["data"]["assigned_to"] == "usr-9"
@@ -380,7 +381,7 @@ async def test_lead_create_task_fires_task_created_event(monkeypatch):
         priority="High",
         assigned_to="usr-1",
     )
-    repo = LeadRepository()
+    repo: Any = LeadRepository()
     repo.get_by_id = AsyncMock(return_value=lead)
     repo.get_first_user = AsyncMock(return_value=None)
     repo.create_user = AsyncMock(return_value=type("U", (), {"id": "usr-1"})())
@@ -393,7 +394,7 @@ async def test_lead_create_task_fires_task_created_event(monkeypatch):
     await service.create_task(db, "lead-1", TaskCreate(title="Call back"))
 
     notify.assert_awaited_once()
-    kwargs = notify.await_args.kwargs
+    kwargs = notify.await_args_list[-1].kwargs
     assert kwargs["event_name"] == "task.created"
     assert kwargs["org_id"] == "org-1"
     assert kwargs["data"]["title"] == "Call back"

@@ -1,6 +1,3 @@
-from datetime import datetime, timezone
-from typing import List, Optional
-
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,14 +15,14 @@ router = APIRouter()
 
 @router.get(
     "/events",
-    response_model=List[CalendarEventResponse],
+    response_model=list[CalendarEventResponse],
     summary="Fetch calendar events between date range",
     dependencies=[Depends(require_permission("calendar:read"))],
 )
 async def get_calendar_events(
-    start_date: Optional[str] = Query(None),
-    end_date: Optional[str] = Query(None),
-    search: Optional[str] = Query(None),
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
+    search: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
     return await calendar_service.get_calendar_events(db, search=search)
@@ -76,10 +73,14 @@ async def delete_calendar_event(event_id: str, db: AsyncSession = Depends(get_db
     return await calendar_service.delete_calendar_event(db, event_id)
 
 
-@router.get("/availability", summary="Get free/busy time slots for user", dependencies=[Depends(require_permission("calendar:sync"))])
+@router.get(
+    "/availability",
+    summary="Get free/busy time slots for user",
+    dependencies=[Depends(require_permission("calendar:sync"))],
+)
 async def get_availability(
-    user_id: Optional[str] = Query(None),
-    date: Optional[str] = Query(None),
+    user_id: str | None = Query(None),
+    date: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
     return await calendar_service.get_availability(user_id, date)
@@ -105,12 +106,21 @@ async def sync_outlook_calendar(db: AsyncSession = Depends(get_db)):
     return await calendar_service.sync_outlook_calendar()
 
 
-@router.get("/recurring", summary="List recurring event rules", dependencies=[Depends(require_permission("calendar:read"))])
+@router.get(
+    "/recurring",
+    summary="List recurring event rules",
+    dependencies=[Depends(require_permission("calendar:read"))],
+)
 async def list_recurring_events(db: AsyncSession = Depends(get_db)):
     return await calendar_service.list_recurring_events()
 
 
-@router.post("/recurring", response_model=MessageResponse, summary="Create recurring event rule", dependencies=[Depends(require_permission("calendar:write"))])
+@router.post(
+    "/recurring",
+    response_model=MessageResponse,
+    summary="Create recurring event rule",
+    dependencies=[Depends(require_permission("calendar:write"))],
+)
 async def create_recurring_event(
     title: str = Query(...),
     rrule: str = Query(...),

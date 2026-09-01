@@ -1,4 +1,5 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -22,7 +23,7 @@ def _make_email(**overrides) -> Email:
         "to_email": "client@example.com",
         "subject": "Hello",
         "body_text": "Hi there",
-        "sent_at": datetime(2026, 8, 5, 12, 0, tzinfo=timezone.utc),
+        "sent_at": datetime(2026, 8, 5, 12, 0, tzinfo=UTC),
     }
     defaults.update(overrides)
     return Email(**defaults)
@@ -43,7 +44,7 @@ def _make_template(**overrides) -> EmailTemplate:
 
 @pytest.mark.asyncio
 async def test_get_inbox_maps_emails():
-    repo = EmailRepository()
+    repo: Any = EmailRepository()
     repo.list_emails = AsyncMock(return_value=[_make_email()])
     service = EmailDomainService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -66,7 +67,7 @@ async def test_send_email_creates_row(monkeypatch):
         fake_resolve_valid_org_id,
     )
     email = _make_email()
-    repo = EmailRepository()
+    repo: Any = EmailRepository()
     repo.create_email = AsyncMock(return_value=email)
     service = EmailDomainService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -75,7 +76,7 @@ async def test_send_email_creates_row(monkeypatch):
         db, EmailSendRequest(to=["client@example.com"], subject="Hello", body="Hi")
     )
 
-    created = repo.create_email.await_args.kwargs["data"]
+    created = repo.create_email.await_args_list[-1].kwargs["data"]
     assert created["organization_id"] == "org-1"
     assert created["to_email"] == "client@example.com"
     assert result["id"] == "email-1"
@@ -84,7 +85,7 @@ async def test_send_email_creates_row(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_list_templates_falls_back_to_defaults():
-    repo = EmailRepository()
+    repo: Any = EmailRepository()
     repo.list_templates = AsyncMock(return_value=[])
     service = EmailDomainService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -97,7 +98,7 @@ async def test_list_templates_falls_back_to_defaults():
 
 @pytest.mark.asyncio
 async def test_get_template_missing_returns_default():
-    repo = EmailRepository()
+    repo: Any = EmailRepository()
     repo.get_template = AsyncMock(return_value=None)
     service = EmailDomainService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -111,7 +112,7 @@ async def test_get_template_missing_returns_default():
 @pytest.mark.asyncio
 async def test_update_template_persists_changes():
     template = _make_template()
-    repo = EmailRepository()
+    repo: Any = EmailRepository()
     repo.get_template = AsyncMock(return_value=template)
     service = EmailDomainService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -128,7 +129,7 @@ async def test_update_template_persists_changes():
 
 @pytest.mark.asyncio
 async def test_bulk_delete_returns_affected_count():
-    repo = EmailRepository()
+    repo: Any = EmailRepository()
     repo.list_by_ids = AsyncMock(return_value=[_make_email(), _make_email(id="email-2")])
     service = EmailDomainService(repository=repo)
     db = AsyncMock(spec=AsyncSession)

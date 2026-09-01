@@ -1,4 +1,3 @@
-
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -181,9 +180,7 @@ class ContactService:
         await self._commit(db, "Failed to delete contact")
         return {"message": f"Contact {contact_id} deleted successfully", "status": "success"}
 
-    async def merge_contacts(
-        self, db: AsyncSession, primary_id: str, secondary_id: str
-    ) -> dict:
+    async def merge_contacts(self, db: AsyncSession, primary_id: str, secondary_id: str) -> dict:
         primary = await self.repository.get_by_id(db, primary_id)
         secondary = await self.repository.get_by_id(db, secondary_id)
         if not primary or not secondary:
@@ -200,9 +197,7 @@ class ContactService:
         await self._commit(db, "Failed to bulk delete contacts")
         return {"affected_count": len(contacts), "message": "Contacts deleted successfully"}
 
-    async def set_starred(
-        self, db: AsyncSession, contact_id: str, *, starred: bool
-    ) -> dict:
+    async def set_starred(self, db: AsyncSession, contact_id: str, *, starred: bool) -> dict:
         contact = await self.repository.get_by_id(db, contact_id)
         if not contact:
             raise NotFoundError(message=f"Contact '{contact_id}' not found")

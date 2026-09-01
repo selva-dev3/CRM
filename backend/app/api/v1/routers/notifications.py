@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
@@ -33,7 +33,11 @@ async def list_notifications(
     )
 
 
-@router.get("/unread-count", summary="Get unread notification count badge", dependencies=[Depends(require_permission("notifications:read"))])
+@router.get(
+    "/unread-count",
+    summary="Get unread notification count badge",
+    dependencies=[Depends(require_permission("notifications:read"))],
+)
 async def get_unread_count(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -42,19 +46,23 @@ async def get_unread_count(
 
 
 @router.post(
-    "/read-all", response_model=MessageResponse, summary="Mark all notifications as read",
+    "/read-all",
+    response_model=MessageResponse,
+    summary="Mark all notifications as read",
     dependencies=[Depends(require_permission("notifications:read"))],
 )
 async def mark_all_notifications_read(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await notification_service.mark_all_notifications_read(
-        db, user_id=current_user.id
-    )
+    return await notification_service.mark_all_notifications_read(db, user_id=current_user.id)
 
 
-@router.get("/preferences", summary="Get user notification delivery preferences", dependencies=[Depends(require_permission("notifications:read"))])
+@router.get(
+    "/preferences",
+    summary="Get user notification delivery preferences",
+    dependencies=[Depends(require_permission("notifications:read"))],
+)
 async def get_notification_preferences(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -112,8 +120,11 @@ async def send_system_alert(
     current_user: User = Depends(get_current_user),
 ):
     return await notification_service.send_system_alert(
-        db, user_id=current_user.id, org_id=current_user.organization_id,
-        title=title, message=message,
+        db,
+        user_id=current_user.id,
+        org_id=current_user.organization_id,
+        title=title,
+        message=message,
     )
 
 
@@ -128,9 +139,7 @@ async def bulk_delete_notifications(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await notification_service.bulk_delete(
-        db, user_id=current_user.id, ids=payload.ids
-    )
+    return await notification_service.bulk_delete(db, user_id=current_user.id, ids=payload.ids)
 
 
 @router.post(

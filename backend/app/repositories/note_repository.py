@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional
+import builtins
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,9 +17,9 @@ class NoteRepository:
         *,
         page: int,
         limit: int,
-        entity_type: Optional[str] = None,
-        search: Optional[str] = None,
-    ) -> list[Note]:
+        entity_type: str | None = None,
+        search: str | None = None,
+    ) -> builtins.list[Note]:
         stmt = select(Note)
         if entity_type and entity_type.strip():
             stmt = stmt.where(Note.entity_type == entity_type.strip())
@@ -31,7 +31,7 @@ class NoteRepository:
 
     async def list_by_entity(
         self, db: AsyncSession, *, entity_type: str, entity_id: str
-    ) -> list[Note]:
+    ) -> builtins.list[Note]:
         result = await db.execute(
             select(Note)
             .where(Note.entity_type == entity_type, Note.entity_id == entity_id)
@@ -39,15 +39,15 @@ class NoteRepository:
         )
         return list(result.scalars().all())
 
-    async def list_pinned(self, db: AsyncSession) -> list[Note]:
-        result = await db.execute(select(Note).where(Note.is_pinned == True))
+    async def list_pinned(self, db: AsyncSession) -> builtins.list[Note]:
+        result = await db.execute(select(Note).where(Note.is_pinned))
         return list(result.scalars().all())
 
-    async def get_by_id(self, db: AsyncSession, note_id: str) -> Optional[Note]:
+    async def get_by_id(self, db: AsyncSession, note_id: str) -> Note | None:
         result = await db.execute(select(Note).where(Note.id == note_id))
         return result.scalars().first()
 
-    async def list_by_ids(self, db: AsyncSession, ids: list[str]) -> list[Note]:
+    async def list_by_ids(self, db: AsyncSession, ids: builtins.list[str]) -> builtins.list[Note]:
         result = await db.execute(select(Note).where(Note.id.in_(ids)))
         return list(result.scalars().all())
 

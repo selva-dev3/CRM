@@ -11,7 +11,7 @@ from app.services.notification_service import notification_service
 from app.services.org_service import organization_service
 
 
-def parse_datetime(val: str | None) -> datetime | None:
+def parse_datetime(val: str | None) -> datetime:
     if not val or not str(val).strip():
         return datetime.now(UTC)
     val_str = str(val).strip()
@@ -155,7 +155,10 @@ class MeetingService:
         meeting.start_time = parse_datetime(new_start_time)
         meeting.end_time = parse_datetime(new_end_time)
         await self._commit(db, "Failed to reschedule meeting")
-        return {"message": f"Meeting {meeting_id} rescheduled to {new_start_time}", "status": "success"}
+        return {
+            "message": f"Meeting {meeting_id} rescheduled to {new_start_time}",
+            "status": "success",
+        }
 
     async def rsvp(self, db: AsyncSession, meeting_id: str, email: str, response: str) -> dict:
         meeting = await self.repository.get_by_id(db, meeting_id)
@@ -171,7 +174,9 @@ class MeetingService:
         await self._commit(db, "Failed to record RSVP")
         return {"message": f"RSVP '{response}' recorded for {email}", "status": "success"}
 
-    async def upload_transcript(self, db: AsyncSession, meeting_id: str, transcript_text: str) -> dict:
+    async def upload_transcript(
+        self, db: AsyncSession, meeting_id: str, transcript_text: str
+    ) -> dict:
         meeting = await self.repository.get_by_id(db, meeting_id)
         if not meeting:
             raise NotFoundError(message=f"Meeting '{meeting_id}' not found")
@@ -195,8 +200,18 @@ class MeetingService:
         if not meeting:
             raise NotFoundError(message=f"Meeting '{meeting_id}' not found")
         return [
-            {"id": "act-1", "task": "Send quote proposal", "assignee": "Sales Lead", "status": "Pending"},
-            {"id": "act-2", "task": "Schedule technical review", "assignee": "Solutions Architect", "status": "Pending"},
+            {
+                "id": "act-1",
+                "task": "Send quote proposal",
+                "assignee": "Sales Lead",
+                "status": "Pending",
+            },
+            {
+                "id": "act-2",
+                "task": "Schedule technical review",
+                "assignee": "Solutions Architect",
+                "status": "Pending",
+            },
         ]
 
     async def create_zoom_link(self, topic: str) -> dict:

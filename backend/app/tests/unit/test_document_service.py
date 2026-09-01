@@ -1,5 +1,5 @@
 import io
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -38,13 +38,15 @@ def _make_document(**overrides) -> Document:
         "file_url": None,
         "s3_key": "documents/org-test/abcdef.pdf",
         "uploaded_by": "usr-123",
-        "uploaded_at": datetime(2026, 8, 5, 12, 0, tzinfo=timezone.utc),
+        "uploaded_at": datetime(2026, 8, 5, 12, 0, tzinfo=UTC),
     }
     defaults.update(overrides)
     return Document(**defaults)
 
 
-def _upload_file(content: bytes, filename: str = "1.png", content_type: str = "image/png", size: int = 0) -> UploadFile:
+def _upload_file(
+    content: bytes, filename: str = "1.png", content_type: str = "image/png", size: int = 0
+) -> UploadFile:
     headers = Headers({"content-type": content_type})
     f = UploadFile(filename=filename, file=io.BytesIO(content), size=size or None, headers=headers)
     return f
@@ -52,7 +54,7 @@ def _upload_file(content: bytes, filename: str = "1.png", content_type: str = "i
 
 @pytest.mark.asyncio
 async def test_list_documents_generates_fresh_presigned_url(monkeypatch):
-    repo = DocumentRepository()
+    repo: Any = DocumentRepository()
     repo.list_documents = AsyncMock(return_value=[_make_document()])
     service = DocumentService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -63,7 +65,9 @@ async def test_list_documents_generates_fresh_presigned_url(monkeypatch):
         lambda key: f"https://s3.example/{key}?fresh=1",
     )
 
-    result = await service.list_documents(db, page=1, limit=20, search="proposal", current_user=user)
+    result = await service.list_documents(
+        db, page=1, limit=20, search="proposal", current_user=user
+    )
 
     repo.list_documents.assert_awaited_once_with(
         db, org_id="org-test", page=1, limit=20, search="proposal"
@@ -76,7 +80,7 @@ async def test_list_documents_generates_fresh_presigned_url(monkeypatch):
 @pytest.mark.asyncio
 async def test_list_documents_legacy_rows_get_empty_download_url(monkeypatch):
     legacy = _make_document(s3_key=None, file_url="https://expired.example/old")
-    repo = DocumentRepository()
+    repo: Any = DocumentRepository()
     repo.list_documents = AsyncMock(return_value=[legacy])
     service = DocumentService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -92,7 +96,7 @@ async def test_list_documents_legacy_rows_get_empty_download_url(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_list_documents_requires_user_with_org():
-    repo = DocumentRepository()
+    repo: Any = DocumentRepository()
     service = DocumentService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
@@ -102,7 +106,7 @@ async def test_list_documents_requires_user_with_org():
 
 @pytest.mark.asyncio
 async def test_get_document_not_found():
-    repo = DocumentRepository()
+    repo: Any = DocumentRepository()
     repo.get_document = AsyncMock(return_value=None)
     service = DocumentService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -114,7 +118,7 @@ async def test_get_document_not_found():
 
 @pytest.mark.asyncio
 async def test_get_document_generates_fresh_presigned_url(monkeypatch):
-    repo = DocumentRepository()
+    repo: Any = DocumentRepository()
     repo.get_document = AsyncMock(return_value=_make_document())
     service = DocumentService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -131,7 +135,7 @@ async def test_get_document_generates_fresh_presigned_url(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_download_document_generates_fresh_presigned_url(monkeypatch):
-    repo = DocumentRepository()
+    repo: Any = DocumentRepository()
     repo.get_document = AsyncMock(return_value=_make_document())
     service = DocumentService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -151,7 +155,7 @@ async def test_download_document_generates_fresh_presigned_url(monkeypatch):
 @pytest.mark.asyncio
 async def test_download_document_raises_410_when_no_s3_key(monkeypatch):
     legacy = _make_document(s3_key=None, file_url="https://expired.example/old")
-    repo = DocumentRepository()
+    repo: Any = DocumentRepository()
     repo.get_document = AsyncMock(return_value=legacy)
     service = DocumentService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -168,7 +172,7 @@ async def test_download_document_raises_410_when_no_s3_key(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_download_document_raises_502_when_s3_fails(monkeypatch):
-    repo = DocumentRepository()
+    repo: Any = DocumentRepository()
     repo.get_document = AsyncMock(return_value=_make_document())
     service = DocumentService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -186,7 +190,7 @@ async def test_download_document_raises_502_when_s3_fails(monkeypatch):
 @pytest.mark.asyncio
 async def test_delete_document_commits_then_cleans_s3(monkeypatch):
     document = _make_document()
-    repo = DocumentRepository()
+    repo: Any = DocumentRepository()
     repo.get_document = AsyncMock(return_value=document)
     repo.delete_document = AsyncMock()
     service = DocumentService(repository=repo)
@@ -210,7 +214,7 @@ async def test_delete_document_commits_then_cleans_s3(monkeypatch):
 @pytest.mark.asyncio
 async def test_delete_document_swallows_post_commit_s3_failure(monkeypatch):
     document = _make_document()
-    repo = DocumentRepository()
+    repo: Any = DocumentRepository()
     repo.get_document = AsyncMock(return_value=document)
     repo.delete_document = AsyncMock()
     service = DocumentService(repository=repo)
@@ -229,8 +233,11 @@ async def test_delete_document_swallows_post_commit_s3_failure(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_bulk_delete_commits_then_cleans_s3(monkeypatch):
-    docs = [_make_document(id="doc-1"), _make_document(id="doc-2", s3_key="documents/org-test/zzz.pdf")]
-    repo = DocumentRepository()
+    docs = [
+        _make_document(id="doc-1"),
+        _make_document(id="doc-2", s3_key="documents/org-test/zzz.pdf"),
+    ]
+    repo: Any = DocumentRepository()
     repo.list_by_ids = AsyncMock(return_value=docs)
     repo.delete_document = AsyncMock()
     service = DocumentService(repository=repo)
@@ -252,7 +259,7 @@ async def test_bulk_delete_commits_then_cleans_s3(monkeypatch):
 @pytest.mark.asyncio
 async def test_bulk_delete_swallows_post_commit_s3_failures(monkeypatch):
     docs = [_make_document(id="doc-1"), _make_document(id="doc-2")]
-    repo = DocumentRepository()
+    repo: Any = DocumentRepository()
     repo.list_by_ids = AsyncMock(return_value=docs)
     repo.delete_document = AsyncMock()
     service = DocumentService(repository=repo)
@@ -278,8 +285,14 @@ def test_document_to_dict_uses_fallbacks():
 
 @pytest.mark.asyncio
 async def test_upload_document_stores_s3_key_not_presigned_url(monkeypatch):
-    repo = DocumentRepository()
-    mock_doc = _make_document(id="doc-new", filename="report.png", file_size=12, mime_type="image/png", s3_key="documents/org-test/abc.png")
+    repo: Any = DocumentRepository()
+    mock_doc = _make_document(
+        id="doc-new",
+        filename="report.png",
+        file_size=12,
+        mime_type="image/png",
+        s3_key="documents/org-test/abc.png",
+    )
     repo.create_document = AsyncMock(return_value=mock_doc)
     service = DocumentService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -293,13 +306,15 @@ async def test_upload_document_stores_s3_key_not_presigned_url(monkeypatch):
         lambda *a, **kw: "https://s3.example/documents/org-test/abc.png",
     )
 
-    file = _upload_file(b"fake image bytes", filename="report.png", content_type="image/png", size=12)
+    file = _upload_file(
+        b"fake image bytes", filename="report.png", content_type="image/png", size=12
+    )
     user = _make_user(id="usr-123", organization_id="org-test")
 
     result = await service.upload_document(db, file, current_user=user)
 
     assert repo.create_document.await_args is not None
-    data = repo.create_document.await_args.kwargs["data"]
+    data = repo.create_document.await_args_list[-1].kwargs["data"]
     assert data["organization_id"] == "org-test"
     assert data["uploaded_by"] == "usr-123"
     assert data["filename"] == "report.png"
@@ -313,8 +328,10 @@ async def test_upload_document_stores_s3_key_not_presigned_url(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_upload_document_sanitizes_filename_and_uses_uuid(monkeypatch):
-    repo = DocumentRepository()
-    mock_doc = _make_document(id="doc-new", filename="evil.png", s3_key="documents/org-test/zzz.png")
+    repo: Any = DocumentRepository()
+    mock_doc = _make_document(
+        id="doc-new", filename="evil.png", s3_key="documents/org-test/zzz.png"
+    )
     repo.create_document = AsyncMock(return_value=mock_doc)
     service = DocumentService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -344,31 +361,35 @@ async def test_upload_document_sanitizes_filename_and_uses_uuid(monkeypatch):
     assert len(stem) == 32  # uuid4 hex
     # Filename persisted is sanitized
     assert repo.create_document.await_args is not None
-    persisted = repo.create_document.await_args.kwargs["data"]["filename"]
+    persisted = repo.create_document.await_args_list[-1].kwargs["data"]["filename"]
     assert ".." not in persisted
     assert "/" not in persisted
 
 
 @pytest.mark.asyncio
 async def test_upload_document_rejects_traversal_filename(monkeypatch):
-    repo = DocumentRepository()
+    repo: Any = DocumentRepository()
     repo.create_document = AsyncMock(return_value=_make_document())
     service = DocumentService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
-    monkeypatch.setattr("app.services.document_service.s3_service.upload_file", lambda *a, **kw: "x")
-    monkeypatch.setattr("app.services.document_service.s3_service.generate_presigned_url", lambda *a, **kw: "x")
+    monkeypatch.setattr(
+        "app.services.document_service.s3_service.upload_file", lambda *a, **kw: "x"
+    )
+    monkeypatch.setattr(
+        "app.services.document_service.s3_service.generate_presigned_url", lambda *a, **kw: "x"
+    )
 
     file = _upload_file(b"x", filename="../../something.png", content_type="image/png")
     await service.upload_document(db, file, current_user=_make_user())
     assert repo.create_document.await_args is not None
-    persisted = repo.create_document.await_args.kwargs["data"]["filename"]
+    persisted = repo.create_document.await_args_list[-1].kwargs["data"]["filename"]
     assert ".." not in persisted and "/" not in persisted
 
 
 @pytest.mark.asyncio
 async def test_upload_document_rejects_unsupported_mime():
-    repo = DocumentRepository()
+    repo: Any = DocumentRepository()
     service = DocumentService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
@@ -380,7 +401,7 @@ async def test_upload_document_rejects_unsupported_mime():
 
 @pytest.mark.asyncio
 async def test_upload_document_rejects_unsupported_extension():
-    repo = DocumentRepository()
+    repo: Any = DocumentRepository()
     service = DocumentService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
@@ -392,7 +413,7 @@ async def test_upload_document_rejects_unsupported_extension():
 
 @pytest.mark.asyncio
 async def test_upload_document_rejects_oversize(monkeypatch):
-    repo = DocumentRepository()
+    repo: Any = DocumentRepository()
     service = DocumentService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
@@ -405,7 +426,7 @@ async def test_upload_document_rejects_oversize(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_upload_document_rejects_oversize_during_stream(monkeypatch):
-    repo = DocumentRepository()
+    repo: Any = DocumentRepository()
     repo.create_document = AsyncMock(return_value=_make_document())
     service = DocumentService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -416,7 +437,9 @@ async def test_upload_document_rejects_oversize_during_stream(monkeypatch):
     async def fake_read(size):
         return b"x" * size  # always returns a full chunk, never empty
 
-    f = UploadFile(filename="big.png", file=io.BytesIO(b""), headers=Headers({"content-type": "image/png"}))
+    f = UploadFile(
+        filename="big.png", file=io.BytesIO(b""), headers=Headers({"content-type": "image/png"})
+    )
     f.read = fake_read  # type: ignore[assignment]
 
     with pytest.raises(APIException) as exc:
@@ -427,7 +450,7 @@ async def test_upload_document_rejects_oversize_during_stream(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_upload_document_raises_forbidden_without_user():
-    repo = DocumentRepository()
+    repo: Any = DocumentRepository()
     service = DocumentService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
@@ -438,11 +461,14 @@ async def test_upload_document_raises_forbidden_without_user():
 
 @pytest.mark.asyncio
 async def test_upload_document_raises_502_on_s3_error(monkeypatch):
-    repo = DocumentRepository()
+    repo: Any = DocumentRepository()
     service = DocumentService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
-    monkeypatch.setattr("app.services.document_service.s3_service.upload_file", lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("s3 timeout")))
+    monkeypatch.setattr(
+        "app.services.document_service.s3_service.upload_file",
+        lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("s3 timeout")),
+    )
 
     file = _upload_file(b"x", filename="a.png", content_type="image/png")
     with pytest.raises(APIException) as exc:
@@ -452,7 +478,7 @@ async def test_upload_document_raises_502_on_s3_error(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_cross_org_document_is_invisible(monkeypatch):
-    repo = DocumentRepository()
+    repo: Any = DocumentRepository()
     repo.get_document = AsyncMock(return_value=None)
     service = DocumentService(repository=repo)
     db = AsyncMock(spec=AsyncSession)

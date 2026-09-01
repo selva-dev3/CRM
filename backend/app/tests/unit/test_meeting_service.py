@@ -1,4 +1,5 @@
-from datetime import date, datetime, timezone
+from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -17,8 +18,8 @@ def _make_meeting(**overrides) -> Meeting:
         "id": "mtg-1",
         "organization_id": "org-1",
         "title": "Product Demo",
-        "start_time": datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc),
-        "end_time": datetime(2026, 8, 1, 11, 0, tzinfo=timezone.utc),
+        "start_time": datetime(2026, 8, 1, 10, 0, tzinfo=UTC),
+        "end_time": datetime(2026, 8, 1, 11, 0, tzinfo=UTC),
         "meeting_link": "https://meet.google.com/x",
         "ai_summary": None,
     }
@@ -40,7 +41,7 @@ def test_parse_datetime_handles_iso_date_and_empty():
 
 @pytest.mark.asyncio
 async def test_get_meeting_raises_not_found_when_missing():
-    repo = MeetingRepository()
+    repo: Any = MeetingRepository()
     repo.get_by_id = AsyncMock(return_value=None)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -52,7 +53,7 @@ async def test_get_meeting_raises_not_found_when_missing():
 @pytest.mark.asyncio
 async def test_schedule_meeting_resolves_org_and_saves_attendees(monkeypatch):
     meeting = _make_meeting()
-    repo = MeetingRepository()
+    repo: Any = MeetingRepository()
     repo.create = AsyncMock(return_value=meeting)
     repo.create_attendee = AsyncMock()
     service = _service_with(repo)
@@ -82,7 +83,7 @@ async def test_schedule_meeting_resolves_org_and_saves_attendees(monkeypatch):
 @pytest.mark.asyncio
 async def test_schedule_meeting_fires_meeting_created_event(monkeypatch):
     meeting = _make_meeting()
-    repo = MeetingRepository()
+    repo: Any = MeetingRepository()
     repo.create = AsyncMock(return_value=meeting)
     repo.create_attendee = AsyncMock()
     service = _service_with(repo)
@@ -107,7 +108,7 @@ async def test_schedule_meeting_fires_meeting_created_event(monkeypatch):
     )
 
     notify.assert_awaited_once()
-    kwargs = notify.await_args.kwargs
+    kwargs = notify.await_args_list[-1].kwargs
     assert kwargs["event_name"] == "meeting.created"
     assert kwargs["org_id"] == "org-1"
     assert kwargs["data"]["attendees"] == ["a@crm.com"]
@@ -116,7 +117,7 @@ async def test_schedule_meeting_fires_meeting_created_event(monkeypatch):
 @pytest.mark.asyncio
 async def test_schedule_meeting_without_attendees_skips_attendee_creation(monkeypatch):
     meeting = _make_meeting()
-    repo = MeetingRepository()
+    repo: Any = MeetingRepository()
     repo.create = AsyncMock(return_value=meeting)
     repo.create_attendee = AsyncMock()
     service = _service_with(repo)
@@ -144,7 +145,7 @@ async def test_schedule_meeting_without_attendees_skips_attendee_creation(monkey
 @pytest.mark.asyncio
 async def test_rsvp_creates_missing_attendee():
     meeting = _make_meeting()
-    repo = MeetingRepository()
+    repo: Any = MeetingRepository()
     repo.get_by_id = AsyncMock(return_value=meeting)
     repo.get_attendee = AsyncMock(return_value=None)
     repo.create_attendee = AsyncMock()

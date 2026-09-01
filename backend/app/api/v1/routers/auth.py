@@ -33,9 +33,7 @@ async def login(
     db: AsyncSession = Depends(get_db),
 ):
     result = await auth_service.login(db, payload)
-    set_auth_cookie(
-        response, result["access_token"], persistent=payload.remember_me
-    )
+    set_auth_cookie(response, result["access_token"], persistent=payload.remember_me)
     return result
 
 
@@ -77,7 +75,11 @@ async def logout(
     return {"message": "Logged out successfully", "status": "success"}
 
 
-@router.post("/forgot-password", response_model=MessageResponse, summary="Trigger password reset email with 14-char random code")
+@router.post(
+    "/forgot-password",
+    response_model=MessageResponse,
+    summary="Trigger password reset email with 14-char random code",
+)
 async def forgot_password(payload: PasswordResetRequest, db: AsyncSession = Depends(get_db)):
     return await auth_service.forgot_password(db, payload)
 
@@ -94,7 +96,9 @@ async def reset_password(
     return await auth_service.reset_password(db, payload)
 
 
-@router.post("/change-password", response_model=MessageResponse, summary="Change current user password")
+@router.post(
+    "/change-password", response_model=MessageResponse, summary="Change current user password"
+)
 async def change_password(
     payload: PasswordChangeRequest,
     db: AsyncSession = Depends(get_db),
@@ -108,12 +112,14 @@ async def change_password(
     )
 
 
-@router.post("/2fa/setup", response_model=TwoFactorSetupResponse, summary="Setup 2FA TOTP secret & QR")
+@router.post(
+    "/2fa/setup", response_model=TwoFactorSetupResponse, summary="Setup 2FA TOTP secret & QR"
+)
 async def setup_2fa(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await auth_service.setup_2fa()
+    return await auth_service.setup_2fa(db, current_user)
 
 
 @router.post("/2fa/verify", response_model=MessageResponse, summary="Verify 2FA TOTP code")
@@ -122,7 +128,7 @@ async def verify_2fa(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await auth_service.verify_2fa(payload)
+    return await auth_service.verify_2fa(db, current_user, payload)
 
 
 @router.post("/2fa/disable", response_model=MessageResponse, summary="Disable 2FA authentication")
@@ -130,7 +136,7 @@ async def disable_2fa(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await auth_service.disable_2fa()
+    return await auth_service.disable_2fa(db, current_user)
 
 
 @router.post("/oauth/google", response_model=Token, summary="Google OAuth SSO Login")
@@ -155,12 +161,19 @@ async def microsoft_oauth(
     return result
 
 
-@router.get("/invitations/{token}", response_model=UserInvitationDetailsResponse, summary="Get user invitation details by token (Public endpoint)")
+@router.get(
+    "/invitations/{token}",
+    response_model=UserInvitationDetailsResponse,
+    summary="Get user invitation details by token (Public endpoint)",
+)
 async def get_auth_invitation_details(token: str, db: AsyncSession = Depends(get_db)):
     return await auth_service.get_auth_invitation_details(db, token)
 
 
-@router.post("/accept-invite", summary="Accept user invitation, set password, and activate account (Public endpoint)")
+@router.post(
+    "/accept-invite",
+    summary="Accept user invitation, set password, and activate account (Public endpoint)",
+)
 async def accept_auth_user_invitation(
     payload: AcceptInviteRequest,
     response: Response,
@@ -179,7 +192,9 @@ async def list_sessions(
     return await auth_service.list_sessions(db)
 
 
-@router.delete("/sessions/{session_id}", response_model=MessageResponse, summary="Revoke specific user session")
+@router.delete(
+    "/sessions/{session_id}", response_model=MessageResponse, summary="Revoke specific user session"
+)
 async def revoke_session(
     session_id: str,
     db: AsyncSession = Depends(get_db),
@@ -188,12 +203,16 @@ async def revoke_session(
     return await auth_service.revoke_session(db, session_id)
 
 
-@router.post("/magic-link/request", response_model=MessageResponse, summary="Request passwordless login link")
+@router.post(
+    "/magic-link/request", response_model=MessageResponse, summary="Request passwordless login link"
+)
 async def request_magic_link(email: str, db: AsyncSession = Depends(get_db)):
     return await auth_service.request_magic_link(db, email)
 
 
-@router.post("/magic-link/verify", response_model=Token, summary="Verify passwordless magic link token")
+@router.post(
+    "/magic-link/verify", response_model=Token, summary="Verify passwordless magic link token"
+)
 async def verify_magic_link(
     token: str,
     response: Response,

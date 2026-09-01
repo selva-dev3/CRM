@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Deal, Organization, Role, User, UserInvitation, UserQuota
+from app.models import Deal, Organization, Role, User, UserInvitation, UserProfile, UserQuota
 
 
 class UserRepository:
@@ -70,6 +70,18 @@ class UserRepository:
     async def get_first(self, db: AsyncSession) -> User | None:
         result = await db.execute(select(User).limit(1))
         return result.scalars().first()
+
+    async def get_profile(self, db: AsyncSession, user_id: str) -> UserProfile | None:
+        result = await db.execute(select(UserProfile).where(UserProfile.user_id == user_id))
+        return result.scalar_one_or_none()
+
+    async def get_or_create_profile(self, db: AsyncSession, user_id: str) -> UserProfile:
+        profile = await self.get_profile(db, user_id)
+        if profile:
+            return profile
+        profile = UserProfile(user_id=user_id)
+        db.add(profile)
+        return profile
 
     async def get_by_email(self, db: AsyncSession, email: str) -> User | None:
         result = await db.execute(select(User).where(User.email.ilike(email)))

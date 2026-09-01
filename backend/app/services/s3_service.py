@@ -26,10 +26,7 @@ class S3Service:
             aws_access_key_id=self.access_key,
             aws_secret_access_key=self.secret_key,
             region_name=self.region,
-            config=Config(
-                signature_version="s3v4",
-                s3={"addressing_style": "path"}
-            )
+            config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
         )
 
     def _ensure_bucket_exists(self):
@@ -50,7 +47,9 @@ class S3Service:
                     f"S3 bucket '{self.bucket_name}' is unavailable and could not be created"
                 ) from create_exc
 
-    def upload_file(self, file_obj: BinaryIO, object_name: str, content_type: str | None = None) -> str:
+    def upload_file(
+        self, file_obj: BinaryIO, object_name: str, content_type: str | None = None
+    ) -> str:
         """Uploads a file object to MinIO S3 bucket and returns the object key."""
         self._ensure_bucket_exists()
         extra_args = {}
@@ -59,14 +58,11 @@ class S3Service:
 
         try:
             self.s3_client.upload_fileobj(
-                Fileobj=file_obj,
-                Bucket=self.bucket_name,
-                Key=object_name,
-                ExtraArgs=extra_args
+                Fileobj=file_obj, Bucket=self.bucket_name, Key=object_name, ExtraArgs=extra_args
             )
             return object_name
-        except ClientError as e:
-            raise RuntimeError(f"Failed to upload object {object_name} to S3: {str(e)}")
+        except ClientError as exc:
+            raise RuntimeError(f"Failed to upload object {object_name} to S3: {exc}") from exc
 
     def generate_presigned_url(self, object_name: str, expiration_seconds: int = 3600) -> str:
         """Generates a temporary presigned GET URL for secure client downloads."""
@@ -74,19 +70,21 @@ class S3Service:
             url = self.s3_client.generate_presigned_url(
                 "get_object",
                 Params={"Bucket": self.bucket_name, "Key": object_name},
-                ExpiresIn=expiration_seconds
+                ExpiresIn=expiration_seconds,
             )
             return url
-        except ClientError as e:
-            raise RuntimeError(f"Failed to generate presigned URL for {object_name}: {str(e)}")
+        except ClientError as exc:
+            raise RuntimeError(
+                f"Failed to generate presigned URL for {object_name}: {exc}"
+            ) from exc
 
     def delete_file(self, object_name: str) -> bool:
         """Deletes an object from MinIO S3 bucket."""
         try:
             self.s3_client.delete_object(Bucket=self.bucket_name, Key=object_name)
             return True
-        except ClientError as e:
-            raise RuntimeError(f"Failed to delete object {object_name}: {str(e)}")
+        except ClientError as exc:
+            raise RuntimeError(f"Failed to delete object {object_name}: {exc}") from exc
 
 
 s3_service = S3Service()

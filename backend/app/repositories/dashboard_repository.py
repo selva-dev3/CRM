@@ -101,7 +101,7 @@ class DashboardRepository:
             .where(Deal.organization_id == organization_id)
             .group_by(Deal.stage)
         )
-        return list(result.all())
+        return [row._tuple() for row in result.all()]
 
     async def top_performers(
         self, db: AsyncSession, organization_id: str, limit: int = 5
@@ -124,7 +124,7 @@ class DashboardRepository:
             .order_by(func.sum(Deal.amount).desc())
             .limit(limit)
         )
-        return list(result.all())
+        return [row._tuple() for row in result.all()]
 
     async def lead_source_conversions(self, db: AsyncSession, organization_id: str) -> list[tuple]:
         converted = case(
@@ -146,7 +146,7 @@ class DashboardRepository:
             )
             .group_by(Lead.source)
         )
-        return list(result.all())
+        return [row._tuple() for row in result.all()]
 
     async def count_calls(
         self, db: AsyncSession, organization_id: str, start: datetime, end: datetime
@@ -215,7 +215,7 @@ class DashboardRepository:
             .order_by(Deal.updated_at.desc())
             .limit(limit)
         )
-        return list(result.all())
+        return [row._tuple() for row in result.all()]
 
     async def count_deals_and_sum(
         self, db: AsyncSession, organization_id: str

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional
+import builtins
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,19 +17,21 @@ class CompanyRepository:
         *,
         page: int,
         limit: int,
-        search: Optional[str] = None,
-    ) -> list[Company]:
+        search: str | None = None,
+    ) -> builtins.list[Company]:
         stmt = select(Company).offset((page - 1) * limit).limit(limit)
         if search:
             stmt = stmt.where(Company.name.ilike(f"%{search}%"))
         result = await db.execute(stmt)
         return list(result.scalars().all())
 
-    async def get_by_id(self, db: AsyncSession, company_id: str) -> Optional[Company]:
+    async def get_by_id(self, db: AsyncSession, company_id: str) -> Company | None:
         result = await db.execute(select(Company).where(Company.id == company_id))
         return result.scalars().first()
 
-    async def list_by_ids(self, db: AsyncSession, ids: list[str]) -> list[Company]:
+    async def list_by_ids(
+        self, db: AsyncSession, ids: builtins.list[str]
+    ) -> builtins.list[Company]:
         result = await db.execute(select(Company).where(Company.id.in_(ids)))
         return list(result.scalars().all())
 

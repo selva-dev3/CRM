@@ -1,7 +1,9 @@
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.schema import Table
 
 from app.models.quote import Quote
 from app.repositories.deal_repository import DealRepository
@@ -27,7 +29,7 @@ async def test_get_quote_scoped_sql_contains_organization_predicate():
     result = await QuoteRepository().get_scoped(db, quote_id="quote-1", organization_id="org-1")
 
     assert result is None
-    sql = str(db.execute.await_args.args[0])
+    sql = str(db.execute.await_args_list[-1].args[0])
     assert "quotes.id" in sql
     assert "quotes.organization_id" in sql
 
@@ -46,7 +48,7 @@ async def test_list_quotes_scoped_sql_contains_organization_predicate():
         search="Q-1",
     )
 
-    sql = str(db.execute.await_args.args[0])
+    sql = str(db.execute.await_args_list[-1].args[0])
     assert "quotes.organization_id" in sql
     assert "quotes.status" in sql
     assert "lower(quotes.quote_number)" in sql.lower()
@@ -59,7 +61,7 @@ async def test_list_quotes_by_deal_sql_is_tenant_scoped():
 
     await QuoteRepository().list_by_deal(db, deal_id="deal-1", organization_id="org-1")
 
-    sql = str(db.execute.await_args.args[0])
+    sql = str(db.execute.await_args_list[-1].args[0])
     assert "quotes.deal_id" in sql
     assert "quotes.organization_id" in sql
 
@@ -72,7 +74,7 @@ async def test_delete_quote_sql_is_tenant_scoped():
     deleted = await QuoteRepository().delete_scoped(db, quote_id="quote-1", organization_id="org-1")
 
     assert deleted is True
-    sql = str(db.execute.await_args.args[0])
+    sql = str(db.execute.await_args_list[-1].args[0])
     assert sql.startswith("DELETE FROM quotes")
     assert "quotes.id" in sql
     assert "quotes.organization_id" in sql
@@ -91,7 +93,7 @@ async def test_bulk_delete_quote_sql_is_tenant_scoped(rowcount):
     )
 
     assert affected == rowcount
-    sql = str(db.execute.await_args.args[0])
+    sql = str(db.execute.await_args_list[-1].args[0])
     assert sql.startswith("DELETE FROM quotes")
     assert "quotes.id IN" in sql
     assert "quotes.organization_id" in sql
@@ -115,7 +117,7 @@ async def test_deal_lookup_sql_is_tenant_scoped():
     deal = await DealRepository().get_by_id_scoped(db, deal_id="deal-1", organization_id="org-1")
 
     assert deal is None
-    sql = str(db.execute.await_args.args[0])
+    sql = str(db.execute.await_args_list[-1].args[0])
     assert "deals.id" in sql
     assert "deals.organization_id" in sql
 
@@ -142,13 +144,13 @@ async def test_legacy_null_deal_quote_can_be_loaded():
 
 
 def test_quote_deal_id_model_contract_is_nullable_set_null_and_indexed():
-    deal_id = Quote.__table__.c.deal_id
+    quote_table = cast(Table, Quote.__table__)
+    deal_id = quote_table.c.deal_id
 
     assert deal_id.nullable is True
     assert {foreign_key.ondelete for foreign_key in deal_id.foreign_keys} == {"SET NULL"}
     assert any(
-        [column.name for column in index.columns] == ["deal_id"]
-        for index in Quote.__table__.indexes
+        [column.name for column in index.columns] == ["deal_id"] for index in quote_table.indexes
     )
 
 

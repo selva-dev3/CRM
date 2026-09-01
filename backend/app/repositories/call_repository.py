@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional
+import builtins
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,9 +17,9 @@ class CallRepository:
         *,
         page: int,
         limit: int,
-        search: Optional[str] = None,
-        call_type: Optional[str] = None,
-    ) -> list[CallLog]:
+        search: str | None = None,
+        call_type: str | None = None,
+    ) -> builtins.list[CallLog]:
         stmt = select(CallLog)
         if search and search.strip():
             stmt = stmt.where(CallLog.notes.ilike(f"%{search.strip()}%"))
@@ -29,11 +29,13 @@ class CallRepository:
         result = await db.execute(stmt)
         return list(result.scalars().all())
 
-    async def get_by_id(self, db: AsyncSession, call_id: str) -> Optional[CallLog]:
+    async def get_by_id(self, db: AsyncSession, call_id: str) -> CallLog | None:
         result = await db.execute(select(CallLog).where(CallLog.id == call_id))
         return result.scalars().first()
 
-    async def list_by_ids(self, db: AsyncSession, ids: list[str]) -> list[CallLog]:
+    async def list_by_ids(
+        self, db: AsyncSession, ids: builtins.list[str]
+    ) -> builtins.list[CallLog]:
         result = await db.execute(select(CallLog).where(CallLog.id.in_(ids)))
         return list(result.scalars().all())
 

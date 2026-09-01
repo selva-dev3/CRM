@@ -1,3 +1,4 @@
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -39,7 +40,7 @@ def test_note_to_dict_applies_defaults():
 
 @pytest.mark.asyncio
 async def test_get_note_raises_not_found_when_missing():
-    repo = NoteRepository()
+    repo: Any = NoteRepository()
     repo.get_by_id = AsyncMock(return_value=None)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -59,7 +60,7 @@ def _db_with_no_users() -> AsyncMock:
 @pytest.mark.asyncio
 async def test_create_note_resolves_org_and_serializes(monkeypatch):
     note = _make_note()
-    repo = NoteRepository()
+    repo: Any = NoteRepository()
     repo.create = AsyncMock(return_value=note)
     service = _service_with(repo)
     db = _db_with_no_users()
@@ -70,9 +71,7 @@ async def test_create_note_resolves_org_and_serializes(monkeypatch):
         organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
     )
 
-    result = await service.create_note(
-        db, entity_type="lead", entity_id="lead-1", content="Hello"
-    )
+    result = await service.create_note(db, entity_type="lead", entity_id="lead-1", content="Hello")
 
     assert result["id"] == "note-1"
     assert result["entity_type"] == "lead"
@@ -82,7 +81,7 @@ async def test_create_note_resolves_org_and_serializes(monkeypatch):
 @pytest.mark.asyncio
 async def test_add_for_entity_uses_current_user_as_created_by(monkeypatch):
     note = _make_note(entity_type="contact", entity_id="cnt-1", created_by="usr-7")
-    repo = NoteRepository()
+    repo: Any = NoteRepository()
     repo.create = AsyncMock(return_value=note)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)

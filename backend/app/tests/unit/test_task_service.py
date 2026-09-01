@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -35,14 +36,16 @@ def _service_with(repo: TaskRepository) -> TaskService:
 def test_parse_datetime_handles_iso_date_and_invalid_input():
     assert parse_datetime("2026-08-01") == datetime(2026, 8, 1)
     assert parse_datetime("2026-08-01T10:30:00") == datetime(2026, 8, 1, 10, 30)
-    assert parse_datetime("2026-08-01T10:30:00Z").tzinfo is not None
+    parsed_utc = parse_datetime("2026-08-01T10:30:00Z")
+    assert parsed_utc is not None
+    assert parsed_utc.tzinfo is not None
     assert parse_datetime("") is None
     assert parse_datetime("not-a-date") is None
 
 
 @pytest.mark.asyncio
 async def test_get_task_raises_not_found_when_missing():
-    repo = TaskRepository()
+    repo: Any = TaskRepository()
     repo.get_by_id = AsyncMock(return_value=None)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -54,7 +57,7 @@ async def test_get_task_raises_not_found_when_missing():
 @pytest.mark.asyncio
 async def test_create_task_resolves_org_and_serializes(monkeypatch):
     task = _make_task()
-    repo = TaskRepository()
+    repo: Any = TaskRepository()
     repo.create = AsyncMock(return_value=task)
     repo.get_user_by_id_name_email = AsyncMock(return_value=None)
     repo.get_first_user = AsyncMock(return_value=User(id="usr-2"))
@@ -80,7 +83,7 @@ async def test_create_task_resolves_org_and_serializes(monkeypatch):
 @pytest.mark.asyncio
 async def test_create_task_fires_task_created_event(monkeypatch):
     task = _make_task()
-    repo = TaskRepository()
+    repo: Any = TaskRepository()
     repo.create = AsyncMock(return_value=task)
     repo.get_user_by_id_name_email = AsyncMock(return_value=None)
     repo.get_first_user = AsyncMock(return_value=User(id="usr-2"))
@@ -98,7 +101,7 @@ async def test_create_task_fires_task_created_event(monkeypatch):
     await service.create_task(db, TaskCreate(title="Follow up"))
 
     notify.assert_awaited_once()
-    kwargs = notify.await_args.kwargs
+    kwargs = notify.await_args_list[-1].kwargs
     assert kwargs["event_name"] == "task.created"
     assert kwargs["org_id"] == "org-1"
     assert kwargs["data"]["title"] == "Follow up"
@@ -107,7 +110,7 @@ async def test_create_task_fires_task_created_event(monkeypatch):
 @pytest.mark.asyncio
 async def test_complete_task_fires_task_completed_event(monkeypatch):
     task = _make_task()
-    repo = TaskRepository()
+    repo: Any = TaskRepository()
     repo.get_by_id = AsyncMock(return_value=task)
     service = _service_with(repo)
     notify = AsyncMock()
@@ -117,7 +120,7 @@ async def test_complete_task_fires_task_completed_event(monkeypatch):
     await service.complete_task(db, "task-1")
 
     notify.assert_awaited_once()
-    kwargs = notify.await_args.kwargs
+    kwargs = notify.await_args_list[-1].kwargs
     assert kwargs["event_name"] == "task.completed"
     assert kwargs["org_id"] == "org-1"
     assert kwargs["data"]["status"] == "Completed"
@@ -126,7 +129,7 @@ async def test_complete_task_fires_task_completed_event(monkeypatch):
 @pytest.mark.asyncio
 async def test_update_task_applies_only_provided_fields():
     task = _make_task()
-    repo = TaskRepository()
+    repo: Any = TaskRepository()
     repo.get_by_id = AsyncMock(return_value=task)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -143,7 +146,7 @@ async def test_update_task_applies_only_provided_fields():
 async def test_bulk_complete_updates_all_matching_tasks():
     t1 = _make_task(id="t1")
     t2 = _make_task(id="t2")
-    repo = TaskRepository()
+    repo: Any = TaskRepository()
     repo.list_by_ids = AsyncMock(return_value=[t1, t2])
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -158,7 +161,7 @@ async def test_bulk_complete_updates_all_matching_tasks():
 @pytest.mark.asyncio
 async def test_assign_task_resolves_user_id(monkeypatch):
     task = _make_task()
-    repo = TaskRepository()
+    repo: Any = TaskRepository()
     repo.get_by_id = AsyncMock(return_value=task)
     repo.get_user_by_id_name_email = AsyncMock(return_value=User(id="usr-9"))
     service = _service_with(repo)
@@ -174,7 +177,7 @@ async def test_assign_task_resolves_user_id(monkeypatch):
 @pytest.mark.asyncio
 async def test_assign_task_fires_task_assigned_event(monkeypatch):
     task = _make_task()
-    repo = TaskRepository()
+    repo: Any = TaskRepository()
     repo.get_by_id = AsyncMock(return_value=task)
     repo.get_user_by_id_name_email = AsyncMock(return_value=User(id="usr-9"))
     service = _service_with(repo)
@@ -185,7 +188,7 @@ async def test_assign_task_fires_task_assigned_event(monkeypatch):
     await service.assign_task(db, "task-1", "usr-9")
 
     notify.assert_awaited_once()
-    kwargs = notify.await_args.kwargs
+    kwargs = notify.await_args_list[-1].kwargs
     assert kwargs["event_name"] == "task.assigned"
     assert kwargs["org_id"] == "org-1"
     assert kwargs["data"]["assigned_to"] == "usr-9"
@@ -194,7 +197,7 @@ async def test_assign_task_fires_task_assigned_event(monkeypatch):
 @pytest.mark.asyncio
 async def test_update_task_fires_priority_changed_event(monkeypatch):
     task = _make_task()
-    repo = TaskRepository()
+    repo: Any = TaskRepository()
     repo.get_by_id = AsyncMock(return_value=task)
     service = _service_with(repo)
     notify = AsyncMock()
@@ -205,7 +208,7 @@ async def test_update_task_fires_priority_changed_event(monkeypatch):
 
     assert task.priority == "High"
     notify.assert_awaited_once()
-    kwargs = notify.await_args.kwargs
+    kwargs = notify.await_args_list[-1].kwargs
     assert kwargs["event_name"] == "task.priority_changed"
     assert kwargs["org_id"] == "org-1"
     assert kwargs["data"]["old_priority"] == "Medium"
@@ -214,7 +217,7 @@ async def test_update_task_fires_priority_changed_event(monkeypatch):
 @pytest.mark.asyncio
 async def test_update_task_no_priority_event_when_unchanged(monkeypatch):
     task = _make_task()
-    repo = TaskRepository()
+    repo: Any = TaskRepository()
     repo.get_by_id = AsyncMock(return_value=task)
     service = _service_with(repo)
     notify = AsyncMock()

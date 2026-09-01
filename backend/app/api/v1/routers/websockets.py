@@ -1,20 +1,21 @@
-from typing import List
-
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, status
 from jose import JWTError, jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.logging import get_logger
 from app.core.security import ALGORITHM
 from app.db.session import get_db
 from app.models import User
 
 router = APIRouter()
+logger = get_logger(__name__)
+
 
 class ConnectionManager:
     def __init__(self):
-        self.active_connections: List[WebSocket] = []
+        self.active_connections: list[WebSocket] = []
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
@@ -34,6 +35,7 @@ class ConnectionManager:
         for conn in disconnected:
             self.disconnect(conn)
 
+
 manager = ConnectionManager()
 
 
@@ -51,7 +53,9 @@ async def _authenticate_websocket(websocket: WebSocket, db: AsyncSession) -> boo
     try:
         payload = jwt.decode(raw_token, settings.SECRET_KEY, algorithms=[ALGORITHM])
     except JWTError:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid or expired token")
+        await websocket.close(
+            code=status.WS_1008_POLICY_VIOLATION, reason="Invalid or expired token"
+        )
         return False
     user_id = payload.get("sub")
     if not user_id:
@@ -60,9 +64,12 @@ async def _authenticate_websocket(websocket: WebSocket, db: AsyncSession) -> boo
     res = await db.execute(select(User).where(User.id == user_id))
     user = res.scalars().first()
     if not user or not user.is_active:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="User account is missing or inactive")
+        await websocket.close(
+            code=status.WS_1008_POLICY_VIOLATION, reason="User account is missing or inactive"
+        )
         return False
     return True
+
 
 @router.websocket("/notifications")
 async def websocket_notifications(websocket: WebSocket, db: AsyncSession = Depends(get_db)):
@@ -78,12 +85,13 @@ async def websocket_notifications(websocket: WebSocket, db: AsyncSession = Depen
             await manager.broadcast(f"Real-time update: {data}")
     except WebSocketDisconnect:
         manager.disconnect(websocket)
-    except Exception as e:
+    except Exception as exc:
         manager.disconnect(websocket)
         try:
-            await websocket.close(code=status.WS_1011_INTERNAL_ERROR, reason=str(e))
+            await websocket.close(code=status.WS_1011_INTERNAL_ERROR, reason=str(exc))
         except Exception:
-            pass
+            logger.warning("Failed to close websocket after notification error", exc_info=True)
+
 
 @router.websocket("/live-events")
 async def websocket_live_events(websocket: WebSocket, db: AsyncSession = Depends(get_db)):

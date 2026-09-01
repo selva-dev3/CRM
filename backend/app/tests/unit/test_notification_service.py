@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
@@ -26,14 +27,12 @@ def _make_notification(**overrides) -> Notification:
 
 
 def _service_with(repo, user_repo=None) -> NotificationService:
-    return NotificationService(
-        repository=repo, user_repository=user_repo or UserRepository()
-    )
+    return NotificationService(repository=repo, user_repository=user_repo or UserRepository())
 
 
 @pytest.mark.asyncio
 async def test_list_notifications_filters_unread():
-    repo = NotificationRepository()
+    repo: Any = NotificationRepository()
     repo.list_notifications = AsyncMock(return_value=[_make_notification()])
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -43,7 +42,7 @@ async def test_list_notifications_filters_unread():
     )
 
     repo.list_notifications.assert_awaited_once()
-    kwargs = repo.list_notifications.await_args.kwargs
+    kwargs = repo.list_notifications.await_args_list[-1].kwargs
     assert kwargs["user_id"] == "user-1"
     assert kwargs["unread_only"] is True
     assert result[0]["title"] == "Deal Updated"
@@ -52,7 +51,7 @@ async def test_list_notifications_filters_unread():
 
 @pytest.mark.asyncio
 async def test_get_unread_count():
-    repo = NotificationRepository()
+    repo: Any = NotificationRepository()
     repo.count_unread = AsyncMock(return_value=3)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -60,14 +59,14 @@ async def test_get_unread_count():
     result = await service.get_unread_count(db, user_id="user-1")
 
     repo.count_unread.assert_awaited_once()
-    assert repo.count_unread.await_args.kwargs["user_id"] == "user-1"
+    assert repo.count_unread.await_args_list[-1].kwargs["user_id"] == "user-1"
     assert result["unread_count"] == 3
 
 
 @pytest.mark.asyncio
 async def test_mark_all_notifications_read():
     n1, n2 = _make_notification(), _make_notification(id="n2")
-    repo = NotificationRepository()
+    repo: Any = NotificationRepository()
     repo.list_unread = AsyncMock(return_value=[n1, n2])
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -82,9 +81,9 @@ async def test_mark_all_notifications_read():
 
 @pytest.mark.asyncio
 async def test_send_system_alert_creates_notification():
-    repo = NotificationRepository()
+    repo: Any = NotificationRepository()
     repo.create_notification = AsyncMock(return_value=_make_notification())
-    user_repo = UserRepository()
+    user_repo: Any = UserRepository()
     user_repo.list_active_ids_by_org = AsyncMock(return_value=["user-1", "user-2"])
     service = _service_with(repo, user_repo)
     db = AsyncMock(spec=AsyncSession)
@@ -103,32 +102,28 @@ async def test_send_system_alert_creates_notification():
 
 @pytest.mark.asyncio
 async def test_mark_notification_read_not_found():
-    repo = NotificationRepository()
+    repo: Any = NotificationRepository()
     repo.get_notification = AsyncMock(return_value=None)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
     with pytest.raises(NotFoundError):
-        await service.mark_notification_read(
-            db, user_id="user-1", notification_id="missing"
-        )
+        await service.mark_notification_read(db, user_id="user-1", notification_id="missing")
 
 
 @pytest.mark.asyncio
 async def test_delete_notification_commit():
     notification = _make_notification()
-    repo = NotificationRepository()
+    repo: Any = NotificationRepository()
     repo.get_notification = AsyncMock(return_value=notification)
     repo.delete_notification = AsyncMock()
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.delete_notification(
-        db, user_id="user-1", notification_id="notif-1"
-    )
+    result = await service.delete_notification(db, user_id="user-1", notification_id="notif-1")
 
     repo.get_notification.assert_awaited_once()
-    assert repo.get_notification.await_args.kwargs["user_id"] == "user-1"
+    assert repo.get_notification.await_args_list[-1].kwargs["user_id"] == "user-1"
     repo.delete_notification.assert_awaited_once_with(db, notification)
     db.commit.assert_awaited_once()
     assert result["message"] == "Notification notif-1 deleted"
@@ -136,7 +131,7 @@ async def test_delete_notification_commit():
 
 @pytest.mark.asyncio
 async def test_bulk_delete():
-    repo = NotificationRepository()
+    repo: Any = NotificationRepository()
     repo.list_by_ids = AsyncMock(return_value=[_make_notification()])
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -144,7 +139,7 @@ async def test_bulk_delete():
     result = await service.bulk_delete(db, user_id="user-1", ids=["notif-1"])
 
     repo.list_by_ids.assert_awaited_once()
-    assert repo.list_by_ids.await_args.kwargs["user_id"] == "user-1"
+    assert repo.list_by_ids.await_args_list[-1].kwargs["user_id"] == "user-1"
     assert result["affected_count"] == 1
     db.commit.assert_awaited_once()
 
@@ -156,13 +151,13 @@ async def test_bulk_delete():
 
 @pytest.mark.asyncio
 async def test_notify_assignee_or_org_uses_assignee():
-    repo = NotificationRepository()
+    repo: Any = NotificationRepository()
     repo.exists_unread = AsyncMock(return_value=False)
     repo.create_notification = AsyncMock()
-    user_repo = UserRepository()
+    user_repo: Any = UserRepository()
     user_repo.list_active_ids_by_org = AsyncMock()
     service = _service_with(repo, user_repo)
-    service.repository.commit = AsyncMock()
+    cast(Any, service.repository).commit = AsyncMock()
     db = AsyncMock(spec=AsyncSession)
 
     await service.notify(
@@ -177,7 +172,7 @@ async def test_notify_assignee_or_org_uses_assignee():
     )
 
     user_repo.list_active_ids_by_org.assert_not_awaited()
-    created = repo.create_notification.await_args.kwargs["data"]
+    created = repo.create_notification.await_args_list[-1].kwargs["data"]
     assert created["user_id"] == "user-2"
     assert created["organization_id"] == "org-1"
     assert created["event_name"] == "lead.created"
@@ -188,13 +183,13 @@ async def test_notify_assignee_or_org_uses_assignee():
 
 @pytest.mark.asyncio
 async def test_notify_assignee_or_org_falls_back_to_org_wide():
-    repo = NotificationRepository()
+    repo: Any = NotificationRepository()
     repo.exists_unread = AsyncMock(return_value=False)
     repo.create_notification = AsyncMock()
-    user_repo = UserRepository()
+    user_repo: Any = UserRepository()
     user_repo.list_active_ids_by_org = AsyncMock(return_value=["user-1", "user-2", "user-3"])
     service = _service_with(repo, user_repo)
-    service.repository.commit = AsyncMock()
+    cast(Any, service.repository).commit = AsyncMock()
     db = AsyncMock(spec=AsyncSession)
 
     await service.notify(
@@ -209,7 +204,7 @@ async def test_notify_assignee_or_org_falls_back_to_org_wide():
     )
 
     user_repo.list_active_ids_by_org.assert_awaited_once()
-    assert user_repo.list_active_ids_by_org.await_args.args[1] == "org-1"
+    assert user_repo.list_active_ids_by_org.await_args_list[-1].args[1] == "org-1"
     created_ids = [c.kwargs["data"]["user_id"] for c in repo.create_notification.await_args_list]
     assert created_ids == ["user-2", "user-3"]
     repo.commit.assert_awaited_once()
@@ -217,11 +212,11 @@ async def test_notify_assignee_or_org_falls_back_to_org_wide():
 
 @pytest.mark.asyncio
 async def test_notify_skips_dedup_when_unread_exists():
-    repo = NotificationRepository()
+    repo: Any = NotificationRepository()
     repo.exists_unread = AsyncMock(return_value=True)
     repo.create_notification = AsyncMock()
     service = _service_with(repo)
-    service.repository.commit = AsyncMock()
+    cast(Any, service.repository).commit = AsyncMock()
     db = AsyncMock(spec=AsyncSession)
 
     await service.notify(
@@ -240,13 +235,13 @@ async def test_notify_skips_dedup_when_unread_exists():
 
 @pytest.mark.asyncio
 async def test_notify_assignee_only_event():
-    repo = NotificationRepository()
+    repo: Any = NotificationRepository()
     repo.exists_unread = AsyncMock(return_value=False)
     repo.create_notification = AsyncMock()
-    user_repo = UserRepository()
+    user_repo: Any = UserRepository()
     user_repo.list_active_ids_by_org = AsyncMock()
     service = _service_with(repo, user_repo)
-    service.repository.commit = AsyncMock()
+    cast(Any, service.repository).commit = AsyncMock()
     db = AsyncMock(spec=AsyncSession)
 
     await service.notify(
@@ -260,19 +255,19 @@ async def test_notify_assignee_only_event():
     )
 
     user_repo.list_active_ids_by_org.assert_not_awaited()
-    created = repo.create_notification.await_args.kwargs["data"]
+    created = repo.create_notification.await_args_list[-1].kwargs["data"]
     assert created["user_id"] == "user-7"
 
 
 @pytest.mark.asyncio
 async def test_notify_org_wide_event():
-    repo = NotificationRepository()
+    repo: Any = NotificationRepository()
     repo.exists_unread = AsyncMock(return_value=False)
     repo.create_notification = AsyncMock()
-    user_repo = UserRepository()
+    user_repo: Any = UserRepository()
     user_repo.list_active_ids_by_org = AsyncMock(return_value=["user-1", "user-2"])
     service = _service_with(repo, user_repo)
-    service.repository.commit = AsyncMock()
+    cast(Any, service.repository).commit = AsyncMock()
     db = AsyncMock(spec=AsyncSession)
 
     await service.notify(
@@ -292,13 +287,13 @@ async def test_notify_org_wide_event():
 async def test_notify_in_app_does_not_dispatch_slack(monkeypatch):
     from app.services.integration_service import integration_service
 
-    repo = NotificationRepository()
+    repo: Any = NotificationRepository()
     repo.exists_unread = AsyncMock(return_value=False)
     repo.create_notification = AsyncMock()
-    user_repo = UserRepository()
+    user_repo: Any = UserRepository()
     user_repo.list_active_ids_by_org = AsyncMock(return_value=["user-2"])
     service = _service_with(repo, user_repo)
-    service.repository.commit = AsyncMock()
+    cast(Any, service.repository).commit = AsyncMock()
     db = AsyncMock(spec=AsyncSession)
     slack_notify = AsyncMock()
     monkeypatch.setattr(integration_service, "notify_slack_event", slack_notify)
@@ -313,7 +308,7 @@ async def test_notify_in_app_does_not_dispatch_slack(monkeypatch):
     )
 
     slack_notify.assert_not_awaited()
-    created = repo.create_notification.await_args.kwargs["data"]
+    created = repo.create_notification.await_args_list[-1].kwargs["data"]
     assert created["event_name"] == "integration.connected"
 
 
@@ -321,7 +316,7 @@ async def test_notify_in_app_does_not_dispatch_slack(monkeypatch):
 async def test_notify_in_app_failure_still_dispatches_slack(monkeypatch):
     from app.services.integration_service import integration_service
 
-    repo = NotificationRepository()
+    repo: Any = NotificationRepository()
     repo.exists_unread = AsyncMock(side_effect=RuntimeError("db down"))
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -339,7 +334,7 @@ async def test_notify_in_app_failure_still_dispatches_slack(monkeypatch):
     )
 
     slack_notify.assert_awaited_once()
-    kwargs = slack_notify.await_args.kwargs
+    kwargs = slack_notify.await_args_list[-1].kwargs
     assert kwargs["event_name"] == "lead.created"
     assert kwargs["org_id"] == "org-1"
 

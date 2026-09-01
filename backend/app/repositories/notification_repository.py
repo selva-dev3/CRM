@@ -48,9 +48,7 @@ class NotificationRepository:
     async def list_by_ids(
         self, db: AsyncSession, *, user_id: str, ids: list[str]
     ) -> Sequence[Notification]:
-        stmt = select(Notification).where(
-            Notification.user_id == user_id, Notification.id.in_(ids)
-        )
+        stmt = select(Notification).where(Notification.user_id == user_id, Notification.id.in_(ids))
         res = await db.execute(stmt)
         return res.scalars().all()
 

@@ -1,5 +1,3 @@
-from typing import List, Optional
-
 from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,15 +17,15 @@ router = APIRouter()
 
 @router.get(
     "",
-    response_model=List[DocumentResponse],
+    response_model=list[DocumentResponse],
     summary="List documents with pagination",
     dependencies=[Depends(require_permission("documents:read"))],
 )
 async def list_documents(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
-    folder_id: Optional[str] = None,
-    search: Optional[str] = Query(None),
+    folder_id: str | None = None,
+    search: str | None = Query(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):

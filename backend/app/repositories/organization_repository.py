@@ -1,5 +1,3 @@
-from typing import Optional
-
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,15 +15,15 @@ from app.models import (
 class OrganizationRepository:
     """DB query layer for the Organization entity. No business logic here."""
 
-    async def get_by_id(self, db: AsyncSession, org_id: str) -> Optional[Organization]:
+    async def get_by_id(self, db: AsyncSession, org_id: str) -> Organization | None:
         result = await db.execute(select(Organization).where(Organization.id == org_id))
         return result.scalars().first()
 
-    async def get_first(self, db: AsyncSession) -> Optional[Organization]:
+    async def get_first(self, db: AsyncSession) -> Organization | None:
         result = await db.execute(select(Organization).limit(1))
         return result.scalars().first()
 
-    async def get_by_slug(self, db: AsyncSession, slug: str) -> Optional[Organization]:
+    async def get_by_slug(self, db: AsyncSession, slug: str) -> Organization | None:
         result = await db.execute(select(Organization).where(Organization.slug == slug))
         return result.scalars().first()
 
@@ -84,9 +82,7 @@ class OrganizationRepository:
         return org
 
     async def count_members(self, db: AsyncSession, org_id: str) -> int:
-        result = await db.execute(
-            select(func.count(User.id)).where(User.organization_id == org_id)
-        )
+        result = await db.execute(select(func.count(User.id)).where(User.organization_id == org_id))
         count = result.scalar() or 0
         return max(count, 1)
 
@@ -94,16 +90,14 @@ class OrganizationRepository:
         result = await db.execute(select(User).where(User.organization_id == org_id))
         return list(result.scalars().all())
 
-    async def get_user_by_id(self, db: AsyncSession, user_id: str) -> Optional[User]:
+    async def get_user_by_id(self, db: AsyncSession, user_id: str) -> User | None:
         result = await db.execute(select(User).where(User.id == user_id))
         return result.scalars().first()
 
     async def delete_user(self, db: AsyncSession, user: User) -> None:
         await db.delete(user)
 
-    async def get_setting(
-        self, db: AsyncSession, org_id: str
-    ) -> Optional[OrganizationSetting]:
+    async def get_setting(self, db: AsyncSession, org_id: str) -> OrganizationSetting | None:
         result = await db.execute(
             select(OrganizationSetting).where(OrganizationSetting.organization_id == org_id)
         )
@@ -116,7 +110,7 @@ class OrganizationRepository:
 
     async def get_subscription(
         self, db: AsyncSession, org_id: str
-    ) -> Optional[OrganizationSubscription]:
+    ) -> OrganizationSubscription | None:
         result = await db.execute(
             select(OrganizationSubscription).where(
                 OrganizationSubscription.organization_id == org_id
@@ -133,22 +127,18 @@ class OrganizationRepository:
         db.add(sub)
         return sub
 
-    async def get_plan_by_id(
-        self, db: AsyncSession, plan_id: str
-    ) -> Optional[SubscriptionPlan]:
+    async def get_plan_by_id(self, db: AsyncSession, plan_id: str) -> SubscriptionPlan | None:
         result = await db.execute(select(SubscriptionPlan).where(SubscriptionPlan.id == plan_id))
         return result.scalars().first()
 
-    async def get_plan_by_slug(self, db: AsyncSession, slug: str) -> Optional[SubscriptionPlan]:
+    async def get_plan_by_slug(self, db: AsyncSession, slug: str) -> SubscriptionPlan | None:
         result = await db.execute(
             select(SubscriptionPlan).where(func.lower(SubscriptionPlan.slug) == slug.lower())
         )
         return result.scalars().first()
 
     async def list_active_plans(self, db: AsyncSession) -> list[SubscriptionPlan]:
-        result = await db.execute(
-            select(SubscriptionPlan).where(SubscriptionPlan.is_active == True)
-        )
+        result = await db.execute(select(SubscriptionPlan).where(SubscriptionPlan.is_active))
         return list(result.scalars().all())
 
     async def create_audit_log(
@@ -171,7 +161,7 @@ class OrganizationRepository:
 
     async def get_subscription_by_checkout_session_id(
         self, db: AsyncSession, checkout_session_id: str
-    ) -> Optional[OrganizationSubscription]:
+    ) -> OrganizationSubscription | None:
         result = await db.execute(
             select(OrganizationSubscription).where(
                 OrganizationSubscription.checkout_session_id == checkout_session_id
@@ -181,7 +171,7 @@ class OrganizationRepository:
 
     async def get_processed_webhook_event(
         self, db: AsyncSession, event_id: str
-    ) -> Optional[ProcessedWebhookEvent]:
+    ) -> ProcessedWebhookEvent | None:
         result = await db.execute(
             select(ProcessedWebhookEvent).where(ProcessedWebhookEvent.event_id == event_id)
         )

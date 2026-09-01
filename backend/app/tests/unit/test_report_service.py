@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -8,6 +9,8 @@ from app.core.errors import APIException, ForbiddenError, NotFoundError
 from app.models.user import User
 from app.repositories.report_repository import ReportRepository
 from app.services.report_service import ReportService, compute_next_run, today_str
+
+TEST_HASH = "hash"
 
 
 class Row:
@@ -25,13 +28,13 @@ def _make_user(org_id="org-1", user_id="user-1"):
         name="Test User",
         organization_id=org_id,
         role="Admin",
-        hashed_password="hash",
+        hashed_password=TEST_HASH,
     )
 
 
 @pytest.mark.asyncio
 async def test_sales_performance_report_builds_rows_with_org():
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     repo.total_won_revenue = AsyncMock(return_value=150000.0)
     repo.rep_performance = AsyncMock(
         return_value=[
@@ -64,9 +67,11 @@ async def test_sales_performance_report_builds_rows_with_org():
 
 @pytest.mark.asyncio
 async def test_pipeline_velocity_empty_returns_zero_avg():
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     repo.stage_age_breakdown = AsyncMock(return_value=[])
-    repo.closed_cycle_stats = AsyncMock(return_value=Row(closed_cnt=0, fastest_sec=0.0, longest_sec=0.0, avg_sec=0.0))
+    repo.closed_cycle_stats = AsyncMock(
+        return_value=Row(closed_cnt=0, fastest_sec=0.0, longest_sec=0.0, avg_sec=0.0)
+    )
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
     user = _make_user(org_id="org-1")
@@ -79,12 +84,12 @@ async def test_pipeline_velocity_empty_returns_zero_avg():
 
 @pytest.mark.asyncio
 async def test_pipeline_velocity_computes_real_stage_age():
-    repo = ReportRepository()
-    repo.stage_age_breakdown = AsyncMock(
-        return_value=[("Negotiation", 2, 30000.0, 5 * 86400.0)]
-    )
+    repo: Any = ReportRepository()
+    repo.stage_age_breakdown = AsyncMock(return_value=[("Negotiation", 2, 30000.0, 5 * 86400.0)])
     repo.closed_cycle_stats = AsyncMock(
-        return_value=Row(closed_cnt=3, fastest_sec=2 * 86400.0, longest_sec=20 * 86400.0, avg_sec=10 * 86400.0)
+        return_value=Row(
+            closed_cnt=3, fastest_sec=2 * 86400.0, longest_sec=20 * 86400.0, avg_sec=10 * 86400.0
+        )
     )
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -102,11 +107,9 @@ async def test_pipeline_velocity_computes_real_stage_age():
 
 @pytest.mark.asyncio
 async def test_win_loss_report_ratio():
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     repo.count_deals_in_stage = AsyncMock(side_effect=[7, 3])
-    repo.win_loss_by_industry = AsyncMock(
-        return_value=[("Software", 5, 1, 50000.0, 5000.0)]
-    )
+    repo.win_loss_by_industry = AsyncMock(return_value=[("Software", 5, 1, 50000.0, 5000.0)])
     repo.top_loss_reason = AsyncMock(return_value="Budget Constraint")
     repo.loss_reason_by_industry = AsyncMock(
         return_value=[
@@ -131,15 +134,13 @@ async def test_win_loss_report_ratio():
 
 @pytest.mark.asyncio
 async def test_win_loss_industry_reasons_are_not_copied_across_segments():
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     repo.count_deals_in_stage = AsyncMock(side_effect=[1, 1])
     repo.top_loss_reason = AsyncMock(return_value="Budget Constraint")
     repo.win_loss_by_industry = AsyncMock(
         return_value=[("Manufacturing", 1, 0, 100.0, 0.0), ("Retail", 0, 1, 0.0, 50.0)]
     )
-    repo.loss_reason_by_industry = AsyncMock(
-        return_value=[("Retail", "Pricing", 1)]
-    )
+    repo.loss_reason_by_industry = AsyncMock(return_value=[("Retail", "Pricing", 1)])
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
     user = _make_user(org_id="org-1")
@@ -155,7 +156,7 @@ async def test_win_loss_industry_reasons_are_not_copied_across_segments():
 
 @pytest.mark.asyncio
 async def test_win_loss_report_without_recorded_reasons():
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     repo.count_deals_in_stage = AsyncMock(side_effect=[7, 3])
     repo.win_loss_by_industry = AsyncMock(return_value=[])
     repo.top_loss_reason = AsyncMock(return_value=None)
@@ -171,10 +172,8 @@ async def test_win_loss_report_without_recorded_reasons():
 
 @pytest.mark.asyncio
 async def test_lead_attribution_has_no_fabricated_revenue():
-    repo = ReportRepository()
-    repo.leads_by_source = AsyncMock(
-        return_value=[("Website", 10, 4, 72.0)]
-    )
+    repo: Any = ReportRepository()
+    repo.leads_by_source = AsyncMock(return_value=[("Website", 10, 4, 72.0)])
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
     user = _make_user(org_id="org-1")
@@ -191,7 +190,7 @@ async def test_lead_attribution_has_no_fabricated_revenue():
 
 @pytest.mark.asyncio
 async def test_rep_leaderboard_uses_real_quota_and_no_activity_padding():
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     repo.rep_leaderboard = AsyncMock(
         return_value=[("user-1", "Alice", "a@x.com", "AE", 6, 120000.0)]
     )
@@ -213,7 +212,7 @@ async def test_rep_leaderboard_uses_real_quota_and_no_activity_padding():
 
 @pytest.mark.asyncio
 async def test_revenue_forecast_periods_from_expected_close_dates():
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     repo.total_won_revenue = AsyncMock(return_value=80000.0)
     repo.revenue_forecast = AsyncMock(return_value=Row(total_pipeline=50000.0, weighted=25000.0))
     repo.forecast_by_period = AsyncMock(
@@ -236,7 +235,7 @@ async def test_revenue_forecast_periods_from_expected_close_dates():
 
 @pytest.mark.asyncio
 async def test_revenue_forecast_no_pipeline():
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     repo.total_won_revenue = AsyncMock(return_value=0.0)
     repo.revenue_forecast = AsyncMock(return_value=None)
     repo.forecast_by_period = AsyncMock(return_value=[])
@@ -254,7 +253,7 @@ async def test_revenue_forecast_no_pipeline():
 
 @pytest.mark.asyncio
 async def test_activity_metrics_org_totals_only():
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     repo.count_calls = AsyncMock(return_value=12)
     repo.total_call_duration_seconds = AsyncMock(return_value=3600)
     repo.count_emails = AsyncMock(return_value=40)
@@ -278,13 +277,13 @@ async def test_activity_metrics_org_totals_only():
 
 @pytest.mark.asyncio
 async def test_deal_duration_computes_real_cycle_stats():
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     repo.closed_cycle_stats = AsyncMock(
-        return_value=Row(closed_cnt=4, fastest_sec=2 * 86400.0, longest_sec=30 * 86400.0, avg_sec=12.5 * 86400.0)
+        return_value=Row(
+            closed_cnt=4, fastest_sec=2 * 86400.0, longest_sec=30 * 86400.0, avg_sec=12.5 * 86400.0
+        )
     )
-    repo.stage_age_breakdown = AsyncMock(
-        return_value=[("Proposal", 3, 40000.0, 21 * 86400.0)]
-    )
+    repo.stage_age_breakdown = AsyncMock(return_value=[("Proposal", 3, 40000.0, 21 * 86400.0)])
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
     user = _make_user(org_id="org-1")
@@ -301,7 +300,7 @@ async def test_deal_duration_computes_real_cycle_stats():
 
 @pytest.mark.asyncio
 async def test_deal_duration_empty_when_nothing_closed():
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     repo.closed_cycle_stats = AsyncMock(
         return_value=Row(closed_cnt=0, fastest_sec=0.0, longest_sec=0.0, avg_sec=0.0)
     )
@@ -318,7 +317,7 @@ async def test_deal_duration_empty_when_nothing_closed():
 
 @pytest.mark.asyncio
 async def test_cac_reports_acquisition_volume_and_value_only():
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     repo.count_deals_in_stage = AsyncMock(return_value=8)
     repo.total_won_revenue = AsyncMock(return_value=200000.0)
     service = ReportService(repository=repo)
@@ -339,7 +338,7 @@ async def test_cac_reports_acquisition_volume_and_value_only():
 
 @pytest.mark.asyncio
 async def test_ltv_reports_real_aggregates():
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     repo.won_aggregate = AsyncMock(return_value=(5, 300000.0))
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -357,7 +356,7 @@ async def test_ltv_reports_real_aggregates():
 
 @pytest.mark.asyncio
 async def test_churn_analysis():
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     repo.lost_aggregate = AsyncMock(return_value=(2, 20000.0))
     repo.count_deals = AsyncMock(return_value=10)
     repo.top_loss_reason = AsyncMock(return_value="Pricing")
@@ -376,7 +375,7 @@ async def test_churn_analysis():
 
 @pytest.mark.asyncio
 async def test_quota_attainment_with_and_without_quotas():
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     repo.rep_quota = AsyncMock(
         return_value=[
             ("user-1", "Alice", "AE", 90000.0, 50000.0),
@@ -402,9 +401,11 @@ async def test_quota_attainment_with_and_without_quotas():
 
 @pytest.mark.asyncio
 async def test_list_custom_reports_uses_today_fallback():
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     repo.list_custom_reports = AsyncMock(
-        return_value=[Row(id="r1", name="Q3", filters=None, metrics_included="a,b", created_at=None)]
+        return_value=[
+            Row(id="r1", name="Q3", filters=None, metrics_included="a,b", created_at=None)
+        ]
     )
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -419,7 +420,7 @@ async def test_list_custom_reports_uses_today_fallback():
 
 @pytest.mark.asyncio
 async def test_create_custom_report_validates_and_commits():
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     repo.create_custom_report = AsyncMock(return_value=Row(id="r1"))
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -428,7 +429,7 @@ async def test_create_custom_report_validates_and_commits():
     result = await service.create_custom_report(db, "My Report", "filter_x", current_user=user)
 
     assert repo.create_custom_report.await_args is not None
-    data = repo.create_custom_report.await_args.kwargs["data"]
+    data = repo.create_custom_report.await_args_list[-1].kwargs["data"]
     assert data["organization_id"] == "org-target"
     assert data["name"] == "My Report"
     assert data["filters"] == "filter_x"
@@ -438,7 +439,7 @@ async def test_create_custom_report_validates_and_commits():
 
 @pytest.mark.asyncio
 async def test_create_custom_report_empty_name_raises():
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
     user = _make_user(org_id="org-1")
@@ -450,8 +451,15 @@ async def test_create_custom_report_empty_name_raises():
 
 @pytest.mark.asyncio
 async def test_run_custom_report_found():
-    repo = ReportRepository()
-    repo.get_custom_report = AsyncMock(return_value=Row(id="r1", name="Enterprise Deals", filters="All Enterprise Filters", metrics_included="sales-performance"))
+    repo: Any = ReportRepository()
+    repo.get_custom_report = AsyncMock(
+        return_value=Row(
+            id="r1",
+            name="Enterprise Deals",
+            filters="All Enterprise Filters",
+            metrics_included="sales-performance",
+        )
+    )
     repo.total_won_revenue = AsyncMock(return_value=50000.0)
     repo.count_deals = AsyncMock(return_value=12)
     service = ReportService(repository=repo)
@@ -467,7 +475,7 @@ async def test_run_custom_report_found():
 
 @pytest.mark.asyncio
 async def test_run_custom_report_not_found_raises_404():
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     repo.get_custom_report = AsyncMock(return_value=None)
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -479,7 +487,7 @@ async def test_run_custom_report_not_found_raises_404():
 
 @pytest.mark.asyncio
 async def test_delete_custom_report_not_found_raises_404():
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     repo.get_custom_report = AsyncMock(return_value=None)
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -491,7 +499,7 @@ async def test_delete_custom_report_not_found_raises_404():
 
 @pytest.mark.asyncio
 async def test_delete_custom_report_success():
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     mock_report = Row(id="r1", name="Report 1")
     repo.get_custom_report = AsyncMock(return_value=mock_report)
     repo.delete_custom_report = AsyncMock()
@@ -508,30 +516,36 @@ async def test_delete_custom_report_success():
 
 @pytest.mark.asyncio
 async def test_schedule_report_email_validations():
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
     user = _make_user(org_id="org-1")
 
     # Invalid email
     with pytest.raises(APIException) as exc:
-        await service.schedule_report_email(db, "sales-performance", "not-an-email", "Weekly", current_user=user)
+        await service.schedule_report_email(
+            db, "sales-performance", "not-an-email", "Weekly", current_user=user
+        )
     assert exc.value.status_code == 422
 
     # Invalid frequency
     with pytest.raises(APIException) as exc:
-        await service.schedule_report_email(db, "sales-performance", "valid@email.com", "Yearly", current_user=user)
+        await service.schedule_report_email(
+            db, "sales-performance", "valid@email.com", "Yearly", current_user=user
+        )
     assert exc.value.status_code == 422
 
     # Invalid report type
     with pytest.raises(APIException) as exc:
-        await service.schedule_report_email(db, "invalid-type", "valid@email.com", "Weekly", current_user=user)
+        await service.schedule_report_email(
+            db, "invalid-type", "valid@email.com", "Weekly", current_user=user
+        )
     assert exc.value.status_code == 422
 
 
 @pytest.mark.asyncio
 async def test_schedule_report_email_sets_next_run():
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     repo.create_scheduled_report = AsyncMock(return_value=Row(id="s1"))
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -542,7 +556,7 @@ async def test_schedule_report_email_sets_next_run():
     )
 
     assert repo.create_scheduled_report.await_args is not None
-    data = repo.create_scheduled_report.await_args.kwargs["data"]
+    data = repo.create_scheduled_report.await_args_list[-1].kwargs["data"]
     assert data["organization_id"] == "org-custom"
     assert data["email"] == "lead@company.com"
     assert data["frequency"] == "Daily"
@@ -552,7 +566,7 @@ async def test_schedule_report_email_sets_next_run():
 
 @pytest.mark.asyncio
 async def test_delete_scheduled_report():
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     mock_sched = Row(id="s1")
     repo.get_scheduled_report = AsyncMock(return_value=mock_sched)
     repo.delete_scheduled_report = AsyncMock()
@@ -567,10 +581,9 @@ async def test_delete_scheduled_report():
     assert result["status"] == "success"
 
 
-
 @pytest.mark.asyncio
 async def test_resolve_org_id_strict_isolation():
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
@@ -591,7 +604,7 @@ async def test_resolve_org_id_strict_isolation():
 
 @pytest.mark.asyncio
 async def test_list_custom_reports_pagination():
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     repo.list_custom_reports = AsyncMock(return_value=[])
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -603,7 +616,7 @@ async def test_list_custom_reports_pagination():
 
 @pytest.mark.asyncio
 async def test_list_scheduled_reports_pagination():
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     repo.list_scheduled_reports = AsyncMock(return_value=[])
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -615,11 +628,9 @@ async def test_list_scheduled_reports_pagination():
 
 @pytest.mark.asyncio
 async def test_export_report_pdf_validates_type_and_user(monkeypatch):
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     repo.total_won_revenue = AsyncMock(return_value=25000.0)
-    repo.rep_performance = AsyncMock(
-        return_value=[("user-1", "Alice", "AE", 4, 1, 25000.0)]
-    )
+    repo.rep_performance = AsyncMock(return_value=[("user-1", "Alice", "AE", 4, 1, 25000.0)])
     repo.quotas_by_user = AsyncMock(return_value={})
     repo.create_export = AsyncMock(
         return_value=Row(
@@ -632,13 +643,19 @@ async def test_export_report_pdf_validates_type_and_user(monkeypatch):
     db = AsyncMock(spec=AsyncSession)
     user = _make_user(org_id="org-sales", user_id="usr-alex")
 
-    monkeypatch.setattr("app.services.report_service.s3_service.upload_file", lambda *a, **kw: "exports/org-sales/abc123.pdf")
-    monkeypatch.setattr("app.services.report_service.s3_service.generate_presigned_url", lambda *a, **kw: "https://s3.example.com/exports/test.pdf")
+    monkeypatch.setattr(
+        "app.services.report_service.s3_service.upload_file",
+        lambda *a, **kw: "exports/org-sales/abc123.pdf",
+    )
+    monkeypatch.setattr(
+        "app.services.report_service.s3_service.generate_presigned_url",
+        lambda *a, **kw: "https://s3.example.com/exports/test.pdf",
+    )
 
     result = await service.export_report_pdf(db, "sales-performance", current_user=user)
 
     assert repo.create_export.await_args is not None
-    data = repo.create_export.await_args.kwargs["data"]
+    data = repo.create_export.await_args_list[-1].kwargs["data"]
     assert data["organization_id"] == "org-sales"
     assert data["requested_by"] == "usr-alex"
     assert data["file_format"] == "pdf"
@@ -653,7 +670,7 @@ async def test_export_report_pdf_validates_type_and_user(monkeypatch):
 async def test_export_report_pdf_accepts_enum_report_type(monkeypatch):
     from app.schemas.report_schemas import ReportTypeEnum
 
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     repo.total_won_revenue = AsyncMock(return_value=0.0)
     repo.rep_performance = AsyncMock(return_value=[])
     repo.quotas_by_user = AsyncMock(return_value={})
@@ -662,12 +679,19 @@ async def test_export_report_pdf_accepts_enum_report_type(monkeypatch):
     db = AsyncMock(spec=AsyncSession)
     user = _make_user(org_id="org-enum")
 
-    monkeypatch.setattr("app.services.report_service.s3_service.upload_file", lambda *a, **kw: "exports/k.pdf")
-    monkeypatch.setattr("app.services.report_service.s3_service.generate_presigned_url", lambda *a, **kw: "https://s3.example/x")
+    monkeypatch.setattr(
+        "app.services.report_service.s3_service.upload_file", lambda *a, **kw: "exports/k.pdf"
+    )
+    monkeypatch.setattr(
+        "app.services.report_service.s3_service.generate_presigned_url",
+        lambda *a, **kw: "https://s3.example/x",
+    )
 
-    result = await service.export_report_pdf(db, ReportTypeEnum.SALES_PERFORMANCE, current_user=user)
+    result = await service.export_report_pdf(
+        db, ReportTypeEnum.SALES_PERFORMANCE, current_user=user
+    )
     assert repo.create_export.await_args is not None
-    data = repo.create_export.await_args.kwargs["data"]
+    data = repo.create_export.await_args_list[-1].kwargs["data"]
     assert data["report_type"] == "sales-performance"
     assert "pdf_url" in result
 
@@ -705,18 +729,25 @@ def test_compute_next_run_monthly_calendar_arithmetic():
 
 @pytest.mark.asyncio
 async def test_export_report_pdf_raises_on_commit_failure(monkeypatch):
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     repo.total_won_revenue = AsyncMock(return_value=0.0)
     repo.rep_performance = AsyncMock(return_value=[])
     repo.quotas_by_user = AsyncMock(return_value={})
-    repo.create_export = AsyncMock(return_value=Row(id="exp-pdf", download_url=None, s3_key="exports/test.pdf"))
+    repo.create_export = AsyncMock(
+        return_value=Row(id="exp-pdf", download_url=None, s3_key="exports/test.pdf")
+    )
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
     db.commit.side_effect = RuntimeError("DB connection lost")
     user = _make_user(org_id="org-fail", user_id="usr-1")
 
-    monkeypatch.setattr("app.services.report_service.s3_service.upload_file", lambda *a, **kw: "exports/test.pdf")
-    monkeypatch.setattr("app.services.report_service.s3_service.generate_presigned_url", lambda *a, **kw: "https://s3.example.com/test.pdf")
+    monkeypatch.setattr(
+        "app.services.report_service.s3_service.upload_file", lambda *a, **kw: "exports/test.pdf"
+    )
+    monkeypatch.setattr(
+        "app.services.report_service.s3_service.generate_presigned_url",
+        lambda *a, **kw: "https://s3.example.com/test.pdf",
+    )
 
     with pytest.raises(APIException) as exc_info:
         await service.export_report_pdf(db, "sales-performance", current_user=user)
@@ -725,7 +756,7 @@ async def test_export_report_pdf_raises_on_commit_failure(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_export_report_csv_sanitizes_formula_prefixes(monkeypatch):
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     repo.total_won_revenue = AsyncMock(return_value=7000.0)
     repo.rep_performance = AsyncMock(
         return_value=[
@@ -734,7 +765,9 @@ async def test_export_report_csv_sanitizes_formula_prefixes(monkeypatch):
         ]
     )
     repo.quotas_by_user = AsyncMock(return_value={})
-    repo.create_export = AsyncMock(return_value=Row(id="exp-csv", download_url=None, s3_key="exports/org-safe/x.csv"))
+    repo.create_export = AsyncMock(
+        return_value=Row(id="exp-csv", download_url=None, s3_key="exports/org-safe/x.csv")
+    )
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
     user = _make_user(org_id="org-safe", user_id="usr-1")
@@ -746,12 +779,15 @@ async def test_export_report_csv_sanitizes_formula_prefixes(monkeypatch):
         return "exports/org-safe/x.csv"
 
     monkeypatch.setattr("app.services.report_service.s3_service.upload_file", fake_upload)
-    monkeypatch.setattr("app.services.report_service.s3_service.generate_presigned_url", lambda *a, **kw: "https://s3.example.com/exports/csv.csv")
+    monkeypatch.setattr(
+        "app.services.report_service.s3_service.generate_presigned_url",
+        lambda *a, **kw: "https://s3.example.com/exports/csv.csv",
+    )
 
     result = await service.export_report_csv(db, "sales-performance", current_user=user)
 
     assert repo.create_export.await_args is not None
-    data = repo.create_export.await_args.kwargs["data"]
+    data = repo.create_export.await_args_list[-1].kwargs["data"]
     assert data["download_url"] is None  # never persist presigned URL
     assert data["s3_key"].startswith("exports/org-safe/")
     assert "csv_url" in result
@@ -763,14 +799,14 @@ async def test_export_report_csv_sanitizes_formula_prefixes(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_export_csv_reflects_requested_report_rows(monkeypatch):
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     repo.count_deals_in_stage = AsyncMock(side_effect=[7, 3])
-    repo.win_loss_by_industry = AsyncMock(
-        return_value=[("Software", 5, 1, 50000.0, 5000.0)]
-    )
+    repo.win_loss_by_industry = AsyncMock(return_value=[("Software", 5, 1, 50000.0, 5000.0)])
     repo.top_loss_reason = AsyncMock(return_value="Budget Constraint")
     repo.loss_reason_by_industry = AsyncMock(return_value=[])
-    repo.create_export = AsyncMock(return_value=Row(id="exp-wl", download_url=None, s3_key="exports/org-1/x.csv"))
+    repo.create_export = AsyncMock(
+        return_value=Row(id="exp-wl", download_url=None, s3_key="exports/org-1/x.csv")
+    )
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
     user = _make_user(org_id="org-1", user_id="usr-1")
@@ -782,7 +818,10 @@ async def test_export_csv_reflects_requested_report_rows(monkeypatch):
         return "exports/org-1/x.csv"
 
     monkeypatch.setattr("app.services.report_service.s3_service.upload_file", fake_upload)
-    monkeypatch.setattr("app.services.report_service.s3_service.generate_presigned_url", lambda *a, **kw: "https://s3.example/x.csv")
+    monkeypatch.setattr(
+        "app.services.report_service.s3_service.generate_presigned_url",
+        lambda *a, **kw: "https://s3.example/x.csv",
+    )
 
     result = await service.export_report_csv(db, "win-loss-ratio", current_user=user)
 
@@ -796,7 +835,7 @@ async def test_export_csv_reflects_requested_report_rows(monkeypatch):
 @pytest.mark.asyncio
 async def test_build_report_csv_for_organization_internal(monkeypatch):
     """Scheduler path: builds report data for an org without a request user."""
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     repo.leads_by_source = AsyncMock(return_value=[("Referral", 4, 2, 80.0)])
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -820,7 +859,7 @@ async def test_build_report_csv_for_organization_invalid_type():
 
 @pytest.mark.asyncio
 async def test_export_report_csv_raises_502_on_s3_error(monkeypatch):
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     repo.total_won_revenue = AsyncMock(return_value=0.0)
     repo.rep_performance = AsyncMock(return_value=[])
     repo.quotas_by_user = AsyncMock(return_value={})
@@ -837,9 +876,10 @@ async def test_export_report_csv_raises_502_on_s3_error(monkeypatch):
         await service.export_report_csv(db, "sales-performance", current_user=user)
     assert exc_info.value.status_code == 502
 
+
 @pytest.mark.asyncio
 async def test_get_export_download_mints_fresh_presigned_url(monkeypatch):
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     repo.get_export = AsyncMock(
         return_value=Row(id="exp-1", organization_id="org-1", s3_key="exports/org-1/abc.pdf")
     )
@@ -861,7 +901,7 @@ async def test_get_export_download_mints_fresh_presigned_url(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_get_export_download_cross_org_not_found():
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     repo.get_export = AsyncMock(return_value=None)
     service = ReportService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -875,7 +915,7 @@ async def test_get_export_download_cross_org_not_found():
 
 @pytest.mark.asyncio
 async def test_get_export_download_legacy_record_without_s3_key_returns_410(monkeypatch):
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     repo.get_export = AsyncMock(
         return_value=Row(
             id="exp-legacy",
@@ -900,7 +940,7 @@ async def test_get_export_download_legacy_record_without_s3_key_returns_410(monk
 
 @pytest.mark.asyncio
 async def test_get_export_download_raises_502_when_s3_fails(monkeypatch):
-    repo = ReportRepository()
+    repo: Any = ReportRepository()
     repo.get_export = AsyncMock(
         return_value=Row(id="exp-1", organization_id="org-1", s3_key="exports/org-1/abc.pdf")
     )
@@ -918,6 +958,7 @@ async def test_get_export_download_raises_502_when_s3_fails(monkeypatch):
 
 
 # --- CSV sanitization: negative numbers preserved, formulas escaped ---
+
 
 @pytest.mark.parametrize(
     "value,expected",
