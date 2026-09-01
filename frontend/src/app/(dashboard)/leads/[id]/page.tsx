@@ -34,10 +34,20 @@ import {
   Award,
   ArrowRightLeft,
   Download,
-  Upload
+  Upload,
+  Flame,
+  Snowflake,
+  AlertTriangle,
 } from 'lucide-react';
 import { Button, Card, Label, Input, Badge, Alert, AlertDescription } from '@/components/ui';
 import { ModalShell } from '@/components/common/modal-shell';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   useLeadQuery,
   useCreateLeadMutation,
@@ -65,6 +75,9 @@ import { useCompaniesQuery } from '@/lib/api/companies';
 import { useUsersQuery } from '@/lib/api/users';
 import { useQueryClient } from '@tanstack/react-query';
 import { BASE_URL } from '@/lib/api/client';
+import { formatDate, formatDateTime } from '@/lib/formatters/date';
+
+const UNASSIGNED_VALUE = '__unassigned__';
 
 export default function LeadDetailPage() {
   const params = useParams();
@@ -79,7 +92,13 @@ export default function LeadDetailPage() {
   const { data: lead, isLoading, isError, error, refetch } = useLeadQuery(leadId);
   const { data: organizations = [], isLoading: isOrgsLoading } = useOrganizationsQuery();
   const { data: companies = [], isLoading: isCompaniesLoading } = useCompaniesQuery();
-  const { data: users = [], isLoading: isUsersLoading } = useUsersQuery(1, 100);
+  const {
+    data: users = [],
+    isLoading: isUsersLoading,
+    isFetching: isUsersFetching,
+    isError: isUsersError,
+    refetch: refetchUsers,
+  } = useUsersQuery(1, 100);
 
   // Sub-resource Queries
   const { data: notes = [], refetch: refetchNotes, isLoading: isNotesLoading } = useLeadNotesQuery(leadId);
@@ -131,7 +150,7 @@ export default function LeadDetailPage() {
 
   const [isRecalculatingScore, setIsRecalculatingScore] = useState(false);
   const [isConverting, setIsConverting] = useState(false);
-  const [selectedAssignUser, setSelectedAssignUser] = useState('');
+  const [assignmentSelection, setAssignmentSelection] = useState({ leadId: '', value: UNASSIGNED_VALUE });
   const [isAssigning, setIsAssigning] = useState(false);
   const [isArchiving, setIsArchiving] = useState(false);
 
@@ -166,6 +185,26 @@ export default function LeadDetailPage() {
     }
     return lead.organization_id;
   }, [lead, organizations]);
+
+  const leadTimeZone = organizations.find(
+    (organization) => organization.id === lead?.organization_id,
+  )?.timezone || 'UTC';
+  const savedAssignedUser = lead?.assigned_to
+    ? users.find(
+        (user) => user.id === lead.assigned_to || user.email === lead.assigned_to || user.name === lead.assigned_to,
+      )
+    : undefined;
+  const savedAssigneeValue = savedAssignedUser?.id || lead?.assigned_to || UNASSIGNED_VALUE;
+
+  const selectedAssignUser = assignmentSelection.leadId === leadId
+    ? assignmentSelection.value
+    : savedAssigneeValue;
+  const isAssignmentChanged = selectedAssignUser !== savedAssigneeValue;
+  const isCurrentAssigneeMissing = savedAssigneeValue !== UNASSIGNED_VALUE
+    && !users.some((user) => user.id === savedAssigneeValue);
+  const isAssignmentUnavailable = isUsersLoading
+    || isUsersError
+    || (users.length === 0 && savedAssigneeValue === UNASSIGNED_VALUE);
 
   const assignedUserName = useMemo(() => {
     if (!lead?.assigned_to) return 'Unassigned';
@@ -437,15 +476,20 @@ export default function LeadDetailPage() {
   };
 
   const handleAssignLead = async () => {
-    if (!selectedAssignUser) return;
+    if (!lead || !isAssignmentChanged) return;
+    const isUnassigning = selectedAssignUser === UNASSIGNED_VALUE;
     try {
       setIsAssigning(true);
-      await assignLeadApi(leadId, selectedAssignUser);
+      if (isUnassigning) {
+        await updateLeadMutation.mutateAsync({ id: leadId, payload: { assigned_to: null } });
+      } else {
+        await assignLeadApi(leadId, selectedAssignUser);
+      }
       await refetch();
-      setSuccessMessage(`Lead assigned to user successfully!`);
+      setSuccessMessage(isUnassigning ? 'Lead unassigned successfully!' : 'Lead assigned successfully!');
       setTimeout(() => setSuccessMessage(null), 3000);
-    } catch (err: any) {
-      setErrorMessage('Failed to assign lead.');
+    } catch {
+      setErrorMessage(isUnassigning ? 'Failed to unassign lead.' : 'Failed to assign lead.');
     } finally {
       setIsAssigning(false);
     }
@@ -538,7 +582,7 @@ export default function LeadDetailPage() {
             </div>
             <p className="text-body font-medium text-[#6B7280] flex items-center gap-2 flex-wrap">
               <span>{lead.title}</span>
-              <span className="text-[#9CA3AF]">â€¢</span>
+              <span className="text-[#9CA3AF]" aria-hidden="true">•</span>
               <span className="text-[#2563EB] font-semibold">{lead.company}</span>
             </p>
           </div>
@@ -557,10 +601,10 @@ export default function LeadDetailPage() {
           </Button>
           <Button
             type="button"
-            variant="danger"
+            variant="outline"
             size="default"
             onClick={() => setIsDeleteModalOpen(true)}
-            className="text-button font-medium shadow-saas-sm cursor-pointer"
+            className="border-rose-200 text-rose-700 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-800 text-button font-medium cursor-pointer"
           >
             <Trash2 className="w-4 h-4 mr-2" /> Delete Lead
           </Button>
@@ -568,7 +612,7 @@ export default function LeadDetailPage() {
       </div>
 
       {/* Enterprise Tabbed Interface Header */}
-      <div className="border-b border-[#E5E7EB] overflow-x-auto scrollbar-none">
+      <div className="sticky top-0 z-20 -mx-1 border-b border-[#E5E7EB] bg-slate-50/95 px-1 pt-2 backdrop-blur-sm sm:-mx-2 sm:px-2 overflow-x-auto scrollbar-none">
         <nav className="flex space-x-2 min-w-max pb-1">
           {[
             { id: 'overview', label: 'Overview & Details', icon: Briefcase },
@@ -725,16 +769,16 @@ export default function LeadDetailPage() {
                   <Activity className="w-4 h-4 text-[#2563EB]" /> Qualification Score
                 </span>
                 {(lead.score ?? 75) >= 70 ? (
-                  <span className="px-2.5 py-0.5 rounded-full bg-[#16A34A]/10 text-[#16A34A] border border-[#16A34A]/20 text-badge font-semibold">
-                    ðŸ”¥ High Intent
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#16A34A]/10 text-[#16A34A] border border-[#16A34A]/20 text-badge font-semibold">
+                    <Flame className="size-3" aria-hidden="true" /> High Intent
                   </span>
                 ) : (lead.score ?? 75) >= 40 ? (
-                  <span className="px-2.5 py-0.5 rounded-full bg-[#F59E0B]/10 text-[#D97706] border border-[#F59E0B]/20 text-badge font-semibold">
-                    âš¡ Warm Lead
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#F59E0B]/10 text-[#D97706] border border-[#F59E0B]/20 text-badge font-semibold">
+                    <Zap className="size-3" aria-hidden="true" /> Warm Lead
                   </span>
                 ) : (
-                  <span className="px-2.5 py-0.5 rounded-full bg-[#F3F4F6] text-[#374151] border border-[#E5E7EB] text-badge font-semibold">
-                    â„ï¸ Cold Lead
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#F3F4F6] text-[#374151] border border-[#E5E7EB] text-badge font-semibold">
+                    <Snowflake className="size-3" aria-hidden="true" /> Cold Lead
                   </span>
                 )}
               </div>
@@ -802,7 +846,7 @@ export default function LeadDetailPage() {
                   <span className="text-[#6B7280] font-medium flex items-center gap-1.5">
                     <Calendar className="w-3.5 h-3.5 text-[#9CA3AF]" /> Created Date
                   </span>
-                  <span className="text-[#111827] font-medium">{lead.created_at ? new Date(lead.created_at).toLocaleDateString() : 'N/A'}</span>
+                  <span className="text-[#111827] font-medium">{formatDate(lead.created_at, { timeZone: leadTimeZone })}</span>
                 </div>
 
                 <div className="flex items-center justify-between border-t border-[#E5E7EB] pt-3">
@@ -832,7 +876,7 @@ export default function LeadDetailPage() {
               onClick={() => setIsNoteModalOpen(true)}
               className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 h-9 shadow-xs cursor-pointer"
             >
-              <Plus className="w-3.5 h-3.5 mr-1.5" /> + Add Note
+              <Plus className="w-3.5 h-3.5 mr-1.5" /> Add Note
             </Button>
           </div>
 
@@ -844,7 +888,7 @@ export default function LeadDetailPage() {
             <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl space-y-2">
               <FileText className="w-8 h-8 text-slate-300 mx-auto" />
               <p className="text-xs font-bold text-slate-600">No notes attached yet.</p>
-              <p className="text-[11px] text-slate-400">Click "+ Add Note" above to attach a note.</p>
+              <p className="text-[11px] text-slate-400">Use Add Note above to attach a note.</p>
             </div>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-slate-200">
@@ -861,7 +905,7 @@ export default function LeadDetailPage() {
                     <tr key={n.id} className="hover:bg-slate-50 transition">
                       <td className="py-3.5 px-4 font-bold text-slate-900 max-w-md">{n.content}</td>
                       <td className="py-3.5 px-4 font-bold text-indigo-600">{n.created_by || 'System User'}</td>
-                      <td className="py-3.5 px-4 font-bold text-slate-600">{new Date(n.created_at).toLocaleString()}</td>
+                      <td className="py-3.5 px-4 font-bold text-slate-600">{formatDateTime(n.created_at, { timeZone: leadTimeZone })}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -886,7 +930,7 @@ export default function LeadDetailPage() {
               onClick={() => setIsTaskModalOpen(true)}
               className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 h-9 shadow-xs cursor-pointer"
             >
-              <Plus className="w-3.5 h-3.5 mr-1.5" /> + Create Task
+              <Plus className="w-3.5 h-3.5 mr-1.5" /> Create Task
             </Button>
           </div>
 
@@ -898,7 +942,7 @@ export default function LeadDetailPage() {
             <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl space-y-2">
               <CheckSquare className="w-8 h-8 text-slate-300 mx-auto" />
               <p className="text-xs font-bold text-slate-600">No tasks created for this lead yet.</p>
-              <p className="text-[11px] text-slate-400">Click "+ Create Task" above to assign a new task.</p>
+              <p className="text-[11px] text-slate-400">Use Create Task above to assign a new task.</p>
             </div>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-slate-200">
@@ -930,7 +974,7 @@ export default function LeadDetailPage() {
                           {t.status || 'Pending'}
                         </span>
                       </td>
-                      <td className="py-3.5 px-4 font-bold text-slate-600">{t.due_date ? new Date(t.due_date).toLocaleDateString() : 'N/A'}</td>
+                      <td className="py-3.5 px-4 font-bold text-slate-600">{formatDate(t.due_date)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -958,7 +1002,7 @@ export default function LeadDetailPage() {
               }}
               className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 h-9 shadow-xs cursor-pointer"
             >
-              <Plus className="w-3.5 h-3.5 mr-1.5" /> + Send Email
+              <Plus className="w-3.5 h-3.5 mr-1.5" /> Send Email
             </Button>
           </div>
 
@@ -970,7 +1014,7 @@ export default function LeadDetailPage() {
             <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl space-y-2">
               <Send className="w-8 h-8 text-slate-300 mx-auto" />
               <p className="text-xs font-bold text-slate-600">No email communications logged yet.</p>
-              <p className="text-[11px] text-slate-400">Click "+ Send Email" above to send an email.</p>
+              <p className="text-[11px] text-slate-400">Use Send Email above to send an email.</p>
             </div>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-slate-200">
@@ -989,7 +1033,7 @@ export default function LeadDetailPage() {
                       <td className="py-3.5 px-4 font-black text-slate-900">{e.subject}</td>
                       <td className="py-3.5 px-4 font-bold text-indigo-600">{e.to.join(', ')}</td>
                       <td className="py-3.5 px-4 font-bold text-slate-600">{e.from_email}</td>
-                      <td className="py-3.5 px-4 font-bold text-slate-600">{new Date(e.sent_at).toLocaleString()}</td>
+                      <td className="py-3.5 px-4 font-bold text-slate-600">{formatDateTime(e.sent_at, { timeZone: leadTimeZone })}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1014,7 +1058,7 @@ export default function LeadDetailPage() {
               onClick={() => setIsCallModalOpen(true)}
               className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 h-9 shadow-xs cursor-pointer"
             >
-              <Plus className="w-3.5 h-3.5 mr-1.5" /> + Log Call
+              <Plus className="w-3.5 h-3.5 mr-1.5" /> Log Call
             </Button>
           </div>
 
@@ -1026,7 +1070,7 @@ export default function LeadDetailPage() {
             <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl space-y-2">
               <PhoneCall className="w-8 h-8 text-slate-300 mx-auto" />
               <p className="text-xs font-bold text-slate-600">No call logs recorded yet.</p>
-              <p className="text-[11px] text-slate-400">Click "+ Log Call" above to record a phone conversation.</p>
+              <p className="text-[11px] text-slate-400">Use Log Call above to record a phone conversation.</p>
             </div>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-slate-200">
@@ -1050,7 +1094,7 @@ export default function LeadDetailPage() {
                       </td>
                       <td className="py-3.5 px-4 font-black text-slate-900">{Math.floor(c.duration_seconds / 60)}m {c.duration_seconds % 60}s</td>
                       <td className="py-3.5 px-4 font-bold text-slate-700">{c.notes || 'N/A'}</td>
-                      <td className="py-3.5 px-4 font-bold text-slate-600">{new Date(c.timestamp).toLocaleString()}</td>
+                      <td className="py-3.5 px-4 font-bold text-slate-600">{formatDateTime(c.timestamp, { timeZone: leadTimeZone })}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1075,7 +1119,7 @@ export default function LeadDetailPage() {
               onClick={() => setIsDocModalOpen(true)}
               className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 h-9 shadow-xs cursor-pointer"
             >
-              <Plus className="w-3.5 h-3.5 mr-1.5" /> + Upload Document
+              <Plus className="w-3.5 h-3.5 mr-1.5" /> Upload Document
             </Button>
           </div>
 
@@ -1087,7 +1131,7 @@ export default function LeadDetailPage() {
             <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl space-y-2">
               <Paperclip className="w-8 h-8 text-slate-300 mx-auto" />
               <p className="text-xs font-bold text-slate-600">No documents uploaded yet.</p>
-              <p className="text-[11px] text-slate-400">Click "+ Upload Document" above to attach a file.</p>
+              <p className="text-[11px] text-slate-400">Use Upload Document above to attach a file.</p>
             </div>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-slate-200">
@@ -1110,7 +1154,7 @@ export default function LeadDetailPage() {
                       </td>
                       <td className="py-3.5 px-4 font-bold text-slate-700">{formatFileSize(d.file_size)}</td>
                       <td className="py-3.5 px-4 font-bold text-slate-600">{d.mime_type || 'application/pdf'}</td>
-                      <td className="py-3.5 px-4 font-bold text-slate-600">{new Date(d.uploaded_at).toLocaleString()}</td>
+                      <td className="py-3.5 px-4 font-bold text-slate-600">{formatDateTime(d.uploaded_at, { timeZone: leadTimeZone })}</td>
                       <td className="py-3.5 px-4 text-right">
                         {d.download_url && (
                           <a
@@ -1174,16 +1218,53 @@ export default function LeadDetailPage() {
               <UserCheck className="w-4 h-4 text-indigo-600" /> Assign Lead to Sales Representative
             </h3>
             <div className="flex items-center gap-3 flex-wrap">
-              <select value={selectedAssignUser} onChange={(e) => setSelectedAssignUser(e.target.value)} className="w-full sm:w-72 max-w-full px-3 py-2 border border-slate-300 rounded-lg bg-slate-50 text-xs font-bold text-black truncate">
-                <option value="">Select Sales Rep User...</option>
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
-                ))}
-              </select>
-              <Button type="button" onClick={handleAssignLead} disabled={isAssigning || !selectedAssignUser} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 cursor-pointer">
-                {isAssigning ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : 'Assign Lead'}
+              <Select
+                value={selectedAssignUser}
+                onValueChange={(value) => setAssignmentSelection({ leadId, value })}
+                disabled={isAssignmentUnavailable}
+              >
+                <SelectTrigger className="w-full border-slate-300 bg-white text-xs font-bold text-slate-900 sm:w-72" aria-label="Select sales representative">
+                  <SelectValue placeholder={isUsersLoading ? 'Loading sales representatives...' : 'Select sales representative'} />
+                </SelectTrigger>
+                <SelectContent position="popper" align="start" className="w-[var(--radix-select-trigger-width)]">
+                  <SelectItem value={UNASSIGNED_VALUE} className="text-xs font-semibold">
+                    Unassigned
+                  </SelectItem>
+                  {isCurrentAssigneeMissing && (
+                    <SelectItem value={savedAssigneeValue} className="text-xs font-semibold">
+                      {assignedUserName} (Current)
+                    </SelectItem>
+                  )}
+                  {users.map((u) => (
+                    <SelectItem key={u.id} value={u.id} className="text-xs font-semibold">
+                      {u.name} ({u.role})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button type="button" onClick={handleAssignLead} disabled={isAssigning || isAssignmentUnavailable || !isAssignmentChanged} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 cursor-pointer">
+                {isAssigning ? (
+                  <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                ) : selectedAssignUser === UNASSIGNED_VALUE ? (
+                  'Unassign Lead'
+                ) : (
+                  'Assign Lead'
+                )}
               </Button>
             </div>
+            {isUsersLoading ? (
+              <p role="status" className="text-xs font-semibold text-slate-500">Loading sales representatives...</p>
+            ) : isUsersError ? (
+              <div role="alert" className="flex flex-col gap-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-800 sm:flex-row sm:items-center sm:justify-between">
+                <span>Sales representatives could not be loaded. Try again to update the assignment.</span>
+                <Button type="button" variant="outline" size="sm" onClick={() => void refetchUsers()} disabled={isUsersFetching} className="shrink-0 border-rose-200 bg-white text-rose-700 hover:bg-rose-100 hover:text-rose-800">
+                  {isUsersFetching && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
+                  Retry
+                </Button>
+              </div>
+            ) : !isUsersLoading && users.length === 0 && savedAssigneeValue === UNASSIGNED_VALUE ? (
+              <p className="text-xs font-semibold text-slate-500">No sales representatives are available for assignment.</p>
+            ) : null}
           </Card>
 
           <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-4">
@@ -1781,8 +1862,9 @@ export default function LeadDetailPage() {
             <p className="text-xs font-bold text-slate-700 leading-relaxed">
               Are you sure you want to delete sales lead <span className="font-black text-slate-950">"{lead.contact_name}"</span> ({lead.company})?
             </p>
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-[11px] font-bold">
-              âš ï¸ Warning: This action cannot be undone and will permanently remove this lead from the database.
+            <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-[11px] font-bold">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+              <span>Warning: This action cannot be undone and will permanently remove this lead from the database.</span>
             </div>
 
             <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
