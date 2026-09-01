@@ -4,6 +4,7 @@ import urllib.parse
 
 from fastapi import status
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.currency import normalize_currency_code_or_default
@@ -46,8 +47,17 @@ class SettingsService:
             setting = await self.repository.get_by_key(db, key)
             if setting and setting.value is not None:
                 return setting.value
-        except Exception:
-            pass
+        except SQLAlchemyError as exc:
+            logger.error(
+                "Failed to read system setting '%s'",
+                key,
+                exc_info=(type(exc), exc, exc.__traceback__),
+            )
+            raise APIException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                code="SETTINGS_READ_FAILED",
+                message="Failed to read system settings.",
+            ) from exc
         return default_val
 
     async def _stage_setting_value(self, db: AsyncSession, key: str, val: str) -> None:
@@ -69,14 +79,13 @@ class SettingsService:
             if org and org.name:
                 org_name = org.name
 
-        stored_currency = (
-            org.currency
-            if org and org.currency
-            else await self._get_setting_value(db, "system_currency", "USD")
-        )
-        currency = normalize_currency_code_or_default(
-            stored_currency, default="INR" if org else "USD"
-        )
+        # Organization currency is authoritative once an organization exists.
+        # system_currency is retained only for the org-less bootstrap state.
+        if org:
+            currency = normalize_currency_code_or_default(org.currency, default="INR")
+        else:
+            stored_currency = await self._get_setting_value(db, "system_currency", "USD")
+            currency = normalize_currency_code_or_default(stored_currency, default="USD")
         timezone = await self._get_setting_value(db, "system_timezone", "UTC")
         smtp_enabled = await self._get_setting_value(db, "smtp_enabled", "true")
         ai_features_enabled = await self._get_setting_value(db, "ai_features_enabled", "true")

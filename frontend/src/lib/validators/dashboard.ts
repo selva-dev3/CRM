@@ -1,10 +1,19 @@
 import { z } from 'zod';
 
-const supportedCurrencyCodes = new Set(Intl.supportedValuesOf('currency'));
+function getSupportedCurrencyCodes(): Set<string> | null {
+  try {
+    if (typeof Intl === 'undefined' || typeof Intl.supportedValuesOf !== 'function') return null;
+    return new Set(Intl.supportedValuesOf('currency'));
+  } catch {
+    return null;
+  }
+}
+
+const supportedCurrencyCodes = getSupportedCurrencyCodes();
 
 const currencyCodeSchema = z.string()
   .regex(/^[A-Z]{3}$/)
-  .refine((currency) => supportedCurrencyCodes.has(currency));
+  .refine((currency) => supportedCurrencyCodes === null || supportedCurrencyCodes.has(currency));
 
 export const dashboardKpisSchema = z.object({
   total_leads: z.number().finite().nonnegative(),

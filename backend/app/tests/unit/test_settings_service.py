@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from pydantic import ValidationError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException
@@ -90,6 +91,44 @@ async def test_get_system_settings_falls_back_for_invalid_organization_currency(
     result = await service.get_system_settings(db, current_user)
 
     assert result["currency"] == "INR"
+    repo.get_by_key.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_system_settings_does_not_use_bootstrap_currency_for_organization(monkeypatch):
+    repo = SettingRepository()
+    repo.get_by_key = AsyncMock(return_value=SimpleNamespace(value="EUR"))
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    org = SimpleNamespace(name="Acme", currency=None)
+    current_user = SimpleNamespace(organization_id="org-1")
+
+    from app.services.settings_service import organization_service
+
+    monkeypatch.setattr(organization_service.repository, "get_by_id", AsyncMock(return_value=org))
+
+    result = await service.get_system_settings(db, current_user)
+
+    assert result["currency"] == "INR"
+    repo.get_by_key.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_system_settings_reports_database_read_failure(monkeypatch):
+    repo = SettingRepository()
+    repo.get_by_key = AsyncMock(side_effect=SQLAlchemyError("database unavailable"))
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.services.settings_service import organization_service
+
+    monkeypatch.setattr(organization_service.repository, "get_first", AsyncMock(return_value=None))
+
+    with pytest.raises(APIException) as exc_info:
+        await service.get_system_settings(db, None)
+
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.code == "SETTINGS_READ_FAILED"
 
 
 @pytest.mark.asyncio
@@ -218,6 +257,15 @@ def test_system_settings_rejects_invalid_currency(currency):
         OrganizationCreate(name="Acme", currency=currency)
     with pytest.raises(ValidationError):
         OrganizationUpdate(currency=currency)
+
+
+@pytest.mark.parametrize("currency", ["XCG", "USD", "INR"])
+def test_system_settings_accepts_supported_currency(currency):
+    from app.schemas.crm_schemas import SystemSettings
+
+    result = SystemSettings(organization_name="Acme", currency=currency.lower())
+
+    assert result.currency == currency
 
 
 @pytest.mark.asyncio

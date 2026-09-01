@@ -2,7 +2,8 @@ import re
 
 DEFAULT_CURRENCY_CODE = "INR"
 CURRENCY_CODE_PATTERN = re.compile(r"^[A-Z]{3}$")
-# Keep this set aligned with the frontend runtime's supported currency values.
+# XCG is the Caribbean guilder code assigned by ISO 4217 Amendment 176,
+# effective March 31, 2025.
 SUPPORTED_CURRENCY_CODES = frozenset(
     """
     AED AFN ALL AMD ANG AOA ARS AUD AWG AZN BAM BBD BDT BGN BHD BIF BMD BND BOB BRL

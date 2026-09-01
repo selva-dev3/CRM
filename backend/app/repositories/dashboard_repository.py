@@ -86,7 +86,10 @@ class DashboardRepository:
     ) -> list[Lead]:
         result = await db.execute(
             select(Lead)
-            .where(Lead.organization_id == organization_id)
+            .where(
+                Lead.organization_id == organization_id,
+                Lead.is_archived.is_(False),
+            )
             .order_by(Lead.created_at.desc())
             .limit(limit)
         )

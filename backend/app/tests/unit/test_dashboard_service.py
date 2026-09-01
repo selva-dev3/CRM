@@ -7,7 +7,7 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException
-from app.models import User
+from app.models import Lead, User
 from app.repositories.dashboard_repository import DashboardRepository
 from app.repositories.setting_repository import SettingRepository
 from app.schemas.dashboard import CustomWidgetSaveRequest, DashboardAiInsightsResponse
@@ -254,6 +254,26 @@ async def test_recent_deals_owner_join_excludes_inactive_users():
     owner_join = statement.get_final_froms()[0]
     assert any(
         condition.compare(User.is_active.is_(True)) for condition in owner_join.onclause.clauses
+    )
+
+
+@pytest.mark.asyncio
+async def test_recent_leads_excludes_archived_leads():
+    db = AsyncMock(spec=AsyncSession)
+    result = Mock()
+    result.scalars.return_value.all.return_value = []
+    db.execute.return_value = result
+
+    await DashboardRepository().recent_leads(db, "org-1")
+
+    statement = db.execute.await_args.args[0]
+    assert any(
+        condition.compare(Lead.organization_id == "org-1")
+        for condition in statement._where_criteria
+    )
+    assert any(
+        condition.compare(Lead.is_archived.is_(False))
+        for condition in statement._where_criteria
     )
 
 
