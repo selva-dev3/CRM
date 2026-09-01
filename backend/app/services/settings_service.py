@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.currency import normalize_currency_code_or_default
 from app.core.errors import APIException
+from app.core.logging import get_logger
 from app.core.security import get_password_hash
 from app.models import Organization, User
 from app.repositories.setting_repository import SettingRepository
@@ -15,6 +16,7 @@ from app.schemas.crm_schemas import SystemSettings
 from app.services.org_service import organization_service
 
 PROTECTED_SUPERADMIN_EMAIL = "superadmin@gmail.com"
+logger = get_logger(__name__)
 
 
 class SettingsService:
@@ -48,12 +50,8 @@ class SettingsService:
             pass
         return default_val
 
-    async def _set_setting_value(self, db: AsyncSession, key: str, val: str) -> None:
-        try:
-            await self.repository.upsert(db, key=key, value=val)
-            await db.commit()
-        except Exception:
-            await db.rollback()
+    async def _stage_setting_value(self, db: AsyncSession, key: str, val: str) -> None:
+        await self.repository.upsert(db, key=key, value=val)
 
     async def get_system_settings(
         self, db: AsyncSession, current_user: User | None = None
@@ -94,28 +92,47 @@ class SettingsService:
     async def update_system_settings(
         self, db: AsyncSession, payload: SystemSettings, current_user: User | None = None
     ) -> SystemSettings:
-        org = None
-        if current_user and getattr(current_user, "organization_id", None):
-            org = await organization_service.repository.get_by_id(db, current_user.organization_id)
-        else:
-            org = await organization_service.repository.get_first(db)
+        try:
+            org = None
+            if current_user and getattr(current_user, "organization_id", None):
+                org = await organization_service.repository.get_by_id(
+                    db, current_user.organization_id
+                )
+            else:
+                org = await organization_service.repository.get_first(db)
 
-        if org:
-            if payload.organization_name:
-                org.name = payload.organization_name
-            if payload.currency:
-                org.currency = payload.currency
+            if org:
+                if payload.organization_name:
+                    org.name = payload.organization_name
+                if payload.currency:
+                    org.currency = payload.currency
+            elif payload.currency:
+                await self._stage_setting_value(db, "system_currency", payload.currency)
+
+            if payload.timezone:
+                await self._stage_setting_value(db, "system_timezone", payload.timezone)
+
+            await self._stage_setting_value(
+                db, "smtp_enabled", "true" if payload.smtp_enabled else "false"
+            )
+            await self._stage_setting_value(
+                db, "ai_features_enabled", "true" if payload.ai_features_enabled else "false"
+            )
             await db.commit()
-        elif payload.currency:
-            await self._set_setting_value(db, "system_currency", payload.currency)
-
-        if payload.timezone:
-            await self._set_setting_value(db, "system_timezone", payload.timezone)
-
-        await self._set_setting_value(db, "smtp_enabled", "true" if payload.smtp_enabled else "false")
-        await self._set_setting_value(
-            db, "ai_features_enabled", "true" if payload.ai_features_enabled else "false"
-        )
+        except Exception as exc:
+            try:
+                await db.rollback()
+            except Exception:
+                logger.exception("Failed to roll back system settings update")
+            logger.error(
+                "Failed to update system settings",
+                exc_info=(type(exc), exc, exc.__traceback__),
+            )
+            raise APIException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                code="SETTINGS_UPDATE_FAILED",
+                message="Failed to update system settings.",
+            ) from exc
 
         return payload
 

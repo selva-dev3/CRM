@@ -32,16 +32,36 @@ describe('dashboard KPI response validation', () => {
     expect(() => parseDashboardKpis(legacyKpis)).toThrow('Dashboard KPI response is invalid.');
   });
 
-  it('rejects an unknown three-letter currency code', () => {
-    expect(() => parseDashboardKpis({ ...validKpis, currency: 'XYZ' })).toThrow(
-      'Dashboard KPI response has invalid currency metadata.',
-    );
+  it('falls back for an unknown currency while preserving a valid locale', () => {
+    expect(parseDashboardKpis({ ...validKpis, currency: 'XYZ', locale: 'en-US' })).toEqual({
+      ...validKpis,
+      currency: 'INR',
+      locale: 'en-US',
+    });
   });
 
-  it('rejects malformed locale metadata before currency formatting', () => {
-    expect(() => parseDashboardKpis({ ...validKpis, locale: 'en_US' })).toThrow(
-      'Dashboard KPI response has invalid currency metadata.',
-    );
+  it('falls back for an invalid locale while preserving a valid currency', () => {
+    expect(parseDashboardKpis({ ...validKpis, currency: 'USD', locale: 'en_US' })).toEqual({
+      ...validKpis,
+      currency: 'USD',
+      locale: 'en-IN',
+    });
+  });
+
+  it('falls back when both currency metadata fields are invalid', () => {
+    expect(parseDashboardKpis({ ...validKpis, currency: 'XYZ', locale: 'en_US' })).toEqual({
+      ...validKpis,
+      currency: 'INR',
+      locale: 'en-IN',
+    });
+  });
+
+  it('does not hide invalid KPI data behind currency metadata fallbacks', () => {
+    expect(() => parseDashboardKpis({
+      ...validKpis,
+      pipeline_revenue: -1,
+      currency: 'XYZ',
+    })).toThrow('Dashboard KPI response is invalid.');
   });
 
   it('turns an invalid API payload into a rejected query result', async () => {

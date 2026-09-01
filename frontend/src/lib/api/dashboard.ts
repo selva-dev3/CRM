@@ -75,13 +75,27 @@ export interface MessageResponse {
 export function parseDashboardKpis(value: unknown): DashboardKPIs {
   const result = dashboardKpisSchema.safeParse(value);
   if (!result.success) {
-    const hasCurrencyMetadataIssue = result.error.issues.some(
-      (issue) => issue.path[0] === 'currency' || issue.path[0] === 'locale',
+    const metadataIssuePaths = new Set(
+      result.error.issues
+        .map((issue) => issue.path[0])
+        .filter((path) => path === 'currency' || path === 'locale'),
     );
     const hasOtherIssue = result.error.issues.some(
       (issue) => issue.path[0] !== 'currency' && issue.path[0] !== 'locale',
     );
-    if (hasCurrencyMetadataIssue && !hasOtherIssue) {
+
+    if (metadataIssuePaths.size > 0 && !hasOtherIssue && value && typeof value === 'object') {
+      const normalizedValue = {
+        ...value,
+        ...(metadataIssuePaths.has('currency') && {
+          currency: DEFAULT_DASHBOARD_CURRENCY,
+        }),
+        ...(metadataIssuePaths.has('locale') && {
+          locale: DEFAULT_DASHBOARD_LOCALE,
+        }),
+      };
+      const normalizedResult = dashboardKpisSchema.safeParse(normalizedValue);
+      if (normalizedResult.success) return normalizedResult.data;
       throw new Error('Dashboard KPI response has invalid currency metadata.');
     }
     throw new Error('Dashboard KPI response is invalid.');

@@ -121,7 +121,7 @@ async def test_update_system_settings_persists_currency_on_organization(monkeypa
 
     assert org.name == "Acme CRM"
     assert org.currency == "INR"
-    db.commit.assert_awaited()
+    db.commit.assert_awaited_once()
     assert all(call.kwargs.get("key") != "system_currency" for call in repo.upsert.await_args_list)
 
 
@@ -152,6 +152,60 @@ async def test_update_system_settings_persists_currency_without_organization(
     )
 
     repo.upsert.assert_any_await(db, key="system_currency", value="INR")
+    db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_update_system_settings_rolls_back_when_setting_upsert_fails(monkeypatch):
+    repo = SettingRepository()
+    repo.upsert = AsyncMock(side_effect=RuntimeError("database unavailable"))
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.schemas.crm_schemas import SystemSettings
+    from app.services.settings_service import organization_service
+
+    monkeypatch.setattr(organization_service.repository, "get_first", AsyncMock(return_value=None))
+
+    with pytest.raises(APIException) as exc_info:
+        await service.update_system_settings(
+            db,
+            SystemSettings(organization_name="Acme CRM", currency="INR"),
+            None,
+        )
+
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.code == "SETTINGS_UPDATE_FAILED"
+    db.rollback.assert_awaited_once()
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_update_system_settings_rolls_back_when_commit_fails(monkeypatch):
+    repo = SettingRepository()
+    repo.upsert = AsyncMock()
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    db.commit.side_effect = RuntimeError("commit failed")
+    org = SimpleNamespace(name="Acme", currency="USD")
+    current_user = SimpleNamespace(organization_id="org-1")
+
+    from app.schemas.crm_schemas import SystemSettings
+    from app.services.settings_service import organization_service
+
+    monkeypatch.setattr(organization_service.repository, "get_by_id", AsyncMock(return_value=org))
+
+    with pytest.raises(APIException) as exc_info:
+        await service.update_system_settings(
+            db,
+            SystemSettings(organization_name="Acme CRM", currency="INR"),
+            current_user,
+        )
+
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.code == "SETTINGS_UPDATE_FAILED"
+    db.rollback.assert_awaited_once()
+    db.commit.assert_awaited_once()
 
 
 @pytest.mark.parametrize("currency", ["$", "US Dollar", "   ", "USDX", "XYZ"])
