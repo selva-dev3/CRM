@@ -28,6 +28,16 @@ function parseDate(value: DateValue): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function normalizeTimeZone(timeZone: string | undefined): string | undefined {
+  if (!timeZone) return undefined;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone }).format();
+    return timeZone;
+  } catch {
+    return 'UTC';
+  }
+}
+
 export function formatDate(
   value: DateValue,
   { fallback = 'N/A', locale, timeZone }: DateFormatOptions = {},
@@ -39,7 +49,7 @@ export function formatDate(
     year: 'numeric',
     month: 'short',
     day: 'numeric',
-    timeZone,
+    timeZone: normalizeTimeZone(timeZone),
   }).format(date);
 }
 
@@ -56,6 +66,6 @@ export function formatDateTime(
     day: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
-    timeZone,
+    timeZone: normalizeTimeZone(timeZone),
   }).format(date);
 }

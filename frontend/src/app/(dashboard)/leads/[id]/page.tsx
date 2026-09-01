@@ -77,6 +77,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { BASE_URL } from '@/lib/api/client';
 import { formatDate, formatDateTime } from '@/lib/formatters/date';
 
+const UNASSIGNED_VALUE = '__unassigned__';
+
 export default function LeadDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -90,7 +92,13 @@ export default function LeadDetailPage() {
   const { data: lead, isLoading, isError, error, refetch } = useLeadQuery(leadId);
   const { data: organizations = [], isLoading: isOrgsLoading } = useOrganizationsQuery();
   const { data: companies = [], isLoading: isCompaniesLoading } = useCompaniesQuery();
-  const { data: users = [], isLoading: isUsersLoading } = useUsersQuery(1, 100);
+  const {
+    data: users = [],
+    isLoading: isUsersLoading,
+    isFetching: isUsersFetching,
+    isError: isUsersError,
+    refetch: refetchUsers,
+  } = useUsersQuery(1, 100);
 
   // Sub-resource Queries
   const { data: notes = [], refetch: refetchNotes, isLoading: isNotesLoading } = useLeadNotesQuery(leadId);
@@ -142,7 +150,7 @@ export default function LeadDetailPage() {
 
   const [isRecalculatingScore, setIsRecalculatingScore] = useState(false);
   const [isConverting, setIsConverting] = useState(false);
-  const [selectedAssignUser, setSelectedAssignUser] = useState('');
+  const [assignmentSelection, setAssignmentSelection] = useState({ leadId: '', value: UNASSIGNED_VALUE });
   const [isAssigning, setIsAssigning] = useState(false);
   const [isArchiving, setIsArchiving] = useState(false);
 
@@ -177,6 +185,26 @@ export default function LeadDetailPage() {
     }
     return lead.organization_id;
   }, [lead, organizations]);
+
+  const leadTimeZone = organizations.find(
+    (organization) => organization.id === lead?.organization_id,
+  )?.timezone || 'UTC';
+  const savedAssignedUser = lead?.assigned_to
+    ? users.find(
+        (user) => user.id === lead.assigned_to || user.email === lead.assigned_to || user.name === lead.assigned_to,
+      )
+    : undefined;
+  const savedAssigneeValue = savedAssignedUser?.id || lead?.assigned_to || UNASSIGNED_VALUE;
+
+  const selectedAssignUser = assignmentSelection.leadId === leadId
+    ? assignmentSelection.value
+    : savedAssigneeValue;
+  const isAssignmentChanged = selectedAssignUser !== savedAssigneeValue;
+  const isCurrentAssigneeMissing = savedAssigneeValue !== UNASSIGNED_VALUE
+    && !users.some((user) => user.id === savedAssigneeValue);
+  const isAssignmentUnavailable = isUsersLoading
+    || isUsersError
+    || (users.length === 0 && savedAssigneeValue === UNASSIGNED_VALUE);
 
   const assignedUserName = useMemo(() => {
     if (!lead?.assigned_to) return 'Unassigned';
@@ -448,15 +476,20 @@ export default function LeadDetailPage() {
   };
 
   const handleAssignLead = async () => {
-    if (!selectedAssignUser) return;
+    if (!lead || !isAssignmentChanged) return;
+    const isUnassigning = selectedAssignUser === UNASSIGNED_VALUE;
     try {
       setIsAssigning(true);
-      await assignLeadApi(leadId, selectedAssignUser);
+      if (isUnassigning) {
+        await updateLeadMutation.mutateAsync({ id: leadId, payload: { assigned_to: null } });
+      } else {
+        await assignLeadApi(leadId, selectedAssignUser);
+      }
       await refetch();
-      setSuccessMessage(`Lead assigned to user successfully!`);
+      setSuccessMessage(isUnassigning ? 'Lead unassigned successfully!' : 'Lead assigned successfully!');
       setTimeout(() => setSuccessMessage(null), 3000);
-    } catch (err: any) {
-      setErrorMessage('Failed to assign lead.');
+    } catch {
+      setErrorMessage(isUnassigning ? 'Failed to unassign lead.' : 'Failed to assign lead.');
     } finally {
       setIsAssigning(false);
     }
@@ -813,7 +846,7 @@ export default function LeadDetailPage() {
                   <span className="text-[#6B7280] font-medium flex items-center gap-1.5">
                     <Calendar className="w-3.5 h-3.5 text-[#9CA3AF]" /> Created Date
                   </span>
-                  <span className="text-[#111827] font-medium">{formatDate(lead.created_at)}</span>
+                  <span className="text-[#111827] font-medium">{formatDate(lead.created_at, { timeZone: leadTimeZone })}</span>
                 </div>
 
                 <div className="flex items-center justify-between border-t border-[#E5E7EB] pt-3">
@@ -872,7 +905,7 @@ export default function LeadDetailPage() {
                     <tr key={n.id} className="hover:bg-slate-50 transition">
                       <td className="py-3.5 px-4 font-bold text-slate-900 max-w-md">{n.content}</td>
                       <td className="py-3.5 px-4 font-bold text-indigo-600">{n.created_by || 'System User'}</td>
-                      <td className="py-3.5 px-4 font-bold text-slate-600">{formatDateTime(n.created_at)}</td>
+                      <td className="py-3.5 px-4 font-bold text-slate-600">{formatDateTime(n.created_at, { timeZone: leadTimeZone })}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1000,7 +1033,7 @@ export default function LeadDetailPage() {
                       <td className="py-3.5 px-4 font-black text-slate-900">{e.subject}</td>
                       <td className="py-3.5 px-4 font-bold text-indigo-600">{e.to.join(', ')}</td>
                       <td className="py-3.5 px-4 font-bold text-slate-600">{e.from_email}</td>
-                      <td className="py-3.5 px-4 font-bold text-slate-600">{formatDateTime(e.sent_at)}</td>
+                      <td className="py-3.5 px-4 font-bold text-slate-600">{formatDateTime(e.sent_at, { timeZone: leadTimeZone })}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1061,7 +1094,7 @@ export default function LeadDetailPage() {
                       </td>
                       <td className="py-3.5 px-4 font-black text-slate-900">{Math.floor(c.duration_seconds / 60)}m {c.duration_seconds % 60}s</td>
                       <td className="py-3.5 px-4 font-bold text-slate-700">{c.notes || 'N/A'}</td>
-                      <td className="py-3.5 px-4 font-bold text-slate-600">{formatDateTime(c.timestamp)}</td>
+                      <td className="py-3.5 px-4 font-bold text-slate-600">{formatDateTime(c.timestamp, { timeZone: leadTimeZone })}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1121,7 +1154,7 @@ export default function LeadDetailPage() {
                       </td>
                       <td className="py-3.5 px-4 font-bold text-slate-700">{formatFileSize(d.file_size)}</td>
                       <td className="py-3.5 px-4 font-bold text-slate-600">{d.mime_type || 'application/pdf'}</td>
-                      <td className="py-3.5 px-4 font-bold text-slate-600">{formatDateTime(d.uploaded_at)}</td>
+                      <td className="py-3.5 px-4 font-bold text-slate-600">{formatDateTime(d.uploaded_at, { timeZone: leadTimeZone })}</td>
                       <td className="py-3.5 px-4 text-right">
                         {d.download_url && (
                           <a
@@ -1185,11 +1218,23 @@ export default function LeadDetailPage() {
               <UserCheck className="w-4 h-4 text-indigo-600" /> Assign Lead to Sales Representative
             </h3>
             <div className="flex items-center gap-3 flex-wrap">
-              <Select value={selectedAssignUser} onValueChange={setSelectedAssignUser} disabled={isUsersLoading || users.length === 0}>
+              <Select
+                value={selectedAssignUser}
+                onValueChange={(value) => setAssignmentSelection({ leadId, value })}
+                disabled={isAssignmentUnavailable}
+              >
                 <SelectTrigger className="w-full border-slate-300 bg-white text-xs font-bold text-slate-900 sm:w-72" aria-label="Select sales representative">
                   <SelectValue placeholder={isUsersLoading ? 'Loading sales representatives...' : 'Select sales representative'} />
                 </SelectTrigger>
                 <SelectContent position="popper" align="start" className="w-[var(--radix-select-trigger-width)]">
+                  <SelectItem value={UNASSIGNED_VALUE} className="text-xs font-semibold">
+                    Unassigned
+                  </SelectItem>
+                  {isCurrentAssigneeMissing && (
+                    <SelectItem value={savedAssigneeValue} className="text-xs font-semibold">
+                      {assignedUserName} (Current)
+                    </SelectItem>
+                  )}
                   {users.map((u) => (
                     <SelectItem key={u.id} value={u.id} className="text-xs font-semibold">
                       {u.name} ({u.role})
@@ -1197,10 +1242,29 @@ export default function LeadDetailPage() {
                   ))}
                 </SelectContent>
               </Select>
-              <Button type="button" onClick={handleAssignLead} disabled={isAssigning || !selectedAssignUser} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 cursor-pointer">
-                {isAssigning ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : 'Assign Lead'}
+              <Button type="button" onClick={handleAssignLead} disabled={isAssigning || isAssignmentUnavailable || !isAssignmentChanged} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 cursor-pointer">
+                {isAssigning ? (
+                  <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                ) : selectedAssignUser === UNASSIGNED_VALUE ? (
+                  'Unassign Lead'
+                ) : (
+                  'Assign Lead'
+                )}
               </Button>
             </div>
+            {isUsersLoading ? (
+              <p role="status" className="text-xs font-semibold text-slate-500">Loading sales representatives...</p>
+            ) : isUsersError ? (
+              <div role="alert" className="flex flex-col gap-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-800 sm:flex-row sm:items-center sm:justify-between">
+                <span>Sales representatives could not be loaded. Try again to update the assignment.</span>
+                <Button type="button" variant="outline" size="sm" onClick={() => void refetchUsers()} disabled={isUsersFetching} className="shrink-0 border-rose-200 bg-white text-rose-700 hover:bg-rose-100 hover:text-rose-800">
+                  {isUsersFetching && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
+                  Retry
+                </Button>
+              </div>
+            ) : !isUsersLoading && users.length === 0 && savedAssigneeValue === UNASSIGNED_VALUE ? (
+              <p className="text-xs font-semibold text-slate-500">No sales representatives are available for assignment.</p>
+            ) : null}
           </Card>
 
           <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-4">
