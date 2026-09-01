@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import APIException
 from app.repositories.dashboard_repository import DashboardRepository
 from app.repositories.setting_repository import SettingRepository
+from app.schemas.dashboard import DashboardKPIs
 
 
 class DashboardService:
@@ -44,7 +45,7 @@ class DashboardService:
 
         return raw_source
 
-    async def get_kpis(self, db: AsyncSession, organization_id: str) -> dict:
+    async def get_kpis(self, db: AsyncSession, organization_id: str) -> DashboardKPIs:
         total_leads = await self.repository.count_leads(db, organization_id)
         pipeline_revenue = await self.repository.sum_pipeline_deals(db, organization_id)
         deals_won_amount = await self.repository.sum_won_deals(db, organization_id)
@@ -53,6 +54,9 @@ class DashboardService:
         win_rate = round((won_deals / closed_deals * 100.0), 2) if closed_deals > 0 else 0.0
         avg_score = await self.repository.avg_lead_score(db, organization_id)
         scored_leads = await self.repository.count_scored_leads(db, organization_id)
+        currency, locale = await self.repository.get_organization_currency_locale(
+            db, organization_id
+        )
 
         recent_activity = []
         for lead in await self.repository.recent_leads(db, organization_id):
@@ -67,17 +71,19 @@ class DashboardService:
                 }
             )
 
-        return {
-            "total_leads": total_leads,
-            "deals_won_amount": deals_won_amount,
-            "pipeline_revenue": pipeline_revenue,
-            "win_rate_percentage": win_rate,
-            "won_deals_count": won_deals,
-            "closed_deals_count": closed_deals,
-            "ai_lead_score_avg": avg_score,
-            "scored_leads_count": scored_leads,
-            "recent_activity": recent_activity,
-        }
+        return DashboardKPIs(
+            total_leads=total_leads,
+            deals_won_amount=deals_won_amount,
+            pipeline_revenue=pipeline_revenue,
+            win_rate_percentage=win_rate,
+            won_deals_count=won_deals,
+            closed_deals_count=closed_deals,
+            ai_lead_score_avg=avg_score,
+            scored_leads_count=scored_leads,
+            currency=currency,
+            locale=locale,
+            recent_activity=recent_activity,
+        )
 
     async def get_sales_funnel(self, db: AsyncSession, organization_id: str) -> list[dict]:
         rows = await self.repository.deal_stage_totals(db, organization_id)
@@ -199,9 +205,10 @@ class DashboardService:
     async def get_ai_insights(self, db: AsyncSession, organization_id: str) -> dict:
         total_leads = await self.repository.count_leads(db, organization_id)
         total_deals, total_amount = await self.repository.count_deals_and_sum(db, organization_id)
+        currency, _ = await self.repository.get_organization_currency_locale(db, organization_id)
         summary_text = (
             f"AI Pipeline Analysis: Database tracks {total_leads} active lead(s) and {total_deals} deal(s) "
-            f"with total pipeline value of ${total_amount:,.2f}."
+            f"with total pipeline value of {currency} {total_amount:,.2f}."
         )
 
         insights_list = []
@@ -210,7 +217,7 @@ class DashboardService:
             insights_list.append(
                 {
                     "title": f"Follow up with {recent_deal.title}",
-                    "description": f"High value opportunity worth ${recent_deal.amount:,.2f} currently in {recent_deal.stage} stage.",
+                    "description": f"High value opportunity worth {currency} {recent_deal.amount:,.2f} currently in {recent_deal.stage} stage.",
                     "type": "high",
                     "action": "Follow Up",
                     "deal_id": recent_deal.id,
@@ -243,12 +250,16 @@ class DashboardService:
                 message="Dashboard widget preferences contain unsupported values.",
             ) from exc
 
-        await self.setting_repository.upsert(
-            db,
-            key=f"dashboard_custom_widgets:{organization_id}",
-            value=serialized_widgets,
-        )
-        await db.commit()
+        try:
+            await self.setting_repository.upsert(
+                db,
+                key=f"dashboard_custom_widgets:{organization_id}",
+                value=serialized_widgets,
+            )
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            raise
         return {
             "message": "Dashboard widget layout preferences saved to Database",
             "status": "success",

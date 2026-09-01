@@ -1,17 +1,14 @@
 ﻿import { useQuery, useMutation, UseQueryOptions } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import {
+  dashboardKpisSchema,
+  type DashboardKpisDto,
+} from '@/lib/validators/dashboard';
 
-export interface DashboardKPIs {
-  total_leads: number;
-  deals_won_amount: number;
-  pipeline_revenue: number;
-  win_rate_percentage: number;
-  won_deals_count: number;
-  closed_deals_count: number;
-  ai_lead_score_avg: number;
-  scored_leads_count: number;
-  recent_activity?: Array<{ action: string; title: string; user: string; timestamp: string }>;
-}
+export type DashboardKPIs = DashboardKpisDto;
+
+export const DEFAULT_DASHBOARD_CURRENCY = 'INR';
+export const DEFAULT_DASHBOARD_LOCALE = 'en-IN';
 
 export interface FunnelStageItem {
   stage: string;
@@ -75,12 +72,43 @@ export interface MessageResponse {
   status: string;
 }
 
+export function parseDashboardKpis(value: unknown): DashboardKPIs {
+  const result = dashboardKpisSchema.safeParse(value);
+  if (!result.success) {
+    const metadataIssuePaths = new Set(
+      result.error.issues
+        .map((issue) => issue.path[0])
+        .filter((path) => path === 'currency' || path === 'locale'),
+    );
+    const hasOtherIssue = result.error.issues.some(
+      (issue) => issue.path[0] !== 'currency' && issue.path[0] !== 'locale',
+    );
+
+    if (metadataIssuePaths.size > 0 && !hasOtherIssue && value && typeof value === 'object') {
+      const normalizedValue = {
+        ...value,
+        ...(metadataIssuePaths.has('currency') && {
+          currency: DEFAULT_DASHBOARD_CURRENCY,
+        }),
+        ...(metadataIssuePaths.has('locale') && {
+          locale: DEFAULT_DASHBOARD_LOCALE,
+        }),
+      };
+      const normalizedResult = dashboardKpisSchema.safeParse(normalizedValue);
+      if (normalizedResult.success) return normalizedResult.data;
+      throw new Error('Dashboard KPI response has invalid currency metadata.');
+    }
+    throw new Error('Dashboard KPI response is invalid.');
+  }
+  return result.data;
+}
+
 // ---------------------------------------------------------------------------
 // API Client Functions
 // ---------------------------------------------------------------------------
 
 export async function fetchDashboardKpisApi(): Promise<DashboardKPIs> {
-  return apiClient.get<DashboardKPIs>('/dashboard/kpis');
+  return parseDashboardKpis(await apiClient.get<unknown>('/dashboard/kpis'));
 }
 
 export async function fetchSalesFunnelApi(): Promise<FunnelStageItem[]> {
@@ -121,7 +149,7 @@ export async function saveCustomWidgetsApi(widgets: CustomWidget[]): Promise<Mes
 
 export function useDashboardKpisQuery(options?: Omit<UseQueryOptions<DashboardKPIs>, 'queryKey' | 'queryFn'>) {
   return useQuery<DashboardKPIs>({
-    queryKey: ['dashboard', 'kpis'],
+    queryKey: ['dashboard', 'kpis', 'v2'],
     queryFn: fetchDashboardKpisApi,
     staleTime: 1000 * 60 * 5,
     ...options,

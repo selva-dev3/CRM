@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -30,6 +30,8 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('@/lib/api/dashboard', () => ({
+  DEFAULT_DASHBOARD_CURRENCY: 'INR',
+  DEFAULT_DASHBOARD_LOCALE: 'en-IN',
   useDashboardKpisQuery: () => mocks.kpis(),
   useSalesFunnelQuery: () => mocks.funnel(),
   useTopPerformersQuery: () => mocks.performers(),
@@ -61,12 +63,15 @@ describe('DashboardPage', () => {
     mocks.kpis.mockReturnValue(queryResult({
       total_leads: 7,
       deals_won_amount: 5000,
-      pipeline_revenue: 0,
+      pipeline_revenue: 1200,
       win_rate_percentage: 100,
       won_deals_count: 1,
       closed_deals_count: 1,
       ai_lead_score_avg: 0,
       scored_leads_count: 7,
+      currency: 'INR',
+      locale: 'en-IN',
+      recent_activity: [],
     }));
     mocks.funnel.mockReturnValue(queryResult([
       { stage: 'Prospecting', count: 0, value: 0 },
@@ -122,6 +127,21 @@ describe('DashboardPage', () => {
     render(<DashboardPage />);
 
     expect(screen.getByText('Today · Asia/Kolkata')).toBeInTheDocument();
+  });
+
+  it('formats dashboard amounts with the organization currency', () => {
+    render(<DashboardPage />);
+
+    expect(screen.getByText('₹1,200')).toBeInTheDocument();
+    expect(screen.getByText('₹5,000')).toBeInTheDocument();
+  });
+
+  it('keeps amounts currency-formatted while KPI metadata is loading', () => {
+    mocks.kpis.mockReturnValue(queryResult(undefined, { isLoading: true }));
+
+    render(<DashboardPage />);
+
+    expect(screen.getByText('₹5,000')).toBeInTheDocument();
   });
 
   it('links each populated opportunity to its detail page', () => {
@@ -200,5 +220,30 @@ describe('DashboardPage', () => {
 
     expect(await screen.findByRole('button', { name: 'Dismiss success message' })).toBeInTheDocument();
     await waitFor(() => expect(refetch).toHaveBeenCalled());
+  });
+
+  it('resets the success-message timer after a second save', async () => {
+    vi.useFakeTimers();
+    try {
+      render(<DashboardPage />);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Customize Widgets' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Save Layout' }));
+      await act(async () => undefined);
+      expect(screen.getByRole('button', { name: 'Dismiss success message' })).toBeInTheDocument();
+
+      act(() => vi.advanceTimersByTime(2000));
+      fireEvent.click(screen.getByRole('button', { name: 'Customize Widgets' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Save Layout' }));
+      await act(async () => undefined);
+
+      act(() => vi.advanceTimersByTime(1000));
+      expect(screen.getByRole('button', { name: 'Dismiss success message' })).toBeInTheDocument();
+
+      act(() => vi.advanceTimersByTime(2000));
+      expect(screen.queryByRole('button', { name: 'Dismiss success message' })).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

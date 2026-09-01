@@ -7,6 +7,7 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException
+from app.models import Lead, User
 from app.repositories.dashboard_repository import DashboardRepository
 from app.repositories.setting_repository import SettingRepository
 from app.schemas.dashboard import CustomWidgetSaveRequest, DashboardAiInsightsResponse
@@ -27,20 +28,23 @@ async def test_get_kpis_computes_win_rate():
     repo.count_won_deals = AsyncMock(return_value=2)
     repo.avg_lead_score = AsyncMock(return_value=0.0)
     repo.count_scored_leads = AsyncMock(return_value=10)
+    repo.get_organization_currency_locale = AsyncMock(return_value=("INR", "en-IN"))
     repo.recent_leads = AsyncMock(return_value=[])
     service = _service_with(repo, SettingRepository())
     db = AsyncMock(spec=AsyncSession)
 
     result = await service.get_kpis(db, "org-1")
 
-    assert result["total_leads"] == 10
-    assert result["deals_won_amount"] == 5000.0
-    assert result["pipeline_revenue"] == 12000.0
-    assert result["win_rate_percentage"] == 25.0
-    assert result["won_deals_count"] == 2
-    assert result["closed_deals_count"] == 8
-    assert result["ai_lead_score_avg"] == 0.0
-    assert result["scored_leads_count"] == 10
+    assert result.total_leads == 10
+    assert result.deals_won_amount == 5000.0
+    assert result.pipeline_revenue == 12000.0
+    assert result.win_rate_percentage == 25.0
+    assert result.won_deals_count == 2
+    assert result.closed_deals_count == 8
+    assert result.ai_lead_score_avg == 0.0
+    assert result.scored_leads_count == 10
+    assert result.currency == "INR"
+    assert result.locale == "en-IN"
     repo.count_leads.assert_awaited_once_with(db, "org-1")
 
 
@@ -54,6 +58,7 @@ async def test_get_kpis_uses_lead_contact_name_for_recent_activity():
     repo.count_won_deals = AsyncMock(return_value=0)
     repo.avg_lead_score = AsyncMock(return_value=0.0)
     repo.count_scored_leads = AsyncMock(return_value=0)
+    repo.get_organization_currency_locale = AsyncMock(return_value=("USD", "en-US"))
     repo.recent_leads = AsyncMock(
         return_value=[
             SimpleNamespace(
@@ -68,7 +73,7 @@ async def test_get_kpis_uses_lead_contact_name_for_recent_activity():
 
     result = await service.get_kpis(AsyncMock(spec=AsyncSession), "org-1")
 
-    assert result["recent_activity"][0]["title"] == "Ada Lovelace"
+    assert result.recent_activity[0].title == "Ada Lovelace"
 
 
 @pytest.mark.asyncio
@@ -153,7 +158,7 @@ async def test_save_custom_widgets_returns_generic_error_for_serialization_failu
 
 
 @pytest.mark.asyncio
-async def test_save_custom_widgets_does_not_mask_database_failure():
+async def test_save_custom_widgets_rolls_back_upsert_failure():
     setting_repo = SettingRepository()
     setting_repo.upsert = AsyncMock(side_effect=RuntimeError("database unavailable"))
     service = _service_with(DashboardRepository(), setting_repo)
@@ -162,7 +167,22 @@ async def test_save_custom_widgets_does_not_mask_database_failure():
     with pytest.raises(RuntimeError, match="database unavailable"):
         await service.save_custom_widgets(db, "org-1", [])
 
-    db.rollback.assert_not_awaited()
+    db.rollback.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_save_custom_widgets_rolls_back_commit_failure():
+    setting_repo = SettingRepository()
+    setting_repo.upsert = AsyncMock()
+    service = _service_with(DashboardRepository(), setting_repo)
+    db = AsyncMock(spec=AsyncSession)
+    db.commit.side_effect = RuntimeError("commit failed")
+
+    with pytest.raises(RuntimeError, match="commit failed"):
+        await service.save_custom_widgets(db, "org-1", [])
+
+    setting_repo.upsert.assert_awaited_once()
+    db.rollback.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -230,8 +250,72 @@ async def test_recent_deals_owner_join_excludes_inactive_users():
 
     await DashboardRepository().recent_deals(db, "org-1")
 
-    query = str(db.execute.await_args.args[0])
-    assert "users.is_active IS true" in query
+    statement = db.execute.await_args.args[0]
+    owner_join = statement.get_final_froms()[0]
+    assert any(
+        condition.compare(User.is_active.is_(True)) for condition in owner_join.onclause.clauses
+    )
+
+
+@pytest.mark.asyncio
+async def test_recent_leads_excludes_archived_leads():
+    db = AsyncMock(spec=AsyncSession)
+    result = Mock()
+    result.scalars.return_value.all.return_value = []
+    db.execute.return_value = result
+
+    await DashboardRepository().recent_leads(db, "org-1")
+
+    statement = db.execute.await_args.args[0]
+    assert any(
+        condition.compare(Lead.organization_id == "org-1")
+        for condition in statement._where_criteria
+    )
+    assert any(
+        condition.compare(Lead.is_archived.is_(False))
+        for condition in statement._where_criteria
+    )
+
+
+@pytest.mark.asyncio
+async def test_organization_currency_locale_is_normalized():
+    db = AsyncMock(spec=AsyncSession)
+    result = Mock()
+    result.first.return_value = (" usd ", "en-US")
+    db.execute.return_value = result
+
+    currency, locale = await DashboardRepository().get_organization_currency_locale(db, "org-1")
+
+    assert currency == "USD"
+    assert locale == "en-US"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stored_currency", ["$", "US Dollar", "   ", "USDX", "XYZ", None])
+async def test_organization_currency_locale_falls_back_for_invalid_currency(stored_currency):
+    db = AsyncMock(spec=AsyncSession)
+    result = Mock()
+    result.first.return_value = (stored_currency, "en-IN")
+    db.execute.return_value = result
+
+    currency, locale = await DashboardRepository().get_organization_currency_locale(db, "org-1")
+
+    assert currency == "INR"
+    assert locale == "en-IN"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stored_locale", [None, "", "en_US", "abcd"])
+async def test_organization_currency_locale_falls_back_for_invalid_locale(stored_locale):
+    db = AsyncMock(spec=AsyncSession)
+    result = Mock()
+    result.first.return_value = ("INR", stored_locale)
+    db.execute.return_value = result
+
+    currency, locale = await DashboardRepository().get_organization_currency_locale(db, "org-1")
+
+    assert currency == "INR"
+    assert locale == "en"
 
 
 @pytest.mark.asyncio
@@ -239,6 +323,7 @@ async def test_ai_insight_includes_deal_identifier():
     repo = DashboardRepository()
     repo.count_leads = AsyncMock(return_value=1)
     repo.count_deals_and_sum = AsyncMock(return_value=(1, 5000.0))
+    repo.get_organization_currency_locale = AsyncMock(return_value=("INR", "en-IN"))
     repo.top_deal = AsyncMock(
         return_value=SimpleNamespace(
             id="deal-1",
@@ -252,6 +337,8 @@ async def test_ai_insight_includes_deal_identifier():
     result = await service.get_ai_insights(AsyncMock(spec=AsyncSession), "org-1")
 
     assert result["insights"][0]["deal_id"] == "deal-1"
+    assert "INR 5,000.00" in result["summary"]
+    assert "INR 5,000.00" in result["insights"][0]["description"]
     assert DashboardAiInsightsResponse.model_validate(result).insights[0].deal_id == "deal-1"
 
 

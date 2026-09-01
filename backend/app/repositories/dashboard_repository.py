@@ -3,7 +3,15 @@ from datetime import datetime
 from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.currency import normalize_currency_code_or_default
+from app.core.locale import normalize_locale_or_default
 from app.models import CallLog, Deal, Email, Lead, Meeting, Organization, Task, User
+
+CLOSED_WON_STAGE = "Closed Won"
+CLOSED_LOST_STAGE = "Closed Lost"
+CLOSED_DEAL_STAGES = (CLOSED_WON_STAGE, CLOSED_LOST_STAGE)
+COMPLETED_TASK_STATUS = "Completed"
+SENT_EMAIL_STATUS = "sent"
 
 
 class DashboardRepository:
@@ -22,7 +30,7 @@ class DashboardRepository:
         result = await db.execute(
             select(func.coalesce(func.sum(Deal.amount), 0.0)).where(
                 Deal.organization_id == organization_id,
-                Deal.stage.notin_(("Closed Won", "Closed Lost")),
+                Deal.stage.notin_(CLOSED_DEAL_STAGES),
             )
         )
         return float(result.scalar() or 0.0)
@@ -31,7 +39,7 @@ class DashboardRepository:
         result = await db.execute(
             select(func.coalesce(func.sum(Deal.amount), 0.0)).where(
                 Deal.organization_id == organization_id,
-                Deal.stage == "Closed Won",
+                Deal.stage == CLOSED_WON_STAGE,
             )
         )
         return float(result.scalar() or 0.0)
@@ -40,7 +48,7 @@ class DashboardRepository:
         result = await db.execute(
             select(func.count(Deal.id)).where(
                 Deal.organization_id == organization_id,
-                Deal.stage.in_(("Closed Won", "Closed Lost")),
+                Deal.stage.in_(CLOSED_DEAL_STAGES),
             )
         )
         return result.scalar() or 0
@@ -49,7 +57,7 @@ class DashboardRepository:
         result = await db.execute(
             select(func.count(Deal.id)).where(
                 Deal.organization_id == organization_id,
-                Deal.stage == "Closed Won",
+                Deal.stage == CLOSED_WON_STAGE,
             )
         )
         return result.scalar() or 0
@@ -78,7 +86,10 @@ class DashboardRepository:
     ) -> list[Lead]:
         result = await db.execute(
             select(Lead)
-            .where(Lead.organization_id == organization_id)
+            .where(
+                Lead.organization_id == organization_id,
+                Lead.is_archived.is_(False),
+            )
             .order_by(Lead.created_at.desc())
             .limit(limit)
         )
@@ -107,7 +118,7 @@ class DashboardRepository:
             .where(
                 Deal.organization_id == organization_id,
                 Deal.assigned_to.isnot(None),
-                Deal.stage == "Closed Won",
+                Deal.stage == CLOSED_WON_STAGE,
             )
             .group_by(User.id, User.name)
             .order_by(func.sum(Deal.amount).desc())
@@ -157,7 +168,7 @@ class DashboardRepository:
                 Email.organization_id == organization_id,
                 Email.sent_at >= start,
                 Email.sent_at < end,
-                Email.status.ilike("sent"),
+                Email.status.ilike(SENT_EMAIL_STATUS),
             )
         )
         return result.scalar() or 0
@@ -180,7 +191,7 @@ class DashboardRepository:
         result = await db.execute(
             select(func.count(Task.id)).where(
                 Task.organization_id == organization_id,
-                Task.status == "Completed",
+                Task.status == COMPLETED_TASK_STATUS,
                 Task.updated_at >= start,
                 Task.updated_at < end,
             )
@@ -212,7 +223,7 @@ class DashboardRepository:
         result = await db.execute(
             select(func.count(Deal.id), func.coalesce(func.sum(Deal.amount), 0.0)).where(
                 Deal.organization_id == organization_id,
-                Deal.stage.notin_(("Closed Won", "Closed Lost")),
+                Deal.stage.notin_(CLOSED_DEAL_STAGES),
             )
         )
         row = result.first()
@@ -223,7 +234,7 @@ class DashboardRepository:
             select(Deal)
             .where(
                 Deal.organization_id == organization_id,
-                Deal.stage.notin_(("Closed Won", "Closed Lost")),
+                Deal.stage.notin_(CLOSED_DEAL_STAGES),
             )
             .order_by(Deal.amount.desc())
             .limit(1)
@@ -235,3 +246,18 @@ class DashboardRepository:
             select(Organization.timezone).where(Organization.id == organization_id)
         )
         return result.scalar() or "UTC"
+
+    async def get_organization_currency_locale(
+        self, db: AsyncSession, organization_id: str
+    ) -> tuple[str, str]:
+        result = await db.execute(
+            select(Organization.currency, Organization.language).where(
+                Organization.id == organization_id
+            )
+        )
+        row = result.first()
+        if not row:
+            return "INR", "en"
+        currency = normalize_currency_code_or_default(row[0])
+        locale = normalize_locale_or_default(row[1])
+        return currency, locale

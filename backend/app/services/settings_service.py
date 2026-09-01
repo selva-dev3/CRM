@@ -4,9 +4,12 @@ import urllib.parse
 
 from fastapi import status
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.currency import normalize_currency_code_or_default
 from app.core.errors import APIException
+from app.core.logging import get_logger
 from app.core.security import get_password_hash
 from app.models import Organization, User
 from app.repositories.setting_repository import SettingRepository
@@ -14,6 +17,7 @@ from app.schemas.crm_schemas import SystemSettings
 from app.services.org_service import organization_service
 
 PROTECTED_SUPERADMIN_EMAIL = "superadmin@gmail.com"
+logger = get_logger(__name__)
 
 
 class SettingsService:
@@ -43,21 +47,27 @@ class SettingsService:
             setting = await self.repository.get_by_key(db, key)
             if setting and setting.value is not None:
                 return setting.value
-        except Exception:
-            pass
+        except SQLAlchemyError as exc:
+            logger.error(
+                "Failed to read system setting '%s'",
+                key,
+                exc_info=(type(exc), exc, exc.__traceback__),
+            )
+            raise APIException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                code="SETTINGS_READ_FAILED",
+                message="Failed to read system settings.",
+            ) from exc
         return default_val
 
-    async def _set_setting_value(self, db: AsyncSession, key: str, val: str) -> None:
-        try:
-            await self.repository.upsert(db, key=key, value=val)
-            await db.commit()
-        except Exception:
-            await db.rollback()
+    async def _stage_setting_value(self, db: AsyncSession, key: str, val: str) -> None:
+        await self.repository.upsert(db, key=key, value=val)
 
     async def get_system_settings(
         self, db: AsyncSession, current_user: User | None = None
     ) -> dict:
         org_name = "Enterprise Organization"
+        org = None
 
         if current_user and getattr(current_user, "organization_id", None):
             org = await organization_service.repository.get_by_id(db, current_user.organization_id)
@@ -69,7 +79,13 @@ class SettingsService:
             if org and org.name:
                 org_name = org.name
 
-        currency = await self._get_setting_value(db, "system_currency", "USD")
+        # Organization currency is authoritative once an organization exists.
+        # system_currency is retained only for the org-less bootstrap state.
+        if org:
+            currency = normalize_currency_code_or_default(org.currency, default="INR")
+        else:
+            stored_currency = await self._get_setting_value(db, "system_currency", "USD")
+            currency = normalize_currency_code_or_default(stored_currency, default="USD")
         timezone = await self._get_setting_value(db, "system_timezone", "UTC")
         smtp_enabled = await self._get_setting_value(db, "smtp_enabled", "true")
         ai_features_enabled = await self._get_setting_value(db, "ai_features_enabled", "true")
@@ -85,26 +101,47 @@ class SettingsService:
     async def update_system_settings(
         self, db: AsyncSession, payload: SystemSettings, current_user: User | None = None
     ) -> SystemSettings:
-        if current_user and getattr(current_user, "organization_id", None) and payload.organization_name:
-            org = await organization_service.repository.get_by_id(db, current_user.organization_id)
-            if org:
-                org.name = payload.organization_name
-                await db.commit()
-        elif payload.organization_name:
-            org = await organization_service.repository.get_first(db)
-            if org:
-                org.name = payload.organization_name
-                await db.commit()
+        try:
+            org = None
+            if current_user and getattr(current_user, "organization_id", None):
+                org = await organization_service.repository.get_by_id(
+                    db, current_user.organization_id
+                )
+            else:
+                org = await organization_service.repository.get_first(db)
 
-        if payload.currency:
-            await self._set_setting_value(db, "system_currency", payload.currency)
-        if payload.timezone:
-            await self._set_setting_value(db, "system_timezone", payload.timezone)
+            if org:
+                if payload.organization_name:
+                    org.name = payload.organization_name
+                if payload.currency:
+                    org.currency = payload.currency
+            elif payload.currency:
+                await self._stage_setting_value(db, "system_currency", payload.currency)
 
-        await self._set_setting_value(db, "smtp_enabled", "true" if payload.smtp_enabled else "false")
-        await self._set_setting_value(
-            db, "ai_features_enabled", "true" if payload.ai_features_enabled else "false"
-        )
+            if payload.timezone:
+                await self._stage_setting_value(db, "system_timezone", payload.timezone)
+
+            await self._stage_setting_value(
+                db, "smtp_enabled", "true" if payload.smtp_enabled else "false"
+            )
+            await self._stage_setting_value(
+                db, "ai_features_enabled", "true" if payload.ai_features_enabled else "false"
+            )
+            await db.commit()
+        except Exception as exc:
+            try:
+                await db.rollback()
+            except Exception:
+                logger.exception("Failed to roll back system settings update")
+            logger.error(
+                "Failed to update system settings",
+                exc_info=(type(exc), exc, exc.__traceback__),
+            )
+            raise APIException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                code="SETTINGS_UPDATE_FAILED",
+                message="Failed to update system settings.",
+            ) from exc
 
         return payload
 
