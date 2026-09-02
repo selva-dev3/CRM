@@ -6,11 +6,8 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   FileText,
-  Calendar,
   DollarSign,
-  Building,
   Plus,
-  Search,
   Download,
   Upload,
   Trash2,
@@ -21,10 +18,7 @@ import {
   X,
   Loader2,
   CreditCard,
-  BellRing,
   Repeat,
-  ShieldCheck,
-  Zap,
   Receipt
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
@@ -34,8 +28,6 @@ import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
 import {
   useInvoicesQuery,
-  useOverdueInvoicesQuery,
-  useRecurringInvoicesQuery,
   useCreateInvoiceMutation,
   useUpdateInvoiceMutation,
   useDeleteInvoiceMutation,
@@ -44,7 +36,6 @@ import {
   useSendInvoiceEmailMutation,
   useCreateStripeCheckoutMutation,
   useMarkInvoicePaidMutation,
-  useSendPaymentReminderMutation,
   useCreateRecurringInvoiceMutation,
   useImportInvoicesCsvMutation,
   exportInvoicesCsvApi,
@@ -106,8 +97,6 @@ export default function InvoicesPage() {
     search: debouncedSearchTerm || undefined,
   });
 
-  const { data: overdueInvoices = [] } = useOverdueInvoicesQuery();
-  const { data: recurringSchedules = [] } = useRecurringInvoicesQuery();
   // Only Closed Won deals are invoiceable (backend enforces the same rule).
   const { data: closedWonDeals = [] } = useDealsQuery(1, 100, 'Closed Won');
 
@@ -120,7 +109,6 @@ export default function InvoicesPage() {
   const sendEmailMutation = useSendInvoiceEmailMutation();
   const stripeCheckoutMutation = useCreateStripeCheckoutMutation();
   const markPaidMutation = useMarkInvoicePaidMutation();
-  const reminderMutation = useSendPaymentReminderMutation();
   const createRecurringMutation = useCreateRecurringInvoiceMutation();
   const importCsvMutation = useImportInvoicesCsvMutation();
 
@@ -192,8 +180,8 @@ export default function InvoicesPage() {
       });
       setSuccessMessage(`Recurring ${recInterval} invoice schedule created for ${recCustomerId.trim()}.`);
       setIsRecurringModalOpen(false);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to create recurring schedule.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to create recurring schedule.'));
     }
   };
 
@@ -208,8 +196,8 @@ export default function InvoicesPage() {
       setSuccessMessage(`Invoice PDF & payment link sent to ${recipientEmailInput.trim()}.`);
       setIsSendModalOpen(false);
       setSendModalInvoice(null);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to send invoice email.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to send invoice email.'));
     }
   };
 
@@ -218,8 +206,8 @@ export default function InvoicesPage() {
       const res = await stripeCheckoutMutation.mutateAsync(inv.id);
       setSuccessMessage(`Stripe Checkout session URL generated.`);
       window.open(res.checkout_url, '_blank');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to generate Stripe Checkout session.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to generate Stripe Checkout session.'));
     }
   };
 
@@ -227,8 +215,8 @@ export default function InvoicesPage() {
     try {
       await markPaidMutation.mutateAsync({ id: inv.id, payment_method: 'Stripe Online' });
       setSuccessMessage(`Invoice "${inv.invoice_number}" marked as Paid.`);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to mark invoice as paid.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to mark invoice as paid.'));
     }
   };
 
@@ -237,8 +225,8 @@ export default function InvoicesPage() {
       const res = await exportInvoicesCsvApi();
       setSuccessMessage('Invoices list exported. Download started.');
       window.open(res.download_url, '_blank');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to export invoices CSV.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to export invoices CSV.'));
     }
   };
 
@@ -246,8 +234,8 @@ export default function InvoicesPage() {
     try {
       const res = await importCsvMutation.mutateAsync();
       setSuccessMessage(res.message || 'Invoices CSV import processing completed.');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to import invoices CSV.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to import invoices CSV.'));
     }
   };
 
@@ -256,8 +244,8 @@ export default function InvoicesPage() {
     try {
       const res = await bulkRemindMutation.mutateAsync(Array.from(selectedIds));
       setSuccessMessage(res.message || `Payment reminders sent to ${selectedIds.size} clients.`);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to send bulk payment reminders.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to send bulk payment reminders.'));
     }
   };
 
@@ -267,8 +255,8 @@ export default function InvoicesPage() {
       await deleteInvoiceMutation.mutateAsync(invoiceToDelete.id);
       setSuccessMessage('Invoice deleted successfully.');
       setInvoiceToDelete(null);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to delete invoice.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to delete invoice.'));
     }
   };
 
@@ -278,8 +266,8 @@ export default function InvoicesPage() {
       const res = await bulkDeleteMutation.mutateAsync(Array.from(selectedIds));
       setSuccessMessage(`${res.affected_count || selectedIds.size} invoice(s) deleted.`);
       setSelectedIds(new Set());
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to delete selected invoices.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to delete selected invoices.'));
     }
   };
 
@@ -710,3 +698,4 @@ export default function InvoicesPage() {
     </div>
   );
 }
+import { getErrorMessage } from '@/lib/utils';

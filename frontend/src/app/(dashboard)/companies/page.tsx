@@ -11,7 +11,6 @@ import {
   Plus,
   FileSpreadsheet,
   Upload,
-  Search,
   Trash2,
   Edit,
   CheckCircle2,
@@ -73,7 +72,7 @@ export default function CompaniesPage() {
   }, [searchTerm]);
 
   // Queries
-  const { data: companies = [], isLoading, refetch } = useCompaniesQuery(page, limit, debouncedSearchTerm);
+  const { data: companies = [], refetch } = useCompaniesQuery(page, limit, debouncedSearchTerm);
 
   // Mutations
   const createCompanyMutation = useCreateCompanyMutation();
@@ -356,15 +355,15 @@ export default function CompaniesPage() {
 
       {/* Companies DataTable */}
       <DataTable
-        columns={columns as any}
-        data={companies as any}
-        getRowKey={(item: any) => item.id}
-        onRowClick={(item: any) => router.push(`/companies/${item.id}`)}
+        columns={columns}
+        data={companies}
+        getRowKey={(item) => item.id}
+        onRowClick={(item) => router.push(`/companies/${item.id}`)}
         searchValue={searchTerm}
         onSearchChange={setSearchTerm}
         searchPlaceholder="Search companies by name or domain..."
         actionVariant="menu"
-        actions={(item: any) => [
+        actions={(item) => [
           {
             label: 'Edit',
             permission: PERMISSIONS.COMPANIES.UPDATE,
@@ -390,7 +389,7 @@ export default function CompaniesPage() {
             setSelectedIds(new Set());
           }
         }}
-        onToggleRow={(item: any, checked) => {
+        onToggleRow={(item, checked) => {
           const next = new Set(selectedIds);
           if (checked) next.add(item.id);
           else next.delete(item.id);

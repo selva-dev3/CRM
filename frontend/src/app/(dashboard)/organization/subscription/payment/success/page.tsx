@@ -50,6 +50,7 @@ function PaymentSuccessContent() {
         setIsSyncTimedOut(true);
       }, 20000);
     } else {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear timeout state when polling completes
       setIsSyncTimedOut(false);
     }
     return () => {

@@ -13,16 +13,13 @@ import {
   RotateCcw,
   Download,
   Upload,
-  Clock,
   CheckCircle2,
   Trash2,
   Edit,
   ListTodo,
   X,
   Loader2,
-  CornerDownRight,
   FileSpreadsheet,
-  Bell
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
@@ -31,8 +28,6 @@ import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
 import {
   useTasksQuery,
-  useOverdueTasksQuery,
-  useTodayTasksQuery,
   useCreateTaskMutation,
   useUpdateTaskMutation,
   useDeleteTaskMutation,
@@ -40,15 +35,10 @@ import {
   useReopenTaskMutation,
   useBulkDeleteTasksMutation,
   useBulkCompleteTasksMutation,
-  useSubtasksQuery,
-  useAddSubtaskMutation,
-  useAssignTaskMutation,
-  useSetTaskReminderMutation,
   exportTasksCsvApi,
   importTasksCsvApi,
   TaskItem,
   TaskCreatePayload,
-  TaskUpdatePayload
 } from '@/lib/api/tasks';
 import { useUsersQuery } from '@/lib/api/users';
 
@@ -71,7 +61,6 @@ export default function TasksPage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<TaskItem | null>(null);
   const [taskToDelete, setTaskToDelete] = useState<TaskItem | null>(null);
-  const [detailTask, setDetailTask] = useState<TaskItem | null>(null);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   // Form states for Create/Edit
@@ -83,9 +72,6 @@ export default function TasksPage() {
   const [assignedTo, setAssignedTo] = useState('');
 
   // Form states for Subtask & Reminder
-  const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
-  const [reminderTime, setReminderTime] = useState('');
-  const [assignUserInput, setAssignUserInput] = useState('');
 
   // Toast / Alert message state
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -106,6 +92,7 @@ export default function TasksPage() {
 
   // Reset page when filters change
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset pagination when filters change
     setPage(1);
   }, [statusFilter, priorityFilter]);
 
@@ -118,9 +105,6 @@ export default function TasksPage() {
     priority: priorityFilter || undefined,
   });
 
-  const { data: overdueTasks = [] } = useOverdueTasksQuery();
-  const { data: todayTasks = [] } = useTodayTasksQuery();
-  const { data: subtasks = [], refetch: refetchSubtasks } = useSubtasksQuery(detailTask?.id || '');
   const { data: users = [] } = useUsersQuery(1, 100);
 
   // Lookup assignee name
@@ -142,9 +126,6 @@ export default function TasksPage() {
   const reopenTaskMutation = useReopenTaskMutation();
   const bulkDeleteMutation = useBulkDeleteTasksMutation();
   const bulkCompleteMutation = useBulkCompleteTasksMutation();
-  const addSubtaskMutation = useAddSubtaskMutation();
-  const assignTaskMutation = useAssignTaskMutation();
-  const setReminderMutation = useSetTaskReminderMutation();
 
   // Reset modal form
   const resetForm = () => {
@@ -200,8 +181,8 @@ export default function TasksPage() {
       }
       setIsCreateModalOpen(false);
       resetForm();
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to save task.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to save task.'));
     }
   };
 
@@ -211,8 +192,8 @@ export default function TasksPage() {
       await deleteTaskMutation.mutateAsync(taskToDelete.id);
       setSuccessMessage(`Task deleted successfully.`);
       setTaskToDelete(null);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to delete task.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to delete task.'));
     }
   };
 
@@ -225,8 +206,8 @@ export default function TasksPage() {
         await completeTaskMutation.mutateAsync(task.id);
         setSuccessMessage(`Task "${task.title}" marked as Completed.`);
       }
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to update task status.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to update task status.'));
     }
   };
 
@@ -237,8 +218,8 @@ export default function TasksPage() {
       const res = await bulkCompleteMutation.mutateAsync(Array.from(selectedIds));
       setSuccessMessage(`${res.affected_count || selectedIds.size} task(s) marked complete.`);
       setSelectedIds(new Set());
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to complete selected tasks.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to complete selected tasks.'));
     }
   };
 
@@ -248,8 +229,8 @@ export default function TasksPage() {
       const res = await bulkDeleteMutation.mutateAsync(Array.from(selectedIds));
       setSuccessMessage(`${res.affected_count || selectedIds.size} task(s) deleted.`);
       setSelectedIds(new Set());
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to delete selected tasks.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to delete selected tasks.'));
     }
   };
 
@@ -261,8 +242,8 @@ export default function TasksPage() {
         window.open(res.download_url, '_blank');
       }
       setSuccessMessage('Tasks exported to CSV successfully.');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to export tasks.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to export tasks.'));
     }
   };
 
@@ -280,51 +261,10 @@ export default function TasksPage() {
       setIsImportModalOpen(false);
       setImportFile(null);
       refetchTasks();
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to import CSV.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to import CSV.'));
     } finally {
       setIsImporting(false);
-    }
-  };
-
-  // Subtask submission
-  const handleAddSubtask = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!detailTask || !newSubtaskTitle.trim()) return;
-    try {
-      await addSubtaskMutation.mutateAsync({ taskId: detailTask.id, title: newSubtaskTitle.trim() });
-      setSuccessMessage(`Subtask added to "${detailTask.title}".`);
-      setNewSubtaskTitle('');
-      refetchSubtasks();
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to add subtask.');
-    }
-  };
-
-  // Assign task submit
-  const handleAssignTaskSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!detailTask || !assignUserInput.trim()) return;
-    try {
-      await assignTaskMutation.mutateAsync({ taskId: detailTask.id, userId: assignUserInput.trim() });
-      setSuccessMessage(`Task assigned to ${assignUserInput}.`);
-      setAssignUserInput('');
-      setDetailTask({ ...detailTask, assigned_to: assignUserInput.trim() });
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to assign task.');
-    }
-  };
-
-  // Set Reminder submit
-  const handleSetReminderSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!detailTask || !reminderTime) return;
-    try {
-      await setReminderMutation.mutateAsync({ taskId: detailTask.id, reminderTime });
-      setSuccessMessage(`Reminder scheduled for ${reminderTime}.`);
-      setReminderTime('');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to set reminder.');
     }
   };
 
@@ -825,3 +765,4 @@ export default function TasksPage() {
     </div>
   );
 }
+import { getErrorMessage } from '@/lib/utils';

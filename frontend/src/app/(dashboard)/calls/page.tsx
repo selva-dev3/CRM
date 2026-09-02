@@ -5,26 +5,19 @@ import { Button } from '@/components/ui/button';
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Phone,
   PhoneCall,
-  PhoneForwarded,
   PhoneIncoming,
   PhoneOutgoing,
   Clock,
   Plus,
-  Search,
   Trash2,
   Volume2,
-  Sparkles,
   Loader2,
   X,
   CheckCircle2,
   AlertCircle,
-  FileText,
   Tag,
   Voicemail,
-  TrendingUp,
-  UserCheck
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
@@ -34,7 +27,6 @@ import { PERMISSIONS } from '@/lib/permissions';
 import {
   useCallsQuery,
   useCallDispositionsQuery,
-  useRepPerformanceStatsQuery,
   useLogCallMutation,
   useTriggerOutboundCallMutation,
   useCreateDispositionMutation,
@@ -49,7 +41,7 @@ export default function CallsPage() {
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
-  const [callTypeFilter, setCallTypeFilter] = useState<string>('');
+  const [callTypeFilter] = useState<string>('');
   const [page, setPage] = useState(1);
   const limit = 15;
 
@@ -93,7 +85,7 @@ export default function CallsPage() {
   }, [searchTerm]);
 
   // Queries
-  const { data: calls = [], isLoading, refetch } = useCallsQuery({
+  const { data: calls = [], isLoading } = useCallsQuery({
     page,
     limit,
     search: debouncedSearchTerm || undefined,
@@ -101,7 +93,6 @@ export default function CallsPage() {
   });
 
   const { data: dispositions = [] } = useCallDispositionsQuery();
-  const { data: repStats = [] } = useRepPerformanceStatsQuery();
 
   // Mutations
   const logCallMutation = useLogCallMutation();
@@ -133,8 +124,8 @@ export default function CallsPage() {
       setSuccessMessage('Call logged successfully.');
       setIsLogCallModalOpen(false);
       resetLogForm();
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to log call.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to log call.'));
     }
   };
 
@@ -149,8 +140,8 @@ export default function CallsPage() {
       setSuccessMessage(`Click-to-dial initiated (Call SID: ${res.call_sid}) to ${res.to}`);
       setIsDialModalOpen(false);
       setPhoneNumber('');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to initiate dial.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to initiate dial.'));
     }
   };
 
@@ -163,8 +154,8 @@ export default function CallsPage() {
       });
       setSuccessMessage(`Voicemail drop executed for contact.`);
       setIsVoicemailModalOpen(false);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to execute voicemail drop.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to execute voicemail drop.'));
     }
   };
 
@@ -175,8 +166,8 @@ export default function CallsPage() {
       await createDispositionMutation.mutateAsync(newDispositionName.trim());
       setSuccessMessage(`Disposition tag "${newDispositionName.trim()}" created.`);
       setNewDispositionName('');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to create disposition tag.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to create disposition tag.'));
     }
   };
 
@@ -186,8 +177,8 @@ export default function CallsPage() {
       await deleteCallMutation.mutateAsync(callToDelete.id);
       setSuccessMessage('Call log deleted successfully.');
       setCallToDelete(null);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to delete call log.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to delete call log.'));
     }
   };
 
@@ -197,8 +188,8 @@ export default function CallsPage() {
       const res = await bulkDeleteMutation.mutateAsync(Array.from(selectedIds));
       setSuccessMessage(`${res.affected_count || selectedIds.size} call log(s) deleted.`);
       setSelectedIds(new Set());
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to delete selected call logs.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to delete selected call logs.'));
     }
   };
 
@@ -609,3 +600,4 @@ export default function CallsPage() {
     </div>
   );
 }
+import { getErrorMessage } from '@/lib/utils';

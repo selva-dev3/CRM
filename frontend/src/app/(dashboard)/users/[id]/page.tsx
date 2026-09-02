@@ -6,8 +6,6 @@ import Link from 'next/link';
 import {
   ArrowLeft,
   Mail,
-  ShieldCheck,
-  UserCheck,
   Building,
   Calendar,
   Trash2,
@@ -15,8 +13,6 @@ import {
   CheckCircle2,
   AlertCircle,
   Activity,
-  Key,
-  Award,
   RefreshCw,
   User,
   Power,
@@ -178,7 +174,7 @@ export default function UserDetailPage() {
 
     try {
       setErrorMessage(null);
-      const res = await setQuotaMutation.mutateAsync({
+      await setQuotaMutation.mutateAsync({
         userId,
         targetAmount: target,
         achievedAmount: achieved,

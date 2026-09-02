@@ -17,7 +17,6 @@ import {
   Loader2,
   Trash2,
   Edit,
-  FileText,
   Upload,
   UserCheck,
   ListTodo
@@ -92,8 +91,8 @@ export default function MeetingDetailPage() {
       setSuccessMessage('Meeting details updated successfully.');
       setIsEditModalOpen(false);
       refetch();
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to update meeting.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to update meeting.'));
     }
   };
 
@@ -101,8 +100,8 @@ export default function MeetingDetailPage() {
     try {
       await cancelMutation.mutateAsync(meetingId);
       router.push('/meetings');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to cancel meeting.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to cancel meeting.'));
     }
   };
 
@@ -118,8 +117,8 @@ export default function MeetingDetailPage() {
       setSuccessMessage('Meeting rescheduled successfully.');
       setIsRescheduleModalOpen(false);
       refetch();
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to reschedule meeting.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to reschedule meeting.'));
     }
   };
 
@@ -135,8 +134,8 @@ export default function MeetingDetailPage() {
       setSuccessMessage(`RSVP "${rsvpStatus}" recorded for ${rsvpEmail}.`);
       setRsvpEmail('');
       refetch();
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to record RSVP.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to record RSVP.'));
     }
   };
 
@@ -151,8 +150,8 @@ export default function MeetingDetailPage() {
       setSuccessMessage('Transcript uploaded and AI summary generated.');
       setTranscriptText('');
       refetchAiSummary();
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to upload transcript.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to upload transcript.'));
     }
   };
 
@@ -562,3 +561,4 @@ export default function MeetingDetailPage() {
     </div>
   );
 }
+import { getErrorMessage } from '@/lib/utils';

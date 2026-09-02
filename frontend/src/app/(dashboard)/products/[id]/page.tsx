@@ -8,7 +8,6 @@ import {
   Package,
   Tag,
   DollarSign,
-  Layers,
   Boxes,
   MapPin,
   CheckCircle2,
@@ -16,8 +15,6 @@ import {
   X,
   Loader2,
   Trash2,
-  Edit,
-  ShieldCheck
 } from 'lucide-react';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
@@ -54,8 +51,8 @@ export default function ProductDetailPage() {
     try {
       await deleteMutation.mutateAsync(productId);
       router.push('/products');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to delete product.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to delete product.'));
     }
   };
 
@@ -66,8 +63,8 @@ export default function ProductDetailPage() {
       await updateInventoryMutation.mutateAsync({ id: productId, delta });
       setSuccessMessage(`Inventory updated by ${delta} units.`);
       setIsStockModalOpen(false);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to update inventory.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to update inventory.'));
     }
   };
 
@@ -291,3 +288,4 @@ export default function ProductDetailPage() {
     </div>
   );
 }
+import { getErrorMessage } from '@/lib/utils';

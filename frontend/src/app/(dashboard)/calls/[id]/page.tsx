@@ -5,7 +5,6 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft,
-  Phone,
   PhoneCall,
   PhoneOutgoing,
   PhoneIncoming,
@@ -18,9 +17,6 @@ import {
   Loader2,
   Trash2,
   Smile,
-  Frown,
-  Activity,
-  HeartHandshake
 } from 'lucide-react';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import {
@@ -54,8 +50,8 @@ export default function CallDetailPage() {
     try {
       await deleteMutation.mutateAsync(callId);
       router.push('/calls');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to delete call log.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to delete call log.'));
     }
   };
 
@@ -303,3 +299,4 @@ export default function CallDetailPage() {
     </div>
   );
 }
+import { getErrorMessage } from '@/lib/utils';

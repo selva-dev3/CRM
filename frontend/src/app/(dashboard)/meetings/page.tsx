@@ -9,10 +9,8 @@ import {
   Calendar,
   Clock,
   Plus,
-  Search,
   Download,
   Trash2,
-  Edit,
   ExternalLink,
   Users,
   Sparkles,
@@ -21,7 +19,6 @@ import {
   CheckCircle2,
   AlertCircle,
   FileText,
-  VideoOff,
   Share2
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
@@ -33,7 +30,6 @@ import {
   useMeetingsQuery,
   useUpcomingMeetingsQuery,
   useCreateMeetingMutation,
-  useUpdateMeetingMutation,
   useCancelMeetingMutation,
   useBulkCancelMeetingsMutation,
   useCreateZoomLinkMutation,
@@ -96,7 +92,7 @@ export default function MeetingsPage() {
     search: debouncedSearchTerm || undefined,
   });
 
-  const { data: upcomingMeetings = [] } = useUpcomingMeetingsQuery();
+  useUpcomingMeetingsQuery();
 
   // Mutations
   const createMeetingMutation = useCreateMeetingMutation();
@@ -139,8 +135,8 @@ export default function MeetingsPage() {
       setSuccessMessage(`Meeting "${title}" scheduled successfully.`);
       setIsCreateModalOpen(false);
       resetCreateForm();
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to schedule meeting.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to schedule meeting.'));
     }
   };
 
@@ -150,8 +146,8 @@ export default function MeetingsPage() {
       await cancelMeetingMutation.mutateAsync(meetingToDelete.id);
       setSuccessMessage(`Meeting cancelled successfully.`);
       setMeetingToDelete(null);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to cancel meeting.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to cancel meeting.'));
     }
   };
 
@@ -161,8 +157,8 @@ export default function MeetingsPage() {
       const res = await bulkCancelMutation.mutateAsync(Array.from(selectedIds));
       setSuccessMessage(`${res.affected_count || selectedIds.size} meeting(s) cancelled.`);
       setSelectedIds(new Set());
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to cancel selected meetings.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to cancel selected meetings.'));
     }
   };
 
@@ -172,8 +168,8 @@ export default function MeetingsPage() {
       const res = await createZoomMutation.mutateAsync({ topic: videoTopic.trim() || 'Sales Meeting' });
       setGeneratedLinkResult(res.join_url);
       setSuccessMessage(`Zoom meeting link generated: ${res.join_url}`);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to generate Zoom link.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to generate Zoom link.'));
     }
   };
 
@@ -183,8 +179,8 @@ export default function MeetingsPage() {
       const res = await createTeamsMutation.mutateAsync({ subject: videoTopic.trim() || 'Sales Meeting' });
       setGeneratedLinkResult(res.join_url);
       setSuccessMessage(`Teams meeting link generated: ${res.join_url}`);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to generate Teams link.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to generate Teams link.'));
     }
   };
 
@@ -200,8 +196,8 @@ export default function MeetingsPage() {
       setSuccessMessage(`Meeting rescheduled successfully.`);
       setRescheduleMeeting(null);
       refetch();
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to reschedule meeting.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to reschedule meeting.'));
     }
   };
 
@@ -212,8 +208,8 @@ export default function MeetingsPage() {
         window.open(res.ical_url, '_blank');
       }
       setSuccessMessage('iCal feed exported successfully.');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to export iCal feed.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to export iCal feed.'));
     }
   };
 
@@ -667,3 +663,4 @@ export default function MeetingsPage() {
     </div>
   );
 }
+import { getErrorMessage } from '@/lib/utils';

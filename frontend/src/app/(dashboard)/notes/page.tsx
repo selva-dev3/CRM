@@ -7,20 +7,12 @@ import {
   Pin,
   PinOff,
   Plus,
-  Search,
   Trash2,
   Edit,
-  Building,
-  User,
-  DollarSign,
-  Layers,
-  Sparkles,
   Loader2,
   X,
   CheckCircle2,
   AlertCircle,
-  Clock,
-  Star
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
@@ -133,8 +125,8 @@ export default function NotesPage() {
       }
       setIsNoteModalOpen(false);
       resetForm();
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to save note.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to save note.'));
     }
   };
 
@@ -144,8 +136,8 @@ export default function NotesPage() {
       await deleteNoteMutation.mutateAsync(noteToDelete.id);
       setSuccessMessage('Note deleted successfully.');
       setNoteToDelete(null);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to delete note.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to delete note.'));
     }
   };
 
@@ -158,8 +150,8 @@ export default function NotesPage() {
         await pinNoteMutation.mutateAsync(n.id);
         setSuccessMessage('Note pinned to top of timeline.');
       }
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to update pin state.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to update pin state.'));
     }
   };
 
@@ -169,8 +161,8 @@ export default function NotesPage() {
       const res = await bulkDeleteMutation.mutateAsync(Array.from(selectedIds));
       setSuccessMessage(`${res.affected_count || selectedIds.size} note(s) deleted.`);
       setSelectedIds(new Set());
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to delete selected notes.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to delete selected notes.'));
     }
   };
 
@@ -456,3 +448,4 @@ export default function NotesPage() {
     </div>
   );
 }
+import { getErrorMessage } from '@/lib/utils';

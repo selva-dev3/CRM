@@ -1,5 +1,14 @@
-﻿import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+﻿import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import type {
+  ActionResponse,
+  DealCommissionResponse,
+  DealPredictionResponse,
+  DealProductItem,
+  DealStageItem,
+  DealWinLossAnalytics,
+  RelatedRecord,
+} from '@/lib/types';
 
 export interface DealItem {
   id: string;
@@ -41,9 +50,9 @@ export async function createDealApi(payload: DealCreatePayload): Promise<DealIte
   return apiClient.post<DealItem>('/deals', payload);
 }
 
-export async function getDealStagesApi(): Promise<any[]> {
+export async function getDealStagesApi(): Promise<DealStageItem[]> {
   try {
-    return await apiClient.get<any[]>('/deals/stages');
+    return await apiClient.get<DealStageItem[]>('/deals/stages');
   } catch {
     return [
       { id: 'stg-1', name: 'Prospecting', probability: 10 },
@@ -56,8 +65,8 @@ export async function getDealStagesApi(): Promise<any[]> {
   }
 }
 
-export async function createDealStageApi(payload: { name: string; probability: number }): Promise<any> {
-  return apiClient.post(`/deals/stages?name=${encodeURIComponent(payload.name)}&probability=${payload.probability}`);
+export async function createDealStageApi(payload: { name: string; probability: number }): Promise<DealStageItem> {
+  return apiClient.post<DealStageItem>(`/deals/stages?name=${encodeURIComponent(payload.name)}&probability=${payload.probability}`);
 }
 
 export async function getKanbanBoardApi(): Promise<Record<string, DealItem[]>> {
@@ -68,7 +77,7 @@ export async function getKanbanBoardApi(): Promise<Record<string, DealItem[]>> {
   }
 }
 
-export async function getWinLossAnalyticsApi(): Promise<any> {
+export async function getWinLossAnalyticsApi(): Promise<DealWinLossAnalytics> {
   try {
     return await apiClient.get('/deals/win-loss-analytics');
   } catch {
@@ -88,8 +97,8 @@ export async function bulkDeleteDealsApi(ids: string[]): Promise<{ affected_coun
   return apiClient.post<{ affected_count: number; message: string }>('/deals/bulk-delete', { ids });
 }
 
-export async function bulkUpdateDealStageApi(payload: { ids: string[]; stage: string }): Promise<any> {
-  return apiClient.post(`/deals/bulk-update-stage?stage=${encodeURIComponent(payload.stage)}`, { ids: payload.ids });
+export async function bulkUpdateDealStageApi(payload: { ids: string[]; stage: string }): Promise<ActionResponse> {
+  return apiClient.post<ActionResponse>(`/deals/bulk-update-stage?stage=${encodeURIComponent(payload.stage)}`, { ids: payload.ids });
 }
 
 export async function getDealApi(id: string): Promise<DealItem> {
@@ -104,86 +113,86 @@ export async function deleteDealApi(id: string): Promise<{ message: string; stat
   return apiClient.delete<{ message: string; status: string }>(`/deals/${id}`);
 }
 
-export async function updateDealStageApi(payload: { id: string; stage: string }): Promise<any> {
-  return apiClient.post(`/deals/${payload.id}/stage?stage=${encodeURIComponent(payload.stage)}`);
+export async function updateDealStageApi(payload: { id: string; stage: string }): Promise<ActionResponse> {
+  return apiClient.post<ActionResponse>(`/deals/${payload.id}/stage?stage=${encodeURIComponent(payload.stage)}`);
 }
 
-export async function markDealWonApi(payload: { id: string; final_amount?: number }): Promise<any> {
+export async function markDealWonApi(payload: { id: string; final_amount?: number }): Promise<ActionResponse> {
   const query = payload.final_amount ? `?final_amount=${payload.final_amount}` : '';
-  return apiClient.post(`/deals/${payload.id}/win${query}`);
+  return apiClient.post<ActionResponse>(`/deals/${payload.id}/win${query}`);
 }
 
-export async function markDealLostApi(payload: { id: string; reason: string }): Promise<any> {
-  return apiClient.post(`/deals/${payload.id}/lose?reason=${encodeURIComponent(payload.reason)}`);
+export async function markDealLostApi(payload: { id: string; reason: string }): Promise<ActionResponse> {
+  return apiClient.post<ActionResponse>(`/deals/${payload.id}/lose?reason=${encodeURIComponent(payload.reason)}`);
 }
 
-export async function assignDealApi(payload: { id: string; user_id: string }): Promise<any> {
-  return apiClient.post(`/deals/${payload.id}/assign?user_id=${encodeURIComponent(payload.user_id)}`);
+export async function assignDealApi(payload: { id: string; user_id: string }): Promise<ActionResponse> {
+  return apiClient.post<ActionResponse>(`/deals/${payload.id}/assign?user_id=${encodeURIComponent(payload.user_id)}`);
 }
 
-export async function getDealProductsApi(id: string): Promise<any[]> {
+export async function getDealProductsApi(id: string): Promise<DealProductItem[]> {
   try {
-    return await apiClient.get<any[]>(`/deals/${id}/products`);
+    return await apiClient.get<DealProductItem[]>(`/deals/${id}/products`);
   } catch {
     return [];
   }
 }
 
-export async function addDealProductApi(payload: { id: string; product_id: string; quantity?: number; unit_price?: number; custom_name?: string }): Promise<any> {
+export async function addDealProductApi(payload: { id: string; product_id: string; quantity?: number; unit_price?: number; custom_name?: string }): Promise<DealProductItem> {
   const query = new URLSearchParams({
     product_id: payload.product_id,
     quantity: String(payload.quantity || 1),
   });
   if (payload.unit_price !== undefined) query.append('unit_price', String(payload.unit_price));
   if (payload.custom_name) query.append('custom_name', payload.custom_name);
-  return apiClient.post(`/deals/${payload.id}/products?${query.toString()}`);
+  return apiClient.post<DealProductItem>(`/deals/${payload.id}/products?${query.toString()}`);
 }
 
-export async function removeDealProductApi(payload: { id: string; product_id: string }): Promise<any> {
-  return apiClient.delete(`/deals/${payload.id}/products/${payload.product_id}`);
+export async function removeDealProductApi(payload: { id: string; product_id: string }): Promise<ActionResponse> {
+  return apiClient.delete<ActionResponse>(`/deals/${payload.id}/products/${payload.product_id}`);
 }
 
-export async function getDealTimelineApi(id: string): Promise<any[]> {
+export async function getDealTimelineApi(id: string): Promise<RelatedRecord[]> {
   try {
-    return await apiClient.get<any[]>(`/deals/${id}/timeline`);
+    return await apiClient.get<RelatedRecord[]>(`/deals/${id}/timeline`);
   } catch {
     return [];
   }
 }
 
-export async function getDealNotesApi(id: string): Promise<any[]> {
+export async function getDealNotesApi(id: string): Promise<RelatedRecord[]> {
   try {
-    return await apiClient.get<any[]>(`/deals/${id}/notes`);
+    return await apiClient.get<RelatedRecord[]>(`/deals/${id}/notes`);
   } catch {
     return [];
   }
 }
 
-export async function addDealNoteApi(payload: { id: string; content: string }): Promise<any> {
-  return apiClient.post(`/deals/${payload.id}/notes?content=${encodeURIComponent(payload.content)}`, {
+export async function addDealNoteApi(payload: { id: string; content: string }): Promise<RelatedRecord> {
+  return apiClient.post<RelatedRecord>(`/deals/${payload.id}/notes?content=${encodeURIComponent(payload.content)}`, {
     content: payload.content,
   });
 }
 
-export async function getDealQuotesApi(id: string): Promise<any[]> {
+export async function getDealQuotesApi(id: string): Promise<RelatedRecord[]> {
   try {
-    return await apiClient.get<any[]>(`/deals/${id}/quotes`);
+    return await apiClient.get<RelatedRecord[]>(`/deals/${id}/quotes`);
   } catch {
     return [];
   }
 }
 
-export async function predictDealWinRateApi(id: string): Promise<any> {
-  return apiClient.post(`/deals/${id}/predict-win-rate`);
+export async function predictDealWinRateApi(id: string): Promise<DealPredictionResponse> {
+  return apiClient.post<DealPredictionResponse>(`/deals/${id}/predict-win-rate`);
 }
 
 export async function cloneDealApi(payload: { id: string; new_title: string }): Promise<DealItem> {
   return apiClient.post<DealItem>(`/deals/${payload.id}/clone?new_title=${encodeURIComponent(payload.new_title)}`);
 }
 
-export async function getDealCommissionApi(id: string): Promise<any> {
+export async function getDealCommissionApi(id: string): Promise<DealCommissionResponse | null> {
   try {
-    return await apiClient.get(`/deals/${id}/commission`);
+    return await apiClient.get<DealCommissionResponse>(`/deals/${id}/commission`);
   } catch {
     return null;
   }

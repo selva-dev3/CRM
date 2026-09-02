@@ -18,7 +18,6 @@ import {
   CreditCard,
   BellRing,
   ShieldCheck,
-  Zap,
   Percent
 } from 'lucide-react';
 import { ActionMenu } from '@/components/common/action-menu';
@@ -72,8 +71,8 @@ export default function InvoiceDetailPage() {
       await sendEmailMutation.mutateAsync({ id: invoiceId, recipient_email: recipientEmailInput.trim() });
       setSuccessMessage(`Invoice email sent to ${recipientEmailInput.trim()}.`);
       setIsSendEmailModalOpen(false);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to send invoice email.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to send invoice email.'));
     }
   };
 
@@ -82,8 +81,8 @@ export default function InvoiceDetailPage() {
       const res = await stripeCheckoutMutation.mutateAsync(invoiceId);
       setSuccessMessage('Stripe Checkout session generated.');
       window.open(res.checkout_url, '_blank');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to launch Stripe Checkout.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to launch Stripe Checkout.'));
     }
   };
 
@@ -91,8 +90,8 @@ export default function InvoiceDetailPage() {
     try {
       await markPaidMutation.mutateAsync({ id: invoiceId, payment_method: 'Stripe Online' });
       setSuccessMessage('Invoice marked as Paid.');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to mark invoice as paid.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to mark invoice as paid.'));
     }
   };
 
@@ -100,8 +99,8 @@ export default function InvoiceDetailPage() {
     try {
       await reminderMutation.mutateAsync(invoiceId);
       setSuccessMessage('Payment reminder email sent to client.');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to send payment reminder.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to send payment reminder.'));
     }
   };
 
@@ -112,8 +111,8 @@ export default function InvoiceDetailPage() {
       await creditMemoMutation.mutateAsync({ id: invoiceId, amount: amt, reason: creditMemoReason });
       setSuccessMessage(`Credit memo of $${amt} issued against invoice.`);
       setIsCreditMemoModalOpen(false);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to issue credit memo.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to issue credit memo.'));
     }
   };
 
@@ -121,8 +120,8 @@ export default function InvoiceDetailPage() {
     try {
       await deleteMutation.mutateAsync(invoiceId);
       router.push('/invoices');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to delete invoice.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to delete invoice.'));
     }
   };
 
@@ -491,3 +490,4 @@ export default function InvoiceDetailPage() {
     </div>
   );
 }
+import { getErrorMessage } from '@/lib/utils';

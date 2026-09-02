@@ -17,11 +17,9 @@ import {
   Edit,
   CheckCircle2,
   AlertCircle,
-  MoreVertical,
 } from 'lucide-react';
 import { ActionMenu } from '@/components/common/action-menu';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
@@ -102,13 +100,12 @@ export default function ContactsPage() {
   }, [searchTerm]);
 
   // Queries
-  const { data: allContacts = [], isLoading: isAllLoading, refetch: refetchAll } = useContactsQuery(page, limit, debouncedSearchTerm);
-  const { data: starredContacts = [], isLoading: isStarredLoading, refetch: refetchStarred } = useStarredContactsQuery();
+  const { data: allContacts = [], refetch: refetchAll } = useContactsQuery(page, limit, debouncedSearchTerm);
+  const { data: starredContacts = [], refetch: refetchStarred } = useStarredContactsQuery();
   const { data: organizations = [] } = useOrganizationsQuery();
   const { data: companiesList = [] } = useCompaniesQuery(1, 100);
 
   const contacts = activeTab === 'starred' ? starredContacts : allContacts;
-  const isLoading = activeTab === 'starred' ? isStarredLoading : isAllLoading;
 
   // Mutations
   const createContactMutation = useCreateContactMutation();
@@ -470,15 +467,15 @@ export default function ContactsPage() {
 
       {/* Contacts DataTable */}
       <DataTable
-        columns={columns as any}
-        data={contacts as any}
-        getRowKey={(item: any) => item.id}
-        onRowClick={(item: any) => router.push(`/contacts/${item.id}`)}
+        columns={columns}
+        data={contacts}
+        getRowKey={(item) => item.id}
+        onRowClick={(item) => router.push(`/contacts/${item.id}`)}
         searchValue={searchTerm}
         onSearchChange={setSearchTerm}
         searchPlaceholder="Search contacts by name or email..."
         actionVariant="menu"
-        actions={(item: any) => [
+        actions={(item) => [
           {
             label: 'Edit',
             permission: PERMISSIONS.CONTACTS.UPDATE,
@@ -504,7 +501,7 @@ export default function ContactsPage() {
             setSelectedIds(new Set());
           }
         }}
-        onToggleRow={(item: any, checked) => {
+        onToggleRow={(item, checked) => {
           const next = new Set(selectedIds);
           if (checked) next.add(item.id);
           else next.delete(item.id);

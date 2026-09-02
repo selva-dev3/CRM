@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Search,
@@ -86,6 +86,7 @@ export function GlobalSearchModal({ isOpen, onClose }: GlobalSearchModalProps) {
   // Focus input when opened
   useEffect(() => {
     if (isOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset modal input on open
       setQuery('');
       setSelectedIndex(0);
       setTimeout(() => {
@@ -96,8 +97,14 @@ export function GlobalSearchModal({ isOpen, onClose }: GlobalSearchModalProps) {
 
   // Reset selected index when query changes
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset keyboard selection when query changes
     setSelectedIndex(0);
   }, [query]);
+
+  const handleSelect = useCallback((href: string) => {
+    onClose();
+    router.push(href);
+  }, [onClose, router]);
 
   // Keyboard navigation inside modal
   useEffect(() => {
@@ -123,12 +130,7 @@ export function GlobalSearchModal({ isOpen, onClose }: GlobalSearchModalProps) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, filteredItems, selectedIndex]);
-
-  const handleSelect = (href: string) => {
-    onClose();
-    router.push(href);
-  };
+  }, [isOpen, filteredItems, selectedIndex, onClose, handleSelect]);
 
   if (!isOpen) return null;
 

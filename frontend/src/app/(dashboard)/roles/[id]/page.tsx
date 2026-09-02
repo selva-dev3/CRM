@@ -6,7 +6,6 @@ import Link from 'next/link';
 import {
   ArrowLeft,
   ShieldCheck,
-  Shield,
   KeyRound,
   Users,
   Star,
@@ -41,7 +40,6 @@ import {
   checkPermissionApi,
   PermissionItem
 } from '@/lib/api/roles';
-import { useUsersQuery } from '@/lib/api/users';
 import { UserSelect } from '@/components/common/user-select';
 
 export default function RoleDetailPage() {
@@ -54,7 +52,6 @@ export default function RoleDetailPage() {
   const { data: defaultRole } = useDefaultRoleQuery();
   const { data: permissionMatrix = [] } = usePermissionMatrixQuery();
   const { data: assignedUsers = [] } = useRoleUsersQuery(roleId);
-  const { data: usersList = [] } = useUsersQuery(1, 100);
 
   // System roles (e.g. super_admin) are immutable — enforced server-side; UI reflects this.
   const isSystemRole = role?.is_system_role === true;
@@ -100,16 +97,6 @@ export default function RoleDetailPage() {
     );
   }, [role, permissionMatrix]);
 
-  const groupedAssignedPermissions = React.useMemo(() => {
-    const map: Record<string, PermissionItem[]> = {};
-    assignedPermissions.forEach((perm) => {
-      const cat = perm.category || perm.module || 'General';
-      if (!map[cat]) map[cat] = [];
-      map[cat].push(perm);
-    });
-    return map;
-  }, [assignedPermissions]);
-
   // DataTable state for assigned permissions
   const [permSearchTerm, setPermSearchTerm] = useState('');
   const [permSelectedIds, setPermSelectedIds] = useState<Set<string>>(new Set());
@@ -124,8 +111,8 @@ export default function RoleDetailPage() {
       });
       setSuccessMessage(res.message || `${permSelectedIds.size} permission(s) removed.`);
       setPermSelectedIds(new Set());
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to remove selected permissions.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to remove selected permissions.'));
     }
   };
 
@@ -196,8 +183,8 @@ export default function RoleDetailPage() {
       });
       setSuccessMessage(res.message || 'Permissions updated successfully.');
       setIsAddPermModalOpen(false);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to update permissions.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to update permissions.'));
     }
   };
 
@@ -217,8 +204,8 @@ export default function RoleDetailPage() {
     try {
       await setDefaultMutation.mutateAsync(roleId);
       setSuccessMessage(`Role "${role?.name}" set as default for new registrations.`);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to set default role.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to set default role.'));
     }
   };
 
@@ -230,8 +217,8 @@ export default function RoleDetailPage() {
       setSuccessMessage(`Role cloned as "${res.name}".`);
       setIsCloneModalOpen(false);
       setCloneNewName('');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to clone role.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to clone role.'));
     }
   };
 
@@ -242,8 +229,8 @@ export default function RoleDetailPage() {
       const res = await assignUserMutation.mutateAsync({ userId: assignUserId.trim(), roleId });
       setSuccessMessage(res.message || 'Role assigned to user.');
       setIsAssignModalOpen(false);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to assign role to user.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to assign role to user.'));
     }
   };
 
@@ -251,8 +238,8 @@ export default function RoleDetailPage() {
     try {
       const res = await removePermMutation.mutateAsync({ roleId, permId: permIdentifier });
       setSuccessMessage(res.message || 'Permission removed.');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to remove permission.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to remove permission.'));
     }
   };
 
@@ -260,8 +247,8 @@ export default function RoleDetailPage() {
     try {
       const res = await checkPermissionApi('usr-1', testPerm);
       setTestResult(res.allowed ? `ALLOWED: User holds permission '${testPerm}'` : `DENIED: Permission missing`);
-    } catch (err: any) {
-      setTestResult(`CHECK FAILED: ${err.message}`);
+    } catch (err: unknown) {
+      setTestResult(`CHECK FAILED: ${getErrorMessage(err, 'Unknown error')}`);
     }
   };
 
@@ -269,8 +256,8 @@ export default function RoleDetailPage() {
     try {
       await deleteMutation.mutateAsync(roleId);
       router.push('/roles');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to delete role.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to delete role.'));
     }
   };
 
@@ -708,3 +695,4 @@ export default function RoleDetailPage() {
     </div>
   );
 }
+import { getErrorMessage } from '@/lib/utils';

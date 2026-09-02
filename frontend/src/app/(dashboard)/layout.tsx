@@ -107,6 +107,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   useEffect(() => {
     if (currentOrg?.name) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- synchronize cached organization state
       setOrgDisplayName(currentOrg.name);
     } else if (typeof window !== 'undefined') {
       try {
@@ -128,6 +129,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         const storedUser = localStorage.getItem('user') || sessionStorage.getItem('user');
         if (storedUser) {
           const parsed = JSON.parse(storedUser);
+          // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate profile from browser storage
           setUserProfile({
             name: parsed?.name || parsed?.full_name || parsed?.username || 'Admin User',
             email: parsed?.email || 'admin@crm.com',
@@ -183,6 +185,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, [router]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- close mobile navigation after route changes
     setIsMobileMenuOpen(false);
   }, [pathname]);
 

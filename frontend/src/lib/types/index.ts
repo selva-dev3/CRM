@@ -166,3 +166,77 @@ export interface Notification {
   isRead: boolean;
   createdAt: string;
 }
+
+/** Common shape for related records returned by detail endpoints. */
+export interface RelatedRecord {
+  id: string;
+  name?: string;
+  title?: string;
+  email?: string;
+  content?: string;
+  status?: string;
+  type?: string;
+  created_at?: string;
+  updated_at?: string;
+  body_text?: string;
+  call_type?: string;
+  duration_seconds?: number;
+  total_amount?: number;
+  amount_due?: number;
+  number?: string;
+  file_type?: string;
+  file_url?: string;
+  domain?: string;
+  key_drivers?: string[];
+  [key: string]: string | number | boolean | string[] | null | undefined;
+}
+
+export interface CompanyItemReference {
+  id: string;
+  name: string;
+  domain?: string;
+}
+
+export interface CompanyHierarchy {
+  parent?: CompanyItemReference | null;
+  parent_company?: CompanyItemReference | null;
+  subsidiaries: CompanyItemReference[];
+}
+
+export interface DealStageItem {
+  id: string;
+  name: string;
+  probability: number;
+}
+
+export interface DealWinLossAnalytics {
+  win_rate: number;
+  won_count: number;
+  lost_count: number;
+  top_loss_reasons: Array<{ reason: string; count: number }>;
+}
+
+export interface DealProductItem extends RelatedRecord {
+  product_id: string;
+  quantity: number;
+  unit_price: number;
+}
+
+export interface DealCommissionResponse {
+  commission: number;
+  rate?: number;
+  commission_rate_pct?: number;
+  estimated_commission?: number;
+}
+
+export interface DealPredictionResponse {
+  win_rate: number;
+  confidence?: number;
+  predicted_probability?: number;
+  key_drivers?: string[];
+}
+
+export interface ActionResponse {
+  message: string;
+  status?: string;
+}

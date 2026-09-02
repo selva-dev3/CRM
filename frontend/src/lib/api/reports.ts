@@ -3,13 +3,89 @@ import { apiClient } from '@/lib/api/client';
 
 export interface ReportData {
   report_type: string;
-  metrics: Record<string, any>;
+  metrics: ReportMetrics;
   generated_at: string;
+}
+
+export interface ReportRow {
+  rep_name?: string;
+  role?: string;
+  deals_assigned?: number;
+  deals_closed?: number;
+  win_rate?: number;
+  revenue?: number;
+  quota_target?: number | null;
+  attainment_pct?: number | null;
+  avg_deal_size?: number;
+  stage?: string;
+  deal_count?: number;
+  total_value?: number;
+  avg_days_in_stage?: number;
+  bottleneck_risk?: string;
+  segment?: string;
+  won_deals?: number;
+  lost_deals?: number;
+  total_deals?: number;
+  win_percentage?: number;
+  won_value?: number;
+  lost_value?: number;
+  primary_loss_reason?: string;
+  source?: string;
+  total_leads?: number;
+  converted_leads?: number;
+  conversion_rate?: number;
+  avg_lead_score?: number;
+  rank?: number;
+  name?: string;
+  badge?: string;
+  period?: string;
+  open_deals?: number;
+  pipeline_amount?: number;
+  pipeline_weighted?: number;
+  deal_tier?: string;
+  avg_cycle_days?: number;
+  fastest_close_days?: number;
+  longest_close_days?: number;
+  primary_bottleneck?: string;
+  customer_count?: number;
+  avg_ltv?: number;
+  total_revenue?: number;
+  assigned_quota?: number;
+  closed_revenue?: number;
+  pipeline_coverage?: number;
+  status?: string;
+  filters?: string;
+  metrics_included?: string[];
+  created_at?: string;
+  report_type?: string;
+  email?: string;
+  frequency?: string;
+  next_run?: string;
+  id: string;
+  [key: string]: string | number | string[] | null | undefined;
+}
+
+export interface ReportMetrics {
+  total_revenue?: number | null;
+  monthly_target?: number | null;
+  avg_days_to_close?: number | null;
+  win_percentage?: number | null;
+  loss_percentage?: number | null;
+  total_won_deals?: number | null;
+  total_lost_deals?: number | null;
+  total_calls?: number | null;
+  total_call_duration_minutes?: number | null;
+  total_emails?: number | null;
+  email_open_rate_pct?: number | null;
+  total_meetings?: number | null;
+  table_rows?: ReportRow[];
+  [key: string]: unknown;
 }
 
 export interface CustomReportItem {
   id: string;
   name: string;
+  filters?: string;
   metrics_included?: string[];
   created_at: string;
 }

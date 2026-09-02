@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @next/next/no-img-element -- remote organization logo URL */
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
@@ -6,29 +7,21 @@ import {
   Building,
   ArrowLeft,
   Globe,
-  Mail,
-  Phone,
-  MapPin,
   Users,
   CreditCard,
-  Shield,
   Save,
   CheckCircle2,
   AlertCircle,
   Loader2,
   Upload,
-  Plus,
   Trash2,
   Zap,
-  Check,
   HardDrive,
   UserCheck,
   ShieldAlert,
   Crown,
-  Lock,
   ArrowRightLeft,
   FileText,
-  Building2
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -73,7 +66,7 @@ export default function OrganizationDetailPage({ isCurrentOrgView = false }: { i
   const { data: members = [], refetch: refetchMembers } = useOrganizationMembersQuery();
   const { data: subscription, refetch: refetchSubscription } = useOrganizationSubscriptionQuery();
   const { data: usage } = useOrganizationUsageQuery();
-  const { data: domains = [], refetch: refetchDomains } = useOrganizationDomainsQuery();
+  const { refetch: refetchDomains } = useOrganizationDomainsQuery();
   const { data: auditLogs = [] } = useOrganizationAuditLogsQuery();
 
   // Mutations
@@ -115,6 +108,7 @@ export default function OrganizationDetailPage({ isCurrentOrgView = false }: { i
   // Populate profile form when organization data is loaded
   useEffect(() => {
     if (org) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate editable form from API data
       setName(org.name || '');
       setSlug(org.slug || '');
       setEmail(org.email || '');

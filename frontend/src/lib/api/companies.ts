@@ -1,5 +1,6 @@
 ﻿import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import type { CompanyHierarchy, RelatedRecord } from '@/lib/types';
 
 export interface CompanyItem {
   id: string;
@@ -79,71 +80,71 @@ export async function importCompaniesCsvApi(): Promise<{ message: string; status
   return apiClient.post<{ message: string; status: string }>('/companies/import/csv');
 }
 
-export async function lookupCompanyDomainApi(domain: string): Promise<any> {
-  return apiClient.post(`/companies/lookup-domain?domain=${encodeURIComponent(domain)}`);
+export async function lookupCompanyDomainApi(domain: string): Promise<CompanyItem> {
+  return apiClient.post<CompanyItem>(`/companies/lookup-domain?domain=${encodeURIComponent(domain)}`);
 }
 
 export async function getCompanyApi(id: string): Promise<CompanyItem> {
   return apiClient.get<CompanyItem>(`/companies/${id}`);
 }
 
-export async function getCompanyContactsApi(id: string): Promise<any[]> {
+export async function getCompanyContactsApi(id: string): Promise<RelatedRecord[]> {
   try {
-    return await apiClient.get<any[]>(`/companies/${id}/contacts`);
+    return await apiClient.get<RelatedRecord[]>(`/companies/${id}/contacts`);
   } catch {
     return [];
   }
 }
 
-export async function getCompanyDealsApi(id: string): Promise<any[]> {
+export async function getCompanyDealsApi(id: string): Promise<RelatedRecord[]> {
   try {
-    return await apiClient.get<any[]>(`/companies/${id}/deals`);
+    return await apiClient.get<RelatedRecord[]>(`/companies/${id}/deals`);
   } catch {
     return [];
   }
 }
 
-export async function getCompanyNotesApi(id: string): Promise<any[]> {
+export async function getCompanyNotesApi(id: string): Promise<RelatedRecord[]> {
   try {
-    return await apiClient.get<any[]>(`/companies/${id}/notes`);
+    return await apiClient.get<RelatedRecord[]>(`/companies/${id}/notes`);
   } catch {
     return [];
   }
 }
 
-export async function addCompanyNoteApi(payload: { id: string; content: string }): Promise<any> {
-  return apiClient.post(`/companies/${payload.id}/notes?content=${encodeURIComponent(payload.content)}`, {
+export async function addCompanyNoteApi(payload: { id: string; content: string }): Promise<RelatedRecord> {
+  return apiClient.post<RelatedRecord>(`/companies/${payload.id}/notes?content=${encodeURIComponent(payload.content)}`, {
     content: payload.content,
   });
 }
 
-export async function getCompanyQuotesApi(id: string): Promise<any[]> {
+export async function getCompanyQuotesApi(id: string): Promise<RelatedRecord[]> {
   try {
-    return await apiClient.get<any[]>(`/companies/${id}/quotes`);
+    return await apiClient.get<RelatedRecord[]>(`/companies/${id}/quotes`);
   } catch {
     return [];
   }
 }
 
-export async function getCompanyInvoicesApi(id: string): Promise<any[]> {
+export async function getCompanyInvoicesApi(id: string): Promise<RelatedRecord[]> {
   try {
-    return await apiClient.get<any[]>(`/companies/${id}/invoices`);
+    return await apiClient.get<RelatedRecord[]>(`/companies/${id}/invoices`);
   } catch {
     return [];
   }
 }
 
-export async function getCompanyDocumentsApi(id: string): Promise<any[]> {
+export async function getCompanyDocumentsApi(id: string): Promise<RelatedRecord[]> {
   try {
-    return await apiClient.get<any[]>(`/companies/${id}/documents`);
+    return await apiClient.get<RelatedRecord[]>(`/companies/${id}/documents`);
   } catch {
     return [];
   }
 }
 
-export async function getCompanyHierarchyApi(id: string): Promise<any> {
+export async function getCompanyHierarchyApi(id: string): Promise<CompanyHierarchy | null> {
   try {
-    return await apiClient.get<any>(`/companies/${id}/hierarchy`);
+    return await apiClient.get<CompanyHierarchy>(`/companies/${id}/hierarchy`);
   } catch {
     return null;
   }

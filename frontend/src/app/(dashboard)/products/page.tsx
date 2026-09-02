@@ -3,26 +3,22 @@
 import { ActionMenu } from '@/components/common/action-menu';
 import { Button } from '@/components/ui/button';
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import {
   Package,
   Tag,
   DollarSign,
   Layers,
   Plus,
-  Search,
   Download,
   Upload,
   Trash2,
   Edit,
   BookOpen,
-  Percent,
   Boxes,
   CheckCircle2,
   AlertCircle,
   X,
   Loader2,
-  FileSpreadsheet
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
@@ -48,7 +44,6 @@ import {
 } from '@/lib/api/products';
 
 export default function ProductsPage() {
-  const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('');
@@ -104,8 +99,8 @@ export default function ProductsPage() {
   });
 
   const { data: categories = [] } = useProductCategoriesQuery();
-  const { data: priceBooks = [] } = usePriceBooksQuery();
-  const { data: taxRates = [] } = useTaxRatesQuery();
+  usePriceBooksQuery();
+  useTaxRatesQuery();
 
   // Mutations
   const createProductMutation = useCreateProductMutation();
@@ -163,8 +158,8 @@ export default function ProductsPage() {
       }
       setIsProductModalOpen(false);
       resetProductForm();
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to save product.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to save product.'));
     }
   };
 
@@ -176,8 +171,8 @@ export default function ProductsPage() {
       setSuccessMessage(`Category tier "${newCatName.trim()}" created.`);
       setIsCategoryModalOpen(false);
       setNewCatName('');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to create category.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to create category.'));
     }
   };
 
@@ -189,8 +184,8 @@ export default function ProductsPage() {
       setSuccessMessage(`Price book "${pbName.trim()}" (${pbCurrency}) created.`);
       setIsPriceBookModalOpen(false);
       setPbName('');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to create price book.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to create price book.'));
     }
   };
 
@@ -199,8 +194,8 @@ export default function ProductsPage() {
       const res = await exportProductsCsvApi();
       setSuccessMessage(`Catalog exported. Download URL generated.`);
       window.open(res.download_url, '_blank');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to export CSV catalog.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to export CSV catalog.'));
     }
   };
 
@@ -208,8 +203,8 @@ export default function ProductsPage() {
     try {
       const res = await importCsvMutation.mutateAsync();
       setSuccessMessage(res.message || 'CSV catalog import processing completed.');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to import CSV catalog.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to import CSV catalog.'));
     }
   };
 
@@ -221,8 +216,8 @@ export default function ProductsPage() {
       await updateInventoryMutation.mutateAsync({ id: inventoryProduct.id, delta });
       setSuccessMessage(`Stock level updated by ${delta} for ${inventoryProduct.name}.`);
       setInventoryProduct(null);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to update stock level.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to update stock level.'));
     }
   };
 
@@ -232,8 +227,8 @@ export default function ProductsPage() {
       await deleteProductMutation.mutateAsync(productToDelete.id);
       setSuccessMessage('Product deleted from catalog.');
       setProductToDelete(null);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to delete product.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to delete product.'));
     }
   };
 
@@ -243,8 +238,8 @@ export default function ProductsPage() {
       const res = await bulkDeleteMutation.mutateAsync(Array.from(selectedIds));
       setSuccessMessage(`${res.affected_count || selectedIds.size} product(s) deleted.`);
       setSelectedIds(new Set());
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to delete selected products.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to delete selected products.'));
     }
   };
 
@@ -668,3 +663,4 @@ export default function ProductsPage() {
     </div>
   );
 }
+import { getErrorMessage } from '@/lib/utils';

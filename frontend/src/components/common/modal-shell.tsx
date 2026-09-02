@@ -67,6 +67,7 @@ export function ModalShell({
   // callers typically pass inline arrows, and re-running the focus/Escape
   // effect on every render would steal focus mid-interaction.
   const onCloseRef = useRef(onClose);
+  // eslint-disable-next-line react-hooks/refs -- keep latest callback for focus restoration
   onCloseRef.current = onClose;
 
   useEffect(() => {

@@ -1,11 +1,11 @@
 ﻿'use client';
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+/* eslint-disable @next/next/no-img-element -- remote organization logo URL */
 import Link from 'next/link';
 import {
   Building,
   Plus,
-  Search,
   Mail,
   Globe,
   Sliders,
@@ -16,12 +16,10 @@ import {
   Sparkles,
   AlertCircle,
   CheckCircle2,
-  ShieldCheck,
   Crown,
   Users,
   MapPin,
   Building2,
-  Power,
   ArrowLeft,
   UserPlus
 } from 'lucide-react';
@@ -29,7 +27,6 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import { useHasPermission } from '@/hooks/use-has-permission';
 import {
   DropdownMenu,
@@ -56,7 +53,6 @@ import {
 } from '@/lib/api/organizations';
 import { useQueryClient } from '@tanstack/react-query';
 import OrganizationDetailPage from './[id]/page';
-import { RoleSearchCombobox } from '@/components/features/users/role-search-combobox';
 
 export default function OrganizationPage() {
   const router = useRouter();
@@ -65,7 +61,7 @@ export default function OrganizationPage() {
   // User Role State for RBAC
   const [userRole, setUserRole] = useState<string>('');
   const [userEmail, setUserEmail] = useState<string>('');
-  const [isRoleChecked, setIsRoleChecked] = useState(false);
+  const [, setIsRoleChecked] = useState(false);
   const { hasPermission } = useHasPermission();
 
   // Invite Organization permission — the backend independently enforces both keys.
@@ -78,6 +74,7 @@ export default function OrganizationPage() {
       if (userStr) {
         const u = JSON.parse(userStr);
         const r = u?.role || u?.role_name || '';
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate role from browser storage
         setUserRole(r);
         if (u?.email) setUserEmail(u.email);
       }
@@ -146,7 +143,7 @@ export default function OrganizationPage() {
   const [isInviteOrgModalOpen, setIsInviteOrgModalOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteFullName, setInviteFullName] = useState('');
-  const [inviteRoleId, setInviteRoleId] = useState('');
+  const [, setInviteRoleId] = useState('');
   const [inviteErrorMessage, setInviteErrorMessage] = useState<string | null>(null);
 
   // Form States for Create/Edit
@@ -259,8 +256,8 @@ export default function OrganizationPage() {
       setIsCreateModalOpen(false);
       resetForm();
       setTimeout(() => setSuccessMessage(null), 4000);
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to create organization.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to create organization.'));
     }
   };
 
@@ -294,8 +291,8 @@ export default function OrganizationPage() {
       setOrgToEdit(null);
       resetForm();
       setTimeout(() => setSuccessMessage(null), 4000);
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to update organization.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to update organization.'));
     }
   };
 
@@ -309,8 +306,8 @@ export default function OrganizationPage() {
       setSuccessMessage(`Organization "${orgToDelete.name}" deleted successfully.`);
       setOrgToDelete(null);
       setTimeout(() => setSuccessMessage(null), 4000);
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to delete organization.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to delete organization.'));
     }
   };
 
@@ -505,7 +502,7 @@ export default function OrganizationPage() {
   );
 
   // Actions for Row Dropdown
-  const actions = (org: OrganizationItem): TableActionOption<OrganizationItem>[] => [
+  const actions = (): TableActionOption<OrganizationItem>[] => [
     {
       label: 'Edit Organization',
       permission: PERMISSIONS.ORGANIZATION.UPDATE,
@@ -962,7 +959,7 @@ export default function OrganizationPage() {
                   Edit Organization Details
                 </h3>
                 <p className="text-caption text-[#6B7280]">
-                  Update settings for "{orgToEdit.name}"
+                  Update settings for &quot;{orgToEdit.name}&quot;
                 </p>
               </div>
             </div>
@@ -1111,3 +1108,4 @@ export default function OrganizationPage() {
     </div>
   );
 }
+import { getErrorMessage } from '@/lib/utils';

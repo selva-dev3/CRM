@@ -40,7 +40,7 @@ export default function RegisterPage() {
       }, 1200);
     },
     onError: (err: Error) => {
-      setError(err.message || 'Registration failed. An account with this email may already exist.');
+      setError(getErrorMessage(err, 'Registration failed. An account with this email may already exist.'));
     },
   });
 
@@ -279,3 +279,4 @@ export default function RegisterPage() {
     </div>
   );
 }
+import { getErrorMessage } from '@/lib/utils';

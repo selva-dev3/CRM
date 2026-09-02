@@ -55,7 +55,7 @@ describe('QuotesPage creation flow', () => {
     expect(dealSelect).toBeInTheDocument();
 
     await user.selectOptions(dealSelect, 'deal-1');
-    const submitButtons = screen.getAllByRole('button', { name: 'Create Quote', exact: true });
+    const submitButtons = screen.getAllByRole('button', { name: /^Create Quote$/ });
     await user.click(submitButtons[submitButtons.length - 1]);
 
     expect(createQuote).toHaveBeenCalledWith(expect.objectContaining({ deal_id: 'deal-1' }));

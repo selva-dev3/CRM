@@ -7,7 +7,6 @@ import {
   ArrowLeft,
   CheckSquare,
   Calendar,
-  Clock,
   UserCheck,
   Edit,
   Trash2,
@@ -19,7 +18,6 @@ import {
   CornerDownRight,
   Bell,
   User,
-  RotateCcw
 } from 'lucide-react';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
@@ -33,7 +31,6 @@ import {
   useAddSubtaskMutation,
   useAssignTaskMutation,
   useSetTaskReminderMutation,
-  TaskItem,
   TaskUpdatePayload
 } from '@/lib/api/tasks';
 import { useUsersQuery } from '@/lib/api/users';
@@ -116,8 +113,8 @@ export default function TaskDetailPage() {
       setSuccessMessage('Task updated successfully.');
       setIsEditModalOpen(false);
       refetch();
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to update task.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to update task.'));
     }
   };
 
@@ -125,8 +122,8 @@ export default function TaskDetailPage() {
     try {
       await deleteTaskMutation.mutateAsync(taskId);
       router.push('/tasks');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to delete task.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to delete task.'));
     }
   };
 
@@ -141,8 +138,8 @@ export default function TaskDetailPage() {
         setSuccessMessage('Task marked as Completed.');
       }
       refetch();
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to update task status.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to update task status.'));
     }
   };
 
@@ -154,8 +151,8 @@ export default function TaskDetailPage() {
       setSuccessMessage(`Subtask "${newSubtaskTitle.trim()}" added.`);
       setNewSubtaskTitle('');
       refetchSubtasks();
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to add subtask.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to add subtask.'));
     }
   };
 
@@ -167,8 +164,8 @@ export default function TaskDetailPage() {
       setSuccessMessage('Task reassigned successfully.');
       setSelectedUser('');
       refetch();
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to assign user.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to assign user.'));
     }
   };
 
@@ -179,8 +176,8 @@ export default function TaskDetailPage() {
       await setReminderMutation.mutateAsync({ taskId, reminderTime });
       setSuccessMessage(`Automated reminder set for ${reminderTime}.`);
       setReminderTime('');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to set reminder.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to set reminder.'));
     }
   };
 
@@ -576,3 +573,4 @@ export default function TaskDetailPage() {
     </div>
   );
 }
+import { getErrorMessage } from '@/lib/utils';

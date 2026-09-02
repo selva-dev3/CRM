@@ -8,22 +8,16 @@ import {
   FileCode,
   Calendar,
   DollarSign,
-  Building,
   Plus,
-  Search,
   Download,
   Upload,
   Trash2,
   Edit,
   Send,
   CheckCircle2,
-  XCircle,
-  FileCheck,
-  FileText,
   AlertCircle,
   X,
   Loader2,
-  TrendingUp,
   Receipt
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
@@ -40,7 +34,6 @@ import {
   useBulkDeleteQuotesMutation,
   useSendQuoteEmailMutation,
   useAcceptQuoteMutation,
-  useRejectQuoteMutation,
   useConvertQuoteToInvoiceMutation,
   useImportQuotesCsvMutation,
   exportQuotesCsvApi,
@@ -155,8 +148,8 @@ export default function QuotesPage() {
       }
       setIsQuoteModalOpen(false);
       resetForm();
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to save quote proposal.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to save quote proposal.'));
     }
   };
 
@@ -172,8 +165,8 @@ export default function QuotesPage() {
       setIsSendEmailModalOpen(false);
       setSendModalQuote(null);
       setRecipientEmailInput('');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to send quote email.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to send quote email.'));
     }
   };
 
@@ -181,8 +174,8 @@ export default function QuotesPage() {
     try {
       await acceptQuoteMutation.mutateAsync(q.id);
       setSuccessMessage(`Quote "${q.quote_number}" marked as Accepted.`);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to mark quote as accepted.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to mark quote as accepted.'));
     }
   };
 
@@ -190,8 +183,8 @@ export default function QuotesPage() {
     try {
       const res = await convertInvoiceMutation.mutateAsync(q.id);
       setSuccessMessage(`Quote "${q.quote_number}" converted into Invoice #${res.invoice_number}!`);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to convert quote into invoice.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to convert quote into invoice.'));
     }
   };
 
@@ -200,8 +193,8 @@ export default function QuotesPage() {
       const res = await exportQuotesCsvApi();
       setSuccessMessage('Quotes list exported. Download started.');
       window.open(res.download_url, '_blank');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to export quotes CSV.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to export quotes CSV.'));
     }
   };
 
@@ -209,8 +202,8 @@ export default function QuotesPage() {
     try {
       const res = await importCsvMutation.mutateAsync();
       setSuccessMessage(res.message || 'Quotes CSV import processing completed.');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to import quotes CSV.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to import quotes CSV.'));
     }
   };
 
@@ -220,8 +213,8 @@ export default function QuotesPage() {
       await deleteQuoteMutation.mutateAsync(quoteToDelete.id);
       setSuccessMessage('Quote deleted successfully.');
       setQuoteToDelete(null);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to delete quote.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to delete quote.'));
     }
   };
 
@@ -231,8 +224,8 @@ export default function QuotesPage() {
       const res = await bulkDeleteMutation.mutateAsync(Array.from(selectedIds));
       setSuccessMessage(`${res.affected_count || selectedIds.size} quote(s) deleted.`);
       setSelectedIds(new Set());
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to delete selected quotes.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to delete selected quotes.'));
     }
   };
 
@@ -590,3 +583,4 @@ export default function QuotesPage() {
     </div>
   );
 }
+import { getErrorMessage } from '@/lib/utils';

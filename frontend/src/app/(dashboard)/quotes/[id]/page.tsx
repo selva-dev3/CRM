@@ -6,12 +6,8 @@ import Link from 'next/link';
 import {
   ArrowLeft,
   FileCode,
-  Calendar,
-  DollarSign,
   Send,
   CheckCircle2,
-  XCircle,
-  FileText,
   Download,
   Receipt,
   Repeat,
@@ -19,7 +15,6 @@ import {
   X,
   Loader2,
   Trash2,
-  Edit,
   History
 } from 'lucide-react';
 import { ActionMenu } from '@/components/common/action-menu';
@@ -32,7 +27,6 @@ import {
   useQuoteRevisionsQuery,
   useSendQuoteEmailMutation,
   useAcceptQuoteMutation,
-  useRejectQuoteMutation,
   useConvertQuoteToInvoiceMutation,
   useCreateQuoteRevisionMutation,
   useDeleteQuoteMutation
@@ -51,7 +45,6 @@ export default function QuoteDetailPage() {
   // Mutations
   const sendEmailMutation = useSendQuoteEmailMutation();
   const acceptMutation = useAcceptQuoteMutation();
-  const rejectMutation = useRejectQuoteMutation();
   const convertInvoiceMutation = useConvertQuoteToInvoiceMutation();
   const createRevisionMutation = useCreateQuoteRevisionMutation();
   const deleteMutation = useDeleteQuoteMutation();
@@ -59,9 +52,7 @@ export default function QuoteDetailPage() {
   // State
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isSendEmailModalOpen, setIsSendEmailModalOpen] = useState(false);
-  const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
   const [recipientEmailInput, setRecipientEmailInput] = useState('client@company.com');
-  const [rejectReasonInput, setRejectReasonInput] = useState('Budget constraints');
 
   // Toast / Alert notifications
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -74,8 +65,8 @@ export default function QuoteDetailPage() {
       await sendEmailMutation.mutateAsync({ id: quoteId, recipient_email: recipientEmailInput.trim() });
       setSuccessMessage(`Quote proposal email sent to ${recipientEmailInput.trim()}.`);
       setIsSendEmailModalOpen(false);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to send email.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to send email.'));
     }
   };
 
@@ -83,19 +74,8 @@ export default function QuoteDetailPage() {
     try {
       await acceptMutation.mutateAsync(quoteId);
       setSuccessMessage(`Quote proposal marked as Accepted.`);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to accept quote.');
-    }
-  };
-
-  const handleRejectSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      await rejectMutation.mutateAsync({ id: quoteId, reason: rejectReasonInput });
-      setSuccessMessage(`Quote marked as Rejected.`);
-      setIsRejectModalOpen(false);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to reject quote.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to accept quote.'));
     }
   };
 
@@ -103,8 +83,8 @@ export default function QuoteDetailPage() {
     try {
       const res = await convertInvoiceMutation.mutateAsync(quoteId);
       setSuccessMessage(`Quote converted directly into Invoice #${res.invoice_number}!`);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to convert quote into invoice.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to convert quote into invoice.'));
     }
   };
 
@@ -112,8 +92,8 @@ export default function QuoteDetailPage() {
     try {
       const res = await createRevisionMutation.mutateAsync(quoteId);
       setSuccessMessage(`New revision created: ${res.quote_number}.`);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to create quote revision.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to create quote revision.'));
     }
   };
 
@@ -121,8 +101,8 @@ export default function QuoteDetailPage() {
     try {
       await deleteMutation.mutateAsync(quoteId);
       router.push('/quotes');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to delete quote.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to delete quote.'));
     }
   };
 
@@ -422,3 +402,4 @@ export default function QuoteDetailPage() {
     </div>
   );
 }
+import { getErrorMessage } from '@/lib/utils';

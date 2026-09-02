@@ -1,5 +1,6 @@
-﻿import { useQuery, useMutation, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
+﻿import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import type { RelatedRecord } from '@/lib/types';
 
 export interface ContactItem {
   id: string;
@@ -113,47 +114,47 @@ export async function unstarContactApi(id: string): Promise<{ message: string; s
   return apiClient.post<{ message: string; status: string }>(`/contacts/${id}/unstar`);
 }
 
-export async function getContactDealsApi(id: string): Promise<any[]> {
+export async function getContactDealsApi(id: string): Promise<RelatedRecord[]> {
   try {
-    return await apiClient.get<any[]>(`/contacts/${id}/deals`);
+    return await apiClient.get<RelatedRecord[]>(`/contacts/${id}/deals`);
   } catch {
     return [];
   }
 }
 
-export async function getContactActivitiesApi(id: string): Promise<any[]> {
+export async function getContactActivitiesApi(id: string): Promise<RelatedRecord[]> {
   try {
-    return await apiClient.get<any[]>(`/contacts/${id}/activities`);
+    return await apiClient.get<RelatedRecord[]>(`/contacts/${id}/activities`);
   } catch {
     return [];
   }
 }
 
-export async function getContactNotesApi(id: string): Promise<any[]> {
+export async function getContactNotesApi(id: string): Promise<RelatedRecord[]> {
   try {
-    return await apiClient.get<any[]>(`/contacts/${id}/notes`);
+    return await apiClient.get<RelatedRecord[]>(`/contacts/${id}/notes`);
   } catch {
     return [];
   }
 }
 
-export async function addContactNoteApi(payload: { id: string; content: string }): Promise<any> {
-  return apiClient.post(`/contacts/${payload.id}/notes?content=${encodeURIComponent(payload.content)}`, {
+export async function addContactNoteApi(payload: { id: string; content: string }): Promise<RelatedRecord> {
+  return apiClient.post<RelatedRecord>(`/contacts/${payload.id}/notes?content=${encodeURIComponent(payload.content)}`, {
     content: payload.content,
   });
 }
 
-export async function getContactEmailsApi(id: string): Promise<any[]> {
+export async function getContactEmailsApi(id: string): Promise<RelatedRecord[]> {
   try {
-    return await apiClient.get<any[]>(`/contacts/${id}/emails`);
+    return await apiClient.get<RelatedRecord[]>(`/contacts/${id}/emails`);
   } catch {
     return [];
   }
 }
 
-export async function getContactCallsApi(id: string): Promise<any[]> {
+export async function getContactCallsApi(id: string): Promise<RelatedRecord[]> {
   try {
-    return await apiClient.get<any[]>(`/contacts/${id}/calls`);
+    return await apiClient.get<RelatedRecord[]>(`/contacts/${id}/calls`);
   } catch {
     return [];
   }
