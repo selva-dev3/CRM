@@ -1,5 +1,6 @@
 'use client';
 
+import { getErrorMessage } from '@/lib/utils';
 import React, { useState } from 'react';
 import {
   BarChart3,
@@ -897,4 +898,3 @@ export default function ReportsPage() {
     </div>
   );
 }
-import { getErrorMessage } from '@/lib/utils';

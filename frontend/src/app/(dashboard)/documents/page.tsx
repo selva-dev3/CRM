@@ -1,6 +1,7 @@
 ﻿'use client';
 
 import { ActionMenu } from '@/components/common/action-menu';
+import { getErrorMessage } from '@/lib/utils';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   FileText,
@@ -46,7 +47,6 @@ export default function DocumentsPage() {
   // Modal states
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [documentToDelete, setDocumentToDelete] = useState<DocumentItem | null>(null);
-  const [, setDownloadingDoc] = useState<DocumentItem | null>(null);
   const [presignedUrlResult, setPresignedUrlResult] = useState<{ download_url: string; filename: string } | null>(null);
 
   // File upload state
@@ -110,7 +110,6 @@ export default function DocumentsPage() {
   };
 
   const handleDownloadClick = async (doc: DocumentItem) => {
-    setDownloadingDoc(doc);
     try {
       const res = await downloadDocumentApi(doc.id);
       setPresignedUrlResult(res);
@@ -408,4 +407,3 @@ export default function DocumentsPage() {
     </div>
   );
 }
-import { getErrorMessage } from '@/lib/utils';

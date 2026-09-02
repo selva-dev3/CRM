@@ -2,6 +2,7 @@
 
 import { ActionMenu } from '@/components/common/action-menu';
 import { Button } from '@/components/ui/button';
+import { getErrorMessage } from '@/lib/utils';
 import React, { useState, useEffect } from 'react';
 import {
   Mail,
@@ -831,4 +832,3 @@ export default function EmailPage() {
     </div>
   );
 }
-import { getErrorMessage } from '@/lib/utils';

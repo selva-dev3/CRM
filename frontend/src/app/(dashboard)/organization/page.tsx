@@ -1,5 +1,6 @@
 ﻿'use client';
 
+import { getErrorMessage } from '@/lib/utils';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 /* eslint-disable @next/next/no-img-element -- remote organization logo URL */
 import Link from 'next/link';
@@ -1108,4 +1109,3 @@ export default function OrganizationPage() {
     </div>
   );
 }
-import { getErrorMessage } from '@/lib/utils';

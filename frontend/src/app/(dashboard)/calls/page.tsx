@@ -2,6 +2,7 @@
 
 import { ActionMenu } from '@/components/common/action-menu';
 import { Button } from '@/components/ui/button';
+import { getErrorMessage } from '@/lib/utils';
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
@@ -41,7 +42,6 @@ export default function CallsPage() {
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
-  const [callTypeFilter] = useState<string>('');
   const [page, setPage] = useState(1);
   const limit = 15;
 
@@ -89,7 +89,6 @@ export default function CallsPage() {
     page,
     limit,
     search: debouncedSearchTerm || undefined,
-    call_type: callTypeFilter || undefined,
   });
 
   const { data: dispositions = [] } = useCallDispositionsQuery();
@@ -600,4 +599,3 @@ export default function CallsPage() {
     </div>
   );
 }
-import { getErrorMessage } from '@/lib/utils';

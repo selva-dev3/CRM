@@ -1,5 +1,6 @@
 'use client';
 
+import { getErrorMessage } from '@/lib/utils';
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -279,4 +280,3 @@ export default function RegisterPage() {
     </div>
   );
 }
-import { getErrorMessage } from '@/lib/utils';

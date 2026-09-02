@@ -1,5 +1,6 @@
 'use client';
 
+import { getErrorMessage } from '@/lib/utils';
 import React, { useState, useEffect } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import {
@@ -383,4 +384,3 @@ export default function AcceptInvitationPage() {
     </div>
   );
 }
-import { getErrorMessage } from '@/lib/utils';

@@ -1,5 +1,6 @@
 ﻿'use client';
 
+import { getErrorMessage } from '@/lib/utils';
 import React, { useState } from 'react';
 import {
   Bell,
@@ -521,4 +522,3 @@ export default function NotificationsPage() {
     </div>
   );
 }
-import { getErrorMessage } from '@/lib/utils';

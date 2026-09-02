@@ -2,6 +2,7 @@
 
 import { ActionMenu } from '@/components/common/action-menu';
 import { Button } from '@/components/ui/button';
+import { getErrorMessage } from '@/lib/utils';
 import React, { useState, useEffect } from 'react';
 import {
   Package,
@@ -663,4 +664,3 @@ export default function ProductsPage() {
     </div>
   );
 }
-import { getErrorMessage } from '@/lib/utils';
