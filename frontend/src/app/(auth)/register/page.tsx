@@ -1,5 +1,6 @@
 'use client';
 
+import { getErrorMessage } from '@/lib/utils';
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -40,7 +41,7 @@ export default function RegisterPage() {
       }, 1200);
     },
     onError: (err: Error) => {
-      setError(err.message || 'Registration failed. An account with this email may already exist.');
+      setError(getErrorMessage(err, 'Registration failed. An account with this email may already exist.'));
     },
   });
 

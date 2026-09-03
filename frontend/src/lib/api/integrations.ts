@@ -60,7 +60,7 @@ export async function testZapierPingApi(): Promise<{ message: string }> {
   return apiClient.post<{ message: string }>('/integrations/zapier/test');
 }
 
-export async function triggerZapierEventApi(eventName: string, payload: any = {}): Promise<{ message: string }> {
+export async function triggerZapierEventApi(eventName: string, payload: Record<string, unknown> = {}): Promise<{ message: string }> {
   return apiClient.post<{ message: string }>('/integrations/zapier/event', { event_name: eventName, payload });
 }
 

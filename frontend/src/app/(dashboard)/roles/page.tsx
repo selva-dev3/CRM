@@ -1,10 +1,10 @@
 'use client';
 
+import { getErrorMessage } from '@/lib/utils';
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ShieldCheck,
-  Lock,
   Plus,
   Copy,
   Trash2,
@@ -21,7 +21,6 @@ import {
   Shield,
   Star,
   Calendar,
-  Layers,
   MoreHorizontal
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
@@ -39,7 +38,6 @@ import {
 import {
   useRolesQuery,
   useAssignableRolesQuery,
-  useSystemRolesQuery,
   useDefaultRoleQuery,
   usePermissionMatrixQuery,
   useRoleAuditLogsQuery,
@@ -57,7 +55,6 @@ import {
   RoleItem,
   PermissionItem
 } from '@/lib/api/roles';
-import { useUsersQuery } from '@/lib/api/users';
 import { UserSelect } from '@/components/common/user-select';
 
 export default function RolesPage() {
@@ -109,11 +106,9 @@ export default function RolesPage() {
   // Queries - live GET /api/v1/roles?search=... API call on typing search input!
   const { data: roles = [], isLoading: isRolesLoading } = useRolesQuery(debouncedSearch.trim() || undefined);
   const { data: assignableRoles = [] } = useAssignableRolesQuery();
-  const { data: systemRoles = [] } = useSystemRolesQuery();
   const { data: defaultRole } = useDefaultRoleQuery();
   const { data: permissionMatrix = [] } = usePermissionMatrixQuery();
   const { data: auditLogs = [] } = useRoleAuditLogsQuery();
-  const { data: usersList = [] } = useUsersQuery(1, 100);
 
   // Mutations
   const createRoleMutation = useCreateRoleMutation();
@@ -142,8 +137,8 @@ export default function RolesPage() {
       setPermName('');
       setPermKey('');
       setPermDesc('');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to create permission.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to create permission.'));
     }
   };
 
@@ -173,8 +168,8 @@ export default function RolesPage() {
       setIsPermModalOpen(false);
       setJsonText('');
       setJsonFileName(null);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to parse JSON file.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to parse JSON file.'));
     }
   };
 
@@ -217,8 +212,8 @@ export default function RolesPage() {
       }
       setIsRoleModalOpen(false);
       resetRoleForm();
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to save role.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to save role.'));
     }
   };
 
@@ -231,8 +226,8 @@ export default function RolesPage() {
       setIsCloneModalOpen(false);
       setCloningRole(null);
       setCloneNewName('');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to clone role.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to clone role.'));
     }
   };
 
@@ -243,8 +238,8 @@ export default function RolesPage() {
       const res = await assignUserMutation.mutateAsync({ userId: assignUserId.trim(), roleId: assignRoleId });
       setSuccessMessage(res.message || 'Role assigned to user.');
       setIsAssignModalOpen(false);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to assign role to user.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to assign role to user.'));
     }
   };
 
@@ -252,8 +247,8 @@ export default function RolesPage() {
     try {
       await setDefaultMutation.mutateAsync(r.id);
       setSuccessMessage(`Role "${r.name}" set as default for new registrations.`);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to set default role.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to set default role.'));
     }
   };
 
@@ -262,8 +257,8 @@ export default function RolesPage() {
       const res = await exportRolesApi();
       setSuccessMessage('Role permissions schema exported. Download started.');
       window.open(res.download_url, '_blank');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to export role schema.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to export role schema.'));
     }
   };
 
@@ -271,8 +266,8 @@ export default function RolesPage() {
     try {
       const res = await importRolesMutation.mutateAsync();
       setSuccessMessage(res.message || 'Role definitions imported successfully.');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to import role schema.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to import role schema.'));
     }
   };
 
@@ -282,8 +277,8 @@ export default function RolesPage() {
       await deleteRoleMutation.mutateAsync(roleToDelete.id);
       setSuccessMessage('Role deleted successfully.');
       setRoleToDelete(null);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to delete role.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to delete role.'));
     }
   };
 
@@ -293,8 +288,8 @@ export default function RolesPage() {
       const res = await bulkDeleteMutation.mutateAsync(Array.from(selectedIds));
       setSuccessMessage(`${res.affected_count || selectedIds.size} role(s) deleted.`);
       setSelectedIds(new Set());
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to delete selected roles.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to delete selected roles.'));
     }
   };
 

@@ -389,7 +389,7 @@ export default function CompanyDetailsPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {contacts.map((contact: any) => (
+              {contacts.map((contact) => (
                 <div key={contact.id} className="p-4 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-full bg-blue-100 text-blue-700 font-bold flex items-center justify-center text-xs">
@@ -431,7 +431,7 @@ export default function CompanyDetailsPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {deals.map((deal: any) => (
+              {deals.map((deal) => (
                 <div key={deal.id} className="p-4 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between">
                   <div>
                     <div className="font-bold text-slate-900">{deal.title}</div>
@@ -479,7 +479,7 @@ export default function CompanyDetailsPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {notes.map((note: any, idx: number) => (
+              {notes.map((note, idx: number) => (
                 <div key={idx} className="p-4 bg-white rounded-xl border border-slate-200 text-xs space-y-1">
                   <div className="font-medium text-slate-900">{note.content}</div>
                   <div className="text-[10px] text-slate-400">{note.created_at || 'Saved'}</div>
@@ -500,7 +500,7 @@ export default function CompanyDetailsPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {quotes.map((quote: any, idx: number) => (
+              {quotes.map((quote, idx: number) => (
                 <div key={idx} className="p-4 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between">
                   <div>
                     <div className="font-bold text-slate-900">{quote.title || `Quote #${quote.id}`}</div>
@@ -526,7 +526,7 @@ export default function CompanyDetailsPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {invoices.map((inv: any, idx: number) => (
+              {invoices.map((inv, idx: number) => (
                 <div key={idx} className="p-4 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between">
                   <div>
                     <div className="font-bold text-slate-900">Invoice #{inv.number || inv.id}</div>
@@ -552,7 +552,7 @@ export default function CompanyDetailsPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {documents.map((doc: any, idx: number) => (
+              {documents.map((doc, idx: number) => (
                 <div key={idx} className="p-4 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
                     <Folder className="w-4 h-4 text-blue-600" />
@@ -586,7 +586,7 @@ export default function CompanyDetailsPage() {
                 <p className="text-slate-400">No child corporate entities registered under this account.</p>
               ) : (
                 <div className="space-y-1.5">
-                  {hierarchy.subsidiaries.map((sub: any, idx: number) => (
+                  {hierarchy.subsidiaries.map((sub, idx: number) => (
                     <div key={idx} className="p-3 bg-slate-50 rounded-lg border border-slate-200 font-semibold text-slate-900">
                       {sub.name} ({sub.domain || 'Subsidiary Branch'})
                     </div>

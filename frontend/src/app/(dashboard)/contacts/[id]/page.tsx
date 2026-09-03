@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import {
   ArrowLeft,
-  User,
   Mail,
   Phone,
   Building,
@@ -374,7 +373,7 @@ export default function ContactDetailsPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {activities.map((act: any, idx: number) => (
+              {activities.map((act, idx: number) => (
                 <div key={idx} className="p-3 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between">
                   <div>
                     <div className="font-semibold text-slate-900">{act.type || 'Activity Event'}</div>
@@ -398,7 +397,7 @@ export default function ContactDetailsPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {deals.map((deal: any) => (
+              {deals.map((deal) => (
                 <div key={deal.id} className="p-4 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between">
                   <div>
                     <div className="font-bold text-slate-900">{deal.title}</div>
@@ -446,7 +445,7 @@ export default function ContactDetailsPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {notes.map((note: any, idx: number) => (
+              {notes.map((note, idx: number) => (
                 <div key={idx} className="p-4 bg-white rounded-xl border border-slate-200 text-xs space-y-1">
                   <div className="font-medium text-slate-900">{note.content}</div>
                   <div className="text-[10px] text-slate-400">{note.created_at || 'Saved'}</div>
@@ -467,7 +466,7 @@ export default function ContactDetailsPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {emails.map((email: any, idx: number) => (
+              {emails.map((email, idx: number) => (
                 <div key={idx} className="p-4 bg-white rounded-xl border border-slate-200 text-xs space-y-1">
                   <div className="font-bold text-slate-900">{email.subject || 'Sales Outreach'}</div>
                   <div className="text-slate-600">{email.body_text || email.body || 'No preview body.'}</div>
@@ -488,7 +487,7 @@ export default function ContactDetailsPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {calls.map((call: any, idx: number) => (
+              {calls.map((call, idx: number) => (
                 <div key={idx} className="p-4 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between">
                   <div>
                     <div className="font-bold text-slate-900">{call.call_type || 'Outbound Call'}</div>

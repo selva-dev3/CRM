@@ -1,14 +1,13 @@
 ﻿'use client';
 
+import { getErrorMessage } from '@/lib/utils';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Plus, 
   Mail, 
   ShieldCheck, 
-  UserCheck, 
   Sliders, 
   ChevronDown, 
-  Pencil, 
   Trash2, 
   RefreshCw, 
   Sparkles, 
@@ -24,8 +23,6 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { Card } from '@/components/ui/card';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -196,8 +193,8 @@ export default function UsersPage() {
       resetCreateForm();
 
       setTimeout(() => setSuccessMessage(null), 4000);
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to create user account.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to create user account.'));
     }
   };
 
@@ -234,8 +231,8 @@ export default function UsersPage() {
       resetForm();
 
       setTimeout(() => setSuccessMessage(null), 4000);
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to send invitation.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to send invitation.'));
     }
   };
 
@@ -252,8 +249,8 @@ export default function UsersPage() {
       await queryClient.invalidateQueries({ queryKey: ['users'] });
       await refetch();
       setTimeout(() => setSuccessMessage(null), 4000);
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to update user status.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to update user status.'));
     }
   };
 
@@ -266,8 +263,8 @@ export default function UsersPage() {
       setSuccessMessage(`User "${userToDelete.name || userToDelete.email}" deleted successfully.`);
       setUserToDelete(null);
       setTimeout(() => setSuccessMessage(null), 4000);
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to delete user.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to delete user.'));
     }
   };
 
@@ -306,7 +303,7 @@ export default function UsersPage() {
       setSuccessMessage(`Deactivated ${selectedIds.size} selected user(s).`);
       setSelectedIds(new Set());
       setTimeout(() => setSuccessMessage(null), 4000);
-    } catch (err: any) {
+    } catch {
       setErrorMessage('Failed to complete bulk deactivate.');
     }
   };
@@ -322,7 +319,7 @@ export default function UsersPage() {
       setSuccessMessage(`Deleted ${selectedIds.size} selected user(s).`);
       setSelectedIds(new Set());
       setTimeout(() => setSuccessMessage(null), 4000);
-    } catch (err: any) {
+    } catch {
       setErrorMessage('Failed to complete bulk delete.');
     }
   };

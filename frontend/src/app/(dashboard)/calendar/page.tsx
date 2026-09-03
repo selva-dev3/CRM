@@ -2,24 +2,21 @@
 
 import { ActionMenu } from '@/components/common/action-menu';
 import { Button } from '@/components/ui/button';
+import { getErrorMessage } from '@/lib/utils';
 import React, { useState, useEffect } from 'react';
 import {
   Calendar as CalendarIcon,
   Clock,
   Plus,
-  Search,
   RefreshCw,
   Trash2,
   Edit,
   Repeat,
-  UserCheck,
   CheckCircle2,
   AlertCircle,
   X,
   Loader2,
-  Zap,
   Globe,
-  CalendarCheck
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
@@ -78,7 +75,7 @@ export default function CalendarPage() {
   }, [searchTerm]);
 
   // Queries
-  const { data: events = [], isLoading: isEventsLoading, refetch } = useCalendarEventsQuery({
+  const { data: events = [], isLoading: isEventsLoading } = useCalendarEventsQuery({
     search: debouncedSearchTerm || undefined,
   });
 
@@ -142,8 +139,8 @@ export default function CalendarPage() {
       }
       setIsCreateModalOpen(false);
       resetForm();
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to save event.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to save event.'));
     }
   };
 
@@ -153,8 +150,8 @@ export default function CalendarPage() {
       await deleteEventMutation.mutateAsync(eventToDelete.id);
       setSuccessMessage('Calendar event deleted.');
       setEventToDelete(null);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to delete event.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to delete event.'));
     }
   };
 
@@ -162,8 +159,8 @@ export default function CalendarPage() {
     try {
       const res = await syncGoogleMutation.mutateAsync();
       setSuccessMessage(res.message || 'Google Calendar synchronized.');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to sync Google Calendar.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to sync Google Calendar.'));
     }
   };
 
@@ -171,8 +168,8 @@ export default function CalendarPage() {
     try {
       const res = await syncOutlookMutation.mutateAsync();
       setSuccessMessage(res.message || 'Outlook Calendar synchronized.');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to sync Outlook Calendar.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to sync Outlook Calendar.'));
     }
   };
 
@@ -187,8 +184,8 @@ export default function CalendarPage() {
       setSuccessMessage(`Recurring rule "${recurringTitle.trim()}" created.`);
       setIsRecurringModalOpen(false);
       setRecurringTitle('');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to create recurring rule.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to create recurring rule.'));
     }
   };
 

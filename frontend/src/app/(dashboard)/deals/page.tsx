@@ -6,9 +6,6 @@ import { useRouter } from 'next/navigation';
 import {
   Briefcase,
   Plus,
-  Kanban,
-  Table as TableIcon,
-  Search,
   FileSpreadsheet,
   Upload,
   Trash2,
@@ -17,13 +14,8 @@ import {
   AlertCircle,
   Trophy,
   XCircle,
-  Sparkles,
   Copy,
   User,
-  DollarSign,
-  Layers,
-  ArrowRight,
-  TrendingUp
 } from 'lucide-react';
 import { ActionMenu } from '@/components/common/action-menu';
 import { Button } from '@/components/ui/button';
@@ -37,16 +29,12 @@ import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
 import {
   useDealsQuery,
-  useKanbanBoardQuery,
-  useWinLossAnalyticsQuery,
   useCreateDealMutation,
   useUpdateDealMutation,
   useDeleteDealMutation,
-  useUpdateDealStageMutation,
   useMarkDealWonMutation,
   useMarkDealLostMutation,
   useBulkDeleteDealsMutation,
-  useBulkUpdateDealStageMutation,
   useImportDealsCsvMutation,
   exportDealsCsvApi,
   importDealsCsvApi,
@@ -59,7 +47,6 @@ const STAGES = ['Prospecting', 'Qualification', 'Proposal', 'Negotiation', 'Clos
 
 export default function DealsPage() {
   const router = useRouter();
-  const [viewMode, setViewMode] = useState<'kanban' | 'table'>('table');
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [page, setPage] = useState(1);
@@ -92,26 +79,20 @@ export default function DealsPage() {
   }, [searchTerm]);
 
   // Queries
-  const { data: deals = [], isLoading: isDealsLoading, refetch: refetchDeals } = useDealsQuery(page, limit, undefined, debouncedSearchTerm);
-  const { data: kanbanBoard = {}, refetch: refetchKanban } = useKanbanBoardQuery();
-  const { data: winLoss = { win_rate: 0, won_count: 0, lost_count: 0 }, refetch: refetchAnalytics } = useWinLossAnalyticsQuery();
+  const { data: deals = [], refetch: refetchDeals } = useDealsQuery(page, limit, undefined, debouncedSearchTerm);
   const { data: users = [] } = useUsersQuery();
 
   // Mutations
   const createDealMutation = useCreateDealMutation();
   const updateDealMutation = useUpdateDealMutation();
   const deleteDealMutation = useDeleteDealMutation();
-  const updateStageMutation = useUpdateDealStageMutation();
   const markWonMutation = useMarkDealWonMutation();
   const markLostMutation = useMarkDealLostMutation();
   const bulkDeleteMutation = useBulkDeleteDealsMutation();
-  const bulkUpdateStageMutation = useBulkUpdateDealStageMutation();
   const importCsvMutation = useImportDealsCsvMutation();
 
   const refetchAll = () => {
     refetchDeals();
-    refetchKanban();
-    refetchAnalytics();
   };
 
   const resetForm = () => {
@@ -192,16 +173,6 @@ export default function DealsPage() {
     } catch {
       setErrorMessage('Failed to delete deal.');
       setDealToDelete(null);
-    }
-  };
-
-  const handleMoveStage = async (dealId: string, newStage: string) => {
-    try {
-      await updateStageMutation.mutateAsync({ id: dealId, stage: newStage });
-      setSuccessMessage(`Deal moved to '${newStage}'.`);
-      refetchAll();
-    } catch {
-      setErrorMessage('Failed to update deal stage.');
     }
   };
 
@@ -418,15 +389,15 @@ export default function DealsPage() {
       )}
       {/* DATATABLE */}
       <DataTable
-          columns={columns as any}
-          data={deals as any}
-          getRowKey={(item: any) => item.id}
-          onRowClick={(item: any) => router.push(`/deals/${item.id}`)}
+          columns={columns}
+          data={deals}
+          getRowKey={(item) => item.id}
+          onRowClick={(item) => router.push(`/deals/${item.id}`)}
           searchValue={searchTerm}
           onSearchChange={setSearchTerm}
           searchPlaceholder="Search deals by title..."
           actionVariant="menu"
-          actions={(item: any) => [
+          actions={(item) => [
             {
               label: 'Edit Deal',
               permission: PERMISSIONS.DEALS.UPDATE,
@@ -470,7 +441,7 @@ export default function DealsPage() {
               setSelectedIds(new Set());
             }
           }}
-          onToggleRow={(item: any, checked) => {
+          onToggleRow={(item, checked) => {
             const next = new Set(selectedIds);
             if (checked) next.add(item.id);
             else next.delete(item.id);

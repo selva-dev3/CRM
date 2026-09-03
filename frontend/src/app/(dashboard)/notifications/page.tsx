@@ -1,5 +1,6 @@
 ﻿'use client';
 
+import { getErrorMessage } from '@/lib/utils';
 import React, { useState } from 'react';
 import {
   Bell,
@@ -15,7 +16,6 @@ import {
   Mail,
   Smartphone,
   MessageSquare,
-  Sparkles,
   Inbox
 } from 'lucide-react';
 import { ConfirmModal } from '@/components/common/confirm-modal';
@@ -32,12 +32,11 @@ import {
   useRegisterWebpushTokenMutation,
   useSendSystemAlertMutation,
   NotificationItem,
-  NotificationPreferences
 } from '@/lib/api/notifications';
 
 export default function NotificationsPage() {
   const [activeTab, setActiveTab] = useState<'all' | 'unread'>('all');
-  const [page, setPage] = useState(1);
+  const [page, ] = useState(1);
   const limit = 20;
 
   // Selected for bulk delete
@@ -85,16 +84,16 @@ export default function NotificationsPage() {
     try {
       await markAllReadMutation.mutateAsync();
       setSuccessMessage('All notifications marked as read.');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to mark all as read.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to mark all as read.'));
     }
   };
 
   const handleMarkSingleRead = async (id: string) => {
     try {
       await markReadMutation.mutateAsync(id);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to mark notification read.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to mark notification read.'));
     }
   };
 
@@ -104,8 +103,8 @@ export default function NotificationsPage() {
       await deleteMutation.mutateAsync(notificationToDelete.id);
       setSuccessMessage('Notification deleted.');
       setNotificationToDelete(null);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to delete notification.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to delete notification.'));
     }
   };
 
@@ -115,8 +114,8 @@ export default function NotificationsPage() {
       const res = await bulkDeleteMutation.mutateAsync(Array.from(selectedIds));
       setSuccessMessage(`${res.affected_count || selectedIds.size} notification(s) deleted.`);
       setSelectedIds(new Set());
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to delete selected notifications.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to delete selected notifications.'));
     }
   };
 
@@ -141,8 +140,8 @@ export default function NotificationsPage() {
       });
       setSuccessMessage('Notification delivery preferences updated successfully.');
       setIsPreferencesModalOpen(false);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to update preferences.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to update preferences.'));
     }
   };
 
@@ -151,8 +150,8 @@ export default function NotificationsPage() {
       const dummyToken = `webpush_token_${Math.random().toString(36).substring(2, 10)}`;
       const res = await registerWebpushMutation.mutateAsync({ token: dummyToken, device_type: 'Chrome Desktop' });
       setSuccessMessage(res.message || 'WebPush browser token registered for push notifications.');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to register WebPush token.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to register WebPush token.'));
     }
   };
 
@@ -165,8 +164,8 @@ export default function NotificationsPage() {
       setIsAlertModalOpen(false);
       setAlertTitle('');
       setAlertMessage('');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to send system alert.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to send system alert.'));
     }
   };
 

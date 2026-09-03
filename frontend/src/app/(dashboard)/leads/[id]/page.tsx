@@ -1,5 +1,6 @@
 'use client';
 
+import { getErrorMessage } from '@/lib/utils';
 import React, { useState, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -39,7 +40,7 @@ import {
   Snowflake,
   AlertTriangle,
 } from 'lucide-react';
-import { Button, Card, Label, Input, Badge, Alert, AlertDescription } from '@/components/ui';
+import { Button, Card, Label, Input, Alert, AlertDescription } from '@/components/ui';
 import { ModalShell } from '@/components/common/modal-shell';
 import {
   Select,
@@ -68,7 +69,6 @@ import {
   assignLeadApi,
   archiveLeadApi,
   unarchiveLeadApi,
-  Lead
 } from '@/lib/api/leads';
 import { useOrganizationsQuery } from '@/lib/api/organizations';
 import { useCompaniesQuery } from '@/lib/api/companies';
@@ -91,7 +91,7 @@ export default function LeadDetailPage() {
   // Queries
   const { data: lead, isLoading, isError, error, refetch } = useLeadQuery(leadId);
   const { data: organizations = [], isLoading: isOrgsLoading } = useOrganizationsQuery();
-  const { data: companies = [], isLoading: isCompaniesLoading } = useCompaniesQuery();
+  const { data: companies = [] } = useCompaniesQuery();
   const {
     data: users = [],
     isLoading: isUsersLoading,
@@ -227,38 +227,6 @@ export default function LeadDetailPage() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   };
 
-  const resetForm = () => {
-    setContactName('');
-    setCompany(companies.length > 0 ? companies[0].name : '');
-    setCustomCompany('');
-    setTitle('');
-    setEmail('');
-    setPhone('');
-    setWebsite('');
-    setIndustry('');
-    setCompanySize('');
-    setCountry('');
-    setStateName('');
-    setCity('');
-    setAddress('');
-    setPostalCode('');
-    setStatus('New');
-    setSource('Website');
-    setOrganizationId(organizations.length > 0 ? organizations[0].id : 'org-1');
-    setScore(75);
-    setAssignedTo('');
-    setIsArchived(false);
-    setErrorMessage(null);
-  };
-
-  const handleOpenCreateModal = () => {
-    setIsEditMode(false);
-    resetForm();
-    if (organizations.length > 0) setOrganizationId(organizations[0].id);
-    if (companies.length > 0) setCompany(companies[0].name);
-    setIsModalOpen(true);
-  };
-
   const handleOpenEditModal = () => {
     if (!lead) return;
     setIsEditMode(true);
@@ -339,8 +307,8 @@ export default function LeadDetailPage() {
 
       setIsModalOpen(false);
       setTimeout(() => setSuccessMessage(null), 4000);
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to save lead.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to save lead.'));
     }
   };
 
@@ -350,8 +318,8 @@ export default function LeadDetailPage() {
       await deleteLeadMutation.mutateAsync(lead.id);
       setIsDeleteModalOpen(false);
       router.push('/leads');
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to delete lead.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to delete lead.'));
     }
   };
 
@@ -367,8 +335,8 @@ export default function LeadDetailPage() {
       await refetchNotes();
       setSuccessMessage('Note added successfully!');
       setTimeout(() => setSuccessMessage(null), 3000);
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to add note.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to add note.'));
     } finally {
       setIsAddingNote(false);
     }
@@ -386,8 +354,8 @@ export default function LeadDetailPage() {
       await refetchTasks();
       setSuccessMessage('Task created successfully!');
       setTimeout(() => setSuccessMessage(null), 3000);
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to create task.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to create task.'));
     } finally {
       setIsCreatingTask(false);
     }
@@ -405,8 +373,8 @@ export default function LeadDetailPage() {
       await refetchEmails();
       setSuccessMessage('Email sent successfully!');
       setTimeout(() => setSuccessMessage(null), 3000);
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to send email.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to send email.'));
     } finally {
       setIsSendingEmail(false);
     }
@@ -422,8 +390,8 @@ export default function LeadDetailPage() {
       await refetchCalls();
       setSuccessMessage('Call record logged successfully!');
       setTimeout(() => setSuccessMessage(null), 3000);
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to log call.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to log call.'));
     } finally {
       setIsLoggingCall(false);
     }
@@ -440,8 +408,8 @@ export default function LeadDetailPage() {
       await refetchDocuments();
       setSuccessMessage('Document attached successfully to MinIO S3!');
       setTimeout(() => setSuccessMessage(null), 3000);
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to upload document.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to upload document.'));
     } finally {
       setIsUploadingDoc(false);
     }
@@ -454,7 +422,7 @@ export default function LeadDetailPage() {
       await refetch();
       setSuccessMessage('AI Lead score recalculated!');
       setTimeout(() => setSuccessMessage(null), 3000);
-    } catch (err: any) {
+    } catch {
       setErrorMessage('Failed to recalculate score.');
     } finally {
       setIsRecalculatingScore(false);
@@ -468,7 +436,7 @@ export default function LeadDetailPage() {
       await refetch();
       setSuccessMessage('Lead converted to Deal, Contact, and Company!');
       setTimeout(() => setSuccessMessage(null), 4000);
-    } catch (err: any) {
+    } catch {
       setErrorMessage('Failed to convert lead.');
     } finally {
       setIsConverting(false);
@@ -507,7 +475,7 @@ export default function LeadDetailPage() {
       }
       await refetch();
       setTimeout(() => setSuccessMessage(null), 3000);
-    } catch (err: any) {
+    } catch {
       setErrorMessage('Failed to change archive status.');
     } finally {
       setIsArchiving(false);
@@ -614,7 +582,7 @@ export default function LeadDetailPage() {
       {/* Enterprise Tabbed Interface Header */}
       <div className="sticky top-0 z-20 -mx-1 border-b border-[#E5E7EB] bg-slate-50/95 px-1 pt-2 backdrop-blur-sm sm:-mx-2 sm:px-2 overflow-x-auto scrollbar-none">
         <nav className="flex space-x-2 min-w-max pb-1">
-          {[
+          {([
             { id: 'overview', label: 'Overview & Details', icon: Briefcase },
             { id: 'notes', label: `Notes (${notes.length})`, icon: FileText },
             { id: 'tasks', label: `Tasks (${tasks.length})`, icon: CheckSquare },
@@ -622,14 +590,14 @@ export default function LeadDetailPage() {
             { id: 'calls', label: `Calls (${calls.length})`, icon: PhoneCall },
             { id: 'documents', label: `Documents (${documents.length})`, icon: Paperclip },
             { id: 'actions', label: 'Actions & Convert', icon: Zap },
-          ].map((tab) => {
+          ] as const).map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setActiveTab(tab.id as any)}
+                onClick={() => setActiveTab(tab.id)}
                 className={`flex items-center gap-2 px-4 py-2 text-button font-medium rounded-btn transition cursor-pointer border ${isActive
                     ? 'bg-[#2563EB] text-white border-[#2563EB] shadow-saas-sm font-semibold'
                     : 'bg-white text-[#374151] hover:bg-[#F3F4F6] border-[#E5E7EB]'
@@ -1860,7 +1828,7 @@ export default function LeadDetailPage() {
         >
           <div className="space-y-4">
             <p className="text-xs font-bold text-slate-700 leading-relaxed">
-              Are you sure you want to delete sales lead <span className="font-black text-slate-950">"{lead.contact_name}"</span> ({lead.company})?
+              Are you sure you want to delete sales lead <span className="font-black text-slate-950">&quot;{lead.contact_name}&quot;</span> ({lead.company})?
             </p>
             <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-[11px] font-bold">
               <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />

@@ -1,15 +1,13 @@
 ﻿'use client';
 
 import { ActionMenu } from '@/components/common/action-menu';
+import { getErrorMessage } from '@/lib/utils';
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Folder,
   FileText,
   UploadCloud,
   Download,
   Trash2,
-  Search,
-  Plus,
   HardDrive,
   CheckCircle2,
   AlertCircle,
@@ -19,9 +17,7 @@ import {
   FileImage,
   FileSpreadsheet,
   FileArchive,
-  Eye,
   ExternalLink,
-  ShieldCheck
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
@@ -51,7 +47,6 @@ export default function DocumentsPage() {
   // Modal states
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [documentToDelete, setDocumentToDelete] = useState<DocumentItem | null>(null);
-  const [downloadingDoc, setDownloadingDoc] = useState<DocumentItem | null>(null);
   const [presignedUrlResult, setPresignedUrlResult] = useState<{ download_url: string; filename: string } | null>(null);
 
   // File upload state
@@ -109,17 +104,16 @@ export default function DocumentsPage() {
       setSuccessMessage(`File "${res.filename}" uploaded successfully to MinIO S3.`);
       setIsUploadModalOpen(false);
       setSelectedFile(null);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to upload document.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to upload document.'));
     }
   };
 
   const handleDownloadClick = async (doc: DocumentItem) => {
-    setDownloadingDoc(doc);
     try {
       const res = await downloadDocumentApi(doc.id);
       setPresignedUrlResult(res);
-    } catch (err: any) {
+    } catch {
       // Fallback
       setPresignedUrlResult({
         download_url: doc.download_url || `https://storage.minio.internal/crm-storage/documents/${doc.filename}`,
@@ -134,8 +128,8 @@ export default function DocumentsPage() {
       await deleteMutation.mutateAsync(documentToDelete.id);
       setSuccessMessage('Document deleted successfully.');
       setDocumentToDelete(null);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to delete document.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to delete document.'));
     }
   };
 
@@ -145,8 +139,8 @@ export default function DocumentsPage() {
       const res = await bulkDeleteMutation.mutateAsync(Array.from(selectedIds));
       setSuccessMessage(`${res.affected_count || selectedIds.size} document(s) deleted.`);
       setSelectedIds(new Set());
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to delete selected documents.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to delete selected documents.'));
     }
   };
 
@@ -167,7 +161,6 @@ export default function DocumentsPage() {
     return <FileCode className="w-5 h-5 text-blue-600" />;
   };
 
-  const totalBytes = documents.reduce((acc, curr) => acc + (curr.file_size || 0), 0);
 
   // Columns definition
   const columns: DataTableColumn<DocumentItem>[] = [

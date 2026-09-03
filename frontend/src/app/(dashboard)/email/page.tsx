@@ -2,31 +2,24 @@
 
 import { ActionMenu } from '@/components/common/action-menu';
 import { Button } from '@/components/ui/button';
+import { getErrorMessage } from '@/lib/utils';
 import React, { useState, useEffect } from 'react';
 import {
   Mail,
   Send,
   FileText,
   RefreshCw,
-  Plus,
-  Search,
-  Trash2,
-  Edit,
   Eye,
   MousePointer,
-  Sparkles,
   Loader2,
   X,
   CheckCircle2,
   AlertCircle,
-  Inbox as InboxIcon,
-  Archive,
   Layers,
   Signature as SignatureIcon,
   Users
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
-import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
@@ -76,7 +69,7 @@ export default function EmailPage() {
   const [tmplName, setTmplName] = useState('');
   const [tmplSubject, setTmplSubject] = useState('');
   const [tmplBody, setTmplBody] = useState('');
-  const [tmplCategory, setTmplCategory] = useState('Outreach');
+  const [tmplCategory, ] = useState('Outreach');
 
   // Campaign Form state
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
@@ -144,8 +137,8 @@ export default function EmailPage() {
       setSuccessMessage(`Email sent to ${recipient.trim()}.`);
       setIsComposeModalOpen(false);
       resetComposeForm();
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to send email.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to send email.'));
     }
   };
 
@@ -160,8 +153,8 @@ export default function EmailPage() {
       setSuccessMessage('Email draft saved.');
       setIsComposeModalOpen(false);
       resetComposeForm();
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to save draft.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to save draft.'));
     }
   };
 
@@ -180,8 +173,8 @@ export default function EmailPage() {
       setTmplName('');
       setTmplSubject('');
       setTmplBody('');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to create template.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to create template.'));
     }
   };
 
@@ -201,8 +194,8 @@ export default function EmailPage() {
       setSuccessMessage(`Campaign blast (ID: ${res.campaign_id}) queued for ${res.queued_count} targets.`);
       setIsCampaignModalOpen(false);
       setTargetLeadsInput('');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to send campaign blast.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to send campaign blast.'));
     }
   };
 
@@ -218,8 +211,8 @@ export default function EmailPage() {
       setIsSignatureModalOpen(false);
       setSigName('');
       setSigHtml('');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to save signature.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to save signature.'));
     }
   };
 
@@ -227,8 +220,8 @@ export default function EmailPage() {
     try {
       const res = await syncImapMutation.mutateAsync();
       setSuccessMessage(res.message || 'IMAP email sync initiated.');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to sync IMAP emails.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to sync IMAP emails.'));
     }
   };
 
@@ -238,7 +231,7 @@ export default function EmailPage() {
     try {
       const data = await fetchEmailTrackingStatusApi(email.id);
       setTrackingData(data);
-    } catch (err: any) {
+    } catch {
       setTrackingData({
         email_id: email.id,
         opens: 2,
@@ -257,8 +250,8 @@ export default function EmailPage() {
       const res = await bulkDeleteMutation.mutateAsync(Array.from(selectedIds));
       setSuccessMessage(`${res.affected_count || selectedIds.size} email(s) deleted.`);
       setSelectedIds(new Set());
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to delete emails.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to delete emails.'));
     }
   };
 

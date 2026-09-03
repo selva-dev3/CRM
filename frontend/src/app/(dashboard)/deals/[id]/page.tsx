@@ -21,7 +21,6 @@ import {
   Plus,
   CheckCircle2,
   AlertCircle,
-  Calendar,
   Loader2,
   Lock,
   Receipt,
@@ -31,7 +30,6 @@ import { ActionMenu } from '@/components/common/action-menu';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
 import { PermissionGate } from '@/components/common/permission-gate';
@@ -56,6 +54,7 @@ import {
 import { useDealInvoicesQuery, useConvertDealToInvoiceMutation } from '@/lib/api/invoices';
 import { useUsersQuery } from '@/lib/api/users';
 import { useProductsQuery } from '@/lib/api/products';
+import type { DealPredictionResponse } from '@/lib/types';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 const STAGES = ['Prospecting', 'Qualification', 'Proposal', 'Negotiation', 'Closed Won', 'Closed Lost'];
@@ -76,7 +75,7 @@ export default function DealDetailsPage() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isAddProductModalOpen, setIsAddProductModalOpen] = useState(false);
-  const [aiPrediction, setAiPrediction] = useState<any>(null);
+  const [aiPrediction, setAiPrediction] = useState<DealPredictionResponse | null>(null);
 
   // Add Product Form State
   const [selectedProductId, setSelectedProductId] = useState('');
@@ -580,7 +579,7 @@ export default function DealDetailsPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {products.map((prod: any, idx: number) => (
+              {products.map((prod, idx: number) => (
                 <div key={idx} className="p-4 bg-white rounded-xl border border-slate-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:border-slate-300 transition">
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm shrink-0">
@@ -633,7 +632,7 @@ export default function DealDetailsPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {timeline.map((evt: any, idx: number) => (
+              {timeline.map((evt, idx: number) => (
                 <div key={idx} className="p-3 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between">
                   <div>
                     <div className="font-semibold text-slate-900">{evt.stage_name || 'Stage Updated'}</div>
@@ -679,7 +678,7 @@ export default function DealDetailsPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {notes.map((note: any, idx: number) => (
+              {notes.map((note, idx: number) => (
                 <div key={idx} className="p-4 bg-white rounded-xl border border-slate-200 text-xs space-y-1">
                   <div className="font-medium text-slate-900">{note.content}</div>
                   <div className="text-[10px] text-slate-400">{note.created_at || 'Saved'}</div>
@@ -700,7 +699,7 @@ export default function DealDetailsPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {quotes.map((quote: any, idx: number) => (
+              {quotes.map((quote, idx: number) => (
                 <div key={idx} className="p-4 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between">
                   <div>
                     <div className="font-bold text-slate-900">{quote.title || `Quote #${quote.id}`}</div>

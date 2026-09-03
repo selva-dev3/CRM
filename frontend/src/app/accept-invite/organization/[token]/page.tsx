@@ -1,15 +1,10 @@
 'use client';
 
+import { getErrorMessage } from '@/lib/utils';
 import React, { useState, useEffect } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import {
   Building2,
-  Lock,
-  User,
-  Globe,
-  Phone,
-  MapPin,
-  Briefcase,
   CheckCircle2,
   AlertCircle,
   Loader2,
@@ -59,6 +54,7 @@ export default function AcceptInvitationPage() {
   useEffect(() => {
     if (invStatus) {
       if (invStatus.full_name) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate invite form from API status
         setFullName(invStatus.full_name);
       }
       if (invStatus.organization?.name) {
@@ -117,8 +113,8 @@ export default function AcceptInvitationPage() {
       setTimeout(() => {
         router.push('/dashboard');
       }, 3500);
-    } catch (err: any) {
-      setErrorMessage(err?.response?.data?.detail || err?.message || 'Failed to accept invitation.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to accept invitation.'));
     }
   };
 

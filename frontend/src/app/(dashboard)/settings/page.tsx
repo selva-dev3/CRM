@@ -9,7 +9,6 @@ import {
   Webhook as WebhookIcon,
   ShieldAlert,
   Database,
-  Download,
   Plus,
   Trash2,
   Send,
@@ -23,8 +22,6 @@ import {
   FileSpreadsheet,
   Building,
   Layers,
-  ChevronDown,
-  Check
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -65,7 +62,7 @@ export default function SettingsPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Queries
-  const { data: settings, isLoading: isSettingsLoading, refetch: refetchSettings } = useSystemSettingsQuery();
+  const { data: settings, refetch: refetchSettings } = useSystemSettingsQuery();
   const { data: customFields = [], refetch: refetchFields } = useCustomFieldsQuery();
   const { data: webhooks = [], refetch: refetchWebhooks } = useWebhooksQuery();
   const { data: slaPolicies = [], refetch: refetchSla } = useSlaPoliciesQuery();
@@ -113,6 +110,7 @@ export default function SettingsPage() {
   // Synchronize Settings Form when loaded
   React.useEffect(() => {
     if (settings) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate editable settings from API data
       setOrgName(settings.organization_name || 'Enterprise Organization');
       setCurrency(settings.currency || 'USD');
       setTimezone(settings.timezone || 'UTC');

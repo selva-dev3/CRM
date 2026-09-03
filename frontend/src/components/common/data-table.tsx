@@ -853,14 +853,3 @@ function DataTableToolbar({
 // ---------------------------------------------------------------------------
 // Toolbar skeleton
 // ---------------------------------------------------------------------------
-function DataTableToolbarSkeleton(): React.JSX.Element {
-  return (
-    <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 px-4 py-3">
-      <Skeleton className="h-9 w-64 rounded-md" />
-      <Skeleton className="h-9 w-24 rounded-md" />
-      <Skeleton className="h-9 w-24 rounded-md" />
-      <div className="flex-1" />
-      <Skeleton className="h-9 w-24 rounded-md" />
-    </div>
-  );
-}

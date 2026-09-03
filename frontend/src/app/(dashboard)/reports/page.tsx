@@ -1,5 +1,6 @@
 'use client';
 
+import { getErrorMessage } from '@/lib/utils';
 import React, { useState } from 'react';
 import {
   BarChart3,
@@ -42,8 +43,6 @@ import {
   useActivityMetricsReportQuery,
   useDealDurationReportQuery,
   useCacReportQuery,
-  useLtvReportQuery,
-  useChurnAnalysisReportQuery,
   useQuotaAttainmentReportQuery,
   useCustomReportsQuery,
   useScheduledReportsQuery,
@@ -53,6 +52,7 @@ import {
   useExportReportCsvMutation,
   useScheduleReportEmailMutation
 } from '@/lib/api/reports';
+import type { CustomReportItem, ReportRow, ScheduledReportItem } from '@/lib/api/reports';
 
 type ReportCategory =
   | 'performance'
@@ -95,11 +95,9 @@ export default function ReportsPage() {
   const { data: leadAttrData, isLoading: isLeadAttrLoading } = useLeadAttributionReportQuery();
   const { data: leaderboardData, isLoading: isLeaderboardLoading } = useRepLeaderboardReportQuery();
   const { data: forecastData, isLoading: isForecastLoading } = useRevenueForecastingReportQuery();
-  const { data: activityData, isLoading: isActivityLoading } = useActivityMetricsReportQuery();
+  const { data: activityData } = useActivityMetricsReportQuery();
   const { data: durationData, isLoading: isDurationLoading } = useDealDurationReportQuery();
   const { data: cacData, isLoading: isCacLoading } = useCacReportQuery();
-  const { data: ltvData } = useLtvReportQuery();
-  const { data: churnData } = useChurnAnalysisReportQuery();
   const { data: quotaData, isLoading: isQuotaLoading } = useQuotaAttainmentReportQuery();
   const { data: customReports = [], isLoading: isCustomLoading } = useCustomReportsQuery();
   const { data: scheduledReports = [], isLoading: isScheduledLoading } = useScheduledReportsQuery();
@@ -116,8 +114,8 @@ export default function ReportsPage() {
       const res = await exportPdfMutation.mutateAsync(activeCategory);
       setSuccessMessage(`PDF export generated for "${activeCategory}". Download started.`);
       window.open(res.pdf_url, '_blank');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to export PDF.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to export PDF.'));
     }
   };
 
@@ -126,8 +124,8 @@ export default function ReportsPage() {
       const res = await exportCsvMutation.mutateAsync(activeCategory);
       setSuccessMessage(`CSV dataset uploaded to S3 bucket. Download started.`);
       window.open(res.csv_url, '_blank');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to export CSV dataset.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to export CSV dataset.'));
     }
   };
 
@@ -139,8 +137,8 @@ export default function ReportsPage() {
       setSuccessMessage(`Custom report query "${customReportName.trim()}" saved.`);
       setIsCustomModalOpen(false);
       setCustomReportName('');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to create custom report.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to create custom report.'));
     }
   };
 
@@ -155,8 +153,8 @@ export default function ReportsPage() {
       });
       setSuccessMessage(res.message || 'Scheduled automated email report delivery.');
       setIsScheduleModalOpen(false);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to schedule email delivery.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to schedule email delivery.'));
     }
   };
 
@@ -166,20 +164,23 @@ export default function ReportsPage() {
       await deleteCustomMutation.mutateAsync(reportToDelete);
       setSuccessMessage('Custom report query deleted.');
       setReportToDelete(null);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to delete custom report.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to delete custom report.'));
     }
   };
 
   // Helper search filter
-  const filterRows = (rows: any[], keys: string[]) => {
+  const filterRows = <T extends object>(rows: T[], keys: string[]): T[] => {
     if (!searchQuery.trim()) return rows;
     const query = searchQuery.toLowerCase().trim();
-    return rows.filter((r) => keys.some((k) => String(r[k] || '').toLowerCase().includes(query)));
+    return rows.filter((r) => {
+      const record = r as Record<string, unknown>;
+      return keys.some((k) => String(record[k] ?? '').toLowerCase().includes(query));
+    });
   };
 
   // Column Definitions
-  const performanceColumns: DataTableColumn<any>[] = [
+  const performanceColumns: DataTableColumn<ReportRow>[] = [
     { id: 'rep_name', header: 'Sales Executive', cell: (row) => <span className="font-bold text-slate-900">{row.rep_name}</span> },
     { id: 'role', header: 'Role', cell: (row) => <span className="text-slate-500">{row.role}</span> },
     { id: 'deals_assigned', header: 'Assigned', className: 'text-center', cell: (row) => <span className="font-semibold">{row.deals_assigned}</span> },
@@ -209,7 +210,7 @@ export default function ReportsPage() {
     { id: 'avg_deal_size', header: 'Avg Deal Size ($)', className: 'text-right', cell: (row) => <span className="font-mono">${row.avg_deal_size?.toLocaleString()}</span> }
   ];
 
-  const velocityColumns: DataTableColumn<any>[] = [
+  const velocityColumns: DataTableColumn<ReportRow>[] = [
     { id: 'stage', header: 'Pipeline Stage', cell: (row) => <span className="font-bold text-slate-900">{row.stage}</span> },
     { id: 'deal_count', header: 'Active Deals', className: 'text-center', cell: (row) => <span className="font-semibold">{row.deal_count}</span> },
     { id: 'total_value', header: 'Stage Value ($)', className: 'text-right', cell: (row) => <span className="font-extrabold text-emerald-600">${row.total_value?.toLocaleString()}</span> },
@@ -226,7 +227,7 @@ export default function ReportsPage() {
     }
   ];
 
-  const winLossColumns: DataTableColumn<any>[] = [
+  const winLossColumns: DataTableColumn<ReportRow>[] = [
     { id: 'segment', header: 'Market Industry Segment', cell: (row) => <span className="font-bold text-slate-900">{row.segment}</span> },
     { id: 'won_deals', header: 'Won Deals', className: 'text-center', cell: (row) => <span className="font-bold text-emerald-600">{row.won_deals}</span> },
     { id: 'lost_deals', header: 'Lost Deals', className: 'text-center', cell: (row) => <span className="font-bold text-rose-600">{row.lost_deals}</span> },
@@ -237,7 +238,7 @@ export default function ReportsPage() {
     { id: 'primary_loss_reason', header: 'Primary Loss Reason', cell: (row) => <span className="text-slate-600">{row.primary_loss_reason}</span> }
   ];
 
-  const leadAttrColumns: DataTableColumn<any>[] = [
+  const leadAttrColumns: DataTableColumn<ReportRow>[] = [
     { id: 'source', header: 'Lead Source Channel', cell: (row) => <span className="font-bold text-slate-900">{row.source}</span> },
     { id: 'total_leads', header: 'Total Leads', className: 'text-center', cell: (row) => <span className="font-semibold">{row.total_leads}</span> },
     { id: 'converted_leads', header: 'Converted Leads', className: 'text-center', cell: (row) => <span className="font-bold text-emerald-600">{row.converted_leads}</span> },
@@ -245,7 +246,7 @@ export default function ReportsPage() {
     { id: 'avg_lead_score', header: 'Avg Lead Score', className: 'text-center', cell: (row) => <span className="font-semibold">{row.avg_lead_score}</span> }
   ];
 
-  const leaderboardColumns: DataTableColumn<any>[] = [
+  const leaderboardColumns: DataTableColumn<ReportRow>[] = [
     {
       id: 'rank',
       header: 'Rank',
@@ -274,14 +275,14 @@ export default function ReportsPage() {
     }
   ];
 
-  const forecastColumns: DataTableColumn<any>[] = [
+  const forecastColumns: DataTableColumn<ReportRow>[] = [
     { id: 'period', header: 'Forecast Period', cell: (row) => <span className="font-bold text-slate-900">{row.period}</span> },
     { id: 'open_deals', header: 'Open Deals', className: 'text-center', cell: (row) => <span className="font-semibold">{row.open_deals}</span> },
     { id: 'pipeline_amount', header: 'Pipeline ($)', className: 'text-right', cell: (row) => <span className="font-semibold text-indigo-600">${row.pipeline_amount?.toLocaleString()}</span> },
     { id: 'pipeline_weighted', header: 'Weighted Pipeline ($)', className: 'text-right', cell: (row) => <span className="font-extrabold text-emerald-600">${row.pipeline_weighted?.toLocaleString()}</span> }
   ];
 
-  const durationColumns: DataTableColumn<any>[] = [
+  const durationColumns: DataTableColumn<ReportRow>[] = [
     { id: 'deal_tier', header: 'Deal Tier / Segment', cell: (row) => <span className="font-bold text-slate-900">{row.deal_tier}</span> },
     { id: 'deal_count', header: 'Deal Count', className: 'text-center', cell: (row) => <span className="font-semibold">{row.deal_count}</span> },
     { id: 'avg_cycle_days', header: 'Avg Cycle (Days)', className: 'text-center', cell: (row) => <span className="font-extrabold text-indigo-600">{row.avg_cycle_days} Days</span> },
@@ -290,14 +291,14 @@ export default function ReportsPage() {
     { id: 'primary_bottleneck', header: 'Primary Lag Bottleneck', cell: (row) => <span className="text-slate-600">{row.primary_bottleneck}</span> }
   ];
 
-  const unitEconomicsColumns: DataTableColumn<any>[] = [
+  const unitEconomicsColumns: DataTableColumn<ReportRow>[] = [
     { id: 'segment', header: 'Customer Segment', cell: (row) => <span className="font-bold text-slate-900">{row.segment}</span> },
     { id: 'customer_count', header: 'Customers', className: 'text-center', cell: (row) => <span className="font-semibold">{row.customer_count}</span> },
     { id: 'avg_ltv', header: 'Avg LTV ($)', className: 'text-right', cell: (row) => <span className="font-extrabold text-emerald-600">${row.avg_ltv?.toLocaleString()}</span> },
     { id: 'total_revenue', header: 'Total Revenue ($)', className: 'text-right', cell: (row) => <span className="font-mono text-slate-700">${row.total_revenue?.toLocaleString()}</span> }
   ];
 
-  const quotaColumns: DataTableColumn<any>[] = [
+  const quotaColumns: DataTableColumn<ReportRow>[] = [
     { id: 'rep_name', header: 'Sales Executive', cell: (row) => <span className="font-bold text-slate-900">{row.rep_name}</span> },
     { id: 'role', header: 'Role', cell: (row) => <span className="text-slate-500">{row.role}</span> },
     { id: 'assigned_quota', header: 'Assigned Quota ($)', className: 'text-right', cell: (row) => <span className="font-mono text-slate-600">${row.assigned_quota?.toLocaleString()}</span> },
@@ -334,7 +335,7 @@ export default function ReportsPage() {
     }
   ];
 
-  const customColumns: DataTableColumn<any>[] = [
+  const customColumns: DataTableColumn<CustomReportItem>[] = [
     { id: 'name', header: 'Report Query Name', cell: (row) => <span className="font-bold text-slate-900">{row.name}</span> },
     { id: 'filters', header: 'Applied Filter Query', cell: (row) => <span className="text-slate-600 font-mono">{row.filters || 'Enterprise Accounts'}</span> },
     { id: 'metrics_included', header: 'Metrics Included', cell: (row) => <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded text-[11px]">{Array.isArray(row.metrics_included) ? row.metrics_included.join(', ') : 'sales-performance'}</span> },
@@ -351,7 +352,7 @@ export default function ReportsPage() {
     }
   ];
 
-  const scheduledColumns: DataTableColumn<any>[] = [
+  const scheduledColumns: DataTableColumn<ScheduledReportItem>[] = [
     { id: 'report_type', header: 'Report Target', cell: (row) => <span className="font-bold text-slate-900 uppercase">{row.report_type}</span> },
     { id: 'email', header: 'Recipient Email', cell: (row) => <span className="text-slate-700 font-mono">{row.email}</span> },
     { id: 'frequency', header: 'Delivery Frequency', className: 'text-center', cell: (row) => <span className="font-semibold text-purple-700">{row.frequency}</span> },
@@ -492,19 +493,19 @@ export default function ReportsPage() {
               <div className="p-4 bg-emerald-50/70 border border-emerald-100 rounded-xl">
                 <span className="text-xs font-semibold text-emerald-800 uppercase tracking-wider block">Total Team Revenue</span>
                 <h4 className="text-2xl font-extrabold text-emerald-950 mt-1">
-                  ${salesData?.metrics?.total_revenue !== undefined ? salesData.metrics.total_revenue.toLocaleString() : '0'}
+                  ${salesData?.metrics?.total_revenue != null ? salesData.metrics.total_revenue.toLocaleString() : '0'}
                 </h4>
               </div>
               <div className="p-4 bg-indigo-50/70 border border-indigo-100 rounded-xl">
                 <span className="text-xs font-semibold text-indigo-800 uppercase tracking-wider block">Monthly Target</span>
                 <h4 className="text-2xl font-extrabold text-indigo-950 mt-1">
-                  ${salesData?.metrics?.monthly_target !== undefined ? salesData.metrics.monthly_target.toLocaleString() : '—'}
+                  ${salesData?.metrics?.monthly_target != null ? salesData.metrics.monthly_target.toLocaleString() : '—'}
                 </h4>
               </div>
               <div className="p-4 bg-purple-50/70 border border-purple-100 rounded-xl">
                 <span className="text-xs font-semibold text-purple-800 uppercase tracking-wider block">Overall Target Attainment</span>
                 <h4 className="text-2xl font-extrabold text-purple-950 mt-1">
-                  {salesData?.metrics?.total_revenue && salesData?.metrics?.monthly_target
+                  {salesData?.metrics?.total_revenue != null && salesData?.metrics?.monthly_target != null
                     ? ((salesData.metrics.total_revenue / salesData.metrics.monthly_target) * 100).toFixed(1)
                     : '0.0'}%
                 </h4>
@@ -514,7 +515,7 @@ export default function ReportsPage() {
             <DataTable
               columns={performanceColumns}
               data={filterRows(salesData?.metrics?.table_rows || [], ['rep_name', 'role'])}
-              getRowKey={(item) => item.rep_name}
+              getRowKey={(item) => item.rep_name ?? item.id}
               isLoading={isSalesLoading}
               emptyTitle="No Performance Data"
               emptyDescription="No sales rep records found for this period."
@@ -539,7 +540,7 @@ export default function ReportsPage() {
             <DataTable
               columns={velocityColumns}
               data={filterRows(velocityData?.metrics?.table_rows || [], ['stage', 'bottleneck_risk'])}
-              getRowKey={(item) => item.stage}
+              getRowKey={(item) => item.stage ?? item.id}
               isLoading={isVelocityLoading}
               emptyTitle="No Pipeline Stage Data"
               emptyDescription="No deal stages found."
@@ -576,7 +577,7 @@ export default function ReportsPage() {
             <DataTable
               columns={winLossColumns}
               data={filterRows(winLossData?.metrics?.table_rows || [], ['segment', 'primary_loss_reason'])}
-              getRowKey={(item) => item.segment}
+              getRowKey={(item) => item.segment ?? item.id}
               isLoading={isWinLossLoading}
               emptyTitle="No Win/Loss Data"
               emptyDescription="No segment data found."
@@ -594,7 +595,7 @@ export default function ReportsPage() {
             <DataTable
               columns={leadAttrColumns}
               data={filterRows(leadAttrData?.metrics?.table_rows || [], ['source'])}
-              getRowKey={(item) => item.source}
+              getRowKey={(item) => item.source ?? item.id}
               isLoading={isLeadAttrLoading}
               emptyTitle="No Lead Attribution Data"
               emptyDescription="No lead source data found."
@@ -612,7 +613,7 @@ export default function ReportsPage() {
             <DataTable
               columns={leaderboardColumns}
               data={filterRows(leaderboardData?.metrics?.table_rows || [], ['name', 'role', 'badge'])}
-              getRowKey={(item) => item.name}
+              getRowKey={(item) => item.name ?? item.id}
               isLoading={isLeaderboardLoading}
               emptyTitle="No Leaderboard Data"
               emptyDescription="No sales executive rankings found."
@@ -630,7 +631,7 @@ export default function ReportsPage() {
             <DataTable
               columns={forecastColumns}
               data={filterRows(forecastData?.metrics?.table_rows || [], ['period', 'forecast_status'])}
-              getRowKey={(item) => item.period}
+              getRowKey={(item) => item.period ?? item.id}
               isLoading={isForecastLoading}
               emptyTitle="No Forecast Data"
               emptyDescription="No forecast periods found."
@@ -671,7 +672,7 @@ export default function ReportsPage() {
             <DataTable
               columns={durationColumns}
               data={filterRows(durationData?.metrics?.table_rows || [], ['deal_tier', 'primary_bottleneck'])}
-              getRowKey={(item) => item.deal_tier}
+              getRowKey={(item) => item.deal_tier ?? item.id}
               isLoading={isDurationLoading}
               emptyTitle="No Duration Data"
               emptyDescription="No deal tier records found."
@@ -689,7 +690,7 @@ export default function ReportsPage() {
             <DataTable
               columns={unitEconomicsColumns}
               data={filterRows(cacData?.metrics?.table_rows || [], ['segment'])}
-              getRowKey={(item) => item.segment}
+              getRowKey={(item) => item.segment ?? item.id}
               isLoading={isCacLoading}
               emptyTitle="No Unit Economics Data"
               emptyDescription="No customer segment records found."
@@ -707,7 +708,7 @@ export default function ReportsPage() {
             <DataTable
               columns={quotaColumns}
               data={filterRows(quotaData?.metrics?.table_rows || [], ['rep_name', 'role', 'status'])}
-              getRowKey={(item) => item.rep_name}
+              getRowKey={(item) => item.rep_name ?? item.id}
               isLoading={isQuotaLoading}
               emptyTitle="No Quota Data"
               emptyDescription="No quota attainment records found."
