@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.errors import APIException, ForbiddenError, NotFoundError
+from app.core.logging import get_logger
 from app.core.permissions import ensure_can_assign_role, is_super_admin_role, is_super_admin_user
 from app.core.security import generate_random_code, get_password_hash
 from app.models import Role, User, UserRole
@@ -22,6 +23,7 @@ from app.services.email_service import send_user_invite_email
 from app.services.s3_service import s3_service
 
 PROTECTED_SUPERADMIN_EMAIL = "superadmin@gmail.com"
+logger = get_logger(__name__)
 
 
 def user_to_dict(user: User) -> dict:
@@ -74,10 +76,25 @@ class UserService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 message="Current organization not found",
             )
-        if getattr(org, "status", "active") != "active" or not getattr(org, "is_active", True):
+        organization_status = (getattr(org, "status", None) or "").strip().lower()
+        if organization_status != "active":
+            logger.warning(
+                "Organization %s rejected for user operation because status is %r",
+                org_id,
+                getattr(org, "status", None),
+            )
             raise APIException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                message="Organization is inactive or disabled.",
+                message="Organization is inactive.",
+            )
+        if not getattr(org, "is_active", True):
+            logger.warning(
+                "Organization %s rejected for user operation because it is disabled",
+                org_id,
+            )
+            raise APIException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                message="Organization is disabled.",
             )
         return org_id
 
