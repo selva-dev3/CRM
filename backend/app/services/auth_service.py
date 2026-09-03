@@ -16,7 +16,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.errors import APIException, ForbiddenError, NotFoundError
-from app.core.permissions import is_super_admin_role
+from app.core.permissions import (
+    SUPER_ADMIN_ROLE_NAMES,
+    is_global_super_admin_role,
+    is_super_admin_role_name,
+)
 from app.core.security import (
     create_access_token,
     generate_random_code,
@@ -71,6 +75,9 @@ class AuthService:
         try:
             raw_role = (user.role or "").strip()
 
+            if is_super_admin_role_name(raw_role):
+                return raw_role
+
             if len(raw_role) == 36 and "-" in raw_role:
                 role_db = await self.repository.get_role_name_by_id(db, raw_role)
                 if role_db:
@@ -109,8 +116,18 @@ class AuthService:
         try:
             organization_id = self._require_organization_id(user)
             role_ids = set(await self.repository.role_ids_for_user(db, user.id))
-            role_lookup = (resolved_role_name or user.role or "").strip()
-            if role_lookup:
+            raw_role = (user.role or "").strip()
+            role_lookup = (resolved_role_name or raw_role).strip()
+            if len(raw_role) == 36 and "-" in raw_role:
+                role_ids.add(raw_role)
+            elif is_super_admin_role_name(raw_role):
+                for alias in sorted(SUPER_ADMIN_ROLE_NAMES):
+                    role_ids.update(
+                        await self.repository.role_ids_by_name(
+                            db, alias, organization_id, global_only=True
+                        )
+                    )
+            elif role_lookup:
                 role_ids.update(
                     await self.repository.role_ids_by_name(db, role_lookup, organization_id)
                 )
@@ -120,7 +137,7 @@ class AuthService:
                 authorized_role_ids = [role.id for role in roles]
                 if not authorized_role_ids:
                     return []
-                if any(is_super_admin_role(role) for role in roles):
+                if any(is_global_super_admin_role(role) for role in roles):
                     return sorted(await self.repository.all_permission_keys(db))
                 keys = await self.repository.permission_keys_for_roles(db, authorized_role_ids)
                 permission_keys.update(keys)

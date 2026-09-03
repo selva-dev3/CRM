@@ -224,7 +224,7 @@ async def test_delete_role_blocks_default(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_check_permission_super_admin_permission_allows_all():
-    role = _make_role(name="Super Admin", is_system_role=True)
+    role = _make_role(name="Super Admin", is_system_role=True, organization_id=None)
     super_perm = type("P", (), {"key": "super_admin:manage"})()
     user = type("U", (), {"id": "u1", "role": "role-1", "email": "a@b.com", "name": "A"})()
     repo: Any = RoleRepository()
@@ -323,7 +323,7 @@ async def test_list_roles_admin_returns_only_assigned_permissions():
 @pytest.mark.asyncio
 async def test_super_admin_role_resolves_all_keys():
     """The super_admin role (by name) is the only role granted every known key."""
-    role = _make_role(id="sys-1", name="super_admin", is_system_role=True)
+    role = _make_role(id="sys-1", name="super_admin", is_system_role=True, organization_id=None)
     all_db_keys = [f"perm:{i:03d}" for i in range(194)]
     repo: Any = RoleRepository()
     repo.get_role = AsyncMock(return_value=role)
@@ -337,6 +337,21 @@ async def test_super_admin_role_resolves_all_keys():
     result = await service.get_role(db, "sys-1", _actor())
 
     assert result["permissions"] == all_db_keys
+
+
+@pytest.mark.asyncio
+async def test_tenant_role_named_super_admin_resolves_only_assigned_keys():
+    role = _make_role(id="tenant-super", name="Super Admin", organization_id="org-1")
+    assigned = [type("P", (), {"key": "dashboard:read"})()]
+    repo: Any = RoleRepository()
+    repo.get_role = AsyncMock(return_value=role)
+    repo.get_permission_keys = AsyncMock(return_value=["dashboard:read", "roles:update"])
+    repo.get_role_permissions = AsyncMock(return_value=assigned)
+    service = RoleService(repository=repo)
+
+    result = await service.get_role(AsyncMock(spec=AsyncSession), "tenant-super", _actor())
+
+    assert result["permissions"] == ["dashboard:read"]
 
 
 @pytest.mark.asyncio
@@ -942,6 +957,20 @@ async def test_seed_permissions_idempotency():
         call.args[0] for call in db.add.call_args_list if isinstance(call.args[0], RolePermission)
     ]
     assert len(added_rp) == 0
+
+
+@pytest.mark.asyncio
+async def test_seed_permissions_can_stage_without_committing():
+    repo: Any = RoleRepository()
+    db = AsyncMock(spec=AsyncSession)
+    db.execute = AsyncMock(
+        side_effect=[_make_result_mock(items=[]), _make_result_mock(first_item=None)]
+    )
+
+    await repo.seed_permissions(db, [], commit=False)
+
+    db.commit.assert_not_awaited()
+    db.rollback.assert_not_awaited()
 
 
 @pytest.mark.asyncio

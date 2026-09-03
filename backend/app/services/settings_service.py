@@ -12,9 +12,11 @@ from app.core.errors import APIException
 from app.core.logging import get_logger
 from app.core.security import get_password_hash
 from app.models import Organization, User
+from app.repositories.role_repository import RoleRepository
 from app.repositories.setting_repository import SettingRepository
 from app.schemas.crm_schemas import SystemSettings
 from app.services.org_service import organization_service
+from app.services.role_service import ALL_STANDARD_PERMISSIONS
 
 PROTECTED_SUPERADMIN_EMAIL = "superadmin@gmail.com"
 logger = get_logger(__name__)
@@ -25,8 +27,13 @@ class SettingsService:
     (audit logs, custom fields, webhooks, SLA policies, database reset).
     """
 
-    def __init__(self, repository: SettingRepository | None = None) -> None:
+    def __init__(
+        self,
+        repository: SettingRepository | None = None,
+        role_repository: RoleRepository | None = None,
+    ) -> None:
         self.repository = repository or SettingRepository()
+        self.role_repository = role_repository or RoleRepository()
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
         try:
@@ -376,7 +383,21 @@ class SettingsService:
                 is_verified=True,
             )
             db.add(superadmin_user)
-            await db.commit()
+            await db.flush()
+
+            superadmin_role = await self.role_repository.create_role(
+                db,
+                name="Super Admin",
+                description="Protected global platform administrator role",
+                organization_id=None,
+                is_system_role=True,
+            )
+            await db.flush()
+            await self.role_repository.create_user_role_mapping(
+                db, user_id=superadmin_user.id, role_id=superadmin_role.id
+            )
+            await self.role_repository.seed_permissions(db, ALL_STANDARD_PERMISSIONS, commit=False)
+            await self._commit(db, "Failed to rebuild the protected administrator account")
 
             return {
                 "message": f"Database reset complete. All 70 tables truncated. Protected user '{PROTECTED_SUPERADMIN_EMAIL}' preserved.",

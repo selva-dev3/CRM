@@ -9,6 +9,7 @@ from app.core.errors import APIException, ForbiddenError, NotFoundError
 from app.core.logging import get_logger
 from app.core.permissions import (
     ensure_can_assign_role,
+    is_global_super_admin_role,
     is_super_admin_role,
     is_super_admin_role_name,
     is_super_admin_user,
@@ -863,7 +864,7 @@ class RoleService:
         ``super_admin:manage`` permission or the ``all`` sentinel does NOT
         implicitly expand a non-super_admin role.
         """
-        if is_super_admin_role(role):
+        if is_global_super_admin_role(role):
             return all_db_keys
         assigned = await self.repository.get_role_permissions(db, role.id)
         return [p.key for p in assigned if p.key] if assigned else []
@@ -1332,7 +1333,7 @@ class RoleService:
             allowed = False
             if role_obj:
                 self._ensure_assignable_role_ownership(role_obj, current_user)
-                if is_super_admin_role(role_obj):
+                if is_global_super_admin_role(role_obj):
                     allowed = True
                 else:
                     assigned = await self.repository.get_role_permissions(db, role_obj.id)
