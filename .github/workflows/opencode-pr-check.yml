@@ -33,11 +33,20 @@ jobs:
             GitHub-flavored Markdown ONLY — no JSON, no code fences wrapping
             the whole response.
 
+            Before reviewing, read the AGENTS.md file at the root of this
+            repository (if it exists). It contains rules written specifically
+            to prevent issues that were previously flagged in past PR reviews
+            from happening again. Treat every rule in AGENTS.md as mandatory
+            for this review.
+
             Review this pull request for:
             - Bugs or logic errors
             - Security issues
             - Missing error handling
             - Code style violations
+            - Violations of any rule listed in AGENTS.md (treat these as
+              🔴 Errors, since they are known recurring issues the repo has
+              explicitly asked to prevent)
 
             Format your reply EXACTLY like this:
 
@@ -54,6 +63,9 @@ jobs:
             ### 🔴 Errors (must fix)
             - **`path/to/file.py` line 42** — Short description of the bug.
               _Fix:_ short suggested fix.
+            - **`path/to/file.py` line 55** — [AGENTS.md rule violated: "<rule
+              name>"] Short description.
+              _Fix:_ short suggested fix.
 
             ### 🟡 Warnings (should fix)
             - **`path/to/file.tsx` line 72** — Short description.
@@ -68,6 +80,9 @@ jobs:
               an empty heading).
             - Keep each bullet to 1–2 lines. No long paragraphs.
             - Group findings under the correct severity only.
+            - Any AGENTS.md rule violation must always be listed under
+              🔴 Errors (must fix), even if it would otherwise seem minor,
+              and must clearly name which AGENTS.md rule was violated.
             - Never wrap the whole answer in a JSON object or a single code
               fence — write it as normal Markdown so it renders nicely as a
               GitHub comment.
