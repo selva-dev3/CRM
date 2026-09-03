@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { navigationSections, filterNavigationSections, getRoutePermission } from '@/constants/navigation';
@@ -71,12 +71,33 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Layers
 };
 
+type UserProfile = { name: string; email: string; role: string; organizationName?: string };
+
+function getStoredUserProfile(): UserProfile {
+  if (typeof window === 'undefined') {
+    return { name: 'Admin User', email: 'admin@crm.com', role: 'Admin' };
+  }
+
+  try {
+    const storedUser = localStorage.getItem('user') || sessionStorage.getItem('user');
+    if (!storedUser) throw new Error('No stored user');
+    const parsed = JSON.parse(storedUser);
+    return {
+      name: parsed?.name || parsed?.full_name || parsed?.username || 'Admin User',
+      email: parsed?.email || 'admin@crm.com',
+      role: parsed?.role || parsed?.role_name || 'Admin',
+      organizationName: parsed?.organization?.name || parsed?.organization_name || parsed?.org_name,
+    };
+  } catch {
+    return { name: 'Admin User', email: 'admin@crm.com', role: 'Admin' };
+  }
+}
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { data: currentOrg } = useCurrentOrganizationQuery();
   const { permissions, hasPermission } = useHasPermission();
-  const [orgDisplayName, setOrgDisplayName] = useState<string>('');
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
@@ -87,11 +108,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const [isSearchOpen, setIsSearchOpen] = useState(false);
 
-  const [userProfile, setUserProfile] = useState<{ name: string; email: string; role: string }>({
-    name: 'Admin User',
-    email: 'admin@crm.com',
-    role: 'Admin',
-  });
+  const [userProfile, setUserProfile] = useState<UserProfile>(getStoredUserProfile);
 
   // Global Ctrl+K / Cmd+K listener
   useEffect(() => {
@@ -103,43 +120,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
-
-  useEffect(() => {
-    if (currentOrg?.name) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- synchronize cached organization state
-      setOrgDisplayName(currentOrg.name);
-    } else if (typeof window !== 'undefined') {
-      try {
-        const storedUser = localStorage.getItem('user');
-        if (storedUser) {
-          const parsed = JSON.parse(storedUser);
-          const name = parsed?.organization?.name || parsed?.organization_name || parsed?.org_name;
-          if (name) setOrgDisplayName(name);
-        }
-      } catch {
-        // fallback
-      }
-    }
-  }, [currentOrg]);
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const storedUser = localStorage.getItem('user') || sessionStorage.getItem('user');
-        if (storedUser) {
-          const parsed = JSON.parse(storedUser);
-          // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate profile from browser storage
-          setUserProfile({
-            name: parsed?.name || parsed?.full_name || parsed?.username || 'Admin User',
-            email: parsed?.email || 'admin@crm.com',
-            role: parsed?.role || parsed?.role_name || 'Admin',
-          });
-        }
-      } catch {
-        // fallback
-      }
-    }
   }, []);
 
   const pageTitle = React.useMemo(() => {
@@ -171,6 +151,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       .then((user) => {
         if (!active) return;
         sessionStorage.setItem('user', JSON.stringify(user));
+        setUserProfile({
+          name: user.name || 'Admin User',
+          email: user.email || 'admin@crm.com',
+          role: user.role || 'Admin',
+        });
         setIsAuthenticated(true);
         notifyAuthUserChanged();
       })
@@ -184,11 +169,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     };
   }, [router]);
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- close mobile navigation after route changes
-    setIsMobileMenuOpen(false);
-  }, [pathname]);
-
+  const closeMobileMenu = useCallback(() => setIsMobileMenuOpen(false), []);
+  const closeSearch = useCallback(() => setIsSearchOpen(false), []);
   const toggleSection = (title: string) => {
     setOpenSections((prev) => ({
       ...prev,
@@ -295,6 +277,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         <Link
                           key={item.href}
                           href={item.href}
+                          onClick={closeMobileMenu}
                           className={`flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition duration-150 relative ${isActive
                               ? 'bg-blue-50 text-blue-600 font-bold border-l-4 border-blue-600'
                               : 'text-slate-600 hover:text-blue-600 hover:bg-slate-50'
@@ -322,6 +305,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {/* Footer Org Badge & Logged In Role */}
         <Link
           href="/settings"
+          onClick={closeMobileMenu}
           title="Organization & User Settings"
           className="p-3 border-t border-[#E5E7EB] bg-[#F9FAFB] hover:bg-slate-100 text-[#374151] shrink-0 transition flex items-center justify-between group"
         >
@@ -331,7 +315,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </div>
             <div className="flex flex-col min-w-0 text-left">
               <span className="truncate group-hover:text-blue-600 transition font-bold text-xs text-slate-900 leading-tight">
-                {orgDisplayName || currentOrg?.name || 'Organization'}
+                {currentOrg?.name || userProfile.organizationName || 'Organization'}
               </span>
               <span className="text-[10px] font-semibold text-blue-600 leading-tight truncate">
                 Role: {userProfile.role}
@@ -413,7 +397,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </div>
 
       {/* Global Command Palette Search Modal */}
-      <GlobalSearchModal isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} />
+      <GlobalSearchModal isOpen={isSearchOpen} onClose={closeSearch} />
 
       {/* Global AI Assistant Floating Widget */}
       <AIChatAssistant />

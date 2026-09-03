@@ -51,7 +51,7 @@ import {
   UserTeamItem,
   UserQuotaResponse
 } from '@/lib/api/users';
-import { useOrganizationsQuery } from '@/lib/api/organizations';
+import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
 
 export default function UserDetailPage() {
   const params = useParams();
@@ -83,7 +83,7 @@ export default function UserDetailPage() {
   const { data: permissionsData } = useUserPermissionsQuery(userId);
   const { data: activities = [] } = useUserActivitiesQuery(userId);
   const { data: teamsData = [], refetch: refetchTeams } = useUserTeamsQuery(userId);
-  const { data: organizations = [] } = useOrganizationsQuery();
+  const { data: currentOrganization } = useCurrentOrganizationQuery();
 
   // Local quota & teams state for instant interactive feedback
   const [localQuota, setLocalQuota] = useState<UserQuotaResponse | null>(null);
@@ -101,7 +101,9 @@ export default function UserDetailPage() {
   const removeTeamMutation = useRemoveUserTeamMutation();
   const setQuotaMutation = useSetUserQuotaMutation();
 
-  const orgName = organizations.find((o) => o.id === user?.organization_id)?.name || user?.organization_id || 'Primary Org';
+  const orgName = currentOrganization?.id === user?.organization_id
+    ? currentOrganization?.name
+    : user?.organization_id || 'Primary Org';
 
   const handleToggleStatus = async () => {
     if (!user) return;

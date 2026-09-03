@@ -1,16 +1,6 @@
 from pydantic import BaseModel, EmailStr, Field
 
 
-class SuperAdminOrgCreateRequest(BaseModel):
-    organization_name: str = Field(..., examples=["Acme Corporation"])
-    domain: str | None = Field(None, examples=["acme.crm.com"])
-    plan_slug: str = Field("enterprise", examples=["enterprise"])
-    admin_full_name: str = Field(..., examples=["John Doe"])
-    admin_email: EmailStr = Field(..., examples=["admin@acme.com"])
-    phone: str | None = Field(None, examples=["+91 9876543210"])
-    industry: str | None = Field(None, examples=["Technology"])
-
-
 class OrganizationInviteRequest(BaseModel):
     email: EmailStr = Field(..., examples=["user@company.com"])
     full_name: str | None = Field(None, examples=["Jane Smith"])
@@ -81,10 +71,3 @@ class InvitationStatusResponse(BaseModel):
 class InvitationListResponse(BaseModel):
     total: int
     invitations: list[InvitationResponse]
-
-
-class SuperAdminOrgResponse(BaseModel):
-    organization: dict
-    subscription: dict
-    invitation: InvitationResponse
-    message: str

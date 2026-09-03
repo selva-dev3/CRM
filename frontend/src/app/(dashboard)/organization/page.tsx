@@ -5,8 +5,6 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 /* eslint-disable @next/next/no-img-element -- remote organization logo URL */
 import Link from 'next/link';
 import {
-  Building,
-  Plus,
   Mail,
   Globe,
   Sliders,
@@ -14,7 +12,6 @@ import {
   Pencil,
   Trash2,
   RefreshCw,
-  Sparkles,
   AlertCircle,
   CheckCircle2,
   Crown,
@@ -42,13 +39,11 @@ import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
 import { PERMISSIONS } from '@/lib/permissions';
 import {
-  useOrganizationsQuery,
-  useCreateOrganizationMutation,
+  useCurrentOrganizationQuery,
   useUpdateOrganizationMutation,
   useDeleteOrganizationMutation,
   useInviteNewOrganizationMutation,
   OrganizationItem,
-  CreateOrganizationPayload,
   UpdateOrganizationPayload,
   deleteOrganizationApi
 } from '@/lib/api/organizations';
@@ -95,45 +90,24 @@ export default function OrganizationPage() {
 
   // Search & Pagination State
   const [searchTerm, setSearchTerm] = useState('');
-  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [page, setPage] = useState(1);
   const limit = 15;
-
-  // Debounce search input
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedSearchTerm(searchTerm);
-      setPage(1);
-    }, 250);
-    return () => clearTimeout(handler);
-  }, [searchTerm]);
 
   // Bulk Selection State
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
 
   // Queries & Mutations
-  const { data: rawOrganizations = [], isLoading, refetch } = useOrganizationsQuery();
-  const createOrgMutation = useCreateOrganizationMutation();
+  const { data: currentOrganization, isLoading, refetch } = useCurrentOrganizationQuery();
+  const organizations = useMemo(
+    () => (currentOrganization ? [currentOrganization] : []),
+    [currentOrganization],
+  );
   const updateOrgMutation = useUpdateOrganizationMutation();
   const deleteOrgMutation = useDeleteOrganizationMutation();
   const inviteNewOrgMutation = useInviteNewOrganizationMutation();
 
-  // Filter organizations by search term
-  const organizations = useMemo(() => {
-    if (!debouncedSearchTerm.trim()) return rawOrganizations;
-    const term = debouncedSearchTerm.toLowerCase();
-    return rawOrganizations.filter(
-      (org) =>
-        org.name?.toLowerCase().includes(term) ||
-        org.slug?.toLowerCase().includes(term) ||
-        org.email?.toLowerCase().includes(term) ||
-        org.domain?.toLowerCase().includes(term) ||
-        org.industry?.toLowerCase().includes(term)
-    );
-  }, [rawOrganizations, debouncedSearchTerm]);
 
   // Modal & Notification States
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [orgToEdit, setOrgToEdit] = useState<OrganizationItem | null>(null);
   const [orgToDelete, setOrgToDelete] = useState<OrganizationItem | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -181,11 +155,6 @@ export default function OrganizationPage() {
     setErrorMessage(null);
   };
 
-  const handleOpenCreateModal = () => {
-    resetForm();
-    setIsCreateModalOpen(true);
-  };
-
   const handleOpenEditModal = (org: OrganizationItem) => {
     setOrgToEdit(org);
     setFormName(org.name || '');
@@ -203,63 +172,6 @@ export default function OrganizationPage() {
     setFormMaxUsers(org.max_users || 3);
     setFormStatus(org.status || 'active');
     setErrorMessage(null);
-  };
-
-  const handleAutofillDemo = () => {
-    const randomSuffix = Math.floor(100 + Math.random() * 900);
-    const demoName = `Apex Global Corp ${randomSuffix}`;
-    const slugified = demoName.toLowerCase().replace(/\s+/g, '-');
-    setFormName(demoName);
-    setFormSlug(slugified);
-    setFormEmail(`contact@apexcorp${randomSuffix}.com`);
-    setFormPhone(`+91 987${randomSuffix}5432`);
-    setFormWebsite(`https://apexcorp${randomSuffix}.com`);
-    setFormDomain(`apexcorp${randomSuffix}.crm.com`);
-    setFormIndustry('Software & Cloud Services');
-    setFormCountry('India');
-    setFormCity('Bengaluru');
-    setFormAddress('45 Tech Park Avenue');
-    setFormTaxNumber(`GSTIN${randomSuffix}98765`);
-    setFormPlan('Free');
-    setFormMaxUsers(3);
-  };
-
-  const handleCreateSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formName.trim()) {
-      setErrorMessage('Please enter an Organization Name.');
-      return;
-    }
-
-    try {
-      const payload: CreateOrganizationPayload = {
-        name: formName.trim(),
-        slug: formSlug.trim() || formName.trim().toLowerCase().replace(/\s+/g, '-'),
-        email: formEmail.trim() || undefined,
-        phone: formPhone.trim() || undefined,
-        website: formWebsite.trim() || undefined,
-        domain: formDomain.trim() || `${formName.trim().toLowerCase().replace(/\s+/g, '-')}.crm.com`,
-        industry: formIndustry.trim() || 'Software',
-        country: formCountry.trim() || 'India',
-        city: formCity.trim() || undefined,
-        address: formAddress.trim() || undefined,
-        tax_number: formTaxNumber.trim() || undefined,
-        plan: 'Free',
-        max_users: 3,
-        status: formStatus
-      };
-
-      const newOrg = await createOrgMutation.mutateAsync(payload);
-      await queryClient.invalidateQueries({ queryKey: ['organizations'] });
-      await refetch();
-
-      setSuccessMessage(`Organization "${newOrg.name}" created successfully!`);
-      setIsCreateModalOpen(false);
-      resetForm();
-      setTimeout(() => setSuccessMessage(null), 4000);
-    } catch (err: unknown) {
-      setErrorMessage(getErrorMessage(err, 'Failed to create organization.'));
-    }
   };
 
   const handleEditSubmit = async (e: React.FormEvent) => {
@@ -595,18 +507,6 @@ export default function OrganizationPage() {
             <UserPlus className="w-4 h-4 mr-2" />
             Invite Organization
           </Button>
-          {isSuperAdmin && (
-            <Button
-              type="button"
-              onClick={handleOpenCreateModal}
-              size="default"
-              variant="primary"
-              className="shadow-saas-sm px-4 text-button cursor-pointer w-full sm:w-auto"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              + Create Organization
-            </Button>
-          )}
         </div>
       </div>
 
@@ -769,176 +669,6 @@ export default function OrganizationPage() {
               className="cursor-pointer shadow-saas-sm"
             >
               {inviteNewOrgMutation.isPending ? 'Sending Invitation...' : 'Send Invitation'}
-            </Button>
-          </div>
-        </form>
-      </ModalShell>
-
-      {/* CREATE ORGANIZATION MODAL DIALOG */}
-      <ModalShell
-        isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
-        size="2xl"
-        title={
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-btn bg-[#2563EB] flex items-center justify-center text-white shadow-saas-sm shrink-0">
-                <Building className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-subheading font-semibold text-[#111827]">
-                  Create New Organization
-                </h3>
-                <p className="text-caption text-[#6B7280]">
-                  Add a new enterprise organization tenant
-                </p>
-              </div>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleAutofillDemo}
-              className="text-caption font-medium gap-1.5 cursor-pointer px-3"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-[#2563EB] animate-pulse" />
-              <span>Auto-fill Demo</span>
-            </Button>
-          </div>
-        }
-      >
-        <form onSubmit={handleCreateSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="create-name">Organization Name <span className="text-[#DC2626]">*</span></Label>
-              <Input
-                id="create-name"
-                required
-                placeholder="e.g. Acme Enterprise Ltd"
-                value={formName}
-                onChange={(e) => {
-                  setFormName(e.target.value);
-                  if (!formSlug) setFormSlug(e.target.value.toLowerCase().replace(/\s+/g, '-'));
-                }}
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="create-slug">Slug Identifier</Label>
-              <Input
-                id="create-slug"
-                placeholder="e.g. acme-enterprise"
-                value={formSlug}
-                onChange={(e) => setFormSlug(e.target.value)}
-                className="font-mono"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="create-email">Official Email</Label>
-              <Input
-                id="create-email"
-                type="email"
-                placeholder="e.g. info@acme.com"
-                value={formEmail}
-                onChange={(e) => setFormEmail(e.target.value)}
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="create-phone">Phone Number</Label>
-              <Input
-                id="create-phone"
-                placeholder="e.g. +91 9876543210"
-                value={formPhone}
-                onChange={(e) => setFormPhone(e.target.value)}
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="create-domain">Custom Domain</Label>
-              <Input
-                id="create-domain"
-                placeholder="e.g. acme.crm.com"
-                value={formDomain}
-                onChange={(e) => setFormDomain(e.target.value)}
-                className="font-mono text-caption"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="create-industry">Industry Sector</Label>
-              <Input
-                id="create-industry"
-                placeholder="e.g. Information Technology"
-                value={formIndustry}
-                onChange={(e) => setFormIndustry(e.target.value)}
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="create-country">Country</Label>
-              <Input
-                id="create-country"
-                placeholder="e.g. India"
-                value={formCountry}
-                onChange={(e) => setFormCountry(e.target.value)}
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="create-city">City</Label>
-              <Input
-                id="create-city"
-                placeholder="e.g. Chennai"
-                value={formCity}
-                onChange={(e) => setFormCity(e.target.value)}
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="create-plan">Subscription Plan</Label>
-              <select
-                id="create-plan"
-                value="Free"
-                disabled
-                className="w-full h-10 rounded-btn border border-[#E5E7EB] bg-[#F9FAFB] px-3 text-body font-medium text-[#111827] cursor-not-allowed opacity-90"
-              >
-                <option value="Free">Free Plan (Default)</option>
-              </select>
-              <p className="text-caption text-[#6B7280] mt-1">All new organizations start on the Free Plan by default.</p>
-            </div>
-
-            <div>
-              <Label htmlFor="create-users">User Seats Limit</Label>
-              <Input
-                id="create-users"
-                type="number"
-                value={3}
-                disabled
-                className="bg-[#F9FAFB] cursor-not-allowed font-mono opacity-90"
-              />
-              <p className="text-caption text-[#6B7280] mt-1">Free Plan includes 3 user seats by default.</p>
-            </div>
-          </div>
-
-          {/* Modal Actions */}
-          <div className="pt-4 border-t border-[#E5E7EB] flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setIsCreateModalOpen(false)}
-              className="cursor-pointer"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              variant="primary"
-              disabled={createOrgMutation.isPending}
-              className="cursor-pointer shadow-saas-sm"
-            >
-              {createOrgMutation.isPending ? 'Creating...' : 'Create Organization'}
             </Button>
           </div>
         </form>

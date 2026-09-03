@@ -79,7 +79,7 @@ vi.mock('@/lib/api/leads', () => ({
 }));
 
 vi.mock('@/lib/api/organizations', () => ({
-  useOrganizationsQuery: () => ({
+  useCurrentOrganizationQuery: () => ({
     data: [{ id: 'org-1', name: 'Acme Organization', timezone: 'Asia/Kolkata' }],
     isLoading: false,
   }),

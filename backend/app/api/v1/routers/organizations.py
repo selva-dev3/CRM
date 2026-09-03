@@ -7,7 +7,6 @@ from app.db.session import get_db
 from app.models import User
 from app.schemas.crm_schemas import (
     MessageResponse,
-    OrganizationCreate,
     OrganizationResponse,
     OrganizationUpdate,
     SubscriptionCheckoutRequest,
@@ -17,17 +16,6 @@ from app.schemas.crm_schemas import (
 from app.services.organization_service import organization_domain_service
 
 router = APIRouter()
-
-
-@router.post(
-    "",
-    response_model=OrganizationResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Create a new organization",
-    dependencies=[Depends(require_permission("organization:update"))],
-)
-async def create_organization(payload: OrganizationCreate, db: AsyncSession = Depends(get_db)):
-    return await organization_domain_service.create_organization(db, payload)
 
 
 @router.get(
@@ -41,16 +29,6 @@ async def get_organization(
     current_user: User | None = Depends(get_current_user_optional),
 ):
     return await organization_domain_service.get_organization(db, current_user)
-
-
-@router.get(
-    "/all",
-    response_model=list[OrganizationResponse],
-    summary="List all organizations",
-    dependencies=[Depends(require_permission("organization:read"))],
-)
-async def list_all_organizations(db: AsyncSession = Depends(get_db)):
-    return await organization_domain_service.list_all_organizations(db)
 
 
 @router.get(

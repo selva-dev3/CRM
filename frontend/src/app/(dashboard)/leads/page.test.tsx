@@ -29,7 +29,7 @@ vi.mock('@/lib/api/leads', () => ({
 }));
 
 vi.mock('@/lib/api/organizations', () => ({
-  useOrganizationsQuery: () => ({ data: [], isLoading: false }),
+  useCurrentOrganizationQuery: () => ({ data: undefined, isLoading: false }),
 }));
 
 vi.mock('@/lib/api/companies', () => ({

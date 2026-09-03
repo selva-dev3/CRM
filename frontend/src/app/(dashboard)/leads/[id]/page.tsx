@@ -70,7 +70,7 @@ import {
   archiveLeadApi,
   unarchiveLeadApi,
 } from '@/lib/api/leads';
-import { useOrganizationsQuery } from '@/lib/api/organizations';
+import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
 import { useCompaniesQuery } from '@/lib/api/companies';
 import { useUsersQuery } from '@/lib/api/users';
 import { useQueryClient } from '@tanstack/react-query';
@@ -90,7 +90,11 @@ export default function LeadDetailPage() {
 
   // Queries
   const { data: lead, isLoading, isError, error, refetch } = useLeadQuery(leadId);
-  const { data: organizations = [], isLoading: isOrgsLoading } = useOrganizationsQuery();
+  const { data: currentOrganization, isLoading: isOrgsLoading } = useCurrentOrganizationQuery();
+  const organizations = useMemo(
+    () => (currentOrganization ? [currentOrganization] : []),
+    [currentOrganization],
+  );
   const { data: companies = [] } = useCompaniesQuery();
   const {
     data: users = [],
