@@ -1,7 +1,7 @@
 """register all models
 
 Revision ID: 7fcd8359c9f2
-Revises: 
+Revises:
 Create Date: 2026-08-03 13:28:31.019923
 
 """
