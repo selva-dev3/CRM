@@ -241,16 +241,7 @@ class OrganizationDomainService:
         org = await self.get_or_create_default_org(db, current_user)
         users = await self.repository.list_members(db, org.id)
         if not users:
-            return [
-                {
-                    "id": "usr-admin-1",
-                    "name": "Super Admin User",
-                    "email": org.email or "admin@enterprise.com",
-                    "role": "Superadmin",
-                    "status": "Active",
-                    "joined_at": str(org.created_at),
-                }
-            ]
+           raise NotFoundError(message="No members found in the organization")
         return [
             {
                 "id": u.id,
@@ -272,7 +263,7 @@ class OrganizationDomainService:
                 "message": f"User {user.name} ({user_id}) removed from organization",
                 "status": "success",
             }
-        return {"message": f"User {user_id} removed from organization", "status": "success"}
+        raise NotFoundError(message="User not found in the organization")
 
     async def get_subscription(self, db: AsyncSession, current_user: User | None) -> dict:
         org = await self.get_or_create_default_org(db, current_user)
