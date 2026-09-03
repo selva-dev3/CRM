@@ -4,6 +4,24 @@ from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def normalize_database_url(value: str) -> str:
+    """Return a PostgreSQL URL that is compatible with async SQLAlchemy."""
+    url = value.strip().strip('"').strip("'")
+    while url.startswith("DATABASE_URL="):
+        url = url[len("DATABASE_URL=") :].strip()
+    url = url.strip().strip('"').strip("'")
+
+    for sync_scheme in (
+        "postgres://",
+        "postgresql://",
+        "postgresql+psycopg2://",
+        "postgresql+psycopg://",
+    ):
+        if url.startswith(sync_scheme):
+            return "postgresql+asyncpg://" + url[len(sync_scheme) :]
+    return url
+
+
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Enterprise CRM API"
     API_V1_STR: str = "/api/v1"
@@ -27,11 +45,7 @@ class Settings(BaseSettings):
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
     def sanitize_database_url(cls, v: str) -> str:
-        if v and isinstance(v, str):
-            v = v.strip().strip('"').strip("'")
-            while v.startswith("DATABASE_URL="):
-                v = v[len("DATABASE_URL=") :].strip()
-        return v
+        return normalize_database_url(v) if v and isinstance(v, str) else v
 
     # Redis & Celery
     REDIS_HOST: str = "localhost"
