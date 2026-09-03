@@ -7,7 +7,7 @@ from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.errors import APIException, NotFoundError
+from app.core.errors import APIException, ForbiddenError, NotFoundError
 from app.core.logging import get_logger
 from app.models import Organization, OrganizationSubscription, SubscriptionPlan, User
 from app.repositories.organization_repository import OrganizationRepository
@@ -221,6 +221,19 @@ class OrganizationDomainService:
 
     async def get_organization(self, db: AsyncSession, current_user: User | None) -> dict:
         org = await self.get_or_create_default_org(db, current_user)
+        members_count = await self.repository.count_members(db, org.id)
+        return org_to_dict(org, members_count=members_count)
+
+    async def get_current_organization(self, db: AsyncSession, current_user: User) -> dict:
+        """Return only the organization assigned to the authenticated user."""
+        org_id = current_user.organization_id
+        if not org_id:
+            raise ForbiddenError(message="Authenticated user has no current organization")
+
+        org = await self.repository.get_by_id(db, org_id)
+        if not org:
+            raise NotFoundError(message="Current organization not found")
+
         members_count = await self.repository.count_members(db, org.id)
         return org_to_dict(org, members_count=members_count)
 

@@ -152,9 +152,9 @@ export interface OrganizationAuditLog {
   ip?: string;
 }
 
-// 1. GET /api/v1/organizations (Get current organization)
+// 1. GET /api/v1/organizations/current (Get current organization)
 export async function getCurrentOrganizationApi(): Promise<OrganizationItem> {
-  return apiClient.get<OrganizationItem>('/organizations');
+  return apiClient.get<OrganizationItem>('/organizations/current');
 }
 
 // 2. GET /api/v1/organizations/{org_id} (Get organization by ID)
@@ -253,11 +253,11 @@ export function useCurrentOrganizationQuery() {
   });
 }
 
-export function useOrganizationByIdQuery(id: string) {
+export function useOrganizationByIdQuery(id: string, enabled = true) {
   return useQuery({
     queryKey: ['organization', id],
     queryFn: () => fetchOrganizationByIdApi(id),
-    enabled: Boolean(id),
+    enabled: enabled && Boolean(id),
   });
 }
 
