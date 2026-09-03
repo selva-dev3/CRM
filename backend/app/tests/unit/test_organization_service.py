@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import NotFoundError
-from app.models import Organization
+from app.core.errors import ForbiddenError, NotFoundError
+from app.models import Organization, User
 from app.repositories.organization_repository import OrganizationRepository
 from app.services.organization_service import (
     DEFAULT_PLANS,
@@ -59,6 +59,76 @@ async def test_get_organization_falls_back_to_default(monkeypatch):
 
     assert result["members_count"] == 5
     assert result["plan"] == "Enterprise"
+
+
+@pytest.mark.asyncio
+async def test_get_current_organization_uses_authenticated_users_org():
+    org = _make_org(id="org-current")
+    repo: Any = OrganizationRepository()
+    repo.get_by_id = AsyncMock(return_value=org)
+    repo.count_members = AsyncMock(return_value=3)
+    repo.get_first = AsyncMock()
+    repo.get_or_create_default = AsyncMock()
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    current_user = User(
+        id="user-1",
+        name="Admin",
+        email="admin@example.com",
+        organization_id="org-current",
+        is_active=True,
+    )
+
+    result = await service.get_current_organization(db, current_user)
+
+    assert result["id"] == "org-current"
+    assert result["members_count"] == 3
+    repo.get_by_id.assert_awaited_once_with(db, "org-current")
+    repo.get_first.assert_not_called()
+    repo.get_or_create_default.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_get_current_organization_rejects_user_without_org():
+    repo: Any = OrganizationRepository()
+    repo.get_by_id = AsyncMock()
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    current_user = User(
+        id="user-1",
+        name="Admin",
+        email="admin@example.com",
+        organization_id=None,
+        is_active=True,
+    )
+
+    with pytest.raises(ForbiddenError, match="no current organization"):
+        await service.get_current_organization(db, current_user)
+
+    repo.get_by_id.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_get_current_organization_fails_when_assigned_org_is_missing():
+    repo: Any = OrganizationRepository()
+    repo.get_by_id = AsyncMock(return_value=None)
+    repo.get_first = AsyncMock()
+    repo.get_or_create_default = AsyncMock()
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    current_user = User(
+        id="user-1",
+        name="Admin",
+        email="admin@example.com",
+        organization_id="missing-org",
+        is_active=True,
+    )
+
+    with pytest.raises(NotFoundError, match="Current organization not found"):
+        await service.get_current_organization(db, current_user)
+
+    repo.get_first.assert_not_called()
+    repo.get_or_create_default.assert_not_called()
 
 
 @pytest.mark.asyncio

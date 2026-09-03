@@ -47,7 +47,7 @@ import {
 export default function OrganizationDetailPage({ isCurrentOrgView = false }: { isCurrentOrgView?: boolean }) {
   const router = useRouter();
   const params = useParams();
-  const orgId = (params?.id as string) || 'org-1';
+  const routeOrgId = typeof params?.id === 'string' ? params.id : '';
 
   const [activeTab, setActiveTab] = useState<
     'profile' | 'branding' | 'members' | 'subscription' | 'usage' | 'domains' | 'ownership'
@@ -57,11 +57,23 @@ export default function OrganizationDetailPage({ isCurrentOrgView = false }: { i
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Queries
-  const { data: currentOrg, isLoading: isCurrentLoading, refetch: refetchCurrent } = useCurrentOrganizationQuery();
-  const { data: orgById, isLoading: isOrgByIdLoading, refetch: refetchById } = useOrganizationByIdQuery(orgId);
+  const {
+    data: currentOrg,
+    isLoading: isCurrentLoading,
+    isError: isCurrentError,
+    refetch: refetchCurrent,
+  } = useCurrentOrganizationQuery();
+  const {
+    data: orgById,
+    isLoading: isOrgByIdLoading,
+    isError: isOrgByIdError,
+    refetch: refetchById,
+  } = useOrganizationByIdQuery(routeOrgId, !isCurrentOrgView);
 
   const org = isCurrentOrgView ? currentOrg : orgById;
+  const orgId = org?.id || routeOrgId;
   const isOrgLoading = isCurrentOrgView ? isCurrentLoading : isOrgByIdLoading;
+  const isOrgError = isCurrentOrgView ? isCurrentError : isOrgByIdError;
   const refetchOrg = isCurrentOrgView ? refetchCurrent : refetchById;
   const { data: members = [], refetch: refetchMembers } = useOrganizationMembersQuery();
   const { data: subscription, refetch: refetchSubscription } = useOrganizationSubscriptionQuery();
@@ -243,14 +255,16 @@ export default function OrganizationDetailPage({ isCurrentOrgView = false }: { i
     );
   }
 
-  const activeOrg = org || {
-    id: orgId,
-    name: 'Enterprise Organization',
-    domain: 'enterprise.crm.com',
-    plan: 'Enterprise',
-    max_users: 100,
-    created_at: '2026-01-01'
-  };
+  if (isOrgError || !org) {
+    return (
+      <div className="h-64 flex flex-col items-center justify-center space-y-3 text-red-600" role="alert">
+        <AlertCircle className="w-8 h-8" />
+        <span className="text-body font-semibold">Unable to load organization details.</span>
+      </div>
+    );
+  }
+
+  const activeOrg = org;
 
   return (
     <div className="space-y-6 text-[#374151]">

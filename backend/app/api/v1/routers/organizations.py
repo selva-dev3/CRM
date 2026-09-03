@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, File, Form, Header, Request, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import get_current_user_optional, require_permission
+from app.api.v1.deps import get_current_user, get_current_user_optional, require_permission
 from app.core.errors import APIException
 from app.db.session import get_db
 from app.models import User
@@ -29,6 +29,19 @@ async def get_organization(
     current_user: User | None = Depends(get_current_user_optional),
 ):
     return await organization_domain_service.get_organization(db, current_user)
+
+
+@router.get(
+    "/current",
+    response_model=OrganizationResponse,
+    summary="Get the authenticated user's current organization",
+    dependencies=[Depends(require_permission("organization:read"))],
+)
+async def get_current_organization(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    return await organization_domain_service.get_current_organization(db, current_user)
 
 
 @router.get(
