@@ -4,7 +4,7 @@ from typing import BinaryIO
 from urllib.parse import urlparse
 
 from minio import Minio
-from minio.error import S3Error
+from minio.error import MinioException, S3Error
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -86,7 +86,6 @@ class S3Service:
         self, file_obj: BinaryIO, object_name: str, content_type: str | None = None
     ) -> str:
         """Uploads a file object to MinIO S3 bucket and returns the object key."""
-        self._ensure_bucket_exists()
         try:
             self.minio_client.put_object(
                 self.bucket_name,
@@ -96,7 +95,7 @@ class S3Service:
                 content_type=content_type or "application/octet-stream",
             )
             return object_name
-        except S3Error as exc:
+        except MinioException as exc:
             raise RuntimeError(f"Failed to upload object {object_name} to S3: {exc}") from exc
 
     def generate_presigned_url(self, object_name: str, expiration_seconds: int = 3600) -> str:
