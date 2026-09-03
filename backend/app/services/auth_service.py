@@ -269,6 +269,18 @@ class AuthService:
             "expires_in": 86400,
         }
 
+    async def logout(self, db: AsyncSession, refresh_token: str | None) -> dict:
+        """Revoke the current refresh token when present; logout remains idempotent."""
+        if refresh_token:
+            token_digest = sha256(refresh_token.strip().encode("utf-8")).hexdigest()
+            stored_token = await self.repository.get_active_refresh_token(
+                db, token_digest=token_digest, now=datetime.now(UTC)
+            )
+            if stored_token:
+                await self.repository.revoke_refresh_token(stored_token)
+                await self._commit(db, "Unable to revoke refresh token")
+        return {"message": "Logged out successfully", "status": "success"}
+
     async def forgot_password(self, db: AsyncSession, payload: PasswordResetRequest) -> dict:
         response = {
             "message": "If an account exists for that email, a password reset link has been sent",

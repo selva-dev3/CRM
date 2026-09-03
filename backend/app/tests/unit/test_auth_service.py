@@ -37,6 +37,7 @@ NEW_INPUT = "new-password"
 EXPECTED_ACCESS_VALUE = "token-user-1"
 EXPECTED_AUTH_SCHEME = "bearer"
 TEST_REFRESH_VALUE = "refresh"
+NEXT_REFRESH_VALUE = "next"
 
 
 def _make_user(**overrides) -> User:
@@ -176,6 +177,77 @@ async def test_refresh_token_rejects_unknown_value():
         await service.refresh_token(db, "unknown-refresh-token")
 
     assert exc_info.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_refresh_token_rotates_and_revokes_previous_token(monkeypatch):
+    user = _make_user()
+    stored_token = RefreshToken(
+        id="refresh-1",
+        user_id=user.id,
+        token=sha256(TEST_REFRESH_VALUE.encode()).hexdigest(),
+        expires_at=datetime.now(UTC) + timedelta(days=1),
+    )
+    repo: Any = AuthRepository()
+    repo.get_active_refresh_token = AsyncMock(side_effect=[stored_token, None])
+    repo.get_user_by_id = AsyncMock(return_value=user)
+    repo.revoke_refresh_token = AsyncMock()
+    repo.create_refresh_token = AsyncMock(return_value=RefreshToken())
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    monkeypatch.setattr(
+        "app.services.auth_service.generate_random_code", lambda length: NEXT_REFRESH_VALUE
+    )
+    monkeypatch.setattr(
+        "app.services.auth_service.create_access_token", lambda user_id: EXPECTED_ACCESS_VALUE
+    )
+
+    result = await service.refresh_token(db, TEST_REFRESH_VALUE)
+
+    assert result["access_token"] == EXPECTED_ACCESS_VALUE
+    assert result["refresh_token"] == NEXT_REFRESH_VALUE
+    repo.revoke_refresh_token.assert_awaited_once_with(stored_token)
+    db.commit.assert_awaited_once()
+
+    with pytest.raises(APIException) as reused_token_error:
+        await service.refresh_token(db, TEST_REFRESH_VALUE)
+    assert reused_token_error.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_logout_revokes_active_refresh_token():
+    stored_token = RefreshToken(
+        id="refresh-1",
+        user_id="user-1",
+        token=sha256(TEST_REFRESH_VALUE.encode()).hexdigest(),
+        expires_at=datetime.now(UTC) + timedelta(days=1),
+    )
+    repo: Any = AuthRepository()
+    repo.get_active_refresh_token = AsyncMock(return_value=stored_token)
+    repo.revoke_refresh_token = AsyncMock()
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.logout(db, TEST_REFRESH_VALUE)
+
+    assert result["status"] == "success"
+    repo.revoke_refresh_token.assert_awaited_once_with(stored_token)
+    db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_logout_without_active_refresh_token_is_idempotent():
+    repo: Any = AuthRepository()
+    repo.get_active_refresh_token = AsyncMock(return_value=None)
+    repo.revoke_refresh_token = AsyncMock()
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.logout(db, TEST_REFRESH_VALUE)
+
+    assert result["status"] == "success"
+    repo.revoke_refresh_token.assert_not_awaited()
+    db.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio

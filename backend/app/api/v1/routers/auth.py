@@ -1,8 +1,15 @@
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
-from app.core.auth_cookies import clear_auth_cookie, set_auth_cookie
+from app.core.auth_cookies import (
+    clear_auth_cookie,
+    clear_refresh_cookie,
+    set_auth_cookie,
+    set_refresh_cookie,
+)
+from app.core.config import settings
+from app.core.errors import APIException
 from app.db.session import get_db
 from app.models import User
 from app.schemas.crm_schemas import (
@@ -26,6 +33,14 @@ from app.services.auth_service import auth_service
 router = APIRouter()
 
 
+def _set_token_cookies(response: Response, result: dict, *, persistent_access: bool = True) -> dict:
+    set_auth_cookie(response, result["access_token"], persistent=persistent_access)
+    refresh_token = result.get("refresh_token")
+    if refresh_token:
+        set_refresh_cookie(response, refresh_token)
+    return result | {"refresh_token": None}
+
+
 @router.post("/login", response_model=Token, summary="Authenticate user & return JWT token")
 async def login(
     payload: LoginRequest,
@@ -33,8 +48,7 @@ async def login(
     db: AsyncSession = Depends(get_db),
 ):
     result = await auth_service.login(db, payload)
-    set_auth_cookie(response, result["access_token"], persistent=payload.remember_me)
-    return result
+    return _set_token_cookies(response, result, persistent_access=payload.remember_me)
 
 
 @router.get("/me", summary="Get current authenticated user info with DB role and permissions")
@@ -56,23 +70,30 @@ async def register(payload: RegisterRequest, db: AsyncSession = Depends(get_db))
 
 @router.post("/refresh-token", response_model=Token, summary="Refresh JWT access token")
 async def refresh_token(
-    refresh_token: str,
+    request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
-    result = await auth_service.refresh_token(db, refresh_token)
-    set_auth_cookie(response, result["access_token"])
-    return result
+    refresh_token_value = request.cookies.get(settings.AUTH_REFRESH_COOKIE_NAME)
+    if not refresh_token_value:
+        raise APIException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            message="Refresh token missing",
+        )
+    result = await auth_service.refresh_token(db, refresh_token_value)
+    return _set_token_cookies(response, result)
 
 
 @router.post("/logout", response_model=MessageResponse, summary="Invalidate current session")
 async def logout(
+    request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
+    result = await auth_service.logout(db, request.cookies.get(settings.AUTH_REFRESH_COOKIE_NAME))
     clear_auth_cookie(response)
-    return {"message": "Logged out successfully", "status": "success"}
+    clear_refresh_cookie(response)
+    return result
 
 
 @router.post(
@@ -146,8 +167,7 @@ async def google_oauth(
     db: AsyncSession = Depends(get_db),
 ):
     result = await auth_service.google_oauth(db, payload)
-    set_auth_cookie(response, result["access_token"])
-    return result
+    return _set_token_cookies(response, result)
 
 
 @router.post("/oauth/microsoft", response_model=Token, summary="Microsoft Azure AD SSO Login")
@@ -157,8 +177,7 @@ async def microsoft_oauth(
     db: AsyncSession = Depends(get_db),
 ):
     result = await auth_service.microsoft_oauth(db, payload)
-    set_auth_cookie(response, result["access_token"])
-    return result
+    return _set_token_cookies(response, result)
 
 
 @router.get(
@@ -219,8 +238,7 @@ async def verify_magic_link(
     db: AsyncSession = Depends(get_db),
 ):
     result = await auth_service.verify_magic_link(db, token)
-    set_auth_cookie(response, result["access_token"])
-    return result
+    return _set_token_cookies(response, result)
 
 
 @router.get(

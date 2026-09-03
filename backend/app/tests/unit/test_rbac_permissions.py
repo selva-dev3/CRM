@@ -318,7 +318,6 @@ def test_self_service_auth_endpoints_require_authentication():
 
     self_service = {
         "/me": {"GET"},
-        "/logout": {"POST"},
         "/change-password": {"POST"},
         "/2fa/setup": {"POST"},
         "/2fa/verify": {"POST"},
@@ -328,6 +327,7 @@ def test_self_service_auth_endpoints_require_authentication():
     }
     public = {
         "/login",
+        "/logout",
         "/register",
         "/refresh-token",
         "/forgot-password",
