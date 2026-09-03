@@ -5,7 +5,12 @@ from fastapi import Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user
-from app.core.auth_cookies import clear_auth_cookie, set_auth_cookie
+from app.core.auth_cookies import (
+    clear_auth_cookie,
+    clear_refresh_cookie,
+    set_auth_cookie,
+    set_refresh_cookie,
+)
 from app.core.config import settings
 from app.core.security import create_access_token
 from app.main import validate_cookie_authenticated_origin
@@ -36,6 +41,21 @@ def test_session_cookie_omits_persistent_expiration(monkeypatch):
     assert "Max-Age=" not in header
 
 
+def test_refresh_cookie_is_httponly_secure_and_scoped_to_auth(monkeypatch):
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    response = Response()
+
+    set_refresh_cookie(response, "refresh-token")
+
+    header = response.headers["set-cookie"]
+    assert f"{settings.AUTH_REFRESH_COOKIE_NAME}=refresh-token" in header
+    assert "HttpOnly" in header
+    assert "Secure" in header
+    assert "SameSite=none" in header
+    assert f"Path={settings.API_V1_STR}/auth" in header
+    assert f"Max-Age={settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400}" in header
+
+
 def test_clear_auth_cookie_expires_server_cookie(monkeypatch):
     monkeypatch.setattr(settings, "ENVIRONMENT", "production")
     response = Response()
@@ -46,6 +66,18 @@ def test_clear_auth_cookie_expires_server_cookie(monkeypatch):
     assert "HttpOnly" in header
     assert "Max-Age=0" in header
     assert "Secure" in header
+
+
+def test_clear_refresh_cookie_uses_matching_path(monkeypatch):
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    response = Response()
+
+    clear_refresh_cookie(response)
+
+    header = response.headers["set-cookie"]
+    assert f"{settings.AUTH_REFRESH_COOKIE_NAME}=" in header
+    assert "Max-Age=0" in header
+    assert f"Path={settings.API_V1_STR}/auth" in header
 
 
 @pytest.mark.asyncio
@@ -92,6 +124,30 @@ async def test_cookie_authenticated_mutation_rejects_untrusted_origin():
             "path": "/api/v1/auth/change-password",
             "headers": [
                 (b"cookie", f"{settings.AUTH_COOKIE_NAME}=jwt-token".encode()),
+                (b"origin", b"https://attacker.example"),
+            ],
+        }
+    )
+    call_next = AsyncMock(return_value=Response())
+
+    response = await validate_cookie_authenticated_origin(request, call_next)
+
+    assert response.status_code == 403
+    call_next.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_refresh_cookie_mutation_rejects_untrusted_origin():
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": f"{settings.API_V1_STR}/auth/refresh-token",
+            "headers": [
+                (
+                    b"cookie",
+                    f"{settings.AUTH_REFRESH_COOKIE_NAME}=refresh-token".encode(),
+                ),
                 (b"origin", b"https://attacker.example"),
             ],
         }

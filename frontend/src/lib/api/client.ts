@@ -15,6 +15,19 @@ export function resolveApiBaseUrl(
 
 export const BASE_URL = resolveApiBaseUrl();
 
+const NON_REFRESHABLE_AUTH_ENDPOINTS = [
+  '/auth/login',
+  '/auth/register',
+  '/auth/forgot-password',
+  '/auth/reset-password',
+  '/auth/logout',
+  '/auth/refresh-token',
+  '/auth/oauth/',
+  '/auth/magic-link/',
+];
+
+let refreshRequest: Promise<boolean> | null = null;
+
 export function clearSessionToken(): void {
   if (typeof window === 'undefined') return;
   // Remove legacy browser-readable tokens during the HttpOnly-cookie migration.
@@ -39,9 +52,45 @@ export interface ApiResponse<T> {
   status: number;
 }
 
+function canRefresh(endpoint: string): boolean {
+  return !NON_REFRESHABLE_AUTH_ENDPOINTS.some((authEndpoint) =>
+    endpoint.startsWith(authEndpoint),
+  );
+}
+
+async function refreshSession(): Promise<boolean> {
+  try {
+    const response = await fetch(`${BASE_URL}/auth/refresh-token`, {
+      method: 'POST',
+      credentials: 'include',
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+function getRefreshRequest(): Promise<boolean> {
+  if (!refreshRequest) {
+    refreshRequest = refreshSession().finally(() => {
+      refreshRequest = null;
+    });
+  }
+  return refreshRequest;
+}
+
+function handleUnauthorized(): void {
+  if (typeof window === 'undefined') return;
+  clearSessionToken();
+  if (!window.location.pathname.startsWith('/login')) {
+    window.location.href = '/login';
+  }
+}
+
 async function request<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  allowRefresh = true,
 ): Promise<ApiResponse<T>> {
   const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
   const headers: Record<string, string> = {
@@ -54,18 +103,26 @@ async function request<T>(
     headers['Content-Type'] = 'application/json';
   }
 
-  const response = await fetch(`${BASE_URL}${endpoint}`, {
+  let response = await fetch(`${BASE_URL}${endpoint}`, {
     ...options,
     headers,
     credentials: 'include',
   });
 
+  if (response.status === 401 && allowRefresh && canRefresh(endpoint)) {
+    const refreshed = await getRefreshRequest();
+    if (refreshed) {
+      response = await fetch(`${BASE_URL}${endpoint}`, {
+        ...options,
+        headers,
+        credentials: 'include',
+      });
+    }
+  }
+
   if (!response.ok) {
-    if (response.status === 401 && typeof window !== 'undefined') {
-      clearSessionToken();
-      if (!window.location.pathname.startsWith('/login')) {
-        window.location.href = '/login';
-      }
+    if (response.status === 401) {
+      handleUnauthorized();
     }
     const errorData = await response.json().catch(() => ({}));
     throw new Error(errorData.detail || errorData.message || 'An unexpected error occurred');

@@ -70,9 +70,10 @@ register_exception_handlers(app)
 async def validate_cookie_authenticated_origin(request: Request, call_next):
     """Reject cross-site state changes authenticated only by the session cookie."""
     unsafe_method = request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"}
-    uses_cookie_auth = bool(request.cookies.get(settings.AUTH_COOKIE_NAME)) and not bool(
-        request.headers.get("Authorization")
-    )
+    uses_cookie_auth = bool(
+        request.cookies.get(settings.AUTH_COOKIE_NAME)
+        or request.cookies.get(settings.AUTH_REFRESH_COOKIE_NAME)
+    ) and not bool(request.headers.get("Authorization"))
     if unsafe_method and uses_cookie_auth:
         origin = request.headers.get("Origin")
         if origin not in settings.cors_origins_list:
