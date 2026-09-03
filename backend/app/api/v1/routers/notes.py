@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import require_permission
+from app.api.v1.deps import get_current_user, require_permission
 from app.db.session import get_db
+from app.models import User
 from app.schemas.crm_schemas import (
     BulkActionResponse,
     BulkDeleteRequest,
@@ -25,21 +26,32 @@ async def list_notes(
     entity_type: str | None = Query(None),
     search: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     return await note_service.list_notes(
-        db, page=page, limit=limit, entity_type=entity_type, search=search
+        db,
+        page=page,
+        limit=limit,
+        entity_type=entity_type,
+        search=search,
+        current_user=current_user,
     )
 
 
 @router.post(
     "", summary="Create new note", dependencies=[Depends(require_permission("notes:create"))]
 )
-async def create_note(payload: NoteBase, db: AsyncSession = Depends(get_db)):
+async def create_note(
+    payload: NoteBase,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     return await note_service.create_note(
         db,
         entity_type=payload.entity_type,
         entity_id=payload.entity_id,
         content=payload.content,
+        current_user=current_user,
     )
 
 
@@ -48,8 +60,11 @@ async def create_note(payload: NoteBase, db: AsyncSession = Depends(get_db)):
     summary="Get list of pinned notes",
     dependencies=[Depends(require_permission("notes:read"))],
 )
-async def get_pinned_notes(db: AsyncSession = Depends(get_db)):
-    return await note_service.list_pinned(db)
+async def get_pinned_notes(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await note_service.list_pinned(db, current_user)
 
 
 @router.get(
@@ -57,8 +72,15 @@ async def get_pinned_notes(db: AsyncSession = Depends(get_db)):
     summary="Get notes filtered by entity type and ID",
     dependencies=[Depends(require_permission("notes:read"))],
 )
-async def get_notes_by_entity(entity_type: str, entity_id: str, db: AsyncSession = Depends(get_db)):
-    return await note_service.get_notes_by_entity(db, entity_type=entity_type, entity_id=entity_id)
+async def get_notes_by_entity(
+    entity_type: str,
+    entity_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await note_service.get_notes_by_entity(
+        db, entity_type=entity_type, entity_id=entity_id, current_user=current_user
+    )
 
 
 @router.post(
@@ -67,8 +89,12 @@ async def get_notes_by_entity(entity_type: str, entity_id: str, db: AsyncSession
     summary="Bulk delete notes",
     dependencies=[Depends(require_permission("notes:delete"))],
 )
-async def bulk_delete_notes(payload: BulkDeleteRequest, db: AsyncSession = Depends(get_db)):
-    return await note_service.bulk_delete(db, payload.ids)
+async def bulk_delete_notes(
+    payload: BulkDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await note_service.bulk_delete(db, payload.ids, current_user)
 
 
 @router.get(
@@ -76,8 +102,12 @@ async def bulk_delete_notes(payload: BulkDeleteRequest, db: AsyncSession = Depen
     summary="Get note details by ID",
     dependencies=[Depends(require_permission("notes:read"))],
 )
-async def get_note(note_id: str, db: AsyncSession = Depends(get_db)):
-    return await note_service.get_note(db, note_id)
+async def get_note(
+    note_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await note_service.get_note(db, note_id, current_user)
 
 
 @router.put(
@@ -85,8 +115,13 @@ async def get_note(note_id: str, db: AsyncSession = Depends(get_db)):
     summary="Update note content",
     dependencies=[Depends(require_permission("notes:update"))],
 )
-async def update_note(note_id: str, content: str, db: AsyncSession = Depends(get_db)):
-    return await note_service.update_note(db, note_id, content)
+async def update_note(
+    note_id: str,
+    content: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await note_service.update_note(db, note_id, content, current_user)
 
 
 @router.delete(
@@ -95,8 +130,12 @@ async def update_note(note_id: str, content: str, db: AsyncSession = Depends(get
     summary="Delete note by ID",
     dependencies=[Depends(require_permission("notes:delete"))],
 )
-async def delete_note(note_id: str, db: AsyncSession = Depends(get_db)):
-    return await note_service.delete_note(db, note_id)
+async def delete_note(
+    note_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await note_service.delete_note(db, note_id, current_user)
 
 
 @router.post(
@@ -105,8 +144,12 @@ async def delete_note(note_id: str, db: AsyncSession = Depends(get_db)):
     summary="Pin note to top of entity timeline",
     dependencies=[Depends(require_permission("notes:update"))],
 )
-async def pin_note(note_id: str, db: AsyncSession = Depends(get_db)):
-    return await note_service.set_pinned(db, note_id, pinned=True)
+async def pin_note(
+    note_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await note_service.set_pinned(db, note_id, pinned=True, current_user=current_user)
 
 
 @router.post(
@@ -115,5 +158,9 @@ async def pin_note(note_id: str, db: AsyncSession = Depends(get_db)):
     summary="Unpin note",
     dependencies=[Depends(require_permission("notes:update"))],
 )
-async def unpin_note(note_id: str, db: AsyncSession = Depends(get_db)):
-    return await note_service.set_pinned(db, note_id, pinned=False)
+async def unpin_note(
+    note_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await note_service.set_pinned(db, note_id, pinned=False, current_user=current_user)

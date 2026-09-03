@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import get_current_user
+from app.api.v1.deps import get_current_user, require_permission
 from app.core.auth_cookies import clear_auth_cookie, set_auth_cookie
 from app.db.session import get_db
 from app.models import User
@@ -189,7 +189,7 @@ async def list_sessions(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await auth_service.list_sessions(db)
+    return await auth_service.list_sessions(db, current_user)
 
 
 @router.delete(
@@ -200,7 +200,7 @@ async def revoke_session(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await auth_service.revoke_session(db, session_id)
+    return await auth_service.revoke_session(db, session_id, current_user)
 
 
 @router.post(
@@ -223,18 +223,28 @@ async def verify_magic_link(
     return result
 
 
-@router.get("/api-keys", response_model=list[ApiKeyResponse], summary="List organization API keys")
+@router.get(
+    "/api-keys",
+    response_model=list[ApiKeyResponse],
+    summary="List organization API keys",
+    dependencies=[Depends(require_permission("integrations:apikeys"))],
+)
 async def list_api_keys(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await auth_service.list_api_keys(db)
+    return await auth_service.list_api_keys(db, current_user)
 
 
-@router.post("/api-keys", response_model=ApiKeyResponse, summary="Create new API key")
+@router.post(
+    "/api-keys",
+    response_model=ApiKeyResponse,
+    summary="Create new API key",
+    dependencies=[Depends(require_permission("integrations:apikeys"))],
+)
 async def create_api_key(
     payload: ApiKeyCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await auth_service.create_api_key(db, payload)
+    return await auth_service.create_api_key(db, payload, current_user)

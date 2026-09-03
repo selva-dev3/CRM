@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import APIException, ForbiddenError, NotFoundError
+from app.core.errors import APIException, NotFoundError
 from app.models import User, UserInvitation
 from app.repositories.user_repository import UserRepository
 from app.schemas.crm_schemas import UserCreate, UserUpdate
@@ -285,7 +285,7 @@ async def test_create_user_rejects_unknown_role():
 
 
 @pytest.mark.asyncio
-async def test_create_user_rejects_system_role():
+async def test_create_user_assigns_system_role():
     repo: Any = UserRepository()
     repo.create = AsyncMock(return_value=_make_user())
     service = _service_with(repo)
@@ -294,20 +294,28 @@ async def test_create_user_rejects_system_role():
         return_value=type(
             "R",
             (),
-            {"id": "role-admin", "name": "Admin", "organization_id": None, "is_system_role": True},
+            {
+                "id": "role-sales-manager",
+                "name": "Sales Manager",
+                "organization_id": None,
+                "is_system_role": True,
+            },
         )()
     )
     cast(Any, service.organization_repository).get_by_id = AsyncMock(return_value=_make_org())
 
     current_user = _make_user(id="current-user", organization_id="org-1")
     payload = UserCreate(
-        name="Alex Smith", email="alex@crm.com", role="role-admin", password=VALID_INPUT
+        name="Alex Smith",
+        email="alex@crm.com",
+        role="role-sales-manager",
+        password=VALID_INPUT,
     )
 
-    with pytest.raises(APIException) as exc_info:
-        await service.create_user(db, payload, current_user=current_user)
-    assert exc_info.value.status_code == 403
-    repo.create.assert_not_awaited()
+    await service.create_user(db, payload, current_user=current_user)
+
+    assert repo.create.await_args.kwargs["data"]["role"] == "role-sales-manager"
+    db.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -633,7 +641,7 @@ async def test_invite_users_rejects_role_from_other_org():
 
 
 @pytest.mark.asyncio
-async def test_invite_users_rejects_system_role():
+async def test_invite_users_assigns_sales_manager_when_system_role(monkeypatch):
     repo: Any = UserRepository()
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -642,28 +650,37 @@ async def test_invite_users_rejects_system_role():
     role = type(
         "R",
         (),
-        {"id": "role-admin", "name": "Admin", "organization_id": None, "is_system_role": True},
+        {
+            "id": "role-sales-manager",
+            "name": "Sales Manager",
+            "organization_id": None,
+            "is_system_role": True,
+        },
     )()
     cast(Any, service.role_repository).get_role_by_id_or_name = AsyncMock(return_value=role)
 
     from app.schemas.crm_schemas import UserInviteRequest
 
-    payload = UserInviteRequest(users=[{"email": "invite@crm.com"}], role="role-admin")
+    monkeypatch.setattr("app.services.user_service.send_user_invite_email", lambda **kwargs: None)
+    payload = UserInviteRequest(
+        users=[{"email": "invite@crm.com"}], role="role-sales-manager"
+    )
 
-    with pytest.raises(APIException) as exc_info:
-        await service.invite_users(db, payload, current_user=current_user)
-    assert exc_info.value.status_code == 403
+    result = await service.invite_users(db, payload, current_user=current_user)
+
+    assert result["status"] == "success"
+    assert result["invitations"][0]["role"] == "role-sales-manager"
 
 
 @pytest.mark.asyncio
 async def test_get_my_profile_raises_not_found_when_no_users():
     repo: Any = UserRepository()
-    repo.get_first = AsyncMock(return_value=None)
+    repo.get_by_id = AsyncMock(return_value=None)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
     with pytest.raises(NotFoundError):
-        await service.get_my_profile(db)
+        await service.get_my_profile(db, _make_user())
 
 
 def test_user_to_dict_serializes_all_fields():
@@ -681,6 +698,8 @@ async def test_update_user_only_changes_provided_fields():
     db = AsyncMock(spec=AsyncSession)
     role = type("R", (), {"id": "role-9", "name": "Sales Manager", "organization_id": None})()
     cast(Any, service.role_repository).get_role_by_id_or_name = AsyncMock(return_value=role)
+    mapping = type("Mapping", (), {"role_id": "old-role"})()
+    cast(Any, service.role_repository).get_user_role_mapping = AsyncMock(return_value=mapping)
 
     result = await service.update_user(
         db, "user-1", UserUpdate(role="Sales Manager"), current_user=_make_user(role="Admin")
@@ -689,6 +708,7 @@ async def test_update_user_only_changes_provided_fields():
     assert user.role == "role-9"
     assert user.name == "Alex Smith"
     assert result["role"] == "role-9"
+    assert mapping.role_id == "role-9"
 
 
 @pytest.mark.asyncio
@@ -710,7 +730,7 @@ async def test_update_user_rejects_role_from_other_org():
 
 
 @pytest.mark.asyncio
-async def test_update_user_rejects_system_role():
+async def test_update_user_assigns_sales_manager_when_system_role():
     user = _make_user()
     repo: Any = UserRepository()
     repo.get_by_id = AsyncMock(return_value=user)
@@ -719,15 +739,25 @@ async def test_update_user_rejects_system_role():
     role = type(
         "R",
         (),
-        {"id": "role-9", "name": "Admin", "organization_id": None, "is_system_role": True},
+        {
+            "id": "role-9",
+            "name": "Sales Manager",
+            "organization_id": None,
+            "is_system_role": True,
+        },
     )()
     cast(Any, service.role_repository).get_role_by_id_or_name = AsyncMock(return_value=role)
+    cast(Any, service.role_repository).get_user_role_mapping = AsyncMock(return_value=None)
 
-    with pytest.raises(ForbiddenError):
-        await service.update_user(
-            db, "user-1", UserUpdate(role="role-9"), current_user=_make_user(role="Admin")
-        )
-    assert user.role == "Sales Executive"
+    result = await service.update_user(
+        db, "user-1", UserUpdate(role="role-9"), current_user=_make_user(role="Admin")
+    )
+
+    assert result["role"] == "role-9"
+    assert user.role == "role-9"
+    added_mapping = db.add.call_args.args[0]
+    assert added_mapping.user_id == "user-1"
+    assert added_mapping.role_id == "role-9"
 
 
 @pytest.mark.asyncio

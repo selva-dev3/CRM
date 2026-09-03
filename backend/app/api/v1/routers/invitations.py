@@ -47,7 +47,13 @@ async def list_invitations(
     current_user: User = Depends(get_current_user),
 ):
     return await list_organization_invitations(
-        db=db, search=search, status_filter=status, page=page, limit=limit, sort_by=sort_by
+        db=db,
+        current_user=current_user,
+        search=search,
+        status_filter=status,
+        page=page,
+        limit=limit,
+        sort_by=sort_by,
     )
 
 

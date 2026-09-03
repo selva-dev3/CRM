@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.errors import NotFoundError
+from app.models import User
 from app.models.deal import Deal
 from app.repositories.deal_repository import DealRepository
 from app.schemas.crm_schemas import DealCreate, DealUpdate
@@ -34,6 +35,10 @@ def _make_deal(**overrides) -> Deal:
 
 def _service_with(repo: DealRepository) -> DealService:
     return DealService(repository=repo)
+
+
+def _user() -> User:
+    return User(id="user-1", email="user@crm.com", organization_id="org-1")
 
 
 @pytest.mark.asyncio
@@ -347,7 +352,7 @@ async def test_predict_win_rate_fallback_for_closed_won(monkeypatch):
     monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
-    result = await service.predict_deal_win_rate(db, "deal-1")
+    result = await service.predict_deal_win_rate(db, "deal-1", _user())
 
     assert result["predicted_probability"] == 100.0
     assert result["model"] == "crm-sales-analytics-engine"

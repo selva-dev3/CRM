@@ -215,14 +215,26 @@ class AuthRepository:
         result = await db.execute(select(UserRole.role_id).where(UserRole.user_id == user_id))
         return [role_id for role_id in result.scalars().all() if role_id]
 
-    async def role_ids_by_name(self, db: AsyncSession, role_name: str) -> list[str]:
+    async def role_ids_by_name(
+        self, db: AsyncSession, role_name: str, organization_id: str
+    ) -> list[str]:
         result = await db.execute(
-            select(Role.id).where(func.lower(Role.name) == role_name.strip().lower())
+            select(Role.id).where(
+                func.lower(Role.name) == role_name.strip().lower(),
+                (Role.organization_id.is_(None)) | (Role.organization_id == organization_id),
+            )
         )
         return [role_id for role_id in result.scalars().all() if role_id]
 
-    async def roles_by_ids(self, db: AsyncSession, role_ids: list[str]) -> list[Role]:
-        result = await db.execute(select(Role).where(Role.id.in_(list(role_ids))))
+    async def roles_by_ids(
+        self, db: AsyncSession, role_ids: list[str], organization_id: str
+    ) -> list[Role]:
+        result = await db.execute(
+            select(Role).where(
+                Role.id.in_(list(role_ids)),
+                (Role.organization_id.is_(None)) | (Role.organization_id == organization_id),
+            )
+        )
         return list(result.scalars().all())
 
     async def permission_keys_for_roles(self, db: AsyncSession, role_ids: list[str]) -> list[str]:
@@ -233,19 +245,30 @@ class AuthRepository:
         )
         return [key for key in result.scalars().all() if key]
 
-    async def list_sessions(self, db: AsyncSession) -> list[UserSession]:
-        result = await db.execute(select(UserSession).limit(10))
+    async def list_sessions(self, db: AsyncSession, user_id: str) -> list[UserSession]:
+        result = await db.execute(
+            select(UserSession).where(UserSession.user_id == user_id).limit(10)
+        )
         return list(result.scalars().all())
 
-    async def get_session_by_id(self, db: AsyncSession, session_id: str) -> UserSession | None:
-        result = await db.execute(select(UserSession).where(UserSession.id == session_id))
+    async def get_session_by_id(
+        self, db: AsyncSession, session_id: str, user_id: str
+    ) -> UserSession | None:
+        result = await db.execute(
+            select(UserSession).where(
+                UserSession.id == session_id,
+                UserSession.user_id == user_id,
+            )
+        )
         return result.scalars().first()
 
     async def delete_session(self, db: AsyncSession, session: UserSession) -> None:
         await db.delete(session)
 
-    async def list_api_keys(self, db: AsyncSession) -> list[ApiKey]:
-        result = await db.execute(select(ApiKey).limit(10))
+    async def list_api_keys(self, db: AsyncSession, organization_id: str) -> list[ApiKey]:
+        result = await db.execute(
+            select(ApiKey).where(ApiKey.organization_id == organization_id).limit(10)
+        )
         return list(result.scalars().all())
 
     async def create_api_key(self, db: AsyncSession, *, data: dict) -> ApiKey:

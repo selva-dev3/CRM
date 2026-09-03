@@ -2,7 +2,7 @@ from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException
-from app.models import Email, EmailTemplate
+from app.models import Email, EmailTemplate, User
 from app.repositories.email_repository import EmailRepository
 from app.schemas.crm_schemas import EmailSendRequest
 from app.services.org_service import organization_service
@@ -70,12 +70,18 @@ class EmailDomainService:
         page: int,
         limit: int,
         search: str | None = None,
+        current_user: User,
     ) -> list[dict]:
-        emails = await self.repository.list_emails(db, page=page, limit=limit, search=search)
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        emails = await self.repository.list_emails(
+            db, page=page, limit=limit, organization_id=org_id, search=search
+        )
         return [email_to_dict(e) for e in emails]
 
-    async def send_email(self, db: AsyncSession, payload: EmailSendRequest) -> dict:
-        org_id = await organization_service.resolve_valid_org_id(db)
+    async def send_email(
+        self, db: AsyncSession, payload: EmailSendRequest, current_user: User
+    ) -> dict:
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
         to_addr = str(payload.to[0]) if payload.to else "client@example.com"
         email = await self.repository.create_email(
             db,
@@ -116,8 +122,9 @@ class EmailDomainService:
     async def delete_draft(self, draft_id: str) -> dict:
         return {"message": f"Draft '{draft_id}' deleted", "status": "success"}
 
-    async def list_templates(self, db: AsyncSession) -> list[dict]:
-        templates = await self.repository.list_templates(db)
+    async def list_templates(self, db: AsyncSession, current_user: User) -> list[dict]:
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        templates = await self.repository.list_templates(db, org_id)
         if not templates:
             return [
                 {
@@ -143,8 +150,9 @@ class EmailDomainService:
         subject: str,
         body: str,
         category: str = "General",
+        current_user: User,
     ) -> dict:
-        org_id = await organization_service.resolve_valid_org_id(db)
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
         await self.repository.create_template(
             db,
             data={
@@ -158,8 +166,11 @@ class EmailDomainService:
         await self._commit(db, "Failed to create email template")
         return {"message": f"Template '{name}' created", "status": "success"}
 
-    async def get_template(self, db: AsyncSession, template_id: str) -> dict:
-        template = await self.repository.get_template(db, template_id)
+    async def get_template(
+        self, db: AsyncSession, template_id: str, current_user: User
+    ) -> dict:
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        template = await self.repository.get_template(db, template_id, org_id)
         if not template:
             return {
                 "id": template_id,
@@ -178,8 +189,10 @@ class EmailDomainService:
         name: str,
         subject: str,
         body: str,
+        current_user: User,
     ) -> dict:
-        template = await self.repository.get_template(db, template_id)
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        template = await self.repository.get_template(db, template_id, org_id)
         if template:
             template.name = name
             template.subject = subject
@@ -187,8 +200,11 @@ class EmailDomainService:
             await self._commit(db, "Failed to update email template")
         return {"message": f"Template {template_id} updated", "status": "success"}
 
-    async def delete_template(self, db: AsyncSession, template_id: str) -> dict:
-        template = await self.repository.get_template(db, template_id)
+    async def delete_template(
+        self, db: AsyncSession, template_id: str, current_user: User
+    ) -> dict:
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        template = await self.repository.get_template(db, template_id, org_id)
         if template:
             await self.repository.delete_template(db, template)
             await self._commit(db, "Failed to delete email template")
@@ -243,8 +259,9 @@ class EmailDomainService:
             ],
         }
 
-    async def bulk_delete(self, db: AsyncSession, ids: list[str]) -> dict:
-        emails = await self.repository.list_by_ids(db, ids)
+    async def bulk_delete(self, db: AsyncSession, ids: list[str], current_user: User) -> dict:
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        emails = await self.repository.list_by_ids(db, ids, org_id)
         for email in emails:
             await self.repository.delete(db, email)
         await self._commit(db, "Failed to bulk delete emails")

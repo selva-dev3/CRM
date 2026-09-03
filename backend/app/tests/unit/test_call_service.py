@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import NotFoundError
-from app.models import CallLog
+from app.models import CallLog, User
 from app.repositories.call_repository import CallRepository
 from app.schemas.crm_schemas import CallLogBase
 from app.services.call_service import CallService
@@ -30,6 +30,18 @@ def _service_with(repo: CallRepository) -> CallService:
     return CallService(repository=repo)
 
 
+def _user() -> User:
+    return User(id="user-1", email="user@crm.com", organization_id="org-1")
+
+
+@pytest.fixture(autouse=True)
+def _stub_organization_resolution(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.call_service.organization_service.resolve_valid_org_id",
+        AsyncMock(return_value="org-1"),
+    )
+
+
 @pytest.mark.asyncio
 async def test_get_call_raises_not_found_when_missing():
     repo: Any = CallRepository()
@@ -38,7 +50,8 @@ async def test_get_call_raises_not_found_when_missing():
     db = AsyncMock(spec=AsyncSession)
 
     with pytest.raises(NotFoundError):
-        await service.get_call(db, "missing-call")
+        await service.get_call(db, "missing-call", _user())
+    repo.get_by_id.assert_awaited_once_with(db, "missing-call", "org-1")
 
 
 @pytest.mark.asyncio
@@ -56,7 +69,7 @@ async def test_log_call_resolves_org_and_serializes(monkeypatch):
     )
 
     payload = CallLogBase(call_type="Inbound", duration_seconds=90, notes="Call back")
-    result = await service.log_call(db, payload)
+    result = await service.log_call(db, payload, _user())
 
     assert result["id"] == "call-1"
     assert result["call_type"] == "Outbound"
@@ -82,4 +95,4 @@ async def test_get_sentiment_requires_existing_call():
     db = AsyncMock(spec=AsyncSession)
 
     with pytest.raises(NotFoundError):
-        await service.get_sentiment(db, "missing-call")
+        await service.get_sentiment(db, "missing-call", _user())

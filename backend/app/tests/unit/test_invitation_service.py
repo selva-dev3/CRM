@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import HTTPException
@@ -8,11 +8,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import User
 from app.models.rbac import Role
 from app.schemas.organization_invitation_schemas import OrganizationInviteRequest
-from app.services.invitation_service import create_organization_user_invitation
+from app.services.invitation_service import (
+    _resolve_invitation_role,
+    create_organization_user_invitation,
+    list_organization_invitations,
+)
 
 
-def _make_role() -> Role:
-    return Role(id="role-1", name="role-1")
+def _make_role(**overrides) -> Role:
+    values = {
+        "id": "role-1",
+        "name": "role-1",
+        "organization_id": "org-1",
+        "is_system_role": False,
+    }
+    values.update(overrides)
+    return Role(**values)
 
 
 def _make_user(**overrides) -> User:
@@ -39,6 +50,59 @@ def _make_org(**overrides):
     }
     defaults.update(overrides)
     return type("Org", (), defaults)()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("is_system_role", [True, False])
+async def test_resolve_invitation_role_assigns_system_and_custom_roles(is_system_role):
+    db = AsyncMock(spec=AsyncSession)
+    role = _make_role(
+        name="Sales Manager",
+        organization_id="org-1",
+        is_system_role=is_system_role,
+    )
+    db.scalar.return_value = role
+
+    result = await _resolve_invitation_role(
+        db,
+        _make_user(),
+        role.id,
+        target_organization_id="org-1",
+    )
+
+    assert result is role
+
+
+@pytest.mark.asyncio
+async def test_resolve_invitation_role_rejects_foreign_tenant_role():
+    db = AsyncMock(spec=AsyncSession)
+    db.scalar.return_value = _make_role(organization_id="org-2")
+
+    with pytest.raises(HTTPException) as exc_info:
+        await _resolve_invitation_role(
+            db,
+            _make_user(organization_id="org-1"),
+            "role-1",
+            target_organization_id="org-1",
+        )
+
+    assert exc_info.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_list_organization_invitations_is_tenant_scoped():
+    count_result = MagicMock()
+    count_result.scalar.return_value = 0
+    list_result = MagicMock()
+    list_result.scalars.return_value.all.return_value = []
+    db = AsyncMock(spec=AsyncSession)
+    db.execute.side_effect = [count_result, list_result]
+
+    result = await list_organization_invitations(db, _make_user(organization_id="org-1"))
+
+    assert result.total == 0
+    for call in db.execute.await_args_list:
+        assert "organization_invitations.organization_id" in str(call.args[0])
 
 
 @pytest.mark.asyncio

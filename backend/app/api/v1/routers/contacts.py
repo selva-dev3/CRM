@@ -189,7 +189,11 @@ async def get_contact_notes(
     current_user: User = Depends(get_current_user),
 ):
     return await note_service.list_for_entity(
-        db, entity_type="contact", entity_id=contact_id, created_by_default=current_user.id
+        db,
+        entity_type="contact",
+        entity_id=contact_id,
+        created_by_default=current_user.id,
+        current_user=current_user,
     )
 
 

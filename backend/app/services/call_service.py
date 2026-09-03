@@ -5,7 +5,7 @@ from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, NotFoundError
-from app.models import CallLog
+from app.models import CallLog, User
 from app.repositories.call_repository import CallRepository
 from app.schemas.crm_schemas import CallLogBase
 from app.services.org_service import organization_service
@@ -46,20 +46,28 @@ class CallService:
         limit: int,
         search: str | None = None,
         call_type: str | None = None,
+        current_user: User,
     ) -> list[dict]:
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
         calls = await self.repository.list(
-            db, page=page, limit=limit, search=search, call_type=call_type
+            db,
+            page=page,
+            limit=limit,
+            organization_id=org_id,
+            search=search,
+            call_type=call_type,
         )
         return [call_to_dict(c) for c in calls]
 
-    async def get_call(self, db: AsyncSession, call_id: str) -> dict:
-        call = await self.repository.get_by_id(db, call_id)
+    async def get_call(self, db: AsyncSession, call_id: str, current_user: User) -> dict:
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        call = await self.repository.get_by_id(db, call_id, org_id)
         if not call:
             raise NotFoundError(message=f"Call log '{call_id}' not found")
         return call_to_dict(call)
 
-    async def log_call(self, db: AsyncSession, payload: CallLogBase) -> dict:
-        org_id = await organization_service.resolve_valid_org_id(db)
+    async def log_call(self, db: AsyncSession, payload: CallLogBase, current_user: User) -> dict:
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
         data = {
             "organization_id": org_id,
             "contact_id": payload.contact_id or "c-101",
@@ -79,29 +87,36 @@ class CallService:
             "timestamp": str(call.timestamp),
         }
 
-    async def bulk_delete(self, db: AsyncSession, ids: list[str]) -> dict:
-        calls = await self.repository.list_by_ids(db, ids)
+    async def bulk_delete(
+        self, db: AsyncSession, ids: list[str], current_user: User
+    ) -> dict:
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        calls = await self.repository.list_by_ids(db, ids, org_id)
         for call in calls:
             await self.repository.delete(db, call)
         await self._commit(db, "Failed to bulk delete call logs")
         return {"affected_count": len(calls), "message": "Call logs deleted successfully"}
 
-    async def delete_call(self, db: AsyncSession, call_id: str) -> dict:
-        call = await self.repository.get_by_id(db, call_id)
+    async def delete_call(self, db: AsyncSession, call_id: str, current_user: User) -> dict:
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        call = await self.repository.get_by_id(db, call_id, org_id)
         if not call:
             raise NotFoundError(message=f"Call log '{call_id}' not found")
         await self.repository.delete(db, call)
         await self._commit(db, "Failed to delete call log")
         return {"message": f"Call log {call_id} deleted successfully", "status": "success"}
 
-    async def require_call(self, db: AsyncSession, call_id: str) -> CallLog:
-        call = await self.repository.get_by_id(db, call_id)
+    async def require_call(
+        self, db: AsyncSession, call_id: str, current_user: User
+    ) -> CallLog:
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        call = await self.repository.get_by_id(db, call_id, org_id)
         if not call:
             raise NotFoundError(message=f"Call log '{call_id}' not found")
         return call
 
-    async def get_recording(self, db: AsyncSession, call_id: str) -> dict:
-        call = await self.require_call(db, call_id)
+    async def get_recording(self, db: AsyncSession, call_id: str, current_user: User) -> dict:
+        call = await self.require_call(db, call_id, current_user)
         try:
             recording_url = await asyncio.to_thread(
                 s3_service.generate_presigned_url, f"recordings/{call_id}.mp3"
@@ -114,8 +129,8 @@ class CallService:
             "duration_seconds": call.duration_seconds or 120,
         }
 
-    async def get_sentiment(self, db: AsyncSession, call_id: str) -> dict:
-        await self.require_call(db, call_id)
+    async def get_sentiment(self, db: AsyncSession, call_id: str, current_user: User) -> dict:
+        await self.require_call(db, call_id, current_user)
         return {
             "call_id": call_id,
             "overall_sentiment": "Positive",

@@ -1,5 +1,4 @@
 from fastapi import status
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, NotFoundError
@@ -38,13 +37,6 @@ class NoteService:
                 status_code=status.HTTP_400_BAD_REQUEST, message=error_message
             ) from e
 
-    async def _resolve_user_id(self, db: AsyncSession) -> str:
-        result = await db.execute(select(User).limit(1))
-        user = result.scalars().first()
-        if user:
-            return user.id
-        return "user-default-1"
-
     async def list_notes(
         self,
         db: AsyncSession,
@@ -53,56 +45,80 @@ class NoteService:
         limit: int,
         entity_type: str | None = None,
         search: str | None = None,
+        current_user: User,
     ) -> list[dict]:
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
         notes = await self.repository.list(
-            db, page=page, limit=limit, entity_type=entity_type, search=search
+            db,
+            page=page,
+            limit=limit,
+            organization_id=org_id,
+            entity_type=entity_type,
+            search=search,
         )
         return [note_to_dict(n) for n in notes]
 
     async def create_note(
-        self, db: AsyncSession, *, entity_type: str, entity_id: str, content: str
+        self,
+        db: AsyncSession,
+        *,
+        entity_type: str,
+        entity_id: str,
+        content: str,
+        current_user: User,
     ) -> dict:
-        org_id = await organization_service.resolve_valid_org_id(db)
-        created_by = await self._resolve_user_id(db)
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
         note = await self.repository.create(
             db,
             organization_id=org_id,
             entity_type=entity_type or "General",
             entity_id=entity_id or "General",
             content=content,
-            created_by=created_by,
+            created_by=current_user.id,
         )
         await self._commit(db, "Failed to create note")
         await db.refresh(note)
         return note_to_dict(note)
 
-    async def list_pinned(self, db: AsyncSession) -> list[dict]:
-        notes = await self.repository.list_pinned(db)
+    async def list_pinned(self, db: AsyncSession, current_user: User) -> list[dict]:
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        notes = await self.repository.list_pinned(db, org_id)
         return [note_to_dict(n) for n in notes]
 
     async def get_notes_by_entity(
-        self, db: AsyncSession, *, entity_type: str, entity_id: str
+        self,
+        db: AsyncSession,
+        *,
+        entity_type: str,
+        entity_id: str,
+        current_user: User,
     ) -> list[dict]:
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
         notes = await self.repository.list_by_entity(
-            db, entity_type=entity_type, entity_id=entity_id
+            db, entity_type=entity_type, entity_id=entity_id, organization_id=org_id
         )
         return [note_to_dict(n) for n in notes]
 
-    async def bulk_delete(self, db: AsyncSession, ids: list[str]) -> dict:
-        notes = await self.repository.list_by_ids(db, ids)
+    async def bulk_delete(self, db: AsyncSession, ids: list[str], current_user: User) -> dict:
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        notes = await self.repository.list_by_ids(db, ids, org_id)
         for note in notes:
             await self.repository.delete(db, note)
         await self._commit(db, "Failed to bulk delete notes")
         return {"affected_count": len(notes), "message": "Notes deleted successfully"}
 
-    async def get_note(self, db: AsyncSession, note_id: str) -> dict:
-        note = await self.repository.get_by_id(db, note_id)
+    async def get_note(self, db: AsyncSession, note_id: str, current_user: User) -> dict:
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        note = await self.repository.get_by_id(db, note_id, org_id)
         if not note:
             raise NotFoundError(message=f"Note '{note_id}' not found")
         return note_to_dict(note)
 
-    async def update_note(self, db: AsyncSession, note_id: str, content: str) -> dict:
-        note = await self.repository.get_by_id(db, note_id)
+    async def update_note(
+        self, db: AsyncSession, note_id: str, content: str, current_user: User
+    ) -> dict:
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        note = await self.repository.get_by_id(db, note_id, org_id)
         if not note:
             raise NotFoundError(message=f"Note '{note_id}' not found")
         note.content = content
@@ -110,16 +126,20 @@ class NoteService:
         await db.refresh(note)
         return note_to_dict(note)
 
-    async def delete_note(self, db: AsyncSession, note_id: str) -> dict:
-        note = await self.repository.get_by_id(db, note_id)
+    async def delete_note(self, db: AsyncSession, note_id: str, current_user: User) -> dict:
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        note = await self.repository.get_by_id(db, note_id, org_id)
         if not note:
             raise NotFoundError(message=f"Note '{note_id}' not found")
         await self.repository.delete(db, note)
         await self._commit(db, "Failed to delete note")
         return {"message": f"Note {note_id} deleted successfully", "status": "success"}
 
-    async def set_pinned(self, db: AsyncSession, note_id: str, pinned: bool) -> dict:
-        note = await self.repository.get_by_id(db, note_id)
+    async def set_pinned(
+        self, db: AsyncSession, note_id: str, pinned: bool, current_user: User
+    ) -> dict:
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        note = await self.repository.get_by_id(db, note_id, org_id)
         if not note:
             raise NotFoundError(message=f"Note '{note_id}' not found")
         note.is_pinned = pinned
@@ -136,9 +156,11 @@ class NoteService:
         entity_type: str,
         entity_id: str,
         created_by_default: str | None = None,
+        current_user: User,
     ) -> list[dict]:
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
         notes = await self.repository.list_by_entity(
-            db, entity_type=entity_type, entity_id=entity_id
+            db, entity_type=entity_type, entity_id=entity_id, organization_id=org_id
         )
         return [
             {

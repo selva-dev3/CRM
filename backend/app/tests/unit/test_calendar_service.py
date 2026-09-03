@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import NotFoundError
-from app.models import CalendarEventModel
+from app.models import CalendarEventModel, User
 from app.repositories.calendar_repository import CalendarRepository
 from app.schemas.crm_schemas import CalendarEventCreatePayload
 from app.services.calendar_service import CalendarService, event_to_dict, parse_datetime
@@ -26,6 +26,18 @@ def _make_event(**overrides) -> CalendarEventModel:
     return CalendarEventModel(**defaults)
 
 
+def _user() -> User:
+    return User(id="user-1", email="user@crm.com", organization_id="org-1")
+
+
+@pytest.fixture(autouse=True)
+def _stub_organization_resolution(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.calendar_service.organization_service.resolve_valid_org_id",
+        AsyncMock(return_value="org-1"),
+    )
+
+
 @pytest.mark.asyncio
 async def test_get_calendar_events_maps_rows():
     repo: Any = CalendarRepository()
@@ -33,17 +45,19 @@ async def test_get_calendar_events_maps_rows():
     service = CalendarService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.get_calendar_events(db, search="demo")
+    result = await service.get_calendar_events(db, search="demo", current_user=_user())
 
     assert result[0]["title"] == "Demo Meeting"
     assert result[0]["event_type"] == "Meeting"
+    repo.list_events.assert_awaited_once_with(
+        db, organization_id="org-1", search="demo"
+    )
 
 
 @pytest.mark.asyncio
 async def test_create_calendar_event_resolves_user(monkeypatch):
     event = _make_event()
     repo: Any = CalendarRepository()
-    repo.resolve_user_id = AsyncMock(return_value="user-1")
     repo.create_event = AsyncMock(return_value=event)
     service = CalendarService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -53,6 +67,7 @@ async def test_create_calendar_event_resolves_user(monkeypatch):
         CalendarEventCreatePayload(
             title="Demo", start="2026-08-10T10:00:00Z", end="2026-08-10T11:00:00Z"
         ),
+        current_user=_user(),
     )
 
     created = repo.create_event.await_args_list[-1].kwargs["data"]
@@ -70,7 +85,8 @@ async def test_get_calendar_event_not_found():
     db = AsyncMock(spec=AsyncSession)
 
     with pytest.raises(NotFoundError):
-        await service.get_calendar_event(db, "missing")
+        await service.get_calendar_event(db, "missing", _user())
+    repo.get_event.assert_awaited_once_with(db, "missing", "org-1")
 
 
 @pytest.mark.asyncio
@@ -85,6 +101,7 @@ async def test_update_calendar_event_partial():
         db,
         "evt-1",
         CalendarEventCreatePayload(title="Renamed", start="", end=""),
+        _user(),
     )
 
     assert event.title == "Renamed"
@@ -101,7 +118,7 @@ async def test_delete_calendar_event_commit():
     service = CalendarService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.delete_calendar_event(db, "evt-1")
+    result = await service.delete_calendar_event(db, "evt-1", _user())
 
     repo.delete_event.assert_awaited_once_with(db, event)
     assert result["status"] == "success"

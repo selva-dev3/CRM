@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import require_permission
+from app.api.v1.deps import get_current_user, require_permission
 from app.db.session import get_db
+from app.models import User
 from app.schemas.crm_schemas import (
     CalendarEventCreatePayload,
     CalendarEventResponse,
@@ -24,8 +25,11 @@ async def get_calendar_events(
     end_date: str | None = Query(None),
     search: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    return await calendar_service.get_calendar_events(db, search=search)
+    return await calendar_service.get_calendar_events(
+        db, search=search, current_user=current_user
+    )
 
 
 @router.post(
@@ -36,9 +40,11 @@ async def get_calendar_events(
     dependencies=[Depends(require_permission("calendar:write"))],
 )
 async def create_calendar_event(
-    payload: CalendarEventCreatePayload, db: AsyncSession = Depends(get_db)
+    payload: CalendarEventCreatePayload,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    return await calendar_service.create_calendar_event(db, payload)
+    return await calendar_service.create_calendar_event(db, payload, current_user)
 
 
 @router.get(
@@ -47,8 +53,12 @@ async def create_calendar_event(
     summary="Get calendar event details by ID",
     dependencies=[Depends(require_permission("calendar:read"))],
 )
-async def get_calendar_event(event_id: str, db: AsyncSession = Depends(get_db)):
-    return await calendar_service.get_calendar_event(db, event_id)
+async def get_calendar_event(
+    event_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await calendar_service.get_calendar_event(db, event_id, current_user)
 
 
 @router.put(
@@ -58,9 +68,12 @@ async def get_calendar_event(event_id: str, db: AsyncSession = Depends(get_db)):
     dependencies=[Depends(require_permission("calendar:write"))],
 )
 async def update_calendar_event(
-    event_id: str, payload: CalendarEventCreatePayload, db: AsyncSession = Depends(get_db)
+    event_id: str,
+    payload: CalendarEventCreatePayload,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    return await calendar_service.update_calendar_event(db, event_id, payload)
+    return await calendar_service.update_calendar_event(db, event_id, payload, current_user)
 
 
 @router.delete(
@@ -69,8 +82,12 @@ async def update_calendar_event(
     summary="Delete calendar event by ID",
     dependencies=[Depends(require_permission("calendar:write"))],
 )
-async def delete_calendar_event(event_id: str, db: AsyncSession = Depends(get_db)):
-    return await calendar_service.delete_calendar_event(db, event_id)
+async def delete_calendar_event(
+    event_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await calendar_service.delete_calendar_event(db, event_id, current_user)
 
 
 @router.get(

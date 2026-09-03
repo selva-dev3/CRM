@@ -189,8 +189,14 @@ async def get_company_invoices(company_id: str, db: AsyncSession = Depends(get_d
     summary="List notes for company",
     dependencies=[Depends(require_permission("companies:read"))],
 )
-async def get_company_notes(company_id: str, db: AsyncSession = Depends(get_db)):
-    return await note_service.list_for_entity(db, entity_type="company", entity_id=company_id)
+async def get_company_notes(
+    company_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await note_service.list_for_entity(
+        db, entity_type="company", entity_id=company_id, current_user=current_user
+    )
 
 
 @router.post(

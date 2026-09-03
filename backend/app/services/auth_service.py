@@ -15,8 +15,8 @@ from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.errors import APIException, NotFoundError
-from app.core.permissions import is_super_admin_role, is_super_admin_role_name
+from app.core.errors import APIException, ForbiddenError, NotFoundError
+from app.core.permissions import is_super_admin_role
 from app.core.security import (
     create_access_token,
     generate_random_code,
@@ -107,21 +107,23 @@ class AuthService:
         """
         permission_keys = set()
         try:
+            organization_id = self._require_organization_id(user)
             role_ids = set(await self.repository.role_ids_for_user(db, user.id))
             role_lookup = (resolved_role_name or user.role or "").strip()
             if role_lookup:
-                role_ids.update(await self.repository.role_ids_by_name(db, role_lookup))
-
-            if is_super_admin_role_name(role_lookup):
-                permission_keys.update(await self.repository.all_permission_keys(db))
-                return sorted(permission_keys)
+                role_ids.update(
+                    await self.repository.role_ids_by_name(db, role_lookup, organization_id)
+                )
 
             if role_ids:
-                keys = await self.repository.permission_keys_for_roles(db, list(role_ids))
+                roles = await self.repository.roles_by_ids(db, list(role_ids), organization_id)
+                authorized_role_ids = [role.id for role in roles]
+                if not authorized_role_ids:
+                    return []
+                if any(is_super_admin_role(role) for role in roles):
+                    return sorted(await self.repository.all_permission_keys(db))
+                keys = await self.repository.permission_keys_for_roles(db, authorized_role_ids)
                 permission_keys.update(keys)
-                roles = await self.repository.roles_by_ids(db, list(role_ids))
-                if any(is_super_admin_role(r) for r in roles):
-                    permission_keys.update(await self.repository.all_permission_keys(db))
         except Exception:
             logger.exception("Failed to resolve permissions for user %s", getattr(user, "id", None))
             permission_keys.clear()
@@ -599,8 +601,8 @@ class AuthService:
                 message=f"Failed to accept invitation: {str(e)}",
             ) from e
 
-    async def list_sessions(self, db: AsyncSession) -> list[dict]:
-        sessions = await self.repository.list_sessions(db)
+    async def list_sessions(self, db: AsyncSession, current_user: User) -> list[dict]:
+        sessions = await self.repository.list_sessions(db, current_user.id)
         return [
             {
                 "session_id": s.id,
@@ -611,8 +613,10 @@ class AuthService:
             for s in sessions
         ]
 
-    async def revoke_session(self, db: AsyncSession, session_id: str) -> dict:
-        session = await self.repository.get_session_by_id(db, session_id)
+    async def revoke_session(
+        self, db: AsyncSession, session_id: str, current_user: User
+    ) -> dict:
+        session = await self.repository.get_session_by_id(db, session_id, current_user.id)
         if not session:
             raise NotFoundError(message=f"Session '{session_id}' not found")
         await self.repository.delete_session(db, session)
@@ -669,42 +673,52 @@ class AuthService:
             "expires_in": 86400,
         }
 
-    async def list_api_keys(self, db: AsyncSession) -> list[dict]:
-        keys = await self.repository.list_api_keys(db)
+    @staticmethod
+    def _require_organization_id(user: User) -> str:
+        organization_id = getattr(user, "organization_id", None)
+        if not organization_id:
+            raise ForbiddenError(message="Authenticated user has no current organization")
+        return organization_id
+
+    async def list_api_keys(self, db: AsyncSession, current_user: User) -> list[dict]:
+        organization_id = self._require_organization_id(current_user)
+        keys = await self.repository.list_api_keys(db, organization_id)
         return [
             {
                 "id": k.id,
                 "name": k.name,
-                "api_key": k.key_hash,
+                "api_key": None,
+                "key": "********",
                 "created_at": str(k.created_at),
                 "last_used": str(k.last_used),
             }
             for k in keys
         ]
 
-    async def create_api_key(self, db: AsyncSession, payload: ApiKeyCreate) -> dict:
+    async def create_api_key(
+        self, db: AsyncSession, payload: ApiKeyCreate, current_user: User
+    ) -> dict:
         try:
-            org = await self.repository.get_first_org(db)
-            if not org:
-                org = await self.repository.create_org(db, name="Default Enterprise CRM")
-                await db.flush()
-
+            organization_id = self._require_organization_id(current_user)
             api_key_str = f"crm_live_{generate_random_code(24)}"
             key = await self.repository.create_api_key(
                 db,
                 data={
-                    "organization_id": org.id,
+                    "organization_id": organization_id,
                     "name": payload.name,
-                    "key_hash": api_key_str,
+                    "key_hash": sha256(api_key_str.encode("utf-8")).hexdigest(),
+                    "created_by": current_user.id,
                 },
             )
             await self._commit(db, "Failed to create API key")
             return {
                 "id": key.id,
                 "name": key.name,
-                "api_key": key.key_hash,
+                "api_key": api_key_str,
                 "created_at": str(key.created_at),
             }
+        except APIException:
+            raise
         except Exception as e:
             await db.rollback()
             raise APIException(status_code=status.HTTP_400_BAD_REQUEST, message=str(e)) from e

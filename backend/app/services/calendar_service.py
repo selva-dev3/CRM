@@ -4,9 +4,10 @@ from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, NotFoundError
-from app.models import CalendarEventModel
+from app.models import CalendarEventModel, User
 from app.repositories.calendar_repository import CalendarRepository
 from app.schemas.crm_schemas import CalendarEventCreatePayload
+from app.services.org_service import organization_service
 
 
 def parse_datetime(val: str | None) -> datetime:
@@ -54,18 +55,21 @@ class CalendarService:
         db: AsyncSession,
         *,
         search: str | None = None,
+        current_user: User,
     ) -> list[dict]:
-        events = await self.repository.list_events(db, search=search)
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        events = await self.repository.list_events(
+            db, organization_id=org_id, search=search
+        )
         return [event_to_dict(e) for e in events]
 
     async def create_calendar_event(
-        self, db: AsyncSession, payload: CalendarEventCreatePayload
+        self, db: AsyncSession, payload: CalendarEventCreatePayload, current_user: User
     ) -> dict:
-        uid = await self.repository.resolve_user_id(db)
         event = await self.repository.create_event(
             db,
             data={
-                "user_id": uid,
+                "user_id": current_user.id,
                 "title": payload.title,
                 "start_time": parse_datetime(payload.start),
                 "end_time": parse_datetime(payload.end),
@@ -77,16 +81,24 @@ class CalendarService:
         await db.refresh(event)
         return event_to_dict(event)
 
-    async def get_calendar_event(self, db: AsyncSession, event_id: str) -> dict:
-        event = await self.repository.get_event(db, event_id)
+    async def get_calendar_event(
+        self, db: AsyncSession, event_id: str, current_user: User
+    ) -> dict:
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        event = await self.repository.get_event(db, event_id, org_id)
         if not event:
             raise NotFoundError(message=f"Calendar event '{event_id}' not found")
         return event_to_dict(event)
 
     async def update_calendar_event(
-        self, db: AsyncSession, event_id: str, payload: CalendarEventCreatePayload
+        self,
+        db: AsyncSession,
+        event_id: str,
+        payload: CalendarEventCreatePayload,
+        current_user: User,
     ) -> dict:
-        event = await self.repository.get_event(db, event_id)
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        event = await self.repository.get_event(db, event_id, org_id)
         if not event:
             raise NotFoundError(message=f"Calendar event '{event_id}' not found")
         try:
@@ -107,8 +119,11 @@ class CalendarService:
             await db.rollback()
             raise APIException(status_code=status.HTTP_400_BAD_REQUEST, message=str(e)) from e
 
-    async def delete_calendar_event(self, db: AsyncSession, event_id: str) -> dict:
-        event = await self.repository.get_event(db, event_id)
+    async def delete_calendar_event(
+        self, db: AsyncSession, event_id: str, current_user: User
+    ) -> dict:
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        event = await self.repository.get_event(db, event_id, org_id)
         if not event:
             raise NotFoundError(message=f"Calendar event '{event_id}' not found")
         await self.repository.delete_event(db, event)

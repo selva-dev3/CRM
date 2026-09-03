@@ -88,6 +88,16 @@ DEFAULT_PLANS_FALLBACK: dict[str, InvitationPlanInfo] = {
 }
 
 
+def _require_current_organization_id(current_user: User) -> str:
+    organization_id = getattr(current_user, "organization_id", None)
+    if not organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Authenticated user has no current organization",
+        )
+    return organization_id
+
+
 def _build_invitation_response(
     inv: OrganizationInvitation, org_name: str | None = None
 ) -> InvitationResponse:
@@ -114,22 +124,43 @@ def _build_invitation_response(
 
 
 async def _resolve_invitation_role(
-    db: AsyncSession, current_user: User, role_value: str | None = "Admin"
+    db: AsyncSession,
+    current_user: User,
+    role_value: str | None = "Admin",
+    *,
+    target_organization_id: str | None,
 ) -> Role:
     """Resolve and authorize the role attached to an organization invitation.
 
     Enforced server-side regardless of any frontend filtering:
     1. Role must exist.
-    2. The super_admin role may only be assigned by a super_admin actor (403 otherwise).
+    2. Role must be global or belong to the target organization. New-organization
+       invitations may use global roles only.
+    3. The super_admin role may only be assigned by a super_admin actor (403 otherwise).
     """
     role_str = (role_value or "").strip() or "Admin"
-    role = await db.scalar(
-        select(Role).where((Role.id == role_str) | (func.lower(Role.name) == role_str.lower()))
+    ownership = (
+        Role.organization_id.is_(None)
+        if target_organization_id is None
+        else or_(
+            Role.organization_id.is_(None),
+            Role.organization_id == target_organization_id,
+        )
     )
-    if not role:
+    role = await db.scalar(
+        select(Role).where(
+            ((Role.id == role_str) | (func.lower(Role.name) == role_str.lower())),
+            ownership,
+        )
+    )
+    if not role and role_str.lower() in {"admin", "administrator"}:
         role = await db.scalar(
             select(Role).where(
-                (func.lower(Role.name) == "admin") | (func.lower(Role.name) == "administrator")
+                (
+                    (func.lower(Role.name) == "admin")
+                    | (func.lower(Role.name) == "administrator")
+                ),
+                ownership,
             )
         )
     if not role:
@@ -137,10 +168,16 @@ async def _resolve_invitation_role(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid role: '{role_value}'",
         )
-    ensure_can_assign_role(
-        actor_is_super_admin=await is_super_admin_user(db, current_user),
-        target_is_super_admin=is_super_admin_role(role),
-    )
+    if role.organization_id is not None and role.organization_id != target_organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Role '{role.name}' does not belong to the target organization",
+        )
+    if is_super_admin_role(role):
+        ensure_can_assign_role(
+            actor_is_super_admin=await is_super_admin_user(db, current_user),
+            target_is_super_admin=True,
+        )
     return role
 
 
@@ -167,7 +204,9 @@ async def create_new_organization_invitation(
         )
 
     # 2. Resolve & authorize the requested role (super_admin guard enforced here)
-    role = await _resolve_invitation_role(db, current_user, payload.role_id)
+    role = await _resolve_invitation_role(
+        db, current_user, payload.role_id, target_organization_id=None
+    )
     role_name = role.name
 
     # 3. Create the NEW organization with a backend-generated ID
@@ -323,7 +362,12 @@ async def create_organization_user_invitation(
     )
 
     # Resolve & authorize the requested role (super_admin only assignable by a super_admin actor)
-    role = await _resolve_invitation_role(db, current_user, payload.role or "Admin")
+    role = await _resolve_invitation_role(
+        db,
+        current_user,
+        payload.role or "Admin",
+        target_organization_id=target_org_id,
+    )
     role_name = role.name
 
     # Check if user is already registered & active
@@ -621,8 +665,12 @@ async def resend_organization_invitation(
     db: AsyncSession, invitation_id: str, current_user: User
 ) -> InvitationResponse:
     """Generate new token, expire old token, send email again."""
+    organization_id = _require_current_organization_id(current_user)
     inv = await db.scalar(
-        select(OrganizationInvitation).where(OrganizationInvitation.id == invitation_id)
+        select(OrganizationInvitation).where(
+            OrganizationInvitation.id == invitation_id,
+            OrganizationInvitation.organization_id == organization_id,
+        )
     )
     if not inv:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invitation not found.")
@@ -668,8 +716,12 @@ async def cancel_organization_invitation(
     db: AsyncSession, invitation_id: str, current_user: User
 ) -> dict:
     """Cancel an invitation."""
+    organization_id = _require_current_organization_id(current_user)
     inv = await db.scalar(
-        select(OrganizationInvitation).where(OrganizationInvitation.id == invitation_id)
+        select(OrganizationInvitation).where(
+            OrganizationInvitation.id == invitation_id,
+            OrganizationInvitation.organization_id == organization_id,
+        )
     )
     if not inv:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invitation not found.")
@@ -700,6 +752,7 @@ async def cancel_organization_invitation(
 
 async def list_organization_invitations(
     db: AsyncSession,
+    current_user: User,
     search: str | None = None,
     status_filter: str | None = None,
     page: int = 1,
@@ -707,7 +760,10 @@ async def list_organization_invitations(
     sort_by: str = "created_at",
 ) -> InvitationListResponse:
     """List invitations with search, status filter, pagination, and sorting."""
-    query = select(OrganizationInvitation)
+    organization_id = _require_current_organization_id(current_user)
+    query = select(OrganizationInvitation).where(
+        OrganizationInvitation.organization_id == organization_id
+    )
 
     if search and search.strip():
         term = f"%{search.strip()}%"
