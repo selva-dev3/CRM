@@ -29,6 +29,11 @@ def is_super_admin_role(role) -> bool:
     return is_super_admin_role_name(getattr(role, "name", "") or "")
 
 
+def is_global_super_admin_role(role) -> bool:
+    """Whether a role is the protected global platform super_admin role."""
+    return is_super_admin_role(role) and getattr(role, "organization_id", None) is None
+
+
 async def is_super_admin_user(db, user) -> bool:
     """Whether the given user is a platform super_admin.
 
@@ -38,13 +43,16 @@ async def is_super_admin_user(db, user) -> bool:
     """
     from app.repositories.role_repository import RoleRepository
 
-    role_value = getattr(user, "role", "") or ""
+    role_value = (getattr(user, "role", "") or "").strip()
     if is_super_admin_role_name(role_value):
-        return True
+        role = await RoleRepository().get_global_role_by_names(
+            db, tuple(sorted(SUPER_ADMIN_ROLE_NAMES))
+        )
+        return bool(role and is_global_super_admin_role(role))
     if not role_value:
         return False
     role = await RoleRepository().get_role_by_id_or_name(db, role_value)
-    return bool(role and is_super_admin_role(role))
+    return bool(role and is_global_super_admin_role(role))
 
 
 def ensure_can_assign_role(*, actor_is_super_admin: bool, target_is_super_admin: bool) -> None:

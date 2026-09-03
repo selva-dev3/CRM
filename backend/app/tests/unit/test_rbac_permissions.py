@@ -32,6 +32,7 @@ from app.api.v1.routers import (
     users,
 )
 from app.core.errors import ForbiddenError
+from app.core.permissions import is_super_admin_user
 from app.models import User
 from app.services.auth_service import AuthService, auth_service
 
@@ -192,6 +193,72 @@ async def test_get_user_permissions_grants_all_when_resolved_role_is_super_admin
 
     keys = await service.get_user_permissions(db, user)
     assert set(keys) == {"deals:read", "roles:update", "super_admin:manage"}
+
+
+@pytest.mark.asyncio
+async def test_legacy_super_admin_alias_resolves_global_role_without_mapping():
+    repo = AsyncMock()
+    repo.all_permission_keys.return_value = ["dashboard:read", "organization:read"]
+    repo.role_ids_for_user.return_value = []
+    repo.role_ids_by_name.side_effect = lambda _db, name, _org, **_kwargs: (
+        ["global-super"] if name == "super admin" else []
+    )
+    repo.roles_by_ids.return_value = [
+        type(
+            "R",
+            (),
+            {"id": "global-super", "name": "Super Admin", "organization_id": None},
+        )()
+    ]
+    service = AuthService(repository=repo)
+    user = _make_user(role="super_admin", organization_id="org-1")
+
+    keys = await service.get_user_permissions(AsyncMock(spec=AsyncSession), user)
+
+    assert keys == ["dashboard:read", "organization:read"]
+    assert repo.role_ids_by_name.await_count == 2
+    for call in repo.role_ids_by_name.await_args_list:
+        assert call.kwargs == {"global_only": True}
+
+
+@pytest.mark.asyncio
+async def test_tenant_super_admin_named_role_does_not_receive_global_access():
+    repo = AsyncMock()
+    repo.all_permission_keys.return_value = ["dashboard:read", "organization:read"]
+    repo.role_ids_for_user.return_value = ["tenant-super"]
+    repo.roles_by_ids.return_value = [
+        type(
+            "R",
+            (),
+            {"id": "tenant-super", "name": "Super Admin", "organization_id": "org-1"},
+        )()
+    ]
+    repo.permission_keys_for_roles.return_value = ["dashboard:read"]
+    service = AuthService(repository=repo)
+    user = _make_user(role="00000000-0000-0000-0000-000000000001", organization_id="org-1")
+
+    keys = await service.get_user_permissions(AsyncMock(spec=AsyncSession), user)
+
+    assert keys == ["dashboard:read"]
+    repo.all_permission_keys.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_super_admin_actor_requires_protected_global_role(monkeypatch):
+    global_role = type("R", (), {"name": "Super Admin", "organization_id": None})()
+    get_global_role = AsyncMock(return_value=global_role)
+    monkeypatch.setattr(
+        "app.repositories.role_repository.RoleRepository.get_global_role_by_names",
+        get_global_role,
+    )
+    user = _make_user(role="super_admin")
+
+    assert await is_super_admin_user(AsyncMock(spec=AsyncSession), user) is True
+
+    get_global_role.return_value = type(
+        "R", (), {"name": "Super Admin", "organization_id": "org-1"}
+    )()
+    assert await is_super_admin_user(AsyncMock(spec=AsyncSession), user) is False
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
@@ -60,6 +60,21 @@ class RoleRepository:
         res = await db.execute(select(Role).where((Role.id == value) | (Role.name == value)))
         return res.scalars().first()
 
+    async def get_global_role_by_names(self, db: AsyncSession, names: Sequence[str]) -> Role | None:
+        normalized_names = [name.strip().lower() for name in names if name.strip()]
+        if not normalized_names:
+            return None
+        res = await db.execute(
+            select(Role)
+            .where(
+                Role.organization_id.is_(None),
+                func.lower(Role.name).in_(normalized_names),
+            )
+            .order_by(Role.created_at.asc())
+            .limit(1)
+        )
+        return res.scalars().first()
+
     async def get_system_roles(
         self, db: AsyncSession, organization_id: str
     ) -> Sequence[Role]:
@@ -83,10 +98,23 @@ class RoleRepository:
         name: str,
         description: str,
         organization_id: str | None = None,
+        is_system_role: bool = False,
     ) -> Role:
-        role = Role(name=name, description=description, organization_id=organization_id)
+        role = Role(
+            name=name,
+            description=description,
+            organization_id=organization_id,
+            is_system_role=is_system_role,
+        )
         db.add(role)
         return role
+
+    async def create_user_role_mapping(
+        self, db: AsyncSession, *, user_id: str, role_id: str
+    ) -> UserRole:
+        mapping = UserRole(user_id=user_id, role_id=role_id)
+        db.add(mapping)
+        return mapping
 
     async def delete_role(self, db: AsyncSession, role: Role) -> None:
         await db.delete(role)
@@ -126,7 +154,9 @@ class RoleRepository:
         db.add(permission)
         return permission
 
-    async def seed_permissions(self, db: AsyncSession, items: list[dict]) -> None:
+    async def seed_permissions(
+        self, db: AsyncSession, items: list[dict], *, commit: bool = True
+    ) -> None:
         from sqlalchemy import func
         from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
@@ -187,17 +217,20 @@ class RoleRepository:
                     except IntegrityError:
                         existing_pids.add(p.id)
 
-        try:
-            await db.commit()
-        except IntegrityError as e:
-            logger.warning(
-                "IntegrityError during seed_permissions commit, rolling back: %s", e, exc_info=True
-            )
-            await db.rollback()
-        except SQLAlchemyError as e:
-            logger.exception("Database error occurred during seed_permissions commit: %s", e)
-            await db.rollback()
-            raise
+        if commit:
+            try:
+                await db.commit()
+            except IntegrityError as e:
+                logger.warning(
+                    "IntegrityError during seed_permissions commit, rolling back: %s",
+                    e,
+                    exc_info=True,
+                )
+                await db.rollback()
+            except SQLAlchemyError as e:
+                logger.exception("Database error occurred during seed_permissions commit: %s", e)
+                await db.rollback()
+                raise
 
     # --- RolePermission mapping ---
     async def get_role_permissions(self, db: AsyncSession, role_id: str) -> Sequence[Permission]:

@@ -102,6 +102,38 @@ async def test_login_returns_token_and_user(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_login_returns_permissions_for_legacy_super_admin(monkeypatch):
+    user = _make_user(role="super_admin")
+    repo: Any = AuthRepository()
+    repo.get_user_by_email = AsyncMock(return_value=user)
+    repo.role_ids_for_user = AsyncMock(return_value=[])
+    repo.role_ids_by_name = AsyncMock(return_value=["global-super"])
+    repo.roles_by_ids = AsyncMock(
+        return_value=[
+            type(
+                "R",
+                (),
+                {"id": "global-super", "name": "Super Admin", "organization_id": None},
+            )()
+        ]
+    )
+    repo.all_permission_keys = AsyncMock(
+        return_value=["dashboard:read", "organization:read"]
+    )
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    monkeypatch.setattr("app.services.auth_service.verify_password", lambda _pwd, _hashed: True)
+    monkeypatch.setattr("app.services.auth_service.create_access_token", lambda _user_id: "token")
+
+    result = await service.login(
+        db, LoginRequest(email="alex@crm.com", password=VALID_INPUT)
+    )
+
+    assert result["user"]["role"] == "super_admin"
+    assert result["user"]["permissions"] == ["dashboard:read", "organization:read"]
+
+
+@pytest.mark.asyncio
 async def test_request_magic_link_persists_only_token_digest(monkeypatch):
     user = _make_user()
     repo: Any = AuthRepository()
@@ -354,6 +386,19 @@ async def test_get_user_role_name_resolves_uuid_role():
 
     user = _make_user(role="00000000-0000-0000-0000-000000000001")
     assert await service.get_user_role_name(db, user) == "Sales Manager"
+
+
+@pytest.mark.asyncio
+async def test_get_user_role_name_preserves_legacy_super_admin_identity():
+    repo: Any = AuthRepository()
+    repo.get_user_role_id = AsyncMock(return_value="admin-role")
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    user = _make_user(role="super_admin")
+
+    assert await service.get_user_role_name(db, user) == "super_admin"
+    repo.get_user_role_id.assert_not_awaited()
 
 
 @pytest.mark.asyncio

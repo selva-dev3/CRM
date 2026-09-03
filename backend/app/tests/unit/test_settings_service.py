@@ -8,7 +8,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException
-from app.models import User
+from app.models import Role, User
+from app.repositories.role_repository import RoleRepository
 from app.repositories.setting_repository import SettingRepository
 from app.services.settings_service import SettingsService
 
@@ -292,6 +293,41 @@ async def test_reset_database_requires_confirmation():
 
     with pytest.raises(APIException):
         await service.reset_database(db, confirm=False)
+
+
+@pytest.mark.asyncio
+async def test_reset_database_rebuilds_super_admin_rbac_graph():
+    repo: Any = SettingRepository()
+    repo.get_user_by_email = AsyncMock(return_value=None)
+    repo.list_table_names = AsyncMock(return_value=[])
+    role_repo: Any = RoleRepository()
+    role_repo.create_role = AsyncMock(
+        return_value=Role(
+            id="super-role",
+            name="Super Admin",
+            organization_id=None,
+            is_system_role=True,
+        )
+    )
+    role_repo.create_user_role_mapping = AsyncMock()
+    role_repo.seed_permissions = AsyncMock()
+    service = SettingsService(repository=repo, role_repository=role_repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.reset_database(db, confirm=True)
+
+    assert result["status"] == "success"
+    role_repo.create_role.assert_awaited_once_with(
+        db,
+        name="Super Admin",
+        description="Protected global platform administrator role",
+        organization_id=None,
+        is_system_role=True,
+    )
+    role_repo.create_user_role_mapping.assert_awaited_once()
+    role_repo.seed_permissions.assert_awaited_once()
+    assert role_repo.seed_permissions.await_args.kwargs == {"commit": False}
+    db.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio

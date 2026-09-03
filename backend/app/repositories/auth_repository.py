@@ -216,12 +216,22 @@ class AuthRepository:
         return [role_id for role_id in result.scalars().all() if role_id]
 
     async def role_ids_by_name(
-        self, db: AsyncSession, role_name: str, organization_id: str
+        self,
+        db: AsyncSession,
+        role_name: str,
+        organization_id: str,
+        *,
+        global_only: bool = False,
     ) -> list[str]:
+        ownership_filter = (
+            Role.organization_id.is_(None)
+            if global_only
+            else (Role.organization_id.is_(None)) | (Role.organization_id == organization_id)
+        )
         result = await db.execute(
             select(Role.id).where(
                 func.lower(Role.name) == role_name.strip().lower(),
-                (Role.organization_id.is_(None)) | (Role.organization_id == organization_id),
+                ownership_filter,
             )
         )
         return [role_id for role_id in result.scalars().all() if role_id]
