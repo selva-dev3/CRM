@@ -48,7 +48,7 @@ import {
   deactivateUserApi,
   deleteUserApi
 } from '@/lib/api/users';
-import { useOrganizationsQuery } from '@/lib/api/organizations';
+import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
 import { RoleSearchCombobox } from '@/components/features/users/role-search-combobox';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -89,7 +89,7 @@ export default function UsersPage() {
     enabled: activeTab === 'invites',
   });
 
-  const { data: organizations = [] } = useOrganizationsQuery();
+  const { data: currentOrganization } = useCurrentOrganizationQuery();
 
   // Mutations
   const createUserMutation = useCreateUserMutation();
@@ -119,9 +119,9 @@ export default function UsersPage() {
   // Organization lookup map for DataTable rendering
   const orgMap = useMemo(() => {
     const map = new Map<string, string>();
-    organizations.forEach((org) => map.set(org.id, org.name));
+    if (currentOrganization) map.set(currentOrganization.id, currentOrganization.name);
     return map;
-  }, [organizations]);
+  }, [currentOrganization]);
 
   const resetForm = () => {
     setUserName('');

@@ -56,7 +56,7 @@ import {
   useAssignLeadMutation,
   Lead 
 } from '@/lib/api/leads';
-import { useOrganizationsQuery } from '@/lib/api/organizations';
+import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
 import { useCompaniesQuery } from '@/lib/api/companies';
 import { useUsersQuery } from '@/lib/api/users';
 
@@ -160,7 +160,8 @@ export default function LeadsPage() {
     return () => clearTimeout(timer);
   }, [userSearchTerm]);
 
-  const { data: organizations = [], isLoading: isOrgsLoading } = useOrganizationsQuery();
+  const { data: currentOrganization, isLoading: isOrgsLoading } = useCurrentOrganizationQuery();
+  const organizations = currentOrganization ? [currentOrganization] : [];
   const { data: companies = [], isLoading: isCompaniesLoading } = useCompaniesQuery();
   const { data: users = [], isLoading: isUsersLoading } = useUsersQuery(1, 100, debouncedUserSearchTerm || undefined);
 

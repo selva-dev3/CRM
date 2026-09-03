@@ -42,7 +42,7 @@ import {
   exportContactsCsvApi,
   ContactItem
 } from '@/lib/api/contacts';
-import { useOrganizationsQuery } from '@/lib/api/organizations';
+import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
 import { useCompaniesQuery } from '@/lib/api/companies';
 import { SearchableCompanySelect } from '@/components/common/searchable-company-select';
 
@@ -102,7 +102,8 @@ export default function ContactsPage() {
   // Queries
   const { data: allContacts = [], refetch: refetchAll } = useContactsQuery(page, limit, debouncedSearchTerm);
   const { data: starredContacts = [], refetch: refetchStarred } = useStarredContactsQuery();
-  const { data: organizations = [] } = useOrganizationsQuery();
+  const { data: currentOrganization } = useCurrentOrganizationQuery();
+  const organizations = currentOrganization ? [currentOrganization] : [];
   const { data: companiesList = [] } = useCompaniesQuery(1, 100);
 
   const contacts = activeTab === 'starred' ? starredContacts : allContacts;

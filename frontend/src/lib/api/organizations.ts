@@ -157,74 +157,52 @@ export async function getCurrentOrganizationApi(): Promise<OrganizationItem> {
   return apiClient.get<OrganizationItem>('/organizations');
 }
 
-// 2. GET /api/v1/organizations/all (List all organizations)
-export async function getAllOrganizationsApi(): Promise<OrganizationItem[]> {
-  try {
-    const data = await apiClient.get<OrganizationItem[] | OrganizationItem>('/organizations/all');
-    if (Array.isArray(data)) return data;
-    if (data && typeof data === 'object' && 'id' in data) return [data];
-  } catch {
-    try {
-      const single = await apiClient.get<OrganizationItem>('/organizations');
-      if (single && single.id) return [single];
-    } catch {
-      // fallback
-    }
-  }
-  return [];
-}
-
-// 3. GET /api/v1/organizations/{org_id} (Get organization by ID)
+// 2. GET /api/v1/organizations/{org_id} (Get organization by ID)
 export async function fetchOrganizationByIdApi(id: string): Promise<OrganizationItem> {
   return apiClient.get<OrganizationItem>(`/organizations/${id}`);
 }
 
-// 4. POST /api/v1/organizations (Create organization)
-export async function createOrganizationApi(payload: CreateOrganizationPayload): Promise<OrganizationItem> {
-  return apiClient.post<OrganizationItem>('/organizations', payload);
-}
-
-// 5. PUT /api/v1/organizations/{org_id} (Update organization by ID)
+// 3. PUT /api/v1/organizations/{org_id} (Update organization by ID)
 export async function updateOrganizationApi(id: string, payload: UpdateOrganizationPayload): Promise<OrganizationItem> {
   return apiClient.put<OrganizationItem>(`/organizations/${id}`, payload);
 }
 
-// 5b. DELETE /api/v1/organizations/{org_id} (Delete organization by ID)
+// 3b. DELETE /api/v1/organizations/{org_id} (Delete organization by ID)
 export async function deleteOrganizationApi(id: string): Promise<{ message: string; status: string }> {
   return apiClient.delete<{ message: string; status: string }>(`/organizations/${id}`);
 }
 
-// 6. GET /api/v1/organizations/members (List members)
+// 4. GET /api/v1/organizations/members (List members)
 export async function getOrganizationMembersApi(): Promise<OrganizationMember[]> {
   return apiClient.get<OrganizationMember[]>('/organizations/members');
 }
 
-// 7. DELETE /api/v1/organizations/members/{user_id} (Remove member)
+// 5. DELETE /api/v1/organizations/members/{user_id} (Remove member)
 export async function removeOrganizationMemberApi(userId: string): Promise<{ message: string; status: string }> {
   return apiClient.delete<{ message: string; status: string }>(`/organizations/members/${userId}`);
 }
 
-// 8. GET /api/v1/organizations/subscription (Subscription details)
+// 6. GET /api/v1/organizations/subscription (Subscription details)
 export async function getOrganizationSubscriptionApi(): Promise<OrganizationSubscription> {
   return apiClient.get<OrganizationSubscription>('/organizations/subscription');
 }
 
-// 8b. GET /api/v1/organizations/subscription/plans (List available plans)
+// 6b. GET /api/v1/organizations/subscription/plans (List available plans)
 export async function getSubscriptionPlansApi(): Promise<SubscriptionPlanItem[]> {
   return apiClient.get<SubscriptionPlanItem[]>('/organizations/subscription/plans');
 }
 
-// 9. POST /api/v1/organizations/subscription/upgrade (Upgrade plan)
+// 7. POST /api/v1/organizations/subscription/upgrade (Upgrade plan)
 export async function upgradeOrganizationSubscriptionApi(planSlug: string): Promise<{ message: string; status: string }> {
   return apiClient.post<{ message: string; status: string }>(`/organizations/subscription/upgrade?plan_slug=${encodeURIComponent(planSlug)}`);
 }
 
-// 9b. POST /api/v1/organizations/subscription/checkout (Create Stripe checkout session)
+// 7b. POST /api/v1/organizations/subscription/checkout (Create Stripe checkout session)
 export async function createSubscriptionCheckoutApi(payload: CreateSubscriptionCheckoutPayload): Promise<SubscriptionCheckoutResponse> {
   return apiClient.post<SubscriptionCheckoutResponse>('/organizations/subscription/checkout', payload);
 }
 
-// 9c. GET /api/v1/organizations/subscription/checkout/verify (Verify Stripe checkout session)
+// 7c. GET /api/v1/organizations/subscription/checkout/verify (Verify Stripe checkout session)
 export async function verifySubscriptionCheckoutApi(sessionId: string, orgId?: string): Promise<SubscriptionCheckoutVerifyResponse> {
   const url = orgId
     ? `/organizations/subscription/checkout/verify?session_id=${encodeURIComponent(sessionId)}&org_id=${encodeURIComponent(orgId)}`
@@ -232,37 +210,37 @@ export async function verifySubscriptionCheckoutApi(sessionId: string, orgId?: s
   return apiClient.get<SubscriptionCheckoutVerifyResponse>(url);
 }
 
-// 10. POST /api/v1/organizations/subscription/cancel (Cancel subscription)
+// 8. POST /api/v1/organizations/subscription/cancel (Cancel subscription)
 export async function cancelOrganizationSubscriptionApi(): Promise<{ message: string; status: string }> {
   return apiClient.post<{ message: string; status: string }>('/organizations/subscription/cancel');
 }
 
-// 11. GET /api/v1/organizations/usage (Get usage metrics & quotas)
+// 9. GET /api/v1/organizations/usage (Get usage metrics & quotas)
 export async function getOrganizationUsageApi(): Promise<OrganizationUsage> {
   return apiClient.get<OrganizationUsage>('/organizations/usage');
 }
 
-// 12. POST /api/v1/organizations/branding (Update branding & upload logo to S3)
+// 10. POST /api/v1/organizations/branding (Update branding & upload logo to S3)
 export async function updateOrganizationBrandingApi(formData: FormData): Promise<{ message: string; status: string }> {
   return apiClient.post<{ message: string; status: string }>('/organizations/branding', formData);
 }
 
-// 13. POST /api/v1/organizations/domains/verify (Verify domain TXT record)
+// 11. POST /api/v1/organizations/domains/verify (Verify domain TXT record)
 export async function verifyOrganizationDomainApi(domain: string): Promise<{ message: string; status: string }> {
   return apiClient.post<{ message: string; status: string }>(`/organizations/domains/verify?domain=${encodeURIComponent(domain)}`);
 }
 
-// 14. GET /api/v1/organizations/domains (List custom domains)
+// 12. GET /api/v1/organizations/domains (List custom domains)
 export async function getOrganizationDomainsApi(): Promise<OrganizationDomain[]> {
   return apiClient.get<OrganizationDomain[]>('/organizations/domains');
 }
 
-// 15. GET /api/v1/organizations/audit-logs (Get audit logs)
+// 13. GET /api/v1/organizations/audit-logs (Get audit logs)
 export async function getOrganizationAuditLogsApi(): Promise<OrganizationAuditLog[]> {
   return apiClient.get<OrganizationAuditLog[]>('/organizations/audit-logs');
 }
 
-// 16. POST /api/v1/organizations/transfer-ownership (Transfer ownership)
+// 14. POST /api/v1/organizations/transfer-ownership (Transfer ownership)
 export async function transferOrganizationOwnershipApi(newOwnerUserId: string): Promise<{ message: string; status: string }> {
   return apiClient.post<{ message: string; status: string }>(`/organizations/transfer-ownership?new_owner_user_id=${encodeURIComponent(newOwnerUserId)}`);
 }
@@ -275,29 +253,11 @@ export function useCurrentOrganizationQuery() {
   });
 }
 
-export function useOrganizationsQuery() {
-  return useQuery({
-    queryKey: ['organizations'],
-    queryFn: getAllOrganizationsApi,
-  });
-}
-
 export function useOrganizationByIdQuery(id: string) {
   return useQuery({
     queryKey: ['organization', id],
     queryFn: () => fetchOrganizationByIdApi(id),
     enabled: Boolean(id),
-  });
-}
-
-export function useCreateOrganizationMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: createOrganizationApi,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['organizations'] });
-      queryClient.invalidateQueries({ queryKey: ['current-organization'] });
-    },
   });
 }
 

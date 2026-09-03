@@ -12,7 +12,7 @@ const useDeactivateUserMutationMock = vi.fn();
 const useDeleteUserMutationMock = vi.fn();
 const deactivateUserApiMock = vi.fn();
 const deleteUserApiMock = vi.fn();
-const useOrganizationsQueryMock = vi.fn();
+const useCurrentOrganizationQueryMock = vi.fn();
 const createMutateAsyncMock = vi.fn();
 const inviteMutateAsyncMock = vi.fn();
 const queryClientMock = { invalidateQueries: vi.fn() };
@@ -38,7 +38,7 @@ vi.mock('@/lib/api/users', () => ({
 }));
 
 vi.mock('@/lib/api/organizations', () => ({
-  useOrganizationsQuery: (...args: unknown[]) => useOrganizationsQueryMock(...args),
+  useCurrentOrganizationQuery: (...args: unknown[]) => useCurrentOrganizationQueryMock(...args),
 }));
 
 vi.mock('@/components/common/permission-gate', () => ({
@@ -69,7 +69,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   useUsersQueryMock.mockReturnValue({ data: [], isLoading: false, isError: false, refetch: vi.fn() });
   useUserInvitationsQueryMock.mockReturnValue({ data: [], isLoading: false, isError: false, refetch: vi.fn() });
-  useOrganizationsQueryMock.mockReturnValue({ data: [], isLoading: false, isError: false });
+  useCurrentOrganizationQueryMock.mockReturnValue({ data: undefined, isLoading: false, isError: false });
   useCreateUserMutationMock.mockReturnValue({ mutateAsync: createMutateAsyncMock });
   useInviteUsersMutationMock.mockReturnValue({ mutateAsync: inviteMutateAsyncMock });
   useActivateUserMutationMock.mockReturnValue({ mutateAsync: vi.fn() });

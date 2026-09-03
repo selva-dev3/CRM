@@ -11,7 +11,7 @@ from app.core.errors import APIException, NotFoundError
 from app.core.logging import get_logger
 from app.models import Organization, OrganizationSubscription, SubscriptionPlan, User
 from app.repositories.organization_repository import OrganizationRepository
-from app.schemas.crm_schemas import OrganizationCreate, OrganizationUpdate
+from app.schemas.crm_schemas import OrganizationUpdate
 from app.services.s3_service import s3_service
 
 logger = get_logger(__name__)
@@ -219,108 +219,10 @@ class OrganizationDomainService:
             db_plan = await self.repository.get_plan_by_slug(db, plan_slug)
         return self._plan_to_info(db_plan, org)
 
-    async def create_organization(self, db: AsyncSession, payload: OrganizationCreate) -> dict:
-        try:
-            slug = payload.slug or payload.name.lower().replace(" ", "-")
-            domain = payload.domain or f"{slug}.crm.com"
-
-            existing_slug = await self.repository.get_by_slug(db, slug)
-            if existing_slug:
-                slug = f"{slug}-{uuid.uuid4().hex[:4]}"
-
-            org = await self.repository.create(
-                db,
-                data={
-                    "id": str(uuid.uuid4()),
-                    "name": payload.name,
-                    "slug": slug,
-                    "domain": domain,
-                    "email": payload.email,
-                    "phone": payload.phone,
-                    "website": payload.website,
-                    "industry": payload.industry,
-                    "company_size": payload.company_size,
-                    "country": payload.country,
-                    "state": payload.state,
-                    "city": payload.city,
-                    "address": payload.address,
-                    "postal_code": payload.postal_code,
-                    "timezone": payload.timezone or "Asia/Kolkata",
-                    "currency": payload.currency or "INR",
-                    "language": payload.language or "en",
-                    "logo_url": payload.logo_url or "",
-                    "tax_number": payload.tax_number,
-                    "registration_number": payload.registration_number,
-                    "status": payload.status or "active",
-                    "role": getattr(payload, "role", "Admin") or "Admin",
-                    "plan": payload.plan or "Free",
-                    "max_users": payload.max_users or 3,
-                },
-            )
-            await db.flush()
-
-            await self.repository.create_setting(
-                db,
-                data={
-                    "id": str(uuid.uuid4()),
-                    "organization_id": org.id,
-                    "timezone": org.timezone or "Asia/Kolkata",
-                    "currency": org.currency or "INR",
-                    "language": org.language or "en",
-                    "logo_url": org.logo_url or "",
-                },
-            )
-
-            free_plan = await self.repository.get_plan_by_slug(db, (payload.plan or "free").lower())
-            await self.repository.create_subscription(
-                db,
-                data={
-                    "id": str(uuid.uuid4()),
-                    "organization_id": org.id,
-                    "plan_id": free_plan.id if free_plan else None,
-                    "status": "active",
-                    "billing_cycle": "Monthly",
-                    "amount": free_plan.price_monthly if free_plan else 0.0,
-                    "currency": "INR",
-                    "auto_renew": True,
-                },
-            )
-
-            await self.repository.create_audit_log(
-                db,
-                organization_id=org.id,
-                action="CREATE_ORGANIZATION",
-                details=f"Created organization '{org.name}'",
-            )
-
-            await self._commit(db, "Failed to create organization")
-            await db.refresh(org)
-            return org_to_dict(org, members_count=1)
-        except APIException:
-            raise
-        except Exception as e:
-            await db.rollback()
-            raise APIException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                message=f"Failed to create organization: {str(e)}",
-            ) from e
-
     async def get_organization(self, db: AsyncSession, current_user: User | None) -> dict:
         org = await self.get_or_create_default_org(db, current_user)
         members_count = await self.repository.count_members(db, org.id)
         return org_to_dict(org, members_count=members_count)
-
-    async def list_all_organizations(self, db: AsyncSession) -> list[dict]:
-        orgs = await self.repository.list_all(db)
-        if not orgs:
-            default_org = await self.get_or_create_default_org(db)
-            orgs = [default_org]
-
-        result = []
-        for org in orgs:
-            m_count = await self.repository.count_members(db, org.id)
-            result.append(org_to_dict(org, members_count=m_count))
-        return result
 
     async def list_members(self, db: AsyncSession, current_user: User | None) -> list[dict]:
         org = await self.get_or_create_default_org(db, current_user)

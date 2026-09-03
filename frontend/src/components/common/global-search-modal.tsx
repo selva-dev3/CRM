@@ -70,6 +70,8 @@ export function GlobalSearchModal({ isOpen, onClose }: GlobalSearchModalProps) {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const filteredItemsRef = useRef<SearchItem[]>(SEARCH_ITEMS);
+  const selectedIndexRef = useRef(0);
 
   // Filter items based on query
   const filteredItems = React.useMemo(() => {
@@ -83,61 +85,71 @@ export function GlobalSearchModal({ isOpen, onClose }: GlobalSearchModalProps) {
     );
   }, [query]);
 
+  useEffect(() => {
+    filteredItemsRef.current = filteredItems;
+  }, [filteredItems]);
+
+  useEffect(() => {
+    selectedIndexRef.current = selectedIndex;
+  }, [selectedIndex]);
+
   // Focus input when opened
   useEffect(() => {
-    if (isOpen) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset modal input on open
-      setQuery('');
-      setSelectedIndex(0);
-      setTimeout(() => {
-        inputRef.current?.focus();
-      }, 50);
-    }
+    if (!isOpen) return;
+    const timeoutId = window.setTimeout(() => inputRef.current?.focus(), 50);
+    return () => window.clearTimeout(timeoutId);
   }, [isOpen]);
 
-  // Reset selected index when query changes
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset keyboard selection when query changes
+  const handleClose = useCallback(() => {
+    setQuery('');
     setSelectedIndex(0);
-  }, [query]);
+    onClose();
+  }, [onClose]);
+
+  const handleQueryChange = (value: string) => {
+    setQuery(value);
+    setSelectedIndex(0);
+  };
 
   const handleSelect = useCallback((href: string) => {
-    onClose();
+    handleClose();
     router.push(href);
-  }, [onClose, router]);
+  }, [handleClose, router]);
 
   // Keyboard navigation inside modal
   useEffect(() => {
     if (!isOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      const items = filteredItemsRef.current;
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        setSelectedIndex((prev) => (prev < filteredItems.length - 1 ? prev + 1 : 0));
+        setSelectedIndex((prev) => (prev < items.length - 1 ? prev + 1 : 0));
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
-        setSelectedIndex((prev) => (prev > 0 ? prev - 1 : filteredItems.length - 1));
+        setSelectedIndex((prev) => (prev > 0 ? prev - 1 : items.length - 1));
       } else if (e.key === 'Enter') {
         e.preventDefault();
-        if (filteredItems[selectedIndex]) {
-          handleSelect(filteredItems[selectedIndex].href);
+        const selectedItem = items[selectedIndexRef.current];
+        if (selectedItem) {
+          handleSelect(selectedItem.href);
         }
       } else if (e.key === 'Escape') {
         e.preventDefault();
-        onClose();
+        handleClose();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, filteredItems, selectedIndex, onClose, handleSelect]);
+  }, [isOpen, handleClose, handleSelect]);
 
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 sm:pt-24 px-4 bg-slate-900/60 backdrop-blur-xs transition-opacity animate-in fade-in duration-200">
       {/* Backdrop click to close */}
-      <div className="fixed inset-0" onClick={onClose} />
+      <div className="fixed inset-0" onClick={handleClose} />
 
       {/* Dialog box */}
       <div className="relative w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col z-10 animate-in zoom-in-95 duration-150">
@@ -148,20 +160,20 @@ export function GlobalSearchModal({ isOpen, onClose }: GlobalSearchModalProps) {
             ref={inputRef}
             type="text"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => handleQueryChange(e.target.value)}
             placeholder="Search CRM pages, modules, settings..."
             className="w-full h-14 px-3 bg-transparent text-sm font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-hidden"
           />
           {query && (
             <button
-              onClick={() => setQuery('')}
+              onClick={() => handleQueryChange('')}
               className="p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-200 transition cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
           )}
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="ml-2 px-2 py-1 text-[11px] font-bold text-slate-500 hover:text-slate-800 bg-slate-200/60 rounded-md transition cursor-pointer"
           >
             ESC

@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import NotFoundError
 from app.models import Organization
 from app.repositories.organization_repository import OrganizationRepository
-from app.schemas.crm_schemas import OrganizationCreate
 from app.services.organization_service import (
     DEFAULT_PLANS,
     OrganizationDomainService,
@@ -44,51 +43,6 @@ async def test_get_organization_by_id_not_found():
 
     with pytest.raises(NotFoundError):
         await service.get_organization_by_id(db, "missing-org")
-
-
-@pytest.mark.asyncio
-async def test_create_organization_builds_slug_and_subscription():
-    org = _make_org()
-    repo: Any = OrganizationRepository()
-    repo.get_by_slug = AsyncMock(return_value=None)
-    repo.create = AsyncMock(return_value=org)
-    repo.create_setting = AsyncMock()
-    repo.get_plan_by_slug = AsyncMock(return_value=None)
-    repo.create_subscription = AsyncMock()
-    repo.create_audit_log = AsyncMock()
-    service = _service_with(repo)
-    db = AsyncMock(spec=AsyncSession)
-
-    result = await service.create_organization(db, OrganizationCreate(name="Acme Inc"))
-
-    assert result["id"] == "org-1"
-    assert repo.create.await_args is not None
-    created = repo.create.await_args_list[-1].kwargs["data"]
-    assert created["slug"] == "acme-inc"
-    assert created["domain"] == "acme-inc.crm.com"
-    assert created["plan"] == "Enterprise"
-    repo.create_subscription.assert_awaited_once()
-    repo.create_audit_log.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_create_organization_disambiguates_slug_collision():
-    org = _make_org()
-    repo: Any = OrganizationRepository()
-    repo.get_by_slug = AsyncMock(return_value=_make_org())
-    repo.create = AsyncMock(return_value=org)
-    repo.create_setting = AsyncMock()
-    repo.get_plan_by_slug = AsyncMock(return_value=None)
-    repo.create_subscription = AsyncMock()
-    repo.create_audit_log = AsyncMock()
-    service = _service_with(repo)
-    db = AsyncMock(spec=AsyncSession)
-
-    await service.create_organization(db, OrganizationCreate(name="Acme Inc"))
-
-    assert repo.create.await_args is not None
-    created = repo.create.await_args_list[-1].kwargs["data"]
-    assert created["slug"].startswith("acme-")
 
 
 @pytest.mark.asyncio
