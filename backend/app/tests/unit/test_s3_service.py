@@ -2,7 +2,7 @@ from io import BytesIO
 from unittest.mock import Mock
 
 import pytest
-from minio.error import S3Error
+from minio.error import S3Error, ServerError
 
 from app.services.s3_service import S3Service
 
@@ -69,7 +69,7 @@ def test_ensure_bucket_exists_does_not_create_after_storage_errors(error: Except
 
 def test_upload_file_uses_minio_put_object():
     service = _service()
-    service.minio_client.bucket_exists.return_value = True
+    service._ensure_bucket_exists = Mock()
     stream = BytesIO(b"document")
 
     result = service.upload_file(stream, "documents/test.txt", "text/plain")
@@ -82,6 +82,35 @@ def test_upload_file_uses_minio_put_object():
         8,
         content_type="text/plain",
     )
+    service._ensure_bucket_exists.assert_not_called()
+    service.minio_client.bucket_exists.assert_not_called()
+
+
+def test_upload_file_preserves_default_content_type():
+    service = _service()
+    stream = BytesIO(b"document")
+
+    result = service.upload_file(stream, "documents/test.bin")
+
+    assert result == "documents/test.bin"
+    assert service.minio_client.put_object.call_args.kwargs["content_type"] == (
+        "application/octet-stream"
+    )
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        _s3_error("AccessDenied", "403"),
+        ServerError("server failed with HTTP status code 429", 429),
+    ],
+)
+def test_upload_file_wraps_minio_errors(error: Exception):
+    service = _service()
+    service.minio_client.put_object.side_effect = error
+
+    with pytest.raises(RuntimeError, match="Failed to upload object documents/test.txt"):
+        service.upload_file(BytesIO(b"document"), "documents/test.txt", "text/plain")
 
 
 def test_generate_presigned_url_uses_minio_presigned_get_object():
