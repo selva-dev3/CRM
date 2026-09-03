@@ -4,7 +4,7 @@ from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.errors import APIException, ForbiddenError, NotFoundError
+from app.core.errors import APIException, NotFoundError
 from app.core.logging import get_logger
 from app.core.permissions import ensure_can_assign_role, is_super_admin_role, is_super_admin_user
 from app.core.security import generate_random_code, get_password_hash
@@ -105,9 +105,10 @@ class UserService:
 
         Enforced server-side regardless of any frontend filtering:
         1. Role must exist.
-        2. Role must belong to the current organization OR be a global/system role.
+        2. Role must belong to the current organization OR be a global role.
         3. The super_admin role may only be assigned by a super_admin actor (403 otherwise).
-        4. Other protected system roles cannot be assigned through user creation / invitations.
+        Assignment is independent of role mutability: ``is_system_role`` protects
+        built-in roles from editing/deletion, but does not make them unassignable.
         """
         role = await self.role_repository.get_role_by_id_or_name(db, role_value)
         if not role:
@@ -126,8 +127,6 @@ class UserService:
                 target_is_super_admin=True,
             )
             return role
-        if getattr(role, "is_system_role", False):
-            raise ForbiddenError(message=f"System role '{role.name}' cannot be assigned")
         return role
 
     @staticmethod
@@ -188,27 +187,29 @@ class UserService:
         await self._commit(db, "User creation failed")
         return user_to_dict(user)
 
-    async def get_my_profile(self, db: AsyncSession) -> dict:
-        user = await self.repository.get_first(db)
-        if not user:
-            raise NotFoundError(message="No profile found")
+    async def get_my_profile(self, db: AsyncSession, current_user: User) -> dict:
+        user = await self.require_user(db, current_user.id)
         return user_to_dict(user)
 
-    async def update_my_profile(self, db: AsyncSession, payload: UserProfileUpdate) -> dict:
-        user = await self.repository.get_first(db)
-        if not user:
-            raise NotFoundError(message="Profile not found")
+    async def update_my_profile(
+        self, db: AsyncSession, payload: UserProfileUpdate, current_user: User
+    ) -> dict:
+        user = await self.require_user(db, current_user.id)
         if payload.name:
             user.name = payload.name
         await self._commit(db, "Failed to update profile")
         return user_to_dict(user)
 
     async def upload_avatar(
-        self, db: AsyncSession, *, file, filename: str, content_type: str | None
+        self,
+        db: AsyncSession,
+        *,
+        file,
+        filename: str,
+        content_type: str | None,
+        current_user: User,
     ) -> dict:
-        user = await self.repository.get_first(db)
-        if not user:
-            raise NotFoundError(message="User not found")
+        user = await self.require_user(db, current_user.id)
         try:
             object_name = f"avatars/{user.id}_{filename}"
             s3_key = await asyncio.to_thread(
@@ -433,6 +434,11 @@ class UserService:
                 db, user.organization_id, payload.role, current_user=current_user
             )
             user.role = role.id
+            mapping = await self.role_repository.get_user_role_mapping(db, user.id)
+            if mapping:
+                mapping.role_id = role.id
+            else:
+                db.add(UserRole(user_id=user.id, role_id=role.id))
         await self._commit(db, "Failed to update user")
         return user_to_dict(user)
 

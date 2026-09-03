@@ -17,10 +17,11 @@ class CallRepository:
         *,
         page: int,
         limit: int,
+        organization_id: str,
         search: str | None = None,
         call_type: str | None = None,
     ) -> builtins.list[CallLog]:
-        stmt = select(CallLog)
+        stmt = select(CallLog).where(CallLog.organization_id == organization_id)
         if search and search.strip():
             stmt = stmt.where(CallLog.notes.ilike(f"%{search.strip()}%"))
         if call_type and call_type.strip():
@@ -29,14 +30,26 @@ class CallRepository:
         result = await db.execute(stmt)
         return list(result.scalars().all())
 
-    async def get_by_id(self, db: AsyncSession, call_id: str) -> CallLog | None:
-        result = await db.execute(select(CallLog).where(CallLog.id == call_id))
+    async def get_by_id(
+        self, db: AsyncSession, call_id: str, organization_id: str
+    ) -> CallLog | None:
+        result = await db.execute(
+            select(CallLog).where(
+                CallLog.id == call_id,
+                CallLog.organization_id == organization_id,
+            )
+        )
         return result.scalars().first()
 
     async def list_by_ids(
-        self, db: AsyncSession, ids: builtins.list[str]
+        self, db: AsyncSession, ids: builtins.list[str], organization_id: str
     ) -> builtins.list[CallLog]:
-        result = await db.execute(select(CallLog).where(CallLog.id.in_(ids)))
+        result = await db.execute(
+            select(CallLog).where(
+                CallLog.id.in_(ids),
+                CallLog.organization_id == organization_id,
+            )
+        )
         return list(result.scalars().all())
 
     async def create(self, db: AsyncSession, *, data: dict) -> CallLog:

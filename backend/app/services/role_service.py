@@ -823,9 +823,17 @@ class RoleService:
             await db.rollback()
             raise APIException(status_code=status_code, message=error_message) from e
 
-    async def _get_default_role_ids(self, db: AsyncSession) -> set:
+    @staticmethod
+    def _role_setting_key(key: str, organization_id: str | None) -> str:
+        return f"{key}:{organization_id}" if organization_id else key
+
+    async def _get_default_role_ids(
+        self, db: AsyncSession, organization_id: str | None = None
+    ) -> set:
         try:
-            setting = await self.repository.get_setting(db, "default_registration_roles")
+            setting = await self.repository.get_setting(
+                db, self._role_setting_key("default_registration_roles", organization_id)
+            )
             if setting and setting.value:
                 try:
                     val = json.loads(setting.value)
@@ -833,7 +841,9 @@ class RoleService:
                         return set(val)
                 except Exception:
                     return {s.strip() for s in setting.value.split(",") if s.strip()}
-            legacy = await self.repository.get_setting(db, "default_registration_role")
+            legacy = await self.repository.get_setting(
+                db, self._role_setting_key("default_registration_role", organization_id)
+            )
             if legacy and legacy.value:
                 return {legacy.value}
         except Exception:
@@ -869,11 +879,31 @@ class RoleService:
         if getattr(role, "is_system_role", False):
             raise ForbiddenError(message="System roles cannot be modified or deleted.")
 
+    @staticmethod
+    def _current_org_id(current_user: User) -> str:
+        org_id = getattr(current_user, "organization_id", None)
+        if not org_id:
+            raise ForbiddenError(message="Authenticated user has no current organization")
+        return org_id
+
+    @classmethod
+    def _ensure_assignable_role_ownership(cls, role: Role, current_user: User) -> None:
+        org_id = cls._current_org_id(current_user)
+        if role.organization_id is not None and role.organization_id != org_id:
+            raise NotFoundError(message=f"Role '{role.id}' not found")
+
+    @classmethod
+    def _ensure_mutable_role_ownership(cls, role: Role, current_user: User) -> None:
+        cls._ensure_mutable_role(role)
+        org_id = cls._current_org_id(current_user)
+        if role.organization_id != org_id:
+            raise NotFoundError(message=f"Role '{role.id}' not found")
+
     # --- List roles ---
     async def list_roles(
         self, db: AsyncSession, search: str | None = None, org_id: str | None = None
     ) -> list[dict]:
-        default_ids = await self._get_default_role_ids(db)
+        default_ids = await self._get_default_role_ids(db, org_id)
         all_db_keys = await self.repository.get_permission_keys(db)
         roles = await self.repository.list_roles(db, search, org_id=org_id)
 
@@ -893,9 +923,15 @@ class RoleService:
         return result
 
     # --- Create role ---
-    async def create_role(self, db: AsyncSession, payload: RoleCreate) -> dict:
+    async def create_role(
+        self, db: AsyncSession, payload: RoleCreate, current_user: User
+    ) -> dict:
+        org_id = self._current_org_id(current_user)
         role = await self.repository.create_role(
-            db, name=payload.name, description=payload.description or ""
+            db,
+            name=payload.name,
+            description=payload.description or "",
+            organization_id=org_id,
         )
         try:
             await db.commit()
@@ -1019,20 +1055,26 @@ class RoleService:
             ) from exc
 
     # --- System roles ---
-    async def list_system_roles(self, db: AsyncSession) -> list[dict]:
+    async def list_system_roles(
+        self, db: AsyncSession, current_user: User
+    ) -> list[dict]:
+        organization_id = self._current_org_id(current_user)
         all_db_keys = await self.repository.get_permission_keys(db)
         try:
-            setting = await self.repository.get_setting(db, "default_registration_role")
+            setting = await self.repository.get_setting(
+                db, self._role_setting_key("default_registration_role", organization_id)
+            )
             default_role_id = setting.value if setting else None
             if default_role_id:
                 r = await self.repository.get_role_by_id_or_name(db, default_role_id)
                 if r:
+                    self._ensure_assignable_role_ownership(r, current_user)
                     perm_keys = await self._resolve_role_permission_keys(db, r, all_db_keys)
                     return [
                         role_to_dict(r, perm_keys, str(getattr(r, "created_at", datetime.now(UTC))))
                         | {"description": r.description or "Registration Default Role"}
                     ]
-            roles = await self.repository.get_system_roles(db)
+            roles = await self.repository.get_system_roles(db, organization_id)
             if roles:
                 result = []
                 for r in roles:
@@ -1072,27 +1114,45 @@ class RoleService:
         return [r for r in roles if not is_super_admin_role_name(r.get("name", ""))]
 
     # --- Set multiple default roles ---
-    async def set_multiple_default_roles(self, db: AsyncSession, role_ids: list[str]) -> dict:
+    async def set_multiple_default_roles(
+        self, db: AsyncSession, role_ids: list[str], current_user: User
+    ) -> dict:
         try:
+            organization_id = self._current_org_id(current_user)
+            for role_id in role_ids:
+                role = await self.repository.get_role(db, role_id)
+                if not role:
+                    raise NotFoundError(message=f"Role '{role_id}' not found")
+                self._ensure_assignable_role_ownership(role, current_user)
             new_val = json.dumps(role_ids)
             await self.repository.upsert_setting(
-                db, "default_registration_roles", new_val, "Default registration roles JSON array"
+                db,
+                self._role_setting_key("default_registration_roles", organization_id),
+                new_val,
+                "Default registration roles JSON array",
             )
             if role_ids:
                 await self.repository.upsert_setting(
-                    db, "default_registration_role", role_ids[0], "Legacy default role"
+                    db,
+                    self._role_setting_key("default_registration_role", organization_id),
+                    role_ids[0],
+                    "Legacy default role",
                 )
             await db.commit()
             return {
                 "message": f"Successfully updated default registration roles ({len(role_ids)} selected)",
                 "status": "success",
             }
+        except APIException:
+            await db.rollback()
+            raise
         except Exception as e:
             await db.rollback()
             raise APIException(status_code=status.HTTP_400_BAD_REQUEST, message=str(e)) from e
 
     # --- Get default role ---
-    async def get_default_role(self, db: AsyncSession) -> dict:
+    async def get_default_role(self, db: AsyncSession, current_user: User) -> dict:
+        organization_id = self._current_org_id(current_user)
         fallback = {
             "id": "sys-manager",
             "name": "manager",
@@ -1102,16 +1162,28 @@ class RoleService:
             "created_at": "2026-08-05",
         }
         try:
-            setting = await self.repository.get_setting(db, "default_registration_role")
+            setting = await self.repository.get_setting(
+                db, self._role_setting_key("default_registration_role", organization_id)
+            )
             role_obj = None
             if setting and setting.value:
                 role_obj = await self.repository.get_role_by_id_or_name(db, setting.value)
             if not role_obj:
-                res = await db.execute(select(Role).where(Role.is_system_role == True).limit(1))  # noqa: E712
+                res = await db.execute(
+                    select(Role)
+                    .where(
+                        Role.is_system_role.is_(True),
+                        (Role.organization_id.is_(None))
+                        | (Role.organization_id == organization_id),
+                    )
+                    .limit(1)
+                )
                 role_obj = res.scalars().first()
             if not role_obj:
-                role_obj = await self.repository.get_first_role(db)
+                roles = await self.repository.list_roles(db, org_id=organization_id)
+                role_obj = next(iter(roles), None)
             if role_obj:
+                self._ensure_assignable_role_ownership(role_obj, current_user)
                 assigned = await self.repository.get_role_permissions(db, role_obj.id)
                 perm_keys = (
                     [p.key for p in assigned if p.key]
@@ -1151,12 +1223,17 @@ class RoleService:
         return {"message": "Role definitions JSON imported successfully", "status": "success"}
 
     # --- Bulk delete ---
-    async def bulk_delete_roles(self, db: AsyncSession, ids: list[str]) -> dict:
-        default_ids = await self._get_default_role_ids(db)
+    async def bulk_delete_roles(
+        self, db: AsyncSession, ids: list[str], current_user: User
+    ) -> dict:
+        default_ids = await self._get_default_role_ids(
+            db, self._current_org_id(current_user)
+        )
         roles = []
         for role_id in ids:
             role = await self.repository.get_role(db, role_id)
             if role:
+                self._ensure_mutable_role_ownership(role, current_user)
                 roles.append(role)
         for role in roles:
             self._ensure_mutable_role(role)
@@ -1172,37 +1249,27 @@ class RoleService:
         }
 
     # --- Get user role ---
-    async def get_user_role(self, db: AsyncSession, user_id: str) -> dict:
+    async def get_user_role(
+        self, db: AsyncSession, user_id: str, current_user: User
+    ) -> dict:
         all_db_keys = await self.repository.get_permission_keys(db)
         role_obj = None
         u = await self.repository.get_user_by_id_or_email(db, user_id)
-        if u and getattr(u, "role", None):
+        if not u or u.organization_id != self._current_org_id(current_user):
+            raise NotFoundError(message=f"User '{user_id}' not found")
+        if getattr(u, "role", None):
             role_obj = await self.repository.get_role_by_id_or_name(db, u.role)
         if not role_obj:
-            role_obj = await self.repository.get_role(db, user_id)
-        if not role_obj:
-            role_obj = await self.repository.get_first_role(db)
+            mapping = await self.repository.get_user_role_mapping(db, u.id)
+            if mapping:
+                role_obj = await self.repository.get_role(db, mapping.role_id)
         if role_obj:
+            self._ensure_assignable_role_ownership(role_obj, current_user)
             perm_keys = await self._resolve_role_permission_keys(db, role_obj, all_db_keys)
             return role_to_dict(
                 role_obj, perm_keys, str(getattr(role_obj, "created_at", "2026-08-05"))
             ) | {"description": role_obj.description or "User assigned role"}
-        return {
-            "id": "sys-manager",
-            "name": "Manager",
-            "description": "User assigned role",
-            "permissions": [
-                "dashboard:read",
-                "users:read",
-                "users:create",
-                "users:update",
-                "users:delete",
-                "users:export",
-                "users:import",
-            ],
-            "is_system_role": True,
-            "created_at": "2026-08-05",
-        }
+        raise NotFoundError(message=f"Role for user '{user_id}' not found")
 
     # --- Assign role to user ---
     async def assign_role_to_user(
@@ -1210,34 +1277,33 @@ class RoleService:
     ) -> dict:
         u = await self.repository.get_user_by_id_or_email(db, user_id)
         r = await self.repository.get_role_by_id_or_name(db, role_id)
+        if not u or u.organization_id != self._current_org_id(current_user):
+            raise NotFoundError(message=f"User '{user_id}' not found")
+        if not r:
+            raise NotFoundError(message=f"Role '{role_id}' not found")
+        self._ensure_assignable_role_ownership(r, current_user)
         # The super_admin role may only be assigned by a super_admin actor (403 otherwise).
-        if r:
+        if is_super_admin_role(r):
             ensure_can_assign_role(
                 actor_is_super_admin=await is_super_admin_user(db, current_user),
-                target_is_super_admin=is_super_admin_role(r),
+                target_is_super_admin=True,
             )
-        target_role_id = r.id if r else role_id
-        target_role_name = r.name if r else role_id
-        if u:
-            u.role = target_role_id
-            if r:
-                entry = await self.repository.get_user_role_mapping(db, u.id)
-                if entry:
-                    entry.role_id = r.id
-                else:
-                    db.add(UserRole(user_id=u.id, role_id=r.id))
-            await self._commit(db, "Failed to assign role")
-            return {
-                "message": f"Successfully assigned role '{target_role_name}' to user '{u.name}'",
-                "status": "success",
-            }
+        u.role = r.id
+        entry = await self.repository.get_user_role_mapping(db, u.id)
+        if entry:
+            entry.role_id = r.id
+        else:
+            db.add(UserRole(user_id=u.id, role_id=r.id))
+        await self._commit(db, "Failed to assign role")
         return {
-            "message": f"Assigned role '{target_role_name}' to user identifier '{user_id}'",
+            "message": f"Successfully assigned role '{r.name}' to user '{u.name}'",
             "status": "success",
         }
 
     # --- Check permission ---
-    async def check_permission(self, db: AsyncSession, user_id: str, permission: str) -> dict:
+    async def check_permission(
+        self, db: AsyncSession, user_id: str, permission: str, current_user: User
+    ) -> dict:
         """Fail-closed permission check for a user against a single permission key.
 
         The decision is based exclusively on the resolved role's assigned
@@ -1250,6 +1316,8 @@ class RoleService:
         """
         try:
             u = await self.repository.get_user_by_id_or_email(db, user_id)
+            if not u or u.organization_id != self._current_org_id(current_user):
+                raise NotFoundError(message=f"User '{user_id}' not found")
             user_role_id = None
             if u and getattr(u, "role", None):
                 user_role_id = u.role
@@ -1263,6 +1331,7 @@ class RoleService:
 
             allowed = False
             if role_obj:
+                self._ensure_assignable_role_ownership(role_obj, current_user)
                 if is_super_admin_role(role_obj):
                     allowed = True
                 else:
@@ -1274,20 +1343,23 @@ class RoleService:
             return {"user_id": user_id, "permission": permission, "allowed": False}
 
     # --- Get role by id ---
-    async def get_role(self, db: AsyncSession, role_id: str) -> dict:
+    async def get_role(self, db: AsyncSession, role_id: str, current_user: User) -> dict:
         r = await self.repository.get_role(db, role_id)
         if not r:
             raise NotFoundError(message=f"Role '{role_id}' not found")
+        self._ensure_assignable_role_ownership(r, current_user)
         all_db_keys = await self.repository.get_permission_keys(db)
         perm_keys = await self._get_permission_keys_for_role(db, r, all_db_keys)
         return role_to_dict(r, perm_keys, str(getattr(r, "created_at", "2026-08-05")))
 
     # --- Update role ---
-    async def update_role(self, db: AsyncSession, role_id: str, payload: RoleUpdate) -> dict:
+    async def update_role(
+        self, db: AsyncSession, role_id: str, payload: RoleUpdate, current_user: User
+    ) -> dict:
         r = await self.repository.get_role(db, role_id)
         if not r:
             raise NotFoundError(message=f"Role '{role_id}' not found")
-        self._ensure_mutable_role(r)
+        self._ensure_mutable_role_ownership(r, current_user)
         try:
             if payload.name:
                 r.name = payload.name
@@ -1315,28 +1387,36 @@ class RoleService:
             raise APIException(status_code=status.HTTP_400_BAD_REQUEST, message=str(e)) from e
 
     # --- Delete role ---
-    async def delete_role(self, db: AsyncSession, role_id: str) -> dict:
+    async def delete_role(self, db: AsyncSession, role_id: str, current_user: User) -> dict:
         r = await self.repository.get_role_by_id_or_name(db, role_id)
         if not r:
             raise NotFoundError(message=f"Role '{role_id}' not found")
-        default_ids = await self._get_default_role_ids(db)
+        default_ids = await self._get_default_role_ids(
+            db, self._current_org_id(current_user)
+        )
         if r.id in default_ids or r.name in default_ids:
             raise APIException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 message=f"Cannot delete default registration role '{r.name}'. Remove default status first.",
             )
-        self._ensure_mutable_role(r)
+        self._ensure_mutable_role_ownership(r, current_user)
         await self.repository.delete_role(db, r)
         await self._commit(db, "Failed to delete role")
         return {"message": f"Role '{r.name}' deleted successfully", "status": "success"}
 
     # --- Clone role ---
-    async def clone_role(self, db: AsyncSession, role_id: str, new_name: str) -> dict:
+    async def clone_role(
+        self, db: AsyncSession, role_id: str, new_name: str, current_user: User
+    ) -> dict:
         orig = await self.repository.get_role(db, role_id)
         if not orig:
             raise NotFoundError(message=f"Role '{role_id}' not found")
+        self._ensure_assignable_role_ownership(orig, current_user)
         r = await self.repository.create_role(
-            db, name=new_name, description=f"Cloned from {orig.name}"
+            db,
+            name=new_name,
+            description=f"Cloned from {orig.name}",
+            organization_id=self._current_org_id(current_user),
         )
         await self._commit(db, "Failed to clone role")
         await db.refresh(r)
@@ -1352,12 +1432,12 @@ class RoleService:
 
     # --- Assign permissions to role ---
     async def assign_permissions(
-        self, db: AsyncSession, role_id: str, permissions: list[str]
+        self, db: AsyncSession, role_id: str, permissions: list[str], current_user: User
     ) -> dict:
         role = await self.repository.get_role(db, role_id)
         if not role:
             raise NotFoundError(message=f"Role '{role_id}' not found")
-        self._ensure_mutable_role(role)
+        self._ensure_mutable_role_ownership(role, current_user)
         existing = await self.repository.get_role_permission_ids(db, role_id)
         for item in existing:
             await self.repository.delete_role_permission(db, item)
@@ -1369,11 +1449,13 @@ class RoleService:
         return {"message": f"Updated permissions for role {role_id}", "status": "success"}
 
     # --- Remove permission from role ---
-    async def remove_permission(self, db: AsyncSession, role_id: str, perm_id: str) -> dict:
+    async def remove_permission(
+        self, db: AsyncSession, role_id: str, perm_id: str, current_user: User
+    ) -> dict:
         role = await self.repository.get_role(db, role_id)
         if not role:
             raise NotFoundError(message=f"Role '{role_id}' not found")
-        self._ensure_mutable_role(role)
+        self._ensure_mutable_role_ownership(role, current_user)
         target_perm = await self.repository.get_permission_by_id_or_key(db, perm_id)
         target_id = target_perm.id if target_perm else perm_id
         await self.repository.remove_permission_from_role(db, role_id, target_id)
@@ -1381,14 +1463,20 @@ class RoleService:
         return {"message": f"Permission '{perm_id}' removed from role", "status": "success"}
 
     # --- Get role users ---
-    async def get_role_users(self, db: AsyncSession, role_id: str) -> list[dict]:
+    async def get_role_users(
+        self, db: AsyncSession, role_id: str, current_user: User
+    ) -> list[dict]:
         r = await self.repository.get_role_by_id_or_name(db, role_id)
-        target_role_id = r.id if r else role_id
-        target_role_name = r.name if r else role_id
+        if not r:
+            raise NotFoundError(message=f"Role '{role_id}' not found")
+        self._ensure_assignable_role_ownership(r, current_user)
+        target_role_id = r.id
+        target_role_name = r.name
         users = await self.repository.get_users_by_role(db, target_role_id)
         ur_users = await self.repository.get_users_by_user_role_id(db, target_role_id)
         user_dict = {u.id: u for u in list(users) + list(ur_users)}
-        matched = list(user_dict.values())
+        org_id = self._current_org_id(current_user)
+        matched = [u for u in user_dict.values() if u.organization_id == org_id]
         if matched:
             return [
                 {
@@ -1400,27 +1488,24 @@ class RoleService:
                 }
                 for u in matched
             ]
-        return [
-            {
-                "id": "usr-101",
-                "name": "Sarah Connor",
-                "email": "sarah@company.com",
-                "role": target_role_name,
-            },
-            {
-                "id": "usr-102",
-                "name": "Alex Mercer",
-                "email": "alex@company.com",
-                "role": target_role_name,
-            },
-        ]
+        return []
 
     # --- Set default role ---
-    async def set_default_role(self, db: AsyncSession, role_id: str) -> dict:
+    async def set_default_role(
+        self, db: AsyncSession, role_id: str, current_user: User
+    ) -> dict:
         r = await self.repository.get_role_by_id_or_name(db, role_id)
         if not r:
             raise NotFoundError(message=f"Role '{role_id}' not found")
-        setting = await self.repository.get_setting(db, "default_registration_roles")
+        self._ensure_assignable_role_ownership(r, current_user)
+        organization_id = self._current_org_id(current_user)
+        roles_setting_key = self._role_setting_key(
+            "default_registration_roles", organization_id
+        )
+        role_setting_key = self._role_setting_key(
+            "default_registration_role", organization_id
+        )
+        setting = await self.repository.get_setting(db, roles_setting_key)
         current_defaults = []
         if setting and setting.value:
             try:
@@ -1438,11 +1523,11 @@ class RoleService:
             msg = f"Role '{r.name}' added as default for new registrations"
         new_val = json.dumps(current_defaults)
         await self.repository.upsert_setting(
-            db, "default_registration_roles", new_val, "Default registration roles JSON array"
+            db, roles_setting_key, new_val, "Default registration roles JSON array"
         )
         if current_defaults:
             await self.repository.upsert_setting(
-                db, "default_registration_role", current_defaults[0], "Legacy single default role"
+                db, role_setting_key, current_defaults[0], "Legacy single default role"
             )
         await db.commit()
         return {"message": msg, "status": "success"}

@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, patch
+from unittest.mock import ANY, AsyncMock, patch
 
 import pytest
 from fastapi.routing import APIRoute
@@ -89,6 +89,36 @@ async def test_require_permission_denies_when_user_has_no_grants():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("is_system_role", [True, False])
+async def test_user_invite_role_assignment_requires_both_permissions(is_system_role):
+    """Permission denial happens before role resolution for system and custom roles alike."""
+    user = _make_user()
+    for required, granted in (
+        ("users:invite", ["users:roles"]),
+        ("users:roles", ["users:invite"]),
+    ):
+        with pytest.raises(ForbiddenError):
+            await _run_permission_dependency(required, user, granted)
+
+    invite_route = next(
+        route
+        for route in users.router.routes
+        if isinstance(route, APIRoute) and route.path == "/invite"
+    )
+    closure_values: set[str] = set()
+    for dependency in invite_route.dependencies:
+        dependency_callable = dependency.dependency
+        if dependency_callable is None:
+            continue
+        closure_values.update(
+            cell.cell_contents
+            for cell in (dependency_callable.__closure__ or ())
+            if isinstance(cell.cell_contents, str)
+        )
+    assert {"users:invite", "users:roles"}.issubset(closure_values)
+
+
+@pytest.mark.asyncio
 async def test_require_permission_resolves_via_get_user_permissions():
     """The dependency must resolve permissions through get_user_permissions (fail-closed)."""
     user = _make_user()
@@ -126,7 +156,9 @@ async def test_get_user_permissions_denies_empty_grants():
 async def test_get_user_permissions_grants_all_for_super_admin_role():
     """The super_admin role (by name) is the only role that receives every key."""
     repo = AsyncMock()
-    repo.all_permission_keys = AsyncMock(return_value=["deals:read", "roles:update"])
+    repo.all_permission_keys = AsyncMock(
+        return_value=["deals:read", "roles:update", "super_admin:manage"]
+    )
     repo.role_ids_for_user = AsyncMock(return_value=["sys-1"])
     repo.role_ids_by_name = AsyncMock(return_value=[])
     repo.permission_keys_for_roles = AsyncMock(return_value=["super_admin:manage"])
@@ -138,14 +170,16 @@ async def test_get_user_permissions_grants_all_for_super_admin_role():
     db = AsyncMock(spec=AsyncSession)
 
     keys = await service.get_user_permissions(db, user)
-    assert set(keys) == {"deals:read", "roles:update"}
+    assert set(keys) == {"deals:read", "roles:update", "super_admin:manage"}
 
 
 @pytest.mark.asyncio
 async def test_get_user_permissions_grants_all_when_resolved_role_is_super_admin():
     """Super_admin identity is also detected when the role is resolved from the DB."""
     repo = AsyncMock()
-    repo.all_permission_keys = AsyncMock(return_value=["deals:read", "roles:update"])
+    repo.all_permission_keys = AsyncMock(
+        return_value=["deals:read", "roles:update", "super_admin:manage"]
+    )
     repo.role_ids_for_user = AsyncMock(return_value=["sys-1"])
     repo.role_ids_by_name = AsyncMock(return_value=[])
     repo.permission_keys_for_roles = AsyncMock(return_value=["super_admin:manage"])
@@ -190,6 +224,24 @@ async def test_get_user_permissions_denies_when_resolution_errors():
     keys = await service.get_user_permissions(db, user)
 
     assert keys == []
+
+
+@pytest.mark.asyncio
+async def test_get_user_permissions_ignores_foreign_role_mapping():
+    repo = AsyncMock()
+    repo.role_ids_for_user.return_value = ["foreign-role"]
+    repo.role_ids_by_name.return_value = []
+    repo.roles_by_ids.return_value = []
+    service = AuthService(repository=repo)
+    user = _make_user(role="foreign-role", organization_id="org-1")
+
+    keys = await service.get_user_permissions(AsyncMock(spec=AsyncSession), user)
+
+    assert keys == []
+    repo.roles_by_ids.assert_awaited_once_with(
+        ANY, ["foreign-role"], "org-1"
+    )
+    repo.permission_keys_for_roles.assert_not_awaited()
 
 
 # --- Wiring test: every endpoint must carry a require_permission dependency ---

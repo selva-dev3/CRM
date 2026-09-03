@@ -17,10 +17,11 @@ class NoteRepository:
         *,
         page: int,
         limit: int,
+        organization_id: str,
         entity_type: str | None = None,
         search: str | None = None,
     ) -> builtins.list[Note]:
-        stmt = select(Note)
+        stmt = select(Note).where(Note.organization_id == organization_id)
         if entity_type and entity_type.strip():
             stmt = stmt.where(Note.entity_type == entity_type.strip())
         if search and search.strip():
@@ -30,25 +31,46 @@ class NoteRepository:
         return list(result.scalars().all())
 
     async def list_by_entity(
-        self, db: AsyncSession, *, entity_type: str, entity_id: str
+        self,
+        db: AsyncSession,
+        *,
+        entity_type: str,
+        entity_id: str,
+        organization_id: str,
     ) -> builtins.list[Note]:
         result = await db.execute(
             select(Note)
-            .where(Note.entity_type == entity_type, Note.entity_id == entity_id)
+            .where(
+                Note.entity_type == entity_type,
+                Note.entity_id == entity_id,
+                Note.organization_id == organization_id,
+            )
             .order_by(Note.created_at.desc())
         )
         return list(result.scalars().all())
 
-    async def list_pinned(self, db: AsyncSession) -> builtins.list[Note]:
-        result = await db.execute(select(Note).where(Note.is_pinned))
+    async def list_pinned(
+        self, db: AsyncSession, organization_id: str
+    ) -> builtins.list[Note]:
+        result = await db.execute(
+            select(Note).where(Note.is_pinned, Note.organization_id == organization_id)
+        )
         return list(result.scalars().all())
 
-    async def get_by_id(self, db: AsyncSession, note_id: str) -> Note | None:
-        result = await db.execute(select(Note).where(Note.id == note_id))
+    async def get_by_id(
+        self, db: AsyncSession, note_id: str, organization_id: str
+    ) -> Note | None:
+        result = await db.execute(
+            select(Note).where(Note.id == note_id, Note.organization_id == organization_id)
+        )
         return result.scalars().first()
 
-    async def list_by_ids(self, db: AsyncSession, ids: builtins.list[str]) -> builtins.list[Note]:
-        result = await db.execute(select(Note).where(Note.id.in_(ids)))
+    async def list_by_ids(
+        self, db: AsyncSession, ids: builtins.list[str], organization_id: str
+    ) -> builtins.list[Note]:
+        result = await db.execute(
+            select(Note).where(Note.id.in_(ids), Note.organization_id == organization_id)
+        )
         return list(result.scalars().all())
 
     async def create(

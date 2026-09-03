@@ -267,8 +267,12 @@ async def get_deal_timeline(deal_id: str, db: AsyncSession = Depends(get_db)):
     summary="List notes for deal",
     dependencies=[Depends(require_permission("deals:read"))],
 )
-async def get_deal_notes(deal_id: str, db: AsyncSession = Depends(get_db)):
-    return await deal_service.get_deal_notes(db, deal_id)
+async def get_deal_notes(
+    deal_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await deal_service.get_deal_notes(db, deal_id, current_user)
 
 
 @router.post(
@@ -312,8 +316,12 @@ async def get_deal_quotes(
     summary="AI prediction for deal win probability using OpenAI",
     dependencies=[Depends(require_permission("deals:update"))],
 )
-async def predict_deal_win_rate(deal_id: str, db: AsyncSession = Depends(get_db)):
-    return await deal_service.predict_deal_win_rate(db, deal_id)
+async def predict_deal_win_rate(
+    deal_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await deal_service.predict_deal_win_rate(db, deal_id, current_user)
 
 
 @router.post(

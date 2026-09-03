@@ -15,9 +15,10 @@ class EmailRepository:
         *,
         page: int,
         limit: int,
+        organization_id: str,
         search: str | None = None,
     ) -> Sequence[Email]:
-        stmt = select(Email)
+        stmt = select(Email).where(Email.organization_id == organization_id)
         if search and search.strip():
             term = f"%{search.strip()}%"
             stmt = stmt.where((Email.subject.ilike(term)) | (Email.to_email.ilike(term)))
@@ -25,8 +26,12 @@ class EmailRepository:
         res = await db.execute(stmt)
         return res.scalars().all()
 
-    async def list_by_ids(self, db: AsyncSession, ids: list[str]) -> Sequence[Email]:
-        stmt = select(Email).where(Email.id.in_(ids))
+    async def list_by_ids(
+        self, db: AsyncSession, ids: list[str], organization_id: str
+    ) -> Sequence[Email]:
+        stmt = select(Email).where(
+            Email.id.in_(ids), Email.organization_id == organization_id
+        )
         res = await db.execute(stmt)
         return res.scalars().all()
 
@@ -38,8 +43,12 @@ class EmailRepository:
     async def delete(self, db: AsyncSession, email: Email) -> None:
         await db.delete(email)
 
-    async def list_templates(self, db: AsyncSession) -> Sequence[EmailTemplate]:
-        stmt = select(EmailTemplate).limit(20)
+    async def list_templates(
+        self, db: AsyncSession, organization_id: str
+    ) -> Sequence[EmailTemplate]:
+        stmt = select(EmailTemplate).where(
+            EmailTemplate.organization_id == organization_id
+        ).limit(20)
         res = await db.execute(stmt)
         return res.scalars().all()
 
@@ -48,8 +57,13 @@ class EmailRepository:
         db.add(template)
         return template
 
-    async def get_template(self, db: AsyncSession, template_id: str) -> EmailTemplate | None:
-        stmt = select(EmailTemplate).where(EmailTemplate.id == template_id)
+    async def get_template(
+        self, db: AsyncSession, template_id: str, organization_id: str
+    ) -> EmailTemplate | None:
+        stmt = select(EmailTemplate).where(
+            EmailTemplate.id == template_id,
+            EmailTemplate.organization_id == organization_id,
+        )
         res = await db.execute(stmt)
         return res.scalars().first()
 

@@ -63,26 +63,41 @@ async def create_user(
 @router.get(
     "/me/profile", response_model=UserResponse, summary="Get current logged in user profile"
 )
-async def get_my_profile(db: AsyncSession = Depends(get_db)):
-    return await user_service.get_my_profile(db)
+async def get_my_profile(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await user_service.get_my_profile(db, current_user)
 
 
 @router.put("/me/profile", response_model=UserResponse, summary="Update logged in user profile")
-async def update_my_profile(payload: UserProfileUpdate, db: AsyncSession = Depends(get_db)):
-    return await user_service.update_my_profile(db, payload)
+async def update_my_profile(
+    payload: UserProfileUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await user_service.update_my_profile(db, payload, current_user)
 
 
 @router.post(
     "/me/avatar", response_model=MessageResponse, summary="Upload user avatar picture to MinIO S3"
 )
-async def upload_avatar(file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
+async def upload_avatar(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     if not file.filename:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Uploaded avatar must include a filename",
         )
     return await user_service.upload_avatar(
-        db, file=file.file, filename=file.filename, content_type=file.content_type
+        db,
+        file=file.file,
+        filename=file.filename,
+        content_type=file.content_type,
+        current_user=current_user,
     )
 
 
@@ -173,7 +188,10 @@ async def get_user(
     "/{user_id}",
     response_model=UserResponse,
     summary="Update user by ID",
-    dependencies=[Depends(require_permission("users:update"))],
+    dependencies=[
+        Depends(require_permission("users:update")),
+        Depends(require_permission("users:roles")),
+    ],
 )
 async def update_user(
     user_id: str,

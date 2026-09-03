@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Email, EmailTemplate
+from app.models import Email, EmailTemplate, User
 from app.repositories.email_repository import EmailRepository
 from app.schemas.crm_schemas import EmailSendRequest
 from app.services.email_domain_service import (
@@ -42,6 +42,18 @@ def _make_template(**overrides) -> EmailTemplate:
     return EmailTemplate(**defaults)
 
 
+def _user() -> User:
+    return User(id="user-1", email="user@crm.com", organization_id="org-1")
+
+
+@pytest.fixture(autouse=True)
+def _stub_organization_resolution(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.email_domain_service.organization_service.resolve_valid_org_id",
+        AsyncMock(return_value="org-1"),
+    )
+
+
 @pytest.mark.asyncio
 async def test_get_inbox_maps_emails():
     repo: Any = EmailRepository()
@@ -49,17 +61,22 @@ async def test_get_inbox_maps_emails():
     service = EmailDomainService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.get_inbox(db, page=1, limit=20, search="hi")
+    result = await service.get_inbox(
+        db, page=1, limit=20, search="hi", current_user=_user()
+    )
 
     assert result[0]["to"] == ["client@example.com"]
     assert result[0]["from_email"] == "rep@company.com"
+    repo.list_emails.assert_awaited_once_with(
+        db, page=1, limit=20, organization_id="org-1", search="hi"
+    )
 
 
 @pytest.mark.asyncio
 async def test_send_email_creates_row(monkeypatch):
     org_id = {"value": "org-1"}
 
-    async def fake_resolve_valid_org_id(db):
+    async def fake_resolve_valid_org_id(db, current_user):
         return org_id["value"]
 
     monkeypatch.setattr(
@@ -73,7 +90,9 @@ async def test_send_email_creates_row(monkeypatch):
     db = AsyncMock(spec=AsyncSession)
 
     result = await service.send_email(
-        db, EmailSendRequest(to=["client@example.com"], subject="Hello", body="Hi")
+        db,
+        EmailSendRequest(to=["client@example.com"], subject="Hello", body="Hi"),
+        _user(),
     )
 
     created = repo.create_email.await_args_list[-1].kwargs["data"]
@@ -90,7 +109,7 @@ async def test_list_templates_falls_back_to_defaults():
     service = EmailDomainService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
-    templates = await service.list_templates(db)
+    templates = await service.list_templates(db, _user())
 
     assert len(templates) == 2
     assert templates[0]["name"] == "Cold Outreach Introduction"
@@ -103,7 +122,7 @@ async def test_get_template_missing_returns_default():
     service = EmailDomainService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.get_template(db, "missing")
+    result = await service.get_template(db, "missing", _user())
 
     assert result["name"] == "Default Template"
     assert result["id"] == "missing"
@@ -118,7 +137,12 @@ async def test_update_template_persists_changes():
     db = AsyncMock(spec=AsyncSession)
 
     result = await service.update_template(
-        db, template_id="tmpl-1", name="New Name", subject="New Subject", body="New Body"
+        db,
+        template_id="tmpl-1",
+        name="New Name",
+        subject="New Subject",
+        body="New Body",
+        current_user=_user(),
     )
 
     assert template.name == "New Name"
@@ -134,7 +158,7 @@ async def test_bulk_delete_returns_affected_count():
     service = EmailDomainService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.bulk_delete(db, ["email-1", "email-2"])
+    result = await service.bulk_delete(db, ["email-1", "email-2"], _user())
 
     assert result["affected_count"] == 2
     db.commit.assert_awaited_once()

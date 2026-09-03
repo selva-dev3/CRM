@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import require_permission
+from app.api.v1.deps import get_current_user, require_permission
 from app.db.session import get_db
+from app.models import User
 from app.schemas.crm_schemas import (
     BulkActionResponse,
     BulkDeleteRequest,
@@ -27,9 +28,15 @@ async def list_calls(
     search: str | None = Query(None),
     call_type: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     return await call_service.list_calls(
-        db, page=page, limit=limit, search=search, call_type=call_type
+        db,
+        page=page,
+        limit=limit,
+        search=search,
+        call_type=call_type,
+        current_user=current_user,
     )
 
 
@@ -40,8 +47,12 @@ async def list_calls(
     summary="Log a new call manually",
     dependencies=[Depends(require_permission("calls:create"))],
 )
-async def log_call(payload: CallLogBase, db: AsyncSession = Depends(get_db)):
-    return await call_service.log_call(db, payload)
+async def log_call(
+    payload: CallLogBase,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await call_service.log_call(db, payload, current_user)
 
 
 @router.post(
@@ -97,8 +108,12 @@ async def log_voicemail_drop(contact_id: str = "c-101", voicemail_template_id: s
     summary="Bulk delete call logs",
     dependencies=[Depends(require_permission("calls:delete"))],
 )
-async def bulk_delete_calls(payload: BulkDeleteRequest, db: AsyncSession = Depends(get_db)):
-    return await call_service.bulk_delete(db, payload.ids)
+async def bulk_delete_calls(
+    payload: BulkDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await call_service.bulk_delete(db, payload.ids, current_user)
 
 
 @router.get(
@@ -107,8 +122,12 @@ async def bulk_delete_calls(payload: BulkDeleteRequest, db: AsyncSession = Depen
     summary="Get call log details by ID",
     dependencies=[Depends(require_permission("calls:read"))],
 )
-async def get_call(call_id: str, db: AsyncSession = Depends(get_db)):
-    return await call_service.get_call(db, call_id)
+async def get_call(
+    call_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await call_service.get_call(db, call_id, current_user)
 
 
 @router.delete(
@@ -117,8 +136,12 @@ async def get_call(call_id: str, db: AsyncSession = Depends(get_db)):
     summary="Delete call log by ID",
     dependencies=[Depends(require_permission("calls:delete"))],
 )
-async def delete_call(call_id: str, db: AsyncSession = Depends(get_db)):
-    return await call_service.delete_call(db, call_id)
+async def delete_call(
+    call_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await call_service.delete_call(db, call_id, current_user)
 
 
 @router.get(
@@ -126,8 +149,12 @@ async def delete_call(call_id: str, db: AsyncSession = Depends(get_db)):
     summary="Get MinIO S3 audio recording presigned URL for call",
     dependencies=[Depends(require_permission("calls:recording"))],
 )
-async def get_call_recording(call_id: str, db: AsyncSession = Depends(get_db)):
-    return await call_service.get_recording(db, call_id)
+async def get_call_recording(
+    call_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await call_service.get_recording(db, call_id, current_user)
 
 
 @router.get(
@@ -135,5 +162,9 @@ async def get_call_recording(call_id: str, db: AsyncSession = Depends(get_db)):
     summary="Get AI voice sentiment analysis & emotion score",
     dependencies=[Depends(require_permission("calls:read"))],
 )
-async def get_call_sentiment(call_id: str, db: AsyncSession = Depends(get_db)):
-    return await call_service.get_sentiment(db, call_id)
+async def get_call_sentiment(
+    call_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await call_service.get_sentiment(db, call_id, current_user)

@@ -56,7 +56,8 @@ export async function fetchRolesApi(search?: string): Promise<RoleItem[]> {
 }
 
 export async function fetchAssignableRolesApi(search?: string): Promise<RoleItem[]> {
-  return fetchRolesApi(search);
+  const query = search ? `?search=${encodeURIComponent(search)}` : '';
+  return apiClient.get<RoleItem[]>(`/roles/assignable${query}`);
 }
 
 export async function createRoleApi(payload: { name: string; description?: string; permissions?: string[] }): Promise<RoleItem> {

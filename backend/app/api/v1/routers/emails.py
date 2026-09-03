@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import require_permission
+from app.api.v1.deps import get_current_user, require_permission
 from app.db.session import get_db
+from app.models import User
 from app.schemas.crm_schemas import (
     BulkActionResponse,
     BulkDeleteRequest,
@@ -26,8 +27,11 @@ async def get_inbox(
     folder: str = "inbox",
     search: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    return await email_domain_service.get_inbox(db, page=page, limit=limit, search=search)
+    return await email_domain_service.get_inbox(
+        db, page=page, limit=limit, search=search, current_user=current_user
+    )
 
 
 @router.post(
@@ -37,8 +41,12 @@ async def get_inbox(
     summary="Send single outbound email",
     dependencies=[Depends(require_permission("emails:send"))],
 )
-async def send_email(payload: EmailSendRequest, db: AsyncSession = Depends(get_db)):
-    return await email_domain_service.send_email(db, payload)
+async def send_email(
+    payload: EmailSendRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await email_domain_service.send_email(db, payload, current_user)
 
 
 @router.get(
@@ -84,8 +92,11 @@ async def delete_draft(draft_id: str, db: AsyncSession = Depends(get_db)):
     summary="List email templates",
     dependencies=[Depends(require_permission("emails:templates"))],
 )
-async def list_email_templates(db: AsyncSession = Depends(get_db)):
-    return await email_domain_service.list_templates(db)
+async def list_email_templates(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await email_domain_service.list_templates(db, current_user)
 
 
 @router.post(
@@ -100,9 +111,15 @@ async def create_email_template(
     body: str,
     category: str = "General",
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     return await email_domain_service.create_template(
-        db, name=name, subject=subject, body=body, category=category
+        db,
+        name=name,
+        subject=subject,
+        body=body,
+        category=category,
+        current_user=current_user,
     )
 
 
@@ -111,8 +128,12 @@ async def create_email_template(
     summary="Get email template by ID",
     dependencies=[Depends(require_permission("emails:templates"))],
 )
-async def get_email_template(template_id: str, db: AsyncSession = Depends(get_db)):
-    return await email_domain_service.get_template(db, template_id)
+async def get_email_template(
+    template_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await email_domain_service.get_template(db, template_id, current_user)
 
 
 @router.put(
@@ -127,9 +148,15 @@ async def update_email_template(
     subject: str,
     body: str,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     return await email_domain_service.update_template(
-        db, template_id=template_id, name=name, subject=subject, body=body
+        db,
+        template_id=template_id,
+        name=name,
+        subject=subject,
+        body=body,
+        current_user=current_user,
     )
 
 
@@ -139,8 +166,12 @@ async def update_email_template(
     summary="Delete email template",
     dependencies=[Depends(require_permission("emails:templates"))],
 )
-async def delete_email_template(template_id: str, db: AsyncSession = Depends(get_db)):
-    return await email_domain_service.delete_template(db, template_id)
+async def delete_email_template(
+    template_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await email_domain_service.delete_template(db, template_id, current_user)
 
 
 @router.post(
@@ -197,8 +228,12 @@ async def get_email_thread(thread_id: str, db: AsyncSession = Depends(get_db)):
     summary="Bulk delete emails from inbox",
     dependencies=[Depends(require_permission("emails:delete"))],
 )
-async def bulk_delete_emails(payload: BulkDeleteRequest, db: AsyncSession = Depends(get_db)):
-    return await email_domain_service.bulk_delete(db, payload.ids)
+async def bulk_delete_emails(
+    payload: BulkDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await email_domain_service.bulk_delete(db, payload.ids, current_user)
 
 
 @router.post(

@@ -5,15 +5,16 @@ import time
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from typing import Any
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import ANY, AsyncMock, Mock
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import APIException, NotFoundError
+from app.core.errors import APIException, ForbiddenError, NotFoundError
 from app.models import MagicLinkToken, PasswordReset, RefreshToken, User, UserInvitation
 from app.repositories.auth_repository import AuthRepository
 from app.schemas.crm_schemas import (
+    ApiKeyCreate,
     LoginRequest,
     OAuthLoginRequest,
     PasswordResetConfirmRequest,
@@ -87,7 +88,9 @@ async def test_login_returns_token_and_user(monkeypatch):
     repo.role_ids_for_user = AsyncMock(return_value=["role-1"])
     repo.role_ids_by_name = AsyncMock(return_value=["role-1"])
     repo.permission_keys_for_roles = AsyncMock(return_value=["leads:all", "deals:all"])
-    repo.roles_by_ids = AsyncMock(return_value=[])
+    repo.roles_by_ids = AsyncMock(
+        return_value=[type("R", (), {"id": "role-1", "name": "Admin"})()]
+    )
 
     result = await service.login(db, LoginRequest(email="alex@crm.com", password=VALID_INPUT))
 
@@ -453,7 +456,73 @@ async def test_revoke_session_not_found():
     db = AsyncMock(spec=AsyncSession)
 
     with pytest.raises(NotFoundError):
-        await service.revoke_session(db, "session-x")
+        await service.revoke_session(db, "session-x", _make_user())
+    repo.get_session_by_id.assert_awaited_once_with(db, "session-x", "user-1")
+
+
+@pytest.mark.asyncio
+async def test_list_api_keys_is_tenant_scoped_and_never_returns_hash():
+    repo: Any = AuthRepository()
+    repo.list_api_keys = AsyncMock(
+        return_value=[
+            type(
+                "K",
+                (),
+                {
+                    "id": "key-1",
+                    "name": "CRM key",
+                    "key_hash": "stored-secret-hash",
+                    "created_at": datetime.now(UTC),
+                    "last_used": None,
+                },
+            )()
+        ]
+    )
+    service = _service_with(repo)
+
+    result = await service.list_api_keys(AsyncMock(spec=AsyncSession), _make_user())
+
+    repo.list_api_keys.assert_awaited_once_with(ANY, "org-1")
+    assert result[0]["api_key"] is None
+    assert result[0]["key"] == "********"
+    assert "stored-secret-hash" not in result[0].values()
+
+
+@pytest.mark.asyncio
+async def test_create_api_key_uses_current_org_and_stores_only_digest(monkeypatch):
+    repo: Any = AuthRepository()
+    repo.create_api_key = AsyncMock(
+        return_value=type(
+            "K",
+            (),
+            {"id": "key-1", "name": "CRM key", "created_at": datetime.now(UTC)},
+        )()
+    )
+    service = _service_with(repo)
+    monkeypatch.setattr("app.services.auth_service.generate_random_code", lambda _length: TEST_CODE)
+
+    result = await service.create_api_key(
+        AsyncMock(spec=AsyncSession), ApiKeyCreate(name="CRM key"), _make_user()
+    )
+
+    raw_key = f"crm_live_{TEST_CODE}"
+    stored = repo.create_api_key.await_args.kwargs["data"]
+    assert result["api_key"] == raw_key
+    assert stored["key_hash"] == sha256(raw_key.encode("utf-8")).hexdigest()
+    assert stored["organization_id"] == "org-1"
+    assert stored["created_by"] == "user-1"
+
+
+@pytest.mark.asyncio
+async def test_create_api_key_without_current_org_stays_forbidden():
+    service = _service_with(AuthRepository())
+
+    with pytest.raises(ForbiddenError):
+        await service.create_api_key(
+            AsyncMock(spec=AsyncSession),
+            ApiKeyCreate(name="CRM key"),
+            _make_user(organization_id=None),
+        )
 
 
 @pytest.mark.asyncio

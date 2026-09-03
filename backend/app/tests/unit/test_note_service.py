@@ -29,6 +29,18 @@ def _service_with(repo: NoteRepository) -> NoteService:
     return NoteService(repository=repo)
 
 
+def _user() -> User:
+    return User(id="usr-1", email="user@crm.com", organization_id="org-1")
+
+
+@pytest.fixture(autouse=True)
+def _stub_organization_resolution(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.note_service.organization_service.resolve_valid_org_id",
+        AsyncMock(return_value="org-1"),
+    )
+
+
 def test_note_to_dict_applies_defaults():
     note = _make_note(entity_type=None, entity_id=None, created_by=None)
     result = note_to_dict(note)
@@ -46,7 +58,8 @@ async def test_get_note_raises_not_found_when_missing():
     db = AsyncMock(spec=AsyncSession)
 
     with pytest.raises(NotFoundError):
-        await service.get_note(db, "missing-note")
+        await service.get_note(db, "missing-note", _user())
+    repo.get_by_id.assert_awaited_once_with(db, "missing-note", "org-1")
 
 
 def _db_with_no_users() -> AsyncMock:
@@ -71,7 +84,13 @@ async def test_create_note_resolves_org_and_serializes(monkeypatch):
         organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
     )
 
-    result = await service.create_note(db, entity_type="lead", entity_id="lead-1", content="Hello")
+    result = await service.create_note(
+        db,
+        entity_type="lead",
+        entity_id="lead-1",
+        content="Hello",
+        current_user=_user(),
+    )
 
     assert result["id"] == "note-1"
     assert result["entity_type"] == "lead"

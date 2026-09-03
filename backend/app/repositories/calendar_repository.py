@@ -13,17 +13,31 @@ class CalendarRepository:
         self,
         db: AsyncSession,
         *,
+        organization_id: str,
         search: str | None = None,
     ) -> Sequence[CalendarEventModel]:
-        stmt = select(CalendarEventModel)
+        stmt = (
+            select(CalendarEventModel)
+            .join(User, User.id == CalendarEventModel.user_id)
+            .where(User.organization_id == organization_id)
+        )
         if search and search.strip():
             stmt = stmt.where(CalendarEventModel.title.ilike(f"%{search.strip()}%"))
         stmt = stmt.order_by(CalendarEventModel.start_time.asc()).limit(50)
         res = await db.execute(stmt)
         return res.scalars().all()
 
-    async def get_event(self, db: AsyncSession, event_id: str) -> CalendarEventModel | None:
-        stmt = select(CalendarEventModel).where(CalendarEventModel.id == event_id)
+    async def get_event(
+        self, db: AsyncSession, event_id: str, organization_id: str
+    ) -> CalendarEventModel | None:
+        stmt = (
+            select(CalendarEventModel)
+            .join(User, User.id == CalendarEventModel.user_id)
+            .where(
+                CalendarEventModel.id == event_id,
+                User.organization_id == organization_id,
+            )
+        )
         res = await db.execute(stmt)
         return res.scalars().first()
 
@@ -34,10 +48,3 @@ class CalendarRepository:
 
     async def delete_event(self, db: AsyncSession, event: CalendarEventModel) -> None:
         await db.delete(event)
-
-    async def resolve_user_id(self, db: AsyncSession) -> str:
-        res = await db.execute(select(User).limit(1))
-        first_user = res.scalars().first()
-        if first_user:
-            return first_user.id
-        return "user-default-1"

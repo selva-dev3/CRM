@@ -60,16 +60,31 @@ class RoleRepository:
         res = await db.execute(select(Role).where((Role.id == value) | (Role.name == value)))
         return res.scalars().first()
 
-    async def get_system_roles(self, db: AsyncSession) -> Sequence[Role]:
-        res = await db.execute(select(Role).where(Role.is_system_role == True))  # noqa: E712
+    async def get_system_roles(
+        self, db: AsyncSession, organization_id: str
+    ) -> Sequence[Role]:
+        res = await db.execute(
+            select(Role).where(
+                Role.is_system_role.is_(True),
+                (Role.organization_id.is_(None))
+                | (Role.organization_id == organization_id),
+            )
+        )
         return res.scalars().all()
 
     async def get_first_role(self, db: AsyncSession) -> Role | None:
         res = await db.execute(select(Role).limit(1))
         return res.scalars().first()
 
-    async def create_role(self, db: AsyncSession, *, name: str, description: str) -> Role:
-        role = Role(name=name, description=description)
+    async def create_role(
+        self,
+        db: AsyncSession,
+        *,
+        name: str,
+        description: str,
+        organization_id: str | None = None,
+    ) -> Role:
+        role = Role(name=name, description=description, organization_id=organization_id)
         db.add(role)
         return role
 

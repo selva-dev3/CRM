@@ -465,8 +465,12 @@ class DealService:
         await self.require_deal(db, deal_id)
         return []
 
-    async def get_deal_notes(self, db: AsyncSession, deal_id: str) -> list[dict]:
-        return await note_service.get_notes_by_entity(db, entity_type="deal", entity_id=deal_id)
+    async def get_deal_notes(
+        self, db: AsyncSession, deal_id: str, current_user: User
+    ) -> list[dict]:
+        return await note_service.get_notes_by_entity(
+            db, entity_type="deal", entity_id=deal_id, current_user=current_user
+        )
 
     async def add_deal_note(
         self, db: AsyncSession, *, deal_id: str, content: str | None, current_user: User
@@ -491,10 +495,14 @@ class DealService:
             db, deal_id=deal_id, organization_id=organization_id
         )
 
-    async def predict_deal_win_rate(self, db: AsyncSession, deal_id: str) -> dict:
+    async def predict_deal_win_rate(
+        self, db: AsyncSession, deal_id: str, current_user: User
+    ) -> dict:
         d = await self.require_deal(db, deal_id)
 
-        notes = await note_service.get_notes_by_entity(db, entity_type="deal", entity_id=deal_id)
+        notes = await note_service.get_notes_by_entity(
+            db, entity_type="deal", entity_id=deal_id, current_user=current_user
+        )
         notes_summary = (
             "\n".join(f"- {n['content']}" for n in notes) if notes else "No notes logged."
         )
