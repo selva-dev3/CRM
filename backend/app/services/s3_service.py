@@ -1,14 +1,25 @@
+from datetime import timedelta
+from io import SEEK_END, SEEK_SET
 from typing import BinaryIO
+from urllib.parse import urlparse
 
-import boto3
-from botocore.client import Config
-from botocore.exceptions import ClientError
+from minio import Minio
+from minio.error import S3Error
 
 from app.core.config import settings
 from app.core.logging import get_logger
 
-
 logger = get_logger(__name__)
+
+
+class _MinioClientCompatibilityAdapter:
+    """Expose the legacy get_object shape used by an existing service caller."""
+
+    def __init__(self, client: Minio) -> None:
+        self._client = client
+
+    def get_object(self, *, Bucket: str, Key: str) -> dict[str, object]:
+        return {"Body": self._client.get_object(Bucket, Key)}
 
 
 class S3Service:
@@ -18,93 +29,85 @@ class S3Service:
         self.secret_key = settings.AWS_SECRET_ACCESS_KEY
         self.region = settings.AWS_REGION
         self.bucket_name = settings.AWS_S3_BUCKET
-        # Bucket existence is checked once per process, not on every upload:
-        # the old behavior issued a blocking head_bucket round-trip before
-        # each upload and silently swallowed failures.
         self._bucket_verified = False
 
-        # Configure boto3 client for MinIO (path-style addressing + S3v4 signature) using central Settings
-        self.s3_client = boto3.client(
-            "s3",
-            endpoint_url=self.endpoint_url,
-            aws_access_key_id=self.access_key,
-            aws_secret_access_key=self.secret_key,
-            region_name=self.region,
-            config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
-        )
+        parsed_endpoint = urlparse(self.endpoint_url)
+        if parsed_endpoint.scheme not in {"http", "https"} or not parsed_endpoint.netloc:
+            raise ValueError("AWS_ENDPOINT_URL must be a valid HTTP or HTTPS URL")
 
-    def _ensure_bucket_exists(self):
+        self.minio_client = Minio(
+            parsed_endpoint.netloc,
+            access_key=self.access_key,
+            secret_key=self.secret_key,
+            secure=parsed_endpoint.scheme == "https",
+            region=self.region,
+        )
+        self.s3_client = _MinioClientCompatibilityAdapter(self.minio_client)
+
+    def _ensure_bucket_exists(self) -> None:
         """Ensures the S3 bucket exists before performing operations."""
         if self._bucket_verified:
             return
-        try:
-            self.s3_client.head_bucket(Bucket=self.bucket_name)
-            self._bucket_verified = True
-        except ClientError as exc:
-            error = exc.response.get("Error", {})
-            error_code = str(error.get("Code", ""))
-            status_code = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
-            bucket_is_missing = error_code in {"404", "NoSuchBucket"} or status_code == 404
-            if not bucket_is_missing:
-                logger.warning(
-                    "S3 bucket check failed for bucket=%s; not attempting bucket creation "
-                    "(code=%s, status=%s)",
-                    self.bucket_name,
-                    error_code or "unknown",
-                    status_code or "unknown",
-                    exc_info=True,
-                )
-                raise
 
-            logger.info(
-                "S3 bucket=%s does not exist; attempting to create it (code=%s, status=%s)",
-                self.bucket_name,
-                error_code or "unknown",
-                status_code or "unknown",
-            )
-            try:
-                self.s3_client.create_bucket(Bucket=self.bucket_name)
-                self._bucket_verified = True
-            except Exception:
-                # Preserve the provider error so callers retain the actual
-                # failure returned by the S3-compatible service.
-                logger.exception("Failed to create missing S3 bucket=%s", self.bucket_name)
-                raise
+        try:
+            bucket_exists = self.minio_client.bucket_exists(self.bucket_name)
         except Exception:
             logger.exception(
-                "S3 bucket check failed for bucket=%s due to a non-S3 client error; "
-                "not attempting bucket creation",
+                "S3 bucket check failed for bucket=%s; not attempting bucket creation",
                 self.bucket_name,
             )
             raise
+
+        if bucket_exists:
+            self._bucket_verified = True
+            return
+
+        logger.info("S3 bucket=%s does not exist; attempting to create it", self.bucket_name)
+        try:
+            self.minio_client.make_bucket(self.bucket_name, location=self.region)
+            self._bucket_verified = True
+        except Exception:
+            logger.exception("Failed to create missing S3 bucket=%s", self.bucket_name)
+            raise
+
+    @staticmethod
+    def _stream_length(file_obj: BinaryIO) -> int:
+        """Return the remaining stream length while preserving its position."""
+        try:
+            position = file_obj.tell()
+            file_obj.seek(0, SEEK_END)
+            length = file_obj.tell() - position
+            file_obj.seek(position, SEEK_SET)
+            return length
+        except (AttributeError, OSError):
+            return -1
 
     def upload_file(
         self, file_obj: BinaryIO, object_name: str, content_type: str | None = None
     ) -> str:
         """Uploads a file object to MinIO S3 bucket and returns the object key."""
         self._ensure_bucket_exists()
-        extra_args = {}
-        if content_type:
-            extra_args["ContentType"] = content_type
-
         try:
-            self.s3_client.upload_fileobj(
-                Fileobj=file_obj, Bucket=self.bucket_name, Key=object_name, ExtraArgs=extra_args
+            self.minio_client.put_object(
+                self.bucket_name,
+                object_name,
+                file_obj,
+                self._stream_length(file_obj),
+                content_type=content_type or "application/octet-stream",
             )
             return object_name
-        except ClientError as exc:
+        except S3Error as exc:
             raise RuntimeError(f"Failed to upload object {object_name} to S3: {exc}") from exc
 
     def generate_presigned_url(self, object_name: str, expiration_seconds: int = 3600) -> str:
         """Generates a temporary presigned GET URL for secure client downloads."""
         try:
-            url = self.s3_client.generate_presigned_url(
-                "get_object",
-                Params={"Bucket": self.bucket_name, "Key": object_name},
-                ExpiresIn=expiration_seconds,
+            return self.minio_client.presigned_get_object(
+                self.bucket_name,
+                object_name,
+                expires=timedelta(seconds=expiration_seconds),
             )
-            return url
-        except ClientError as exc:
+        except S3Error as exc:
             raise RuntimeError(
                 f"Failed to generate presigned URL for {object_name}: {exc}"
             ) from exc
@@ -112,9 +115,9 @@ class S3Service:
     def delete_file(self, object_name: str) -> bool:
         """Deletes an object from MinIO S3 bucket."""
         try:
-            self.s3_client.delete_object(Bucket=self.bucket_name, Key=object_name)
+            self.minio_client.remove_object(self.bucket_name, object_name)
             return True
-        except ClientError as exc:
+        except S3Error as exc:
             raise RuntimeError(f"Failed to delete object {object_name}: {exc}") from exc
 
 
