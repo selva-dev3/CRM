@@ -488,6 +488,75 @@ async def test_invite_users_uses_current_user_org_and_stores_role_id(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_invite_users_accepts_normalized_active_organization_status(monkeypatch):
+    repo: Any = UserRepository()
+    repo.create_invitation = AsyncMock(return_value=None)
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    current_user = _make_user(id="user-1", organization_id="org-1")
+    cast(Any, service.organization_repository).get_by_id = AsyncMock(
+        return_value=_make_org(status=" Active ")
+    )
+    role = type(
+        "R",
+        (),
+        {
+            "id": "role-1",
+            "name": "Sales Manager",
+            "organization_id": "org-1",
+            "is_system_role": False,
+        },
+    )()
+    cast(Any, service.role_repository).get_role_by_id_or_name = AsyncMock(return_value=role)
+    monkeypatch.setattr("app.services.user_service.send_user_invite_email", lambda **kwargs: None)
+
+    from app.schemas.crm_schemas import UserInviteRequest
+
+    payload = UserInviteRequest(users=[{"email": "invite@crm.com"}], role="role-1")
+
+    result = await service.invite_users(db, payload, current_user=current_user)
+
+    assert result["status"] == "success"
+    repo.create_invitation.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("organization", "expected_message"),
+    [
+        (_make_org(status="inactive"), "Organization is inactive."),
+        (_make_org(is_active=False), "Organization is disabled."),
+    ],
+)
+async def test_invite_users_rejects_inactive_or_disabled_organization(
+    monkeypatch, organization, expected_message
+):
+    repo: Any = UserRepository()
+    repo.create_invitation = AsyncMock(return_value=None)
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    current_user = _make_user(id="user-1", organization_id="org-1")
+    cast(Any, service.organization_repository).get_by_id = AsyncMock(return_value=organization)
+    role_lookup = AsyncMock()
+    cast(Any, service.role_repository).get_role_by_id_or_name = role_lookup
+    send_invite = AsyncMock()
+    monkeypatch.setattr("app.services.user_service.send_user_invite_email", send_invite)
+
+    from app.schemas.crm_schemas import UserInviteRequest
+
+    payload = UserInviteRequest(users=[{"email": "invite@crm.com"}], role="role-1")
+
+    with pytest.raises(APIException) as exc_info:
+        await service.invite_users(db, payload, current_user=current_user)
+
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.message == expected_message
+    role_lookup.assert_not_awaited()
+    repo.create_invitation.assert_not_awaited()
+    send_invite.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_invite_users_derives_org_from_session_not_payload():
     repo: Any = UserRepository()
     repo.create_invitation = AsyncMock(return_value=None)
