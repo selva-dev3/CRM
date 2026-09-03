@@ -5,6 +5,10 @@ from botocore.client import Config
 from botocore.exceptions import ClientError
 
 from app.core.config import settings
+from app.core.logging import get_logger
+
+
+logger = get_logger(__name__)
 
 
 class S3Service:
@@ -36,16 +40,43 @@ class S3Service:
         try:
             self.s3_client.head_bucket(Bucket=self.bucket_name)
             self._bucket_verified = True
-        except Exception:
+        except ClientError as exc:
+            error = exc.response.get("Error", {})
+            error_code = str(error.get("Code", ""))
+            status_code = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+            bucket_is_missing = error_code in {"404", "NoSuchBucket"} or status_code == 404
+            if not bucket_is_missing:
+                logger.warning(
+                    "S3 bucket check failed for bucket=%s; not attempting bucket creation "
+                    "(code=%s, status=%s)",
+                    self.bucket_name,
+                    error_code or "unknown",
+                    status_code or "unknown",
+                    exc_info=True,
+                )
+                raise
+
+            logger.info(
+                "S3 bucket=%s does not exist; attempting to create it (code=%s, status=%s)",
+                self.bucket_name,
+                error_code or "unknown",
+                status_code or "unknown",
+            )
             try:
                 self.s3_client.create_bucket(Bucket=self.bucket_name)
                 self._bucket_verified = True
-            except Exception as create_exc:
-                # Never silently continue: uploads into a missing bucket
-                # would otherwise fail later with confusing errors.
-                raise RuntimeError(
-                    f"S3 bucket '{self.bucket_name}' is unavailable and could not be created"
-                ) from create_exc
+            except Exception:
+                # Preserve the provider error so callers retain the actual
+                # failure returned by the S3-compatible service.
+                logger.exception("Failed to create missing S3 bucket=%s", self.bucket_name)
+                raise
+        except Exception:
+            logger.exception(
+                "S3 bucket check failed for bucket=%s due to a non-S3 client error; "
+                "not attempting bucket creation",
+                self.bucket_name,
+            )
+            raise
 
     def upload_file(
         self, file_obj: BinaryIO, object_name: str, content_type: str | None = None
