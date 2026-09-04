@@ -85,6 +85,53 @@ describe('AIChatAssistant', () => {
     expect(screen.queryByText(/pipeline is healthy/i)).toBeNull();
   });
 
+  it('renders grounded database results, evidence, and follow-up questions', async () => {
+    mocks.chatAssistant.mockResolvedValue({
+      conversation_id: 'conversation-1',
+      response: 'There are 7 companies.',
+      evidence: [
+        { entity_type: 'company', entity_id: 'company-1', label: 'Acme' },
+      ],
+      proposed_actions: [],
+      result_blocks: [
+        {
+          key: 'company-count',
+          title: 'Companies',
+          entity_type: 'company',
+          intent: 'count',
+          results: [{ count: 7 }],
+          result_count: 7,
+          explanation: 'There are 7 matching company records.',
+          generated_at: '2026-09-04T12:00:00Z',
+        },
+      ],
+      follow_up_questions: ['Show the newest companies'],
+    });
+    render(<AIChatAssistant />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open AI Sales Assistant' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Message AI Sales Assistant' }), {
+      target: { value: 'How many companies?' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+
+    expect(await screen.findByText('There are 7 companies.')).toBeInTheDocument();
+    expect(screen.getByText('There are 7 matching company records.')).toBeInTheDocument();
+    expect(screen.getAllByText('7').length).toBeGreaterThan(0);
+    expect(screen.getByRole('link', { name: 'Acme' })).toHaveAttribute(
+      'href',
+      '/companies/company-1',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show the newest companies' }));
+    await waitFor(() => {
+      expect(mocks.chatAssistant).toHaveBeenLastCalledWith(
+        'Show the newest companies',
+        'conversation-1',
+      );
+    });
+  });
+
   it('executes a task only after explicit confirmation', async () => {
     mocks.chatAssistant.mockResolvedValue({
       conversation_id: 'conversation-1',

@@ -15,6 +15,7 @@ from app.schemas.ai import (
     AIEvidence,
     AIOrganizationConfigUpdate,
     AISalesForecastAnalysis,
+    CRMChatPlan,
     CRMSearchPlan,
     Customer360Response,
     DataCleaningRequest,
@@ -89,10 +90,12 @@ def _repository() -> Any:
     repository.create_transcript = AsyncMock(return_value=SimpleNamespace(id="transcript-1"))
     repository.search_transcripts = AsyncMock(return_value=[])
     repository.get_conversation = AsyncMock()
+    repository.list_conversation_prompts = AsyncMock(return_value=[])
     repository.get_organization_config = AsyncMock(return_value=None)
     repository.set_organization_model = AsyncMock()
     repository.update_organization_config = AsyncMock()
     repository.search_context = AsyncMock(return_value={})
+    repository.execute_search_plan = AsyncMock(return_value=[])
     repository.save_lead_score = AsyncMock()
     repository.create_generated_content = AsyncMock()
     repository.create_conversation = AsyncMock(return_value=SimpleNamespace(id="conversation-1"))
@@ -108,6 +111,15 @@ def _runtime(output: Any) -> AsyncMock:
         output,
         SimpleNamespace(id="run-1", model_name="gpt-4o-mini", total_tokens=25),
     )
+    return runtime
+
+
+def _chat_runtime(plan: CRMChatPlan, output: AIChatGeneratedOutput) -> AsyncMock:
+    runtime = AsyncMock()
+    runtime.execute.side_effect = [
+        (plan, SimpleNamespace(id="plan-run", model_name="configured-model", total_tokens=10)),
+        (output, SimpleNamespace(id="answer-run", model_name="configured-model", total_tokens=15)),
+    ]
     return runtime
 
 
@@ -418,29 +430,33 @@ async def test_sales_assistant_rejects_cross_tenant_conversation():
 
 
 @pytest.mark.asyncio
-async def test_sales_assistant_uses_only_permitted_crm_modules():
+async def test_sales_assistant_planner_receives_only_permitted_crm_catalog():
     repository = _repository()
+    repository.execute_search_plan.return_value = [{"count": 1}]
+    plan = CRMChatPlan(
+        operations=[CRMSearchPlan(intent="count", entity_type="deal", result_key="deals")]
+    )
     output = AIChatGeneratedOutput(response="One matching deal was found")
-    service = AIDomainService(repository=repository, runtime=_runtime(output))
+    service = AIDomainService(repository=repository, runtime=_chat_runtime(plan, output))
     service._permission_keys = AsyncMock(return_value={"ai:generate", "deals:read", "tasks:read"})
     db = AsyncMock(spec=AsyncSession)
 
     result = await service.sales_assistant_chat(db, "Expansion", None, _user())
 
     assert result["conversation_id"] == "conversation-1"
-    assert repository.search_context.await_args.kwargs["allowed_modules"] == {
-        "deals",
-        "tasks",
-    }
+    planner_prompt = service.runtime.execute.await_args_list[0].kwargs["user_prompt"]
+    assert '"deal"' in planner_prompt
+    assert '"task"' in planner_prompt
+    assert '"lead"' not in planner_prompt
+    assert result["result_blocks"][0]["result_count"] == 1
     repository.create_prompt.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_sales_assistant_drops_evidence_not_present_in_authorized_context():
     repository = _repository()
-    repository.search_context.return_value = {
-        "deals": [{"id": "deal-1", "title": "Authorized deal"}]
-    }
+    repository.execute_search_plan.return_value = [{"id": "deal-1", "title": "Authorized deal"}]
+    plan = CRMChatPlan(operations=[CRMSearchPlan(entity_type="deal")])
     output = AIChatGeneratedOutput(
         response="A deal was found.",
         evidence=[
@@ -448,7 +464,7 @@ async def test_sales_assistant_drops_evidence_not_present_in_authorized_context(
             AIEvidence(entity_type="deal", entity_id="foreign-deal", label="Invalid"),
         ],
     )
-    service = AIDomainService(repository=repository, runtime=_runtime(output))
+    service = AIDomainService(repository=repository, runtime=_chat_runtime(plan, output))
     service._permission_keys = AsyncMock(return_value={"ai:generate", "deals:read"})
 
     result = await service.sales_assistant_chat(
@@ -463,6 +479,7 @@ async def test_sales_assistant_drops_evidence_not_present_in_authorized_context(
 @pytest.mark.asyncio
 async def test_sales_assistant_persists_only_supported_confirmation_actions():
     repository = _repository()
+    plan = CRMChatPlan(operations=[CRMSearchPlan(entity_type="task")])
     output = AIChatGeneratedOutput(
         response="I prepared a task proposal.",
         proposed_actions=[
@@ -478,7 +495,7 @@ async def test_sales_assistant_persists_only_supported_confirmation_actions():
             ),
         ],
     )
-    service = AIDomainService(repository=repository, runtime=_runtime(output))
+    service = AIDomainService(repository=repository, runtime=_chat_runtime(plan, output))
     service._permission_keys = AsyncMock(return_value={"ai:generate", "tasks:read"})
 
     result = await service.sales_assistant_chat(
@@ -489,6 +506,141 @@ async def test_sales_assistant_persists_only_supported_confirmation_actions():
     assert result["proposed_actions"][0]["proposal_id"] == "proposal-1"
     assert repository.create_action.await_args.kwargs["organization_id"] == "org-1"
     assert repository.create_action.await_args.kwargs["user_id"] == "user-1"
+
+
+@pytest.mark.asyncio
+async def test_sales_assistant_executes_database_count_and_returns_result_block():
+    repository = _repository()
+    repository.execute_search_plan.return_value = [{"count": 7}]
+    plan = CRMChatPlan(
+        operations=[
+            CRMSearchPlan(
+                intent="count",
+                entity_type="company",
+                result_key="company_count",
+                title="Companies",
+            )
+        ]
+    )
+    output = AIChatGeneratedOutput(response="There are 7 companies.")
+    service = AIDomainService(repository=repository, runtime=_chat_runtime(plan, output))
+    service._permission_keys = AsyncMock(return_value={"ai:generate", "companies:read"})
+
+    result = await service.sales_assistant_chat(
+        AsyncMock(spec=AsyncSession), "How many companies do we have?", None, _user()
+    )
+
+    assert result["response"] == "There are 7 matching company record(s)."
+    assert result["result_blocks"][0]["results"] == [{"count": 7}]
+    assert result["result_blocks"][0]["result_count"] == 7
+    assert repository.execute_search_plan.await_args.kwargs["organization_id"] == "org-1"
+
+
+@pytest.mark.asyncio
+async def test_sales_assistant_executes_multiple_authorized_operations():
+    repository = _repository()
+    repository.execute_search_plan.side_effect = [
+        [{"count": 3}],
+        [{"aggregate": "sum", "field": "amount", "value": 500000, "matched_count": 3}],
+    ]
+    plan = CRMChatPlan(
+        operations=[
+            CRMSearchPlan(intent="count", entity_type="company", result_key="companies"),
+            CRMSearchPlan(
+                intent="aggregate",
+                entity_type="deal",
+                aggregate="sum",
+                aggregate_field="amount",
+                result_key="pipeline",
+            ),
+        ]
+    )
+    service = AIDomainService(
+        repository=repository,
+        runtime=_chat_runtime(plan, AIChatGeneratedOutput(response="Summary")),
+    )
+    service._permission_keys = AsyncMock(
+        return_value={"ai:generate", "companies:read", "deals:read"}
+    )
+
+    result = await service.sales_assistant_chat(
+        AsyncMock(spec=AsyncSession), "Summarize companies and pipeline", None, _user()
+    )
+
+    assert [block["key"] for block in result["result_blocks"]] == ["companies", "pipeline"]
+    assert repository.execute_search_plan.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_sales_assistant_checks_every_operation_permission_before_querying():
+    repository = _repository()
+    plan = CRMChatPlan(
+        operations=[
+            CRMSearchPlan(intent="count", entity_type="company"),
+            CRMSearchPlan(intent="count", entity_type="invoice"),
+        ]
+    )
+    runtime = AsyncMock()
+    runtime.execute.return_value = (
+        plan,
+        SimpleNamespace(id="plan-run", model_name="configured-model", total_tokens=10),
+    )
+    service = AIDomainService(repository=repository, runtime=runtime)
+    service._permission_keys = AsyncMock(return_value={"ai:generate", "companies:read"})
+
+    with pytest.raises(ForbiddenError, match="invoices:read"):
+        await service.sales_assistant_chat(
+            AsyncMock(spec=AsyncSession), "Compare companies and invoices", None, _user()
+        )
+
+    repository.execute_search_plan.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_sales_assistant_uses_scoped_conversation_history_for_follow_up():
+    repository = _repository()
+    repository.get_conversation.return_value = SimpleNamespace(id="conversation-1")
+    repository.list_conversation_prompts.return_value = [
+        SimpleNamespace(user_prompt="Find Acme", ai_response="I found Acme.")
+    ]
+    plan = CRMChatPlan(operations=[CRMSearchPlan(entity_type="company")])
+    service = AIDomainService(
+        repository=repository,
+        runtime=_chat_runtime(plan, AIChatGeneratedOutput(response="Acme is in software.")),
+    )
+    service._permission_keys = AsyncMock(return_value={"ai:generate", "companies:read"})
+    db = AsyncMock(spec=AsyncSession)
+
+    await service.sales_assistant_chat(db, "What industry is it in?", "conversation-1", _user())
+
+    repository.list_conversation_prompts.assert_awaited_once_with(
+        db,
+        conversation_id="conversation-1",
+        organization_id="org-1",
+        user_id="user-1",
+    )
+    planner_prompt = service.runtime.execute.await_args_list[0].kwargs["user_prompt"]
+    assert "Find Acme" in planner_prompt
+
+
+@pytest.mark.asyncio
+async def test_sales_assistant_clarification_does_not_query_database():
+    repository = _repository()
+    plan = CRMChatPlan(
+        needs_clarification=True,
+        clarification_question="Which customer do you mean?",
+    )
+    runtime = _runtime(plan)
+    service = AIDomainService(repository=repository, runtime=runtime)
+    service._permission_keys = AsyncMock(return_value={"ai:generate", "companies:read"})
+
+    result = await service.sales_assistant_chat(
+        AsyncMock(spec=AsyncSession), "Tell me about it", None, _user()
+    )
+
+    assert result["response"] == "Which customer do you mean?"
+    repository.execute_search_plan.assert_not_awaited()
+    assert runtime.execute.await_count == 1
 
 
 @pytest.mark.asyncio
@@ -685,6 +837,39 @@ async def test_crm_search_aggregate_requires_related_deal_permission():
 
 
 @pytest.mark.asyncio
+async def test_crm_search_related_name_requires_underlying_permission():
+    repository = _repository()
+    repository.execute_search_plan = AsyncMock()
+    plan = CRMSearchPlan(
+        entity_type="deal",
+        filters=[{"field": "company_name", "operator": "contains", "value": "Acme"}],
+        include_fields=["company_name"],
+    )
+    service = AIDomainService(repository=repository, runtime=_runtime(plan))
+    service._permission_keys = AsyncMock(return_value={"ai:generate", "deals:read"})
+
+    with pytest.raises(ForbiddenError):
+        await service.search_crm(AsyncMock(spec=AsyncSession), "Show deals for Acme", None, _user())
+
+    repository.execute_search_plan.assert_not_awaited()
+
+
+def test_crm_search_catalog_hides_related_fields_without_underlying_permission():
+    catalog = AIDomainService._search_catalog({"deals:read"})
+
+    assert "company_name" not in catalog["deal"]["fields"]
+    assert "contact_name" not in catalog["deal"]["fields"]
+    assert "owner_name" not in catalog["deal"]["fields"]
+
+    authorized_catalog = AIDomainService._search_catalog(
+        {"deals:read", "companies:read", "contacts:read", "users:read"}
+    )
+    assert "company_name" in authorized_catalog["deal"]["fields"]
+    assert "contact_name" in authorized_catalog["deal"]["fields"]
+    assert "owner_name" in authorized_catalog["deal"]["fields"]
+
+
+@pytest.mark.asyncio
 async def test_crm_search_returns_database_aggregate_without_ai_fabrication():
     repository = _repository()
     repository.execute_search_plan = AsyncMock(
@@ -838,6 +1023,65 @@ async def test_repository_company_city_filter_is_tenant_scoped():
     assert "companies.organization_id" in sql
     assert "contacts.organization_id" in sql
     assert "contact_addresses.city" in sql
+
+
+@pytest.mark.asyncio
+async def test_repository_related_company_name_is_tenant_scoped():
+    db = AsyncMock(spec=AsyncSession)
+    query_result = Mock()
+    query_result.all.return_value = []
+    db.execute.return_value = query_result
+
+    await AIRepository().execute_search_plan(
+        db,
+        organization_id="org-1",
+        entity_type="deal",
+        filters=[{"field": "company_name", "operator": "contains", "value": "Acme"}],
+        include_fields=["company_name"],
+    )
+
+    sql = str(db.execute.await_args.args[0])
+    assert "deals.organization_id" in sql
+    assert "companies.organization_id" in sql
+    assert "companies.name" in sql
+
+
+@pytest.mark.asyncio
+async def test_repository_invoice_count_is_tenant_scoped():
+    db = AsyncMock(spec=AsyncSession)
+    db.scalar.return_value = 4
+
+    result = await AIRepository().execute_search_plan(
+        db,
+        organization_id="org-1",
+        current_user_id="user-1",
+        entity_type="invoice",
+        intent="count",
+        status="overdue",
+    )
+
+    sql = str(db.scalar.await_args.args[0])
+    assert "invoices.organization_id" in sql
+    assert "invoices.status" in sql
+    assert result == [{"count": 4}]
+
+
+@pytest.mark.asyncio
+async def test_repository_calendar_search_is_scoped_to_current_user():
+    db = AsyncMock(spec=AsyncSession)
+    db.scalar.return_value = 2
+
+    await AIRepository().execute_search_plan(
+        db,
+        organization_id="org-1",
+        current_user_id="user-1",
+        entity_type="calendar_event",
+        intent="count",
+    )
+
+    sql = str(db.scalar.await_args.args[0])
+    assert "calendar_events.user_id" in sql
+    assert "calendar_events.organization_id" not in sql
 
 
 @pytest.mark.asyncio

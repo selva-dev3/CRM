@@ -20,12 +20,14 @@ from app.schemas.ai import (
     AIChatResponse,
     AIOrganizationConfigResponse,
     AIOrganizationConfigUpdate,
+    AIResultBlock,
     AISalesForecastAnalysis,
     AISalesForecastResponse,
     ChurnPredictionResponse,
     CompanyIntelligenceResponse,
     CompetitorBattlecardResponse,
     ContractReviewResponse,
+    CRMChatPlan,
     CRMSearchPlan,
     CRMSearchResponse,
     Customer360Response,
@@ -74,6 +76,7 @@ class AIDomainService:
             "score",
             "created_at",
             "updated_at",
+            "owner_name",
         },
         "contact": {
             "name",
@@ -82,6 +85,7 @@ class AIDomainService:
             "created_at",
             "updated_at",
             "last_contact_at",
+            "company_name",
         },
         "company": {
             "name",
@@ -101,8 +105,19 @@ class AIDomainService:
             "created_at",
             "updated_at",
             "expected_close_date",
+            "company_name",
+            "contact_name",
+            "owner_name",
         },
-        "task": {"title", "status", "priority", "created_at", "updated_at", "due_date"},
+        "task": {
+            "title",
+            "status",
+            "priority",
+            "created_at",
+            "updated_at",
+            "due_date",
+            "owner_name",
+        },
         "project": {
             "name",
             "description",
@@ -115,7 +130,61 @@ class AIDomainService:
             "completion_percentage",
             "created_at",
             "updated_at",
+            "owner_name",
         },
+        "call": {
+            "contact_id",
+            "call_type",
+            "duration_seconds",
+            "notes",
+            "disposition",
+            "timestamp",
+            "contact_name",
+        },
+        "meeting": {
+            "title",
+            "description",
+            "start_time",
+            "end_time",
+            "created_at",
+        },
+        "email": {"from_email", "to_email", "subject", "status", "sent_at"},
+        "note": {"entity_type", "entity_id", "content", "is_pinned", "created_at"},
+        "document": {
+            "filename",
+            "file_size",
+            "mime_type",
+            "uploaded_at",
+            "uploaded_by",
+            "uploaded_by_name",
+        },
+        "product": {"name", "sku", "price", "in_stock_quantity", "is_active", "created_at"},
+        "quote": {
+            "quote_number",
+            "deal_id",
+            "deal_title",
+            "total_amount",
+            "status",
+            "created_at",
+        },
+        "invoice": {
+            "invoice_number",
+            "deal_id",
+            "company_id",
+            "contact_id",
+            "currency",
+            "amount",
+            "paid_amount",
+            "status",
+            "due_date",
+            "created_at",
+            "company_name",
+            "contact_name",
+            "deal_title",
+        },
+        "calendar_event": {"title", "description", "start_time", "end_time", "event_type"},
+        "activity": {"module", "action_description", "user_id", "user_name", "timestamp"},
+        "user": {"name", "role", "is_active", "created_at", "updated_at"},
     }
     _SEARCH_AGGREGATE_FIELDS = {
         "lead": {"score"},
@@ -124,6 +193,17 @@ class AIDomainService:
         "contact": set(),
         "task": set(),
         "project": {"budget", "completion_percentage"},
+        "call": {"duration_seconds"},
+        "meeting": set(),
+        "email": set(),
+        "note": set(),
+        "document": {"file_size"},
+        "product": {"price", "in_stock_quantity"},
+        "quote": {"total_amount"},
+        "invoice": {"amount", "paid_amount"},
+        "calendar_event": set(),
+        "activity": set(),
+        "user": set(),
     }
     _SEARCH_GROUP_FIELDS = {
         "lead": {"status", "industry", "city", "country"},
@@ -132,6 +212,17 @@ class AIDomainService:
         "deal": {"stage"},
         "task": {"status", "priority"},
         "project": {"status", "priority", "owner_id"},
+        "call": {"call_type", "disposition"},
+        "meeting": set(),
+        "email": {"status"},
+        "note": {"entity_type", "is_pinned"},
+        "document": {"mime_type", "uploaded_by"},
+        "product": {"is_active"},
+        "quote": {"status"},
+        "invoice": {"status", "currency"},
+        "calendar_event": {"event_type"},
+        "activity": {"module", "user_id"},
+        "user": {"role", "is_active"},
     }
     _SEARCH_NUMERIC_FIELDS = {
         "amount",
@@ -141,6 +232,12 @@ class AIDomainService:
         "score",
         "budget",
         "completion_percentage",
+        "duration_seconds",
+        "file_size",
+        "price",
+        "in_stock_quantity",
+        "total_amount",
+        "paid_amount",
     }
     _SEARCH_DATE_FIELDS = {
         "created_at",
@@ -149,6 +246,52 @@ class AIDomainService:
         "last_contact_at",
         "updated_at",
         "start_date",
+        "timestamp",
+        "start_time",
+        "end_time",
+        "sent_at",
+        "uploaded_at",
+    }
+    _SEARCH_BOOLEAN_FIELDS = {"is_active", "is_pinned"}
+
+    _SEARCH_PERMISSIONS = {
+        "lead": "leads:read",
+        "contact": "contacts:read",
+        "company": "companies:read",
+        "deal": "deals:read",
+        "task": "tasks:read",
+        "project": "projects:read",
+        "call": "calls:read",
+        "meeting": "meetings:read",
+        "email": "emails:read",
+        "note": "notes:read",
+        "document": "documents:read",
+        "product": "products:read",
+        "quote": "quotes:read",
+        "invoice": "invoices:read",
+        "calendar_event": "calendar:read",
+        "activity": "activities:read",
+        "user": "users:read",
+    }
+    _RELATED_FIELD_PERMISSIONS = {
+        ("lead", "owner_name"): ("users:read",),
+        ("contact", "company_name"): ("companies:read",),
+        ("contact", "last_contact_at"): ("calls:read",),
+        ("company", "city"): ("contacts:read",),
+        ("company", "last_contact_at"): ("contacts:read", "calls:read"),
+        ("company", "open_deal_value"): ("deals:read",),
+        ("deal", "owner_name"): ("users:read",),
+        ("deal", "company_name"): ("companies:read",),
+        ("deal", "contact_name"): ("contacts:read",),
+        ("task", "owner_name"): ("users:read",),
+        ("project", "owner_name"): ("users:read",),
+        ("call", "contact_name"): ("contacts:read",),
+        ("document", "uploaded_by_name"): ("users:read",),
+        ("quote", "deal_title"): ("deals:read",),
+        ("invoice", "company_name"): ("companies:read",),
+        ("invoice", "contact_name"): ("contacts:read",),
+        ("invoice", "deal_title"): ("deals:read",),
+        ("activity", "user_name"): ("users:read",),
     }
 
     def __init__(
@@ -186,7 +329,10 @@ class AIDomainService:
     def _validate_search_plan(cls, plan: CRMSearchPlan) -> None:
         entity_fields = cls._SEARCH_FIELDS[plan.entity_type]
         invalid_fields = {item.field for item in plan.filters} - entity_fields
-        if plan.date_field and plan.date_field not in entity_fields:
+        invalid_fields.update(set(plan.include_fields) - entity_fields)
+        if plan.date_field and (
+            plan.date_field not in entity_fields or plan.date_field not in cls._SEARCH_DATE_FIELDS
+        ):
             invalid_fields.add(plan.date_field)
         if plan.sort_by and plan.sort_by not in entity_fields:
             invalid_fields.add(plan.sort_by)
@@ -205,8 +351,10 @@ class AIDomainService:
                 item.field in cls._SEARCH_DATE_FIELDS
                 and item.operator not in {"before", "after", "gte", "lte"}
             )
+            or (item.field in cls._SEARCH_BOOLEAN_FIELDS and item.operator != "equals")
             or (
                 item.field not in cls._SEARCH_NUMERIC_FIELDS | cls._SEARCH_DATE_FIELDS
+                and item.field not in cls._SEARCH_BOOLEAN_FIELDS
                 and item.operator not in {"equals", "contains"}
             )
             for item in plan.filters
@@ -250,7 +398,11 @@ class AIDomainService:
                 code="AI_INVALID_SEARCH_PLAN",
                 message="Recent-contact filtering is unsupported for this CRM record type.",
             )
-        if plan.status and plan.entity_type not in {"lead", "deal", "task", "project"}:
+        if (
+            plan.status
+            and "status" not in cls._SEARCH_FIELDS[plan.entity_type]
+            and plan.entity_type != "deal"
+        ):
             raise APIException(
                 status_code=502,
                 code="AI_INVALID_SEARCH_PLAN",
@@ -268,16 +420,9 @@ class AIDomainService:
 
     @classmethod
     def _require_search_permissions(cls, permissions: set[str], plan: CRMSearchPlan) -> None:
-        permission_by_entity = {
-            "lead": "leads:read",
-            "contact": "contacts:read",
-            "company": "companies:read",
-            "deal": "deals:read",
-            "task": "tasks:read",
-            "project": "projects:read",
-        }
-        cls._require_permission(permissions, permission_by_entity[plan.entity_type])
+        cls._require_permission(permissions, cls._SEARCH_PERMISSIONS[plan.entity_type])
         fields = {item.field for item in plan.filters}
+        fields.update(plan.include_fields)
         if plan.aggregate_field:
             fields.add(plan.aggregate_field)
         if plan.group_by:
@@ -288,12 +433,40 @@ class AIDomainService:
             fields.add("open_deal_value")
         if plan.inactive_days:
             fields.add("last_contact_at")
-        if plan.entity_type == "company" and fields & {"open_deal_value"}:
-            cls._require_permission(permissions, "deals:read")
-        if plan.entity_type == "company" and fields & {"city", "last_contact_at"}:
-            cls._require_permission(permissions, "contacts:read")
-        if plan.entity_type in {"company", "contact"} and "last_contact_at" in fields:
-            cls._require_permission(permissions, "calls:read")
+        for field in fields:
+            for required_permission in cls._RELATED_FIELD_PERMISSIONS.get(
+                (plan.entity_type, field), ()
+            ):
+                cls._require_permission(permissions, required_permission)
+
+    @classmethod
+    def _field_is_authorized(cls, entity: str, field: str, permissions: set[str]) -> bool:
+        requirements = cls._RELATED_FIELD_PERMISSIONS.get((entity, field), ())
+        return "all" in permissions or all(item in permissions for item in requirements)
+
+    @classmethod
+    def _search_catalog(cls, permissions: set[str]) -> dict[str, dict[str, object]]:
+        return {
+            entity: {
+                "fields": sorted(
+                    field
+                    for field in fields
+                    if cls._field_is_authorized(entity, field, permissions)
+                ),
+                "aggregate_fields": sorted(
+                    field
+                    for field in cls._SEARCH_AGGREGATE_FIELDS[entity]
+                    if cls._field_is_authorized(entity, field, permissions)
+                ),
+                "group_fields": sorted(
+                    field
+                    for field in cls._SEARCH_GROUP_FIELDS[entity]
+                    if cls._field_is_authorized(entity, field, permissions)
+                ),
+            }
+            for entity, fields in cls._SEARCH_FIELDS.items()
+            if cls._SEARCH_PERMISSIONS[entity] in permissions or "all" in permissions
+        }
 
     @staticmethod
     def _search_explanation(
@@ -601,76 +774,146 @@ class AIDomainService:
         current_user: User,
     ) -> dict:
         permissions = await self._permission_keys(db, current_user)
-        module_permissions = {
-            "leads": "leads:read",
-            "contacts": "contacts:read",
-            "companies": "companies:read",
-            "deals": "deals:read",
-            "tasks": "tasks:read",
-            "projects": "projects:read",
-            "calls": "calls:read",
-            "meetings": "meetings:read",
-        }
-        allowed_modules = {
-            module
-            for module, permission in module_permissions.items()
-            if permission in permissions or "all" in permissions
-        }
-        context = await self.repository.search_context(
-            db,
-            organization_id=current_user.organization_id or "",
-            query=message,
-            allowed_modules=allowed_modules,
-        )
+        organization_id = current_user.organization_id or ""
+        history: list[dict[str, str]] = []
         if conversation_id:
             conversation = await self.repository.get_conversation(
                 db,
                 conversation_id=conversation_id,
-                organization_id=current_user.organization_id or "",
+                organization_id=organization_id,
                 user_id=current_user.id,
             )
             if not conversation:
                 raise NotFoundError(message="AI conversation not found")
-        output, run = await self._run(
+            prompts = await self.repository.list_conversation_prompts(
+                db,
+                conversation_id=conversation_id,
+                organization_id=organization_id,
+                user_id=current_user.id,
+            )
+            history = [
+                {"user": prompt.user_prompt, "assistant": prompt.ai_response} for prompt in prompts
+            ]
+
+        plan_output, plan_run = await self._run(
             db,
             current_user=current_user,
-            feature="sales_assistant",
-            context={"question": message, "search_results": context},
+            feature="sales_assistant_plan",
+            context={
+                "question": message,
+                "recent_conversation": history,
+                "authorized_crm_catalog": self._search_catalog(permissions),
+                "current_utc_date": datetime.now(UTC).date().isoformat(),
+            },
             instructions=(
-                "Answer using only the search results. Cite evidence entries for every CRM fact. "
-                "You may propose a create_task action, but never execute it. Do not propose "
-                "email sending or record updates because those assistant actions are unavailable."
+                "Create a safe plan that answers the current CRM question. Use one operation for "
+                "each independently required dataset and no more than five operations. Resolve "
+                "follow-up references only from recent_conversation. Use only entities and fields "
+                "in authorized_crm_catalog. Prefer database count, aggregate, and comparison "
+                "operations over asking the model to calculate. Use stage, not status, for deals. "
+                "Request include_fields when related names are needed in the answer. "
+                "If the question is ambiguous or cannot be answered from the authorized catalog, "
+                "set needs_clarification and ask one specific clarification question. Never emit SQL."
             ),
-            output_schema=AIChatGeneratedOutput,
+            output_schema=CRMChatPlan,
         )
-        generated = AIChatGeneratedOutput.model_validate(output)
-        authorized_evidence = self._authorized_evidence_pairs(context)
-        evidence_type_aliases = {
-            "leads": "lead",
-            "contacts": "contact",
-            "companies": "company",
-            "deals": "deal",
-            "tasks": "task",
-            "calls": "call",
-            "meetings": "meeting",
-        }
-        generated.evidence = [
-            evidence
-            for evidence in generated.evidence
-            if (
-                evidence_type_aliases.get(
-                    evidence.entity_type.lower(), evidence.entity_type.lower()
-                ),
-                evidence.entity_id,
+        chat_plan = CRMChatPlan.model_validate(plan_output)
+        for operation in chat_plan.operations:
+            self._validate_search_plan(operation)
+            self._require_search_permissions(permissions, operation)
+
+        result_blocks: list[AIResultBlock] = []
+        for index, operation in enumerate(chat_plan.operations, start=1):
+            results = await self.repository.execute_search_plan(
+                db,
+                organization_id=organization_id,
+                current_user_id=current_user.id,
+                **operation.model_dump(exclude={"result_key", "title"}),
             )
-            in authorized_evidence
-        ]
+            explanation, result_count = self._search_explanation(operation, results)
+            result_blocks.append(
+                AIResultBlock(
+                    key=operation.result_key or f"result_{index}",
+                    title=operation.title or operation.entity_type.replace("_", " ").title(),
+                    entity_type=operation.entity_type,
+                    intent=operation.intent,
+                    results=results,
+                    result_count=result_count,
+                    explanation=explanation,
+                    generated_at=datetime.now(UTC).isoformat(),
+                )
+            )
+
+        if chat_plan.needs_clarification:
+            generated = AIChatGeneratedOutput(
+                response=chat_plan.clarification_question or "Please clarify your CRM question."
+            )
+            run = plan_run
+        elif result_blocks and all(
+            block.intent in {"count", "aggregate", "comparison"} for block in result_blocks
+        ):
+            generated = AIChatGeneratedOutput(
+                response=" ".join(block.explanation for block in result_blocks)
+            )
+            run = plan_run
+        else:
+            output, run = await self._run(
+                db,
+                current_user=current_user,
+                feature="sales_assistant_answer",
+                context={
+                    "question": message,
+                    "recent_conversation": history,
+                    "database_results": [block.model_dump() for block in result_blocks],
+                    "current_utc_date": datetime.now(UTC).date().isoformat(),
+                },
+                instructions=(
+                    "Answer the question directly using only database_results. Preserve every "
+                    "database-calculated count, amount, date, and status exactly. Explain useful "
+                    "patterns without inventing causes. Cite returned record IDs as evidence for "
+                    "record-specific claims. For aggregate-only results, state the exact database "
+                    "value without inventing evidence. You may propose create_task, but do not "
+                    "execute actions. Offer up to three useful follow-up questions."
+                ),
+                output_schema=AIChatGeneratedOutput,
+            )
+            generated = AIChatGeneratedOutput.model_validate(output)
+
+        if (
+            result_blocks
+            and all(block.result_count == 0 for block in result_blocks)
+            and not generated.proposed_actions
+        ):
+            generated.response = "No authorized CRM records matched your question."
+
+        authorized_evidence = {
+            (block.entity_type, str(item["id"])): item
+            for block in result_blocks
+            for item in block.results
+            if item.get("id") is not None
+        }
+        normalized_evidence = []
+        for evidence in generated.evidence:
+            evidence_key = (evidence.entity_type.lower(), evidence.entity_id)
+            record = authorized_evidence.get(evidence_key)
+            if not record:
+                continue
+            label = next(
+                (
+                    str(record[field])
+                    for field in ("name", "title", "filename", "invoice_number", "quote_number")
+                    if record.get(field)
+                ),
+                f"{evidence.entity_type.replace('_', ' ').title()} {evidence.entity_id}",
+            )
+            normalized_evidence.append(evidence.model_copy(update={"label": label, "detail": None}))
+        generated.evidence = normalized_evidence
         if conversation_id:
             resolved_conversation_id = conversation_id
         else:
             conversation = await self.repository.create_conversation(
                 db,
-                organization_id=current_user.organization_id or "",
+                organization_id=organization_id,
                 user_id=current_user.id,
                 title=message[:255],
                 model_name=run.model_name,
@@ -683,7 +926,7 @@ class AIDomainService:
             action = await self.repository.create_action(
                 db,
                 run_id=run.id,
-                organization_id=current_user.organization_id or "",
+                organization_id=organization_id,
                 user_id=current_user.id,
                 action_type=proposal.action_type,
                 title=proposal.title[:255],
@@ -698,6 +941,8 @@ class AIDomainService:
             response=generated.response,
             evidence=generated.evidence,
             proposed_actions=executable_actions,
+            result_blocks=result_blocks,
+            follow_up_questions=generated.follow_up_questions,
         )
         await self.repository.create_prompt(
             db,
@@ -1215,34 +1460,24 @@ class AIDomainService:
             context={
                 "natural_language_query": query,
                 "requested_scope": scope or "auto",
-                "project_fields": [
-                    "name",
-                    "description",
-                    "status",
-                    "priority",
-                    "owner_id",
-                    "start_date",
-                    "due_date",
-                    "budget",
-                    "completion_percentage",
-                ],
+                "authorized_crm_catalog": self._search_catalog(permissions),
                 "current_utc_date": datetime.now(UTC).date().isoformat(),
             },
             instructions=(
                 "Convert the question into one safe structured CRM search plan. Infer whether the "
                 "user wants a list, detail, count, aggregate, or grouped comparison. Use only "
-                "fields, operators, date ranges, aggregates, and entity types present in the "
-                "schema. If requested_scope is not auto, entity_type must match it exactly. "
+                "entities and fields present in authorized_crm_catalog and only the operators, "
+                "date ranges, and aggregates present in the schema. If requested_scope is not "
+                "auto, entity_type must match it exactly. "
                 "Use stage, not status, for deals. Use last_contact_at or inactive_days "
                 "only for contacts or companies. For customer/account questions, use company. "
                 "For company location, use city. Normalize monetary values to numeric base units. "
-                "For project questions, use entity_type project and the project fields supplied in "
-                "the context; use budget for project budget totals and completion_percentage for "
+                "For project questions, use entity_type project; use budget for project budget "
+                "totals and completion_percentage for "
                 "progress. Never infer project data from tasks or deals. "
                 "Never emit SQL or invent unsupported fields."
             ),
             output_schema=CRMSearchPlan,
-            provider_override="openrouter",
         )
         plan = CRMSearchPlan.model_validate(plan_output)
         if scope and plan.entity_type != scope:
@@ -1257,7 +1492,8 @@ class AIDomainService:
         results = await self.repository.execute_search_plan(
             db,
             organization_id=current_user.organization_id or "",
-            **plan.model_dump(),
+            current_user_id=current_user.id,
+            **plan.model_dump(exclude={"result_key", "title"}),
         )
         logger.info(
             "CRM AI search completed provider=%s model=%s crm_query_latency_ms=%s",

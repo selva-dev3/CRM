@@ -27,7 +27,39 @@ export interface AIChatResponse {
   response: string;
   evidence: AIEvidence[];
   proposed_actions: AIActionProposal[];
+  result_blocks?: AIResultBlock[];
+  follow_up_questions?: string[];
   run_id?: string | null;
+}
+
+export type CRMEntityType =
+  | 'lead'
+  | 'contact'
+  | 'company'
+  | 'deal'
+  | 'task'
+  | 'project'
+  | 'call'
+  | 'meeting'
+  | 'email'
+  | 'note'
+  | 'document'
+  | 'product'
+  | 'quote'
+  | 'invoice'
+  | 'calendar_event'
+  | 'activity'
+  | 'user';
+
+export interface AIResultBlock {
+  key: string;
+  title: string;
+  entity_type: string;
+  intent: string;
+  results: Array<Record<string, unknown>>;
+  result_count: number;
+  explanation: string;
+  generated_at: string;
 }
 
 export interface LeadScoringResponse {
@@ -60,7 +92,7 @@ export interface MeetingSummaryResponse {
 
 export interface CRMSearchPlan {
   intent: 'list' | 'detail' | 'count' | 'aggregate' | 'comparison';
-  entity_type: 'lead' | 'contact' | 'company' | 'deal' | 'task' | 'project';
+  entity_type: CRMEntityType;
   text_query?: string | null;
   status?: string | null;
   filters: Array<{
@@ -68,6 +100,7 @@ export interface CRMSearchPlan {
     operator: 'equals' | 'contains' | 'gte' | 'lte' | 'before' | 'after';
     value: string | number | boolean;
   }>;
+  include_fields?: string[];
   aggregate?: 'sum' | 'average' | 'minimum' | 'maximum' | null;
   aggregate_field?: string | null;
   group_by?: string | null;

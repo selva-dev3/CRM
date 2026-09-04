@@ -15,6 +15,7 @@ from app.models import (
     AIPrompt,
     AIRun,
     AITranscript,
+    CalendarEventModel,
     CallLog,
     Company,
     Contact,
@@ -22,10 +23,16 @@ from app.models import (
     Deal,
     DealActivity,
     DealProduct,
+    Document,
+    Email,
+    Invoice,
     Lead,
     Meeting,
+    Note,
     OrganizationSubscription,
+    Product,
     Project,
+    Quote,
     SystemSetting,
     Task,
     User,
@@ -387,6 +394,28 @@ class AIRepository:
             )
         )
         return result.scalars().first()
+
+    async def list_conversation_prompts(
+        self,
+        db: AsyncSession,
+        *,
+        conversation_id: str,
+        organization_id: str,
+        user_id: str,
+        limit: int = 6,
+    ) -> list[AIPrompt]:
+        result = await db.execute(
+            select(AIPrompt)
+            .join(AIConversation, AIConversation.id == AIPrompt.conversation_id)
+            .where(
+                AIPrompt.conversation_id == conversation_id,
+                AIConversation.organization_id == organization_id,
+                AIConversation.user_id == user_id,
+            )
+            .order_by(AIPrompt.created_at.desc())
+            .limit(limit)
+        )
+        return list(reversed(result.scalars().all()))
 
     async def create_action(
         self,
@@ -793,11 +822,13 @@ class AIRepository:
         db: AsyncSession,
         *,
         organization_id: str,
+        current_user_id: str | None = None,
         entity_type: str,
         intent: str = "list",
         text_query: str | None = None,
         status: str | None = None,
         filters: list[dict[str, object]] | None = None,
+        include_fields: list[str] | None = None,
         aggregate: str | None = None,
         aggregate_field: str | None = None,
         group_by: str | None = None,
@@ -818,6 +849,17 @@ class AIRepository:
             "deal": Deal,
             "task": Task,
             "project": Project,
+            "call": CallLog,
+            "meeting": Meeting,
+            "email": Email,
+            "note": Note,
+            "document": Document,
+            "product": Product,
+            "quote": Quote,
+            "invoice": Invoice,
+            "calendar_event": CalendarEventModel,
+            "activity": ActivityLog,
+            "user": User,
         }
         model: Any = models[entity_type]
         open_deal_value = (
@@ -872,12 +914,104 @@ class AIRepository:
             .correlate(Contact)
             .scalar_subquery()
         )
+        owner_name_by_entity = {
+            "lead": select(User.name)
+            .where(User.id == Lead.assigned_to, User.organization_id == organization_id)
+            .correlate(Lead)
+            .scalar_subquery(),
+            "deal": select(User.name)
+            .where(User.id == Deal.assigned_to, User.organization_id == organization_id)
+            .correlate(Deal)
+            .scalar_subquery(),
+            "task": select(User.name)
+            .where(User.id == Task.assigned_to, User.organization_id == organization_id)
+            .correlate(Task)
+            .scalar_subquery(),
+            "project": select(User.name)
+            .where(User.id == Project.owner_id, User.organization_id == organization_id)
+            .correlate(Project)
+            .scalar_subquery(),
+        }
+        contact_company_name = (
+            select(Company.name)
+            .where(
+                Company.id == Contact.company_id,
+                Company.organization_id == organization_id,
+            )
+            .correlate(Contact)
+            .scalar_subquery()
+        )
+        deal_company_name = (
+            select(Company.name)
+            .where(Company.id == Deal.company_id, Company.organization_id == organization_id)
+            .correlate(Deal)
+            .scalar_subquery()
+        )
+        deal_contact_name = (
+            select(Contact.name)
+            .where(Contact.id == Deal.contact_id, Contact.organization_id == organization_id)
+            .correlate(Deal)
+            .scalar_subquery()
+        )
+        call_contact_name = (
+            select(Contact.name)
+            .where(Contact.id == CallLog.contact_id, Contact.organization_id == organization_id)
+            .correlate(CallLog)
+            .scalar_subquery()
+        )
+        document_uploader_name = (
+            select(User.name)
+            .where(User.id == Document.uploaded_by, User.organization_id == organization_id)
+            .correlate(Document)
+            .scalar_subquery()
+        )
+        quote_deal_title = (
+            select(Deal.title)
+            .where(Deal.id == Quote.deal_id, Deal.organization_id == organization_id)
+            .correlate(Quote)
+            .scalar_subquery()
+        )
+        invoice_company_name = (
+            select(Company.name)
+            .where(Company.id == Invoice.company_id, Company.organization_id == organization_id)
+            .correlate(Invoice)
+            .scalar_subquery()
+        )
+        invoice_contact_name = (
+            select(Contact.name)
+            .where(Contact.id == Invoice.contact_id, Contact.organization_id == organization_id)
+            .correlate(Invoice)
+            .scalar_subquery()
+        )
+        invoice_deal_title = (
+            select(Deal.title)
+            .where(Deal.id == Invoice.deal_id, Deal.organization_id == organization_id)
+            .correlate(Invoice)
+            .scalar_subquery()
+        )
+        activity_user_name = (
+            select(User.name)
+            .where(User.id == ActivityLog.user_id, User.organization_id == organization_id)
+            .correlate(ActivityLog)
+            .scalar_subquery()
+        )
         related_columns: dict[tuple[str, str], Any] = {
             ("company", "open_deal_value"): open_deal_value,
             ("company", "last_contact_at"): company_last_contact,
             ("company", "city"): company_city,
             ("contact", "last_contact_at"): contact_last_contact,
             ("contact", "city"): contact_city,
+            ("contact", "company_name"): contact_company_name,
+            ("deal", "company_name"): deal_company_name,
+            ("deal", "contact_name"): deal_contact_name,
+            ("call", "contact_name"): call_contact_name,
+            ("document", "uploaded_by_name"): document_uploader_name,
+            ("quote", "deal_title"): quote_deal_title,
+            ("invoice", "company_name"): invoice_company_name,
+            ("invoice", "contact_name"): invoice_contact_name,
+            ("invoice", "deal_title"): invoice_deal_title,
+            ("activity", "user_name"): activity_user_name,
+            **{(entity, "owner_name"): column for entity, column in owner_name_by_entity.items()},
         }
         direct_columns: dict[str, dict[str, Any]] = {
             "lead": {
@@ -937,6 +1071,89 @@ class AIRepository:
                 "created_at": Project.created_at,
                 "updated_at": Project.updated_at,
             },
+            "call": {
+                "contact_id": CallLog.contact_id,
+                "call_type": CallLog.call_type,
+                "duration_seconds": CallLog.duration_seconds,
+                "notes": CallLog.notes,
+                "disposition": CallLog.disposition,
+                "timestamp": CallLog.timestamp,
+            },
+            "meeting": {
+                "title": Meeting.title,
+                "description": Meeting.description,
+                "start_time": Meeting.start_time,
+                "end_time": Meeting.end_time,
+                "created_at": Meeting.created_at,
+            },
+            "email": {
+                "from_email": Email.from_email,
+                "to_email": Email.to_email,
+                "subject": Email.subject,
+                "status": Email.status,
+                "sent_at": Email.sent_at,
+            },
+            "note": {
+                "entity_type": Note.entity_type,
+                "entity_id": Note.entity_id,
+                "content": Note.content,
+                "is_pinned": Note.is_pinned,
+                "created_at": Note.created_at,
+            },
+            "document": {
+                "filename": Document.filename,
+                "file_size": Document.file_size,
+                "mime_type": Document.mime_type,
+                "uploaded_at": Document.uploaded_at,
+                "uploaded_by": Document.uploaded_by,
+            },
+            "product": {
+                "name": Product.name,
+                "sku": Product.sku,
+                "price": Product.price,
+                "in_stock_quantity": Product.in_stock_quantity,
+                "is_active": Product.is_active,
+                "created_at": Product.created_at,
+            },
+            "quote": {
+                "quote_number": Quote.quote_number,
+                "deal_id": Quote.deal_id,
+                "total_amount": Quote.total_amount,
+                "status": Quote.status,
+                "created_at": Quote.created_at,
+            },
+            "invoice": {
+                "invoice_number": Invoice.invoice_number,
+                "deal_id": Invoice.deal_id,
+                "company_id": Invoice.company_id,
+                "contact_id": Invoice.contact_id,
+                "currency": Invoice.currency,
+                "amount": Invoice.amount,
+                "paid_amount": Invoice.paid_amount,
+                "status": Invoice.status,
+                "due_date": Invoice.due_date,
+                "created_at": Invoice.created_at,
+            },
+            "calendar_event": {
+                "title": CalendarEventModel.title,
+                "description": CalendarEventModel.description,
+                "start_time": CalendarEventModel.start_time,
+                "end_time": CalendarEventModel.end_time,
+                "event_type": CalendarEventModel.event_type,
+            },
+            "activity": {
+                "module": ActivityLog.module,
+                "action_description": ActivityLog.action_description,
+                "user_id": ActivityLog.user_id,
+                "timestamp": ActivityLog.timestamp,
+            },
+            "user": {
+                "name": User.name,
+                "role": User.role,
+                "is_active": User.is_active,
+                "created_at": User.created_at,
+                "updated_at": User.updated_at,
+            },
         }
 
         def column_for(field: str) -> Any:
@@ -980,6 +1197,8 @@ class AIRepository:
                     return func.lower(Deal.stage) == "closed won"
                 if normalized in {"lost", "closed lost"}:
                     return func.lower(Deal.stage) == "closed lost"
+            if isinstance(value, bool):
+                return column == value
             if isinstance(value, str):
                 return func.lower(column) == normalized
             return column == value
@@ -993,6 +1212,12 @@ class AIRepository:
                 "score",
                 "budget",
                 "completion_percentage",
+                "duration_seconds",
+                "file_size",
+                "price",
+                "in_stock_quantity",
+                "total_amount",
+                "paid_amount",
             }:
                 return float(str(value))
             if field in {
@@ -1002,12 +1227,23 @@ class AIRepository:
                 "last_contact_at",
                 "updated_at",
                 "start_date",
+                "timestamp",
+                "start_time",
+                "end_time",
+                "sent_at",
+                "uploaded_at",
             }:
                 parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
                 return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
             return value
 
-        conditions: list[Any] = [model.organization_id == organization_id]
+        conditions: list[Any] = [
+            (
+                CalendarEventModel.user_id == current_user_id
+                if entity_type == "calendar_event"
+                else model.organization_id == organization_id
+            )
+        ]
         searchable = {
             "lead": (Lead.title, Lead.company, Lead.contact_name),
             "contact": (Contact.name, Contact.email),
@@ -1015,6 +1251,17 @@ class AIRepository:
             "deal": (Deal.title,),
             "task": (Task.title,),
             "project": (Project.name, Project.description),
+            "call": (CallLog.notes, CallLog.disposition),
+            "meeting": (Meeting.title, Meeting.description),
+            "email": (Email.subject, Email.from_email, Email.to_email),
+            "note": (Note.content,),
+            "document": (Document.filename, Document.mime_type),
+            "product": (Product.name, Product.sku),
+            "quote": (Quote.quote_number,),
+            "invoice": (Invoice.invoice_number,),
+            "calendar_event": (CalendarEventModel.title, CalendarEventModel.description),
+            "activity": (ActivityLog.module, ActivityLog.action_description),
+            "user": (User.name, User.role),
         }
         if text_query:
             pattern = f"%{text_query.strip()}%"
@@ -1023,7 +1270,9 @@ class AIRepository:
         if status:
             status_field = "stage" if entity_type == "deal" else "status"
             conditions.append(equals_condition(status_field, column_for(status_field), status))
-        requested_related_fields: set[str] = set()
+        requested_related_fields = {
+            field for field in include_fields or [] if (entity_type, field) in related_columns
+        }
         for item in filters or []:
             field = str(item["field"])
             operator = str(item["operator"])
@@ -1168,7 +1417,27 @@ class AIRepository:
                 sort_column.desc() if sort_direction == "desc" else sort_column.asc()
             )
         else:
-            query = query.order_by(model.created_at.desc())
+            default_orders = {
+                "lead": Lead.created_at,
+                "contact": Contact.created_at,
+                "company": Company.created_at,
+                "deal": Deal.created_at,
+                "task": Task.created_at,
+                "project": Project.created_at,
+                "call": CallLog.timestamp,
+                "meeting": Meeting.created_at,
+                "email": Email.sent_at,
+                "note": Note.created_at,
+                "document": Document.uploaded_at,
+                "product": Product.created_at,
+                "quote": Quote.created_at,
+                "invoice": Invoice.created_at,
+                "calendar_event": CalendarEventModel.start_time,
+                "activity": ActivityLog.timestamp,
+                "user": User.created_at,
+            }
+            default_order = default_orders[entity_type]
+            query = query.order_by(default_order.desc())
         rows = (await db.execute(query.limit(1 if intent == "detail" else limit))).all()
         fields = {
             "lead": ("id", "title", "company", "status", "score", "updated_at"),
@@ -1188,13 +1457,45 @@ class AIRepository:
                 "completion_percentage",
                 "updated_at",
             ),
+            "call": (
+                "id",
+                "contact_id",
+                "call_type",
+                "duration_seconds",
+                "disposition",
+                "timestamp",
+            ),
+            "meeting": ("id", "title", "start_time", "end_time", "created_at"),
+            "email": ("id", "from_email", "to_email", "subject", "status", "sent_at"),
+            "note": ("id", "entity_type", "entity_id", "content", "is_pinned", "created_at"),
+            "document": ("id", "filename", "file_size", "mime_type", "uploaded_at"),
+            "product": ("id", "name", "sku", "price", "in_stock_quantity", "is_active"),
+            "quote": ("id", "quote_number", "deal_id", "total_amount", "status", "created_at"),
+            "invoice": (
+                "id",
+                "invoice_number",
+                "company_id",
+                "currency",
+                "amount",
+                "paid_amount",
+                "status",
+                "due_date",
+            ),
+            "calendar_event": ("id", "title", "start_time", "end_time", "event_type"),
+            "activity": ("id", "module", "action_description", "user_id", "timestamp"),
+            "user": ("id", "name", "role", "is_active", "created_at"),
         }
         results = []
         for row in rows:
             record = row[0]
+            output_fields = set(fields[entity_type]) | {
+                field
+                for field in include_fields or []
+                if (entity_type, field) not in related_columns
+            }
             item = {
                 field: str(value) if isinstance(value, datetime) else value
-                for field in fields[entity_type]
+                for field in output_fields
                 if (value := getattr(record, field, None)) is not None
             }
             for index, field in enumerate(sorted(extra_fields), start=1):
