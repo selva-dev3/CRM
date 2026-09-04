@@ -6,6 +6,15 @@ from slowapi.util import get_remote_address
 
 from app.core.config import settings
 
+AUTH_LOGIN_RATE_LIMIT = "5/minute"
+AUTH_REGISTER_RATE_LIMIT = "5/hour"
+AUTH_REFRESH_RATE_LIMIT = "30/minute"
+AUTH_LOGOUT_RATE_LIMIT = "30/minute"
+AUTH_PASSWORD_RESET_REQUEST_RATE_LIMIT = "5/hour"  # noqa: S105 - request quota
+AUTH_PASSWORD_RESET_CONFIRM_RATE_LIMIT = "10/hour"  # noqa: S105 - request quota
+AUTH_OAUTH_RATE_LIMIT = "20/minute"
+AUTH_MAGIC_LINK_REQUEST_RATE_LIMIT = "5/hour"
+AUTH_MAGIC_LINK_VERIFY_RATE_LIMIT = "10/minute"
 USER_INVITATION_LOOKUP_RATE_LIMIT = "10/minute"
 USER_INVITATION_ACCEPT_RATE_LIMIT = "5/minute"
 

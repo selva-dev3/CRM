@@ -58,6 +58,20 @@ def test_invite_escapes_role_and_url(captured_html):
     assert "&amp;amp;" not in html
 
 
+def test_welcome_email_escapes_name_and_role(captured_html):
+    ok = email_service.send_welcome_email(
+        email_to="new@example.com",
+        user_name='<script>alert("name")</script>',
+        role='Sales "Lead" <Admin>',
+    )
+
+    assert ok is True
+    html = captured_html["html"]
+    assert "<script>" not in html
+    assert "&lt;script&gt;alert(&quot;name&quot;)&lt;/script&gt;" in html
+    assert "Sales &quot;Lead&quot; &lt;Admin&gt;" in html
+
+
 def test_onboarding_escapes_org_admin_and_plan(captured_html):
     ok = email_service.send_organization_onboarding_invite_email(
         email_to="admin@evil.example",

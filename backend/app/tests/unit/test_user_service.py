@@ -6,14 +6,13 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, NotFoundError
-from app.models import User, UserInvitation
+from app.models import User
 from app.repositories.user_repository import UserRepository
 from app.schemas.crm_schemas import UserCreate, UserUpdate
 from app.services.user_service import UserService, user_to_dict
 
 VALID_INPUT = "secret"
 EXPECTED_HASHED_VALUE = "hashed-secret"
-TEST_CODE = "ABCDEFGHIJKLMN"
 
 
 def _make_user(**overrides) -> User:
@@ -29,19 +28,6 @@ def _make_user(**overrides) -> User:
     }
     defaults.update(overrides)
     return User(**defaults)
-
-
-def _make_invitation(**overrides) -> UserInvitation:
-    defaults = {
-        "id": "inv-1",
-        "email": "invite@crm.com",
-        "token": TEST_CODE,
-        "role": "Sales Executive",
-        "organization_id": "org-1",
-        "status": "pending",
-    }
-    defaults.update(overrides)
-    return UserInvitation(**defaults)
 
 
 def _make_org(**overrides):
@@ -365,107 +351,6 @@ async def test_bulk_delete_skips_superadmin():
     )
 
     assert result["affected_count"] == 1
-
-
-@pytest.mark.asyncio
-async def test_accept_invitation_creates_user(monkeypatch):
-    inv = _make_invitation()
-    user = _make_user()
-    repo: Any = UserRepository()
-    repo.get_invitation_by_token = AsyncMock(return_value=inv)
-    repo.get_invitation_by_email = AsyncMock(return_value=None)
-    repo.get_first_org = AsyncMock(return_value=type("O", (), {"id": "org-1"})())
-    repo.get_by_email = AsyncMock(return_value=None)
-    repo.create = AsyncMock(return_value=user)
-    repo.list_invitations_by_email = AsyncMock(return_value=[])
-    service = _service_with(repo)
-    db = AsyncMock(spec=AsyncSession)
-
-    role = type("R", (), {"id": "role-1", "name": "Sales Manager", "organization_id": None})()
-    cast(Any, service.role_repository).get_role_by_id_or_name = AsyncMock(return_value=role)
-    cast(Any, service.role_repository).get_user_role_mapping = AsyncMock(return_value=None)
-
-    monkeypatch.setattr("app.services.user_service.get_password_hash", lambda pwd: "hashed")
-
-    from app.schemas.crm_schemas import AcceptInviteRequest
-
-    payload = AcceptInviteRequest(token=TEST_CODE, name="Alex", password=VALID_INPUT)
-    result = await service.accept_user_invitation(db, payload)
-
-    assert result["user_id"] == "user-1"
-    assert inv.status == "accepted"
-    assert repo.create.await_args_list[-1].kwargs["data"]["role"] == "role-1"
-    db.add.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_accept_invitation_rejects_invalid_role(monkeypatch):
-    inv = _make_invitation(role="vanished-role")
-    repo: Any = UserRepository()
-    repo.get_invitation_by_token = AsyncMock(return_value=inv)
-    repo.get_invitation_by_email = AsyncMock(return_value=None)
-    repo.create = AsyncMock(return_value=_make_user())
-    service = _service_with(repo)
-    db = AsyncMock(spec=AsyncSession)
-    cast(Any, service.role_repository).get_role_by_id_or_name = AsyncMock(return_value=None)
-
-    from app.schemas.crm_schemas import AcceptInviteRequest
-
-    payload = AcceptInviteRequest(token=TEST_CODE, name="Alex", password=VALID_INPUT)
-
-    with pytest.raises(APIException) as exc_info:
-        await service.accept_user_invitation(db, payload)
-    assert exc_info.value.status_code == 400
-    repo.create.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_accept_invitation_rejects_missing_organization(monkeypatch):
-    inv = _make_invitation(organization_id=None)
-    repo: Any = UserRepository()
-    repo.get_invitation_by_token = AsyncMock(return_value=inv)
-    repo.get_invitation_by_email = AsyncMock(return_value=None)
-    repo.create = AsyncMock(return_value=_make_user())
-    service = _service_with(repo)
-    db = AsyncMock(spec=AsyncSession)
-    role = type("R", (), {"id": "role-1", "name": "Sales Manager", "organization_id": None})()
-    cast(Any, service.role_repository).get_role_by_id_or_name = AsyncMock(return_value=role)
-    cast(Any, service.role_repository).get_user_role_mapping = AsyncMock(return_value=None)
-
-    monkeypatch.setattr("app.services.user_service.get_password_hash", lambda pwd: "hashed")
-
-    from app.schemas.crm_schemas import AcceptInviteRequest
-
-    payload = AcceptInviteRequest(token=TEST_CODE, name="Alex", password=VALID_INPUT)
-
-    with pytest.raises(APIException) as exc_info:
-        await service.accept_user_invitation(db, payload)
-    assert exc_info.value.status_code == 400
-    assert "organization" in exc_info.value.message.lower()
-    repo.create.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_accept_invitation_already_accepted_does_not_commit():
-    inv = _make_invitation(status="accepted")
-    repo: Any = UserRepository()
-    repo.get_invitation_by_token = AsyncMock(return_value=inv)
-    repo.get_invitation_by_email = AsyncMock(return_value=None)
-    repo.create = AsyncMock(return_value=_make_user())
-    service = _service_with(repo)
-    db = AsyncMock(spec=AsyncSession)
-    role = type("R", (), {"id": "role-1", "name": "Sales Manager", "organization_id": None})()
-    cast(Any, service.role_repository).get_role_by_id_or_name = AsyncMock(return_value=role)
-
-    from app.schemas.crm_schemas import AcceptInviteRequest
-
-    payload = AcceptInviteRequest(token=TEST_CODE, name="Alex", password=VALID_INPUT)
-
-    with pytest.raises(APIException) as exc_info:
-        await service.accept_user_invitation(db, payload)
-    assert exc_info.value.status_code == 400
-    db.commit.assert_not_awaited()
-    repo.create.assert_not_awaited()
 
 
 @pytest.mark.asyncio

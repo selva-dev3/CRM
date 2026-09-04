@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
@@ -11,6 +11,15 @@ from app.core.auth_cookies import (
 from app.core.config import settings
 from app.core.errors import APIException
 from app.core.rate_limiter import (
+    AUTH_LOGIN_RATE_LIMIT,
+    AUTH_LOGOUT_RATE_LIMIT,
+    AUTH_MAGIC_LINK_REQUEST_RATE_LIMIT,
+    AUTH_MAGIC_LINK_VERIFY_RATE_LIMIT,
+    AUTH_OAUTH_RATE_LIMIT,
+    AUTH_PASSWORD_RESET_CONFIRM_RATE_LIMIT,
+    AUTH_PASSWORD_RESET_REQUEST_RATE_LIMIT,
+    AUTH_REFRESH_RATE_LIMIT,
+    AUTH_REGISTER_RATE_LIMIT,
     USER_INVITATION_ACCEPT_RATE_LIMIT,
     USER_INVITATION_LOOKUP_RATE_LIMIT,
     limiter,
@@ -34,6 +43,7 @@ from app.schemas.crm_schemas import (
     UserInvitationDetailsResponse,
 )
 from app.services.auth_service import auth_service
+from app.services.email_service import send_welcome_email
 
 router = APIRouter()
 
@@ -47,7 +57,9 @@ def _set_token_cookies(response: Response, result: dict, *, persistent_access: b
 
 
 @router.post("/login", response_model=Token, summary="Authenticate user & return JWT token")
+@limiter.limit(AUTH_LOGIN_RATE_LIMIT)
 async def login(
+    request: Request,
     payload: LoginRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),
@@ -69,11 +81,13 @@ async def get_current_user_me(
     status_code=status.HTTP_201_CREATED,
     summary="Register new tenant & admin user",
 )
-async def register(payload: RegisterRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit(AUTH_REGISTER_RATE_LIMIT)
+async def register(request: Request, payload: RegisterRequest, db: AsyncSession = Depends(get_db)):
     return await auth_service.register(db, payload)
 
 
 @router.post("/refresh-token", response_model=Token, summary="Refresh JWT access token")
+@limiter.limit(AUTH_REFRESH_RATE_LIMIT)
 async def refresh_token(
     request: Request,
     response: Response,
@@ -90,6 +104,7 @@ async def refresh_token(
 
 
 @router.post("/logout", response_model=MessageResponse, summary="Invalidate current session")
+@limiter.limit(AUTH_LOGOUT_RATE_LIMIT)
 async def logout(
     request: Request,
     response: Response,
@@ -106,7 +121,10 @@ async def logout(
     response_model=MessageResponse,
     summary="Trigger password reset email with 14-char random code",
 )
-async def forgot_password(payload: PasswordResetRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit(AUTH_PASSWORD_RESET_REQUEST_RATE_LIMIT)
+async def forgot_password(
+    request: Request, payload: PasswordResetRequest, db: AsyncSession = Depends(get_db)
+):
     return await auth_service.forgot_password(db, payload)
 
 
@@ -115,7 +133,9 @@ async def forgot_password(payload: PasswordResetRequest, db: AsyncSession = Depe
     response_model=MessageResponse,
     summary="Reset password using a single-use token",
 )
+@limiter.limit(AUTH_PASSWORD_RESET_CONFIRM_RATE_LIMIT)
 async def reset_password(
+    request: Request,
     payload: PasswordResetConfirmRequest,
     db: AsyncSession = Depends(get_db),
 ):
@@ -166,7 +186,9 @@ async def disable_2fa(
 
 
 @router.post("/oauth/google", response_model=Token, summary="Google OAuth SSO Login")
+@limiter.limit(AUTH_OAUTH_RATE_LIMIT)
 async def google_oauth(
+    request: Request,
     payload: OAuthLoginRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),
@@ -176,7 +198,9 @@ async def google_oauth(
 
 
 @router.post("/oauth/microsoft", response_model=Token, summary="Microsoft Azure AD SSO Login")
+@limiter.limit(AUTH_OAUTH_RATE_LIMIT)
 async def microsoft_oauth(
+    request: Request,
     payload: OAuthLoginRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),
@@ -206,9 +230,16 @@ async def accept_auth_user_invitation(
     request: Request,
     payload: AcceptInviteRequest,
     response: Response,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
     result = await auth_service.accept_auth_user_invitation(db, payload)
+    background_tasks.add_task(
+        send_welcome_email,
+        email_to=result["email"],
+        user_name=result["name"],
+        role=result["role"],
+    )
     return _set_token_cookies(response, result)
 
 
@@ -234,14 +265,17 @@ async def revoke_session(
 @router.post(
     "/magic-link/request", response_model=MessageResponse, summary="Request passwordless login link"
 )
-async def request_magic_link(email: str, db: AsyncSession = Depends(get_db)):
+@limiter.limit(AUTH_MAGIC_LINK_REQUEST_RATE_LIMIT)
+async def request_magic_link(request: Request, email: str, db: AsyncSession = Depends(get_db)):
     return await auth_service.request_magic_link(db, email)
 
 
 @router.post(
     "/magic-link/verify", response_model=Token, summary="Verify passwordless magic link token"
 )
+@limiter.limit(AUTH_MAGIC_LINK_VERIFY_RATE_LIMIT)
 async def verify_magic_link(
+    request: Request,
     token: str,
     response: Response,
     db: AsyncSession = Depends(get_db),

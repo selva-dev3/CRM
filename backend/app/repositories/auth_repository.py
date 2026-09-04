@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -214,12 +214,9 @@ class AuthRepository:
         return result.scalars().first()
 
     async def assign_user_role(self, db: AsyncSession, *, user_id: str, role_id: str) -> UserRole:
-        result = await db.execute(select(UserRole).where(UserRole.user_id == user_id).limit(1))
-        mapping = result.scalars().first()
-        if mapping:
-            mapping.role_id = role_id
-            return mapping
-
+        # User.role is singular throughout the application. Replace every
+        # mapping so stale rows cannot retain permissions from an older role.
+        await db.execute(delete(UserRole).where(UserRole.user_id == user_id))
         mapping = UserRole(user_id=user_id, role_id=role_id)
         db.add(mapping)
         return mapping

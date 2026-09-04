@@ -21,6 +21,8 @@ export interface LoginResponse {
     role: string;
     organization_id?: string;
     permissions?: string[];
+    is_verified?: boolean;
+    two_factor_enabled?: boolean;
   };
 }
 
@@ -75,6 +77,8 @@ export interface AcceptInviteResponse {
   email: string;
   name: string;
   role: string;
+  is_verified: boolean;
+  two_factor_enabled: boolean;
   status: string;
   user: CurrentUserResponse;
 }

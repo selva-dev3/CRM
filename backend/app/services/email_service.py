@@ -224,6 +224,51 @@ def send_user_invite_email(email_to: str, invite_url: str, role: str = "Member")
         return False
 
 
+def send_welcome_email(email_to: str, user_name: str, role: str) -> bool:
+    """Send a confirmation after a user invitation has been accepted."""
+
+    user_name_escaped = html.escape(str(user_name))
+    role_escaped = html.escape(str(role))
+    project_name = html.escape(settings.PROJECT_NAME)
+    subject = f"Welcome to {settings.PROJECT_NAME}"
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            body {{ font-family: Arial, sans-serif; background-color: #f4f6f9; margin: 0; padding: 20px; }}
+            .container {{ max-width: 600px; background: #ffffff; padding: 30px; border-radius: 8px; margin: 0 auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
+            .footer {{ font-size: 12px; color: #6b7280; margin-top: 30px; border-top: 1px solid #e5e7eb; padding-top: 15px; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h2>Welcome to {project_name}</h2>
+            <p>Hello {user_name_escaped},</p>
+            <p>Your invitation has been accepted and your account is now active.</p>
+            <p>Your assigned role is <strong>{role_escaped}</strong>.</p>
+            <div class="footer">
+                <p>If you did not accept this invitation, please contact your administrator.</p>
+                <p>&copy; 2026 {project_name}. All rights reserved.</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+
+    try:
+        logger.info("Sending invitation acceptance email to %s...", email_to)
+        success = send_email(to_email=email_to, subject=subject, html_content=html_content)
+        if success:
+            logger.info("Invitation acceptance email sent successfully to %s", email_to)
+        else:
+            logger.error("Invitation acceptance email failed for %s", email_to)
+        return success
+    except Exception:
+        logger.exception("Invitation acceptance email failed unexpectedly for %s", email_to)
+        return False
+
+
 def send_organization_onboarding_invite_email(
     email_to: str,
     admin_name: str,

@@ -15,7 +15,7 @@ from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.errors import APIException, ForbiddenError, NotFoundError
+from app.core.errors import APIException, ConflictError, ForbiddenError, NotFoundError
 from app.core.permissions import (
     SUPER_ADMIN_ROLE_NAMES,
     is_global_super_admin_role,
@@ -589,6 +589,16 @@ class AuthService:
                 raise ForbiddenError(
                     message="An existing user cannot be moved to another organization by invitation"
                 )
+            if user and user.is_active:
+                raise ConflictError(
+                    code="ACTIVE_ACCOUNT_EXISTS",
+                    message="An active account already exists for this invitation email",
+                )
+            if user and user.two_factor_enabled:
+                raise ConflictError(
+                    code="INVITATION_ACCOUNT_REQUIRES_RECOVERY",
+                    message="This account must complete account recovery before accepting an invitation",
+                )
 
             try:
                 hashed_pwd = get_password_hash(payload.password)
@@ -605,6 +615,7 @@ class AuthService:
                 user.hashed_password = hashed_pwd
                 user.role = role.id
                 user.is_active = True
+                user.is_verified = True
             else:
                 user = await self.repository.create_user(
                     db,
@@ -615,10 +626,12 @@ class AuthService:
                         "role": role.id,
                         "organization_id": target_org_id,
                         "is_active": True,
+                        "is_verified": True,
                     },
                 )
                 await db.flush()
 
+            user.is_verified = True
             await self.repository.assign_user_role(db, user_id=user.id, role_id=role.id)
             inv.status = "accepted"
             refresh_token = await self._create_refresh_token(db, user.id)
@@ -638,6 +651,8 @@ class AuthService:
                 "email": user.email,
                 "name": user.name,
                 "role": role.name,
+                "is_verified": user.is_verified,
+                "two_factor_enabled": user.two_factor_enabled,
                 "status": "success",
                 "user": {
                     "id": user.id,
@@ -646,6 +661,8 @@ class AuthService:
                     "role": role.name,
                     "organization_id": user.organization_id,
                     "permissions": user_permissions,
+                    "is_verified": user.is_verified,
+                    "two_factor_enabled": user.two_factor_enabled,
                 },
             }
         except APIException:

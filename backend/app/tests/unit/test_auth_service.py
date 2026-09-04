@@ -19,6 +19,7 @@ from app.models import (
     Role,
     User,
     UserInvitation,
+    UserRole,
 )
 from app.repositories.auth_repository import AuthRepository
 from app.schemas.crm_schemas import (
@@ -39,6 +40,7 @@ MISSING_USER_INPUT = "x"
 MALFORMED_STORED_VALUE = "malformed-hash"
 REGISTRATION_INPUT = "password123"
 EXPECTED_REGISTRATION_HASH = "h-password123"
+EXPECTED_INVITATION_HASH = "hashed"
 OLD_STORED_VALUE = "old-hash"
 TEST_CODE = "ABCDEFGHIJKLMN"
 STORED_DIGEST = "digest"
@@ -767,7 +769,7 @@ async def test_accept_invitation_assigns_system_and_custom_roles(monkeypatch, is
         is_system_role=is_system_role,
     )
     inv = _make_invitation(role=role.id)
-    user = _make_user(role=role.id)
+    user = _make_user(role=role.id, two_factor_enabled=False)
     repo: Any = AuthRepository()
     repo.get_invitation_by_token = AsyncMock(return_value=inv)
     repo.get_organization_by_id = AsyncMock(
@@ -782,7 +784,9 @@ async def test_accept_invitation_assigns_system_and_custom_roles(monkeypatch, is
     service.get_user_permissions = AsyncMock(return_value=["users:read"])
     db = AsyncMock(spec=AsyncSession)
 
-    monkeypatch.setattr("app.services.auth_service.get_password_hash", lambda pwd: "hashed")
+    monkeypatch.setattr(
+        "app.services.auth_service.get_password_hash", lambda pwd: EXPECTED_INVITATION_HASH
+    )
     monkeypatch.setattr("app.services.auth_service.create_access_token", lambda user_id: "tok")
 
     result = await service.accept_auth_user_invitation(
@@ -793,6 +797,8 @@ async def test_accept_invitation_assigns_system_and_custom_roles(monkeypatch, is
     assert result["user_id"] == "user-1"
     assert result["role"] == "Sales Manager"
     assert result["refresh_token"] == TEST_REFRESH_VALUE
+    assert result["is_verified"] is True
+    assert result["two_factor_enabled"] is False
     assert result["user"]["permissions"] == ["users:read"]
     repo.get_invitation_by_token.assert_awaited_once_with(db, TEST_CODE, for_update=True)
     repo.get_role_for_organization.assert_awaited_once_with(db, role.id, "org-1")
@@ -800,6 +806,7 @@ async def test_accept_invitation_assigns_system_and_custom_roles(monkeypatch, is
     created = repo.create_user.await_args.kwargs["data"]
     assert created["organization_id"] == "org-1"
     assert created["role"] == role.id
+    assert created["is_verified"] is True
     db.commit.assert_awaited_once()
 
 
@@ -854,6 +861,113 @@ async def test_accept_invitation_rejects_existing_user_from_another_organization
     assert exc_info.value.status_code == 403
     repo.assign_user_role.assert_not_awaited()
     db.rollback.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_accept_invitation_rejects_existing_active_account():
+    role = Role(id="role-1", name="Sales Manager", organization_id="org-1")
+    repo: Any = AuthRepository()
+    repo.get_invitation_by_token = AsyncMock(return_value=_make_invitation(role=role.id))
+    repo.get_organization_by_id = AsyncMock(
+        return_value=Organization(id="org-1", name="Acme", status="active", is_active=True)
+    )
+    repo.get_role_for_organization = AsyncMock(return_value=role)
+    repo.get_user_by_email = AsyncMock(return_value=_make_user(is_active=True))
+    repo.assign_user_role = AsyncMock()
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(APIException) as exc_info:
+        await service.accept_auth_user_invitation(
+            db,
+            AcceptInviteRequest(token=TEST_CODE, name="Alex", password=VALID_INPUT),
+        )
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.code == "ACTIVE_ACCOUNT_EXISTS"
+    repo.assign_user_role.assert_not_awaited()
+    db.rollback.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_accept_invitation_rejects_existing_account_with_2fa():
+    role = Role(id="role-1", name="Sales Manager", organization_id="org-1")
+    repo: Any = AuthRepository()
+    repo.get_invitation_by_token = AsyncMock(return_value=_make_invitation(role=role.id))
+    repo.get_organization_by_id = AsyncMock(
+        return_value=Organization(id="org-1", name="Acme", status="active", is_active=True)
+    )
+    repo.get_role_for_organization = AsyncMock(return_value=role)
+    repo.get_user_by_email = AsyncMock(
+        return_value=_make_user(is_active=False, two_factor_enabled=True)
+    )
+    repo.assign_user_role = AsyncMock()
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(APIException) as exc_info:
+        await service.accept_auth_user_invitation(
+            db,
+            AcceptInviteRequest(token=TEST_CODE, name="Alex", password=VALID_INPUT),
+        )
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.code == "INVITATION_ACCOUNT_REQUIRES_RECOVERY"
+    repo.assign_user_role.assert_not_awaited()
+    db.rollback.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_accept_invitation_activates_and_verifies_inactive_account(monkeypatch):
+    role = Role(id="role-1", name="Sales Manager", organization_id="org-1")
+    user = _make_user(is_active=False, is_verified=False, two_factor_enabled=False)
+    repo: Any = AuthRepository()
+    repo.get_invitation_by_token = AsyncMock(return_value=_make_invitation(role=role.id))
+    repo.get_organization_by_id = AsyncMock(
+        return_value=Organization(id="org-1", name="Acme", status="active", is_active=True)
+    )
+    repo.get_role_for_organization = AsyncMock(return_value=role)
+    repo.get_user_by_email = AsyncMock(return_value=user)
+    repo.assign_user_role = AsyncMock()
+    service: Any = _service_with(repo)
+    service._create_refresh_token = AsyncMock(return_value=TEST_REFRESH_VALUE)
+    service.get_user_permissions = AsyncMock(return_value=["users:read"])
+    db = AsyncMock(spec=AsyncSession)
+    monkeypatch.setattr(
+        "app.services.auth_service.get_password_hash", lambda pwd: EXPECTED_INVITATION_HASH
+    )
+    monkeypatch.setattr("app.services.auth_service.create_access_token", lambda user_id: "tok")
+
+    result = await service.accept_auth_user_invitation(
+        db,
+        AcceptInviteRequest(token=TEST_CODE, name="Invited Alex", password=VALID_INPUT),
+    )
+
+    assert user.name == "Invited Alex"
+    assert user.hashed_password == EXPECTED_INVITATION_HASH
+    assert user.is_active is True
+    assert user.is_verified is True
+    assert user.two_factor_enabled is False
+    assert result["is_verified"] is True
+    assert result["two_factor_enabled"] is False
+    repo.assign_user_role.assert_awaited_once_with(db, user_id=user.id, role_id=role.id)
+    db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_assign_user_role_replaces_all_existing_mappings():
+    repo = AuthRepository()
+    db = AsyncMock(spec=AsyncSession)
+
+    mapping = await repo.assign_user_role(db, user_id="user-1", role_id="role-new")
+
+    statement = db.execute.await_args.args[0]
+    assert str(statement).startswith("DELETE FROM user_roles")
+    assert statement.compile().params == {"user_id_1": "user-1"}
+    assert isinstance(mapping, UserRole)
+    assert mapping.user_id == "user-1"
+    assert mapping.role_id == "role-new"
+    db.add.assert_called_once_with(mapping)
 
 
 @pytest.mark.asyncio

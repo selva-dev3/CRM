@@ -1,7 +1,7 @@
 from unittest.mock import AsyncMock
 
 import pytest
-from fastapi import Request, Response
+from fastapi import BackgroundTasks, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.routers import auth as auth_router
@@ -49,6 +49,7 @@ async def test_login_sets_access_and_refresh_cookies_without_returning_refresh_t
     db = AsyncMock(spec=AsyncSession)
 
     result = await auth_router.login(
+        _request(),
         LoginRequest(email="alex@crm.com", password=TEST_PASSWORD_VALUE, remember_me=False),
         response,
         db,
@@ -133,10 +134,21 @@ async def test_accept_invitation_sets_access_and_refresh_cookies(monkeypatch):
         password=TEST_PASSWORD_VALUE,
     )
 
-    response_body = await auth_router.accept_auth_user_invitation(_request(), payload, response, db)
+    background_tasks = BackgroundTasks()
+    response_body = await auth_router.accept_auth_user_invitation(
+        _request(), payload, response, background_tasks, db
+    )
 
     accept_mock.assert_awaited_once_with(db, payload)
     cookies = response.headers.getlist("set-cookie")
     assert any(cookie.startswith(f"{settings.AUTH_COOKIE_NAME}=") for cookie in cookies)
     assert any(cookie.startswith(f"{settings.AUTH_REFRESH_COOKIE_NAME}=") for cookie in cookies)
     assert response_body["refresh_token"] is None
+    assert len(background_tasks.tasks) == 1
+    task = background_tasks.tasks[0]
+    assert task.func is auth_router.send_welcome_email
+    assert task.kwargs == {
+        "email_to": "invite@crm.com",
+        "user_name": "Invite User",
+        "role": "Sales Manager",
+    }

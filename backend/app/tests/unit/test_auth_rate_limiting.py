@@ -3,14 +3,15 @@ from collections.abc import Iterator
 from unittest.mock import AsyncMock
 
 import pytest
-from fastapi import Request, Response
+from fastapi import BackgroundTasks, Request, Response
+from fastapi.routing import APIRoute
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.routers import auth as auth_router
 from app.core.config import settings
 from app.core.rate_limiter import limiter, rate_limit_exceeded_handler
-from app.schemas.crm_schemas import AcceptInviteRequest
+from app.schemas.crm_schemas import AcceptInviteRequest, LoginRequest
 
 TEST_PASSWORD_VALUE = "synthetic-password"  # noqa: S105 - synthetic test credential
 ANOTHER_INVITATION_VALUE = "another-token"
@@ -60,6 +61,23 @@ def _acceptance_result() -> dict:
             "role": "Sales Manager",
             "organization_id": "org-1",
             "permissions": ["dashboard:read"],
+        },
+    }
+
+
+def _login_result() -> dict:
+    return {
+        "access_token": "synthetic-access-value",
+        "refresh_token": "synthetic-refresh-value",
+        "token_type": "bearer",
+        "expires_in": 86400,
+        "user": {
+            "id": "user-1",
+            "name": "Alex",
+            "email": "alex@crm.com",
+            "role": "Sales Manager",
+            "organization_id": "org-1",
+            "permissions": [],
         },
     }
 
@@ -135,6 +153,7 @@ async def test_invitation_acceptance_is_limited_before_service_work(monkeypatch)
             request=_request("/auth/accept-invite", "192.0.2.20"),
             payload=payload,
             response=Response(),
+            background_tasks=BackgroundTasks(),
             db=db,
         )
         assert result["status"] == "success"
@@ -144,10 +163,41 @@ async def test_invitation_acceptance_is_limited_before_service_work(monkeypatch)
             request=_request("/auth/accept-invite", "192.0.2.20"),
             payload=payload,
             response=Response(),
+            background_tasks=BackgroundTasks(),
             db=db,
         )
 
     assert accept_invitation.await_count == 5
+
+
+@pytest.mark.asyncio
+async def test_login_is_limited_before_password_verification(monkeypatch):
+    login = AsyncMock(return_value=_login_result())
+    monkeypatch.setattr(auth_router.auth_service, "login", login)
+    db = AsyncMock(spec=AsyncSession)
+    payload = LoginRequest(
+        email="alex@crm.com",
+        password=TEST_PASSWORD_VALUE,
+        remember_me=False,
+    )
+
+    for _ in range(5):
+        await auth_router.login(
+            request=_request("/auth/login", "192.0.2.25"),
+            payload=payload,
+            response=Response(),
+            db=db,
+        )
+
+    with pytest.raises(RateLimitExceeded):
+        await auth_router.login(
+            request=_request("/auth/login", "192.0.2.25"),
+            payload=payload,
+            response=Response(),
+            db=db,
+        )
+
+    assert login.await_count == 5
 
 
 @pytest.mark.asyncio
@@ -202,7 +252,35 @@ async def test_lookup_and_acceptance_limits_use_independent_buckets(monkeypatch)
             password=TEST_PASSWORD_VALUE,
         ),
         response=Response(),
+        background_tasks=BackgroundTasks(),
         db=db,
     )
 
     assert result["status"] == "success"
+
+
+def test_every_public_auth_endpoint_has_a_rate_limit():
+    public_paths = {
+        "/login",
+        "/logout",
+        "/register",
+        "/refresh-token",
+        "/forgot-password",
+        "/reset-password",
+        "/oauth/google",
+        "/oauth/microsoft",
+        "/invitations/{token}",
+        "/accept-invite",
+        "/magic-link/request",
+        "/magic-link/verify",
+    }
+    routes = {
+        route.path: route
+        for route in auth_router.router.routes
+        if isinstance(route, APIRoute) and route.path in public_paths
+    }
+
+    assert set(routes) == public_paths
+    for path, route in routes.items():
+        endpoint_key = f"{route.endpoint.__module__}.{route.endpoint.__name__}"
+        assert limiter._route_limits.get(endpoint_key), f"{path} is missing a rate limit"
