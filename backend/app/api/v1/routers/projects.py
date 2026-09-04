@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
@@ -17,8 +17,8 @@ router = APIRouter()
     dependencies=[Depends(require_permission("projects:read"))],
 )
 async def list_projects(
-    page: int = 1,
-    limit: int = 20,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     status: str | None = None,
     priority: str | None = None,
     db: AsyncSession = Depends(get_db),
