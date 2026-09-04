@@ -1,10 +1,14 @@
 from app.db.base import Base
 from app.models.ai import (
+    AIAction,
     AIConversation,
     AIGeneratedContent,
     AILeadScore,
     AIMeetingSummary,
+    AIOrganizationConfig,
     AIPrompt,
+    AIRun,
+    AITranscript,
 )
 from app.models.audit import ActivityLog, AuditLog
 from app.models.auth import (
@@ -134,10 +138,14 @@ __all__ = [
     "ApiKey",
     "Webhook",
     "AIConversation",
+    "AIAction",
     "AIPrompt",
     "AIGeneratedContent",
     "AILeadScore",
     "AIMeetingSummary",
+    "AIOrganizationConfig",
+    "AIRun",
+    "AITranscript",
     "SystemSetting",
     "CustomField",
     "SLAPolicy",

@@ -41,7 +41,8 @@ export const navigationSections: NavSection[] = [
     title: 'Analytics',
     items: [
       { title: 'Reports', href: '/reports', icon: 'BarChart3', permission: PERMISSIONS.REPORTS.READ },
-      { title: 'Calendar', href: '/calendar', icon: 'Calendar', permission: PERMISSIONS.CALENDAR.READ }
+      { title: 'Calendar', href: '/calendar', icon: 'Calendar', permission: PERMISSIONS.CALENDAR.READ },
+      { title: 'AI Intelligence', href: '/ai', icon: 'Sparkles', permission: PERMISSIONS.AI.READ }
     ]
   },
   {
@@ -87,6 +88,7 @@ export const protectedRoutes: Record<string, PermissionKey> = {
   organization: PERMISSIONS.ORGANIZATION.READ,
   integrations: PERMISSIONS.INTEGRATIONS.READ,
   notifications: PERMISSIONS.NOTIFICATIONS.READ,
+  ai: PERMISSIONS.AI.READ,
 };
 
 /** Returns the permission required to view `pathname`, or undefined when unguarded. */

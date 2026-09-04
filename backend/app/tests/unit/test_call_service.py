@@ -26,8 +26,8 @@ def _make_call(**overrides) -> CallLog:
     return CallLog(**defaults)
 
 
-def _service_with(repo: CallRepository) -> CallService:
-    return CallService(repository=repo)
+def _service_with(repo: CallRepository, ai_service: Any | None = None) -> CallService:
+    return CallService(repository=repo, ai_service_instance=ai_service)
 
 
 def _user() -> User:
@@ -96,3 +96,29 @@ async def test_get_sentiment_requires_existing_call():
 
     with pytest.raises(NotFoundError):
         await service.get_sentiment(db, "missing-call", _user())
+
+
+@pytest.mark.asyncio
+async def test_get_sentiment_uses_real_ai_analysis_of_tenant_scoped_call_notes():
+    repo: Any = CallRepository()
+    repo.get_by_id = AsyncMock(return_value=_make_call(notes="Customer is unhappy with delay"))
+    ai_service = AsyncMock()
+    ai_service.analyze_sentiment.return_value = {
+        "sentiment": "Negative",
+        "confidence": 0.91,
+        "reasons": ["Customer expressed dissatisfaction"],
+        "urgency": "High",
+        "escalation_required": True,
+        "run_id": "run-1",
+    }
+    service = _service_with(repo, ai_service)
+    db = AsyncMock(spec=AsyncSession)
+    actor = _user()
+
+    result = await service.get_sentiment(db, "call-1", actor)
+
+    ai_service.analyze_sentiment.assert_awaited_once_with(
+        db, "Customer is unhappy with delay", actor
+    )
+    assert result["overall_sentiment"] == "Negative"
+    assert result["run_id"] == "run-1"

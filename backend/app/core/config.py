@@ -87,6 +87,19 @@ class Settings(BaseSettings):
     # AI API Keys
     OPENAI_API_KEY: str | None = None
     ANTHROPIC_API_KEY: str | None = None
+    AI_PROVIDER: Literal["openai", "anthropic"] = "openai"
+    AI_MODEL: str = "gpt-4o-mini"
+    AI_WEB_SEARCH_MODEL: str = "gpt-4.1-mini"
+    AI_OPENAI_FALLBACK_MODEL: str | None = None
+    AI_ANTHROPIC_FALLBACK_MODEL: str | None = None
+    AI_TRANSCRIPTION_MODEL: str = "whisper-1"
+    AI_MAX_AUDIO_BYTES: int = 25 * 1024 * 1024
+    AI_REQUEST_TIMEOUT_SECONDS: float = 30.0
+    AI_MAX_RETRIES: int = 2
+    AI_RATE_LIMIT: str = "20/minute"
+    AI_MONTHLY_COST_LIMIT_USD: float = 100.0
+    AI_INPUT_COST_PER_MILLION_USD: float = 0.15
+    AI_OUTPUT_COST_PER_MILLION_USD: float = 0.60
     ENVIRONMENT: str = "development"
     # CORS & Frontend URLs
     CORS_ORIGINS: str = (

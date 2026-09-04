@@ -85,6 +85,7 @@ class DashboardAiInsightsResponse(BaseModel):
     summary: str
     insights: list[AiInsightResponse]
     risk_deals: list[dict[str, object]]
+    run_id: str | None = None
 
 
 class CustomWidgetResponse(BaseModel):

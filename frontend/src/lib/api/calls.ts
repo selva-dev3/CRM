@@ -40,14 +40,12 @@ export interface RecordingResponse {
 
 export interface SentimentResponse {
   call_id: string;
-  overall_sentiment: string;
+  overall_sentiment: 'Positive' | 'Neutral' | 'Negative';
   confidence_score: number;
-  customer_interest: string;
-  emotion_breakdown?: {
-    satisfaction: number;
-    urgency: number;
-    frustration: number;
-  };
+  reasons: string[];
+  urgency: 'Low' | 'Medium' | 'High';
+  escalation_required: boolean;
+  run_id?: string | null;
 }
 
 export interface BulkActionResponse {

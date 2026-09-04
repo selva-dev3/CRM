@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.errors import APIException, NotFoundError
+from app.core.errors import NotFoundError
 from app.models import User
 from app.models.deal import Deal
 from app.repositories.deal_repository import DealRepository
@@ -447,25 +448,31 @@ async def test_update_deal_fires_probability_changed_event(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_predict_win_rate_fallback_for_closed_won(monkeypatch):
+async def test_predict_win_rate_uses_shared_ai_service():
     repo: Any = DealRepository()
-    repo.get_by_id = AsyncMock(return_value=_make_deal(stage="Closed Won", probability=50.0))
-    service = _service_with(repo)
+    ai_service = AsyncMock()
+    ai_service.predict_deal_forecast.return_value = {
+        "win_probability": 81.0,
+        "key_drivers": ["Recent executive meeting"],
+        "next_action": "Confirm procurement timeline",
+        "risk_factors": ["No legal review date"],
+        "run_id": "run-1",
+    }
+    service = DealService(repository=repo, ai_service_instance=ai_service)
     db = AsyncMock(spec=AsyncSession)
+    actor = _user()
 
-    from app.services.deal_service import note_service
+    result = await service.predict_deal_win_rate(db, "deal-1", actor)
 
-    async def empty_notes(*_args, **_kwargs):
-        return []
-
-    monkeypatch.setattr(note_service, "get_notes_by_entity", empty_notes)
-    monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-
-    result = await service.predict_deal_win_rate(db, "deal-1", _user())
-
-    assert result["predicted_probability"] == 100.0
-    assert result["model"] == "crm-sales-analytics-engine"
+    assert result == {
+        "deal_id": "deal-1",
+        "predicted_probability": 81.0,
+        "key_drivers": ["Recent executive meeting"],
+        "ai_recommendation": "Confirm procurement timeline",
+        "risk_factors": ["No legal review date"],
+        "run_id": "run-1",
+    }
+    ai_service.predict_deal_forecast.assert_awaited_once_with(db, "deal-1", actor)
 
 
 @pytest.mark.asyncio

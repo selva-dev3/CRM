@@ -50,14 +50,14 @@ export interface TeamsLinkResponse {
 
 export interface AiSummaryResponse {
   meeting_id: string;
-  summary: string;
+  summary: string | null;
   key_decisions: string[];
 }
 
 export interface ActionItem {
   id: string;
   task: string;
-  assignee: string;
+  assignee?: string | null;
   status: string;
 }
 
@@ -119,7 +119,9 @@ export async function meetingRsvpApi(meetingId: string, email: string, response:
 }
 
 export async function uploadMeetingTranscriptApi(meetingId: string, transcript_text: string): Promise<MessageResponse> {
-  return apiClient.post<MessageResponse>(`/meetings/${meetingId}/transcript?transcript_text=${encodeURIComponent(transcript_text)}`);
+  return apiClient.post<MessageResponse>(`/meetings/${meetingId}/transcript`, {
+    transcript: transcript_text,
+  });
 }
 
 export async function fetchMeetingAiSummaryApi(meetingId: string): Promise<AiSummaryResponse> {

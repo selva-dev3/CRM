@@ -263,7 +263,7 @@ export default function DealDetailsPage() {
       setErrorMessage(null);
       const res = await predictDealWinRateApi(dealId);
       setAiPrediction(res);
-      setSuccessMessage(`AI Prediction generated: ${res.predicted_probability || deal?.probability}% win probability.`);
+      setSuccessMessage(`AI prediction generated: ${res.predicted_probability}% win probability.`);
     } catch {
       setErrorMessage('Failed to generate AI win rate prediction.');
     }
@@ -440,6 +440,14 @@ export default function DealDetailsPage() {
           {aiPrediction.key_drivers && (
             <div className="text-[11px] text-indigo-800 font-medium">
               Key Drivers: {aiPrediction.key_drivers.join(', ')}
+            </div>
+          )}
+          <p className="text-[11px] text-indigo-800">
+            Recommended action: {aiPrediction.ai_recommendation}
+          </p>
+          {aiPrediction.risk_factors.length > 0 && (
+            <div className="text-[11px] text-indigo-800">
+              Risk factors: {aiPrediction.risk_factors.join(', ')}
             </div>
           )}
         </div>

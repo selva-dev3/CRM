@@ -1,13 +1,7 @@
-import json
-import os
-
-import httpx
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.core.errors import APIException, ConflictError, NotFoundError
-from app.core.logging import get_logger
 from app.models import User
 from app.models.deal import Deal
 from app.repositories.deal_repository import DealRepository
@@ -19,12 +13,12 @@ from app.schemas.crm_schemas import (
     DealCustomFieldValue,
     DealUpdate,
 )
+from app.schemas.crm_schemas import DealCreate, DealUpdate
+from app.services.ai_domain_service import AIDomainService, ai_domain_service
 from app.services.note_service import note_service
 from app.services.notification_service import notification_service
 from app.services.org_service import organization_service
 from app.services.quote_service import QuoteService, quote_service
-
-logger = get_logger(__name__)
 
 # Canonical pipeline stages (mirrors dashboard_service and the frontend STAGES constant).
 DEAL_STAGE_CLOSED_WON = "Closed Won"
@@ -68,6 +62,11 @@ class DealService:
         self.repository = repository or DealRepository()
         self.quote_service = quote_service_instance or quote_service
         self.setting_repository = setting_repository or SettingRepository()
+        ai_service_instance: AIDomainService | None = None,
+    ) -> None:
+        self.repository = repository or DealRepository()
+        self.quote_service = quote_service_instance or quote_service
+        self.ai_service = ai_service_instance or ai_domain_service
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
         try:
@@ -578,108 +577,14 @@ class DealService:
     async def predict_deal_win_rate(
         self, db: AsyncSession, deal_id: str, current_user: User
     ) -> dict:
-        d = await self.require_deal(db, deal_id)
-
-        notes = await note_service.get_notes_by_entity(
-            db, entity_type="deal", entity_id=deal_id, current_user=current_user
-        )
-        notes_summary = (
-            "\n".join(f"- {n['content']}" for n in notes) if notes else "No notes logged."
-        )
-
-        api_key = settings.OPENAI_API_KEY or os.environ.get("OPENAI_API_KEY")
-
-        if api_key and api_key.startswith("sk-"):
-            try:
-                headers = {
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                }
-                prompt_text = f"""
-                Analyze the following B2B sales deal profile in Enterprise CRM and calculate the AI predicted win probability:
-                - Deal Title: {d.title}
-                - Deal Amount: ${d.amount:,.2f}
-                - Current Pipeline Stage: {d.stage}
-                - Current Win Probability: {d.probability}%
-                - Related Notes / Log:
-                {notes_summary}
-
-                Respond ONLY with a JSON object in this exact schema:
-                {{
-                  "predicted_probability": 75.0,
-                  "key_drivers": ["Driver 1", "Driver 2", "Driver 3"],
-                  "ai_recommendation": "Strategic advice...",
-                  "risk_factors": ["Risk 1", "Risk 2"]
-                }}
-                """
-                payload = {
-                    "model": "gpt-4o-mini",
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": "You are an expert Enterprise CRM Sales Analyst AI. Output ONLY valid JSON.",
-                        },
-                        {"role": "user", "content": prompt_text},
-                    ],
-                    "temperature": 0.3,
-                    "response_format": {"type": "json_object"},
-                }
-
-                async with httpx.AsyncClient(timeout=15.0) as client:
-                    resp = await client.post(
-                        "https://api.openai.com/v1/chat/completions", headers=headers, json=payload
-                    )
-                    if resp.status_code == 200:
-                        result_data = resp.json()
-                        content_json = json.loads(result_data["choices"][0]["message"]["content"])
-                        return {
-                            "deal_id": deal_id,
-                            "predicted_probability": float(
-                                content_json.get("predicted_probability", d.probability or 50.0)
-                            ),
-                            "key_drivers": content_json.get(
-                                "key_drivers", ["Decision maker engaged", "Proposal submitted fast"]
-                            ),
-                            "ai_recommendation": content_json.get(
-                                "ai_recommendation", "Maintain weekly executive check-ins."
-                            ),
-                            "risk_factors": content_json.get(
-                                "risk_factors", ["Pending procurement review"]
-                            ),
-                            "model": "gpt-4o-mini",
-                        }
-            except Exception as err:
-                logger.error("OpenAI API call error: %s", err)
-
-        prob = d.probability or 50.0
-        drivers = ["Decision maker engaged", "Proposal submitted fast", "Budget aligned with scope"]
-        rec = "Maintain executive check-ins and offer flexible contract terms."
-        risks = ["Competitor evaluation", "Procurement timeline"]
-
-        if d.stage == "Closed Won":
-            prob = 100.0
-            drivers = ["Contract signed", "Payment processed"]
-            rec = "Hand over to Customer Success team for onboarding."
-            risks = []
-        elif d.stage == "Closed Lost":
-            prob = 0.0
-            drivers = ["Competitor chosen", "Budget cut"]
-            rec = "Schedule re-engagement check-in in 6 months."
-            risks = ["Loss reason logged"]
-        elif d.stage == "Negotiation":
-            prob = max(prob, 85.0)
-            drivers = ["Legal review in progress", "Final pricing agreed"]
-        elif d.stage == "Proposal":
-            prob = max(prob, 65.0)
-            drivers = ["Proposal submitted", "Technical validation completed"]
-
+        prediction = await self.ai_service.predict_deal_forecast(db, deal_id, current_user)
         return {
             "deal_id": deal_id,
-            "predicted_probability": round(prob, 1),
-            "key_drivers": drivers,
-            "ai_recommendation": rec,
-            "risk_factors": risks,
-            "model": "crm-sales-analytics-engine",
+            "predicted_probability": prediction["win_probability"],
+            "key_drivers": prediction["key_drivers"],
+            "ai_recommendation": prediction["next_action"],
+            "risk_factors": prediction["risk_factors"],
+            "run_id": prediction["run_id"],
         }
 
     async def clone_deal(self, db: AsyncSession, *, deal_id: str, new_title: str) -> dict:

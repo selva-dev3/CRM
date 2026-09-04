@@ -25,6 +25,8 @@ import {
 } from 'lucide-react';
 import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui';
 import { ModalShell } from '@/components/common/modal-shell';
+import { useHasPermission } from '@/hooks/use-has-permission';
+import { PERMISSIONS } from '@/lib/permissions';
 import { 
   useDashboardKpisQuery,
   useSalesFunnelQuery,
@@ -66,6 +68,8 @@ function DashboardSectionError({
 
 export default function DashboardPage() {
   const router = useRouter();
+  const { hasPermission } = useHasPermission();
+  const canGenerateAi = hasPermission(PERMISSIONS.AI.GENERATE);
   const [isWidgetModalOpen, setIsWidgetModalOpen] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -79,7 +83,7 @@ export default function DashboardPage() {
   const leadConversionsQuery = useLeadConversionsQuery();
   const activitiesQuery = useActivitiesSummaryQuery();
   const recentDealsQuery = useRecentDealsQuery();
-  const aiInsightsQuery = useDashboardAiInsightsQuery();
+  const aiInsightsQuery = useDashboardAiInsightsQuery({ enabled: canGenerateAi });
   const widgetsQuery = useCustomWidgetsQuery();
 
   const { data: kpis } = kpisQuery;
@@ -117,15 +121,16 @@ export default function DashboardPage() {
   };
 
   const handleRefreshDashboard = async () => {
-    await Promise.all([
+    const refreshes: Promise<unknown>[] = [
       kpisQuery.refetch(),
       salesFunnelQuery.refetch(),
       topPerformersQuery.refetch(),
       leadConversionsQuery.refetch(),
       activitiesQuery.refetch(),
       recentDealsQuery.refetch(),
-      aiInsightsQuery.refetch(),
-    ]);
+    ];
+    if (canGenerateAi) refreshes.push(aiInsightsQuery.refetch());
+    await Promise.all(refreshes);
   };
 
   const handleSaveWidgetPreferences = async () => {
@@ -206,7 +211,7 @@ export default function DashboardPage() {
   const showFunnel = isWidgetEnabled('w-funnel');
   const showTopPerformers = isWidgetEnabled('w-top');
   const showRecentDeals = isWidgetEnabled('w-deals');
-  const showAiInsights = isWidgetEnabled('w-ai');
+  const showAiInsights = canGenerateAi && isWidgetEnabled('w-ai');
 
   return (
     <div className="space-y-6 pb-12">
