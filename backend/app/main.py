@@ -70,6 +70,15 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 
+def _is_trusted_origin(request: Request, origin: str | None) -> bool:
+    """Allow same-origin requests and explicitly configured cross-origin clients."""
+    if not origin:
+        return False
+    if origin in settings.cors_origins_list:
+        return True
+    return origin == f"{request.url.scheme}://{request.url.netloc}"
+
+
 @app.middleware("http")
 async def validate_cookie_authenticated_origin(request: Request, call_next):
     """Reject cross-site state changes authenticated only by the session cookie."""
@@ -80,7 +89,7 @@ async def validate_cookie_authenticated_origin(request: Request, call_next):
     ) and not bool(request.headers.get("Authorization"))
     if unsafe_method and uses_cookie_auth:
         origin = request.headers.get("Origin")
-        if origin not in settings.cors_origins_list:
+        if not _is_trusted_origin(request, origin):
             return JSONResponse(
                 status_code=status.HTTP_403_FORBIDDEN,
                 content={

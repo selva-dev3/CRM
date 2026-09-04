@@ -181,3 +181,28 @@ async def test_cookie_authenticated_mutation_allows_configured_origin():
 
     assert response is expected_response
     call_next.assert_awaited_once_with(request)
+
+
+@pytest.mark.asyncio
+async def test_cookie_authenticated_mutation_allows_same_origin_request():
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "scheme": "https",
+            "server": ("crm-bjza.onrender.com", 443),
+            "path": "/api/v1/auth/login",
+            "headers": [
+                (b"host", b"crm-bjza.onrender.com"),
+                (b"cookie", f"{settings.AUTH_COOKIE_NAME}=jwt-token".encode()),
+                (b"origin", b"https://crm-bjza.onrender.com"),
+            ],
+        }
+    )
+    expected_response = Response(status_code=200)
+    call_next = AsyncMock(return_value=expected_response)
+
+    response = await validate_cookie_authenticated_origin(request, call_next)
+
+    assert response is expected_response
+    call_next.assert_awaited_once_with(request)
