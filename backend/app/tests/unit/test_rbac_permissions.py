@@ -347,9 +347,19 @@ NO_PERMISSION_PATHS = {
     ("users", "GET", "/me/profile"),
     ("users", "PUT", "/me/profile"),
     ("users", "POST", "/me/avatar"),
-    ("users", "POST", "/accept-invite"),
     ("organizations", "POST", "/subscription/webhook"),
 }
+
+
+def test_legacy_user_invitation_acceptance_route_is_removed():
+    from app.api.v1.routers import users as users_router
+
+    assert not any(
+        isinstance(route, APIRoute)
+        and route.path == "/accept-invite"
+        and "POST" in (route.methods or set())
+        for route in users_router.router.routes
+    )
 
 
 def _route_signature(router, route: APIRoute):

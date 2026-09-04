@@ -20,6 +20,8 @@ const NON_REFRESHABLE_AUTH_ENDPOINTS = [
   '/auth/register',
   '/auth/forgot-password',
   '/auth/reset-password',
+  '/auth/accept-invite',
+  '/auth/invitations/',
   '/auth/logout',
   '/auth/refresh-token',
   '/auth/oauth/',
