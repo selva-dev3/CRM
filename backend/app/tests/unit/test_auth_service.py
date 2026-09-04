@@ -806,7 +806,6 @@ async def test_accept_invitation_assigns_system_and_custom_roles(monkeypatch, is
     created = repo.create_user.await_args.kwargs["data"]
     assert created["organization_id"] == "org-1"
     assert created["role"] == role.id
-    assert created["is_verified"] is True
     db.commit.assert_awaited_once()
 
 
@@ -1010,6 +1009,46 @@ async def test_accept_invitation_reports_password_hashing_failure(monkeypatch):
     repo.create_user.assert_not_awaited()
     repo.assign_user_role.assert_not_awaited()
     service._create_refresh_token.assert_not_awaited()
+    db.commit.assert_not_awaited()
+    db.rollback.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_accept_invitation_reports_unexpected_internal_failure(monkeypatch):
+    role = Role(
+        id="role-sales-manager",
+        name="Sales Manager",
+        organization_id="org-1",
+        is_system_role=False,
+    )
+    invitation = _make_invitation(role=role.id)
+    user = _make_user(is_active=False, two_factor_enabled=False)
+    repo: Any = AuthRepository()
+    repo.get_invitation_by_token = AsyncMock(return_value=invitation)
+    repo.get_organization_by_id = AsyncMock(
+        return_value=Organization(id="org-1", name="Acme", status="active", is_active=True)
+    )
+    repo.get_role_for_organization = AsyncMock(return_value=role)
+    repo.get_user_by_email = AsyncMock(return_value=user)
+    repo.assign_user_role = AsyncMock()
+    service: Any = _service_with(repo)
+    service._create_refresh_token = AsyncMock(side_effect=RuntimeError("database unavailable"))
+    db = AsyncMock(spec=AsyncSession)
+    monkeypatch.setattr(
+        "app.services.auth_service.get_password_hash", lambda pwd: EXPECTED_INVITATION_HASH
+    )
+
+    with pytest.raises(APIException) as exc_info:
+        await service.accept_auth_user_invitation(
+            db,
+            AcceptInviteRequest(token=TEST_CODE, name="Alex", password=VALID_INPUT),
+        )
+
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.code == "INVITATION_ACCEPTANCE_FAILED"
+    assert exc_info.value.message == "Unable to accept invitation. Please try again later."
+    assert invitation.status == "pending"
+    repo.assign_user_role.assert_awaited_once_with(db, user_id=user.id, role_id=role.id)
     db.commit.assert_not_awaited()
     db.rollback.assert_awaited_once()
 

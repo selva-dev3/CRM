@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.routers import auth as auth_router
 from app.core.config import settings
-from app.core.errors import APIException
+from app.core.errors import APIException, _api_exception_handler
 from app.schemas.crm_schemas import AcceptInviteRequest, LoginRequest
 
 TEST_PASSWORD_VALUE = "synthetic-password"  # noqa: S105 - synthetic test credential
@@ -152,3 +152,20 @@ async def test_accept_invitation_sets_access_and_refresh_cookies(monkeypatch):
         "user_name": "Invite User",
         "role": "Sales Manager",
     }
+
+
+@pytest.mark.asyncio
+async def test_password_hashing_failure_keeps_standard_500_response_shape():
+    error = APIException(
+        status_code=500,
+        code="PASSWORD_HASHING_FAILED",
+        message="Unable to create account. Please try again later.",
+    )
+
+    response = await _api_exception_handler(_request(), error)
+
+    assert response.status_code == 500
+    assert response.body == (
+        b'{"code":"PASSWORD_HASHING_FAILED","message":"Unable to create account. '
+        b'Please try again later.","fields":null}'
+    )

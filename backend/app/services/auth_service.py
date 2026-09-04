@@ -610,12 +610,12 @@ class AuthService:
                     message="Unable to create account. Please try again later.",
                 ) from e
 
+            is_new_user = user is None
             if user:
                 user.name = payload.name
                 user.hashed_password = hashed_pwd
                 user.role = role.id
                 user.is_active = True
-                user.is_verified = True
             else:
                 user = await self.repository.create_user(
                     db,
@@ -626,15 +626,15 @@ class AuthService:
                         "role": role.id,
                         "organization_id": target_org_id,
                         "is_active": True,
-                        "is_verified": True,
                     },
                 )
-                await db.flush()
 
             user.is_verified = True
+            if is_new_user:
+                await db.flush()
             await self.repository.assign_user_role(db, user_id=user.id, role_id=role.id)
-            inv.status = "accepted"
             refresh_token = await self._create_refresh_token(db, user.id)
+            inv.status = "accepted"
             await db.commit()
 
             access_token = create_access_token(user.id)
@@ -670,9 +670,11 @@ class AuthService:
             raise
         except Exception as e:
             await db.rollback()
+            logger.exception("Unexpected failure during invitation acceptance")
             raise APIException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                message="Failed to accept invitation",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                code="INVITATION_ACCEPTANCE_FAILED",
+                message="Unable to accept invitation. Please try again later.",
             ) from e
 
     async def list_sessions(self, db: AsyncSession, current_user: User) -> list[dict]:
