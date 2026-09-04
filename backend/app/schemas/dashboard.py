@@ -81,10 +81,19 @@ class AiInsightResponse(BaseModel):
     deal_id: str | None = None
 
 
+class RiskDealInsight(BaseModel):
+    id: str
+    title: str
+    amount: float | None = None
+    stage: str
+    probability: float | None = None
+    updated_at: str
+
+
 class DashboardAiInsightsResponse(BaseModel):
     summary: str
     insights: list[AiInsightResponse]
-    risk_deals: list[dict[str, object]]
+    risk_deals: list[RiskDealInsight]
     run_id: str | None = None
 
 
