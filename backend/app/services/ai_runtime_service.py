@@ -66,6 +66,7 @@ class AIRuntimeService:
         prompt_version: str,
         provider_override: str | None = None,
         model_override: str | None = None,
+        model_overrides: dict[str, str] | None = None,
     ) -> AIRun:
         organization_id = current_user.organization_id
         if not organization_id:
@@ -135,11 +136,12 @@ class AIRuntimeService:
             if organization_config and organization_config.provider
             else settings.AI_PROVIDER
         )
-        model = model_override or (
+        configured_model = (
             organization_config.model_name
             if organization_config and organization_config.model_name
             else settings.AI_MODEL
         )
+        model = model_override or (model_overrides or {}).get(provider) or configured_model
         run = await self.repository.create_run(
             db,
             organization_id=organization_id,
@@ -195,8 +197,18 @@ class AIRuntimeService:
             entity_type=entity_type,
             entity_id=entity_id,
             prompt_version=prompt_version,
-            provider_override="openai" if web_search else None,
-            model_override=settings.AI_WEB_SEARCH_MODEL if web_search else None,
+            model_overrides=(
+                {
+                    "openai": settings.AI_WEB_SEARCH_MODEL,
+                    **(
+                        {"gemini": settings.AI_GEMINI_WEB_SEARCH_MODEL}
+                        if settings.AI_GEMINI_WEB_SEARCH_MODEL
+                        else {}
+                    ),
+                }
+                if web_search
+                else None
+            ),
         )
         try:
             result = await self.provider_gateway.generate_structured(
@@ -231,12 +243,22 @@ class AIRuntimeService:
             entity_type=None,
             entity_id=None,
             prompt_version="audio-v1",
+            model_overrides={
+                "openai": settings.AI_TRANSCRIPTION_MODEL,
+                **(
+                    {"gemini": settings.AI_GEMINI_TRANSCRIPTION_MODEL}
+                    if settings.AI_GEMINI_TRANSCRIPTION_MODEL
+                    else {}
+                ),
+            },
         )
         try:
             result = await self.provider_gateway.transcribe_audio(
                 file_name=file_name,
                 content=content,
                 content_type=content_type,
+                provider=run.provider,
+                model=run.model_name,
             )
         except APIException as exc:
             self._complete_failure(run, exc)

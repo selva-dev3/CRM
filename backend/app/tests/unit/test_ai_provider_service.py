@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 import httpx
 import openai
 import pytest
+from google.genai import errors as genai_errors
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -61,6 +62,192 @@ def test_provider_accepts_json_code_fence():
     result = AIProviderGateway._validate_output('```json\n{"score": 82}\n```', ScoreOutput)
 
     assert result.score == 82
+
+
+def _gemini_client(response: object) -> tuple[SimpleNamespace, AsyncMock]:
+    generate_content = AsyncMock(return_value=response)
+    client = SimpleNamespace(
+        aio=SimpleNamespace(
+            models=SimpleNamespace(generate_content=generate_content),
+            aclose=AsyncMock(),
+        )
+    )
+    return client, generate_content
+
+
+@pytest.mark.asyncio
+async def test_gemini_generation_uses_configured_model_and_validates_output(monkeypatch):
+    response = SimpleNamespace(
+        parsed={"score": 82},
+        usage_metadata=SimpleNamespace(prompt_token_count=12, candidates_token_count=4),
+    )
+    client, generate_content = _gemini_client(response)
+    monkeypatch.setattr("app.services.ai_provider_service.settings.GEMINI_API_KEY", "set")
+    monkeypatch.setattr(AIProviderGateway, "_gemini_client", staticmethod(lambda: client))
+
+    result = await AIProviderGateway().generate_structured(
+        provider="gemini",
+        model="configured-gemini-model",
+        system_prompt="system",
+        user_prompt="user",
+        output_schema=ScoreOutput,
+    )
+
+    assert result.output == ScoreOutput(score=82)
+    assert result.provider == "gemini"
+    assert result.model == "configured-gemini-model"
+    assert result.total_tokens == 16
+    assert generate_content.await_args.kwargs["model"] == "configured-gemini-model"
+    config = generate_content.await_args.kwargs["config"]
+    assert config.response_schema is ScoreOutput
+    assert config.response_mime_type == "application/json"
+    assert config.automatic_function_calling.disable is True
+    client.aio.aclose.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_gemini_generation_rejects_invalid_structured_response(monkeypatch):
+    response = SimpleNamespace(
+        parsed={"score": 120},
+        usage_metadata=None,
+    )
+    client, _ = _gemini_client(response)
+    monkeypatch.setattr("app.services.ai_provider_service.settings.GEMINI_API_KEY", "set")
+    monkeypatch.setattr(AIProviderGateway, "_gemini_client", staticmethod(lambda: client))
+
+    with pytest.raises(APIException) as exc_info:
+        await AIProviderGateway().generate_structured(
+            provider="gemini",
+            model="configured-gemini-model",
+            system_prompt="system",
+            user_prompt="user",
+            output_schema=ScoreOutput,
+        )
+
+    assert exc_info.value.code == "AI_INVALID_RESPONSE"
+
+
+@pytest.mark.asyncio
+async def test_gemini_grounded_output_uses_provider_grounding_urls(monkeypatch):
+    response = SimpleNamespace(
+        parsed={"summary": "Grounded result", "sources": ["https://invented.example"]},
+        usage_metadata=SimpleNamespace(prompt_token_count=20, candidates_token_count=10),
+        candidates=[
+            SimpleNamespace(
+                grounding_metadata=SimpleNamespace(
+                    grounding_chunks=[
+                        SimpleNamespace(web=SimpleNamespace(uri="https://source.example/company"))
+                    ]
+                )
+            )
+        ],
+    )
+    client, generate_content = _gemini_client(response)
+    monkeypatch.setattr("app.services.ai_provider_service.settings.GEMINI_API_KEY", "set")
+    monkeypatch.setattr(AIProviderGateway, "_gemini_client", staticmethod(lambda: client))
+
+    result = await AIProviderGateway().generate_structured(
+        provider="gemini",
+        model="configured-research-model",
+        system_prompt="system",
+        user_prompt="research company",
+        output_schema=ResearchOutput,
+        web_search=True,
+    )
+
+    assert result.output.sources == ["https://source.example/company"]
+    assert result.total_tokens == 30
+    assert generate_content.await_args.kwargs["model"] == "configured-research-model"
+    assert generate_content.await_args.kwargs["config"].tools
+
+
+@pytest.mark.asyncio
+async def test_gemini_transcription_preserves_response_contract(monkeypatch):
+    response = SimpleNamespace(
+        parsed={
+            "text": "Hello customer",
+            "language": "en",
+            "duration_seconds": 2.5,
+            "segments": [
+                {
+                    "start_seconds": 0,
+                    "end_seconds": 2.5,
+                    "text": "Hello customer",
+                }
+            ],
+        },
+        usage_metadata=SimpleNamespace(prompt_token_count=15, candidates_token_count=5),
+    )
+    client, generate_content = _gemini_client(response)
+    monkeypatch.setattr("app.services.ai_provider_service.settings.GEMINI_API_KEY", "set")
+    monkeypatch.setattr(AIProviderGateway, "_gemini_client", staticmethod(lambda: client))
+
+    result = await AIProviderGateway().transcribe_audio(
+        file_name="call.mp3",
+        content=b"audio bytes",
+        content_type="audio/mpeg",
+        provider="gemini",
+        model="configured-transcription-model",
+    )
+
+    assert result.output.text == "Hello customer"
+    assert result.output.segments[0].end_seconds == 2.5
+    assert result.total_tokens == 20
+    assert generate_content.await_args.kwargs["model"] == "configured-transcription-model"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("provider_error", "expected_code", "expected_status"),
+    [
+        (
+            genai_errors.ClientError(
+                400,
+                {
+                    "error": {
+                        "status": "INVALID_ARGUMENT",
+                        "details": [{"reason": "API_KEY_INVALID"}],
+                    }
+                },
+            ),
+            "AI_PROVIDER_AUTH_FAILED",
+            503,
+        ),
+        (
+            genai_errors.ClientError(429, {"error": {"status": "RESOURCE_EXHAUSTED"}}),
+            "AI_PROVIDER_RATE_LIMITED",
+            503,
+        ),
+        (
+            genai_errors.ServerError(503, {"error": {"status": "UNAVAILABLE"}}),
+            "AI_PROVIDER_UNAVAILABLE",
+            503,
+        ),
+        (TimeoutError(), "AI_PROVIDER_TIMEOUT", 504),
+    ],
+)
+async def test_gemini_provider_failures_use_application_error_contract(
+    monkeypatch,
+    provider_error,
+    expected_code,
+    expected_status,
+):
+    gateway = AIProviderGateway()
+    gateway._gemini_generate = AsyncMock(side_effect=provider_error)
+    monkeypatch.setattr("app.services.ai_provider_service.settings.OPENAI_API_KEY", None)
+    monkeypatch.setattr("app.services.ai_provider_service.settings.ANTHROPIC_API_KEY", None)
+
+    with pytest.raises(APIException) as exc_info:
+        await gateway.generate_structured(
+            provider="gemini",
+            model="configured-gemini-model",
+            system_prompt="system",
+            user_prompt="user",
+            output_schema=ScoreOutput,
+        )
+
+    assert exc_info.value.code == expected_code
+    assert exc_info.value.status_code == expected_status
 
 
 @pytest.mark.asyncio
@@ -228,6 +415,8 @@ async def test_openai_transcription_maps_real_provider_response(monkeypatch):
         file_name="call.mp3",
         content=b"audio bytes",
         content_type="audio/mpeg",
+        provider="openai",
+        model="configured-transcription-model",
     )
 
     assert result.output.text == "Hello customer"
@@ -471,7 +660,7 @@ async def test_runtime_uses_dedicated_grounded_research_model(monkeypatch):
     provider = AsyncMock()
     provider.generate_structured.return_value = AIProviderResult(
         output=ResearchOutput(summary="Grounded", sources=["https://source.example"]),
-        provider="openai",
+        provider="gemini",
         model="research-model",
         input_tokens=10,
         output_tokens=5,
@@ -479,8 +668,10 @@ async def test_runtime_uses_dedicated_grounded_research_model(monkeypatch):
     )
     service = AIRuntimeService(repository=repository, provider_gateway=provider)
     monkeypatch.setattr(
-        "app.services.ai_runtime_service.settings.AI_WEB_SEARCH_MODEL", "research-model"
+        "app.services.ai_runtime_service.settings.AI_GEMINI_WEB_SEARCH_MODEL",
+        "research-model",
     )
+    monkeypatch.setattr("app.services.ai_runtime_service.settings.AI_PROVIDER", "gemini")
 
     await service.execute(
         AsyncMock(spec=AsyncSession),
@@ -492,7 +683,7 @@ async def test_runtime_uses_dedicated_grounded_research_model(monkeypatch):
         web_search=True,
     )
 
-    assert repository.create_run.await_args.kwargs["provider"] == "openai"
+    assert repository.create_run.await_args.kwargs["provider"] == "gemini"
     assert repository.create_run.await_args.kwargs["model_name"] == "research-model"
     assert provider.generate_structured.await_args.kwargs["web_search"] is True
 

@@ -24,7 +24,7 @@ CRM/
     │   ├── core/             # JWT Auth, Bcrypt, RBAC Permissions
     │   ├── models/           # SQLAlchemy 2.0 ORM Models
     │   ├── schemas/          # Pydantic v2 Request/Response Schemas
-    │   ├── services/         # OpenAI / Anthropic AI Service Layer
+    │   ├── services/         # Gemini / OpenAI / Anthropic AI provider layer
     │   └── worker/           # Celery Async Background Tasks
     └── requirements.txt
 ```
@@ -46,3 +46,11 @@ python -m venv venv
 pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
+
+### AI provider configuration
+
+AI model identifiers are deployment configuration, not application constants. To use Gemini,
+set `GEMINI_API_KEY`, set `AI_PROVIDER=gemini`, and set `AI_MODEL` to a Gemini model enabled for
+the API key. Optional `AI_GEMINI_WEB_SEARCH_MODEL` and `AI_GEMINI_TRANSCRIPTION_MODEL` values may
+select dedicated models; when omitted, those Gemini operations use `AI_MODEL`. Keep provider keys
+in runtime environment variables and never commit real credentials.

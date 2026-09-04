@@ -123,6 +123,18 @@ def _lead_result() -> LeadIntelligenceResponse:
     )
 
 
+def test_configured_models_includes_gemini_without_hard_coded_model(monkeypatch):
+    monkeypatch.setattr("app.services.ai_domain_service.settings.OPENAI_API_KEY", None)
+    monkeypatch.setattr("app.services.ai_domain_service.settings.ANTHROPIC_API_KEY", None)
+    monkeypatch.setattr("app.services.ai_domain_service.settings.GEMINI_API_KEY", "set")
+    monkeypatch.setattr("app.services.ai_domain_service.settings.AI_PROVIDER", "gemini")
+    monkeypatch.setattr(
+        "app.services.ai_domain_service.settings.AI_MODEL", "configured-gemini-model"
+    )
+
+    assert AIDomainService._configured_models() == [("gemini", "configured-gemini-model")]
+
+
 @pytest.mark.asyncio
 async def test_evaluate_lead_score_is_tenant_scoped_and_persists_history():
     repository = _repository()

@@ -1302,6 +1302,14 @@ class AIDomainService:
             )
             if anthropic_model:
                 models.append(("anthropic", anthropic_model))
+        if ai_provider_gateway.has_usable_api_key(settings.GEMINI_API_KEY):
+            gemini_model = (
+                settings.AI_MODEL
+                if settings.AI_PROVIDER == "gemini"
+                else settings.AI_GEMINI_FALLBACK_MODEL
+            )
+            if gemini_model:
+                models.append(("gemini", gemini_model))
         return models
 
     async def list_ai_models(self, db: AsyncSession, current_user: User) -> list[dict]:
