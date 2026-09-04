@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import APIException, ForbiddenError
 from app.models import AIRun, User
 from app.repositories.ai_repository import AIRepository
+from app.schemas.dashboard import DashboardAiInsightsResponse
 from app.services.ai_provider_service import AIProviderGateway, AIProviderResult
 from app.services.ai_runtime_service import AIRuntimeService
 
@@ -62,6 +63,21 @@ def test_provider_accepts_json_code_fence():
     result = AIProviderGateway._validate_output('```json\n{"score": 82}\n```', ScoreOutput)
 
     assert result.score == 82
+
+
+def test_dashboard_insights_schema_is_compatible_with_gemini_developer_api():
+    schema = DashboardAiInsightsResponse.model_json_schema()
+
+    def contains_additional_properties(value: object) -> bool:
+        if isinstance(value, dict):
+            return "additionalProperties" in value or any(
+                contains_additional_properties(item) for item in value.values()
+            )
+        if isinstance(value, list):
+            return any(contains_additional_properties(item) for item in value)
+        return False
+
+    assert not contains_additional_properties(schema)
 
 
 def _gemini_client(response: object) -> tuple[SimpleNamespace, AsyncMock]:
