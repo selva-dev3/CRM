@@ -313,16 +313,36 @@ class AIProviderGateway:
                         "schema": self._openrouter_schema(output_schema),
                     },
                 },
+                extra_body={"provider": {"require_parameters": True}},
             )
         finally:
             await client.close()
-        message = response.choices[0].message if response.choices else None
+        choice = response.choices[0] if response.choices else None
+        message = getattr(choice, "message", None) if choice else None
+        refusal = getattr(message, "refusal", None) if message else None
         raw_text = getattr(message, "content", None) if message else None
-        if not raw_text:
+        if refusal:
+            logger.warning(
+                "OpenRouter structured response refused model=%s finish_reason=%s",
+                self._safe_log_value(model),
+                self._safe_log_value(getattr(choice, "finish_reason", None)),
+            )
             raise APIException(
                 status_code=502,
                 code="AI_INVALID_RESPONSE",
-                message="The AI provider returned no structured result.",
+                message="The AI provider refused to return a CRM search plan.",
+            )
+        if not isinstance(raw_text, str) or not raw_text.strip():
+            logger.warning(
+                "OpenRouter structured response empty model=%s finish_reason=%s content_type=%s",
+                self._safe_log_value(model),
+                self._safe_log_value(getattr(choice, "finish_reason", None)),
+                self._safe_log_value(type(raw_text).__name__),
+            )
+            raise APIException(
+                status_code=502,
+                code="AI_INVALID_RESPONSE",
+                message="The AI provider returned no structured search plan.",
             )
         usage = response.usage
         result = AIProviderResult(

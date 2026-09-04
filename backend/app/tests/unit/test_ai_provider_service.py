@@ -59,6 +59,7 @@ async def test_openrouter_generation_uses_strict_schema_and_validates_output(mon
     assert request["response_format"]["type"] == "json_schema"
     assert request["response_format"]["json_schema"]["strict"] is True
     assert request["response_format"]["json_schema"]["schema"]["required"] == ["score"]
+    assert request["extra_body"] == {"provider": {"require_parameters": True}}
     client.close.assert_awaited_once()
 
 
@@ -85,6 +86,39 @@ async def test_openrouter_generation_rejects_invalid_structured_output(monkeypat
         )
 
     assert exc_info.value.code == "AI_INVALID_RESPONSE"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message",
+    [
+        SimpleNamespace(content=None, refusal="unsupported request"),
+        SimpleNamespace(content="", refusal=None),
+    ],
+)
+async def test_openrouter_rejects_refusal_or_empty_content(monkeypatch, message):
+    response = SimpleNamespace(
+        choices=[SimpleNamespace(message=message, finish_reason="stop")],
+        usage=None,
+    )
+    client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=response))),
+        close=AsyncMock(),
+    )
+    monkeypatch.setattr("app.services.ai_provider_service.settings.OPENROUTER_API_KEY", "set")
+    monkeypatch.setattr("app.services.ai_provider_service.AsyncOpenAI", lambda **kwargs: client)
+
+    with pytest.raises(APIException) as exc_info:
+        await AIProviderGateway().generate_structured(
+            provider="openrouter",
+            model="openrouter/free",
+            system_prompt="system",
+            user_prompt="user",
+            output_schema=ScoreOutput,
+        )
+
+    assert exc_info.value.code == "AI_INVALID_RESPONSE"
+    client.close.assert_awaited_once()
 
 
 def test_openrouter_crm_search_schema_is_strict():
