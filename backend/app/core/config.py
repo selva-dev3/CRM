@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     REDIS_PORT: int = 6379
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
+    RATE_LIMIT_STORAGE_URI: str | None = None
 
     # AWS S3 / MinIO Storage
     AWS_ENDPOINT_URL: str = "http://minio:9000"
@@ -104,6 +105,14 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+
+    @property
+    def rate_limit_storage_uri(self) -> str:
+        if self.RATE_LIMIT_STORAGE_URI:
+            return self.RATE_LIMIT_STORAGE_URI
+        if self.ENVIRONMENT.lower() in {"development", "test"}:
+            return "memory://"
+        return self.CELERY_BROKER_URL
 
     @property
     def auth_cookie_secure(self) -> bool:

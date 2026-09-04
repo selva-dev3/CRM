@@ -857,6 +857,50 @@ async def test_accept_invitation_rejects_existing_user_from_another_organization
 
 
 @pytest.mark.asyncio
+async def test_accept_invitation_reports_password_hashing_failure(monkeypatch):
+    role = Role(
+        id="role-sales-manager",
+        name="Sales Manager",
+        organization_id="org-1",
+        is_system_role=False,
+    )
+    invitation = _make_invitation(role=role.id)
+    repo: Any = AuthRepository()
+    repo.get_invitation_by_token = AsyncMock(return_value=invitation)
+    repo.get_organization_by_id = AsyncMock(
+        return_value=Organization(id="org-1", name="Acme", status="active", is_active=True)
+    )
+    repo.get_role_for_organization = AsyncMock(return_value=role)
+    repo.get_user_by_email = AsyncMock(return_value=None)
+    repo.create_user = AsyncMock()
+    repo.assign_user_role = AsyncMock()
+    service = _service_with(repo)
+    service._create_refresh_token = AsyncMock()
+    db = AsyncMock(spec=AsyncSession)
+
+    def raise_hashing_error(_password):
+        raise RuntimeError("bcrypt unavailable")
+
+    monkeypatch.setattr("app.services.auth_service.get_password_hash", raise_hashing_error)
+
+    with pytest.raises(APIException) as exc_info:
+        await service.accept_auth_user_invitation(
+            db,
+            AcceptInviteRequest(token=TEST_CODE, name="Alex", password=VALID_INPUT),
+        )
+
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.code == "PASSWORD_HASHING_FAILED"
+    assert exc_info.value.message == "Unable to create account. Please try again later."
+    assert invitation.status == "pending"
+    repo.create_user.assert_not_awaited()
+    repo.assign_user_role.assert_not_awaited()
+    service._create_refresh_token.assert_not_awaited()
+    db.commit.assert_not_awaited()
+    db.rollback.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_get_invitation_details_resolves_role_name_without_cross_invite_status():
     role = Role(
         id="role-sales-manager",

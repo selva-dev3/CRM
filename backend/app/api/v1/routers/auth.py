@@ -10,6 +10,11 @@ from app.core.auth_cookies import (
 )
 from app.core.config import settings
 from app.core.errors import APIException
+from app.core.rate_limiter import (
+    USER_INVITATION_ACCEPT_RATE_LIMIT,
+    USER_INVITATION_LOOKUP_RATE_LIMIT,
+    limiter,
+)
 from app.db.session import get_db
 from app.models import User
 from app.schemas.crm_schemas import (
@@ -185,7 +190,10 @@ async def microsoft_oauth(
     response_model=UserInvitationDetailsResponse,
     summary="Get user invitation details by token (Public endpoint)",
 )
-async def get_auth_invitation_details(token: str, db: AsyncSession = Depends(get_db)):
+@limiter.limit(USER_INVITATION_LOOKUP_RATE_LIMIT)
+async def get_auth_invitation_details(
+    request: Request, token: str, db: AsyncSession = Depends(get_db)
+):
     return await auth_service.get_auth_invitation_details(db, token)
 
 
@@ -193,7 +201,9 @@ async def get_auth_invitation_details(token: str, db: AsyncSession = Depends(get
     "/accept-invite",
     summary="Accept user invitation, set password, and activate account (Public endpoint)",
 )
+@limiter.limit(USER_INVITATION_ACCEPT_RATE_LIMIT)
 async def accept_auth_user_invitation(
+    request: Request,
     payload: AcceptInviteRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),

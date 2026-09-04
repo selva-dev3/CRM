@@ -590,7 +590,15 @@ class AuthService:
                     message="An existing user cannot be moved to another organization by invitation"
                 )
 
-            hashed_pwd = get_password_hash(payload.password)
+            try:
+                hashed_pwd = get_password_hash(payload.password)
+            except Exception as e:
+                logger.exception("Password hashing failed during invitation acceptance")
+                raise APIException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    code="PASSWORD_HASHING_FAILED",
+                    message="Unable to create account. Please try again later.",
+                ) from e
 
             if user:
                 user.name = payload.name

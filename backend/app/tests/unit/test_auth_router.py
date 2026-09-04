@@ -133,7 +133,7 @@ async def test_accept_invitation_sets_access_and_refresh_cookies(monkeypatch):
         password=TEST_PASSWORD_VALUE,
     )
 
-    response_body = await auth_router.accept_auth_user_invitation(payload, response, db)
+    response_body = await auth_router.accept_auth_user_invitation(_request(), payload, response, db)
 
     accept_mock.assert_awaited_once_with(db, payload)
     cookies = response.headers.getlist("set-cookie")
