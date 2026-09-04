@@ -339,7 +339,10 @@ class UserService:
 
     async def get_user(self, db: AsyncSession, user_id: str, *, current_user: User) -> dict:
         user = await self._require_same_org_user(db, user_id, current_user)
-        return user_to_dict(user)
+        role_map = await self.repository.role_name_map(db, {user.role} if user.role else set())
+        result = user_to_dict(user)
+        result["role"] = self._get_display_role(user, role_map)
+        return result
 
     async def update_user(
         self, db: AsyncSession, user_id: str, payload: UserUpdate, *, current_user: User

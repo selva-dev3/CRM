@@ -48,8 +48,7 @@ import {
   useAssignUserTeamMutation,
   useRemoveUserTeamMutation,
   useSetUserQuotaMutation,
-  UserTeamItem,
-  UserQuotaResponse
+  UserTeamItem
 } from '@/lib/api/users';
 import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
 
@@ -69,8 +68,8 @@ export default function UserDetailPage() {
 
   // Quota Create/Edit Modal State
   const [isQuotaModalOpen, setIsQuotaModalOpen] = useState(false);
-  const [quotaTargetInput, setQuotaTargetInput] = useState('125000');
-  const [quotaAchievedInput, setQuotaAchievedInput] = useState('87500');
+  const [quotaTargetInput, setQuotaTargetInput] = useState('');
+  const [quotaAchievedInput, setQuotaAchievedInput] = useState('');
 
   // Confirmation Modal States for Deleting Team / Deleting User
   const [teamToDelete, setTeamToDelete] = useState<{ id: string; name: string } | null>(null);
@@ -78,19 +77,37 @@ export default function UserDetailPage() {
 
   // Queries
   const { data: user, isLoading, isError, refetch } = useUserQuery(userId);
-  const { data: quotaData, refetch: refetchQuota } = useUserQuotaQuery(userId);
-  const { data: performance } = useUserPerformanceQuery(userId);
-  const { data: permissionsData } = useUserPermissionsQuery(userId);
-  const { data: activities = [] } = useUserActivitiesQuery(userId);
-  const { data: teamsData = [], refetch: refetchTeams } = useUserTeamsQuery(userId);
+  const {
+    data: quota,
+    isLoading: isQuotaLoading,
+    isError: isQuotaError,
+    refetch: refetchQuota,
+  } = useUserQuotaQuery(userId);
+  const {
+    data: performance,
+    isLoading: isPerformanceLoading,
+    isError: isPerformanceError,
+  } = useUserPerformanceQuery(userId);
+  const {
+    data: permissionsData,
+    isLoading: isPermissionsLoading,
+    isError: isPermissionsError,
+  } = useUserPermissionsQuery(userId);
+  const {
+    data: activitiesData,
+    isLoading: isActivitiesLoading,
+    isError: isActivitiesError,
+  } = useUserActivitiesQuery(userId);
+  const {
+    data: teamsData,
+    isLoading: isTeamsLoading,
+    isError: isTeamsError,
+    refetch: refetchTeams,
+  } = useUserTeamsQuery(userId);
   const { data: currentOrganization } = useCurrentOrganizationQuery();
 
-  // Local quota & teams state for instant interactive feedback
-  const [localQuota, setLocalQuota] = useState<UserQuotaResponse | null>(null);
-  const quota = localQuota ?? quotaData;
-
-  const [localTeams, setLocalTeams] = useState<UserTeamItem[] | null>(null);
-  const teams = localTeams ?? teamsData;
+  const activities = activitiesData ?? [];
+  const teams: UserTeamItem[] = teamsData ?? [];
 
   // Mutations
   const activateUserMutation = useActivateUserMutation();
@@ -103,7 +120,13 @@ export default function UserDetailPage() {
 
   const orgName = currentOrganization?.id === user?.organization_id
     ? currentOrganization?.name
-    : user?.organization_id || 'Primary Org';
+    : null;
+
+  const openQuotaModal = () => {
+    setQuotaTargetInput(quota?.target_amount?.toString() ?? '');
+    setQuotaAchievedInput(quota?.achieved_amount.toString() ?? '0');
+    setIsQuotaModalOpen(true);
+  };
 
   const handleToggleStatus = async () => {
     if (!user) return;
@@ -149,17 +172,11 @@ export default function UserDetailPage() {
         role: newTeamRole,
       });
 
-      const updatedList = [
-        ...teams,
-        { id: newTeamId, name: newTeamName.trim(), role: newTeamRole }
-      ];
-      setLocalTeams(updatedList);
-
       setSuccessMessage(res.message || `Assigned to team '${newTeamName.trim()}' successfully.`);
       setNewTeamName('');
       setNewTeamRole('Member');
       setIsTeamModalOpen(false);
-      refetchTeams();
+      await refetchTeams();
     } catch {
       setErrorMessage('Failed to assign user to team.');
     }
@@ -182,15 +199,9 @@ export default function UserDetailPage() {
         achievedAmount: achieved,
       });
 
-      setLocalQuota({
-        user_id: userId,
-        target_amount: target,
-        achieved_amount: achieved,
-      });
-
       setSuccessMessage(`Sales quota target $${target.toLocaleString()} assigned successfully.`);
       setIsQuotaModalOpen(false);
-      refetchQuota();
+      await refetchQuota();
     } catch {
       setErrorMessage('Failed to set sales quota.');
     }
@@ -202,12 +213,9 @@ export default function UserDetailPage() {
       setErrorMessage(null);
       const res = await removeTeamMutation.mutateAsync({ userId, teamId: teamToDelete.id });
 
-      const updatedList = teams.filter((t) => t.id !== teamToDelete.id);
-      setLocalTeams(updatedList);
-
       setSuccessMessage(res.message || `Removed from team '${teamToDelete.name}' successfully.`);
       setTeamToDelete(null);
-      refetchTeams();
+      await refetchTeams();
     } catch {
       setErrorMessage('Failed to remove team.');
       setTeamToDelete(null);
@@ -250,7 +258,7 @@ export default function UserDetailPage() {
           <AlertCircle className="w-12 h-12 text-rose-500 mx-auto mb-3" />
           <h2 className="text-lg font-bold text-slate-900">User Not Found</h2>
           <p className="text-sm text-slate-500 mt-1 mb-4">
-            The requested user profile (ID: {userId}) could not be located or has been removed.
+            The requested user profile could not be located or has been removed.
           </p>
           <Button onClick={() => router.push('/users')}>Return to User Directory</Button>
         </div>
@@ -258,7 +266,9 @@ export default function UserDetailPage() {
     );
   }
 
-  const quotaPercent = quota?.target_amount ? Math.min(100, Math.round((quota.achieved_amount / quota.target_amount) * 100)) : 70;
+  const quotaPercent = quota?.target_amount
+    ? Math.min(100, Math.round((quota.achieved_amount / quota.target_amount) * 100))
+    : null;
 
   return (
     <div className="space-y-6">
@@ -293,11 +303,7 @@ export default function UserDetailPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => {
-                setQuotaTargetInput(String(quota?.target_amount || 125000));
-                setQuotaAchievedInput(String(quota?.achieved_amount || 87500));
-                setIsQuotaModalOpen(true);
-              }}
+              onClick={openQuotaModal}
               className="border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 font-semibold text-xs cursor-pointer"
             >
               <Target className="w-3.5 h-3.5 mr-1.5" />
@@ -383,10 +389,12 @@ export default function UserDetailPage() {
                 <Mail className="w-4 h-4 text-slate-400" />
                 <span>{user.email}</span>
               </div>
-              <div className="flex items-center gap-1.5">
-                <Building className="w-4 h-4 text-slate-400" />
-                <span>{orgName}</span>
-              </div>
+              {orgName && (
+                <div className="flex items-center gap-1.5">
+                  <Building className="w-4 h-4 text-slate-400" />
+                  <span>{orgName}</span>
+                </div>
+              )}
               <div className="flex items-center gap-1.5">
                 <Calendar className="w-4 h-4 text-slate-400" />
                 <span>Joined {user.created_at ? new Date(user.created_at).toLocaleDateString() : 'N/A'}</span>
@@ -402,19 +410,25 @@ export default function UserDetailPage() {
           <div>
             <div className="text-xs font-medium text-slate-500">Sales Quota Target</div>
             <div className="text-lg font-bold text-slate-900 mt-0.5">
-              ${(quota?.target_amount || 125000).toLocaleString()}
+              {isQuotaLoading
+                ? 'Loading...'
+                : isQuotaError
+                  ? 'Unavailable'
+                  : quota?.target_amount == null
+                    ? 'Not configured'
+                    : `$${quota.target_amount.toLocaleString()}`}
             </div>
-            <div className="text-[11px] text-emerald-600 font-semibold mt-1">
-              ${(quota?.achieved_amount || 87500).toLocaleString()} achieved ({quotaPercent}%)
-            </div>
+            {!isQuotaLoading && !isQuotaError && quota && (
+              <div className="text-[11px] text-emerald-600 font-semibold mt-1">
+                ${quota.achieved_amount.toLocaleString()} achieved
+                {quotaPercent !== null ? ` (${quotaPercent}%)` : ''}
+              </div>
+            )}
           </div>
           <button
             type="button"
-            onClick={() => {
-              setQuotaTargetInput(String(quota?.target_amount || 125000));
-              setQuotaAchievedInput(String(quota?.achieved_amount || 87500));
-              setIsQuotaModalOpen(true);
-            }}
+            onClick={openQuotaModal}
+            disabled={isQuotaLoading || isQuotaError}
             className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 transition cursor-pointer"
             title="Edit Sales Quota Target"
           >
@@ -426,7 +440,11 @@ export default function UserDetailPage() {
           <div>
             <div className="text-xs font-medium text-slate-500">Deal Win Rate</div>
             <div className="text-lg font-bold text-slate-900 mt-0.5">
-              {performance?.win_rate || 68.5}%
+              {isPerformanceLoading
+                ? 'Loading...'
+                : isPerformanceError || !performance
+                  ? 'Unavailable'
+                  : `${performance.win_rate}%`}
             </div>
             <div className="text-[11px] text-slate-500 font-medium mt-1">Closed deals ratio</div>
           </div>
@@ -439,7 +457,11 @@ export default function UserDetailPage() {
           <div>
             <div className="text-xs font-medium text-slate-500">Avg Deal Size</div>
             <div className="text-lg font-bold text-slate-900 mt-0.5">
-              ${(performance?.avg_deal_size || 14200).toLocaleString()}
+              {isPerformanceLoading
+                ? 'Loading...'
+                : isPerformanceError || !performance
+                  ? 'Unavailable'
+                  : `$${performance.avg_deal_size.toLocaleString()}`}
             </div>
             <div className="text-[11px] text-slate-500 font-medium mt-1">Average revenue</div>
           </div>
@@ -452,7 +474,11 @@ export default function UserDetailPage() {
           <div>
             <div className="text-xs font-medium text-slate-500">Calls Logged</div>
             <div className="text-lg font-bold text-slate-900 mt-0.5">
-              {performance?.calls_made || 142}
+              {isPerformanceLoading
+                ? 'Loading...'
+                : isPerformanceError || !performance
+                  ? 'Unavailable'
+                  : performance.calls_made}
             </div>
             <div className="text-[11px] text-slate-500 font-medium mt-1">Customer calls</div>
           </div>
@@ -536,17 +562,22 @@ export default function UserDetailPage() {
             </div>
 
             <div className="space-y-3">
-              {teams.length > 0 ? (
+              {isTeamsLoading ? (
+                <div className="text-xs text-slate-500 p-4 text-center bg-slate-50 rounded-lg">
+                  Loading assigned teams...
+                </div>
+              ) : isTeamsError ? (
+                <div className="text-xs text-rose-600 p-4 text-center bg-rose-50 rounded-lg">
+                  Assigned teams are unavailable.
+                </div>
+              ) : teams.length > 0 ? (
                 teams.map((t) => (
                   <div key={t.id} className="p-3 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-between">
                     <div>
                       <div className="font-bold text-slate-900 text-xs">{t.name}</div>
-                      <div className="text-slate-500 text-[11px]">{t.role || 'Member'}</div>
+                      {t.role && <div className="text-slate-500 text-[11px]">{t.role}</div>}
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-xs">
-                        Active
-                      </Badge>
                       <button
                         type="button"
                         onClick={() => setTeamToDelete({ id: t.id, name: t.name })}
@@ -576,11 +607,8 @@ export default function UserDetailPage() {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => {
-                setQuotaTargetInput(String(quota?.target_amount || 125000));
-                setQuotaAchievedInput(String(quota?.achieved_amount || 87500));
-                setIsQuotaModalOpen(true);
-              }}
+              onClick={openQuotaModal}
+              disabled={isQuotaLoading || isQuotaError}
               className="h-8 gap-1 border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-semibold cursor-pointer"
             >
               <Pencil className="w-3.5 h-3.5" />
@@ -588,19 +616,33 @@ export default function UserDetailPage() {
             </Button>
           </div>
 
-          <div className="space-y-2">
-            <div className="flex justify-between text-xs font-semibold">
-              <span className="text-slate-700">Achieved: ${(quota?.achieved_amount || 87500).toLocaleString()}</span>
-              <span className="text-slate-900">Target: ${(quota?.target_amount || 125000).toLocaleString()}</span>
+          {isQuotaLoading ? (
+            <div className="text-sm text-slate-500">Loading quota...</div>
+          ) : isQuotaError ? (
+            <div className="text-sm text-rose-600">Sales quota is unavailable.</div>
+          ) : quota?.target_amount == null || quotaPercent === null ? (
+            <div className="text-sm text-slate-500">No sales quota is configured.</div>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs font-semibold">
+                <span className="text-slate-700">
+                  Achieved: ${quota.achieved_amount.toLocaleString()}
+                </span>
+                <span className="text-slate-900">
+                  Target: ${quota.target_amount.toLocaleString()}
+                </span>
+              </div>
+              <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
+                <div
+                  className="h-full bg-gradient-to-r from-blue-500 to-emerald-500 rounded-full transition-all duration-500"
+                  style={{ width: `${quotaPercent}%` }}
+                />
+              </div>
+              <div className="text-right text-[11px] font-bold text-emerald-600">
+                {quotaPercent}% completed
+              </div>
             </div>
-            <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
-              <div
-                className="h-full bg-gradient-to-r from-blue-500 to-emerald-500 rounded-full transition-all duration-500"
-                style={{ width: `${quotaPercent}%` }}
-              />
-            </div>
-            <div className="text-right text-[11px] font-bold text-emerald-600">{quotaPercent}% completed</div>
-          </div>
+          )}
         </Card>
       )}
 
@@ -611,11 +653,19 @@ export default function UserDetailPage() {
             <span>Effective System Permissions</span>
           </h3>
           <div className="flex flex-wrap gap-2 pt-2">
-            {(permissionsData?.permissions || ['leads:read', 'leads:write', 'deals:read', 'deals:write', 'contacts:all']).map((perm) => (
-              <span key={perm} className="px-3 py-1 bg-slate-100 border border-slate-200 text-slate-800 text-xs font-mono font-bold rounded-lg">
-                {perm}
-              </span>
-            ))}
+            {isPermissionsLoading ? (
+              <span className="text-sm text-slate-500">Loading permissions...</span>
+            ) : isPermissionsError ? (
+              <span className="text-sm text-rose-600">Permissions are unavailable.</span>
+            ) : permissionsData?.permissions.length ? (
+              permissionsData.permissions.map((perm) => (
+                <span key={perm} className="px-3 py-1 bg-slate-100 border border-slate-200 text-slate-800 text-xs font-mono font-bold rounded-lg">
+                  {perm}
+                </span>
+              ))
+            ) : (
+              <span className="text-sm text-slate-500">No permissions assigned.</span>
+            )}
           </div>
         </Card>
       )}
@@ -627,16 +677,24 @@ export default function UserDetailPage() {
             <span>User Activity Audit Log</span>
           </h3>
           <div className="space-y-3 text-xs">
-            {activities.map((act) => (
-              <div key={act.id} className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
-                <div>
-                  <div className="font-bold text-slate-900">{act.action}</div>
-                  <div className="text-slate-500">{act.details || 'System event logged'}</div>
-                  <div className="text-[10px] text-slate-400 mt-1">{new Date(act.timestamp).toLocaleString()}</div>
+            {isActivitiesLoading ? (
+              <div className="text-sm text-slate-500">Loading activity...</div>
+            ) : isActivitiesError ? (
+              <div className="text-sm text-rose-600">Activity is unavailable.</div>
+            ) : activities.length ? (
+              activities.map((act) => (
+                <div key={act.id} className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
+                  <div>
+                    <div className="font-bold text-slate-900">{act.action}</div>
+                    {act.details && <div className="text-slate-500">{act.details}</div>}
+                    <div className="text-[10px] text-slate-400 mt-1">{new Date(act.timestamp).toLocaleString()}</div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))
+            ) : (
+              <div className="text-sm text-slate-500">No activity recorded.</div>
+            )}
           </div>
         </Card>
       )}
@@ -656,9 +714,9 @@ export default function UserDetailPage() {
           <form onSubmit={handleCreateTeamSubmit} className="space-y-4 text-xs">
             <div className="space-y-1">
               <Label className="text-slate-700 font-semibold">Team Name</Label>
-              <Input
-                type="text"
-                placeholder="e.g. Enterprise Sales East"
+                <Input
+                  type="text"
+                  placeholder="Enter team name"
                 value={newTeamName}
                 onChange={(e) => setNewTeamName(e.target.value)}
                 className="h-9 text-xs"
@@ -716,9 +774,9 @@ export default function UserDetailPage() {
           <form onSubmit={handleSetQuotaSubmit} className="space-y-4 text-xs">
             <div className="space-y-1">
               <Label className="text-slate-700 font-semibold">Target Sales Quota ($)</Label>
-              <Input
-                type="number"
-                placeholder="e.g. 150000"
+                <Input
+                  type="number"
+                  placeholder="Enter target amount"
                 value={quotaTargetInput}
                 onChange={(e) => setQuotaTargetInput(e.target.value)}
                 className="h-9 text-xs"
@@ -727,9 +785,9 @@ export default function UserDetailPage() {
 
             <div className="space-y-1">
               <Label className="text-slate-700 font-semibold">Current Achieved Amount ($)</Label>
-              <Input
-                type="number"
-                placeholder="e.g. 87500"
+                <Input
+                  type="number"
+                  placeholder="Enter achieved amount"
                 value={quotaAchievedInput}
                 onChange={(e) => setQuotaAchievedInput(e.target.value)}
                 className="h-9 text-xs"
