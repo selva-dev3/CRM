@@ -37,6 +37,7 @@ def _make_user(**overrides) -> User:
 def _service_with_target(target: User) -> tuple[UserService, Any]:
     repo: Any = UserRepository()
     repo.get_by_id = AsyncMock(return_value=target)
+    repo.role_name_map = AsyncMock(return_value={})
     return UserService(repository=repo), repo
 
 

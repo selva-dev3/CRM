@@ -72,7 +72,7 @@ export interface UserCreatePayload {
 
 export interface UserQuotaResponse {
   user_id: string;
-  target_amount: number;
+  target_amount: number | null;
   achieved_amount: number;
 }
 
@@ -156,55 +156,23 @@ export async function deleteUserApi(userId: string): Promise<UserDeleteResponse>
 }
 
 export async function fetchUserQuotaApi(userId: string): Promise<UserQuotaResponse> {
-  try {
-    return await apiClient<UserQuotaResponse>(`/users/${userId}/quota`);
-  } catch {
-    return { user_id: userId, target_amount: 125000, achieved_amount: 87500 };
-  }
+  return apiClient<UserQuotaResponse>(`/users/${userId}/quota`);
 }
 
 export async function fetchUserPerformanceApi(userId: string): Promise<UserPerformanceResponse> {
-  try {
-    return await apiClient<UserPerformanceResponse>(`/users/${userId}/performance`);
-  } catch {
-    return { user_id: userId, win_rate: 68.5, avg_deal_size: 14200, calls_made: 142 };
-  }
+  return apiClient<UserPerformanceResponse>(`/users/${userId}/performance`);
 }
 
 export async function fetchUserPermissionsApi(userId: string): Promise<UserPermissionsResponse> {
-  try {
-    return await apiClient<UserPermissionsResponse>(`/users/${userId}/permissions`);
-  } catch {
-    return { user_id: userId, permissions: ['leads:read', 'leads:write', 'deals:read', 'deals:write', 'contacts:all', 'reports:read'] };
-  }
+  return apiClient<UserPermissionsResponse>(`/users/${userId}/permissions`);
 }
 
 export async function fetchUserActivitiesApi(userId: string): Promise<UserActivityItem[]> {
-  try {
-    const data = await apiClient.get<UserActivityItem[]>(`/users/${userId}/activities`);
-    if (Array.isArray(data) && data.length > 0) return data;
-  } catch {
-    // Fallback data
-  }
-  return [
-    { id: 'act-1', action: 'Account Login Authenticated', timestamp: '2026-08-04T10:15:00Z', details: 'Successful OAuth login from Chrome/Windows' },
-    { id: 'act-2', action: 'Lead Assigned: Acme License', timestamp: '2026-08-04T09:30:00Z', details: 'Assigned new sales lead worth $45,000' },
-    { id: 'act-3', action: 'Quota Performance Updated', timestamp: '2026-08-03T16:45:00Z', details: 'Quarterly target updated to $125,000' },
-    { id: 'act-4', action: 'Security Credentials Verified', timestamp: '2026-08-01T14:20:00Z', details: 'MFA token validated successfully' },
-  ];
+  return apiClient.get<UserActivityItem[]>(`/users/${userId}/activities`);
 }
 
 export async function fetchUserTeamsApi(userId: string): Promise<UserTeamItem[]> {
-  try {
-    const data = await apiClient.get<UserTeamItem[]>(`/users/${userId}/teams`);
-    if (Array.isArray(data) && data.length > 0) return data;
-  } catch {
-    // Fallback data
-  }
-  return [
-    { id: 'team-1', name: 'Enterprise Sales East', role: 'Team Lead' },
-    { id: 'team-2', name: 'Global Account Executives', role: 'Member' },
-  ];
+  return apiClient.get<UserTeamItem[]>(`/users/${userId}/teams`);
 }
 
 export async function resetUserPasswordAdminApi(userId: string): Promise<{ message: string; status: string }> {

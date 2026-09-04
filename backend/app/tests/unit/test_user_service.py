@@ -93,6 +93,23 @@ async def test_get_user_raises_not_found_when_missing():
 
 
 @pytest.mark.asyncio
+async def test_get_user_maps_role_id_to_display_name():
+    user = _make_user(role="95efa96f-4d75-46ff-9e2f-183a16f7531d")
+    repo: Any = UserRepository()
+    repo.get_by_id = AsyncMock(return_value=user)
+    repo.role_name_map = AsyncMock(
+        return_value={"95efa96f-4d75-46ff-9e2f-183a16f7531d": "Sales Manager"}
+    )
+    service = _service_with(repo)
+
+    result = await service.get_user(
+        AsyncMock(spec=AsyncSession), "user-1", current_user=_make_user(id="admin")
+    )
+
+    assert result["role"] == "Sales Manager"
+
+
+@pytest.mark.asyncio
 async def test_create_user_hashes_password(monkeypatch):
     user = _make_user()
     repo: Any = UserRepository()
