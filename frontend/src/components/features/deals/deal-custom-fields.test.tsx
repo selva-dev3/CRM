@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { DealCustomFields } from './deal-custom-fields';
 
 describe('DealCustomFields', () => {
-  it('renders API field definitions and reports entered values', () => {
+  it('renders API field definitions and reports entered values', async () => {
     const onChange = vi.fn();
     render(
       <DealCustomFields
@@ -21,12 +21,33 @@ describe('DealCustomFields', () => {
     );
 
     fireEvent.change(screen.getByLabelText('Decision Maker'), { target: { value: 'CTO' } });
-    fireEvent.change(screen.getByLabelText('Priority'), { target: { value: 'High' } });
+    fireEvent.keyDown(screen.getByLabelText('Priority'), { key: 'ArrowDown' });
+    fireEvent.click(await screen.findByRole('option', { name: 'High' }));
     fireEvent.click(screen.getByLabelText('Renewal'));
 
     expect(onChange).toHaveBeenCalledWith('decision_maker', 'CTO');
     expect(onChange).toHaveBeenCalledWith('priority', 'High');
     expect(onChange).toHaveBeenCalledWith('renewal', true);
+  });
+
+  it('reports null when a selected option is cleared', async () => {
+    const onChange = vi.fn();
+    render(
+      <DealCustomFields
+        fields={[
+          { field_name: 'priority', field_type: 'select', label: 'Priority', options: ['High'] },
+        ]}
+        values={{ priority: 'High' }}
+        onChange={onChange}
+        isLoading={false}
+        isError={false}
+      />,
+    );
+
+    fireEvent.keyDown(screen.getByLabelText('Priority'), { key: 'ArrowDown' });
+    fireEvent.click(await screen.findByRole('option', { name: '-- Select --' }));
+
+    expect(onChange).toHaveBeenCalledWith('priority', null);
   });
 
   it('does not render fabricated fields for an empty response', () => {

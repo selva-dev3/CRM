@@ -825,6 +825,16 @@ class ReportData(BaseModel):
 
 
 # 24. System Settings Schemas
+class CustomFieldResponse(BaseModel):
+    id: str
+    entity_type: str
+    field_name: str
+    field_type: str
+    label: str
+    options: list[str] = Field(default_factory=list)
+    created_at: str | None = None
+
+
 class SystemSettings(BaseModel):
     organization_name: str
     currency: str = "USD"

@@ -1,8 +1,18 @@
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import type { DealCustomFieldDefinition } from '@/lib/api/deals';
 
 type CustomFieldValue = string | number | boolean | null;
+
+const EMPTY_SELECT_VALUE = '__deal_custom_field_empty__';
 
 interface DealCustomFieldsProps {
   fields: DealCustomFieldDefinition[];
@@ -38,16 +48,16 @@ export function DealCustomFields({
           const inputId = `deal-custom-${field.field_name}`;
           if (field.field_type === 'boolean') {
             return (
-              <label key={field.field_name} className="flex items-center gap-2 pt-5">
-                <input
+              <div key={field.field_name} className="flex items-center gap-2 pt-5">
+                <Checkbox
                   id={inputId}
-                  type="checkbox"
                   checked={value === true}
-                  onChange={(event) => onChange(field.field_name, event.target.checked)}
-                  className="h-4 w-4 rounded border-slate-300"
+                  onCheckedChange={(checked) => onChange(field.field_name, checked === true)}
                 />
-                <span className="font-semibold text-slate-700">{field.label}</span>
-              </label>
+                <Label htmlFor={inputId} className="font-semibold text-slate-700">
+                  {field.label}
+                </Label>
+              </div>
             );
           }
 
@@ -55,17 +65,25 @@ export function DealCustomFields({
             <div key={field.field_name} className="space-y-1">
               <Label htmlFor={inputId} className="font-semibold text-slate-700">{field.label}</Label>
               {field.field_type === 'select' ? (
-                <select
-                  id={inputId}
-                  value={typeof value === 'string' ? value : ''}
-                  onChange={(event) => onChange(field.field_name, event.target.value || null)}
-                  className="w-full h-9 rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                <Select
+                  value={typeof value === 'string' ? value : EMPTY_SELECT_VALUE}
+                  onValueChange={(selectedValue) =>
+                    onChange(
+                      field.field_name,
+                      selectedValue === EMPTY_SELECT_VALUE ? null : selectedValue,
+                    )
+                  }
                 >
-                  <option value="">-- Select --</option>
-                  {field.options.map((option) => (
-                    <option key={option} value={option}>{option}</option>
-                  ))}
-                </select>
+                  <SelectTrigger id={inputId} className="w-full h-9 text-xs">
+                    <SelectValue placeholder="-- Select --" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={EMPTY_SELECT_VALUE}>-- Select --</SelectItem>
+                    {field.options.map((option) => (
+                      <SelectItem key={option} value={option}>{option}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               ) : (
                 <Input
                   id={inputId}

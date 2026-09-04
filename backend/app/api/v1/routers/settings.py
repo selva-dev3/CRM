@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.deps import get_current_user, get_current_user_optional, require_permission
 from app.db.session import get_db
 from app.models import User
-from app.schemas.crm_schemas import MessageResponse, SystemSettings
+from app.schemas.crm_schemas import CustomFieldResponse, MessageResponse, SystemSettings
 from app.services.settings_service import settings_service
 
 router = APIRouter()
@@ -87,6 +87,7 @@ async def export_audit_logs_csv(db: AsyncSession = Depends(get_db)):
 
 @router.get(
     "/custom-fields",
+    response_model=list[CustomFieldResponse],
     summary="List custom metadata schema fields for entities",
     dependencies=[Depends(require_permission("settings:read"))],
 )
