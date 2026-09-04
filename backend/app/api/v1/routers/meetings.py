@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.deps import get_current_user, require_permission
 from app.db.session import get_db
 from app.models import User
+from app.schemas.ai import MeetingSummaryRequest
 from app.schemas.crm_schemas import (
     BulkActionResponse,
     BulkDeleteRequest,
@@ -152,27 +153,47 @@ async def meeting_rsvp(
     "/{meeting_id}/transcript",
     response_model=MessageResponse,
     summary="Upload meeting transcript text or audio",
-    dependencies=[Depends(require_permission("meetings:update"))],
+    dependencies=[
+        Depends(require_permission("ai:generate")),
+        Depends(require_permission("meetings:update")),
+    ],
 )
 async def upload_meeting_transcript(
-    meeting_id: str, transcript_text: str, db: AsyncSession = Depends(get_db)
+    meeting_id: str,
+    payload: MeetingSummaryRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    return await meeting_service.upload_transcript(db, meeting_id, transcript_text)
+    return await meeting_service.upload_transcript(db, meeting_id, payload.transcript, current_user)
 
 
 @router.get(
     "/{meeting_id}/ai-summary",
     summary="Get AI generated meeting summary",
-    dependencies=[Depends(require_permission("meetings:read"))],
+    dependencies=[
+        Depends(require_permission("ai:read")),
+        Depends(require_permission("meetings:read")),
+    ],
 )
-async def get_meeting_ai_summary(meeting_id: str, db: AsyncSession = Depends(get_db)):
-    return await meeting_service.get_ai_summary(db, meeting_id)
+async def get_meeting_ai_summary(
+    meeting_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await meeting_service.get_ai_summary(db, meeting_id, current_user)
 
 
 @router.get(
     "/{meeting_id}/action-items",
     summary="Get AI extracted action items from meeting transcript",
-    dependencies=[Depends(require_permission("meetings:read"))],
+    dependencies=[
+        Depends(require_permission("ai:read")),
+        Depends(require_permission("meetings:read")),
+    ],
 )
-async def get_meeting_action_items(meeting_id: str, db: AsyncSession = Depends(get_db)):
-    return await meeting_service.get_action_items(db, meeting_id)
+async def get_meeting_action_items(
+    meeting_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await meeting_service.get_action_items(db, meeting_id, current_user)

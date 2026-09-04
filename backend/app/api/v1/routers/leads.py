@@ -22,6 +22,7 @@ from app.schemas.crm_schemas import (
     TaskCreate,
     TaskResponse,
 )
+from app.services.ai_domain_service import ai_domain_service
 from app.services.lead_service import (
     LEAD_SOURCES,
     LEAD_STATUSES,
@@ -236,10 +237,17 @@ async def assign_lead(lead_id: str, user_id: str, db: AsyncSession = Depends(get
 @router.post(
     "/{lead_id}/score",
     summary="Recalculate AI score for lead",
-    dependencies=[Depends(require_permission("leads:update"))],
+    dependencies=[
+        Depends(require_permission("leads:update")),
+        Depends(require_permission("ai:generate")),
+    ],
 )
-async def recalculate_lead_score(lead_id: str, db: AsyncSession = Depends(get_db)):
-    return await lead_service.recalculate_lead_score(db, lead_id)
+async def recalculate_lead_score(
+    lead_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await ai_domain_service.evaluate_lead_score(db, lead_id, current_user)
 
 
 @router.get(

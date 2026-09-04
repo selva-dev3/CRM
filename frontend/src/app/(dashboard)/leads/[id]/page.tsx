@@ -42,6 +42,8 @@ import {
 } from 'lucide-react';
 import { Button, Card, Label, Input, Alert, AlertDescription } from '@/components/ui';
 import { ModalShell } from '@/components/common/modal-shell';
+import { PermissionGate } from '@/components/common/permission-gate';
+import { PERMISSIONS } from '@/lib/permissions';
 import {
   Select,
   SelectContent,
@@ -69,6 +71,7 @@ import {
   assignLeadApi,
   archiveLeadApi,
   unarchiveLeadApi,
+  type LeadIntelligenceResult,
 } from '@/lib/api/leads';
 import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
 import { useCompaniesQuery } from '@/lib/api/companies';
@@ -153,6 +156,7 @@ export default function LeadDetailPage() {
   const [isUploadingDoc, setIsUploadingDoc] = useState(false);
 
   const [isRecalculatingScore, setIsRecalculatingScore] = useState(false);
+  const [leadIntelligence, setLeadIntelligence] = useState<LeadIntelligenceResult | null>(null);
   const [isConverting, setIsConverting] = useState(false);
   const [assignmentSelection, setAssignmentSelection] = useState({ leadId: '', value: UNASSIGNED_VALUE });
   const [isAssigning, setIsAssigning] = useState(false);
@@ -176,7 +180,6 @@ export default function LeadDetailPage() {
   const [status, setStatus] = useState('New');
   const [source, setSource] = useState('Website');
   const [organizationId, setOrganizationId] = useState('');
-  const [score, setScore] = useState<number>(75);
   const [assignedTo, setAssignedTo] = useState<string>('');
   const [isArchived, setIsArchived] = useState<boolean>(false);
 
@@ -251,7 +254,6 @@ export default function LeadDetailPage() {
     setStatus(lead.status || 'New');
     setSource(lead.source || 'Website');
     setOrganizationId(lead.organization_id || (organizations[0]?.id ?? 'org-1'));
-    setScore(lead.score ?? 75);
     setAssignedTo(lead.assigned_to || '');
     setIsArchived(lead.is_archived ?? false);
     setErrorMessage(null);
@@ -290,7 +292,6 @@ export default function LeadDetailPage() {
         postal_code: postalCode.trim() || undefined,
         status,
         source,
-        score: Number(score) || 75,
         assigned_to: assignedTo.trim() || undefined,
         is_archived: isArchived,
         organization_id: organizationId || (organizations[0]?.id ?? 'org-1'),
@@ -422,9 +423,10 @@ export default function LeadDetailPage() {
   const handleRecalculateScore = async () => {
     try {
       setIsRecalculatingScore(true);
-      await recalculateLeadScoreApi(leadId);
+      const result = await recalculateLeadScoreApi(leadId);
+      setLeadIntelligence(result);
       await refetch();
-      setSuccessMessage('AI Lead score recalculated!');
+      setSuccessMessage('AI lead intelligence updated.');
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch {
       setErrorMessage('Failed to recalculate score.');
@@ -513,6 +515,8 @@ export default function LeadDetailPage() {
       </div>
     );
   }
+
+  const leadScore = typeof lead.score === 'number' ? lead.score : null;
 
   return (
     <div className="w-full space-y-6 text-[#374151] pb-16 px-1 sm:px-2">
@@ -740,11 +744,15 @@ export default function LeadDetailPage() {
                 <span className="text-subheading font-semibold text-[#111827] flex items-center gap-1.5">
                   <Activity className="w-4 h-4 text-[#2563EB]" /> Qualification Score
                 </span>
-                {(lead.score ?? 75) >= 70 ? (
+                {leadScore === null ? (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-[#F3F4F6] text-[#374151] border border-[#E5E7EB] text-badge font-semibold">
+                    Not scored
+                  </span>
+                ) : leadScore >= 70 ? (
                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#16A34A]/10 text-[#16A34A] border border-[#16A34A]/20 text-badge font-semibold">
                     <Flame className="size-3" aria-hidden="true" /> High Intent
                   </span>
-                ) : (lead.score ?? 75) >= 40 ? (
+                ) : leadScore >= 40 ? (
                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#F59E0B]/10 text-[#D97706] border border-[#F59E0B]/20 text-badge font-semibold">
                     <Zap className="size-3" aria-hidden="true" /> Warm Lead
                   </span>
@@ -758,7 +766,7 @@ export default function LeadDetailPage() {
               <div className="flex items-baseline justify-between">
                 <div>
                   <div className="text-page-title text-[#111827]">
-                    {lead.score ?? 75}
+                    {leadScore ?? '—'}
                     <span className="text-body font-medium text-[#6B7280] ml-1">/ 100</span>
                   </div>
                   <p className="text-caption font-medium text-[#6B7280] mt-0.5">Engagement & Conversion Potential</p>
@@ -768,12 +776,14 @@ export default function LeadDetailPage() {
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between text-body font-medium text-[#374151]">
                   <span>Engagement Health</span>
-                  <span className="font-semibold text-[#111827]">{lead.score ?? 75}%</span>
+                  <span className="font-semibold text-[#111827]">
+                    {leadScore === null ? 'Not scored' : `${leadScore}%`}
+                  </span>
                 </div>
                 <div className="w-full h-2.5 rounded-full bg-[#F3F4F6] overflow-hidden border border-[#E5E7EB]">
                   <div
                     className="h-full bg-[#2563EB] rounded-full transition-all duration-500"
-                    style={{ width: `${Math.min(100, Math.max(0, lead.score ?? 75))}%` }}
+                    style={{ width: `${Math.min(100, Math.max(0, leadScore ?? 0))}%` }}
                   />
                 </div>
               </div>
@@ -1163,11 +1173,36 @@ export default function LeadDetailPage() {
                 </h3>
                 <p className="text-xs font-bold text-slate-600">Re-evaluates lead metrics and updates engagement score</p>
               </div>
-              <Button type="button" onClick={handleRecalculateScore} disabled={isRecalculatingScore} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 cursor-pointer">
-                {isRecalculatingScore ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 mr-1.5" />}
-                Recalculate AI Score
-              </Button>
+              <PermissionGate permission={PERMISSIONS.LEADS.UPDATE}>
+                <PermissionGate permission={PERMISSIONS.AI.GENERATE}>
+                  <Button type="button" onClick={handleRecalculateScore} disabled={isRecalculatingScore} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 cursor-pointer">
+                    {isRecalculatingScore ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 mr-1.5" />}
+                    Recalculate AI Score
+                  </Button>
+                </PermissionGate>
+              </PermissionGate>
             </div>
+            {leadIntelligence && (
+              <div className="grid gap-3 text-xs sm:grid-cols-3" aria-live="polite">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <span className="text-slate-500">Conversion probability</span>
+                  <p className="mt-1 font-bold text-slate-900">{leadIntelligence.conversion_probability}%</p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <span className="text-slate-500">Qualification</span>
+                  <p className="mt-1 font-bold text-slate-900">{leadIntelligence.qualification}</p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <span className="text-slate-500">Confidence</span>
+                  <p className="mt-1 font-bold text-slate-900">{Math.round(leadIntelligence.confidence * 100)}%</p>
+                </div>
+                {leadIntelligence.reasons.length > 0 && (
+                  <ul className="list-disc space-y-1 pl-5 text-slate-700 sm:col-span-3">
+                    {leadIntelligence.reasons.map((reason) => <li key={reason}>{reason}</li>)}
+                  </ul>
+                )}
+              </div>
+            )}
           </Card>
 
           <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-4">
@@ -1734,20 +1769,7 @@ export default function LeadDetailPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1 items-end">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-black text-black">AI Score (0-100)</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    max={100}
-                    placeholder="75"
-                    value={score}
-                    onChange={(e) => setScore(Number(e.target.value))}
-                    className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
-                  />
-                </div>
-
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1 items-end">
                 <div className="space-y-1.5">
                   <Label className="text-xs font-black text-black">Assigned To User</Label>
                   <select

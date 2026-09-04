@@ -7,9 +7,11 @@ from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException
+from app.models import User
 from app.repositories.dashboard_repository import DashboardRepository
 from app.repositories.setting_repository import SettingRepository
 from app.schemas.dashboard import DashboardKPIs
+from app.services.ai_domain_service import AIDomainService, ai_domain_service
 
 
 class DashboardService:
@@ -27,9 +29,11 @@ class DashboardService:
         self,
         repository: DashboardRepository | None = None,
         setting_repository: SettingRepository | None = None,
+        ai_service_instance: AIDomainService | None = None,
     ) -> None:
         self.repository = repository or DashboardRepository()
         self.setting_repository = setting_repository or SettingRepository()
+        self.ai_service = ai_service_instance or ai_domain_service
 
     @staticmethod
     def _normalize_lead_source(source: str | None) -> str:
@@ -65,9 +69,9 @@ class DashboardService:
                     "action": "New Lead Added",
                     "title": lead.contact_name or lead.title or lead.email,
                     "user": "System API",
-                    "timestamp": str(lead.created_at)[:16]
-                    if getattr(lead, "created_at", None)
-                    else "Recent",
+                    "timestamp": (
+                        str(lead.created_at)[:16] if getattr(lead, "created_at", None) else "Recent"
+                    ),
                 }
             )
 
@@ -150,9 +154,11 @@ class DashboardService:
                 "source": source,
                 "leads": counts["leads"],
                 "converted": counts["converted"],
-                "rate": round((counts["converted"] / counts["leads"] * 100.0), 1)
-                if counts["leads"] > 0
-                else 0.0,
+                "rate": (
+                    round((counts["converted"] / counts["leads"] * 100.0), 1)
+                    if counts["leads"] > 0
+                    else 0.0
+                ),
             }
             for source, counts in grouped.items()
         ]
@@ -202,29 +208,35 @@ class DashboardService:
             for d, owner_name in deals
         ]
 
-    async def get_ai_insights(self, db: AsyncSession, organization_id: str) -> dict:
+    async def get_ai_insights(self, db: AsyncSession, current_user: User) -> dict:
+        organization_id = current_user.organization_id or ""
         total_leads = await self.repository.count_leads(db, organization_id)
         total_deals, total_amount = await self.repository.count_deals_and_sum(db, organization_id)
         currency, _ = await self.repository.get_organization_currency_locale(db, organization_id)
-        summary_text = (
-            f"AI Pipeline Analysis: Database tracks {total_leads} active lead(s) and {total_deals} deal(s) "
-            f"with total pipeline value of {currency} {total_amount:,.2f}."
-        )
-
-        insights_list = []
         recent_deal = await self.repository.top_deal(db, organization_id)
-        if recent_deal:
-            insights_list.append(
-                {
-                    "title": f"Follow up with {recent_deal.title}",
-                    "description": f"High value opportunity worth {currency} {recent_deal.amount:,.2f} currently in {recent_deal.stage} stage.",
-                    "type": "high",
-                    "action": "Follow Up",
-                    "deal_id": recent_deal.id,
-                }
-            )
-
-        return {"summary": summary_text, "insights": insights_list, "risk_deals": []}
+        context = {
+            "metrics": {
+                "total_leads": total_leads,
+                "total_deals": total_deals,
+                "total_pipeline_amount": total_amount,
+                "currency": currency,
+            },
+            "deals": (
+                [
+                    {
+                        "id": recent_deal.id,
+                        "title": recent_deal.title,
+                        "amount": recent_deal.amount,
+                        "stage": recent_deal.stage,
+                        "probability": recent_deal.probability,
+                        "updated_at": recent_deal.updated_at,
+                    }
+                ]
+                if recent_deal
+                else []
+            ),
+        }
+        return await self.ai_service.generate_dashboard_insights(db, context, current_user)
 
     async def get_custom_widgets(self, db: AsyncSession, organization_id: str) -> list[dict]:
         setting = await self.setting_repository.get_by_key(

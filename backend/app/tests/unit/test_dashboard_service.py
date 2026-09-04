@@ -15,8 +15,16 @@ from app.schemas.dashboard import CustomWidgetSaveRequest, DashboardAiInsightsRe
 from app.services.dashboard_service import DashboardService
 
 
-def _service_with(repo: DashboardRepository, setting_repo: SettingRepository) -> DashboardService:
-    return DashboardService(repository=repo, setting_repository=setting_repo)
+def _service_with(
+    repo: DashboardRepository,
+    setting_repo: SettingRepository,
+    ai_service: Any | None = None,
+) -> DashboardService:
+    return DashboardService(
+        repository=repo,
+        setting_repository=setting_repo,
+        ai_service_instance=ai_service,
+    )
 
 
 @pytest.mark.asyncio
@@ -330,16 +338,37 @@ async def test_ai_insight_includes_deal_identifier():
             title="Enterprise renewal",
             amount=5000.0,
             stage="Negotiation",
+            probability=70.0,
+            updated_at=datetime(2026, 8, 31, tzinfo=UTC),
         )
     )
-    service = _service_with(repo, SettingRepository())
+    ai_service = AsyncMock()
+    ai_service.generate_dashboard_insights.return_value = {
+        "summary": "One recorded deal is in negotiation.",
+        "insights": [
+            {
+                "title": "Review enterprise renewal",
+                "description": "The recorded deal remains in negotiation.",
+                "type": "info",
+                "action": "Review",
+                "deal_id": "deal-1",
+            }
+        ],
+        "risk_deals": [],
+        "run_id": "run-1",
+    }
+    service = _service_with(repo, SettingRepository(), ai_service)
+    actor = User(id="user-1", email="user@example.com", organization_id="org-1")
+    db = AsyncMock(spec=AsyncSession)
 
-    result = await service.get_ai_insights(AsyncMock(spec=AsyncSession), "org-1")
+    result = await service.get_ai_insights(db, actor)
 
     assert result["insights"][0]["deal_id"] == "deal-1"
-    assert "INR 5,000.00" in result["summary"]
-    assert "INR 5,000.00" in result["insights"][0]["description"]
+    assert result["run_id"] == "run-1"
     assert DashboardAiInsightsResponse.model_validate(result).insights[0].deal_id == "deal-1"
+    context = ai_service.generate_dashboard_insights.await_args.args[1]
+    assert context["metrics"]["total_pipeline_amount"] == 5000.0
+    assert context["deals"][0]["id"] == "deal-1"
 
 
 @pytest.mark.asyncio
