@@ -437,7 +437,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <GlobalSearchModal isOpen={isSearchOpen} onClose={closeSearch} />
 
       {/* Global AI Assistant Floating Widget */}
-      <AIChatAssistant />
+      {pathname !== '/ai' && <AIChatAssistant />}
     </div>
   );
 }

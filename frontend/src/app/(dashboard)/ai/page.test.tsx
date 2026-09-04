@@ -4,115 +4,133 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import AIIntelligencePage from './page';
 
 const mocks = vi.hoisted(() => ({
+  canRead: true,
   canGenerate: true,
-  getUsageStats: vi.fn(),
-  searchCRM: vi.fn(),
-  generateEmail: vi.fn(),
+  listConversations: vi.fn(),
+  getConversation: vi.fn(),
+  deleteConversation: vi.fn(),
+  streamChatAssistant: vi.fn(),
 }));
 
 vi.mock('@/hooks/use-has-permission', () => ({
   useHasPermission: () => ({
     hasPermission: (permission: string) =>
-      permission === 'ai:read' || (permission === 'ai:generate' && mocks.canGenerate),
+      permission === 'ai:read' ? mocks.canRead : mocks.canGenerate,
   }),
 }));
 
 vi.mock('@/lib/api/ai', () => ({
   aiService: {
-    getUsageStats: mocks.getUsageStats,
-    searchCRM: mocks.searchCRM,
-    generateEmail: mocks.generateEmail,
+    listConversations: mocks.listConversations,
+    getConversation: mocks.getConversation,
+    deleteConversation: mocks.deleteConversation,
+    streamChatAssistant: mocks.streamChatAssistant,
   },
 }));
 
 describe('AIIntelligencePage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.canRead = true;
     mocks.canGenerate = true;
-    mocks.getUsageStats.mockResolvedValue({
-      request_count: 3,
-      tokens_used_this_month: 120,
-      estimated_cost_usd: 0.0123,
-    });
-  });
-
-  it('runs tenant-safe CRM search and renders real API results', async () => {
-    mocks.searchCRM.mockResolvedValue({
-      query: 'Acme',
-      plan: {
-        entity_type: 'company',
-        limit: 20,
+    mocks.listConversations.mockResolvedValue([]);
+    mocks.streamChatAssistant.mockImplementation(
+      async (_question: string, _conversationId: string | undefined, handlers: { onDelta: (text: string) => void }) => {
+        handlers.onDelta('There are 4 ');
+        handlers.onDelta('open deals.');
+        return {
+          conversation_id: 'conversation-1',
+          response: 'There are 4 open deals.',
+          evidence: [],
+          proposed_actions: [],
+          result_blocks: [{
+            key: 'deals',
+            title: 'Open deals',
+            entity_type: 'deal',
+            intent: 'count',
+            results: [{ count: 4 }],
+            result_count: 4,
+            explanation: 'There are 4 matching deal records.',
+            generated_at: '2026-09-04T00:00:00Z',
+          }],
+          follow_up_questions: [],
+          metadata: {
+            model: 'model-b',
+            provider: 'openrouter',
+            fallback_used: true,
+            attempted_model_count: 2,
+            generated_at: '2026-09-04T00:00:00Z',
+          },
+        };
       },
-      result_count: 1,
-      results: [{ id: 'company-1', name: 'Acme' }],
-      explanation: 'One authorized company matched.',
-      run_id: 'run-1',
-    });
-    render(<AIIntelligencePage />);
-
-    fireEvent.change(screen.getByLabelText('Question'), { target: { value: 'Acme' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Search authorized CRM data' }));
-
-    await waitFor(() => expect(mocks.searchCRM).toHaveBeenCalledWith('Acme', undefined));
-    expect(await screen.findByText('One authorized company matched.')).toBeInTheDocument();
-    expect(screen.getByText('Acme')).toBeInTheDocument();
+    );
   });
 
-  it('allows an explicit record type while defaulting to automatic intent detection', async () => {
-    mocks.searchCRM.mockResolvedValue({
-      query: 'How many open deals are there?',
-      plan: { intent: 'count', entity_type: 'deal', filters: [], sort_direction: 'asc', limit: 20 },
-      result_count: 4,
-      results: [{ count: 4 }],
-      explanation: 'There are 4 matching deal record(s).',
-      run_id: 'run-3',
-    });
+  it('streams an authorized CRM answer and renders database results', async () => {
     render(<AIIntelligencePage />);
-
-    expect(screen.getByLabelText('Record type')).toHaveValue('auto');
-    fireEvent.change(screen.getByLabelText('Record type'), { target: { value: 'deal' } });
-    fireEvent.change(screen.getByLabelText('Question'), {
+    fireEvent.change(screen.getByLabelText('Message CRM AI'), {
       target: { value: 'How many open deals are there?' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Search authorized CRM data' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
 
     await waitFor(() =>
-      expect(mocks.searchCRM).toHaveBeenCalledWith('How many open deals are there?', 'deal'),
+      expect(mocks.streamChatAssistant).toHaveBeenCalledWith(
+        'How many open deals are there?',
+        undefined,
+        expect.any(Object),
+      ),
     );
-    expect(await screen.findByText('There are 4 matching deal record(s).')).toBeInTheDocument();
+    expect(await screen.findByText('There are 4 open deals.')).toBeInTheDocument();
+    expect(screen.getByText('Open deals')).toBeInTheDocument();
+    expect(screen.getByText(/Fallback model used/)).toBeInTheDocument();
   });
 
-  it('shows a provider failure and allows the search to be retried', async () => {
-    mocks.searchCRM
-      .mockRejectedValueOnce(new Error('The configured AI provider credentials were rejected.'))
-      .mockResolvedValueOnce({
-        query: 'Acme',
-        plan: { entity_type: 'company', limit: 20 },
-        result_count: 0,
-        results: [],
-        explanation: 'Found 0 authorized company record(s) matching the validated search plan.',
-        run_id: 'run-2',
-      });
+  it('loads a tenant-scoped persisted conversation', async () => {
+    mocks.listConversations.mockResolvedValue([{
+      id: 'conversation-1',
+      title: 'Pipeline review',
+      model_name: 'model-a',
+      created_at: '2026-09-04T00:00:00Z',
+      updated_at: '2026-09-04T00:00:00Z',
+    }]);
+    mocks.getConversation.mockResolvedValue({
+      id: 'conversation-1',
+      title: 'Pipeline review',
+      messages: [{
+        id: 'prompt-1',
+        user_prompt: 'Show pipeline',
+        ai_response: 'Pipeline total is 500.',
+        result_blocks: [],
+        evidence: [],
+        follow_up_questions: [],
+        model: 'model-a',
+        fallback_used: false,
+        created_at: '2026-09-04T00:00:00Z',
+      }],
+    });
     render(<AIIntelligencePage />);
 
-    fireEvent.change(screen.getByLabelText('Question'), { target: { value: 'Acme' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Search authorized CRM data' }));
-
-    expect(
-      await screen.findByText('The configured AI provider credentials were rejected.'),
-    ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-
-    await waitFor(() => expect(mocks.searchCRM).toHaveBeenCalledTimes(2));
-    expect(await screen.findByText('No matching records.')).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: /^Pipeline review/ }));
+    expect(await screen.findByText('Show pipeline')).toBeInTheDocument();
+    expect(screen.getByText('Pipeline total is 500.')).toBeInTheDocument();
   });
 
-  it('does not allow generation without ai:generate', async () => {
+  it('shows retry without fabricating an answer when providers fail', async () => {
+    mocks.streamChatAssistant.mockRejectedValue(new Error('All configured AI models are temporarily unavailable.'));
+    render(<AIIntelligencePage />);
+    fireEvent.change(screen.getByLabelText('Message CRM AI'), { target: { value: 'Show leads' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+
+    expect(await screen.findByText('All configured AI models are temporarily unavailable.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(screen.getByText('I could not complete that request.')).toBeInTheDocument();
+  });
+
+  it('disables chat generation without ai:generate', async () => {
     mocks.canGenerate = false;
     render(<AIIntelligencePage />);
-
-    expect(screen.getByText(/cannot run AI operations/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Generate email' })).toBeDisabled();
-    expect(mocks.generateEmail).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Message CRM AI')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
+    expect(mocks.streamChatAssistant).not.toHaveBeenCalled();
   });
 });

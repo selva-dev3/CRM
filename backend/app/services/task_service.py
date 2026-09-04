@@ -7,6 +7,7 @@ from app.core.errors import APIException, NotFoundError
 from app.core.security import generate_random_code, get_password_hash
 from app.models import User
 from app.models.task import Task
+from app.repositories.project_repository import ProjectRepository
 from app.repositories.task_repository import TaskRepository
 from app.schemas.crm_schemas import TaskCreate, TaskUpdate
 from app.services.notification_service import notification_service
@@ -36,6 +37,7 @@ def task_to_dict(task: Task) -> dict:
         "due_date": str(task.due_date) if task.due_date else None,
         "status": task.status,
         "assigned_to": task.assigned_to,
+        "project_id": getattr(task, "project_id", None),
         "created_at": str(task.created_at) if task.created_at else None,
     }
 
@@ -43,8 +45,25 @@ def task_to_dict(task: Task) -> dict:
 class TaskService:
     """Business logic for the Task domain."""
 
-    def __init__(self, repository: TaskRepository | None = None) -> None:
+    def __init__(
+        self,
+        repository: TaskRepository | None = None,
+        project_repository: ProjectRepository | None = None,
+    ) -> None:
         self.repository = repository or TaskRepository()
+        self.project_repository = project_repository or ProjectRepository()
+
+    async def _validate_project(
+        self, db: AsyncSession, project_id: str | None, organization_id: str
+    ) -> str | None:
+        if not project_id or project_id in {"null", "None"}:
+            return None
+        project = await self.project_repository.get(
+            db, project_id=project_id, organization_id=organization_id
+        )
+        if not project:
+            raise NotFoundError(message=f"Project '{project_id}' not found")
+        return project.id
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
         try:
@@ -97,6 +116,7 @@ class TaskService:
         due_dt = parse_datetime(payload.due_date)
         assigned_user = await self._resolve_user_id(db, payload.assigned_to)
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        project_id = await self._validate_project(db, payload.project_id, org_id)
         data = {
             "organization_id": org_id,
             "title": payload.title,
@@ -105,6 +125,7 @@ class TaskService:
             "status": payload.status or "Pending",
             "due_date": due_dt,
             "assigned_to": assigned_user,
+            "project_id": project_id,
         }
         task = await self.repository.create(db, data=data)
         await self._commit(db, "Failed to create task")
@@ -162,6 +183,10 @@ class TaskService:
             task.status = updates["status"]
         if "priority" in updates:
             task.priority = updates["priority"]
+        if "project_id" in updates:
+            task.project_id = await self._validate_project(
+                db, updates["project_id"], task.organization_id
+            )
 
         await self._commit(db, "Failed to update task")
         await db.refresh(task)

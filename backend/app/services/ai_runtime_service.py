@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime, timedelta
 from time import monotonic
 
@@ -172,6 +173,8 @@ class AIRuntimeService:
         run.total_tokens = result.total_tokens
         run.estimated_cost_usd = result.estimated_cost_usd
         run.latency_ms = result.latency_ms
+        run.fallback_used = result.fallback_used
+        run.attempted_models_json = json.dumps(result.attempted_models)
         run.completed_at = datetime.now(UTC)
 
     @staticmethod

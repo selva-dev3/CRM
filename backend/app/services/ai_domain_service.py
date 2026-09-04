@@ -18,8 +18,12 @@ from app.schemas.ai import (
     AIActionExecutionResponse,
     AIChatGeneratedOutput,
     AIChatResponse,
+    AIConversationDetail,
+    AIConversationMessage,
+    AIConversationSummary,
     AIOrganizationConfigResponse,
     AIOrganizationConfigUpdate,
+    AIResponseMetadata,
     AIResultBlock,
     AISalesForecastAnalysis,
     AISalesForecastResponse,
@@ -61,6 +65,90 @@ logger = get_logger(__name__)
 
 class AIDomainService:
     """Tenant-scoped business logic for provider-backed AI features."""
+
+    @staticmethod
+    def _json_list(value: str | None) -> list[Any]:
+        try:
+            parsed = json.loads(value or "[]")
+        except (TypeError, ValueError):
+            return []
+        return parsed if isinstance(parsed, list) else []
+
+    async def list_conversations(
+        self, db: AsyncSession, current_user: User
+    ) -> list[dict[str, Any]]:
+        rows = await self.repository.list_conversations(
+            db,
+            organization_id=current_user.organization_id or "",
+            user_id=current_user.id,
+        )
+        return [
+            AIConversationSummary(
+                id=conversation.id,
+                title=conversation.title or "New conversation",
+                model_name=conversation.model_name,
+                created_at=conversation.created_at.isoformat(),
+                updated_at=updated_at.isoformat(),
+            ).model_dump()
+            for conversation, updated_at in rows
+        ]
+
+    async def get_conversation_history(
+        self, db: AsyncSession, conversation_id: str, current_user: User
+    ) -> dict[str, Any]:
+        conversation = await self.repository.get_conversation(
+            db,
+            conversation_id=conversation_id,
+            organization_id=current_user.organization_id or "",
+            user_id=current_user.id,
+        )
+        if not conversation:
+            raise NotFoundError(message="AI conversation not found")
+        prompts = await self.repository.list_conversation_prompts(
+            db,
+            conversation_id=conversation_id,
+            organization_id=current_user.organization_id or "",
+            user_id=current_user.id,
+            limit=100,
+        )
+        runs = await self.repository.get_runs_by_ids(
+            db, run_ids={prompt.run_id for prompt in prompts if prompt.run_id}
+        )
+        messages = []
+        for prompt in prompts:
+            run = runs.get(prompt.run_id or "")
+            messages.append(
+                AIConversationMessage(
+                    id=prompt.id,
+                    user_prompt=prompt.user_prompt,
+                    ai_response=prompt.ai_response,
+                    result_blocks=self._json_list(prompt.result_blocks_json),
+                    evidence=self._json_list(prompt.evidence_json),
+                    follow_up_questions=self._json_list(prompt.follow_up_questions_json),
+                    provider=run.provider if run else None,
+                    model=run.model_name if run else conversation.model_name,
+                    fallback_used=run.fallback_used if run else False,
+                    created_at=prompt.created_at.isoformat(),
+                )
+            )
+        return AIConversationDetail(
+            id=conversation.id,
+            title=conversation.title or "New conversation",
+            messages=messages,
+        ).model_dump()
+
+    async def delete_conversation(
+        self, db: AsyncSession, conversation_id: str, current_user: User
+    ) -> None:
+        deleted = await self.repository.delete_conversation(
+            db,
+            conversation_id=conversation_id,
+            organization_id=current_user.organization_id or "",
+            user_id=current_user.id,
+        )
+        if not deleted:
+            raise NotFoundError(message="AI conversation not found")
+        await db.commit()
 
     _SEARCH_FIELDS = {
         "lead": {
@@ -108,6 +196,8 @@ class AIDomainService:
             "company_name",
             "contact_name",
             "owner_name",
+            "project_id",
+            "project_name",
         },
         "task": {
             "title",
@@ -117,6 +207,8 @@ class AIDomainService:
             "updated_at",
             "due_date",
             "owner_name",
+            "project_id",
+            "project_name",
         },
         "project": {
             "name",
@@ -131,6 +223,9 @@ class AIDomainService:
             "created_at",
             "updated_at",
             "owner_name",
+            "pending_task_count",
+            "deal_count",
+            "deal_value",
         },
         "call": {
             "contact_id",
@@ -185,6 +280,7 @@ class AIDomainService:
         "calendar_event": {"title", "description", "start_time", "end_time", "event_type"},
         "activity": {"module", "action_description", "user_id", "user_name", "timestamp"},
         "user": {"name", "role", "is_active", "created_at", "updated_at"},
+        "report": {"report_type"},
     }
     _SEARCH_AGGREGATE_FIELDS = {
         "lead": {"score"},
@@ -192,7 +288,13 @@ class AIDomainService:
         "deal": {"amount", "probability"},
         "contact": set(),
         "task": set(),
-        "project": {"budget", "completion_percentage"},
+        "project": {
+            "budget",
+            "completion_percentage",
+            "pending_task_count",
+            "deal_count",
+            "deal_value",
+        },
         "call": {"duration_seconds"},
         "meeting": set(),
         "email": set(),
@@ -204,6 +306,7 @@ class AIDomainService:
         "calendar_event": set(),
         "activity": set(),
         "user": set(),
+        "report": set(),
     }
     _SEARCH_GROUP_FIELDS = {
         "lead": {"status", "industry", "city", "country"},
@@ -223,6 +326,7 @@ class AIDomainService:
         "calendar_event": {"event_type"},
         "activity": {"module", "user_id"},
         "user": {"role", "is_active"},
+        "report": set(),
     }
     _SEARCH_NUMERIC_FIELDS = {
         "amount",
@@ -231,6 +335,9 @@ class AIDomainService:
         "probability",
         "score",
         "budget",
+        "pending_task_count",
+        "deal_count",
+        "deal_value",
         "completion_percentage",
         "duration_seconds",
         "file_size",
@@ -272,6 +379,7 @@ class AIDomainService:
         "calendar_event": "calendar:read",
         "activity": "activities:read",
         "user": "users:read",
+        "report": "reports:read",
     }
     _RELATED_FIELD_PERMISSIONS = {
         ("lead", "owner_name"): ("users:read",),
@@ -283,8 +391,13 @@ class AIDomainService:
         ("deal", "owner_name"): ("users:read",),
         ("deal", "company_name"): ("companies:read",),
         ("deal", "contact_name"): ("contacts:read",),
+        ("deal", "project_name"): ("projects:read",),
         ("task", "owner_name"): ("users:read",),
+        ("task", "project_name"): ("projects:read",),
         ("project", "owner_name"): ("users:read",),
+        ("project", "pending_task_count"): ("tasks:read",),
+        ("project", "deal_count"): ("deals:read",),
+        ("project", "deal_value"): ("deals:read",),
         ("call", "contact_name"): ("contacts:read",),
         ("document", "uploaded_by_name"): ("users:read",),
         ("quote", "deal_title"): ("deals:read",),
@@ -292,6 +405,34 @@ class AIDomainService:
         ("invoice", "contact_name"): ("contacts:read",),
         ("invoice", "deal_title"): ("deals:read",),
         ("activity", "user_name"): ("users:read",),
+    }
+    _REPORT_GETTERS = {
+        "sales-performance": "get_sales_performance_report",
+        "pipeline-velocity": "get_pipeline_velocity_report",
+        "win-loss-ratio": "get_win_loss_report",
+        "lead-attribution": "get_lead_attribution_report",
+        "rep-leaderboard": "get_rep_leaderboard_report",
+        "revenue-forecasting": "get_revenue_forecasting_report",
+        "activity-metrics": "get_activity_metrics_report",
+        "deal-duration": "get_deal_duration_report",
+        "customer-acquisition-cost": "get_cac_report",
+        "customer-lifetime-value": "get_ltv_report",
+        "churn-analysis": "get_churn_analysis_report",
+        "quota-attainment": "get_quota_attainment_report",
+    }
+    _REPORT_PERMISSIONS = {
+        "sales-performance": ("deals:read", "users:read"),
+        "pipeline-velocity": ("deals:read",),
+        "win-loss-ratio": ("deals:read",),
+        "lead-attribution": ("leads:read",),
+        "rep-leaderboard": ("deals:read", "users:read", "activities:read"),
+        "revenue-forecasting": ("deals:read",),
+        "activity-metrics": ("activities:read",),
+        "deal-duration": ("deals:read",),
+        "customer-acquisition-cost": ("deals:read", "leads:read"),
+        "customer-lifetime-value": ("deals:read", "companies:read"),
+        "churn-analysis": ("deals:read", "companies:read"),
+        "quota-attainment": ("deals:read", "users:read"),
     }
 
     def __init__(
@@ -327,6 +468,21 @@ class AIDomainService:
 
     @classmethod
     def _validate_search_plan(cls, plan: CRMSearchPlan) -> None:
+        if plan.entity_type == "report" and (
+            plan.intent != "list"
+            or plan.filters
+            or plan.text_query
+            or plan.status
+            or plan.include_fields
+            or plan.aggregate
+            or plan.group_by
+            or plan.date_range
+        ):
+            raise APIException(
+                status_code=502,
+                code="AI_INVALID_SEARCH_PLAN",
+                message="The AI provider requested unsupported report options.",
+            )
         entity_fields = cls._SEARCH_FIELDS[plan.entity_type]
         invalid_fields = {item.field for item in plan.filters} - entity_fields
         invalid_fields.update(set(plan.include_fields) - entity_fields)
@@ -421,6 +577,9 @@ class AIDomainService:
     @classmethod
     def _require_search_permissions(cls, permissions: set[str], plan: CRMSearchPlan) -> None:
         cls._require_permission(permissions, cls._SEARCH_PERMISSIONS[plan.entity_type])
+        if plan.entity_type == "report" and plan.report_type:
+            for permission in cls._REPORT_PERMISSIONS[str(plan.report_type)]:
+                cls._require_permission(permissions, permission)
         fields = {item.field for item in plan.filters}
         fields.update(plan.include_fields)
         if plan.aggregate_field:
@@ -446,7 +605,7 @@ class AIDomainService:
 
     @classmethod
     def _search_catalog(cls, permissions: set[str]) -> dict[str, dict[str, object]]:
-        return {
+        catalog = {
             entity: {
                 "fields": sorted(
                     field
@@ -467,6 +626,9 @@ class AIDomainService:
             for entity, fields in cls._SEARCH_FIELDS.items()
             if cls._SEARCH_PERMISSIONS[entity] in permissions or "all" in permissions
         }
+        if "report" in catalog:
+            catalog["report"]["report_types"] = sorted(cls._REPORT_GETTERS)
+        return catalog
 
     @staticmethod
     def _search_explanation(
@@ -824,12 +986,19 @@ class AIDomainService:
 
         result_blocks: list[AIResultBlock] = []
         for index, operation in enumerate(chat_plan.operations, start=1):
-            results = await self.repository.execute_search_plan(
-                db,
-                organization_id=organization_id,
-                current_user_id=current_user.id,
-                **operation.model_dump(exclude={"result_key", "title"}),
-            )
+            if operation.entity_type == "report" and operation.report_type:
+                getter = getattr(
+                    self.report_service, self._REPORT_GETTERS[str(operation.report_type)]
+                )
+                report = await getter(db, current_user=current_user)
+                results = [report]
+            else:
+                results = await self.repository.execute_search_plan(
+                    db,
+                    organization_id=organization_id,
+                    current_user_id=current_user.id,
+                    **operation.model_dump(exclude={"result_key", "title", "report_type"}),
+                )
             explanation, result_count = self._search_explanation(operation, results)
             result_blocks.append(
                 AIResultBlock(
@@ -943,6 +1112,17 @@ class AIDomainService:
             proposed_actions=executable_actions,
             result_blocks=result_blocks,
             follow_up_questions=generated.follow_up_questions,
+            metadata=AIResponseMetadata(
+                run_id=run.id,
+                provider=getattr(run, "provider", None),
+                model=run.model_name,
+                fallback_used=bool(getattr(run, "fallback_used", False)),
+                attempted_model_count=len(
+                    self._json_list(getattr(run, "attempted_models_json", "[]"))
+                )
+                or 1,
+                generated_at=datetime.now(UTC).isoformat(),
+            ),
         )
         await self.repository.create_prompt(
             db,
@@ -950,6 +1130,14 @@ class AIDomainService:
             user_prompt=message,
             ai_response=result.response,
             tokens_used=run.total_tokens,
+            run_id=run.id,
+            result_blocks_json=json.dumps(
+                [block.model_dump() for block in result.result_blocks], default=str
+            ),
+            evidence_json=json.dumps(
+                [evidence.model_dump() for evidence in result.evidence], default=str
+            ),
+            follow_up_questions_json=json.dumps(result.follow_up_questions),
         )
         await db.commit()
         return result.model_dump() | {"run_id": run.id}

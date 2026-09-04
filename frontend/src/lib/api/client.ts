@@ -70,6 +70,16 @@ export class ApiError extends Error {
   }
 }
 
+async function throwResponseError(response: Response): Promise<never> {
+  if (response.status === 401) handleUnauthorized();
+  const errorData = await response.json().catch(() => ({}));
+  throw new ApiError(
+    errorData.detail || errorData.message || 'An unexpected error occurred',
+    'http',
+    response.status,
+  );
+}
+
 function canRefresh(endpoint: string): boolean {
   return !NON_REFRESHABLE_AUTH_ENDPOINTS.some((authEndpoint) =>
     endpoint.startsWith(authEndpoint),
@@ -170,15 +180,7 @@ async function request<T>(
   }
 
   if (!response.ok) {
-    if (response.status === 401) {
-      handleUnauthorized();
-    }
-    const errorData = await response.json().catch(() => ({}));
-    throw new ApiError(
-      errorData.detail || errorData.message || 'An unexpected error occurred',
-      'http',
-      response.status,
-    );
+    return throwResponseError(response);
   }
 
   return {
@@ -186,6 +188,34 @@ async function request<T>(
     headers: response.headers,
     status: response.status,
   };
+}
+
+export async function openApiStream(
+  endpoint: string,
+  data: unknown,
+  signal?: AbortSignal,
+): Promise<Response> {
+  const options: RequestInit = {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    body: JSON.stringify(data),
+    credentials: 'include',
+    signal,
+  };
+  let response = await fetchWithTimeout(
+    `${BASE_URL}${endpoint}`,
+    options,
+    API_REQUEST_TIMEOUT_MS,
+  );
+  if (response.status === 401 && canRefresh(endpoint) && (await getRefreshRequest())) {
+    response = await fetchWithTimeout(
+      `${BASE_URL}${endpoint}`,
+      options,
+      API_REQUEST_TIMEOUT_MS,
+    );
+  }
+  if (!response.ok) return throwResponseError(response);
+  return response;
 }
 
 const mainClient = async function <T>(

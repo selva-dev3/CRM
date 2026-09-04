@@ -1,5 +1,5 @@
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from time import monotonic
 from typing import TypeVar
 
@@ -37,6 +37,8 @@ class AIProviderResult:
     input_tokens: int
     output_tokens: int
     latency_ms: int
+    attempted_models: tuple[str, ...] = ()
+    fallback_used: bool = False
 
     @property
     def total_tokens(self) -> int:
@@ -51,6 +53,16 @@ class AIProviderResult:
 
 class AIProviderGateway:
     """Single provider boundary for validated, structured AI generation."""
+
+    _RETRYABLE_CODES = {
+        "AI_PROVIDER_TIMEOUT",
+        "AI_PROVIDER_CONNECTION_ERROR",
+        "AI_MODEL_UNAVAILABLE",
+        "AI_PROVIDER_RATE_LIMITED",
+        "AI_PROVIDER_UNAVAILABLE",
+        "AI_INVALID_RESPONSE",
+        "AI_PROVIDER_ERROR",
+    }
 
     @staticmethod
     def has_usable_api_key(value: str | None) -> bool:
@@ -938,28 +950,43 @@ class AIProviderGateway:
                     model=selected_model,
                     exc=exc,
                 ) from exc
-        candidates = [(selected_provider, selected_model)]
-        fallback = self._fallback_candidate(selected_provider)
-        if fallback:
-            candidates.append(fallback)
+        if selected_provider == "openrouter":
+            ordered_models = list(dict.fromkeys([selected_model, *settings.openrouter_model_pool]))
+            candidates = [("openrouter", item) for item in ordered_models]
+        else:
+            candidates = [(selected_provider, selected_model)]
+            fallback = self._fallback_candidate(selected_provider)
+            if fallback:
+                candidates.append(fallback)
 
         last_error: APIException | None = None
+        attempted_models: list[str] = []
         for candidate_provider, candidate_model in candidates:
+            attempted_models.append(candidate_model)
             try:
-                return await self._generate_once(
+                result = await self._generate_once(
                     provider=candidate_provider,
                     model=candidate_model,
                     system_prompt=system_prompt,
                     user_prompt=user_prompt,
                     output_schema=output_schema,
                 )
+                return replace(
+                    result,
+                    attempted_models=tuple(attempted_models),
+                    fallback_used=len(attempted_models) > 1,
+                )
             except APIException as exc:
                 last_error = exc
-                if candidate_provider != candidates[-1][0]:
+                if exc.code not in self._RETRYABLE_CODES:
+                    raise
+                if len(attempted_models) < len(candidates):
                     logger.warning(
-                        "AI provider failed; attempting configured fallback from %s to %s",
+                        "AI model failed with retryable error; attempting next fallback "
+                        "provider=%s model=%s error_code=%s",
                         candidate_provider,
-                        candidates[-1][0],
+                        self._safe_log_value(candidate_model),
+                        exc.code,
                     )
 
         if last_error:

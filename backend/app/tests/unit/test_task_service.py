@@ -81,6 +81,32 @@ async def test_create_task_resolves_org_and_serializes(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_create_task_rejects_project_outside_current_organization(monkeypatch):
+    repo: Any = TaskRepository()
+    repo.create = AsyncMock()
+    repo.get_user_by_id_name_email = AsyncMock(return_value=None)
+    repo.get_first_user = AsyncMock(return_value=User(id="usr-2"))
+    project_repository = AsyncMock()
+    project_repository.get.return_value = None
+    service = TaskService(repository=repo, project_repository=project_repository)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.services.task_service import organization_service
+
+    monkeypatch.setattr(
+        organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
+    )
+
+    with pytest.raises(NotFoundError):
+        await service.create_task(db, TaskCreate(title="Follow up", project_id="project-2"))
+
+    project_repository.get.assert_awaited_once_with(
+        db, project_id="project-2", organization_id="org-1"
+    )
+    repo.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_create_task_fires_task_created_event(monkeypatch):
     task = _make_task()
     repo: Any = TaskRepository()

@@ -35,6 +35,12 @@ class AIPrompt(Base):
     user_prompt: Mapped[str] = mapped_column(Text, nullable=False)
     ai_response: Mapped[str] = mapped_column(Text, nullable=False)
     tokens_used: Mapped[int] = mapped_column(default=0)
+    run_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("ai_runs.id", ondelete="SET NULL"), index=True
+    )
+    result_blocks_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    evidence_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    follow_up_questions_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -126,6 +132,8 @@ class AIRun(Base):
     latency_ms: Mapped[int | None] = mapped_column(Integer)
     error_code: Mapped[str | None] = mapped_column(String(100))
     error_message: Mapped[str | None] = mapped_column(Text)
+    fallback_used: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    attempted_models_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True, nullable=False
     )
