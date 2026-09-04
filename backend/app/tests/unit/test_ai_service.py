@@ -559,6 +559,31 @@ async def test_crm_search_checks_scope_permission_before_ai_planning():
 
 
 @pytest.mark.asyncio
+async def test_crm_search_does_not_query_records_when_provider_fails():
+    repository = _repository()
+    repository.execute_search_plan = AsyncMock()
+    runtime = AsyncMock()
+    runtime.execute.side_effect = APIException(
+        status_code=503,
+        code="AI_PROVIDER_AUTH_FAILED",
+        message="The configured AI provider credentials were rejected.",
+    )
+    service = AIDomainService(repository=repository, runtime=runtime)
+    service._permission_keys = AsyncMock(return_value={"ai:generate", "companies:read"})
+
+    with pytest.raises(APIException) as exc_info:
+        await service.search_crm(
+            AsyncMock(spec=AsyncSession),
+            "Show Acme companies",
+            "company",
+            _user(),
+        )
+
+    assert exc_info.value.code == "AI_PROVIDER_AUTH_FAILED"
+    repository.execute_search_plan.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_crm_search_executes_only_validated_tenant_scoped_plan():
     repository = _repository()
     repository.execute_search_plan = AsyncMock(
@@ -583,6 +608,10 @@ async def test_crm_search_executes_only_validated_tenant_scoped_plan():
     )
 
     assert result["result_count"] == 1
+    assert result["plan"]["entity_type"] == "company"
+    assert result["explanation"] == (
+        "Found 1 authorized company record(s) matching the validated search plan."
+    )
     assert repository.execute_search_plan.await_args.kwargs["organization_id"] == "org-1"
     assert repository.execute_search_plan.await_args.kwargs["minimum_open_deal_amount"] == 500000
 

@@ -39,10 +39,14 @@ describe('AIIntelligencePage', () => {
   it('runs tenant-safe CRM search and renders real API results', async () => {
     mocks.searchCRM.mockResolvedValue({
       query: 'Acme',
-      entity_type: 'company',
+      plan: {
+        entity_type: 'company',
+        limit: 20,
+      },
       result_count: 1,
       results: [{ id: 'company-1', name: 'Acme' }],
       explanation: 'One authorized company matched.',
+      run_id: 'run-1',
     });
     render(<AIIntelligencePage />);
 
@@ -52,6 +56,31 @@ describe('AIIntelligencePage', () => {
     await waitFor(() => expect(mocks.searchCRM).toHaveBeenCalledWith('Acme', 'company'));
     expect(await screen.findByText('One authorized company matched.')).toBeInTheDocument();
     expect(screen.getByText('Acme')).toBeInTheDocument();
+  });
+
+  it('shows a provider failure and allows the search to be retried', async () => {
+    mocks.searchCRM
+      .mockRejectedValueOnce(new Error('The configured AI provider credentials were rejected.'))
+      .mockResolvedValueOnce({
+        query: 'Acme',
+        plan: { entity_type: 'company', limit: 20 },
+        result_count: 0,
+        results: [],
+        explanation: 'Found 0 authorized company record(s) matching the validated search plan.',
+        run_id: 'run-2',
+      });
+    render(<AIIntelligencePage />);
+
+    fireEvent.change(screen.getByLabelText('Question'), { target: { value: 'Acme' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Search authorized CRM data' }));
+
+    expect(
+      await screen.findByText('The configured AI provider credentials were rejected.'),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+
+    await waitFor(() => expect(mocks.searchCRM).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText('No matching records.')).toBeInTheDocument();
   });
 
   it('does not allow generation without ai:generate', async () => {
