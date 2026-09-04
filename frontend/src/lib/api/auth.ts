@@ -1,4 +1,4 @@
-﻿import { useMutation, UseMutationOptions } from '@tanstack/react-query';
+﻿import { useMutation, UseMutationOptions, useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
 
 // Types
@@ -69,11 +69,23 @@ export interface AcceptInvitePayload {
 
 export interface AcceptInviteResponse {
   message: string;
+  access_token: string;
+  token_type: string;
   user_id: string;
   email: string;
   name: string;
   role: string;
   status: string;
+  user: CurrentUserResponse;
+}
+
+export interface UserInvitationDetailsResponse {
+  id: string;
+  email: string;
+  role: string;
+  status: string;
+  organization_id?: string;
+  created_at: string;
 }
 
 // API Functions
@@ -129,6 +141,14 @@ export async function acceptInviteApi(payload: AcceptInvitePayload): Promise<Acc
   });
 }
 
+export async function getUserInvitationDetailsApi(
+  token: string,
+): Promise<UserInvitationDetailsResponse> {
+  return apiClient.get<UserInvitationDetailsResponse>(
+    `/auth/invitations/${encodeURIComponent(token)}`,
+  );
+}
+
 // TanStack Query Mutations
 export function useLoginMutation(
   options?: UseMutationOptions<LoginResponse, Error, LoginPayload>
@@ -172,5 +192,14 @@ export function useAcceptInviteMutation(
   return useMutation<AcceptInviteResponse, Error, AcceptInvitePayload>({
     mutationFn: acceptInviteApi,
     ...options,
+  });
+}
+
+export function useUserInvitationDetailsQuery(token: string) {
+  return useQuery<UserInvitationDetailsResponse, Error>({
+    queryKey: ['auth', 'user-invitation', token],
+    queryFn: () => getUserInvitationDetailsApi(token),
+    enabled: Boolean(token),
+    retry: false,
   });
 }

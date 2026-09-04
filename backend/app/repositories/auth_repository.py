@@ -175,11 +175,54 @@ class AuthRepository:
         db.add(org)
         return org
 
-    async def get_invitation_by_token(self, db: AsyncSession, token: str) -> UserInvitation | None:
+    async def get_invitation_by_token(
+        self, db: AsyncSession, token: str, *, for_update: bool = False
+    ) -> UserInvitation | None:
+        stmt = select(UserInvitation).where(UserInvitation.token == token.strip())
+        if for_update:
+            stmt = stmt.with_for_update()
+        result = await db.execute(stmt)
+        return result.scalars().first()
+
+    async def get_organization_by_id(
+        self, db: AsyncSession, organization_id: str
+    ) -> Organization | None:
+        return await db.get(Organization, organization_id)
+
+    async def get_role_for_organization(
+        self, db: AsyncSession, role_value: str, organization_id: str
+    ) -> Role | None:
+        ownership_filter = (Role.organization_id.is_(None)) | (
+            Role.organization_id == organization_id
+        )
         result = await db.execute(
-            select(UserInvitation).where(UserInvitation.token == token.strip())
+            select(Role).where(Role.id == role_value, ownership_filter).limit(1)
+        )
+        role = result.scalars().first()
+        if role:
+            return role
+
+        result = await db.execute(
+            select(Role)
+            .where(
+                func.lower(Role.name) == role_value.strip().lower(),
+                ownership_filter,
+            )
+            .order_by(Role.organization_id.is_(None))
+            .limit(1)
         )
         return result.scalars().first()
+
+    async def assign_user_role(self, db: AsyncSession, *, user_id: str, role_id: str) -> UserRole:
+        result = await db.execute(select(UserRole).where(UserRole.user_id == user_id).limit(1))
+        mapping = result.scalars().first()
+        if mapping:
+            mapping.role_id = role_id
+            return mapping
+
+        mapping = UserRole(user_id=user_id, role_id=role_id)
+        db.add(mapping)
+        return mapping
 
     async def get_invitation_by_email(
         self, db: AsyncSession, email: str, *, status: str | None = None

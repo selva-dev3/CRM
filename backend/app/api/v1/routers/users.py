@@ -164,7 +164,9 @@ async def get_invitation_details(token: str, db: AsyncSession = Depends(get_db))
 
 @router.post(
     "/accept-invite",
-    summary="Accept organization user invitation, set password, and activate account (Public endpoint)",
+    summary="Legacy authenticated user-invitation acceptance endpoint",
+    description="Deprecated: unauthenticated invitees must use POST /auth/accept-invite.",
+    deprecated=True,
 )
 async def accept_user_invitation(payload: AcceptInviteRequest, db: AsyncSession = Depends(get_db)):
     return await user_service.accept_user_invitation(db, payload)

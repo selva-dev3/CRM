@@ -27,7 +27,7 @@ from app.core.security import (
     get_password_hash,
     verify_password,
 )
-from app.models import User
+from app.models import Role, User, UserInvitation
 from app.repositories.auth_repository import AuthRepository
 from app.schemas.crm_schemas import (
     AcceptInviteRequest,
@@ -525,57 +525,77 @@ class AuthService:
         inv = await self.repository.get_invitation_by_token(db, token)
         if not inv:
             raise NotFoundError(message="Invitation not found or token invalid")
-        accepted_any = await self.repository.get_invitation_by_email(
-            db, inv.email, status="accepted"
-        )
-        if accepted_any:
-            inv.status = "accepted"
+        role = await self._resolve_user_invitation_role(db, inv)
         return {
             "id": inv.id,
             "email": inv.email,
-            "role": inv.role,
+            "role": role.name,
             "status": inv.status,
             "organization_id": inv.organization_id,
             "created_at": str(inv.created_at),
         }
 
+    async def _resolve_user_invitation_role(
+        self, db: AsyncSession, invitation: UserInvitation
+    ) -> Role:
+        organization_id = (invitation.organization_id or "").strip()
+        if not organization_id:
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Invitation has no associated organization and cannot be accepted",
+            )
+
+        organization = await self.repository.get_organization_by_id(db, organization_id)
+        if not organization:
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Invitation organization no longer exists",
+            )
+        if not organization.is_active or (organization.status or "").strip().lower() != "active":
+            raise ForbiddenError(message="Invitation organization is inactive")
+
+        role = await self.repository.get_role_for_organization(db, invitation.role, organization_id)
+        if not role:
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Invitation role is invalid for this organization",
+            )
+        return role
+
     async def accept_auth_user_invitation(
         self, db: AsyncSession, payload: AcceptInviteRequest
     ) -> dict:
-        inv = await self.repository.get_invitation_by_token(db, payload.token)
+        inv = await self.repository.get_invitation_by_token(db, payload.token, for_update=True)
         if not inv:
             raise NotFoundError(message="Invalid or expired invitation token")
 
-        accepted_any = await self.repository.get_invitation_by_email(
-            db, inv.email, status="accepted"
-        )
-        if inv.status == "accepted" or accepted_any:
-            inv.status = "accepted"
-            await db.commit()
+        if inv.status != "pending":
+            message = (
+                "Invitation has already been accepted"
+                if inv.status == "accepted"
+                else "Invitation is no longer active"
+            )
             raise APIException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                message="Invitation has already been accepted",
+                message=message,
             )
+
+        role = await self._resolve_user_invitation_role(db, inv)
+        target_org_id = inv.organization_id
 
         try:
-            org = await self.repository.get_first_org(db)
-            if not org:
-                org = await self.repository.create_org(db, name="Default Enterprise CRM")
-                await db.flush()
-            target_org_id = (
-                inv.organization_id
-                if inv.organization_id and len(inv.organization_id) > 5
-                else org.id
-            )
-
             user = await self.repository.get_user_by_email(db, inv.email)
+            if user and user.organization_id != target_org_id:
+                raise ForbiddenError(
+                    message="An existing user cannot be moved to another organization by invitation"
+                )
+
             hashed_pwd = get_password_hash(payload.password)
 
             if user:
                 user.name = payload.name
                 user.hashed_password = hashed_pwd
-                user.role = inv.role
-                user.organization_id = target_org_id
+                user.role = role.id
                 user.is_active = True
             else:
                 user = await self.repository.create_user(
@@ -584,50 +604,50 @@ class AuthService:
                         "name": payload.name,
                         "email": inv.email,
                         "hashed_password": hashed_pwd,
-                        "role": inv.role,
+                        "role": role.id,
                         "organization_id": target_org_id,
                         "is_active": True,
                     },
                 )
                 await db.flush()
 
+            await self.repository.assign_user_role(db, user_id=user.id, role_id=role.id)
             inv.status = "accepted"
-            for other in await self.repository.list_invitations_by_email(
-                db, inv.email, exclude_id=inv.id
-            ):
-                other.status = "accepted"
-
+            refresh_token = await self._create_refresh_token(db, user.id)
             await db.commit()
 
             access_token = create_access_token(user.id)
-            user_role_name = await self.get_user_role_name(db, user)
             user_permissions = await self.get_user_permissions(
-                db, user, resolved_role_name=user_role_name
+                db, user, resolved_role_name=role.name
             )
 
             return {
                 "message": "Invitation accepted successfully! Your account is active.",
                 "access_token": access_token,
+                "refresh_token": refresh_token,
                 "token_type": "bearer",
                 "user_id": user.id,
                 "email": user.email,
                 "name": user.name,
-                "role": user_role_name,
+                "role": role.name,
                 "status": "success",
                 "user": {
                     "id": user.id,
                     "name": user.name,
                     "email": user.email,
-                    "role": user_role_name,
+                    "role": role.name,
                     "organization_id": user.organization_id,
                     "permissions": user_permissions,
                 },
             }
+        except APIException:
+            await db.rollback()
+            raise
         except Exception as e:
             await db.rollback()
             raise APIException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                message=f"Failed to accept invitation: {str(e)}",
+                message="Failed to accept invitation",
             ) from e
 
     async def list_sessions(self, db: AsyncSession, current_user: User) -> list[dict]:

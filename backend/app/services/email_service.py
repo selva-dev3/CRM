@@ -141,13 +141,8 @@ def send_reset_password_email(email_to: str, token: str, user_name: str = "User"
         return False
 
 
-def send_user_invite_email(
-    email_to: str, role: str = "Member", invite_url: str | None = None
-) -> bool:
+def send_user_invite_email(email_to: str, invite_url: str, role: str = "Member") -> bool:
     """Sends Organization User Invitation HTML email via Brevo API."""
-
-    if not invite_url:
-        invite_url = f"{settings.FRONTEND_URL}/accept-invite"
 
     # Dynamic values interpolated into HTML below are escaped once here.
     invite_url_escaped = html.escape(invite_url, quote=True)

@@ -199,8 +199,7 @@ async def accept_auth_user_invitation(
     db: AsyncSession = Depends(get_db),
 ):
     result = await auth_service.accept_auth_user_invitation(db, payload)
-    set_auth_cookie(response, result["access_token"])
-    return result
+    return _set_token_cookies(response, result)
 
 
 @router.get("/sessions", summary="List active user sessions")

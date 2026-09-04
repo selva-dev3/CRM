@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.routers import auth as auth_router
 from app.core.config import settings
 from app.core.errors import APIException
-from app.schemas.crm_schemas import LoginRequest
+from app.schemas.crm_schemas import AcceptInviteRequest, LoginRequest
 
 TEST_PASSWORD_VALUE = "synthetic-password"  # noqa: S105 - synthetic test credential
 TEST_REFRESH_VALUE = "current-refresh"
@@ -110,3 +110,33 @@ async def test_logout_without_access_token_revokes_refresh_and_clears_both_cooki
     cookies = response.headers.getlist("set-cookie")
     assert len(cookies) == 2
     assert all("Max-Age=0" in cookie for cookie in cookies)
+
+
+@pytest.mark.asyncio
+async def test_accept_invitation_sets_access_and_refresh_cookies(monkeypatch):
+    result = _token_result() | {
+        "message": "accepted",
+        "user_id": "user-1",
+        "email": "invite@crm.com",
+        "name": "Invite User",
+        "role": "Sales Manager",
+        "status": "success",
+        "user": {"id": "user-1", "permissions": ["users:read"]},
+    }
+    accept_mock = AsyncMock(return_value=result)
+    monkeypatch.setattr(auth_router.auth_service, "accept_auth_user_invitation", accept_mock)
+    response = Response()
+    db = AsyncMock(spec=AsyncSession)
+    payload = AcceptInviteRequest(
+        token=TEST_REFRESH_VALUE,
+        name="Invite User",
+        password=TEST_PASSWORD_VALUE,
+    )
+
+    response_body = await auth_router.accept_auth_user_invitation(payload, response, db)
+
+    accept_mock.assert_awaited_once_with(db, payload)
+    cookies = response.headers.getlist("set-cookie")
+    assert any(cookie.startswith(f"{settings.AUTH_COOKIE_NAME}=") for cookie in cookies)
+    assert any(cookie.startswith(f"{settings.AUTH_REFRESH_COOKIE_NAME}=") for cookie in cookies)
+    assert response_body["refresh_token"] is None

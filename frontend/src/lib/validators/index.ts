@@ -23,6 +23,20 @@ export const resetPasswordSchema = z
     path: ['confirmPassword'],
   });
 
+export const acceptUserInviteSchema = z
+  .object({
+    name: z.string().trim().min(2, 'Name must be at least 2 characters'),
+    password: z
+      .string()
+      .min(8, 'Password must be at least 8 characters')
+      .max(72, 'Password must be 72 characters or fewer'),
+    confirmPassword: z.string().min(1, 'Confirm your password'),
+  })
+  .refine((values) => values.password === values.confirmPassword, {
+    message: 'Passwords do not match',
+    path: ['confirmPassword'],
+  });
+
 export const registerSchema = z.object({
   name: z.string().min(2, 'Name is required'),
   email: z.string().email('Invalid email address'),
