@@ -1,6 +1,6 @@
 // Central API Client for CRM Backend Integration (FastAPI)
-const DEFAULT_API_URL = 'http://localhost:8000/api/v1';
-export const API_REQUEST_TIMEOUT_MS = 15_000;
+const DEFAULT_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+export const API_REQUEST_TIMEOUT_MS = 30_000;
 const REFRESH_REQUEST_TIMEOUT_MS = 10_000;
 
 export function resolveApiBaseUrl(
