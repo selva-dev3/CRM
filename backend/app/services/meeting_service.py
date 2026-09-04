@@ -7,6 +7,7 @@ from app.core.errors import APIException, NotFoundError
 from app.models import Meeting, User
 from app.repositories.meeting_repository import MeetingRepository
 from app.schemas.crm_schemas import MeetingBase, MeetingCreate
+from app.services.ai_domain_service import AIDomainService, ai_domain_service
 from app.services.notification_service import notification_service
 from app.services.org_service import organization_service
 
@@ -42,8 +43,13 @@ def meeting_to_dict(meeting: Meeting, attendees: list[str] | None = None) -> dic
 class MeetingService:
     """Business logic for the Meeting domain."""
 
-    def __init__(self, repository: MeetingRepository | None = None) -> None:
+    def __init__(
+        self,
+        repository: MeetingRepository | None = None,
+        ai_service_instance: AIDomainService | None = None,
+    ) -> None:
         self.repository = repository or MeetingRepository()
+        self.ai_service = ai_service_instance or ai_domain_service
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
         try:
@@ -175,43 +181,51 @@ class MeetingService:
         return {"message": f"RSVP '{response}' recorded for {email}", "status": "success"}
 
     async def upload_transcript(
-        self, db: AsyncSession, meeting_id: str, transcript_text: str
+        self,
+        db: AsyncSession,
+        meeting_id: str,
+        transcript_text: str,
+        current_user: User,
     ) -> dict:
-        meeting = await self.repository.get_by_id(db, meeting_id)
-        if not meeting:
-            raise NotFoundError(message=f"Meeting '{meeting_id}' not found")
-        meeting.ai_summary = f"Summary of transcript: {transcript_text[:150]}..."
-        await self._commit(db, "Failed to upload transcript")
+        await self.ai_service.analyze_meeting(db, meeting_id, transcript_text, current_user)
         return {"message": f"Transcript uploaded for meeting {meeting_id}", "status": "success"}
 
-    async def get_ai_summary(self, db: AsyncSession, meeting_id: str) -> dict:
-        meeting = await self.repository.get_by_id(db, meeting_id)
+    async def get_ai_summary(self, db: AsyncSession, meeting_id: str, current_user: User) -> dict:
+        meeting = await self.repository.get_by_id_scoped(
+            db,
+            meeting_id=meeting_id,
+            organization_id=current_user.organization_id or "",
+        )
         if not meeting:
             raise NotFoundError(message=f"Meeting '{meeting_id}' not found")
+        intelligence = await self.ai_service.get_meeting_intelligence(db, meeting.id, current_user)
         return {
             "meeting_id": meeting_id,
-            "summary": meeting.ai_summary
-            or "Action points: 1. Confirm product scope. 2. Finalize contract terms.",
-            "key_decisions": ["Product demo approved", "Follow-up scheduled"],
+            "summary": meeting.ai_summary,
+            "key_decisions": intelligence.decisions if intelligence else [],
         }
 
-    async def get_action_items(self, db: AsyncSession, meeting_id: str) -> list[dict]:
-        meeting = await self.repository.get_by_id(db, meeting_id)
+    async def get_action_items(
+        self, db: AsyncSession, meeting_id: str, current_user: User
+    ) -> list[dict]:
+        meeting = await self.repository.get_by_id_scoped(
+            db,
+            meeting_id=meeting_id,
+            organization_id=current_user.organization_id or "",
+        )
         if not meeting:
             raise NotFoundError(message=f"Meeting '{meeting_id}' not found")
+        summary = await self.ai_service.get_meeting_intelligence(db, meeting.id, current_user)
+        if not summary:
+            return []
         return [
             {
-                "id": "act-1",
-                "task": "Send quote proposal",
-                "assignee": "Sales Lead",
-                "status": "Pending",
-            },
-            {
-                "id": "act-2",
-                "task": "Schedule technical review",
-                "assignee": "Solutions Architect",
-                "status": "Pending",
-            },
+                "id": f"{meeting.id}:{index}",
+                "task": item,
+                "assignee": None,
+                "status": "Proposed",
+            }
+            for index, item in enumerate(summary.action_items, start=1)
         ]
 
     async def create_zoom_link(self, topic: str) -> dict:

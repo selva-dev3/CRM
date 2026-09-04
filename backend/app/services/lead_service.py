@@ -316,17 +316,6 @@ class LeadService:
         )
         return {"message": f"Lead {lead_id} assigned to user {user_id}", "status": "success"}
 
-    async def recalculate_lead_score(self, db: AsyncSession, lead_id: str) -> dict:
-        lead = await self.repository.get_by_id(db, lead_id)
-        if not lead:
-            raise NotFoundError(message=f"Lead '{lead_id}' not found")
-        return {
-            "lead_id": lead_id,
-            "old_score": lead.score,
-            "new_score": 88.5,
-            "factors": ["High company revenue", "Frequent email replies"],
-        }
-
     async def get_timeline(self, db: AsyncSession, lead_id: str) -> list[dict]:
         lead = await self.repository.get_by_id(db, lead_id)
         if not lead:
@@ -378,9 +367,11 @@ class LeadService:
                     "id": f"task-{task.id}",
                     "event_type": "task_created",
                     "title": f"Task Created: {task.title}",
-                    "description": clean_desc
-                    if clean_desc
-                    else f"Priority: {task.priority}, Status: {task.status}",
+                    "description": (
+                        clean_desc
+                        if clean_desc
+                        else f"Priority: {task.priority}, Status: {task.status}"
+                    ),
                     "timestamp": str(task.created_at),
                 }
             )

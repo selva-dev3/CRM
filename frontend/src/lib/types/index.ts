@@ -230,10 +230,12 @@ export interface DealCommissionResponse {
 }
 
 export interface DealPredictionResponse {
-  win_rate: number;
-  confidence?: number;
-  predicted_probability?: number;
-  key_drivers?: string[];
+  deal_id: string;
+  predicted_probability: number;
+  key_drivers: string[];
+  ai_recommendation: string;
+  risk_factors: string[];
+  run_id?: string | null;
 }
 
 export interface ActionResponse {

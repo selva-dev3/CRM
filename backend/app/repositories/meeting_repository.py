@@ -34,6 +34,17 @@ class MeetingRepository:
         result = await db.execute(select(Meeting).where(Meeting.id == meeting_id))
         return result.scalars().first()
 
+    async def get_by_id_scoped(
+        self, db: AsyncSession, *, meeting_id: str, organization_id: str
+    ) -> Meeting | None:
+        result = await db.execute(
+            select(Meeting).where(
+                Meeting.id == meeting_id,
+                Meeting.organization_id == organization_id,
+            )
+        )
+        return result.scalars().first()
+
     async def list_by_ids(
         self, db: AsyncSession, ids: builtins.list[str]
     ) -> builtins.list[Meeting]:

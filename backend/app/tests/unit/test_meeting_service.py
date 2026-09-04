@@ -6,8 +6,9 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import NotFoundError
-from app.models import Meeting
+from app.models import Meeting, User
 from app.repositories.meeting_repository import MeetingRepository
+from app.schemas.ai import MeetingSummaryResponse
 from app.schemas.crm_schemas import MeetingCreate
 from app.services.integration_service import integration_service
 from app.services.meeting_service import MeetingService, parse_datetime
@@ -156,3 +157,62 @@ async def test_rsvp_creates_missing_attendee():
 
     assert result["message"] == "RSVP 'accepted' recorded for a@crm.com"
     repo.create_attendee.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_upload_transcript_uses_real_ai_service():
+    repo: Any = MeetingRepository()
+    ai_service = AsyncMock()
+    ai_service.analyze_meeting.return_value = {"summary": "Customer approved scope"}
+    service = MeetingService(repository=repo, ai_service_instance=ai_service)
+    db = AsyncMock(spec=AsyncSession)
+    actor = User(id="user-1", email="user@example.com", organization_id="org-1")
+
+    result = await service.upload_transcript(db, "mtg-1", "Full meeting transcript", actor)
+
+    assert result["status"] == "success"
+    ai_service.analyze_meeting.assert_awaited_once_with(
+        db, "mtg-1", "Full meeting transcript", actor
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_ai_summary_is_tenant_scoped_and_has_no_fake_fallback():
+    repo: Any = MeetingRepository()
+    repo.get_by_id_scoped = AsyncMock(return_value=_make_meeting(ai_summary=None))
+    ai_service = AsyncMock()
+    ai_service.get_meeting_intelligence.return_value = None
+    service = MeetingService(repository=repo, ai_service_instance=ai_service)
+    db = AsyncMock(spec=AsyncSession)
+    actor = User(id="user-1", email="user@example.com", organization_id="org-1")
+
+    result = await service.get_ai_summary(db, "mtg-1", actor)
+
+    assert result["summary"] is None
+    assert result["key_decisions"] == []
+    repo.get_by_id_scoped.assert_awaited_once_with(db, meeting_id="mtg-1", organization_id="org-1")
+
+
+@pytest.mark.asyncio
+async def test_get_action_items_returns_only_persisted_ai_results():
+    repo: Any = MeetingRepository()
+    repo.get_by_id_scoped = AsyncMock(return_value=_make_meeting())
+    ai_service = AsyncMock()
+    ai_service.get_meeting_intelligence.return_value = MeetingSummaryResponse(
+        summary="Summary",
+        action_items=["Send approved proposal"],
+    )
+    service = MeetingService(repository=repo, ai_service_instance=ai_service)
+    db = AsyncMock(spec=AsyncSession)
+    actor = User(id="user-1", email="user@example.com", organization_id="org-1")
+
+    result = await service.get_action_items(db, "mtg-1", actor)
+
+    assert result == [
+        {
+            "id": "mtg-1:1",
+            "task": "Send approved proposal",
+            "assignee": None,
+            "status": "Proposed",
+        }
+    ]

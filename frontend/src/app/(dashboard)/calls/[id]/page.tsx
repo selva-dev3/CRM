@@ -17,9 +17,10 @@ import {
   X,
   Loader2,
   Trash2,
-  Smile,
 } from 'lucide-react';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { useHasPermission } from '@/hooks/use-has-permission';
+import { PERMISSIONS } from '@/lib/permissions';
 import {
   useCallQuery,
   useCallRecordingQuery,
@@ -31,11 +32,18 @@ export default function CallDetailPage() {
   const params = useParams();
   const router = useRouter();
   const callId = (params?.id as string) || '';
+  const { hasPermission } = useHasPermission();
+  const canAnalyzeSentiment = hasPermission(PERMISSIONS.AI.GENERATE)
+    && hasPermission(PERMISSIONS.CALLS.READ);
 
   // Queries
   const { data: call, isLoading, isError } = useCallQuery(callId);
   const { data: recording } = useCallRecordingQuery(callId);
-  const { data: sentiment } = useCallSentimentQuery(callId);
+  const {
+    data: sentiment,
+    isLoading: isSentimentLoading,
+    isError: isSentimentError,
+  } = useCallSentimentQuery(callId, { enabled: Boolean(callId) && canAnalyzeSentiment });
 
   // Mutations
   const deleteMutation = useDeleteCallMutation();
@@ -217,16 +225,24 @@ export default function CallDetailPage() {
               AI Voice Sentiment
             </h3>
 
-            <div className="space-y-4">
+            {!canAnalyzeSentiment ? (
+              <p className="text-xs text-slate-500">AI and call read permissions are required.</p>
+            ) : isSentimentLoading ? (
+              <div className="flex items-center gap-2 text-xs text-slate-500">
+                <Loader2 className="h-4 w-4 animate-spin" /> Analyzing recorded call notes…
+              </div>
+            ) : isSentimentError || !sentiment ? (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                Sentiment is unavailable. The call must contain notes and the AI provider must be available.
+              </div>
+            ) : (
+            <div className="space-y-4" aria-live="polite">
               <div className="p-4 bg-indigo-50/50 border border-indigo-100 rounded-xl flex items-center justify-between">
                 <div>
                   <span className="text-xs font-semibold text-indigo-700 block uppercase tracking-wider">Overall Sentiment</span>
                   <h4 className="text-lg font-extrabold text-indigo-950 mt-0.5">
-                    {sentiment?.overall_sentiment || 'Positive'}
+                    {sentiment.overall_sentiment}
                   </h4>
-                </div>
-                <div className="h-10 w-10 rounded-full bg-emerald-100 text-emerald-700 font-bold flex items-center justify-center">
-                  <Smile className="w-6 h-6" />
                 </div>
               </div>
 
@@ -234,53 +250,29 @@ export default function CallDetailPage() {
                 <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
                   <span className="text-slate-400 block font-medium">Confidence</span>
                   <span className="text-sm font-bold text-slate-900 mt-0.5 block">
-                    {sentiment?.confidence_score ? `${Math.round(sentiment.confidence_score * 100)}%` : '89%'}
+                    {Math.round(sentiment.confidence_score * 100)}%
                   </span>
                 </div>
 
                 <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
-                  <span className="text-slate-400 block font-medium">Customer Interest</span>
+                  <span className="text-slate-400 block font-medium">Urgency</span>
                   <span className="text-sm font-bold text-indigo-600 mt-0.5 block">
-                    {sentiment?.customer_interest || 'High'}
+                    {sentiment.urgency}
                   </span>
                 </div>
               </div>
-
-              {/* Emotion Breakdown Bars */}
-              <div className="space-y-2 pt-2 border-t border-slate-100">
-                <span className="text-xs font-bold text-slate-600 uppercase tracking-wider block">Emotion Breakdown</span>
-                
-                <div className="space-y-1">
-                  <div className="flex justify-between text-[11px] font-semibold text-slate-700">
-                    <span>Satisfaction</span>
-                    <span>85%</span>
-                  </div>
-                  <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-emerald-500 rounded-full w-[85%]"></div>
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <div className="flex justify-between text-[11px] font-semibold text-slate-700">
-                    <span>Buying Urgency</span>
-                    <span>40%</span>
-                  </div>
-                  <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-amber-500 rounded-full w-[40%]"></div>
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <div className="flex justify-between text-[11px] font-semibold text-slate-700">
-                    <span>Frustration Risk</span>
-                    <span>5%</span>
-                  </div>
-                  <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-rose-500 rounded-full w-[5%]"></div>
-                  </div>
-                </div>
+              <div className="space-y-2 border-t border-slate-100 pt-3 text-xs text-slate-700">
+                <p className="font-semibold">
+                  Escalation required: {sentiment.escalation_required ? 'Yes' : 'No'}
+                </p>
+                {sentiment.reasons.length > 0 && (
+                  <ul className="list-disc space-y-1 pl-5">
+                    {sentiment.reasons.map((reason) => <li key={reason}>{reason}</li>)}
+                  </ul>
+                )}
               </div>
             </div>
+            )}
           </div>
         </div>
       </div>

@@ -353,7 +353,7 @@ export default function MeetingDetailPage() {
                       <span className="font-semibold text-slate-900">{act.task}</span>
                     </div>
                     <div className="flex items-center gap-2 text-slate-500">
-                      <span className="px-2 py-0.5 bg-slate-200 rounded text-[11px] font-semibold">{act.assignee}</span>
+                      <span className="px-2 py-0.5 bg-slate-200 rounded text-[11px] font-semibold">{act.assignee || act.status}</span>
                     </div>
                   </div>
                 ))

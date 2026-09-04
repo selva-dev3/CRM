@@ -8,6 +8,7 @@ from app.core.errors import APIException, NotFoundError
 from app.models import CallLog, User
 from app.repositories.call_repository import CallRepository
 from app.schemas.crm_schemas import CallLogBase
+from app.services.ai_domain_service import AIDomainService, ai_domain_service
 from app.services.org_service import organization_service
 from app.services.s3_service import s3_service
 
@@ -26,8 +27,13 @@ def call_to_dict(call: CallLog) -> dict:
 class CallService:
     """Business logic for the CallLog domain."""
 
-    def __init__(self, repository: CallRepository | None = None) -> None:
+    def __init__(
+        self,
+        repository: CallRepository | None = None,
+        ai_service_instance: AIDomainService | None = None,
+    ) -> None:
         self.repository = repository or CallRepository()
+        self.ai_service = ai_service_instance or ai_domain_service
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
         try:
@@ -87,9 +93,7 @@ class CallService:
             "timestamp": str(call.timestamp),
         }
 
-    async def bulk_delete(
-        self, db: AsyncSession, ids: list[str], current_user: User
-    ) -> dict:
+    async def bulk_delete(self, db: AsyncSession, ids: list[str], current_user: User) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
         calls = await self.repository.list_by_ids(db, ids, org_id)
         for call in calls:
@@ -106,9 +110,7 @@ class CallService:
         await self._commit(db, "Failed to delete call log")
         return {"message": f"Call log {call_id} deleted successfully", "status": "success"}
 
-    async def require_call(
-        self, db: AsyncSession, call_id: str, current_user: User
-    ) -> CallLog:
+    async def require_call(self, db: AsyncSession, call_id: str, current_user: User) -> CallLog:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
         call = await self.repository.get_by_id(db, call_id, org_id)
         if not call:
@@ -130,13 +132,22 @@ class CallService:
         }
 
     async def get_sentiment(self, db: AsyncSession, call_id: str, current_user: User) -> dict:
-        await self.require_call(db, call_id, current_user)
+        call = await self.require_call(db, call_id, current_user)
+        if not call.notes or not call.notes.strip():
+            raise APIException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                code="AI_CALL_TEXT_UNAVAILABLE",
+                message="This call has no transcript or notes to analyze.",
+            )
+        analysis = await self.ai_service.analyze_sentiment(db, call.notes, current_user)
         return {
             "call_id": call_id,
-            "overall_sentiment": "Positive",
-            "confidence_score": 0.89,
-            "customer_interest": "High",
-            "emotion_breakdown": {"satisfaction": 0.85, "urgency": 0.40, "frustration": 0.05},
+            "overall_sentiment": analysis["sentiment"],
+            "confidence_score": analysis["confidence"],
+            "reasons": analysis["reasons"],
+            "urgency": analysis["urgency"],
+            "escalation_required": analysis["escalation_required"],
+            "run_id": analysis.get("run_id"),
         }
 
     async def trigger_outbound(self, phone_number: str, contact_id: str) -> dict:

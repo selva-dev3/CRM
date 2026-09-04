@@ -117,12 +117,15 @@ async def get_recent_deals(
     "/ai-insights",
     response_model=DashboardAiInsightsResponse,
     summary="Get AI-generated pipeline executive summary",
-    dependencies=[Depends(require_permission("dashboard:read"))],
+    dependencies=[
+        Depends(require_permission("dashboard:read")),
+        Depends(require_permission("ai:generate")),
+    ],
 )
 async def get_dashboard_ai_insights(
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
-    return await dashboard_service.get_ai_insights(db, current_user.organization_id)
+    return await dashboard_service.get_ai_insights(db, current_user)
 
 
 @router.get(

@@ -212,8 +212,20 @@ export async function uploadLeadDocumentApi(leadId: string, file: File): Promise
   return apiClient.post<LeadDocumentItem>(`/leads/${leadId}/documents`, formData);
 }
 
-export async function recalculateLeadScoreApi(leadId: string): Promise<{ old_score: number; new_score: number; factors: string[] }> {
-  return apiClient.post<{ old_score: number; new_score: number; factors: string[] }>(`/leads/${leadId}/score`);
+export interface LeadIntelligenceResult {
+  lead_id: string;
+  score: number;
+  conversion_probability: number;
+  quality: 'Hot' | 'Warm' | 'Cold';
+  qualification: 'Qualified' | 'Needs Review' | 'Unqualified';
+  confidence: number;
+  reasons: string[];
+  recommended_owner_id?: string | null;
+  run_id?: string | null;
+}
+
+export async function recalculateLeadScoreApi(leadId: string): Promise<LeadIntelligenceResult> {
+  return apiClient.post<LeadIntelligenceResult>(`/leads/${leadId}/score`);
 }
 
 export async function convertLeadApi(leadId: string, payload: { create_deal?: boolean; deal_title?: string; deal_amount?: number }): Promise<{ message: string; contact_id: string; company_id: string; deal_id: string }> {

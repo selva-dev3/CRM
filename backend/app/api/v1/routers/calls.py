@@ -160,7 +160,10 @@ async def get_call_recording(
 @router.get(
     "/{call_id}/sentiment",
     summary="Get AI voice sentiment analysis & emotion score",
-    dependencies=[Depends(require_permission("calls:read"))],
+    dependencies=[
+        Depends(require_permission("calls:read")),
+        Depends(require_permission("ai:generate")),
+    ],
 )
 async def get_call_sentiment(
     call_id: str,

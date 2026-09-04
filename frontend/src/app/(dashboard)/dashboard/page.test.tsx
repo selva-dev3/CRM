@@ -29,6 +29,10 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: mocks.routerPush }),
 }));
 
+vi.mock('@/hooks/use-has-permission', () => ({
+  useHasPermission: () => ({ hasPermission: () => true }),
+}));
+
 vi.mock('@/lib/api/dashboard', () => ({
   DEFAULT_DASHBOARD_CURRENCY: 'INR',
   DEFAULT_DASHBOARD_LOCALE: 'en-IN',
