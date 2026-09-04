@@ -6,7 +6,13 @@ from app.models import User
 from app.models.deal import Deal
 from app.repositories.deal_repository import DealRepository
 from app.repositories.invoice_repository import invoice_repository
-from app.schemas.crm_schemas import DealCreate, DealUpdate
+from app.repositories.setting_repository import SettingRepository
+from app.schemas.crm_schemas import (
+    DealCreate,
+    DealCustomFieldDefinition,
+    DealCustomFieldValue,
+    DealUpdate,
+)
 from app.services.ai_domain_service import AIDomainService, ai_domain_service
 from app.services.note_service import note_service
 from app.services.notification_service import notification_service
@@ -37,6 +43,7 @@ def deal_to_dict(d: Deal) -> dict:
         "assigned_to": d.assigned_to,
         "company_id": d.company_id,
         "contact_id": d.contact_id,
+        "custom_fields": d.custom_fields or {},
         "organization_id": d.organization_id,
         "created_at": str(d.created_at) if d.created_at else None,
     }
@@ -49,10 +56,12 @@ class DealService:
         self,
         repository: DealRepository | None = None,
         quote_service_instance: QuoteService | None = None,
+        setting_repository: SettingRepository | None = None,
         ai_service_instance: AIDomainService | None = None,
-    ) -> None:
+        ) -> None:
         self.repository = repository or DealRepository()
         self.quote_service = quote_service_instance or quote_service
+        self.setting_repository = setting_repository or SettingRepository()
         self.ai_service = ai_service_instance or ai_domain_service
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
@@ -80,6 +89,70 @@ class DealService:
                 message=f"Invalid deal stage '{stage}'.",
                 code="INVALID_DEAL_STAGE",
             )
+
+    async def list_custom_fields(
+        self, db: AsyncSession, current_user: User
+    ) -> list[DealCustomFieldDefinition]:
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        fields = await self.setting_repository.list_custom_fields(
+            db, organization_id=org_id, entity_type="Deal"
+        )
+        return [
+            DealCustomFieldDefinition(
+                field_name=field.field_name,
+                field_type=field.field_type,
+                label=field.label,
+                options=field.options or [],
+            )
+            for field in fields
+        ]
+
+    async def _validate_custom_fields(
+        self,
+        db: AsyncSession,
+        organization_id: str,
+        values: dict[str, DealCustomFieldValue],
+    ) -> dict[str, DealCustomFieldValue]:
+        if not values:
+            return {}
+        definitions = await self.setting_repository.list_custom_fields(
+            db, organization_id=organization_id, entity_type="Deal"
+        )
+        fields_by_name = {field.field_name: field for field in definitions}
+        unknown_fields = sorted(set(values) - set(fields_by_name))
+        if unknown_fields:
+            raise APIException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                code="INVALID_CUSTOM_FIELDS",
+                message=f"Unknown deal custom field(s): {', '.join(unknown_fields)}",
+            )
+
+        for field_name, value in values.items():
+            if value is None:
+                continue
+            definition = fields_by_name[field_name]
+            field_type = definition.field_type.lower()
+            valid = (
+                (field_type == "text" and isinstance(value, str))
+                or (
+                    field_type == "number"
+                    and isinstance(value, (int, float))
+                    and not isinstance(value, bool)
+                )
+                or (field_type == "boolean" and isinstance(value, bool))
+                or (
+                    field_type == "select"
+                    and isinstance(value, str)
+                    and value in (definition.options or [])
+                )
+            )
+            if not valid:
+                raise APIException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    code="INVALID_CUSTOM_FIELD_VALUE",
+                    message=f"Invalid value for deal custom field '{field_name}'",
+                )
+        return values
 
     async def _guard_closed_won_transition(
         self, db: AsyncSession, deal: Deal, new_stage: str
@@ -121,6 +194,7 @@ class DealService:
         self, db: AsyncSession, payload: DealCreate, current_user: User | None
     ) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        custom_fields = await self._validate_custom_fields(db, org_id, payload.custom_fields)
 
         assigned_user_id = payload.assigned_to
         if assigned_user_id:
@@ -151,6 +225,7 @@ class DealService:
                 "assigned_to": assigned_user_id,
                 "company_id": comp_id,
                 "contact_id": cont_id,
+                "custom_fields": custom_fields,
             },
         )
         await self._commit(db, "Failed to create deal")
@@ -254,6 +329,11 @@ class DealService:
                 d.contact_id = None
             elif await self.repository.contact_exists(db, payload.contact_id):
                 d.contact_id = payload.contact_id
+
+        if payload.custom_fields is not None:
+            d.custom_fields = await self._validate_custom_fields(
+                db, d.organization_id, payload.custom_fields
+            )
 
         await self._commit(db, "Failed to update deal")
         await db.refresh(d)

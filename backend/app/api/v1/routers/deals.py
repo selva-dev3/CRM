@@ -8,6 +8,7 @@ from app.schemas.crm_schemas import (
     BulkActionResponse,
     BulkDeleteRequest,
     DealCreate,
+    DealCustomFieldDefinition,
     DealResponse,
     DealUpdate,
     InvoiceResponse,
@@ -56,6 +57,19 @@ async def create_deal(
     current_user: User | None = Depends(get_current_user),
 ):
     return await deal_service.create_deal(db, payload, current_user)
+
+
+@router.get(
+    "/custom-fields",
+    response_model=list[DealCustomFieldDefinition],
+    summary="List custom fields available for deals",
+    dependencies=[Depends(require_permission("deals:read"))],
+)
+async def list_deal_custom_fields(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await deal_service.list_custom_fields(db, current_user)
 
 
 @router.get(

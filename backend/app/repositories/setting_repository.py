@@ -38,9 +38,9 @@ class SettingRepository:
         return [row._tuple() for row in result.all()]
 
     async def list_custom_fields(
-        self, db: AsyncSession, entity_type: str | None = None
+        self, db: AsyncSession, *, organization_id: str, entity_type: str | None = None
     ) -> list[CustomField]:
-        stmt = select(CustomField)
+        stmt = select(CustomField).where(CustomField.organization_id == organization_id)
         if entity_type:
             stmt = stmt.where(CustomField.entity_type == entity_type)
         result = await db.execute(stmt)
@@ -51,8 +51,15 @@ class SettingRepository:
         db.add(field)
         return field
 
-    async def get_custom_field(self, db: AsyncSession, field_id: str) -> CustomField | None:
-        result = await db.execute(select(CustomField).where(CustomField.id == field_id))
+    async def get_custom_field(
+        self, db: AsyncSession, *, field_id: str, organization_id: str
+    ) -> CustomField | None:
+        result = await db.execute(
+            select(CustomField).where(
+                CustomField.id == field_id,
+                CustomField.organization_id == organization_id,
+            )
+        )
         return result.scalars().first()
 
     async def delete_custom_field(self, db: AsyncSession, field: CustomField) -> None:

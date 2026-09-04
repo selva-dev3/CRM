@@ -20,6 +20,14 @@ export interface DealItem {
   assigned_to?: string;
   organization_id?: string;
   created_at?: string;
+  custom_fields?: Record<string, string | number | boolean | null>;
+}
+
+export interface DealCustomFieldDefinition {
+  field_name: string;
+  field_type: 'text' | 'number' | 'boolean' | 'select';
+  label: string;
+  options: string[];
 }
 
 export interface DealCreatePayload {
@@ -28,6 +36,7 @@ export interface DealCreatePayload {
   stage: string;
   probability?: number;
   assigned_to?: string;
+  custom_fields?: Record<string, string | number | boolean | null>;
 }
 
 export interface DealUpdatePayload {
@@ -36,6 +45,7 @@ export interface DealUpdatePayload {
   stage?: string;
   probability?: number;
   assigned_to?: string;
+  custom_fields?: Record<string, string | number | boolean | null>;
 }
 
 // API Functions
@@ -48,6 +58,10 @@ export async function fetchDealsApi(page = 1, limit = 20, stage?: string, search
 
 export async function createDealApi(payload: DealCreatePayload): Promise<DealItem> {
   return apiClient.post<DealItem>('/deals', payload);
+}
+
+export async function fetchDealCustomFieldsApi(): Promise<DealCustomFieldDefinition[]> {
+  return apiClient.get<DealCustomFieldDefinition[]>('/deals/custom-fields');
 }
 
 export async function getDealStagesApi(): Promise<DealStageItem[]> {
@@ -212,6 +226,14 @@ export function useDealQuery(id: string) {
     queryKey: ['deal', id],
     queryFn: () => getDealApi(id),
     enabled: !!id,
+  });
+}
+
+export function useDealCustomFieldsQuery(enabled = true) {
+  return useQuery({
+    queryKey: ['deal-custom-fields'],
+    queryFn: fetchDealCustomFieldsApi,
+    enabled,
   });
 }
 

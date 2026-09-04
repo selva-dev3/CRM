@@ -344,11 +344,65 @@ async def test_create_custom_field_resolves_org(monkeypatch):
     )
 
     result = await service.create_custom_field(
-        db, entity_type="Lead", field_name="priority", field_type="text", label="Priority"
+        db,
+        entity_type="Lead",
+        field_name="priority",
+        field_type="text",
+        label="Priority",
+        options=[],
+        current_user=_current_user(),
     )
 
     assert result["status"] == "success"
     repo.create_custom_field.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_list_custom_fields_is_scoped_to_current_organization(monkeypatch):
+    repo: Any = SettingRepository()
+    repo.list_custom_fields = AsyncMock(return_value=[])
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.services.settings_service import organization_service
+
+    monkeypatch.setattr(
+        organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
+    )
+
+    await service.list_custom_fields(db, "Deal", _current_user())
+
+    repo.list_custom_fields.assert_awaited_once_with(
+        db, organization_id="org-1", entity_type="Deal"
+    )
+
+
+@pytest.mark.asyncio
+async def test_create_select_custom_field_requires_options(monkeypatch):
+    repo: Any = SettingRepository()
+    repo.create_custom_field = AsyncMock()
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.services.settings_service import organization_service
+
+    monkeypatch.setattr(
+        organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
+    )
+
+    with pytest.raises(APIException) as exc_info:
+        await service.create_custom_field(
+            db,
+            entity_type="Deal",
+            field_name="segment",
+            field_type="select",
+            label="Segment",
+            options=[],
+            current_user=_current_user(),
+        )
+
+    assert exc_info.value.code == "CUSTOM_FIELD_OPTIONS_REQUIRED"
+    repo.create_custom_field.assert_not_awaited()
 
 
 def test_resolve_username_prefers_existing_user():

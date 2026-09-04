@@ -5,11 +5,12 @@ from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import NotFoundError
+from app.core.config import settings
+from app.core.errors import APIException, NotFoundError
 from app.models import User
 from app.models.deal import Deal
 from app.repositories.deal_repository import DealRepository
-from app.schemas.crm_schemas import DealCreate, DealUpdate
+from app.schemas.crm_schemas import DealCreate, DealCustomFieldDefinition, DealUpdate
 from app.services.deal_service import DealService, deal_to_dict
 from app.services.integration_service import integration_service
 from app.services.quote_service import QuoteService
@@ -26,6 +27,7 @@ def _make_deal(**overrides) -> Deal:
         "assigned_to": "user-1",
         "company_id": None,
         "contact_id": None,
+        "custom_fields": {},
         "created_at": datetime(2026, 8, 1, tzinfo=UTC),
     }
     defaults.update(overrides)
@@ -92,6 +94,115 @@ async def test_create_deal_falls_back_to_first_user(monkeypatch):
     created = repo.create.await_args_list[-1].kwargs["data"]
     assert created["assigned_to"] == "user-1"
     assert created["stage"] == "Qualification"
+
+
+@pytest.mark.asyncio
+async def test_create_deal_validates_and_persists_custom_fields(monkeypatch):
+    deal = _make_deal(custom_fields={"decision_maker": "CTO"})
+    repo: Any = DealRepository()
+    repo.create = AsyncMock(return_value=deal)
+    repo.user_exists = AsyncMock(return_value=True)
+    repo.company_exists = AsyncMock(return_value=True)
+    repo.contact_exists = AsyncMock(return_value=True)
+    field_repo = AsyncMock()
+    field_repo.list_custom_fields.return_value = [
+        type(
+            "Field",
+            (),
+            {
+                "field_name": "decision_maker",
+                "field_type": "text",
+                "options": [],
+            },
+        )()
+    ]
+    service = DealService(repository=repo, setting_repository=field_repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.services.deal_service import organization_service
+
+    monkeypatch.setattr(
+        organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
+    )
+
+    result = await service.create_deal(
+        db,
+        DealCreate(
+            title="Acme Corp Deal",
+            assigned_to="user-1",
+            custom_fields={"decision_maker": "CTO"},
+        ),
+        _user(),
+    )
+
+    assert repo.create.await_args.kwargs["data"]["custom_fields"] == {"decision_maker": "CTO"}
+    assert result["custom_fields"] == {"decision_maker": "CTO"}
+
+
+@pytest.mark.asyncio
+async def test_list_custom_fields_returns_typed_definitions(monkeypatch):
+    repo: Any = DealRepository()
+    field_repo = AsyncMock()
+    field_repo.list_custom_fields.return_value = [
+        type(
+            "Field",
+            (),
+            {
+                "field_name": "sales_region",
+                "field_type": "select",
+                "label": "Sales Region",
+                "options": ["North", "South"],
+            },
+        )()
+    ]
+    service = DealService(repository=repo, setting_repository=field_repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.services.deal_service import organization_service
+
+    monkeypatch.setattr(
+        organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
+    )
+
+    result = await service.list_custom_fields(db, _user())
+
+    assert result == [
+        DealCustomFieldDefinition(
+            field_name="sales_region",
+            field_type="select",
+            label="Sales Region",
+            options=["North", "South"],
+        )
+    ]
+    field_repo.list_custom_fields.assert_awaited_once_with(
+        db, organization_id="org-1", entity_type="Deal"
+    )
+
+
+@pytest.mark.asyncio
+async def test_create_deal_rejects_unknown_custom_field(monkeypatch):
+    repo: Any = DealRepository()
+    repo.create = AsyncMock()
+    field_repo = AsyncMock()
+    field_repo.list_custom_fields.return_value = []
+    service = DealService(repository=repo, setting_repository=field_repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.services.deal_service import organization_service
+
+    monkeypatch.setattr(
+        organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
+    )
+
+    with pytest.raises(APIException) as exc_info:
+        await service.create_deal(
+            db,
+            DealCreate(title="Acme Corp Deal", custom_fields={"foreign_field": "value"}),
+            _user(),
+        )
+
+    assert getattr(exc_info.value, "code", None) == "INVALID_CUSTOM_FIELDS"
+    repo.create.assert_not_awaited()
 
 
 @pytest.mark.asyncio
