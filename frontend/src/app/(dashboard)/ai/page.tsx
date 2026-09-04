@@ -14,7 +14,7 @@ import {
 import { PERMISSIONS } from '@/lib/permissions';
 import { getErrorMessage } from '@/lib/utils';
 
-type SearchScope = 'lead' | 'contact' | 'company' | 'deal';
+type SearchScope = 'auto' | 'lead' | 'contact' | 'company' | 'deal' | 'task';
 
 function ResultValue({ value }: { readonly value: unknown }) {
   if (value === null || value === undefined || value === '') return <span>—</span>;
@@ -28,7 +28,7 @@ export default function AIIntelligencePage() {
   const [usage, setUsage] = useState<AIUsageStats | null>(null);
   const [usageError, setUsageError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
-  const [scope, setScope] = useState<SearchScope>('company');
+  const [scope, setScope] = useState<SearchScope>('auto');
   const [searchResult, setSearchResult] = useState<CRMSearchResponse | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [isSearching, setIsSearching] = useState(false);
@@ -57,7 +57,9 @@ export default function AIIntelligencePage() {
     setSearchError(null);
     setSearchResult(null);
     try {
-      setSearchResult(await aiService.searchCRM(query.trim(), scope));
+      setSearchResult(
+        await aiService.searchCRM(query.trim(), scope === 'auto' ? undefined : scope),
+      );
     } catch (error: unknown) {
       setSearchError(getErrorMessage(error, 'CRM search failed.'));
     } finally {
@@ -138,10 +140,12 @@ export default function AIIntelligencePage() {
                 className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
                 disabled={!canGenerate || isSearching}
               >
+                <option value="auto">Auto-detect from question</option>
                 <option value="company">Companies</option>
                 <option value="lead">Leads</option>
                 <option value="contact">Contacts</option>
                 <option value="deal">Deals</option>
+                <option value="task">Tasks</option>
               </select>
             </div>
             <div className="space-y-1.5">

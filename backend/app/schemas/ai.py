@@ -1,6 +1,7 @@
+from datetime import date
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class AIEvidence(BaseModel):
@@ -384,16 +385,104 @@ class DataQualityResponse(BaseModel):
 
 class CRMSearchRequest(BaseModel):
     query: str = Field(min_length=3, max_length=1000)
-    scope: Literal["lead", "contact", "company", "deal", "task"]
+    scope: Literal["lead", "contact", "company", "deal", "task"] | None = None
+
+
+class CRMSearchFilter(BaseModel):
+    field: Literal[
+        "name",
+        "title",
+        "company",
+        "contact_name",
+        "email",
+        "industry",
+        "employee_count",
+        "city",
+        "country",
+        "source",
+        "status",
+        "stage",
+        "priority",
+        "amount",
+        "probability",
+        "score",
+        "created_at",
+        "updated_at",
+        "due_date",
+        "expected_close_date",
+        "open_deal_value",
+        "last_contact_at",
+    ]
+    operator: Literal["equals", "contains", "gte", "lte", "before", "after"]
+    value: str | int | float | bool
 
 
 class CRMSearchPlan(BaseModel):
+    intent: Literal["list", "detail", "count", "aggregate", "comparison"] = "list"
     entity_type: Literal["lead", "contact", "company", "deal", "task"]
     text_query: str | None = None
     status: str | None = None
+    filters: list[CRMSearchFilter] = Field(default_factory=list, max_length=10)
+    aggregate: Literal["sum", "average", "minimum", "maximum"] | None = None
+    aggregate_field: Literal["amount", "probability", "score", "open_deal_value"] | None = None
+    group_by: Literal["status", "stage", "industry", "city", "country", "priority"] | None = None
+    date_field: Literal["created_at", "updated_at", "due_date", "expected_close_date"] | None = None
+    date_range: (
+        Literal[
+            "today",
+            "this_week",
+            "this_month",
+            "last_month",
+            "this_quarter",
+            "this_year",
+            "last_7_days",
+            "last_30_days",
+            "custom",
+        ]
+        | None
+    ) = None
+    start_date: date | None = None
+    end_date: date | None = None
+    sort_by: (
+        Literal[
+            "name",
+            "title",
+            "amount",
+            "probability",
+            "score",
+            "created_at",
+            "updated_at",
+            "due_date",
+            "expected_close_date",
+            "open_deal_value",
+            "last_contact_at",
+        ]
+        | None
+    ) = None
+    sort_direction: Literal["asc", "desc"] = "asc"
     inactive_days: int | None = Field(default=None, ge=1, le=3650)
     minimum_open_deal_amount: float | None = Field(default=None, ge=0)
     limit: int = Field(default=20, ge=1, le=50)
+
+    @model_validator(mode="after")
+    def validate_intent(self) -> "CRMSearchPlan":
+        if self.intent == "aggregate" and not (self.aggregate and self.aggregate_field):
+            raise ValueError("Aggregate queries require aggregate and aggregate_field")
+        if self.intent != "aggregate" and (self.aggregate or self.aggregate_field):
+            raise ValueError("Aggregate options require aggregate intent")
+        if self.intent == "comparison" and not self.group_by:
+            raise ValueError("Comparison queries require group_by")
+        if self.intent != "comparison" and self.group_by:
+            raise ValueError("Group options require comparison intent")
+        if self.date_range and not self.date_field:
+            raise ValueError("Date-range queries require date_field")
+        if self.date_range == "custom" and not (self.start_date or self.end_date):
+            raise ValueError("Custom date ranges require a start or end date")
+        if (self.start_date or self.end_date) and self.date_range != "custom":
+            raise ValueError("Explicit dates require a custom date range")
+        if self.start_date and self.end_date and self.end_date < self.start_date:
+            raise ValueError("End date must not be before start date")
+        return self
 
 
 class CRMSearchResponse(BaseModel):

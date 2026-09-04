@@ -59,9 +59,24 @@ export interface MeetingSummaryResponse {
 }
 
 export interface CRMSearchPlan {
+  intent: 'list' | 'detail' | 'count' | 'aggregate' | 'comparison';
   entity_type: 'lead' | 'contact' | 'company' | 'deal' | 'task';
   text_query?: string | null;
   status?: string | null;
+  filters: Array<{
+    field: string;
+    operator: 'equals' | 'contains' | 'gte' | 'lte' | 'before' | 'after';
+    value: string | number | boolean;
+  }>;
+  aggregate?: 'sum' | 'average' | 'minimum' | 'maximum' | null;
+  aggregate_field?: string | null;
+  group_by?: string | null;
+  date_field?: string | null;
+  date_range?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  sort_by?: string | null;
+  sort_direction: 'asc' | 'desc';
   inactive_days?: number | null;
   minimum_open_deal_amount?: number | null;
   limit: number;
@@ -115,9 +130,12 @@ export const aiService = {
 
   searchCRM: (
     query: string,
-    scope: 'lead' | 'contact' | 'company' | 'deal',
+    scope?: 'lead' | 'contact' | 'company' | 'deal' | 'task',
   ): Promise<CRMSearchResponse> =>
-    apiClient.post<CRMSearchResponse>('/ai/crm-search/query', { query, scope }),
+    apiClient.post<CRMSearchResponse>('/ai/crm-search/query', {
+      query,
+      ...(scope ? { scope } : {}),
+    }),
 
   getUsageStats: (): Promise<AIUsageStats> =>
     apiClient.get<AIUsageStats>('/ai/usage-stats'),

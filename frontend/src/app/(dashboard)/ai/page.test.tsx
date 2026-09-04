@@ -53,9 +53,33 @@ describe('AIIntelligencePage', () => {
     fireEvent.change(screen.getByLabelText('Question'), { target: { value: 'Acme' } });
     fireEvent.click(screen.getByRole('button', { name: 'Search authorized CRM data' }));
 
-    await waitFor(() => expect(mocks.searchCRM).toHaveBeenCalledWith('Acme', 'company'));
+    await waitFor(() => expect(mocks.searchCRM).toHaveBeenCalledWith('Acme', undefined));
     expect(await screen.findByText('One authorized company matched.')).toBeInTheDocument();
     expect(screen.getByText('Acme')).toBeInTheDocument();
+  });
+
+  it('allows an explicit record type while defaulting to automatic intent detection', async () => {
+    mocks.searchCRM.mockResolvedValue({
+      query: 'How many open deals are there?',
+      plan: { intent: 'count', entity_type: 'deal', filters: [], sort_direction: 'asc', limit: 20 },
+      result_count: 4,
+      results: [{ count: 4 }],
+      explanation: 'There are 4 matching deal record(s).',
+      run_id: 'run-3',
+    });
+    render(<AIIntelligencePage />);
+
+    expect(screen.getByLabelText('Record type')).toHaveValue('auto');
+    fireEvent.change(screen.getByLabelText('Record type'), { target: { value: 'deal' } });
+    fireEvent.change(screen.getByLabelText('Question'), {
+      target: { value: 'How many open deals are there?' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Search authorized CRM data' }));
+
+    await waitFor(() =>
+      expect(mocks.searchCRM).toHaveBeenCalledWith('How many open deals are there?', 'deal'),
+    );
+    expect(await screen.findByText('There are 4 matching deal record(s).')).toBeInTheDocument();
   });
 
   it('shows a provider failure and allows the search to be retried', async () => {

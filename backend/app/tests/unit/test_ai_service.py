@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -608,7 +608,13 @@ async def test_crm_search_executes_only_validated_tenant_scoped_plan():
     )
     service = AIDomainService(repository=repository, runtime=_runtime(plan))
     service._permission_keys = AsyncMock(
-        return_value={"ai:generate", "companies:read", "deals:read"}
+        return_value={
+            "ai:generate",
+            "calls:read",
+            "companies:read",
+            "contacts:read",
+            "deals:read",
+        }
     )
     db = AsyncMock(spec=AsyncSession)
 
@@ -621,9 +627,7 @@ async def test_crm_search_executes_only_validated_tenant_scoped_plan():
 
     assert result["result_count"] == 1
     assert result["plan"]["entity_type"] == "company"
-    assert result["explanation"] == (
-        "Found 1 authorized company record(s) matching the validated search plan."
-    )
+    assert result["explanation"] == "Found 1 matching company record(s)."
     assert repository.execute_search_plan.await_args.kwargs["organization_id"] == "org-1"
     assert repository.execute_search_plan.await_args.kwargs["minimum_open_deal_amount"] == 500000
 
@@ -639,6 +643,201 @@ async def test_crm_search_rejects_provider_scope_escalation():
         await service.search_crm(AsyncMock(spec=AsyncSession), "Show Acme", "company", _user())
 
     assert exc_info.value.code == "AI_INVALID_SEARCH_PLAN"
+
+
+@pytest.mark.asyncio
+async def test_crm_search_auto_detects_count_intent_and_inferred_permission():
+    repository = _repository()
+    repository.execute_search_plan = AsyncMock(return_value=[{"count": 7}])
+    plan = CRMSearchPlan(intent="count", entity_type="company")
+    service = AIDomainService(repository=repository, runtime=_runtime(plan))
+    service._permission_keys = AsyncMock(return_value={"ai:generate", "companies:read"})
+
+    result = await service.search_crm(
+        AsyncMock(spec=AsyncSession), "How many companies do we have?", None, _user()
+    )
+
+    assert result["result_count"] == 7
+    assert result["results"] == [{"count": 7}]
+    assert result["explanation"] == "There are 7 matching company record(s)."
+    repository.execute_search_plan.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_crm_search_aggregate_requires_related_deal_permission():
+    repository = _repository()
+    repository.execute_search_plan = AsyncMock()
+    plan = CRMSearchPlan(
+        intent="aggregate",
+        entity_type="company",
+        aggregate="sum",
+        aggregate_field="open_deal_value",
+    )
+    service = AIDomainService(repository=repository, runtime=_runtime(plan))
+    service._permission_keys = AsyncMock(return_value={"ai:generate", "companies:read"})
+
+    with pytest.raises(ForbiddenError):
+        await service.search_crm(
+            AsyncMock(spec=AsyncSession), "What is the total open deal value?", None, _user()
+        )
+
+    repository.execute_search_plan.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_crm_search_returns_database_aggregate_without_ai_fabrication():
+    repository = _repository()
+    repository.execute_search_plan = AsyncMock(
+        return_value=[
+            {
+                "aggregate": "sum",
+                "field": "amount",
+                "value": 750000.0,
+                "matched_count": 5,
+            }
+        ]
+    )
+    plan = CRMSearchPlan(
+        intent="aggregate",
+        entity_type="deal",
+        aggregate="sum",
+        aggregate_field="amount",
+        filters=[{"field": "stage", "operator": "equals", "value": "open"}],
+    )
+    service = AIDomainService(repository=repository, runtime=_runtime(plan))
+    service._permission_keys = AsyncMock(return_value={"ai:generate", "deals:read"})
+
+    result = await service.search_crm(
+        AsyncMock(spec=AsyncSession), "What is the total value of open deals?", None, _user()
+    )
+
+    assert result["result_count"] == 5
+    assert result["results"][0]["value"] == 750000.0
+    assert result["explanation"] == ("The sum amount is 750000.0 across 5 matching deal record(s).")
+
+
+@pytest.mark.asyncio
+async def test_crm_search_returns_grouped_comparison_from_database_results():
+    repository = _repository()
+    repository.execute_search_plan = AsyncMock(
+        return_value=[
+            {"group": "Prospecting", "count": 3},
+            {"group": "Negotiation", "count": 2},
+        ]
+    )
+    plan = CRMSearchPlan(intent="comparison", entity_type="deal", group_by="stage")
+    service = AIDomainService(repository=repository, runtime=_runtime(plan))
+    service._permission_keys = AsyncMock(return_value={"ai:generate", "deals:read"})
+
+    result = await service.search_crm(
+        AsyncMock(spec=AsyncSession), "Compare deal counts by stage", None, _user()
+    )
+
+    assert result["result_count"] == 5
+    assert "Prospecting: 3" in result["explanation"]
+    assert "Negotiation: 2" in result["explanation"]
+
+
+@pytest.mark.asyncio
+async def test_crm_search_passes_date_and_filter_plan_to_tenant_repository():
+    repository = _repository()
+    repository.execute_search_plan = AsyncMock(return_value=[{"id": "lead-1", "title": "New lead"}])
+    plan = CRMSearchPlan(
+        entity_type="lead",
+        date_field="created_at",
+        date_range="this_month",
+        filters=[{"field": "city", "operator": "equals", "value": "Chennai"}],
+    )
+    service = AIDomainService(repository=repository, runtime=_runtime(plan))
+    service._permission_keys = AsyncMock(return_value={"ai:generate", "leads:read"})
+
+    await service.search_crm(
+        AsyncMock(spec=AsyncSession), "Which Chennai leads were created this month?", None, _user()
+    )
+
+    kwargs = repository.execute_search_plan.await_args.kwargs
+    assert kwargs["organization_id"] == "org-1"
+    assert kwargs["date_range"] == "this_month"
+    assert kwargs["filters"][0]["value"] == "Chennai"
+
+
+@pytest.mark.asyncio
+async def test_crm_search_rejects_inferred_entity_without_permission():
+    repository = _repository()
+    repository.execute_search_plan = AsyncMock()
+    service = AIDomainService(
+        repository=repository,
+        runtime=_runtime(CRMSearchPlan(intent="count", entity_type="deal")),
+    )
+    service._permission_keys = AsyncMock(return_value={"ai:generate", "companies:read"})
+
+    with pytest.raises(ForbiddenError):
+        await service.search_crm(
+            AsyncMock(spec=AsyncSession), "How many open deals are there?", None, _user()
+        )
+
+    repository.execute_search_plan.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_crm_search_rejects_invalid_provider_filter_operation():
+    repository = _repository()
+    repository.execute_search_plan = AsyncMock()
+    plan = CRMSearchPlan(
+        entity_type="deal",
+        filters=[{"field": "amount", "operator": "contains", "value": "500"}],
+    )
+    service = AIDomainService(repository=repository, runtime=_runtime(plan))
+    service._permission_keys = AsyncMock(return_value={"ai:generate", "deals:read"})
+
+    with pytest.raises(APIException) as exc_info:
+        await service.search_crm(
+            AsyncMock(spec=AsyncSession), "Deals with amount containing 500", None, _user()
+        )
+
+    assert exc_info.value.code == "AI_INVALID_SEARCH_PLAN"
+    repository.execute_search_plan.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_repository_count_plan_keeps_organization_scope_with_text_filter():
+    db = AsyncMock(spec=AsyncSession)
+    db.scalar.return_value = 2
+
+    result = await AIRepository().execute_search_plan(
+        db,
+        organization_id="org-1",
+        entity_type="company",
+        intent="count",
+        text_query="Acme",
+    )
+
+    statement = db.scalar.await_args.args[0]
+    sql = str(statement)
+    assert "companies.organization_id" in sql
+    assert "lower(companies.name)" in sql.lower() or "companies.name" in sql
+    assert result == [{"count": 2}]
+
+
+@pytest.mark.asyncio
+async def test_repository_company_city_filter_is_tenant_scoped():
+    db = AsyncMock(spec=AsyncSession)
+    query_result = Mock()
+    query_result.all.return_value = []
+    db.execute.return_value = query_result
+
+    await AIRepository().execute_search_plan(
+        db,
+        organization_id="org-1",
+        entity_type="company",
+        filters=[{"field": "city", "operator": "equals", "value": "Chennai"}],
+    )
+
+    statement = db.execute.await_args.args[0]
+    sql = str(statement)
+    assert "companies.organization_id" in sql
+    assert "contacts.organization_id" in sql
+    assert "contact_addresses.city" in sql
 
 
 @pytest.mark.asyncio
