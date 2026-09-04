@@ -1,6 +1,7 @@
 ﻿import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
 import type { CompanyHierarchy, RelatedRecord } from '@/lib/types';
+import type { CustomFieldValue } from '@/lib/api/custom-fields';
 
 export interface CompanyItem {
   id: string;
@@ -11,6 +12,7 @@ export interface CompanyItem {
   size?: string;
   employee_count?: number;
   created_at?: string;
+  custom_fields?: Record<string, CustomFieldValue>;
 }
 
 export interface CompanyCreatePayload {
@@ -20,6 +22,7 @@ export interface CompanyCreatePayload {
   industry?: string;
   size?: string;
   employee_count?: number;
+  custom_fields?: Record<string, CustomFieldValue>;
 }
 
 export interface CompanyUpdatePayload {
@@ -29,19 +32,39 @@ export interface CompanyUpdatePayload {
   industry?: string;
   size?: string;
   employee_count?: number;
+  custom_fields?: Record<string, CustomFieldValue>;
+}
+
+export interface CompaniesPage {
+  items: CompanyItem[];
+  total: number;
 }
 
 // API Functions
-export async function fetchCompaniesApi(page = 1, limit = 15, search?: string): Promise<CompanyItem[]> {
-  try {
-    const query = new URLSearchParams({ page: String(page), limit: String(limit) });
-    if (search) query.append('search', search);
-    const data = await apiClient.get<CompanyItem[]>(`/companies?${query.toString()}`);
-    if (Array.isArray(data)) return data;
-  } catch (error) {
-    console.error('Failed to fetch companies:', error);
+export async function fetchCompaniesPageApi(
+  page = 1,
+  limit = 15,
+  search?: string,
+): Promise<CompaniesPage> {
+  const query = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (search) query.append('search', search);
+  const response = await apiClient.getWithMetadata<CompanyItem[]>(
+    `/companies?${query.toString()}`,
+  );
+  const totalHeader = response.headers.get('X-Total-Count');
+  const total = totalHeader === null ? Number.NaN : Number.parseInt(totalHeader, 10);
+  if (!Number.isInteger(total) || total < 0) {
+    throw new Error('Companies response is missing valid pagination metadata.');
   }
-  return [];
+  return { items: response.data, total };
+}
+
+export async function fetchCompaniesApi(
+  page = 1,
+  limit = 15,
+  search?: string,
+): Promise<CompanyItem[]> {
+  return (await fetchCompaniesPageApi(page, limit, search)).items;
 }
 
 export async function createCompanyApi(payload: CompanyCreatePayload): Promise<CompanyItem> {
@@ -53,6 +76,7 @@ export async function createCompanyApi(payload: CompanyCreatePayload): Promise<C
     industry: payload.industry || undefined,
     size: payload.size || (empCount ? String(empCount) : undefined),
     employee_count: empCount,
+    custom_fields: payload.custom_fields ?? {},
   });
 }
 
@@ -155,6 +179,14 @@ export function useCompaniesQuery(page = 1, limit = 15, search?: string) {
   return useQuery({
     queryKey: ['companies', page, limit, search],
     queryFn: () => fetchCompaniesApi(page, limit, search),
+    placeholderData: (previousData) => previousData,
+  });
+}
+
+export function useCompaniesPageQuery(page = 1, limit = 15, search?: string) {
+  return useQuery({
+    queryKey: ['companies-page', page, limit, search],
+    queryFn: () => fetchCompaniesPageApi(page, limit, search),
     placeholderData: (previousData) => previousData,
   });
 }

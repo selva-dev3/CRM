@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
@@ -11,6 +11,7 @@ from app.schemas.crm_schemas import (
     CompanyResponse,
     CompanyUpdate,
     ContactResponse,
+    CustomFieldDefinition,
     DealResponse,
     DocumentResponse,
     InvoiceResponse,
@@ -31,12 +32,23 @@ router = APIRouter()
     dependencies=[Depends(require_permission("companies:read"))],
 )
 async def list_companies(
+    response: Response,
     page: int = 1,
     limit: int = 20,
     search: str | None = None,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    return await company_service.list_companies(db, page=page, limit=limit, search=search)
+    companies = await company_service.list_companies(
+        db,
+        page=page,
+        limit=limit,
+        search=search,
+        current_user=current_user,
+    )
+    total = await company_service.count_companies(db, search=search, current_user=current_user)
+    response.headers["X-Total-Count"] = str(total)
+    return companies
 
 
 @router.post(
@@ -52,6 +64,19 @@ async def create_company(
     current_user: User = Depends(get_current_user),
 ):
     return await company_service.create_company(db, payload, current_user)
+
+
+@router.get(
+    "/custom-fields",
+    response_model=list[CustomFieldDefinition],
+    summary="List custom fields available for companies",
+    dependencies=[Depends(require_permission("companies:read"))],
+)
+async def list_company_custom_fields(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await company_service.list_custom_fields(db, current_user)
 
 
 @router.post(

@@ -43,6 +43,12 @@ import {
   getCompanyHierarchyApi
 } from '@/lib/api/companies';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { CustomFieldValues } from '@/components/common/custom-field-values';
+import { CustomFields } from '@/components/common/custom-fields';
+import {
+  useEntityCustomFieldsQuery,
+  type CustomFieldValue,
+} from '@/lib/api/custom-fields';
 
 export default function CompanyDetailsPage() {
   const params = useParams();
@@ -70,9 +76,17 @@ export default function CompanyDetailsPage() {
   const [formIndustry, setFormIndustry] = useState('');
   const [formSize, setFormSize] = useState('');
   const [formEmployeeCount, setFormEmployeeCount] = useState<number | ''>('');
+  const [formCustomFields, setFormCustomFields] = useState<
+    Record<string, CustomFieldValue>
+  >({});
 
   // Main Company Data Query
   const { data: company, isLoading, isError, refetch } = useCompanyQuery(companyId);
+  const {
+    data: customFields = [],
+    isLoading: isCustomFieldsLoading,
+    isError: isCustomFieldsError,
+  } = useEntityCustomFieldsQuery('Company');
 
   // Sub-resource queries
   const { data: contacts = [] } = useQuery({
@@ -142,6 +156,7 @@ export default function CompanyDetailsPage() {
     setFormIndustry(company.industry || '');
     setFormSize(company.size || '');
     setFormEmployeeCount(company.employee_count ?? '');
+    setFormCustomFields(company.custom_fields ?? {});
     setIsEditModalOpen(true);
   };
 
@@ -159,6 +174,7 @@ export default function CompanyDetailsPage() {
           industry: formIndustry || undefined,
           size: formSize || (formEmployeeCount ? String(formEmployeeCount) : undefined),
           employee_count: formEmployeeCount !== '' ? Number(formEmployeeCount) : undefined,
+          custom_fields: formCustomFields,
         },
       });
       setSuccessMessage('Company profile updated successfully.');
@@ -305,6 +321,8 @@ export default function CompanyDetailsPage() {
           </div>
         </div>
       </div>
+
+      <CustomFieldValues fields={customFields} values={company.custom_fields ?? {}} />
 
       {/* Sub-Resource Navigation Tabs */}
       <div className="flex items-center border-b border-slate-200 gap-6 text-sm font-semibold text-slate-600 overflow-x-auto">
@@ -675,6 +693,17 @@ export default function CompanyDetailsPage() {
                 />
               </div>
             </div>
+
+            <CustomFields
+              fields={customFields}
+              values={formCustomFields}
+              onChange={(fieldName, value) => {
+                setFormCustomFields((current) => ({ ...current, [fieldName]: value }));
+              }}
+              isLoading={isCustomFieldsLoading}
+              isError={isCustomFieldsError}
+              idPrefix="company-detail-edit"
+            />
 
             <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
               <Button type="button" variant="outline" size="sm" onClick={() => setIsEditModalOpen(false)} className="cursor-pointer">

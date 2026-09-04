@@ -1,5 +1,6 @@
 ﻿import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import type { CustomFieldValue } from '@/lib/api/custom-fields';
 
 export interface Lead {
   id: string;
@@ -23,6 +24,7 @@ export interface Lead {
   is_archived?: boolean;
   organization_id?: string;
   created_at?: string;
+  custom_fields?: Record<string, CustomFieldValue>;
 }
 
 export interface CreateLeadPayload {
@@ -45,6 +47,7 @@ export interface CreateLeadPayload {
   assigned_to?: string | null;
   is_archived?: boolean;
   organization_id?: string;
+  custom_fields?: Record<string, CustomFieldValue>;
 }
 
 export interface UpdateLeadPayload {
@@ -67,6 +70,7 @@ export interface UpdateLeadPayload {
   assigned_to?: string | null;
   is_archived?: boolean;
   organization_id?: string;
+  custom_fields?: Record<string, CustomFieldValue>;
 }
 
 export interface FetchLeadsParams {

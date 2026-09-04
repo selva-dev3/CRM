@@ -14,6 +14,7 @@ from app.schemas.crm_schemas import (
     DealUpdate,
 )
 from app.services.ai_domain_service import AIDomainService, ai_domain_service
+from app.services.custom_field_service import CustomFieldService
 from app.services.note_service import note_service
 from app.services.notification_service import notification_service
 from app.services.org_service import organization_service
@@ -58,10 +59,11 @@ class DealService:
         quote_service_instance: QuoteService | None = None,
         setting_repository: SettingRepository | None = None,
         ai_service_instance: AIDomainService | None = None,
-        ) -> None:
+    ) -> None:
         self.repository = repository or DealRepository()
         self.quote_service = quote_service_instance or quote_service
         self.setting_repository = setting_repository or SettingRepository()
+        self.custom_field_service = CustomFieldService(self.setting_repository)
         self.ai_service = ai_service_instance or ai_domain_service
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
@@ -79,11 +81,11 @@ class DealService:
             raise NotFoundError(message=f"Deal '{deal_id}' not found")
         return deal
 
-    async def _validate_stage(self, db: AsyncSession, stage: str) -> None:
+    async def _validate_stage(self, db: AsyncSession, stage: str, organization_id: str) -> None:
         """Allow canonical stages plus stages configured by the organization."""
         if stage in CANONICAL_DEAL_STAGES:
             return
-        configured_stages = await self.repository.list_stages(db)
+        configured_stages = await self.repository.list_stages(db, organization_id=organization_id)
         if stage not in {s.name for s in configured_stages}:
             raise APIException(
                 message=f"Invalid deal stage '{stage}'.",
@@ -94,18 +96,9 @@ class DealService:
         self, db: AsyncSession, current_user: User
     ) -> list[DealCustomFieldDefinition]:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
-        fields = await self.setting_repository.list_custom_fields(
+        return await self.custom_field_service.list_definitions(
             db, organization_id=org_id, entity_type="Deal"
         )
-        return [
-            DealCustomFieldDefinition(
-                field_name=field.field_name,
-                field_type=field.field_type,
-                label=field.label,
-                options=field.options or [],
-            )
-            for field in fields
-        ]
 
     async def _validate_custom_fields(
         self,
@@ -113,46 +106,12 @@ class DealService:
         organization_id: str,
         values: dict[str, DealCustomFieldValue],
     ) -> dict[str, DealCustomFieldValue]:
-        if not values:
-            return {}
-        definitions = await self.setting_repository.list_custom_fields(
-            db, organization_id=organization_id, entity_type="Deal"
+        return await self.custom_field_service.validate_values(
+            db,
+            organization_id=organization_id,
+            entity_type="Deal",
+            values=values,
         )
-        fields_by_name = {field.field_name: field for field in definitions}
-        unknown_fields = sorted(set(values) - set(fields_by_name))
-        if unknown_fields:
-            raise APIException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                code="INVALID_CUSTOM_FIELDS",
-                message=f"Unknown deal custom field(s): {', '.join(unknown_fields)}",
-            )
-
-        for field_name, value in values.items():
-            if value is None:
-                continue
-            definition = fields_by_name[field_name]
-            field_type = definition.field_type.lower()
-            valid = (
-                (field_type == "text" and isinstance(value, str))
-                or (
-                    field_type == "number"
-                    and isinstance(value, (int, float))
-                    and not isinstance(value, bool)
-                )
-                or (field_type == "boolean" and isinstance(value, bool))
-                or (
-                    field_type == "select"
-                    and isinstance(value, str)
-                    and value in (definition.options or [])
-                )
-            )
-            if not valid:
-                raise APIException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                    code="INVALID_CUSTOM_FIELD_VALUE",
-                    message=f"Invalid value for deal custom field '{field_name}'",
-                )
-        return values
 
     async def _guard_closed_won_transition(
         self, db: AsyncSession, deal: Deal, new_stage: str
@@ -249,13 +208,25 @@ class DealService:
         )
         return deal_to_dict(deal)
 
-    async def get_deal_stages(self, db: AsyncSession) -> list[dict]:
-        stages = await self.repository.list_stages(db)
+    async def get_deal_stages(self, db: AsyncSession, current_user: User) -> list[dict]:
+        organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+        stages = await self.repository.list_stages(db, organization_id=organization_id)
         return [{"id": s.id, "name": s.name, "probability": s.default_probability} for s in stages]
 
-    async def create_deal_stage(self, db: AsyncSession, *, name: str, probability: float) -> dict:
+    async def create_deal_stage(
+        self,
+        db: AsyncSession,
+        *,
+        name: str,
+        probability: float,
+        current_user: User,
+    ) -> dict:
+        organization_id = await organization_service.resolve_valid_org_id(db, current_user)
         await self.repository.create_stage(
-            db, organization_id="org-1", name=name, probability=probability
+            db,
+            organization_id=organization_id,
+            name=name,
+            probability=probability,
         )
         await self._commit(db, "Failed to create pipeline stage")
         return {"message": f"Pipeline stage {name} created", "status": "success"}
@@ -284,8 +255,9 @@ class DealService:
         return {"affected_count": len(deals), "message": "Deals deleted successfully"}
 
     async def bulk_update_stage(self, db: AsyncSession, ids: list[str], stage: str) -> dict:
-        await self._validate_stage(db, stage)
         deals = await self.repository.list_by_ids(db, ids)
+        for organization_id in {deal.organization_id for deal in deals}:
+            await self._validate_stage(db, stage, organization_id)
         for deal in deals:
             await self._guard_closed_won_transition(db, deal, stage)
             deal.stage = stage
@@ -302,7 +274,7 @@ class DealService:
         prev_probability = d.probability
 
         if payload.stage is not None:
-            await self._validate_stage(db, payload.stage)
+            await self._validate_stage(db, payload.stage, d.organization_id)
             await self._guard_closed_won_transition(db, d, payload.stage)
         if payload.title is not None:
             d.title = payload.title
@@ -377,7 +349,7 @@ class DealService:
 
     async def update_deal_stage(self, db: AsyncSession, deal_id: str, stage: str) -> dict:
         d = await self.require_deal(db, deal_id)
-        await self._validate_stage(db, stage)
+        await self._validate_stage(db, stage, d.organization_id)
         await self._guard_closed_won_transition(db, d, stage)
         d.stage = stage
         await self._commit(db, "Failed to update deal stage")
@@ -479,7 +451,7 @@ class DealService:
         deal = await self.repository.get_by_id(db, deal_id)
         if deal and (force or total > 0):
             deal.amount = total
-            await db.commit()
+            await self._commit(db, "Failed to recalculate deal amount")
 
     async def add_deal_product(
         self,
@@ -491,6 +463,7 @@ class DealService:
         unit_price: float | None,
         custom_name: str | None,
     ) -> dict:
+        deal = await self.require_deal(db, deal_id)
         p = await self.repository.get_product(db, product_id)
 
         if not p and custom_name:
@@ -499,7 +472,7 @@ class DealService:
                 sku_gen = f"SKU-{custom_name.replace(' ', '-').upper()[:10]}"
                 p = await self.repository.create_product(
                     db,
-                    organization_id="org-1",
+                    organization_id=deal.organization_id,
                     name=custom_name,
                     sku=sku_gen,
                     price=unit_price or 0.0,
@@ -604,10 +577,12 @@ class DealService:
             "amount": deal.amount,
             "stage": deal.stage,
             "probability": deal.probability,
-            "expected_close_date": "2026-09-01",
+            "expected_close_date": (
+                deal.expected_close_date.isoformat() if deal.expected_close_date else None
+            ),
             "assigned_to": deal.assigned_to,
             "organization_id": deal.organization_id,
-            "created_at": "2026-08-02",
+            "created_at": deal.created_at.isoformat() if deal.created_at else None,
         }
 
     async def get_deal_commission(self, db: AsyncSession, deal_id: str) -> dict:

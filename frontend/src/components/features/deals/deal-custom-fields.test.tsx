@@ -23,11 +23,32 @@ describe('DealCustomFields', () => {
     fireEvent.change(screen.getByLabelText('Decision Maker'), { target: { value: 'CTO' } });
     fireEvent.keyDown(screen.getByLabelText('Priority'), { key: 'ArrowDown' });
     fireEvent.click(await screen.findByRole('option', { name: 'High' }));
-    fireEvent.click(screen.getByLabelText('Renewal'));
+    fireEvent.keyDown(screen.getByLabelText('Renewal'), { key: 'ArrowDown' });
+    fireEvent.click(await screen.findByRole('option', { name: 'Yes' }));
 
     expect(onChange).toHaveBeenCalledWith('decision_maker', 'CTO');
     expect(onChange).toHaveBeenCalledWith('priority', 'High');
     expect(onChange).toHaveBeenCalledWith('renewal', true);
+  });
+
+  it('supports explicit false and unset boolean values', async () => {
+    const onChange = vi.fn();
+    render(
+      <DealCustomFields
+        fields={[
+          { field_name: 'renewal', field_type: 'boolean', label: 'Renewal', options: [] },
+        ]}
+        values={{ renewal: false }}
+        onChange={onChange}
+        isLoading={false}
+        isError={false}
+      />,
+    );
+
+    fireEvent.keyDown(screen.getByLabelText('Renewal'), { key: 'ArrowDown' });
+    fireEvent.click(await screen.findByRole('option', { name: '-- Not set --' }));
+
+    expect(onChange).toHaveBeenCalledWith('renewal', null);
   });
 
   it('reports null when a selected option is cleared', async () => {

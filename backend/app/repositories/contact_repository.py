@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.contact import Contact
@@ -30,6 +30,29 @@ class ContactRepository:
         stmt = stmt.offset((page - 1) * limit).limit(limit).order_by(Contact.created_at.desc())
         result = await db.execute(stmt)
         return list(result.scalars().all())
+
+    async def count_by_org(
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        search: str | None = None,
+    ) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(Contact)
+            .where(Contact.organization_id == organization_id)
+        )
+        if search:
+            pattern = f"%{search}%"
+            stmt = stmt.where(
+                (Contact.name.ilike(pattern))
+                | (Contact.email.ilike(pattern))
+                | (Contact.phone.ilike(pattern))
+                | (Contact.position.ilike(pattern))
+            )
+        result = await db.execute(stmt)
+        return int(result.scalar_one())
 
     async def list_starred(self, db: AsyncSession) -> list[Contact]:
         result = await db.execute(select(Contact).where(Contact.is_starred))

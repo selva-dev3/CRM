@@ -30,6 +30,52 @@ def _service_with(repo: CompanyRepository) -> CompanyService:
 
 
 @pytest.mark.asyncio
+async def test_list_companies_is_scoped_to_current_organization(monkeypatch):
+    repo: Any = CompanyRepository()
+    repo.list_by_org = AsyncMock(return_value=[_make_company()])
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.services.company_service import organization_service
+
+    monkeypatch.setattr(
+        organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
+    )
+
+    result = await service.list_companies(
+        db, page=2, limit=15, search="Acme", current_user=AsyncMock()
+    )
+
+    assert result[0]["id"] == "cmp-1"
+    repo.list_by_org.assert_awaited_once_with(
+        db,
+        organization_id="org-1",
+        page=2,
+        limit=15,
+        search="Acme",
+    )
+
+
+@pytest.mark.asyncio
+async def test_count_companies_is_scoped_to_current_organization(monkeypatch):
+    repo: Any = CompanyRepository()
+    repo.count_by_org = AsyncMock(return_value=23)
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.services.company_service import organization_service
+
+    monkeypatch.setattr(
+        organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
+    )
+
+    result = await service.count_companies(db, search="Acme", current_user=AsyncMock())
+
+    assert result == 23
+    repo.count_by_org.assert_awaited_once_with(db, organization_id="org-1", search="Acme")
+
+
+@pytest.mark.asyncio
 async def test_get_company_raises_not_found_when_missing():
     repo: Any = CompanyRepository()
     repo.get_by_id = AsyncMock(return_value=None)
@@ -62,6 +108,38 @@ async def test_create_company_serializes_domain_and_size(monkeypatch):
     assert result["domain"] == "acme.com"
     assert result["size"] == "250"
     repo.create.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_create_company_validates_and_persists_custom_fields(monkeypatch):
+    company = _make_company(custom_fields={"account_tier": "Gold"})
+    repo: Any = CompanyRepository()
+    repo.create = AsyncMock(return_value=company)
+    custom_fields = AsyncMock()
+    custom_fields.validate_values.return_value = {"account_tier": "Gold"}
+    service = CompanyService(repository=repo, custom_field_service_instance=custom_fields)
+    monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.services.company_service import organization_service
+
+    monkeypatch.setattr(
+        organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
+    )
+
+    result = await service.create_company(
+        db,
+        CompanyCreate(name="Acme Inc", custom_fields={"account_tier": "Gold"}),
+    )
+
+    custom_fields.validate_values.assert_awaited_once_with(
+        db,
+        organization_id="org-1",
+        entity_type="Company",
+        values={"account_tier": "Gold"},
+    )
+    assert repo.create.await_args.kwargs["data"]["custom_fields"] == {"account_tier": "Gold"}
+    assert result["custom_fields"] == {"account_tier": "Gold"}
 
 
 @pytest.mark.asyncio

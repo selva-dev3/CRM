@@ -25,8 +25,9 @@ import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
+import { CustomFields } from '@/components/common/custom-fields';
 import {
-  useCompaniesQuery,
+  useCompaniesPageQuery,
   useCreateCompanyMutation,
   useUpdateCompanyMutation,
   useDeleteCompanyMutation,
@@ -36,6 +37,7 @@ import {
   lookupCompanyDomainApi,
   CompanyItem
 } from '@/lib/api/companies';
+import { useEntityCustomFieldsQuery, type CustomFieldValue } from '@/lib/api/custom-fields';
 
 export default function CompaniesPage() {
   const router = useRouter();
@@ -61,6 +63,7 @@ export default function CompaniesPage() {
   const [formIndustry, setFormIndustry] = useState('');
   const [formSize, setFormSize] = useState('');
   const [formEmployeeCount, setFormEmployeeCount] = useState<number | ''>('');
+  const [formCustomFields, setFormCustomFields] = useState<Record<string, CustomFieldValue>>({});
 
   // Search Debounce
   useEffect(() => {
@@ -72,7 +75,18 @@ export default function CompaniesPage() {
   }, [searchTerm]);
 
   // Queries
-  const { data: companies = [], refetch } = useCompaniesQuery(page, limit, debouncedSearchTerm);
+  const { data: companiesPage, isError: isCompaniesError, refetch } = useCompaniesPageQuery(
+    page,
+    limit,
+    debouncedSearchTerm,
+  );
+  const companies = companiesPage?.items ?? [];
+  const totalCompanies = companiesPage?.total ?? 0;
+  const {
+    data: customFields = [],
+    isLoading: isCustomFieldsLoading,
+    isError: isCustomFieldsError,
+  } = useEntityCustomFieldsQuery('Company', isCreateModalOpen || isEditModalOpen);
 
   // Mutations
   const createCompanyMutation = useCreateCompanyMutation();
@@ -88,6 +102,7 @@ export default function CompaniesPage() {
     setFormIndustry('');
     setFormSize('');
     setFormEmployeeCount('');
+    setFormCustomFields({});
   };
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
@@ -105,6 +120,7 @@ export default function CompaniesPage() {
         industry: formIndustry || undefined,
         size: formSize || (formEmployeeCount ? String(formEmployeeCount) : undefined),
         employee_count: formEmployeeCount !== '' ? Number(formEmployeeCount) : undefined,
+        custom_fields: formCustomFields,
       });
       setSuccessMessage(`Company '${formName}' created successfully.`);
       setIsCreateModalOpen(false);
@@ -129,6 +145,7 @@ export default function CompaniesPage() {
           industry: formIndustry || undefined,
           size: formSize || (formEmployeeCount ? String(formEmployeeCount) : undefined),
           employee_count: formEmployeeCount !== '' ? Number(formEmployeeCount) : undefined,
+          custom_fields: formCustomFields,
         },
       });
       setSuccessMessage(`Company '${formName}' updated successfully.`);
@@ -149,6 +166,7 @@ export default function CompaniesPage() {
     setFormIndustry(item.industry || '');
     setFormSize(item.size || '');
     setFormEmployeeCount(item.employee_count ?? '');
+    setFormCustomFields(item.custom_fields ?? {});
     setIsEditModalOpen(true);
   };
 
@@ -352,6 +370,12 @@ export default function CompaniesPage() {
           <span>{errorMessage}</span>
         </div>
       )}
+      {isCompaniesError && (
+        <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-sm font-medium flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+          <span>Companies could not be loaded. Please try again.</span>
+        </div>
+      )}
 
       {/* Companies DataTable */}
       <DataTable
@@ -397,9 +421,9 @@ export default function CompaniesPage() {
         }}
         pagination={{
           pageIndex: page - 1,
-          pageCount: Math.ceil((companies.length || 1) / limit) || 1,
+          pageCount: Math.ceil(totalCompanies / limit) || 1,
           onPageChange: (pIndex) => setPage(pIndex + 1),
-          totalRecords: companies.length,
+          totalRecords: totalCompanies,
         }}
       />
 
@@ -496,6 +520,17 @@ export default function CompaniesPage() {
               </div>
             </div>
 
+            <CustomFields
+              fields={customFields}
+              values={formCustomFields}
+              onChange={(fieldName, value) => {
+                setFormCustomFields((current) => ({ ...current, [fieldName]: value }));
+              }}
+              isLoading={isCustomFieldsLoading}
+              isError={isCustomFieldsError}
+              idPrefix="company-create"
+            />
+
             <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
               <Button type="button" variant="outline" size="sm" onClick={() => setIsCreateModalOpen(false)} className="cursor-pointer">
                 Cancel
@@ -584,6 +619,17 @@ export default function CompaniesPage() {
                 />
               </div>
             </div>
+
+            <CustomFields
+              fields={customFields}
+              values={formCustomFields}
+              onChange={(fieldName, value) => {
+                setFormCustomFields((current) => ({ ...current, [fieldName]: value }));
+              }}
+              isLoading={isCustomFieldsLoading}
+              isError={isCustomFieldsError}
+              idPrefix="company-edit"
+            />
 
             <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
               <Button type="button" variant="outline" size="sm" onClick={() => setIsEditModalOpen(false)} className="cursor-pointer">

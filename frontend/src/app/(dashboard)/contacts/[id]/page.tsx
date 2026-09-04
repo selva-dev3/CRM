@@ -42,6 +42,12 @@ import {
 import { useCompaniesQuery } from '@/lib/api/companies';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { SearchableCompanySelect } from '@/components/common/searchable-company-select';
+import { CustomFieldValues } from '@/components/common/custom-field-values';
+import { CustomFields } from '@/components/common/custom-fields';
+import {
+  useEntityCustomFieldsQuery,
+  type CustomFieldValue,
+} from '@/lib/api/custom-fields';
 
 export default function ContactDetailsPage() {
   const params = useParams();
@@ -65,6 +71,9 @@ export default function ContactDetailsPage() {
   const [formCompanyId, setFormCompanyId] = useState('');
   const [formPosition, setFormPosition] = useState('');
   const [formJobTitle, setFormJobTitle] = useState('');
+  const [formCustomFields, setFormCustomFields] = useState<
+    Record<string, CustomFieldValue>
+  >({});
 
   // Add Note Form State
   const [newNoteContent, setNewNoteContent] = useState('');
@@ -72,6 +81,11 @@ export default function ContactDetailsPage() {
   // Queries
   const { data: contact, isLoading, refetch: refetchContact } = useContactQuery(contactId);
   const { data: companiesList = [] } = useCompaniesQuery(1, 100);
+  const {
+    data: customFields = [],
+    isLoading: isCustomFieldsLoading,
+    isError: isCustomFieldsError,
+  } = useEntityCustomFieldsQuery('Contact');
 
   // Sub-resource queries
   const { data: deals = [] } = useQuery({
@@ -134,6 +148,7 @@ export default function ContactDetailsPage() {
       setFormCompanyId(contact.company_id || '');
       setFormPosition(contact.position || '');
       setFormJobTitle(contact.position || '');
+      setFormCustomFields(contact.custom_fields ?? {});
       setIsEditModalOpen(true);
     }
   };
@@ -154,6 +169,7 @@ export default function ContactDetailsPage() {
           company_id: formCompanyId || undefined,
           position: formPosition || undefined,
           job_title: formJobTitle || formPosition || undefined,
+          custom_fields: formCustomFields,
         },
       });
       setSuccessMessage('Contact updated successfully.');
@@ -309,6 +325,8 @@ export default function ContactDetailsPage() {
           </div>
         </div>
       </div>
+
+      <CustomFieldValues fields={customFields} values={contact.custom_fields ?? {}} />
 
       {/* Sub-Resource Tabs Bar */}
       <div className="flex items-center border-b border-slate-200 gap-4 sm:gap-6 text-sm font-semibold text-slate-600 overflow-x-auto">
@@ -598,6 +616,17 @@ export default function ContactDetailsPage() {
                 />
               </div>
             </div>
+
+            <CustomFields
+              fields={customFields}
+              values={formCustomFields}
+              onChange={(fieldName, value) => {
+                setFormCustomFields((current) => ({ ...current, [fieldName]: value }));
+              }}
+              isLoading={isCustomFieldsLoading}
+              isError={isCustomFieldsError}
+              idPrefix="contact-detail-edit"
+            />
 
             <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
               <Button type="button" variant="outline" size="sm" onClick={() => setIsEditModalOpen(false)} className="cursor-pointer">

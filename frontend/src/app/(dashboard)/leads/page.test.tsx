@@ -40,6 +40,10 @@ vi.mock('@/lib/api/users', () => ({
   useUsersQuery: () => ({ data: [], isLoading: false }),
 }));
 
+vi.mock('@/lib/api/custom-fields', () => ({
+  useEntityCustomFieldsQuery: () => ({ data: [], isLoading: false, isError: false }),
+}));
+
 import LeadsPage from './page';
 
 const lead = {

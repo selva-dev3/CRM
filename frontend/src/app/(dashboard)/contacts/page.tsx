@@ -28,8 +28,9 @@ import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
+import { CustomFields } from '@/components/common/custom-fields';
 import {
-  useContactsQuery,
+  useContactsPageQuery,
   useStarredContactsQuery,
   useCreateContactMutation,
   useUpdateContactMutation,
@@ -45,6 +46,7 @@ import {
 import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
 import { useCompaniesQuery } from '@/lib/api/companies';
 import { SearchableCompanySelect } from '@/components/common/searchable-company-select';
+import { useEntityCustomFieldsQuery, type CustomFieldValue } from '@/lib/api/custom-fields';
 
 export default function ContactsPage() {
   const router = useRouter();
@@ -74,6 +76,7 @@ export default function ContactsPage() {
   const [formPosition, setFormPosition] = useState('');
   const [formJobTitle, setFormJobTitle] = useState('');
   const [formCompanyId, setFormCompanyId] = useState('');
+  const [formCustomFields, setFormCustomFields] = useState<Record<string, CustomFieldValue>>({});
 
   // Merge Form State
   const [primaryContactId, setPrimaryContactId] = useState('');
@@ -88,6 +91,7 @@ export default function ContactsPage() {
     setFormPosition('');
     setFormJobTitle('');
     setFormCompanyId('');
+    setFormCustomFields({});
   };
 
   // Search Debounce
@@ -100,13 +104,32 @@ export default function ContactsPage() {
   }, [searchTerm]);
 
   // Queries
-  const { data: allContacts = [], refetch: refetchAll } = useContactsQuery(page, limit, debouncedSearchTerm);
-  const { data: starredContacts = [], refetch: refetchStarred } = useStarredContactsQuery();
+  const {
+    data: contactsPage,
+    isError: isContactsError,
+    refetch: refetchAll,
+  } = useContactsPageQuery(
+    page,
+    limit,
+    debouncedSearchTerm,
+  );
+  const allContacts = contactsPage?.items ?? [];
+  const {
+    data: starredContacts = [],
+    isError: isStarredContactsError,
+    refetch: refetchStarred,
+  } = useStarredContactsQuery();
   const { data: currentOrganization } = useCurrentOrganizationQuery();
   const organizations = currentOrganization ? [currentOrganization] : [];
   const { data: companiesList = [] } = useCompaniesQuery(1, 100);
+  const {
+    data: customFields = [],
+    isLoading: isCustomFieldsLoading,
+    isError: isCustomFieldsError,
+  } = useEntityCustomFieldsQuery('Contact', isCreateModalOpen || isEditModalOpen);
 
   const contacts = activeTab === 'starred' ? starredContacts : allContacts;
+  const totalContacts = activeTab === 'starred' ? starredContacts.length : contactsPage?.total ?? 0;
 
   // Mutations
   const createContactMutation = useCreateContactMutation();
@@ -134,6 +157,7 @@ export default function ContactsPage() {
         company_id: formCompanyId || undefined,
         position: formPosition || undefined,
         job_title: formJobTitle || formPosition || undefined,
+        custom_fields: formCustomFields,
       });
       setSuccessMessage(`Contact '${displayName}' created successfully.`);
       setIsCreateModalOpen(false);
@@ -161,6 +185,7 @@ export default function ContactsPage() {
           company_id: formCompanyId || undefined,
           position: formPosition || undefined,
           job_title: formJobTitle || formPosition || undefined,
+          custom_fields: formCustomFields,
         },
       });
       setSuccessMessage(`Contact '${displayName}' updated successfully.`);
@@ -184,6 +209,7 @@ export default function ContactsPage() {
     setFormPosition(item.position || '');
     setFormJobTitle(item.position || '');
     setFormCompanyId(item.company_id || '');
+    setFormCustomFields(item.custom_fields ?? {});
     setIsEditModalOpen(true);
   };
 
@@ -431,6 +457,18 @@ export default function ContactsPage() {
           <span>{errorMessage}</span>
         </div>
       )}
+      {activeTab === 'all' && isContactsError && (
+        <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-sm font-medium flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+          <span>Contacts could not be loaded. Please try again.</span>
+        </div>
+      )}
+      {activeTab === 'starred' && isStarredContactsError && (
+        <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-sm font-medium flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+          <span>Starred contacts could not be loaded. Please try again.</span>
+        </div>
+      )}
 
       {/* Navigation Sub-Tabs */}
       <div className="flex items-center border-b border-slate-200 gap-4 sm:gap-6 text-sm font-semibold text-slate-600 overflow-x-auto">
@@ -510,9 +548,9 @@ export default function ContactsPage() {
         }}
         pagination={{
           pageIndex: page - 1,
-          pageCount: Math.ceil((contacts.length || 1) / limit) || 1,
+          pageCount: Math.ceil(totalContacts / limit) || 1,
           onPageChange: (pIndex) => setPage(pIndex + 1),
-          totalRecords: contacts.length,
+          totalRecords: totalContacts,
         }}
       />
 
@@ -616,6 +654,17 @@ export default function ContactsPage() {
               />
             </div>
           </div>
+
+          <CustomFields
+            fields={customFields}
+            values={formCustomFields}
+            onChange={(fieldName, value) => {
+              setFormCustomFields((current) => ({ ...current, [fieldName]: value }));
+            }}
+            isLoading={isCustomFieldsLoading}
+            isError={isCustomFieldsError}
+            idPrefix="contact-create"
+          />
 
           <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
             <Button type="button" variant="outline" size="sm" onClick={() => setIsCreateModalOpen(false)} className="cursor-pointer">
@@ -721,6 +770,17 @@ export default function ContactsPage() {
               />
             </div>
           </div>
+
+          <CustomFields
+            fields={customFields}
+            values={formCustomFields}
+            onChange={(fieldName, value) => {
+              setFormCustomFields((current) => ({ ...current, [fieldName]: value }));
+            }}
+            isLoading={isCustomFieldsLoading}
+            isError={isCustomFieldsError}
+            idPrefix="contact-edit"
+          />
 
           <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
             <Button type="button" variant="outline" size="sm" onClick={() => setIsEditModalOpen(false)} className="cursor-pointer">

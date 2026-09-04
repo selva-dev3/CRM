@@ -42,6 +42,7 @@ import {
 import { DataTable, DataTableColumn, TableActionOption } from '@/components/common/data-table';
 import { ModalShell } from '@/components/common/modal-shell';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { CustomFields } from '@/components/common/custom-fields';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
 import { 
@@ -59,6 +60,7 @@ import {
 import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
 import { useCompaniesQuery } from '@/lib/api/companies';
 import { useUsersQuery } from '@/lib/api/users';
+import { useEntityCustomFieldsQuery, type CustomFieldValue } from '@/lib/api/custom-fields';
 
 const LEAD_STATUS_OPTIONS = ['New', 'Contacted', 'Qualified', 'Unqualified', 'Converted'] as const;
 const LEAD_SOURCE_OPTIONS = ['Website', 'LinkedIn', 'Referral', 'Cold Call', 'Event', 'Partner'] as const;
@@ -135,6 +137,7 @@ export default function LeadsPage() {
   const [score, setScore] = useState<number>(75);
   const [assignedTo, setAssignedTo] = useState<string>('');
   const [isArchived, setIsArchived] = useState<boolean>(false);
+  const [formCustomFields, setFormCustomFields] = useState<Record<string, CustomFieldValue>>({});
 
   // Feedback Banner State
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -164,6 +167,11 @@ export default function LeadsPage() {
   const organizations = currentOrganization ? [currentOrganization] : [];
   const { data: companies = [], isLoading: isCompaniesLoading } = useCompaniesQuery();
   const { data: users = [], isLoading: isUsersLoading } = useUsersQuery(1, 100, debouncedUserSearchTerm || undefined);
+  const {
+    data: customFields = [],
+    isLoading: isCustomFieldsLoading,
+    isError: isCustomFieldsError,
+  } = useEntityCustomFieldsQuery('Lead', isModalOpen);
 
   const [assigningLead, setAssigningLead] = useState<Lead | null>(null);
   const [selectedUserId, setSelectedUserId] = useState<string>('');
@@ -269,6 +277,7 @@ export default function LeadsPage() {
     setScore(75);
     setAssignedTo('');
     setIsArchived(false);
+    setFormCustomFields({});
     setErrorMessage(null);
   };
 
@@ -326,6 +335,7 @@ export default function LeadsPage() {
     setScore(lead.score ?? 75);
     setAssignedTo(lead.assigned_to || '');
     setIsArchived(lead.is_archived ?? false);
+    setFormCustomFields(lead.custom_fields ?? {});
     setErrorMessage(null);
     setIsModalOpen(true);
   };
@@ -376,6 +386,7 @@ export default function LeadsPage() {
         assigned_to: assignedTo.trim() || undefined,
         is_archived: isArchived,
         organization_id: organizationId || (organizations[0]?.id ?? 'org-1'),
+        custom_fields: formCustomFields,
       };
 
       if (editingLead) {
@@ -1144,6 +1155,17 @@ export default function LeadsPage() {
                 </div>
               </div>
             )}
+
+            <CustomFields
+              fields={customFields}
+              values={formCustomFields}
+              onChange={(fieldName, value) => {
+                setFormCustomFields((current) => ({ ...current, [fieldName]: value }));
+              }}
+              isLoading={isCustomFieldsLoading}
+              isError={isCustomFieldsError}
+              idPrefix="lead"
+            />
 
             {/* Modal Actions */}
             <div className="pt-4 border-t border-slate-200 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">

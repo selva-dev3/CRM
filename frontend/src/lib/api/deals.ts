@@ -1,5 +1,11 @@
 ﻿import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import {
+  fetchEntityCustomFieldsApi,
+  useEntityCustomFieldsQuery,
+  type CustomFieldDefinition,
+  type CustomFieldValue,
+} from '@/lib/api/custom-fields';
 import type {
   ActionResponse,
   DealCommissionResponse,
@@ -20,15 +26,10 @@ export interface DealItem {
   assigned_to?: string;
   organization_id?: string;
   created_at?: string;
-  custom_fields?: Record<string, string | number | boolean | null>;
+  custom_fields?: Record<string, CustomFieldValue>;
 }
 
-export interface DealCustomFieldDefinition {
-  field_name: string;
-  field_type: 'text' | 'number' | 'boolean' | 'select';
-  label: string;
-  options: string[];
-}
+export type DealCustomFieldDefinition = CustomFieldDefinition;
 
 export interface DealCreatePayload {
   title: string;
@@ -36,7 +37,7 @@ export interface DealCreatePayload {
   stage: string;
   probability?: number;
   assigned_to?: string;
-  custom_fields?: Record<string, string | number | boolean | null>;
+  custom_fields?: Record<string, CustomFieldValue>;
 }
 
 export interface DealUpdatePayload {
@@ -45,7 +46,7 @@ export interface DealUpdatePayload {
   stage?: string;
   probability?: number;
   assigned_to?: string;
-  custom_fields?: Record<string, string | number | boolean | null>;
+  custom_fields?: Record<string, CustomFieldValue>;
 }
 
 // API Functions
@@ -61,7 +62,7 @@ export async function createDealApi(payload: DealCreatePayload): Promise<DealIte
 }
 
 export async function fetchDealCustomFieldsApi(): Promise<DealCustomFieldDefinition[]> {
-  return apiClient.get<DealCustomFieldDefinition[]>('/deals/custom-fields');
+  return fetchEntityCustomFieldsApi('Deal');
 }
 
 export async function getDealStagesApi(): Promise<DealStageItem[]> {
@@ -230,11 +231,7 @@ export function useDealQuery(id: string) {
 }
 
 export function useDealCustomFieldsQuery(enabled = true) {
-  return useQuery({
-    queryKey: ['deal-custom-fields'],
-    queryFn: fetchDealCustomFieldsApi,
-    enabled,
-  });
+  return useEntityCustomFieldsQuery('Deal', enabled);
 }
 
 export function useDealStagesQuery() {

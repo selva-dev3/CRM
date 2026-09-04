@@ -1,11 +1,10 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.core.errors import APIException, NotFoundError
 from app.models import User
 from app.models.deal import Deal
@@ -180,6 +179,51 @@ async def test_list_custom_fields_returns_typed_definitions(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_create_deal_stage_uses_current_organization(monkeypatch):
+    repo: Any = DealRepository()
+    repo.create_stage = AsyncMock()
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.services.deal_service import organization_service
+
+    monkeypatch.setattr(
+        organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-2")
+    )
+
+    await service.create_deal_stage(
+        db,
+        name="Discovery",
+        probability=25,
+        current_user=_user(),
+    )
+
+    repo.create_stage.assert_awaited_once_with(
+        db,
+        organization_id="org-2",
+        name="Discovery",
+        probability=25,
+    )
+
+
+@pytest.mark.asyncio
+async def test_list_deal_stages_is_scoped_to_current_organization(monkeypatch):
+    repo: Any = DealRepository()
+    repo.list_stages = AsyncMock(return_value=[])
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.services.deal_service import organization_service
+
+    monkeypatch.setattr(
+        organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-2")
+    )
+
+    assert await service.get_deal_stages(db, _user()) == []
+    repo.list_stages.assert_awaited_once_with(db, organization_id="org-2")
+
+
+@pytest.mark.asyncio
 async def test_create_deal_rejects_unknown_custom_field(monkeypatch):
     repo: Any = DealRepository()
     repo.create = AsyncMock()
@@ -332,6 +376,79 @@ async def test_add_deal_product_recalculates_amount():
 
     assert deal.amount == 1000.0
     assert result["status"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_recalculate_deal_amount_uses_transaction_helper():
+    deal = _make_deal(amount=25000.0)
+    repo: Any = DealRepository()
+    repo.list_deal_products = AsyncMock(
+        return_value=[type("DP", (), {"quantity": 2, "unit_price": 500.0})()]
+    )
+    repo.get_by_id = AsyncMock(return_value=deal)
+    service = _service_with(repo)
+    service._commit = AsyncMock()
+    db = AsyncMock(spec=AsyncSession)
+
+    await service._recalculate_deal_amount(db, "deal-1", force=True)
+
+    assert deal.amount == 1000.0
+    service._commit.assert_awaited_once_with(db, "Failed to recalculate deal amount")
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_custom_deal_product_uses_deal_organization():
+    deal = _make_deal(organization_id="org-2")
+    product = type("P", (), {"id": "prod-2", "price": 500.0})()
+    repo: Any = DealRepository()
+    repo.get_by_id = AsyncMock(return_value=deal)
+    repo.get_product = AsyncMock(return_value=None)
+    repo.get_product_by_name = AsyncMock(return_value=None)
+    repo.create_product = AsyncMock(return_value=product)
+    repo.get_deal_product = AsyncMock(return_value=None)
+    repo.create_deal_product = AsyncMock()
+    repo.list_deal_products = AsyncMock(return_value=[])
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    await service.add_deal_product(
+        db,
+        deal_id="deal-1",
+        product_id="",
+        quantity=1,
+        unit_price=500.0,
+        custom_name="Implementation",
+    )
+
+    repo.create_product.assert_awaited_once_with(
+        db,
+        organization_id="org-2",
+        name="Implementation",
+        sku="SKU-IMPLEMENTA",
+        price=500.0,
+    )
+
+
+@pytest.mark.asyncio
+async def test_clone_deal_returns_persisted_dates():
+    original = _make_deal()
+    clone = _make_deal(
+        id="deal-2",
+        title="Cloned deal",
+        expected_close_date=date(2026, 9, 15),
+        created_at=datetime(2026, 9, 4, 12, 30, tzinfo=UTC),
+    )
+    repo: Any = DealRepository()
+    repo.get_by_id = AsyncMock(return_value=original)
+    repo.create = AsyncMock(return_value=clone)
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.clone_deal(db, deal_id="deal-1", new_title="Cloned deal")
+
+    assert result["expected_close_date"] == "2026-09-15"
+    assert result["created_at"] == "2026-09-04T12:30:00+00:00"
 
 
 @pytest.mark.asyncio

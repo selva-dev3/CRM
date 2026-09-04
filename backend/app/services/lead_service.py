@@ -13,12 +13,14 @@ from app.models import Lead, User
 from app.repositories.lead_repository import LeadRepository
 from app.schemas.crm_schemas import (
     CallLogBase,
+    CustomFieldDefinition,
     EmailSendRequest,
     LeadConvertRequest,
     LeadCreate,
     LeadUpdate,
     TaskCreate,
 )
+from app.services.custom_field_service import CustomFieldService, custom_field_service
 from app.services.document_service import (
     _normalize_mime_type,
     _read_upload_with_limit,
@@ -27,6 +29,7 @@ from app.services.document_service import (
     _validate_upload,
 )
 from app.services.notification_service import notification_service
+from app.services.org_service import organization_service
 from app.services.s3_service import s3_service
 
 LEAD_SOURCES = ["Website", "LinkedIn", "Referral", "Cold Call", "Event", "Partner"]
@@ -59,14 +62,20 @@ def lead_to_dict(lead: Lead) -> dict:
         "score": getattr(lead, "score", 50.0),
         "assigned_to": getattr(lead, "assigned_to", None),
         "is_archived": getattr(lead, "is_archived", False),
+        "custom_fields": getattr(lead, "custom_fields", None) or {},
         "organization_id": getattr(lead, "organization_id", "org-1"),
         "created_at": str(lead.created_at) if getattr(lead, "created_at", None) else "2026-01-01",
     }
 
 
 class LeadService:
-    def __init__(self, repository: LeadRepository | None = None) -> None:
+    def __init__(
+        self,
+        repository: LeadRepository | None = None,
+        custom_field_service_instance: CustomFieldService | None = None,
+    ) -> None:
         self.repository = repository or LeadRepository()
+        self.custom_field_service = custom_field_service_instance or custom_field_service
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
         try:
@@ -99,6 +108,14 @@ class LeadService:
         lead_status: str | None = None,
     ) -> int:
         return await self.repository.count_leads(db, search=search, status=lead_status)
+
+    async def list_custom_fields(
+        self, db: AsyncSession, current_user: User
+    ) -> list[CustomFieldDefinition]:
+        organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+        return await self.custom_field_service.list_definitions(
+            db, organization_id=organization_id, entity_type="Lead"
+        )
 
     async def get_lead(self, db: AsyncSession, lead_id: str) -> dict:
         lead = await self.repository.get_by_id(db, lead_id)
@@ -143,7 +160,15 @@ class LeadService:
         self, db: AsyncSession, payload: LeadCreate, current_user: User | None = None
     ) -> dict:
         org_id = await self._resolve_organization_id(db, payload.organization_id, current_user)
+        if not org_id:
+            raise ForbiddenError(message="Organization context is required.")
         assigned_to = await self._resolve_assigned_to(db, payload.assigned_to, org_id)
+        custom_fields = await self.custom_field_service.validate_values(
+            db,
+            organization_id=org_id,
+            entity_type="Lead",
+            values=payload.custom_fields,
+        )
         data = {
             "organization_id": org_id,
             "title": payload.title,
@@ -164,6 +189,7 @@ class LeadService:
             "score": payload.score if payload.score is not None else 50.0,
             "assigned_to": assigned_to,
             "is_archived": payload.is_archived if payload.is_archived is not None else False,
+            "custom_fields": custom_fields,
         }
         lead = await self.repository.create(db, data=data)
         await self._commit(db, "Failed to create lead")
@@ -207,6 +233,13 @@ class LeadService:
         if "assigned_to" in updates:
             updates["assigned_to"] = await self._resolve_assigned_to(
                 db, updates["assigned_to"], organization_id
+            )
+        if "custom_fields" in updates:
+            updates["custom_fields"] = await self.custom_field_service.validate_values(
+                db,
+                organization_id=organization_id,
+                entity_type="Lead",
+                values=updates["custom_fields"] or {},
             )
 
         for field, value in updates.items():

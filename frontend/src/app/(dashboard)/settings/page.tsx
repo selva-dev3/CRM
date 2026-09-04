@@ -62,12 +62,40 @@ export default function SettingsPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Queries
-  const { data: settings, refetch: refetchSettings } = useSystemSettingsQuery();
-  const { data: customFields = [], refetch: refetchFields } = useCustomFieldsQuery();
-  const { data: webhooks = [], refetch: refetchWebhooks } = useWebhooksQuery();
-  const { data: slaPolicies = [], refetch: refetchSla } = useSlaPoliciesQuery();
-  const { data: backups = [], refetch: refetchBackups } = useBackupsQuery();
-  const { data: auditLogs = [] } = useAuditLogsQuery();
+  const {
+    data: settings,
+    isError: isSettingsError,
+    refetch: refetchSettings,
+  } = useSystemSettingsQuery();
+  const {
+    data: customFields = [],
+    isError: isCustomFieldsError,
+    refetch: refetchFields,
+  } = useCustomFieldsQuery();
+  const {
+    data: webhooks = [],
+    isError: isWebhooksError,
+    refetch: refetchWebhooks,
+  } = useWebhooksQuery();
+  const {
+    data: slaPolicies = [],
+    isError: isSlaError,
+    refetch: refetchSla,
+  } = useSlaPoliciesQuery();
+  const {
+    data: backups = [],
+    isError: isBackupsError,
+    refetch: refetchBackups,
+  } = useBackupsQuery();
+  const { data: auditLogs = [], isError: isAuditError } = useAuditLogsQuery();
+
+  const activeQueryFailed =
+    (activeTab === 'general' && isSettingsError) ||
+    (activeTab === 'fields' && isCustomFieldsError) ||
+    (activeTab === 'webhooks' && isWebhooksError) ||
+    (activeTab === 'sla' && isSlaError) ||
+    (activeTab === 'backups' && isBackupsError) ||
+    (activeTab === 'audit' && isAuditError);
 
   // Mutations
   const updateSettingsMutation = useUpdateSystemSettingsMutation();
@@ -337,6 +365,12 @@ export default function SettingsPage() {
         <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-sm font-medium flex items-center gap-2 animate-in fade-in-50">
           <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
           <span>{errorMessage}</span>
+        </div>
+      )}
+      {activeQueryFailed && (
+        <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-sm font-medium flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+          <span>This settings data could not be loaded. Please try again.</span>
         </div>
       )}
 
