@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -24,6 +24,7 @@ class CustomField(Base):
     field_name: Mapped[str] = mapped_column(String(100), nullable=False)
     field_type: Mapped[str] = mapped_column(String(50), nullable=False, default="text")
     label: Mapped[str] = mapped_column(String(100), nullable=False)
+    options: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

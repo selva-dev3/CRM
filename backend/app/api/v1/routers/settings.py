@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Body, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import get_current_user_optional, require_permission
+from app.api.v1.deps import get_current_user, get_current_user_optional, require_permission
 from app.db.session import get_db
 from app.models import User
 from app.schemas.crm_schemas import MessageResponse, SystemSettings
@@ -21,6 +21,7 @@ class CreateCustomFieldPayload(BaseModel):
     field_name: str | None = None
     field_type: str | None = "text"
     label: str | None = None
+    options: list[str] = Field(default_factory=list)
 
 
 class CreateSlaPayload(BaseModel):
@@ -89,8 +90,12 @@ async def export_audit_logs_csv(db: AsyncSession = Depends(get_db)):
     summary="List custom metadata schema fields for entities",
     dependencies=[Depends(require_permission("settings:read"))],
 )
-async def list_custom_fields(entity_type: str | None = None, db: AsyncSession = Depends(get_db)):
-    return await settings_service.list_custom_fields(db, entity_type)
+async def list_custom_fields(
+    entity_type: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await settings_service.list_custom_fields(db, entity_type, current_user)
 
 
 @router.post(
@@ -106,13 +111,21 @@ async def create_custom_field(
     field_type: str | None = Query(None),
     label: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     ent = (payload and payload.entity_type) or entity_type or "Lead"
     fname = (payload and payload.field_name) or field_name or "custom_field"
     ftype = (payload and payload.field_type) or field_type or "text"
     lbl = (payload and payload.label) or label or fname
+    options = payload.options if payload else []
     return await settings_service.create_custom_field(
-        db, entity_type=ent, field_name=fname, field_type=ftype, label=lbl
+        db,
+        entity_type=ent,
+        field_name=fname,
+        field_type=ftype,
+        label=lbl,
+        options=options,
+        current_user=current_user,
     )
 
 
@@ -122,8 +135,12 @@ async def create_custom_field(
     summary="Delete custom schema field",
     dependencies=[Depends(require_permission("settings:update"))],
 )
-async def delete_custom_field(field_id: str, db: AsyncSession = Depends(get_db)):
-    return await settings_service.delete_custom_field(db, field_id)
+async def delete_custom_field(
+    field_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await settings_service.delete_custom_field(db, field_id, current_user)
 
 
 @router.get(

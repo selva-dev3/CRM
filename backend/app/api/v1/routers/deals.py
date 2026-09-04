@@ -59,6 +59,18 @@ async def create_deal(
 
 
 @router.get(
+    "/custom-fields",
+    summary="List custom fields available for deals",
+    dependencies=[Depends(require_permission("deals:read"))],
+)
+async def list_deal_custom_fields(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await deal_service.list_custom_fields(db, current_user)
+
+
+@router.get(
     "/stages",
     summary="Get deal pipeline stages configuration",
     dependencies=[Depends(require_permission("deals:read"))],

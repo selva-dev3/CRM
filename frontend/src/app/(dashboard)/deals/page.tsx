@@ -27,6 +27,7 @@ import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
+import { DealCustomFields } from '@/components/features/deals/deal-custom-fields';
 import {
   useDealsQuery,
   useCreateDealMutation,
@@ -36,6 +37,7 @@ import {
   useMarkDealLostMutation,
   useBulkDeleteDealsMutation,
   useImportDealsCsvMutation,
+  useDealCustomFieldsQuery,
   exportDealsCsvApi,
   importDealsCsvApi,
   cloneDealApi,
@@ -68,6 +70,7 @@ export default function DealsPage() {
   const [formStage, setFormStage] = useState('Prospecting');
   const [formProbability, setFormProbability] = useState<number | ''>(10);
   const [formAssignedTo, setFormAssignedTo] = useState('');
+  const [formCustomFields, setFormCustomFields] = useState<Record<string, string | number | boolean | null>>({});
 
   // Search Debounce
   useEffect(() => {
@@ -81,6 +84,11 @@ export default function DealsPage() {
   // Queries
   const { data: deals = [], refetch: refetchDeals } = useDealsQuery(page, limit, undefined, debouncedSearchTerm);
   const { data: users = [] } = useUsersQuery();
+  const {
+    data: customFields = [],
+    isLoading: isCustomFieldsLoading,
+    isError: isCustomFieldsError,
+  } = useDealCustomFieldsQuery(isCreateModalOpen || isEditModalOpen);
 
   // Mutations
   const createDealMutation = useCreateDealMutation();
@@ -101,6 +109,7 @@ export default function DealsPage() {
     setFormStage('Prospecting');
     setFormProbability(10);
     setFormAssignedTo(users[0]?.id || '');
+    setFormCustomFields({});
   };
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
@@ -117,6 +126,7 @@ export default function DealsPage() {
         stage: formStage,
         probability: formProbability !== '' ? Number(formProbability) : undefined,
         assigned_to: formAssignedTo || undefined,
+        custom_fields: formCustomFields,
       });
       setSuccessMessage(`Deal '${formTitle}' created successfully.`);
       setIsCreateModalOpen(false);
@@ -140,6 +150,7 @@ export default function DealsPage() {
           stage: formStage,
           probability: formProbability !== '' ? Number(formProbability) : undefined,
           assigned_to: formAssignedTo || undefined,
+          custom_fields: formCustomFields,
         },
       });
       setSuccessMessage(`Deal '${formTitle}' updated successfully.`);
@@ -159,6 +170,7 @@ export default function DealsPage() {
     setFormStage(item.stage);
     setFormProbability(item.probability ?? 10);
     setFormAssignedTo(item.assigned_to || '');
+    setFormCustomFields(item.custom_fields ?? {});
     setIsEditModalOpen(true);
   };
 
@@ -536,6 +548,16 @@ export default function DealsPage() {
               </div>
             </div>
 
+            <DealCustomFields
+              fields={customFields}
+              values={formCustomFields}
+              onChange={(fieldName, value) => {
+                setFormCustomFields((current) => ({ ...current, [fieldName]: value }));
+              }}
+              isLoading={isCustomFieldsLoading}
+              isError={isCustomFieldsError}
+            />
+
             <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
               <Button type="button" variant="outline" size="sm" onClick={() => setIsCreateModalOpen(false)} className="cursor-pointer">
                 Cancel
@@ -625,6 +647,16 @@ export default function DealsPage() {
                 </select>
               </div>
             </div>
+
+            <DealCustomFields
+              fields={customFields}
+              values={formCustomFields}
+              onChange={(fieldName, value) => {
+                setFormCustomFields((current) => ({ ...current, [fieldName]: value }));
+              }}
+              isLoading={isCustomFieldsLoading}
+              isError={isCustomFieldsError}
+            />
 
             <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
               <Button type="button" variant="outline" size="sm" onClick={() => setIsEditModalOpen(false)} className="cursor-pointer">

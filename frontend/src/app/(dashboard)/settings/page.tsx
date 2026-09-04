@@ -93,6 +93,7 @@ export default function SettingsPage() {
   const [fieldName, setFieldName] = useState('');
   const [fieldType, setFieldType] = useState('text');
   const [fieldLabel, setFieldLabel] = useState('');
+  const [fieldOptions, setFieldOptions] = useState('');
 
   const [isWebhookModalOpen, setIsWebhookModalOpen] = useState(false);
   const [webhookUrl, setWebhookUrl] = useState('');
@@ -151,11 +152,15 @@ export default function SettingsPage() {
         field_name: fieldName,
         field_type: fieldType,
         label: fieldLabel,
+        options: fieldType === 'select'
+          ? fieldOptions.split(',').map((option) => option.trim()).filter(Boolean)
+          : [],
       });
       setSuccessMessage(res.message || `Custom field '${fieldLabel}' added successfully.`);
       setIsFieldModalOpen(false);
       setFieldName('');
       setFieldLabel('');
+      setFieldOptions('');
       refetchFields();
     } catch {
       setErrorMessage('Failed to create custom field.');
@@ -835,6 +840,19 @@ export default function SettingsPage() {
                 ]}
               />
             </div>
+
+            {fieldType === 'select' && (
+              <div className="space-y-1">
+                <Label className="font-semibold text-slate-700">Dropdown Options</Label>
+                <Input
+                  type="text"
+                  placeholder="Enter comma-separated options"
+                  value={fieldOptions}
+                  onChange={(e) => setFieldOptions(e.target.value)}
+                  className="h-9 text-xs"
+                />
+              </div>
+            )}
 
             <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-2">
               <Button type="button" variant="outline" size="sm" onClick={() => setIsFieldModalOpen(false)} className="w-full sm:w-auto cursor-pointer">

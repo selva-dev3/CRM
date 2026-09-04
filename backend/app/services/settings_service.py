@@ -8,7 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.currency import normalize_currency_code_or_default
-from app.core.errors import APIException
+from app.core.errors import APIException, NotFoundError
 from app.core.logging import get_logger
 from app.core.security import get_password_hash
 from app.models import Organization, User
@@ -202,50 +202,74 @@ class SettingsService:
             }
 
     async def list_custom_fields(
-        self, db: AsyncSession, entity_type: str | None = None
+        self, db: AsyncSession, entity_type: str | None, current_user: User
     ) -> list[dict]:
-        try:
-            fields = await self.repository.list_custom_fields(db, entity_type=entity_type)
-            return [
-                {
-                    "id": f.id,
-                    "entity_type": f.entity_type,
-                    "field_name": f.field_name,
-                    "field_type": f.field_type,
-                    "label": f.label,
-                    "created_at": str(f.created_at) if f.created_at else None,
-                }
-                for f in fields
-            ]
-        except Exception:
-            return []
+        org_id = await self._resolve_org_id(db, current_user)
+        fields = await self.repository.list_custom_fields(
+            db, organization_id=org_id, entity_type=entity_type
+        )
+        return [
+            {
+                "id": f.id,
+                "entity_type": f.entity_type,
+                "field_name": f.field_name,
+                "field_type": f.field_type,
+                "label": f.label,
+                "options": f.options or [],
+                "created_at": str(f.created_at) if f.created_at else None,
+            }
+            for f in fields
+        ]
 
     async def create_custom_field(
-        self, db: AsyncSession, *, entity_type: str, field_name: str, field_type: str, label: str
+        self,
+        db: AsyncSession,
+        *,
+        entity_type: str,
+        field_name: str,
+        field_type: str,
+        label: str,
+        options: list[str],
+        current_user: User,
     ) -> dict:
-        org_id = await self._resolve_org_id(db)
+        org_id = await self._resolve_org_id(db, current_user)
+        normalized_type = field_type.strip().lower()
+        if normalized_type not in {"text", "number", "boolean", "select"}:
+            raise APIException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                code="INVALID_CUSTOM_FIELD_TYPE",
+                message=f"Unsupported custom field type '{field_type}'",
+            )
+        cleaned_options = [option.strip() for option in options if option.strip()]
+        if normalized_type == "select" and not cleaned_options:
+            raise APIException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                code="CUSTOM_FIELD_OPTIONS_REQUIRED",
+                message="Select custom fields require at least one option",
+            )
         data = {
             "organization_id": org_id,
             "entity_type": entity_type,
             "field_name": field_name,
-            "field_type": field_type,
+            "field_type": normalized_type,
             "label": label,
+            "options": cleaned_options,
         }
-        try:
-            await self.repository.create_custom_field(db, data=data)
-            await db.commit()
-        except Exception:
-            await db.rollback()
+        await self.repository.create_custom_field(db, data=data)
+        await self._commit(db, "Failed to create custom field")
         return {"message": f"Custom field '{label}' added to {entity_type}", "status": "success"}
 
-    async def delete_custom_field(self, db: AsyncSession, field_id: str) -> dict:
-        try:
-            field = await self.repository.get_custom_field(db, field_id)
-            if field:
-                await self.repository.delete_custom_field(db, field)
-                await db.commit()
-        except Exception:
-            await db.rollback()
+    async def delete_custom_field(
+        self, db: AsyncSession, field_id: str, current_user: User
+    ) -> dict:
+        org_id = await self._resolve_org_id(db, current_user)
+        field = await self.repository.get_custom_field(
+            db, field_id=field_id, organization_id=org_id
+        )
+        if not field:
+            raise NotFoundError(message=f"Custom field '{field_id}' not found")
+        await self.repository.delete_custom_field(db, field)
+        await self._commit(db, "Failed to delete custom field")
         return {"message": f"Custom field {field_id} deleted", "status": "success"}
 
     async def list_webhooks(self, db: AsyncSession, current_user: User | None = None) -> list[dict]:

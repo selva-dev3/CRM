@@ -24,6 +24,7 @@ export interface CustomFieldItem {
   field_name: string;
   field_type: string;
   label: string;
+  options: string[];
 }
 
 export interface WebhookItem {
@@ -85,27 +86,12 @@ export async function exportAuditLogsCsvApi(): Promise<{ download_url: string }>
 }
 
 export async function fetchCustomFieldsApi(entityType?: string): Promise<CustomFieldItem[]> {
-  try {
-    const query = entityType ? `?entity_type=${entityType}` : '';
-    const data = await apiClient.get<CustomFieldItem[]>(`/settings/custom-fields${query}`);
-    if (Array.isArray(data) && data.length > 0) return data;
-  } catch {
-    // Fallback data
-  }
-  return [
-    { id: 'cf-1', entity_type: 'Lead', field_name: 'annual_revenue_bracket', field_type: 'select', label: 'Revenue Bracket' },
-    { id: 'cf-2', entity_type: 'Deal', field_name: 'decision_maker_title', field_type: 'text', label: 'Decision Maker Title' },
-  ];
+  const query = entityType ? `?entity_type=${encodeURIComponent(entityType)}` : '';
+  return apiClient.get<CustomFieldItem[]>(`/settings/custom-fields${query}`);
 }
 
-export async function createCustomFieldApi(payload: { entity_type: string; field_name: string; field_type: string; label: string }): Promise<{ message: string; status: string }> {
-  const query = new URLSearchParams({
-    entity_type: payload.entity_type,
-    field_name: payload.field_name,
-    field_type: payload.field_type,
-    label: payload.label,
-  });
-  return apiClient.post<{ message: string; status: string }>(`/settings/custom-fields?${query.toString()}`);
+export async function createCustomFieldApi(payload: { entity_type: string; field_name: string; field_type: string; label: string; options?: string[] }): Promise<{ message: string; status: string }> {
+  return apiClient.post<{ message: string; status: string }>('/settings/custom-fields', payload);
 }
 
 export async function deleteCustomFieldApi(fieldId: string): Promise<{ message: string; status: string }> {

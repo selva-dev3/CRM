@@ -467,6 +467,7 @@ class DealBase(BaseModel):
     company_id: str | None = None
     contact_id: str | None = None
     assigned_to: str | None = None
+    custom_fields: dict[str, str | float | bool | None] = Field(default_factory=dict)
 
 
 class DealCreate(DealBase):
@@ -482,6 +483,7 @@ class DealUpdate(BaseModel):
     company_id: str | None = None
     contact_id: str | None = None
     assigned_to: str | None = None
+    custom_fields: dict[str, str | float | bool | None] | None = None
 
 
 class DealResponse(DealBase):
