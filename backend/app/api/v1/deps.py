@@ -1,3 +1,5 @@
+from hashlib import sha256
+
 from fastapi import Depends, HTTPException, Query, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
@@ -9,7 +11,7 @@ from app.core.errors import ForbiddenError
 from app.core.permissions import UserRole, check_permission
 from app.core.security import ALGORITHM
 from app.db.session import get_db
-from app.models import Organization, User
+from app.models import Organization, User, UserSession
 from app.services.auth_service import auth_service
 
 # HTTP Bearer scheme auto-configured for FastAPI Swagger UI authentication
@@ -81,6 +83,27 @@ async def get_current_user(
             detail="User session is inactive or account has been removed",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    organization_id = getattr(user, "organization_id", None)
+    if not organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Authenticated user has no current organization",
+        )
+    organization = await db.get(Organization, organization_id)
+    if not organization or not organization.is_active or organization.status != "active":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User organization is inactive or unavailable",
+        )
+
+    access_session = await db.get(UserSession, sha256(token.encode("utf-8")).hexdigest())
+    if access_session is not None and not access_session.is_current:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session has been revoked. Please log in again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return user
 
 
@@ -97,8 +120,10 @@ async def get_current_user_optional(
             token_query=token_query,
             db=db,
         )
-    except Exception:
-        return None
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_401_UNAUTHORIZED:
+            return None
+        raise
 
 
 async def get_valid_org_id(db: AsyncSession, current_user: User | None = None) -> str:

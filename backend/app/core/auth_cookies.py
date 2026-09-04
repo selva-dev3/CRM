@@ -15,11 +15,11 @@ def set_auth_cookie(response: Response, access_token: str, *, persistent: bool =
     )
 
 
-def set_refresh_cookie(response: Response, refresh_token: str) -> None:
+def set_refresh_cookie(response: Response, refresh_token: str, *, persistent: bool = True) -> None:
     response.set_cookie(
         key=settings.AUTH_REFRESH_COOKIE_NAME,
         value=refresh_token,
-        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        max_age=(settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60 if persistent else None),
         httponly=True,
         secure=settings.auth_cookie_secure,
         samesite=settings.auth_cookie_samesite,

@@ -7,7 +7,7 @@ import { navigationSections, filterNavigationSections, getRoutePermission } from
 import { AIChatAssistant } from '@/components/features/ai/ai-chat-assistant';
 import { GlobalSearchModal } from '@/components/common/global-search-modal';
 import { NotificationBell } from '@/components/features/notifications/notification-bell';
-import { clearSessionToken } from '@/lib/api/client';
+import { ApiError, clearSessionToken } from '@/lib/api/client';
 import { getCurrentUserApi, logoutApi } from '@/lib/api';
 import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
 import { PERMISSIONS } from '@/lib/permissions';
@@ -98,9 +98,11 @@ function getStoredUserProfile(): UserProfile {
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { data: currentOrg } = useCurrentOrganizationQuery();
-  const { permissions, hasPermission } = useHasPermission();
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [verificationAttempt, setVerificationAttempt] = useState(0);
+  const { data: currentOrg } = useCurrentOrganizationQuery(isAuthenticated === true);
+  const { permissions, hasPermission } = useHasPermission();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     CRM: true,
@@ -161,15 +163,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         setIsAuthenticated(true);
         notifyAuthUserChanged();
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (!active) return;
+        if (error instanceof ApiError && error.status !== 401) {
+          setAuthError(error.message);
+          setIsAuthenticated(false);
+          return;
+        }
         setIsAuthenticated(false);
         router.push('/login');
       });
     return () => {
       active = false;
     };
-  }, [router]);
+  }, [router, verificationAttempt]);
 
   const closeMobileMenu = useCallback(() => setIsMobileMenuOpen(false), []);
   const closeSearch = useCallback(() => setIsSearchOpen(false), []);
@@ -195,6 +202,34 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <div className="h-dvh w-full flex flex-col items-center justify-center bg-slate-50 text-slate-900 space-y-4">
         <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
         <p className="text-sm text-slate-900 font-bold">Verifying Session Token...</p>
+      </div>
+    );
+  }
+
+  if (authError) {
+    return (
+      <div className="h-dvh w-full flex flex-col items-center justify-center bg-slate-50 text-slate-900 space-y-4 px-6 text-center">
+        <p className="text-sm font-bold">Unable to verify your session</p>
+        <p className="max-w-md text-sm text-slate-600">{authError}</p>
+        <div className="flex gap-3">
+          <button
+            type="button"
+            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
+            onClick={() => {
+              setIsAuthenticated(null);
+              setVerificationAttempt((attempt) => attempt + 1);
+            }}
+          >
+            Try again
+          </button>
+          <button
+            type="button"
+            className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"
+            onClick={() => router.push('/login')}
+          >
+            Go to login
+          </button>
+        </div>
       </div>
     );
   }

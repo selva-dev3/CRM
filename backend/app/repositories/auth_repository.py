@@ -119,6 +119,21 @@ class AuthRepository:
     async def revoke_refresh_token(self, refresh_token: RefreshToken) -> None:
         refresh_token.is_revoked = True
 
+    async def get_session_by_access_token(
+        self, db: AsyncSession, token_digest: str
+    ) -> UserSession | None:
+        return await db.get(UserSession, token_digest)
+
+    async def create_access_session(
+        self, db: AsyncSession, *, token_digest: str, user_id: str
+    ) -> UserSession:
+        session = UserSession(id=token_digest, user_id=user_id, is_current=True)
+        db.add(session)
+        return session
+
+    async def revoke_access_session(self, session: UserSession) -> None:
+        session.is_current = False
+
     async def invalidate_password_resets(self, db: AsyncSession, user_id: str) -> None:
         await db.execute(
             update(PasswordReset)

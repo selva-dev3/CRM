@@ -1,5 +1,6 @@
 import uuid
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from typing import TypedDict
 
 from fastapi import HTTPException, status
@@ -18,6 +19,7 @@ from app.models import (
     Role,
     SubscriptionPlan,
     User,
+    UserSession,
 )
 from app.schemas.organization_invitation_schemas import (
     AcceptInvitationRequest,
@@ -633,11 +635,17 @@ async def accept_organization_invitation(
     )
     db.add(audit)
 
+    # 6. Generate JWT Token and persist a revocable access-session marker.
+    access_token = create_access_token(subject=user.id, expires_delta=timedelta(days=7))
+    db.add(
+        UserSession(
+            id=sha256(access_token.encode("utf-8")).hexdigest(),
+            user_id=user.id,
+            is_current=True,
+        )
+    )
     await db.commit()
     await db.refresh(user)
-
-    # 6. Generate JWT Token
-    access_token = create_access_token(subject=user.id, expires_delta=timedelta(days=7))
 
     return {
         "access_token": access_token,

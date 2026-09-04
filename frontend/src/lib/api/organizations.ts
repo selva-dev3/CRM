@@ -246,10 +246,11 @@ export async function transferOrganizationOwnershipApi(newOwnerUserId: string): 
 }
 
 // React Query Hooks
-export function useCurrentOrganizationQuery() {
+export function useCurrentOrganizationQuery(enabled = true) {
   return useQuery({
     queryKey: ['current-organization'],
     queryFn: getCurrentOrganizationApi,
+    enabled,
   });
 }
 

@@ -1,7 +1,7 @@
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from fastapi import Request, Response
+from fastapi import HTTPException, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user
@@ -14,7 +14,7 @@ from app.core.auth_cookies import (
 from app.core.config import settings
 from app.core.security import create_access_token
 from app.main import validate_cookie_authenticated_origin
-from app.models import User
+from app.models import Organization, User, UserSession
 
 
 def test_auth_cookie_is_httponly_secure_and_cross_site_in_production(monkeypatch):
@@ -54,6 +54,17 @@ def test_refresh_cookie_is_httponly_secure_and_scoped_to_auth(monkeypatch):
     assert "SameSite=none" in header
     assert f"Path={settings.API_V1_STR}/auth" in header
     assert f"Max-Age={settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400}" in header
+
+
+def test_session_refresh_cookie_omits_persistent_expiration(monkeypatch):
+    monkeypatch.setattr(settings, "ENVIRONMENT", "test")
+    response = Response()
+
+    set_refresh_cookie(response, "refresh-token", persistent=False)
+
+    header = response.headers["set-cookie"]
+    assert "HttpOnly" in header
+    assert "Max-Age=" not in header
 
 
 def test_clear_auth_cookie_expires_server_cookie(monkeypatch):
@@ -104,6 +115,12 @@ async def test_get_current_user_accepts_valid_auth_cookie():
     result.scalars.return_value.first.return_value = user
     db = AsyncMock(spec=AsyncSession)
     db.execute = AsyncMock(return_value=result)
+    db.get = AsyncMock(
+        side_effect=[
+            Organization(id="org-1", name="Acme", status="active", is_active=True),
+            None,
+        ]
+    )
 
     current_user = await get_current_user(
         request=request,
@@ -113,6 +130,43 @@ async def test_get_current_user_accepts_valid_auth_cookie():
     )
 
     assert current_user is user
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_rejects_revoked_access_session():
+    user = User(
+        id="user-1",
+        name="Alex",
+        email="alex@crm.com",
+        hashed_password="hash",  # noqa: S106 - synthetic test fixture
+        role="Admin",
+        organization_id="org-1",
+        is_active=True,
+    )
+    token = create_access_token(user.id)
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/api/v1/auth/me",
+            "headers": [(b"cookie", f"{settings.AUTH_COOKIE_NAME}={token}".encode())],
+        }
+    )
+    result = Mock()
+    result.scalars.return_value.first.return_value = user
+    db = AsyncMock(spec=AsyncSession)
+    db.execute = AsyncMock(return_value=result)
+    db.get = AsyncMock(
+        side_effect=[
+            Organization(id="org-1", name="Acme", status="active", is_active=True),
+            UserSession(id="session-1", user_id=user.id, is_current=False),
+        ]
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await get_current_user(request=request, credentials=None, token_query=None, db=db)
+
+    assert exc_info.value.status_code == 401
 
 
 @pytest.mark.asyncio
