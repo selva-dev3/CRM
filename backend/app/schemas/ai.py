@@ -385,7 +385,7 @@ class DataQualityResponse(BaseModel):
 
 class CRMSearchRequest(BaseModel):
     query: str = Field(min_length=3, max_length=1000)
-    scope: Literal["lead", "contact", "company", "deal", "task"] | None = None
+    scope: Literal["lead", "contact", "company", "deal", "task", "project"] | None = None
 
 
 class CRMSearchFilter(BaseModel):
@@ -412,6 +412,11 @@ class CRMSearchFilter(BaseModel):
         "expected_close_date",
         "open_deal_value",
         "last_contact_at",
+        "description",
+        "owner_id",
+        "start_date",
+        "budget",
+        "completion_percentage",
     ]
     operator: Literal["equals", "contains", "gte", "lte", "before", "after"]
     value: str | int | float | bool
@@ -419,14 +424,23 @@ class CRMSearchFilter(BaseModel):
 
 class CRMSearchPlan(BaseModel):
     intent: Literal["list", "detail", "count", "aggregate", "comparison"] = "list"
-    entity_type: Literal["lead", "contact", "company", "deal", "task"]
+    entity_type: Literal["lead", "contact", "company", "deal", "task", "project"]
     text_query: str | None = None
     status: str | None = None
     filters: list[CRMSearchFilter] = Field(default_factory=list, max_length=10)
     aggregate: Literal["sum", "average", "minimum", "maximum"] | None = None
-    aggregate_field: Literal["amount", "probability", "score", "open_deal_value"] | None = None
-    group_by: Literal["status", "stage", "industry", "city", "country", "priority"] | None = None
-    date_field: Literal["created_at", "updated_at", "due_date", "expected_close_date"] | None = None
+    aggregate_field: (
+        Literal[
+            "amount", "probability", "score", "open_deal_value", "budget", "completion_percentage"
+        ]
+        | None
+    ) = None
+    group_by: (
+        Literal["status", "stage", "industry", "city", "country", "priority", "owner_id"] | None
+    ) = None
+    date_field: (
+        Literal["created_at", "updated_at", "due_date", "expected_close_date", "start_date"] | None
+    ) = None
     date_range: (
         Literal[
             "today",
@@ -456,6 +470,9 @@ class CRMSearchPlan(BaseModel):
             "expected_close_date",
             "open_deal_value",
             "last_contact_at",
+            "start_date",
+            "budget",
+            "completion_percentage",
         ]
         | None
     ) = None

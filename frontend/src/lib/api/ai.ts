@@ -60,7 +60,7 @@ export interface MeetingSummaryResponse {
 
 export interface CRMSearchPlan {
   intent: 'list' | 'detail' | 'count' | 'aggregate' | 'comparison';
-  entity_type: 'lead' | 'contact' | 'company' | 'deal' | 'task';
+  entity_type: 'lead' | 'contact' | 'company' | 'deal' | 'task' | 'project';
   text_query?: string | null;
   status?: string | null;
   filters: Array<{
@@ -130,7 +130,7 @@ export const aiService = {
 
   searchCRM: (
     query: string,
-    scope?: 'lead' | 'contact' | 'company' | 'deal' | 'task',
+    scope?: 'lead' | 'contact' | 'company' | 'deal' | 'task' | 'project',
   ): Promise<CRMSearchResponse> =>
     apiClient.post<CRMSearchResponse>('/ai/crm-search/query', {
       query,

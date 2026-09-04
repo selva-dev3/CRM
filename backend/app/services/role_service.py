@@ -286,6 +286,36 @@ ALL_STANDARD_PERMISSIONS = [
         "description": "Mark assigned tasks completed",
     },
     {
+        "key": "projects:read",
+        "name": "View Projects",
+        "category": "Projects",
+        "description": "View organization projects",
+    },
+    {
+        "key": "projects:create",
+        "name": "Create Projects",
+        "category": "Projects",
+        "description": "Create organization projects",
+    },
+    {
+        "key": "projects:update",
+        "name": "Update Projects",
+        "category": "Projects",
+        "description": "Edit organization projects",
+    },
+    {
+        "key": "projects:delete",
+        "name": "Delete Projects",
+        "category": "Projects",
+        "description": "Delete organization projects",
+    },
+    {
+        "key": "projects:assign",
+        "name": "Assign Projects",
+        "category": "Projects",
+        "description": "Assign projects to team members",
+    },
+    {
         "key": "meetings:read",
         "name": "View Meetings",
         "category": "Meetings",

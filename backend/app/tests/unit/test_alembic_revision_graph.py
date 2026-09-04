@@ -5,7 +5,7 @@ from alembic.script import ScriptDirectory
 
 BACKEND_ROOT = Path(__file__).resolve().parents[3]
 MERGE_REVISION = "e8f9a0b1c2d3"
-HEAD_REVISION = "f0a1b2c3d4e5"
+HEAD_REVISION = "a1b2c3d4e5f7"
 EXPECTED_PARENTS = {"d4e5f6a7b8c0", "d6e7f8a9b0c1"}
 
 

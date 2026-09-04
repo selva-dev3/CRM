@@ -25,6 +25,7 @@ from app.models import (
     Lead,
     Meeting,
     OrganizationSubscription,
+    Project,
     SystemSetting,
     Task,
     User,
@@ -744,6 +745,27 @@ class AIRepository:
                 {"id": row.id, "title": row.title, "status": row.status, "priority": row.priority}
                 for row in result.scalars().all()
             ]
+        if "projects" in allowed_modules:
+            result = await db.execute(
+                select(Project)
+                .where(
+                    Project.organization_id == organization_id,
+                    Project.name.ilike(pattern) | Project.description.ilike(pattern),
+                )
+                .limit(limit_per_module)
+            )
+            context["projects"] = [
+                {
+                    "id": row.id,
+                    "name": row.name,
+                    "status": row.status,
+                    "priority": row.priority,
+                    "owner_id": row.owner_id,
+                    "budget": row.budget,
+                    "completion_percentage": row.completion_percentage,
+                }
+                for row in result.scalars().all()
+            ]
         if "calls" in allowed_modules:
             result = await db.execute(
                 select(CallLog)
@@ -795,6 +817,7 @@ class AIRepository:
             "company": Company,
             "deal": Deal,
             "task": Task,
+            "project": Project,
         }
         model: Any = models[entity_type]
         open_deal_value = (
@@ -901,6 +924,19 @@ class AIRepository:
                 "created_at": Task.created_at,
                 "updated_at": Task.updated_at,
             },
+            "project": {
+                "name": Project.name,
+                "description": Project.description,
+                "status": Project.status,
+                "priority": Project.priority,
+                "owner_id": Project.owner_id,
+                "start_date": Project.start_date,
+                "due_date": Project.due_date,
+                "budget": Project.budget,
+                "completion_percentage": Project.completion_percentage,
+                "created_at": Project.created_at,
+                "updated_at": Project.updated_at,
+            },
         }
 
         def column_for(field: str) -> Any:
@@ -949,7 +985,15 @@ class AIRepository:
             return column == value
 
         def normalized_filter_value(field: str, value: object) -> object:
-            if field in {"amount", "employee_count", "open_deal_value", "probability", "score"}:
+            if field in {
+                "amount",
+                "employee_count",
+                "open_deal_value",
+                "probability",
+                "score",
+                "budget",
+                "completion_percentage",
+            }:
                 return float(str(value))
             if field in {
                 "created_at",
@@ -957,6 +1001,7 @@ class AIRepository:
                 "expected_close_date",
                 "last_contact_at",
                 "updated_at",
+                "start_date",
             }:
                 parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
                 return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
@@ -969,6 +1014,7 @@ class AIRepository:
             "company": (Company.name, Company.industry),
             "deal": (Deal.title,),
             "task": (Task.title,),
+            "project": (Project.name, Project.description),
         }
         if text_query:
             pattern = f"%{text_query.strip()}%"
@@ -1130,6 +1176,18 @@ class AIRepository:
             "company": ("id", "name", "industry", "employee_count", "updated_at"),
             "deal": ("id", "title", "amount", "stage", "probability", "updated_at"),
             "task": ("id", "title", "status", "priority", "due_date", "updated_at"),
+            "project": (
+                "id",
+                "name",
+                "status",
+                "priority",
+                "owner_id",
+                "start_date",
+                "due_date",
+                "budget",
+                "completion_percentage",
+                "updated_at",
+            ),
         }
         results = []
         for row in rows:

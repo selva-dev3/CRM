@@ -103,6 +103,19 @@ class AIDomainService:
             "expected_close_date",
         },
         "task": {"title", "status", "priority", "created_at", "updated_at", "due_date"},
+        "project": {
+            "name",
+            "description",
+            "status",
+            "priority",
+            "owner_id",
+            "start_date",
+            "due_date",
+            "budget",
+            "completion_percentage",
+            "created_at",
+            "updated_at",
+        },
     }
     _SEARCH_AGGREGATE_FIELDS = {
         "lead": {"score"},
@@ -110,6 +123,7 @@ class AIDomainService:
         "deal": {"amount", "probability"},
         "contact": set(),
         "task": set(),
+        "project": {"budget", "completion_percentage"},
     }
     _SEARCH_GROUP_FIELDS = {
         "lead": {"status", "industry", "city", "country"},
@@ -117,14 +131,24 @@ class AIDomainService:
         "company": {"industry", "city"},
         "deal": {"stage"},
         "task": {"status", "priority"},
+        "project": {"status", "priority", "owner_id"},
     }
-    _SEARCH_NUMERIC_FIELDS = {"amount", "employee_count", "open_deal_value", "probability", "score"}
+    _SEARCH_NUMERIC_FIELDS = {
+        "amount",
+        "employee_count",
+        "open_deal_value",
+        "probability",
+        "score",
+        "budget",
+        "completion_percentage",
+    }
     _SEARCH_DATE_FIELDS = {
         "created_at",
         "due_date",
         "expected_close_date",
         "last_contact_at",
         "updated_at",
+        "start_date",
     }
 
     def __init__(
@@ -226,7 +250,7 @@ class AIDomainService:
                 code="AI_INVALID_SEARCH_PLAN",
                 message="Recent-contact filtering is unsupported for this CRM record type.",
             )
-        if plan.status and plan.entity_type not in {"lead", "deal", "task"}:
+        if plan.status and plan.entity_type not in {"lead", "deal", "task", "project"}:
             raise APIException(
                 status_code=502,
                 code="AI_INVALID_SEARCH_PLAN",
@@ -250,6 +274,7 @@ class AIDomainService:
             "company": "companies:read",
             "deal": "deals:read",
             "task": "tasks:read",
+            "project": "projects:read",
         }
         cls._require_permission(permissions, permission_by_entity[plan.entity_type])
         fields = {item.field for item in plan.filters}
@@ -310,6 +335,7 @@ class AIDomainService:
             "companies": "company",
             "deals": "deal",
             "tasks": "task",
+            "projects": "project",
             "calls": "call",
             "meetings": "meeting",
         }
@@ -581,6 +607,7 @@ class AIDomainService:
             "companies": "companies:read",
             "deals": "deals:read",
             "tasks": "tasks:read",
+            "projects": "projects:read",
             "calls": "calls:read",
             "meetings": "meetings:read",
         }
@@ -1178,6 +1205,7 @@ class AIDomainService:
                     "company": "companies:read",
                     "deal": "deals:read",
                     "task": "tasks:read",
+                    "project": "projects:read",
                 }[scope],
             )
         plan_output, run = await self._run(
@@ -1187,6 +1215,17 @@ class AIDomainService:
             context={
                 "natural_language_query": query,
                 "requested_scope": scope or "auto",
+                "project_fields": [
+                    "name",
+                    "description",
+                    "status",
+                    "priority",
+                    "owner_id",
+                    "start_date",
+                    "due_date",
+                    "budget",
+                    "completion_percentage",
+                ],
                 "current_utc_date": datetime.now(UTC).date().isoformat(),
             },
             instructions=(
@@ -1197,6 +1236,9 @@ class AIDomainService:
                 "Use stage, not status, for deals. Use last_contact_at or inactive_days "
                 "only for contacts or companies. For customer/account questions, use company. "
                 "For company location, use city. Normalize monetary values to numeric base units. "
+                "For project questions, use entity_type project and the project fields supplied in "
+                "the context; use budget for project budget totals and completion_percentage for "
+                "progress. Never infer project data from tasks or deals. "
                 "Never emit SQL or invent unsupported fields."
             ),
             output_schema=CRMSearchPlan,
