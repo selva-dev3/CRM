@@ -12,7 +12,13 @@ import type { DealCustomFieldDefinition } from '@/lib/api/deals';
 
 type CustomFieldValue = string | number | boolean | null;
 
-const EMPTY_SELECT_VALUE = '__deal_custom_field_empty__';
+function getEmptySelectValue(options: string[]): string {
+  let value = '__deal_custom_field_empty__';
+  while (options.includes(value)) {
+    value += '_';
+  }
+  return value;
+}
 
 interface DealCustomFieldsProps {
   fields: DealCustomFieldDefinition[];
@@ -46,6 +52,7 @@ export function DealCustomFields({
         {fields.map((field) => {
           const value = values[field.field_name];
           const inputId = `deal-custom-${field.field_name}`;
+          const emptySelectValue = getEmptySelectValue(field.options);
           if (field.field_type === 'boolean') {
             return (
               <div key={field.field_name} className="flex items-center gap-2 pt-5">
@@ -66,11 +73,11 @@ export function DealCustomFields({
               <Label htmlFor={inputId} className="font-semibold text-slate-700">{field.label}</Label>
               {field.field_type === 'select' ? (
                 <Select
-                  value={typeof value === 'string' ? value : EMPTY_SELECT_VALUE}
+                  value={typeof value === 'string' ? value : emptySelectValue}
                   onValueChange={(selectedValue) =>
                     onChange(
                       field.field_name,
-                      selectedValue === EMPTY_SELECT_VALUE ? null : selectedValue,
+                      selectedValue === emptySelectValue ? null : selectedValue,
                     )
                   }
                 >
@@ -78,7 +85,7 @@ export function DealCustomFields({
                     <SelectValue placeholder="-- Select --" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={EMPTY_SELECT_VALUE}>-- Select --</SelectItem>
+                    <SelectItem value={emptySelectValue}>-- Select --</SelectItem>
                     {field.options.map((option) => (
                       <SelectItem key={option} value={option}>{option}</SelectItem>
                     ))}

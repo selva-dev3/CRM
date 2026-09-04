@@ -50,6 +50,31 @@ describe('DealCustomFields', () => {
     expect(onChange).toHaveBeenCalledWith('priority', null);
   });
 
+  it('preserves an option that matches the default empty-value marker', async () => {
+    const onChange = vi.fn();
+    render(
+      <DealCustomFields
+        fields={[
+          {
+            field_name: 'segment',
+            field_type: 'select',
+            label: 'Segment',
+            options: ['__deal_custom_field_empty__'],
+          },
+        ]}
+        values={{}}
+        onChange={onChange}
+        isLoading={false}
+        isError={false}
+      />,
+    );
+
+    fireEvent.keyDown(screen.getByLabelText('Segment'), { key: 'ArrowDown' });
+    fireEvent.click(await screen.findByRole('option', { name: '__deal_custom_field_empty__' }));
+
+    expect(onChange).toHaveBeenCalledWith('segment', '__deal_custom_field_empty__');
+  });
+
   it('does not render fabricated fields for an empty response', () => {
     const { container } = render(
       <DealCustomFields
