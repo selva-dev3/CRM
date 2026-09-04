@@ -2,7 +2,7 @@ import json
 import re
 from datetime import UTC, datetime, timedelta
 from difflib import SequenceMatcher
-from typing import Any
+from typing import Any, cast
 
 from fastapi import status
 from pydantic import BaseModel
@@ -56,6 +56,73 @@ from app.services.task_service import TaskService, task_service
 class AIDomainService:
     """Tenant-scoped business logic for provider-backed AI features."""
 
+    _SEARCH_FIELDS = {
+        "lead": {
+            "title",
+            "company",
+            "contact_name",
+            "email",
+            "industry",
+            "city",
+            "country",
+            "source",
+            "status",
+            "score",
+            "created_at",
+            "updated_at",
+        },
+        "contact": {
+            "name",
+            "email",
+            "city",
+            "created_at",
+            "updated_at",
+            "last_contact_at",
+        },
+        "company": {
+            "name",
+            "industry",
+            "employee_count",
+            "city",
+            "created_at",
+            "updated_at",
+            "open_deal_value",
+            "last_contact_at",
+        },
+        "deal": {
+            "title",
+            "stage",
+            "amount",
+            "probability",
+            "created_at",
+            "updated_at",
+            "expected_close_date",
+        },
+        "task": {"title", "status", "priority", "created_at", "updated_at", "due_date"},
+    }
+    _SEARCH_AGGREGATE_FIELDS = {
+        "lead": {"score"},
+        "company": {"open_deal_value"},
+        "deal": {"amount", "probability"},
+        "contact": set(),
+        "task": set(),
+    }
+    _SEARCH_GROUP_FIELDS = {
+        "lead": {"status", "industry", "city", "country"},
+        "contact": {"city"},
+        "company": {"industry", "city"},
+        "deal": {"stage"},
+        "task": {"status", "priority"},
+    }
+    _SEARCH_NUMERIC_FIELDS = {"amount", "employee_count", "open_deal_value", "probability", "score"}
+    _SEARCH_DATE_FIELDS = {
+        "created_at",
+        "due_date",
+        "expected_close_date",
+        "last_contact_at",
+        "updated_at",
+    }
+
     def __init__(
         self,
         repository: AIRepository | None = None,
@@ -86,6 +153,148 @@ class AIDomainService:
     def _require_permission(permission_keys: set[str], permission: str) -> None:
         if permission not in permission_keys and "all" not in permission_keys:
             raise ForbiddenError(message=f"Missing required permission: {permission}")
+
+    @classmethod
+    def _validate_search_plan(cls, plan: CRMSearchPlan) -> None:
+        entity_fields = cls._SEARCH_FIELDS[plan.entity_type]
+        invalid_fields = {item.field for item in plan.filters} - entity_fields
+        if plan.date_field and plan.date_field not in entity_fields:
+            invalid_fields.add(plan.date_field)
+        if plan.sort_by and plan.sort_by not in entity_fields:
+            invalid_fields.add(plan.sort_by)
+        if invalid_fields:
+            raise APIException(
+                status_code=502,
+                code="AI_INVALID_SEARCH_PLAN",
+                message="The AI provider requested unsupported CRM fields.",
+            )
+        invalid_operator = any(
+            (
+                item.field in cls._SEARCH_NUMERIC_FIELDS
+                and item.operator not in {"equals", "gte", "lte"}
+            )
+            or (
+                item.field in cls._SEARCH_DATE_FIELDS
+                and item.operator not in {"before", "after", "gte", "lte"}
+            )
+            or (
+                item.field not in cls._SEARCH_NUMERIC_FIELDS | cls._SEARCH_DATE_FIELDS
+                and item.operator not in {"equals", "contains"}
+            )
+            for item in plan.filters
+        )
+        if invalid_operator:
+            raise APIException(
+                status_code=502,
+                code="AI_INVALID_SEARCH_PLAN",
+                message="The AI provider requested an unsupported CRM filter operation.",
+            )
+        try:
+            for item in plan.filters:
+                if item.field in cls._SEARCH_NUMERIC_FIELDS:
+                    float(item.value)
+                elif item.field in cls._SEARCH_DATE_FIELDS:
+                    datetime.fromisoformat(str(item.value).replace("Z", "+00:00"))
+        except (TypeError, ValueError) as error:
+            raise APIException(
+                status_code=502,
+                code="AI_INVALID_SEARCH_PLAN",
+                message="The AI provider returned an invalid CRM filter value.",
+            ) from error
+        if (
+            plan.aggregate_field
+            and plan.aggregate_field not in cls._SEARCH_AGGREGATE_FIELDS[plan.entity_type]
+        ):
+            raise APIException(
+                status_code=502,
+                code="AI_INVALID_SEARCH_PLAN",
+                message="The AI provider requested an unsupported CRM aggregate.",
+            )
+        if plan.group_by and plan.group_by not in cls._SEARCH_GROUP_FIELDS[plan.entity_type]:
+            raise APIException(
+                status_code=502,
+                code="AI_INVALID_SEARCH_PLAN",
+                message="The AI provider requested an unsupported CRM comparison.",
+            )
+        if plan.inactive_days and plan.entity_type not in {"company", "contact"}:
+            raise APIException(
+                status_code=502,
+                code="AI_INVALID_SEARCH_PLAN",
+                message="Recent-contact filtering is unsupported for this CRM record type.",
+            )
+        if plan.status and plan.entity_type not in {"lead", "deal", "task"}:
+            raise APIException(
+                status_code=502,
+                code="AI_INVALID_SEARCH_PLAN",
+                message="Status filtering is unsupported for this CRM record type.",
+            )
+        if plan.minimum_open_deal_amount is not None and plan.entity_type not in {
+            "company",
+            "deal",
+        }:
+            raise APIException(
+                status_code=502,
+                code="AI_INVALID_SEARCH_PLAN",
+                message="Open-deal filtering is unsupported for this CRM record type.",
+            )
+
+    @classmethod
+    def _require_search_permissions(cls, permissions: set[str], plan: CRMSearchPlan) -> None:
+        permission_by_entity = {
+            "lead": "leads:read",
+            "contact": "contacts:read",
+            "company": "companies:read",
+            "deal": "deals:read",
+            "task": "tasks:read",
+        }
+        cls._require_permission(permissions, permission_by_entity[plan.entity_type])
+        fields = {item.field for item in plan.filters}
+        if plan.aggregate_field:
+            fields.add(plan.aggregate_field)
+        if plan.group_by:
+            fields.add(plan.group_by)
+        if plan.sort_by:
+            fields.add(plan.sort_by)
+        if plan.minimum_open_deal_amount is not None:
+            fields.add("open_deal_value")
+        if plan.inactive_days:
+            fields.add("last_contact_at")
+        if plan.entity_type == "company" and fields & {"open_deal_value"}:
+            cls._require_permission(permissions, "deals:read")
+        if plan.entity_type == "company" and fields & {"city", "last_contact_at"}:
+            cls._require_permission(permissions, "contacts:read")
+        if plan.entity_type in {"company", "contact"} and "last_contact_at" in fields:
+            cls._require_permission(permissions, "calls:read")
+
+    @staticmethod
+    def _search_explanation(
+        plan: CRMSearchPlan, results: list[dict[str, object]]
+    ) -> tuple[str, int]:
+        label = plan.entity_type.replace("_", " ")
+        if plan.intent == "count":
+            count = int(cast(Any, results[0].get("count", 0))) if results else 0
+            return f"There are {count} matching {label} record(s).", count
+        if plan.intent == "aggregate":
+            row = results[0] if results else {}
+            count = int(cast(Any, row.get("matched_count", 0)))
+            value = row.get("value")
+            return (
+                f"The {plan.aggregate} {plan.aggregate_field} is {value or 0} across "
+                f"{count} matching {label} record(s).",
+                count,
+            )
+        if plan.intent == "comparison":
+            total = sum(int(cast(Any, item.get("count", 0))) for item in results)
+            groups = ", ".join(
+                f"{item.get('group', 'Unknown')}: {item.get('count', 0)}" for item in results
+            )
+            return (
+                f"{label.title()} comparison by {plan.group_by}: {groups or 'no matches'}.",
+                total,
+            )
+        count = len(results)
+        prefix = "Found" if plan.intent == "list" else "Found details for"
+        return f"{prefix} {count} matching {label} record(s).", count
 
     @staticmethod
     def _authorized_evidence_pairs(
@@ -950,53 +1159,62 @@ class AIDomainService:
         }
 
     async def search_crm(
-        self, db: AsyncSession, query: str, scope: str, current_user: User
+        self, db: AsyncSession, query: str, scope: str | None, current_user: User
     ) -> dict:
-        permission_by_entity = {
-            "lead": "leads:read",
-            "contact": "contacts:read",
-            "company": "companies:read",
-            "deal": "deals:read",
-            "task": "tasks:read",
-        }
         permissions = await self._permission_keys(db, current_user)
-        self._require_permission(permissions, permission_by_entity[scope])
+        if scope:
+            self._require_permission(
+                permissions,
+                {
+                    "lead": "leads:read",
+                    "contact": "contacts:read",
+                    "company": "companies:read",
+                    "deal": "deals:read",
+                    "task": "tasks:read",
+                }[scope],
+            )
         plan_output, run = await self._run(
             db,
             current_user=current_user,
             feature="crm_search",
-            context={"natural_language_query": query, "authorized_scope": scope},
+            context={
+                "natural_language_query": query,
+                "requested_scope": scope or "auto",
+                "current_utc_date": datetime.now(UTC).date().isoformat(),
+            },
             instructions=(
-                "Convert the query into a safe structured search plan. Use only the available "
-                "entity types and filters in the schema. Do not emit SQL or invent filters. "
-                "For customer/account queries, use entity_type company. Monetary values must be "
-                "normalized to their numeric base-unit value."
+                "Convert the question into one safe structured CRM search plan. Infer whether the "
+                "user wants a list, detail, count, aggregate, or grouped comparison. Use only "
+                "fields, operators, date ranges, aggregates, and entity types present in the "
+                "schema. If requested_scope is not auto, entity_type must match it exactly. "
+                "Use stage, not status, for deals. Use last_contact_at or inactive_days "
+                "only for contacts or companies. For customer/account questions, use company. "
+                "For company location, use city. Normalize monetary values to numeric base units. "
+                "Never emit SQL or invent unsupported fields."
             ),
             output_schema=CRMSearchPlan,
         )
         plan = CRMSearchPlan.model_validate(plan_output)
-        if plan.entity_type != scope:
+        if scope and plan.entity_type != scope:
             raise APIException(
                 status_code=502,
                 code="AI_INVALID_SEARCH_PLAN",
                 message="The AI provider returned a search plan outside the authorized scope.",
             )
-        if plan.minimum_open_deal_amount is not None:
-            self._require_permission(permissions, "deals:read")
+        self._validate_search_plan(plan)
+        self._require_search_permissions(permissions, plan)
         results = await self.repository.execute_search_plan(
             db,
             organization_id=current_user.organization_id or "",
             **plan.model_dump(),
         )
+        explanation, result_count = self._search_explanation(plan, results)
         return CRMSearchResponse(
             query=query,
             plan=plan,
             results=results,
-            result_count=len(results),
-            explanation=(
-                f"Found {len(results)} authorized {plan.entity_type} record(s) matching the "
-                "validated search plan."
-            ),
+            result_count=result_count,
+            explanation=explanation,
             run_id=run.id,
         ).model_dump()
 
