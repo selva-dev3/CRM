@@ -46,6 +46,7 @@ from app.schemas.ai import (
 )
 from app.schemas.crm_schemas import TaskCreate
 from app.schemas.dashboard import DashboardAiInsightsResponse
+from app.services.ai_provider_service import ai_provider_gateway
 from app.services.ai_runtime_service import AIRuntimeService, ai_runtime_service
 from app.services.auth_service import auth_service
 from app.services.report_service import ReportService, report_service
@@ -992,6 +993,10 @@ class AIDomainService:
             plan=plan,
             results=results,
             result_count=len(results),
+            explanation=(
+                f"Found {len(results)} authorized {plan.entity_type} record(s) matching the "
+                "validated search plan."
+            ),
             run_id=run.id,
         ).model_dump()
 
@@ -1281,7 +1286,7 @@ class AIDomainService:
     @staticmethod
     def _configured_models() -> list[tuple[str, str]]:
         models: list[tuple[str, str]] = []
-        if settings.OPENAI_API_KEY:
+        if ai_provider_gateway.has_usable_api_key(settings.OPENAI_API_KEY):
             openai_model = (
                 settings.AI_MODEL
                 if settings.AI_PROVIDER == "openai"
@@ -1289,7 +1294,7 @@ class AIDomainService:
             )
             if openai_model:
                 models.append(("openai", openai_model))
-        if settings.ANTHROPIC_API_KEY:
+        if ai_provider_gateway.has_usable_api_key(settings.ANTHROPIC_API_KEY):
             anthropic_model = (
                 settings.AI_MODEL
                 if settings.AI_PROVIDER == "anthropic"

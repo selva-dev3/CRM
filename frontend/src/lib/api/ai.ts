@@ -58,13 +58,22 @@ export interface MeetingSummaryResponse {
   sentiment?: string | null;
 }
 
+export interface CRMSearchPlan {
+  entity_type: 'lead' | 'contact' | 'company' | 'deal' | 'task';
+  text_query?: string | null;
+  status?: string | null;
+  inactive_days?: number | null;
+  minimum_open_deal_amount?: number | null;
+  limit: number;
+}
+
 export interface CRMSearchResponse {
   query: string;
-  entity_type: 'lead' | 'contact' | 'company' | 'deal';
+  plan: CRMSearchPlan;
   result_count: number;
   results: Array<Record<string, unknown>>;
   explanation: string;
-  run_id?: string | null;
+  run_id: string;
 }
 
 export interface AIUsageStats {

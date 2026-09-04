@@ -51,8 +51,7 @@ export default function AIIntelligencePage() {
     };
   }, []);
 
-  const handleSearch = async (event: FormEvent) => {
-    event.preventDefault();
+  const runSearch = async () => {
     if (!query.trim() || !canGenerate) return;
     setIsSearching(true);
     setSearchError(null);
@@ -64,6 +63,11 @@ export default function AIIntelligencePage() {
     } finally {
       setIsSearching(false);
     }
+  };
+
+  const handleSearch = (event: FormEvent) => {
+    event.preventDefault();
+    void runSearch();
   };
 
   const handleEmailGeneration = async (event: FormEvent) => {
@@ -155,7 +159,20 @@ export default function AIIntelligencePage() {
               Search authorized CRM data
             </Button>
           </form>
-          {searchError && <p className="text-sm text-red-700">{searchError}</p>}
+          {searchError && (
+            <div className="flex flex-wrap items-center gap-3" role="alert">
+              <p className="text-sm text-red-700">{searchError}</p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={isSearching}
+                onClick={() => void runSearch()}
+              >
+                Retry
+              </Button>
+            </div>
+          )}
           {searchResult && (
             <div className="space-y-3" aria-live="polite">
               <p className="text-sm text-slate-700">{searchResult.explanation}</p>

@@ -17,6 +17,11 @@ from app.schemas.ai import TranscriptionResponse, TranscriptionSegment
 logger = get_logger(__name__)
 OutputT = TypeVar("OutputT", bound=BaseModel)
 
+_PLACEHOLDER_API_KEYS = {
+    "your-openai-api-key",
+    "your-anthropic-api-key",
+}
+
 
 @dataclass(frozen=True)
 class AIProviderResult:
@@ -40,6 +45,107 @@ class AIProviderResult:
 
 class AIProviderGateway:
     """Single provider boundary for validated, structured AI generation."""
+
+    @staticmethod
+    def has_usable_api_key(value: str | None) -> bool:
+        normalized = value.strip().lower() if value else ""
+        return bool(normalized and normalized not in _PLACEHOLDER_API_KEYS)
+
+    @staticmethod
+    def _safe_log_value(value: object, *, max_length: int = 128) -> str:
+        if value is None:
+            return "-"
+        text = str(value)[:max_length]
+        if not text or any(not (character.isalnum() or character in "._-") for character in text):
+            return "-"
+        return text
+
+    @classmethod
+    def _provider_error_code(cls, exc: Exception) -> str:
+        code = getattr(exc, "code", None)
+        body = getattr(exc, "body", None)
+        if not code and isinstance(body, dict):
+            error = body.get("error")
+            if isinstance(error, dict):
+                code = error.get("code") or error.get("type")
+            else:
+                code = body.get("code") or body.get("type")
+        return cls._safe_log_value(code)
+
+    @classmethod
+    def _translate_provider_error(
+        cls,
+        *,
+        provider: str,
+        model: str,
+        exc: Exception,
+    ) -> APIException:
+        status_code = getattr(exc, "status_code", None)
+        request_id = getattr(exc, "request_id", None)
+        logger.warning(
+            "AI provider request failed provider=%s model=%s error_type=%s "
+            "upstream_status=%s provider_code=%s provider_request_id=%s",
+            cls._safe_log_value(provider),
+            cls._safe_log_value(model),
+            type(exc).__name__,
+            cls._safe_log_value(status_code),
+            cls._provider_error_code(exc),
+            cls._safe_log_value(request_id),
+        )
+
+        if isinstance(exc, (openai.APITimeoutError, anthropic.APITimeoutError)):
+            return APIException(
+                status_code=504,
+                code="AI_PROVIDER_TIMEOUT",
+                message="The AI provider timed out.",
+            )
+        if isinstance(exc, (openai.AuthenticationError, anthropic.AuthenticationError)):
+            return APIException(
+                status_code=503,
+                code="AI_PROVIDER_AUTH_FAILED",
+                message="The configured AI provider credentials were rejected.",
+            )
+        if isinstance(exc, (openai.PermissionDeniedError, anthropic.PermissionDeniedError)):
+            return APIException(
+                status_code=503,
+                code="AI_PROVIDER_ACCESS_DENIED",
+                message="The configured AI provider account cannot access this operation.",
+            )
+        if isinstance(exc, (openai.NotFoundError, anthropic.NotFoundError)):
+            return APIException(
+                status_code=503,
+                code="AI_MODEL_UNAVAILABLE",
+                message="The configured AI model is unavailable.",
+            )
+        if isinstance(exc, (openai.RateLimitError, anthropic.RateLimitError)):
+            return APIException(
+                status_code=503,
+                code="AI_PROVIDER_RATE_LIMITED",
+                message="The AI provider is temporarily rate limited.",
+            )
+        if isinstance(exc, (openai.APIConnectionError, anthropic.APIConnectionError)):
+            return APIException(
+                status_code=502,
+                code="AI_PROVIDER_CONNECTION_ERROR",
+                message="The AI provider could not be reached.",
+            )
+        if isinstance(exc, (openai.BadRequestError, anthropic.BadRequestError)):
+            return APIException(
+                status_code=502,
+                code="AI_PROVIDER_REQUEST_REJECTED",
+                message="The AI provider rejected the structured request.",
+            )
+        if isinstance(exc, (openai.InternalServerError, anthropic.InternalServerError)):
+            return APIException(
+                status_code=503,
+                code="AI_PROVIDER_UNAVAILABLE",
+                message="The AI provider is temporarily unavailable.",
+            )
+        return APIException(
+            status_code=502,
+            code="AI_PROVIDER_ERROR",
+            message="The AI provider could not complete the request.",
+        )
 
     @staticmethod
     def _json_text(value: str) -> str:
@@ -73,11 +179,11 @@ class AIProviderGateway:
         user_prompt: str,
         output_schema: type[OutputT],
     ) -> AIProviderResult:
-        if not settings.OPENAI_API_KEY:
+        if not self.has_usable_api_key(settings.OPENAI_API_KEY):
             raise APIException(
                 status_code=503,
                 code="AI_PROVIDER_UNAVAILABLE",
-                message="OpenAI is not configured.",
+                message="OpenAI is not configured with a usable credential.",
             )
         client = AsyncOpenAI(
             api_key=settings.OPENAI_API_KEY,
@@ -116,11 +222,11 @@ class AIProviderGateway:
         user_prompt: str,
         output_schema: type[OutputT],
     ) -> AIProviderResult:
-        if not settings.OPENAI_API_KEY:
+        if not self.has_usable_api_key(settings.OPENAI_API_KEY):
             raise APIException(
                 status_code=503,
                 code="AI_WEB_RESEARCH_UNAVAILABLE",
-                message="AI web research is not configured.",
+                message="AI web research is not configured with a usable credential.",
             )
         client = AsyncOpenAI(
             api_key=settings.OPENAI_API_KEY,
@@ -177,11 +283,11 @@ class AIProviderGateway:
         content: bytes,
         content_type: str,
     ) -> AIProviderResult:
-        if not settings.OPENAI_API_KEY:
+        if not self.has_usable_api_key(settings.OPENAI_API_KEY):
             raise APIException(
                 status_code=503,
                 code="AI_TRANSCRIPTION_UNAVAILABLE",
-                message="The transcription provider is not configured.",
+                message="The transcription provider is not configured with a usable credential.",
             )
         client = AsyncOpenAI(
             api_key=settings.OPENAI_API_KEY,
@@ -196,18 +302,11 @@ class AIProviderGateway:
                 response_format="verbose_json",
                 timestamp_granularities=["segment"],
             )
-        except openai.APITimeoutError as exc:
-            raise APIException(
-                status_code=504,
-                code="AI_PROVIDER_TIMEOUT",
-                message="The transcription provider timed out.",
-            ) from exc
         except openai.APIError as exc:
-            logger.warning("AI transcription provider request failed")
-            raise APIException(
-                status_code=502,
-                code="AI_PROVIDER_ERROR",
-                message="The transcription provider could not complete the request.",
+            raise self._translate_provider_error(
+                provider="openai",
+                model=settings.AI_TRANSCRIPTION_MODEL,
+                exc=exc,
             ) from exc
 
         segments = [
@@ -242,11 +341,11 @@ class AIProviderGateway:
         user_prompt: str,
         output_schema: type[OutputT],
     ) -> AIProviderResult:
-        if not settings.ANTHROPIC_API_KEY:
+        if not self.has_usable_api_key(settings.ANTHROPIC_API_KEY):
             raise APIException(
                 status_code=503,
                 code="AI_PROVIDER_UNAVAILABLE",
-                message="Anthropic is not configured.",
+                message="Anthropic is not configured with a usable credential.",
             )
         client = AsyncAnthropic(
             api_key=settings.ANTHROPIC_API_KEY,
@@ -304,31 +403,24 @@ class AIProviderGateway:
             )
         except APIException:
             raise
-        except (openai.APITimeoutError, anthropic.APITimeoutError) as exc:
-            raise APIException(
-                status_code=504,
-                code="AI_PROVIDER_TIMEOUT",
-                message="The AI provider timed out.",
-            ) from exc
         except (openai.APIError, anthropic.APIError) as exc:
-            logger.warning("AI provider request failed for provider=%s", provider)
-            raise APIException(
-                status_code=502,
-                code="AI_PROVIDER_ERROR",
-                message="The AI provider could not complete the request.",
+            raise self._translate_provider_error(
+                provider=provider,
+                model=model,
+                exc=exc,
             ) from exc
 
     @staticmethod
     def _fallback_candidate(primary_provider: str) -> tuple[str, str] | None:
         if (
             primary_provider == "openai"
-            and settings.ANTHROPIC_API_KEY
+            and AIProviderGateway.has_usable_api_key(settings.ANTHROPIC_API_KEY)
             and settings.AI_ANTHROPIC_FALLBACK_MODEL
         ):
             return "anthropic", settings.AI_ANTHROPIC_FALLBACK_MODEL
         if (
             primary_provider == "anthropic"
-            and settings.OPENAI_API_KEY
+            and AIProviderGateway.has_usable_api_key(settings.OPENAI_API_KEY)
             and settings.AI_OPENAI_FALLBACK_MODEL
         ):
             return "openai", settings.AI_OPENAI_FALLBACK_MODEL
@@ -362,18 +454,11 @@ class AIProviderGateway:
                 )
             except APIException:
                 raise
-            except openai.APITimeoutError as exc:
-                raise APIException(
-                    status_code=504,
-                    code="AI_PROVIDER_TIMEOUT",
-                    message="The AI research provider timed out.",
-                ) from exc
             except openai.APIError as exc:
-                logger.warning("AI web research provider request failed")
-                raise APIException(
-                    status_code=502,
-                    code="AI_PROVIDER_ERROR",
-                    message="The AI research provider could not complete the request.",
+                raise self._translate_provider_error(
+                    provider="openai",
+                    model=selected_model,
+                    exc=exc,
                 ) from exc
         candidates = [(selected_provider, selected_model)]
         fallback = self._fallback_candidate(selected_provider)

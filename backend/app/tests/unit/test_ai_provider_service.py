@@ -2,6 +2,8 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
+import httpx
+import openai
 import pytest
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,6 +61,128 @@ def test_provider_accepts_json_code_fence():
     result = AIProviderGateway._validate_output('```json\n{"score": 82}\n```', ScoreOutput)
 
     assert result.score == 82
+
+
+@pytest.mark.asyncio
+async def test_provider_rejects_example_placeholder_key(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.ai_provider_service.settings.OPENAI_API_KEY",
+        "your-openai-api-key",
+    )
+    monkeypatch.setattr("app.services.ai_provider_service.settings.ANTHROPIC_API_KEY", None)
+
+    with pytest.raises(APIException) as exc_info:
+        await AIProviderGateway().generate_structured(
+            provider="openai",
+            model="gpt-4o-mini",
+            system_prompt="system",
+            user_prompt="user",
+            output_schema=ScoreOutput,
+        )
+
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.code == "AI_PROVIDER_UNAVAILABLE"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error_type", "upstream_status", "expected_code", "expected_status"),
+    [
+        (openai.AuthenticationError, 401, "AI_PROVIDER_AUTH_FAILED", 503),
+        (openai.PermissionDeniedError, 403, "AI_PROVIDER_ACCESS_DENIED", 503),
+        (openai.NotFoundError, 404, "AI_MODEL_UNAVAILABLE", 503),
+        (openai.RateLimitError, 429, "AI_PROVIDER_RATE_LIMITED", 503),
+        (openai.BadRequestError, 400, "AI_PROVIDER_REQUEST_REJECTED", 502),
+        (openai.InternalServerError, 500, "AI_PROVIDER_UNAVAILABLE", 503),
+    ],
+)
+async def test_openai_status_errors_are_classified_and_safely_logged(
+    monkeypatch,
+    caplog,
+    error_type,
+    upstream_status,
+    expected_code,
+    expected_status,
+):
+    response = httpx.Response(
+        upstream_status,
+        request=httpx.Request("POST", "https://api.openai.com/v1/responses"),
+        headers={"x-request-id": "req_safe123"},
+    )
+    provider_error = error_type(
+        "provider message containing sk-secret-value",
+        response=response,
+        body={"error": {"code": "provider_error_code", "message": "sk-secret-value"}},
+    )
+    gateway = AIProviderGateway()
+    gateway._openai_generate = AsyncMock(side_effect=provider_error)
+    monkeypatch.setattr("app.services.ai_provider_service.settings.ANTHROPIC_API_KEY", None)
+
+    with pytest.raises(APIException) as exc_info:
+        await gateway.generate_structured(
+            provider="openai",
+            model="gpt-4o-mini",
+            system_prompt="system",
+            user_prompt="customer data must not be logged",
+            output_schema=ScoreOutput,
+        )
+
+    assert exc_info.value.status_code == expected_status
+    assert exc_info.value.code == expected_code
+    assert "upstream_status=" in caplog.text
+    assert "provider_code=provider_error_code" in caplog.text
+    assert "provider_request_id=req_safe123" in caplog.text
+    assert "sk-secret-value" not in caplog.text
+    assert "customer data must not be logged" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_openai_connection_error_is_classified_without_logging_message(
+    monkeypatch,
+    caplog,
+):
+    provider_error = openai.APIConnectionError(
+        message="connection failed with sk-secret-value",
+        request=httpx.Request("POST", "https://api.openai.com/v1/responses"),
+    )
+    gateway = AIProviderGateway()
+    gateway._openai_generate = AsyncMock(side_effect=provider_error)
+    monkeypatch.setattr("app.services.ai_provider_service.settings.ANTHROPIC_API_KEY", None)
+
+    with pytest.raises(APIException) as exc_info:
+        await gateway.generate_structured(
+            provider="openai",
+            model="gpt-4o-mini",
+            system_prompt="system",
+            user_prompt="user",
+            output_schema=ScoreOutput,
+        )
+
+    assert exc_info.value.status_code == 502
+    assert exc_info.value.code == "AI_PROVIDER_CONNECTION_ERROR"
+    assert "sk-secret-value" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_openai_timeout_is_classified(monkeypatch):
+    provider_error = openai.APITimeoutError(
+        request=httpx.Request("POST", "https://api.openai.com/v1/responses")
+    )
+    gateway = AIProviderGateway()
+    gateway._openai_generate = AsyncMock(side_effect=provider_error)
+    monkeypatch.setattr("app.services.ai_provider_service.settings.ANTHROPIC_API_KEY", None)
+
+    with pytest.raises(APIException) as exc_info:
+        await gateway.generate_structured(
+            provider="openai",
+            model="gpt-4o-mini",
+            system_prompt="system",
+            user_prompt="user",
+            output_schema=ScoreOutput,
+        )
+
+    assert exc_info.value.status_code == 504
+    assert exc_info.value.code == "AI_PROVIDER_TIMEOUT"
 
 
 @pytest.mark.asyncio

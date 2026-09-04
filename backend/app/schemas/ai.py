@@ -401,4 +401,5 @@ class CRMSearchResponse(BaseModel):
     plan: CRMSearchPlan
     results: list[dict[str, Any]]
     result_count: int
+    explanation: str
     run_id: str
