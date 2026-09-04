@@ -1,4 +1,3 @@
-import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -55,15 +54,27 @@ export function CustomFields({
           const emptySelectValue = getEmptySelectValue(field.options);
           if (field.field_type === 'boolean') {
             return (
-              <div key={field.field_name} className="flex items-center gap-2 pt-5">
-                <Checkbox
-                  id={inputId}
-                  checked={value === true}
-                  onCheckedChange={(checked) => onChange(field.field_name, checked === true)}
-                />
+              <div key={field.field_name} className="space-y-1">
                 <Label htmlFor={inputId} className="font-semibold text-slate-700">
                   {field.label}
                 </Label>
+                <Select
+                  value={value === true ? 'true' : value === false ? 'false' : emptySelectValue}
+                  onValueChange={(selectedValue) => {
+                    const nextValue =
+                      selectedValue === emptySelectValue ? null : selectedValue === 'true';
+                    onChange(field.field_name, nextValue);
+                  }}
+                >
+                  <SelectTrigger id={inputId} className="h-9 w-full text-xs">
+                    <SelectValue placeholder="-- Not set --" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={emptySelectValue}>-- Not set --</SelectItem>
+                    <SelectItem value="true">Yes</SelectItem>
+                    <SelectItem value="false">No</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             );
           }

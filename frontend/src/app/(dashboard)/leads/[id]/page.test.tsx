@@ -9,6 +9,7 @@ const updateLeadMutateAsync = vi.fn();
 const assignLeadApiMock = vi.fn();
 const refetchLeadMock = vi.fn();
 const refetchUsersMock = vi.fn();
+const customFieldsQueryMock = vi.fn();
 
 const emptyQuery = {
   data: [],
@@ -94,7 +95,7 @@ vi.mock('@/lib/api/users', () => ({
 }));
 
 vi.mock('@/lib/api/custom-fields', () => ({
-  useEntityCustomFieldsQuery: () => ({ data: [] }),
+  useEntityCustomFieldsQuery: () => customFieldsQueryMock(),
 }));
 
 import LeadDetailPage from './page';
@@ -113,6 +114,7 @@ const lead = {
   assigned_to: 'user-1',
   is_archived: false,
   created_at: '2026-08-31T20:00:00Z',
+  custom_fields: { territory: 'North' },
 };
 
 const users = [
@@ -143,6 +145,35 @@ beforeEach(() => {
     isFetching: false,
     isError: false,
     refetch: refetchUsersMock,
+  });
+  customFieldsQueryMock.mockReturnValue({
+    data: [
+      { field_name: 'territory', field_type: 'text', label: 'Territory', options: [] },
+    ],
+    isLoading: false,
+    isError: false,
+  });
+});
+
+describe('LeadDetailPage custom fields', () => {
+  it('loads and submits custom fields from the edit modal', async () => {
+    const user = userEvent.setup();
+    render(<LeadDetailPage />);
+
+    await user.click(screen.getByRole('button', { name: 'Edit Lead' }));
+    expect(screen.getByLabelText('Territory')).toHaveValue('North');
+    await user.clear(screen.getByLabelText('Territory'));
+    await user.type(screen.getByLabelText('Territory'), 'South');
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+
+    await waitFor(() => {
+      expect(updateLeadMutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'lead-1',
+          payload: expect.objectContaining({ custom_fields: { territory: 'South' } }),
+        }),
+      );
+    });
   });
 });
 

@@ -57,7 +57,11 @@ import { useProductsQuery } from '@/lib/api/products';
 import type { DealPredictionResponse } from '@/lib/types';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { CustomFieldValues } from '@/components/common/custom-field-values';
-import { useEntityCustomFieldsQuery } from '@/lib/api/custom-fields';
+import { CustomFields } from '@/components/common/custom-fields';
+import {
+  useEntityCustomFieldsQuery,
+  type CustomFieldValue,
+} from '@/lib/api/custom-fields';
 
 const STAGES = ['Prospecting', 'Qualification', 'Proposal', 'Negotiation', 'Closed Won', 'Closed Lost'];
 
@@ -92,10 +96,17 @@ export default function DealDetailsPage() {
   const [formStage, setFormStage] = useState('Prospecting');
   const [formProbability, setFormProbability] = useState<number | ''>(10);
   const [formAssignedTo, setFormAssignedTo] = useState('');
+  const [formCustomFields, setFormCustomFields] = useState<
+    Record<string, CustomFieldValue>
+  >({});
 
   // Main Deal Query
   const { data: deal, isLoading, isError, refetch } = useDealQuery(dealId);
-  const { data: customFields = [] } = useEntityCustomFieldsQuery('Deal');
+  const {
+    data: customFields = [],
+    isLoading: isCustomFieldsLoading,
+    isError: isCustomFieldsError,
+  } = useEntityCustomFieldsQuery('Deal');
   const { data: users = [] } = useUsersQuery();
   const { data: catalogProducts = [] } = useProductsQuery();
 
@@ -200,6 +211,7 @@ export default function DealDetailsPage() {
     setFormStage(deal.stage || 'Prospecting');
     setFormProbability(deal.probability ?? 10);
     setFormAssignedTo(deal.assigned_to || '');
+    setFormCustomFields(deal.custom_fields ?? {});
     setIsEditModalOpen(true);
   };
 
@@ -216,6 +228,7 @@ export default function DealDetailsPage() {
           stage: formStage,
           probability: formProbability !== '' ? Number(formProbability) : undefined,
           assigned_to: formAssignedTo || undefined,
+          custom_fields: formCustomFields,
         },
       });
       setSuccessMessage('Deal details updated successfully.');
@@ -242,7 +255,7 @@ export default function DealDetailsPage() {
     try {
       setErrorMessage(null);
       await markWonMutation.mutateAsync({ id: dealId, final_amount: deal.amount });
-      setSuccessMessage(`Deal '${deal.title}' marked as Closed Won! ðŸŽ‰`);
+      setSuccessMessage(`Deal '${deal.title}' marked as Closed Won! 🎉`);
       refetch();
     } catch {
       setErrorMessage('Failed to mark deal as won.');
@@ -837,6 +850,17 @@ export default function DealDetailsPage() {
                 </select>
               </div>
             </div>
+
+            <CustomFields
+              fields={customFields}
+              values={formCustomFields}
+              onChange={(fieldName, value) => {
+                setFormCustomFields((current) => ({ ...current, [fieldName]: value }));
+              }}
+              isLoading={isCustomFieldsLoading}
+              isError={isCustomFieldsError}
+              idPrefix="deal-detail-edit"
+            />
 
             <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
               <Button type="button" variant="outline" size="sm" onClick={() => setIsEditModalOpen(false)} className="cursor-pointer">

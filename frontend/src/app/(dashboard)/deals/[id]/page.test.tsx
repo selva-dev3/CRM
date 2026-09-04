@@ -1,9 +1,11 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import DealDetailsPage from './page';
 
 const push = vi.fn();
+const updateDealMutateAsync = vi.fn();
 
 vi.mock('next/navigation', () => ({
   useParams: () => ({ id: 'deal-1' }),
@@ -12,7 +14,7 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/lib/api/deals', () => ({
   useDealQuery: vi.fn(),
-  useUpdateDealMutation: () => ({ mutateAsync: vi.fn() }),
+  useUpdateDealMutation: () => ({ mutateAsync: updateDealMutateAsync, isPending: false }),
   useDeleteDealMutation: () => ({ mutateAsync: vi.fn() }),
   useMarkDealWonMutation: () => ({ mutateAsync: vi.fn() }),
   useMarkDealLostMutation: () => ({ mutateAsync: vi.fn() }),
@@ -52,6 +54,21 @@ vi.mock('@/lib/api/products', () => ({
   useProductsQuery: () => ({ data: [] }),
 }));
 
+vi.mock('@/lib/api/custom-fields', () => ({
+  useEntityCustomFieldsQuery: () => ({
+    data: [
+      {
+        field_name: 'decision_maker',
+        field_type: 'text',
+        label: 'Decision Maker',
+        options: [],
+      },
+    ],
+    isLoading: false,
+    isError: false,
+  }),
+}));
+
 import { useDealQuery } from '@/lib/api/deals';
 
 function setStoredUser(permissions: string[]): void {
@@ -78,6 +95,7 @@ const baseDeal = {
   amount: 25000,
   stage: 'Qualification',
   probability: 20,
+  custom_fields: { decision_maker: 'CTO' },
 };
 
 describe('DealDetailsPage invoice lifecycle UX', () => {
@@ -149,5 +167,26 @@ describe('DealDetailsPage invoice lifecycle UX', () => {
     expect(viewLink).toBeInTheDocument();
     expect(screen.getByText('INV-1001')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Create Invoice/i })).not.toBeInTheDocument();
+  });
+
+  it('loads and submits custom fields from the edit modal', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole('button', { name: 'More' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Edit deal' }));
+    expect(screen.getByLabelText('Decision Maker')).toHaveValue('CTO');
+    await user.clear(screen.getByLabelText('Decision Maker'));
+    await user.type(screen.getByLabelText('Decision Maker'), 'CFO');
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+
+    await waitFor(() => {
+      expect(updateDealMutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'deal-1',
+          data: expect.objectContaining({ custom_fields: { decision_maker: 'CFO' } }),
+        }),
+      );
+    });
   });
 });

@@ -35,17 +35,36 @@ export interface CompanyUpdatePayload {
   custom_fields?: Record<string, CustomFieldValue>;
 }
 
+export interface CompaniesPage {
+  items: CompanyItem[];
+  total: number;
+}
+
 // API Functions
-export async function fetchCompaniesApi(page = 1, limit = 15, search?: string): Promise<CompanyItem[]> {
-  try {
-    const query = new URLSearchParams({ page: String(page), limit: String(limit) });
-    if (search) query.append('search', search);
-    const data = await apiClient.get<CompanyItem[]>(`/companies?${query.toString()}`);
-    if (Array.isArray(data)) return data;
-  } catch (error) {
-    console.error('Failed to fetch companies:', error);
+export async function fetchCompaniesPageApi(
+  page = 1,
+  limit = 15,
+  search?: string,
+): Promise<CompaniesPage> {
+  const query = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (search) query.append('search', search);
+  const response = await apiClient.getWithMetadata<CompanyItem[]>(
+    `/companies?${query.toString()}`,
+  );
+  const totalHeader = response.headers.get('X-Total-Count');
+  const total = totalHeader === null ? Number.NaN : Number.parseInt(totalHeader, 10);
+  if (!Number.isInteger(total) || total < 0) {
+    throw new Error('Companies response is missing valid pagination metadata.');
   }
-  return [];
+  return { items: response.data, total };
+}
+
+export async function fetchCompaniesApi(
+  page = 1,
+  limit = 15,
+  search?: string,
+): Promise<CompanyItem[]> {
+  return (await fetchCompaniesPageApi(page, limit, search)).items;
 }
 
 export async function createCompanyApi(payload: CompanyCreatePayload): Promise<CompanyItem> {
@@ -160,6 +179,14 @@ export function useCompaniesQuery(page = 1, limit = 15, search?: string) {
   return useQuery({
     queryKey: ['companies', page, limit, search],
     queryFn: () => fetchCompaniesApi(page, limit, search),
+    placeholderData: (previousData) => previousData,
+  });
+}
+
+export function useCompaniesPageQuery(page = 1, limit = 15, search?: string) {
+  return useQuery({
+    queryKey: ['companies-page', page, limit, search],
+    queryFn: () => fetchCompaniesPageApi(page, limit, search),
     placeholderData: (previousData) => previousData,
   });
 }

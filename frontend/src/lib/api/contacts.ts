@@ -40,17 +40,36 @@ export interface ContactUpdatePayload {
   custom_fields?: Record<string, CustomFieldValue>;
 }
 
+export interface ContactsPage {
+  items: ContactItem[];
+  total: number;
+}
+
 // API Functions
-export async function fetchContactsApi(page = 1, limit = 15, search?: string): Promise<ContactItem[]> {
-  try {
-    const query = new URLSearchParams({ page: String(page), limit: String(limit) });
-    if (search) query.append('search', search);
-    const data = await apiClient.get<ContactItem[]>(`/contacts?${query.toString()}`);
-    if (Array.isArray(data)) return data;
-  } catch (error) {
-    console.error('Failed to fetch contacts:', error);
+export async function fetchContactsPageApi(
+  page = 1,
+  limit = 15,
+  search?: string,
+): Promise<ContactsPage> {
+  const query = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (search) query.append('search', search);
+  const response = await apiClient.getWithMetadata<ContactItem[]>(
+    `/contacts?${query.toString()}`,
+  );
+  const totalHeader = response.headers.get('X-Total-Count');
+  const total = totalHeader === null ? Number.NaN : Number.parseInt(totalHeader, 10);
+  if (!Number.isInteger(total) || total < 0) {
+    throw new Error('Contacts response is missing valid pagination metadata.');
   }
-  return [];
+  return { items: response.data, total };
+}
+
+export async function fetchContactsApi(
+  page = 1,
+  limit = 15,
+  search?: string,
+): Promise<ContactItem[]> {
+  return (await fetchContactsPageApi(page, limit, search)).items;
 }
 
 export async function createContactApi(payload: ContactCreatePayload): Promise<ContactItem> {
@@ -170,6 +189,14 @@ export function useContactsQuery(page = 1, limit = 15, search?: string) {
   return useQuery({
     queryKey: ['contacts', page, limit, search],
     queryFn: () => fetchContactsApi(page, limit, search),
+    placeholderData: (previousData) => previousData,
+  });
+}
+
+export function useContactsPageQuery(page = 1, limit = 15, search?: string) {
+  return useQuery({
+    queryKey: ['contacts-page', page, limit, search],
+    queryFn: () => fetchContactsPageApi(page, limit, search),
     placeholderData: (previousData) => previousData,
   });
 }

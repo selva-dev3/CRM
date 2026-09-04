@@ -30,7 +30,7 @@ import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
 import { CustomFields } from '@/components/common/custom-fields';
 import {
-  useContactsQuery,
+  useContactsPageQuery,
   useStarredContactsQuery,
   useCreateContactMutation,
   useUpdateContactMutation,
@@ -104,7 +104,16 @@ export default function ContactsPage() {
   }, [searchTerm]);
 
   // Queries
-  const { data: allContacts = [], refetch: refetchAll } = useContactsQuery(page, limit, debouncedSearchTerm);
+  const {
+    data: contactsPage,
+    isError: isContactsError,
+    refetch: refetchAll,
+  } = useContactsPageQuery(
+    page,
+    limit,
+    debouncedSearchTerm,
+  );
+  const allContacts = contactsPage?.items ?? [];
   const { data: starredContacts = [], refetch: refetchStarred } = useStarredContactsQuery();
   const { data: currentOrganization } = useCurrentOrganizationQuery();
   const organizations = currentOrganization ? [currentOrganization] : [];
@@ -116,6 +125,7 @@ export default function ContactsPage() {
   } = useEntityCustomFieldsQuery('Contact', isCreateModalOpen || isEditModalOpen);
 
   const contacts = activeTab === 'starred' ? starredContacts : allContacts;
+  const totalContacts = activeTab === 'starred' ? starredContacts.length : contactsPage?.total ?? 0;
 
   // Mutations
   const createContactMutation = useCreateContactMutation();
@@ -443,6 +453,12 @@ export default function ContactsPage() {
           <span>{errorMessage}</span>
         </div>
       )}
+      {activeTab === 'all' && isContactsError && (
+        <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-sm font-medium flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+          <span>Contacts could not be loaded. Please try again.</span>
+        </div>
+      )}
 
       {/* Navigation Sub-Tabs */}
       <div className="flex items-center border-b border-slate-200 gap-4 sm:gap-6 text-sm font-semibold text-slate-600 overflow-x-auto">
@@ -522,9 +538,9 @@ export default function ContactsPage() {
         }}
         pagination={{
           pageIndex: page - 1,
-          pageCount: Math.ceil((contacts.length || 1) / limit) || 1,
+          pageCount: Math.ceil(totalContacts / limit) || 1,
           onPageChange: (pIndex) => setPage(pIndex + 1),
-          totalRecords: contacts.length,
+          totalRecords: totalContacts,
         }}
       />
 

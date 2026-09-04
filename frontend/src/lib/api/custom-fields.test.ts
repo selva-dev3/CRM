@@ -27,4 +27,18 @@ describe('entity custom field API', () => {
     await expect(fetchEntityCustomFieldsApi(entity)).resolves.toEqual(fields);
     expect(fetchMock.mock.calls[0][0]).toContain(path);
   });
+
+  it.each([400, 401, 422, 500])('propagates an HTTP %s response', async (status) => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status,
+      headers: new Headers(),
+      json: vi.fn().mockResolvedValue({ message: 'Custom fields unavailable' }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchEntityCustomFieldsApi('Lead')).rejects.toThrow(
+      'Custom fields unavailable',
+    );
+  });
 });

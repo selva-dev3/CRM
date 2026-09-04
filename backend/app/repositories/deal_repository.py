@@ -79,8 +79,14 @@ class DealRepository:
         result = await db.execute(select(Contact.id).where(Contact.id == contact_id).limit(1))
         return result.scalars().first() is not None
 
-    async def list_stages(self, db: AsyncSession) -> builtins.list[DealStage]:
-        result = await db.execute(select(DealStage).order_by(DealStage.order_index))
+    async def list_stages(
+        self, db: AsyncSession, *, organization_id: str
+    ) -> builtins.list[DealStage]:
+        result = await db.execute(
+            select(DealStage)
+            .where(DealStage.organization_id == organization_id)
+            .order_by(DealStage.order_index)
+        )
         return list(result.scalars().all())
 
     async def create_stage(

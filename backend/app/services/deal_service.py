@@ -81,11 +81,11 @@ class DealService:
             raise NotFoundError(message=f"Deal '{deal_id}' not found")
         return deal
 
-    async def _validate_stage(self, db: AsyncSession, stage: str) -> None:
+    async def _validate_stage(self, db: AsyncSession, stage: str, organization_id: str) -> None:
         """Allow canonical stages plus stages configured by the organization."""
         if stage in CANONICAL_DEAL_STAGES:
             return
-        configured_stages = await self.repository.list_stages(db)
+        configured_stages = await self.repository.list_stages(db, organization_id=organization_id)
         if stage not in {s.name for s in configured_stages}:
             raise APIException(
                 message=f"Invalid deal stage '{stage}'.",
@@ -208,13 +208,25 @@ class DealService:
         )
         return deal_to_dict(deal)
 
-    async def get_deal_stages(self, db: AsyncSession) -> list[dict]:
-        stages = await self.repository.list_stages(db)
+    async def get_deal_stages(self, db: AsyncSession, current_user: User) -> list[dict]:
+        organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+        stages = await self.repository.list_stages(db, organization_id=organization_id)
         return [{"id": s.id, "name": s.name, "probability": s.default_probability} for s in stages]
 
-    async def create_deal_stage(self, db: AsyncSession, *, name: str, probability: float) -> dict:
+    async def create_deal_stage(
+        self,
+        db: AsyncSession,
+        *,
+        name: str,
+        probability: float,
+        current_user: User,
+    ) -> dict:
+        organization_id = await organization_service.resolve_valid_org_id(db, current_user)
         await self.repository.create_stage(
-            db, organization_id="org-1", name=name, probability=probability
+            db,
+            organization_id=organization_id,
+            name=name,
+            probability=probability,
         )
         await self._commit(db, "Failed to create pipeline stage")
         return {"message": f"Pipeline stage {name} created", "status": "success"}
@@ -243,8 +255,9 @@ class DealService:
         return {"affected_count": len(deals), "message": "Deals deleted successfully"}
 
     async def bulk_update_stage(self, db: AsyncSession, ids: list[str], stage: str) -> dict:
-        await self._validate_stage(db, stage)
         deals = await self.repository.list_by_ids(db, ids)
+        for organization_id in {deal.organization_id for deal in deals}:
+            await self._validate_stage(db, stage, organization_id)
         for deal in deals:
             await self._guard_closed_won_transition(db, deal, stage)
             deal.stage = stage
@@ -261,7 +274,7 @@ class DealService:
         prev_probability = d.probability
 
         if payload.stage is not None:
-            await self._validate_stage(db, payload.stage)
+            await self._validate_stage(db, payload.stage, d.organization_id)
             await self._guard_closed_won_transition(db, d, payload.stage)
         if payload.title is not None:
             d.title = payload.title
@@ -336,7 +349,7 @@ class DealService:
 
     async def update_deal_stage(self, db: AsyncSession, deal_id: str, stage: str) -> dict:
         d = await self.require_deal(db, deal_id)
-        await self._validate_stage(db, stage)
+        await self._validate_stage(db, stage, d.organization_id)
         await self._guard_closed_won_transition(db, d, stage)
         d.stage = stage
         await self._commit(db, "Failed to update deal stage")
@@ -450,6 +463,7 @@ class DealService:
         unit_price: float | None,
         custom_name: str | None,
     ) -> dict:
+        deal = await self.require_deal(db, deal_id)
         p = await self.repository.get_product(db, product_id)
 
         if not p and custom_name:
@@ -458,7 +472,7 @@ class DealService:
                 sku_gen = f"SKU-{custom_name.replace(' ', '-').upper()[:10]}"
                 p = await self.repository.create_product(
                     db,
-                    organization_id="org-1",
+                    organization_id=deal.organization_id,
                     name=custom_name,
                     sku=sku_gen,
                     price=unit_price or 0.0,
@@ -563,10 +577,12 @@ class DealService:
             "amount": deal.amount,
             "stage": deal.stage,
             "probability": deal.probability,
-            "expected_close_date": "2026-09-01",
+            "expected_close_date": (
+                deal.expected_close_date.isoformat() if deal.expected_close_date else None
+            ),
             "assigned_to": deal.assigned_to,
             "organization_id": deal.organization_id,
-            "created_at": "2026-08-02",
+            "created_at": deal.created_at.isoformat() if deal.created_at else None,
         }
 
     async def get_deal_commission(self, db: AsyncSession, deal_id: str) -> dict:

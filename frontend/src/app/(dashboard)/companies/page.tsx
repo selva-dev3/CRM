@@ -27,7 +27,7 @@ import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
 import { CustomFields } from '@/components/common/custom-fields';
 import {
-  useCompaniesQuery,
+  useCompaniesPageQuery,
   useCreateCompanyMutation,
   useUpdateCompanyMutation,
   useDeleteCompanyMutation,
@@ -75,7 +75,13 @@ export default function CompaniesPage() {
   }, [searchTerm]);
 
   // Queries
-  const { data: companies = [], refetch } = useCompaniesQuery(page, limit, debouncedSearchTerm);
+  const { data: companiesPage, isError: isCompaniesError, refetch } = useCompaniesPageQuery(
+    page,
+    limit,
+    debouncedSearchTerm,
+  );
+  const companies = companiesPage?.items ?? [];
+  const totalCompanies = companiesPage?.total ?? 0;
   const {
     data: customFields = [],
     isLoading: isCustomFieldsLoading,
@@ -364,6 +370,12 @@ export default function CompaniesPage() {
           <span>{errorMessage}</span>
         </div>
       )}
+      {isCompaniesError && (
+        <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-sm font-medium flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+          <span>Companies could not be loaded. Please try again.</span>
+        </div>
+      )}
 
       {/* Companies DataTable */}
       <DataTable
@@ -409,9 +421,9 @@ export default function CompaniesPage() {
         }}
         pagination={{
           pageIndex: page - 1,
-          pageCount: Math.ceil((companies.length || 1) / limit) || 1,
+          pageCount: Math.ceil(totalCompanies / limit) || 1,
           onPageChange: (pIndex) => setPage(pIndex + 1),
-          totalRecords: companies.length,
+          totalRecords: totalCompanies,
         }}
       />
 

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
@@ -30,15 +30,19 @@ router = APIRouter()
     dependencies=[Depends(require_permission("contacts:read"))],
 )
 async def list_contacts(
+    response: Response,
     page: int = Query(1, ge=1),
     limit: int = Query(15, ge=1, le=100),
     search: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await contact_service.list_contacts(
+    contacts = await contact_service.list_contacts(
         db, page=page, limit=limit, search=search, current_user=current_user
     )
+    total = await contact_service.count_contacts(db, search=search, current_user=current_user)
+    response.headers["X-Total-Count"] = str(total)
+    return contacts
 
 
 @router.post(

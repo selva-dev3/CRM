@@ -80,7 +80,11 @@ import { useQueryClient } from '@tanstack/react-query';
 import { BASE_URL } from '@/lib/api/client';
 import { formatDate, formatDateTime } from '@/lib/formatters/date';
 import { CustomFieldValues } from '@/components/common/custom-field-values';
-import { useEntityCustomFieldsQuery } from '@/lib/api/custom-fields';
+import { CustomFields } from '@/components/common/custom-fields';
+import {
+  useEntityCustomFieldsQuery,
+  type CustomFieldValue,
+} from '@/lib/api/custom-fields';
 
 const UNASSIGNED_VALUE = '__unassigned__';
 
@@ -95,7 +99,11 @@ export default function LeadDetailPage() {
 
   // Queries
   const { data: lead, isLoading, isError, error, refetch } = useLeadQuery(leadId);
-  const { data: customFields = [] } = useEntityCustomFieldsQuery('Lead');
+  const {
+    data: customFields = [],
+    isLoading: isCustomFieldsLoading,
+    isError: isCustomFieldsError,
+  } = useEntityCustomFieldsQuery('Lead');
   const { data: currentOrganization, isLoading: isOrgsLoading } = useCurrentOrganizationQuery();
   const organizations = useMemo(
     () => (currentOrganization ? [currentOrganization] : []),
@@ -185,6 +193,9 @@ export default function LeadDetailPage() {
   const [organizationId, setOrganizationId] = useState('');
   const [assignedTo, setAssignedTo] = useState<string>('');
   const [isArchived, setIsArchived] = useState<boolean>(false);
+  const [formCustomFields, setFormCustomFields] = useState<
+    Record<string, CustomFieldValue>
+  >({});
 
   const orgName = useMemo(() => {
     if (!lead?.organization_id) return 'Enterprise Organization';
@@ -259,6 +270,7 @@ export default function LeadDetailPage() {
     setOrganizationId(lead.organization_id || (organizations[0]?.id ?? 'org-1'));
     setAssignedTo(lead.assigned_to || '');
     setIsArchived(lead.is_archived ?? false);
+    setFormCustomFields(lead.custom_fields ?? {});
     setErrorMessage(null);
     setIsModalOpen(true);
   };
@@ -298,6 +310,7 @@ export default function LeadDetailPage() {
         assigned_to: assignedTo.trim() || undefined,
         is_archived: isArchived,
         organization_id: organizationId || (organizations[0]?.id ?? 'org-1'),
+        custom_fields: formCustomFields,
       };
 
       if (isEditMode && lead) {
@@ -1809,6 +1822,17 @@ export default function LeadDetailPage() {
                 </div>
               </div>
             </div>
+
+            <CustomFields
+              fields={customFields}
+              values={formCustomFields}
+              onChange={(fieldName, value) => {
+                setFormCustomFields((current) => ({ ...current, [fieldName]: value }));
+              }}
+              isLoading={isCustomFieldsLoading}
+              isError={isCustomFieldsError}
+              idPrefix="lead-detail-edit"
+            />
 
             <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-4 border-t border-slate-200">
               <Button

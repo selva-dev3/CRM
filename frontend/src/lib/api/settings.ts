@@ -51,17 +51,7 @@ export interface BackupSnapshotItem {
 
 // API Functions
 export async function fetchSystemSettingsApi(): Promise<SystemSettings> {
-  try {
-    return await apiClient.get<SystemSettings>('/settings');
-  } catch {
-    return {
-      organization_name: 'Enterprise Organization',
-      currency: 'USD',
-      timezone: 'UTC',
-      smtp_enabled: true,
-      ai_features_enabled: true,
-    };
-  }
+  return apiClient.get<SystemSettings>('/settings');
 }
 
 export async function updateSystemSettingsApi(payload: SystemSettings): Promise<SystemSettings> {
@@ -69,17 +59,7 @@ export async function updateSystemSettingsApi(payload: SystemSettings): Promise<
 }
 
 export async function fetchAuditLogsApi(page = 1, limit = 20): Promise<AuditLogItem[]> {
-  try {
-    const data = await apiClient.get<AuditLogItem[]>(`/settings/audit-logs?page=${page}&limit=${limit}`);
-    if (Array.isArray(data) && data.length > 0) return data;
-  } catch {
-    // Fallback data
-  }
-  return [
-    { id: 'log-1', action: 'User Login Success', ip: '192.168.1.1', timestamp: new Date().toISOString() },
-    { id: 'log-2', action: 'Updated System Settings', ip: '192.168.1.15', timestamp: new Date(Date.now() - 3600000).toISOString() },
-    { id: 'log-3', action: 'Exported Lead CSV Data', ip: '10.0.0.4', timestamp: new Date(Date.now() - 7200000).toISOString() },
-  ];
+  return apiClient.get<AuditLogItem[]>(`/settings/audit-logs?page=${page}&limit=${limit}`);
 }
 
 export async function exportAuditLogsCsvApi(): Promise<{ download_url: string }> {
@@ -100,16 +80,7 @@ export async function deleteCustomFieldApi(fieldId: string): Promise<{ message: 
 }
 
 export async function fetchWebhooksApi(): Promise<WebhookItem[]> {
-  try {
-    const data = await apiClient.get<WebhookItem[]>('/settings/webhooks');
-    if (Array.isArray(data) && data.length > 0) return data;
-  } catch {
-    // Fallback data
-  }
-  return [
-    { id: 'wh-1', target_url: 'https://hooks.zapier.com/hooks/catch/12345/abc', events: ['lead.created', 'deal.won'], is_active: true },
-    { id: 'wh-2', target_url: 'https://api.segment.io/v1/import', events: ['contact.updated'], is_active: true },
-  ];
+  return apiClient.get<WebhookItem[]>('/settings/webhooks');
 }
 
 export async function createWebhookApi(payload: { target_url: string; events: string[] }): Promise<{ message: string; status: string }> {
@@ -125,16 +96,7 @@ export async function testWebhookApi(webhookId: string): Promise<{ message: stri
 }
 
 export async function fetchSlaPoliciesApi(): Promise<SLAPolicyItem[]> {
-  try {
-    const data = await apiClient.get<SLAPolicyItem[]>('/settings/sla');
-    if (Array.isArray(data) && data.length > 0) return data;
-  } catch {
-    // Fallback data
-  }
-  return [
-    { id: 'sla-1', name: 'High Priority Lead Response SLA', response_time_hours: 1, resolution_time_hours: 24 },
-    { id: 'sla-2', name: 'Standard Customer Support SLA', response_time_hours: 4, resolution_time_hours: 72 },
-  ];
+  return apiClient.get<SLAPolicyItem[]>('/settings/sla');
 }
 
 export async function createSlaPolicyApi(payload: { name: string; response_time_hours: number; resolution_time_hours: number }): Promise<{ message: string; status: string }> {
@@ -147,16 +109,7 @@ export async function createSlaPolicyApi(payload: { name: string; response_time_
 }
 
 export async function fetchBackupsApi(): Promise<BackupSnapshotItem[]> {
-  try {
-    const data = await apiClient.get<BackupSnapshotItem[]>('/settings/backups');
-    if (Array.isArray(data) && data.length > 0) return data;
-  } catch {
-    // Fallback data
-  }
-  return [
-    { id: 'bak-1', filename: 'db_backup_2026_08_04.sql.gz', size_mb: 48.2, created_at: new Date().toISOString() },
-    { id: 'bak-2', filename: 'db_backup_2026_08_03.sql.gz', size_mb: 46.8, created_at: new Date(Date.now() - 86400000).toISOString() },
-  ];
+  return apiClient.get<BackupSnapshotItem[]>('/settings/backups');
 }
 
 export async function triggerManualBackupApi(): Promise<{ message: string; status: string }> {

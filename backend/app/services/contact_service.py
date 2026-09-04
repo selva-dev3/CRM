@@ -65,6 +65,18 @@ class ContactService:
         )
         return [contact_to_dict(c) for c in contacts]
 
+    async def count_contacts(
+        self,
+        db: AsyncSession,
+        *,
+        search: str | None,
+        current_user: User,
+    ) -> int:
+        organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+        return await self.repository.count_by_org(
+            db, organization_id=organization_id, search=search
+        )
+
     async def get_starred_contacts(self, db: AsyncSession) -> list[dict]:
         contacts = await self.repository.list_starred(db)
         return [contact_to_dict(c) for c in contacts]

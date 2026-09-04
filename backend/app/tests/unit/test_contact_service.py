@@ -47,6 +47,25 @@ def _service_with(repo: ContactRepository) -> ContactService:
 
 
 @pytest.mark.asyncio
+async def test_count_contacts_is_scoped_to_current_organization(monkeypatch):
+    repo: Any = ContactRepository()
+    repo.count_by_org = AsyncMock(return_value=19)
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.services.contact_service import organization_service
+
+    monkeypatch.setattr(
+        organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
+    )
+
+    result = await service.count_contacts(db, search="Jane", current_user=_make_user())
+
+    assert result == 19
+    repo.count_by_org.assert_awaited_once_with(db, organization_id="org-1", search="Jane")
+
+
+@pytest.mark.asyncio
 async def test_get_contact_raises_not_found_when_missing():
     repo: Any = ContactRepository()
     repo.get_by_id = AsyncMock(return_value=None)
@@ -109,6 +128,12 @@ async def test_create_contact_validates_and_persists_custom_fields(monkeypatch):
         _make_user(),
     )
 
+    custom_fields.validate_values.assert_awaited_once_with(
+        db,
+        organization_id="org-1",
+        entity_type="Contact",
+        values={"preferred_channel": "Email"},
+    )
     assert repo.create.await_args.kwargs["data"]["custom_fields"] == {"preferred_channel": "Email"}
     assert result["custom_fields"] == {"preferred_channel": "Email"}
 
@@ -141,7 +166,6 @@ async def test_create_contact_fires_contact_created_event(monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.asyncio
 async def test_update_contact_fires_contact_updated_event(monkeypatch):
     contact = _make_contact()
     repo: Any = ContactRepository()
@@ -161,6 +185,7 @@ async def test_update_contact_fires_contact_updated_event(monkeypatch):
     assert kwargs["data"]["email"] == "jane@acme.io"
 
 
+@pytest.mark.asyncio
 async def test_create_contact_defaults_name_from_email(monkeypatch):
     contact = _make_contact(name="jane", email="jane@acme.com")
     repo: Any = ContactRepository()

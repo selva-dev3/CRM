@@ -64,9 +64,29 @@ class CompanyService:
         page: int,
         limit: int,
         search: str | None = None,
+        current_user: User,
     ) -> list[dict]:
-        companies = await self.repository.list(db, page=page, limit=limit, search=search)
+        organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+        companies = await self.repository.list_by_org(
+            db,
+            organization_id=organization_id,
+            page=page,
+            limit=limit,
+            search=search,
+        )
         return [company_to_dict(c) for c in companies]
+
+    async def count_companies(
+        self,
+        db: AsyncSession,
+        *,
+        search: str | None = None,
+        current_user: User,
+    ) -> int:
+        organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+        return await self.repository.count_by_org(
+            db, organization_id=organization_id, search=search
+        )
 
     async def get_company(self, db: AsyncSession, company_id: str) -> dict:
         company = await self.repository.get_by_id(db, company_id)

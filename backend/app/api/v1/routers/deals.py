@@ -77,8 +77,11 @@ async def list_deal_custom_fields(
     summary="Get deal pipeline stages configuration",
     dependencies=[Depends(require_permission("deals:read"))],
 )
-async def get_deal_stages(db: AsyncSession = Depends(get_db)):
-    return await deal_service.get_deal_stages(db)
+async def get_deal_stages(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await deal_service.get_deal_stages(db, current_user)
 
 
 @router.post(
@@ -87,8 +90,18 @@ async def get_deal_stages(db: AsyncSession = Depends(get_db)):
     summary="Create new pipeline stage",
     dependencies=[Depends(require_permission("deals:pipeline"))],
 )
-async def create_deal_stage(name: str, probability: float, db: AsyncSession = Depends(get_db)):
-    return await deal_service.create_deal_stage(db, name=name, probability=probability)
+async def create_deal_stage(
+    name: str,
+    probability: float,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await deal_service.create_deal_stage(
+        db,
+        name=name,
+        probability=probability,
+        current_user=current_user,
+    )
 
 
 @router.get(
