@@ -87,12 +87,16 @@ class Settings(BaseSettings):
     # AI API Keys
     OPENAI_API_KEY: str | None = None
     ANTHROPIC_API_KEY: str | None = None
-    AI_PROVIDER: Literal["openai", "anthropic"] = "openai"
+    GEMINI_API_KEY: str | None = None
+    AI_PROVIDER: Literal["openai", "anthropic", "gemini"] = "openai"
     AI_MODEL: str = "gpt-4o-mini"
     AI_WEB_SEARCH_MODEL: str = "gpt-4.1-mini"
+    AI_GEMINI_WEB_SEARCH_MODEL: str | None = None
     AI_OPENAI_FALLBACK_MODEL: str | None = None
     AI_ANTHROPIC_FALLBACK_MODEL: str | None = None
+    AI_GEMINI_FALLBACK_MODEL: str | None = None
     AI_TRANSCRIPTION_MODEL: str = "whisper-1"
+    AI_GEMINI_TRANSCRIPTION_MODEL: str | None = None
     AI_MAX_AUDIO_BYTES: int = 25 * 1024 * 1024
     AI_REQUEST_TIMEOUT_SECONDS: float = 30.0
     AI_MAX_RETRIES: int = 2

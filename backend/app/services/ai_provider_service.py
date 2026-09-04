@@ -4,8 +4,12 @@ from time import monotonic
 from typing import TypeVar
 
 import anthropic
+import httpx
 import openai
 from anthropic import AsyncAnthropic
+from google import genai
+from google.genai import errors as genai_errors
+from google.genai import types as genai_types
 from openai import AsyncOpenAI
 from pydantic import BaseModel, ValidationError
 
@@ -20,6 +24,7 @@ OutputT = TypeVar("OutputT", bound=BaseModel)
 _PLACEHOLDER_API_KEYS = {
     "your-openai-api-key",
     "your-anthropic-api-key",
+    "your-gemini-api-key",
 }
 
 
@@ -62,7 +67,7 @@ class AIProviderGateway:
 
     @classmethod
     def _provider_error_code(cls, exc: Exception) -> str:
-        code = getattr(exc, "code", None)
+        code = getattr(exc, "status", None) or getattr(exc, "code", None)
         body = getattr(exc, "body", None)
         if not code and isinstance(body, dict):
             error = body.get("error")
@@ -71,6 +76,18 @@ class AIProviderGateway:
             else:
                 code = body.get("code") or body.get("type")
         return cls._safe_log_value(code)
+
+    @staticmethod
+    def _gemini_error_reason(exc: genai_errors.APIError) -> str:
+        details = getattr(exc, "details", None)
+        error = details.get("error") if isinstance(details, dict) else None
+        entries = error.get("details") if isinstance(error, dict) else None
+        if not isinstance(entries, list):
+            return ""
+        for entry in entries:
+            if isinstance(entry, dict) and entry.get("reason"):
+                return str(entry["reason"]).upper()
+        return ""
 
     @classmethod
     def _translate_provider_error(
@@ -81,6 +98,8 @@ class AIProviderGateway:
         exc: Exception,
     ) -> APIException:
         status_code = getattr(exc, "status_code", None)
+        if status_code is None and isinstance(exc, genai_errors.APIError):
+            status_code = getattr(exc, "code", None)
         request_id = getattr(exc, "request_id", None)
         logger.warning(
             "AI provider request failed provider=%s model=%s error_type=%s "
@@ -93,6 +112,72 @@ class AIProviderGateway:
             cls._safe_log_value(request_id),
         )
 
+        if isinstance(exc, (TimeoutError, httpx.TimeoutException)):
+            return APIException(
+                status_code=504,
+                code="AI_PROVIDER_TIMEOUT",
+                message="The AI provider timed out.",
+            )
+        if isinstance(exc, httpx.RequestError):
+            return APIException(
+                status_code=502,
+                code="AI_PROVIDER_CONNECTION_ERROR",
+                message="The AI provider could not be reached.",
+            )
+        if isinstance(exc, genai_errors.APIError):
+            upstream_status = getattr(exc, "code", None)
+            provider_status = str(getattr(exc, "status", "")).upper()
+            provider_reason = cls._gemini_error_reason(exc)
+            if (
+                upstream_status in {401}
+                or provider_status
+                in {
+                    "API_KEY_INVALID",
+                    "UNAUTHENTICATED",
+                }
+                or provider_reason == "API_KEY_INVALID"
+            ):
+                return APIException(
+                    status_code=503,
+                    code="AI_PROVIDER_AUTH_FAILED",
+                    message="The configured AI provider credentials were rejected.",
+                )
+            if upstream_status == 403 or provider_status == "PERMISSION_DENIED":
+                return APIException(
+                    status_code=503,
+                    code="AI_PROVIDER_ACCESS_DENIED",
+                    message="The configured AI provider account cannot access this operation.",
+                )
+            if upstream_status == 404 or provider_status == "NOT_FOUND":
+                return APIException(
+                    status_code=503,
+                    code="AI_MODEL_UNAVAILABLE",
+                    message="The configured AI model is unavailable.",
+                )
+            if upstream_status == 429 or provider_status == "RESOURCE_EXHAUSTED":
+                return APIException(
+                    status_code=503,
+                    code="AI_PROVIDER_RATE_LIMITED",
+                    message="The AI provider is temporarily rate limited.",
+                )
+            if upstream_status in {408, 504} or provider_status == "DEADLINE_EXCEEDED":
+                return APIException(
+                    status_code=504,
+                    code="AI_PROVIDER_TIMEOUT",
+                    message="The AI provider timed out.",
+                )
+            if upstream_status and upstream_status >= 500:
+                return APIException(
+                    status_code=503,
+                    code="AI_PROVIDER_UNAVAILABLE",
+                    message="The AI provider is temporarily unavailable.",
+                )
+            if upstream_status == 400:
+                return APIException(
+                    status_code=502,
+                    code="AI_PROVIDER_REQUEST_REJECTED",
+                    message="The AI provider rejected the structured request.",
+                )
         if isinstance(exc, (openai.APITimeoutError, anthropic.APITimeoutError)):
             return APIException(
                 status_code=504,
@@ -170,6 +255,153 @@ class AIProviderGateway:
                 code="AI_INVALID_RESPONSE",
                 message="The AI provider returned an invalid structured response.",
             ) from exc
+
+    @staticmethod
+    def _gemini_client() -> genai.Client:
+        return genai.Client(
+            api_key=settings.GEMINI_API_KEY,
+            http_options=genai_types.HttpOptions(
+                timeout=int(settings.AI_REQUEST_TIMEOUT_SECONDS * 1000),
+                retry_options=genai_types.HttpRetryOptions(
+                    attempts=settings.AI_MAX_RETRIES + 1,
+                    http_status_codes=[408, 429, 500, 502, 503, 504],
+                ),
+            ),
+        )
+
+    async def _gemini_generate(
+        self,
+        *,
+        model: str,
+        system_prompt: str,
+        user_prompt: str,
+        output_schema: type[OutputT],
+    ) -> AIProviderResult:
+        if not self.has_usable_api_key(settings.GEMINI_API_KEY):
+            raise APIException(
+                status_code=503,
+                code="AI_PROVIDER_UNAVAILABLE",
+                message="Gemini is not configured with a usable credential.",
+            )
+        client = self._gemini_client()
+        started = monotonic()
+        try:
+            response = await client.aio.models.generate_content(
+                model=model,
+                contents=user_prompt,
+                config=genai_types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    temperature=0.2,
+                    response_mime_type="application/json",
+                    response_schema=output_schema,
+                    automatic_function_calling=genai_types.AutomaticFunctionCallingConfig(
+                        disable=True
+                    ),
+                ),
+            )
+        finally:
+            await client.aio.aclose()
+        parsed = getattr(response, "parsed", None)
+        if parsed is None:
+            raw_text = getattr(response, "text", None)
+            if not raw_text:
+                raise APIException(
+                    status_code=502,
+                    code="AI_INVALID_RESPONSE",
+                    message="The AI provider returned no structured result.",
+                )
+            output = self._validate_output(raw_text, output_schema)
+        else:
+            try:
+                output = output_schema.model_validate(parsed)
+            except ValidationError as exc:
+                raise APIException(
+                    status_code=502,
+                    code="AI_INVALID_RESPONSE",
+                    message="The AI provider returned an invalid structured response.",
+                ) from exc
+        usage = getattr(response, "usage_metadata", None)
+        return AIProviderResult(
+            output=output,
+            provider="gemini",
+            model=model,
+            input_tokens=int(getattr(usage, "prompt_token_count", 0) or 0),
+            output_tokens=int(getattr(usage, "candidates_token_count", 0) or 0),
+            latency_ms=int((monotonic() - started) * 1000),
+        )
+
+    async def _gemini_generate_grounded(
+        self,
+        *,
+        model: str,
+        system_prompt: str,
+        user_prompt: str,
+        output_schema: type[OutputT],
+    ) -> AIProviderResult:
+        if not self.has_usable_api_key(settings.GEMINI_API_KEY):
+            raise APIException(
+                status_code=503,
+                code="AI_WEB_RESEARCH_UNAVAILABLE",
+                message="AI web research is not configured with a usable credential.",
+            )
+        client = self._gemini_client()
+        started = monotonic()
+        try:
+            response = await client.aio.models.generate_content(
+                model=model,
+                contents=user_prompt,
+                config=genai_types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    temperature=0.2,
+                    response_mime_type="application/json",
+                    response_schema=output_schema,
+                    tools=[genai_types.Tool(google_search=genai_types.GoogleSearch())],
+                    automatic_function_calling=genai_types.AutomaticFunctionCallingConfig(
+                        disable=True
+                    ),
+                ),
+            )
+        finally:
+            await client.aio.aclose()
+        parsed = getattr(response, "parsed", None)
+        raw_text = getattr(response, "text", None)
+        if parsed is None and not raw_text:
+            raise APIException(
+                status_code=502,
+                code="AI_INVALID_RESPONSE",
+                message="The AI provider returned no structured research result.",
+            )
+        try:
+            output = (
+                output_schema.model_validate(parsed)
+                if parsed is not None
+                else self._validate_output(str(raw_text), output_schema)
+            )
+        except ValidationError as exc:
+            raise APIException(
+                status_code=502,
+                code="AI_INVALID_RESPONSE",
+                message="The AI provider returned an invalid structured response.",
+            ) from exc
+
+        sources: set[str] = set()
+        for candidate in getattr(response, "candidates", None) or []:
+            metadata = getattr(candidate, "grounding_metadata", None)
+            for chunk in getattr(metadata, "grounding_chunks", None) or []:
+                url = getattr(getattr(chunk, "web", None), "uri", None)
+                if url:
+                    sources.add(str(url))
+        if "sources" in output.__class__.model_fields:
+            output = output.model_copy(update={"sources": sorted(sources)})
+        usage = getattr(response, "usage_metadata", None)
+        return AIProviderResult(
+            output=output,
+            provider="gemini",
+            model=model,
+            input_tokens=int(getattr(usage, "prompt_token_count", 0) or 0),
+            output_tokens=int(getattr(usage, "candidates_token_count", 0) or 0),
+            latency_ms=int((monotonic() - started) * 1000),
+        )
 
     async def _openai_generate(
         self,
@@ -282,7 +514,36 @@ class AIProviderGateway:
         file_name: str,
         content: bytes,
         content_type: str,
+        provider: str | None = None,
+        model: str | None = None,
     ) -> AIProviderResult:
+        selected_provider = (provider or settings.AI_PROVIDER).lower()
+        selected_model = model or settings.AI_TRANSCRIPTION_MODEL
+        if selected_provider == "gemini":
+            try:
+                return await self._gemini_transcribe_audio(
+                    model=selected_model,
+                    content=content,
+                    content_type=content_type,
+                )
+            except APIException:
+                raise
+            except (
+                genai_errors.APIError,
+                httpx.RequestError,
+                TimeoutError,
+            ) as exc:
+                raise self._translate_provider_error(
+                    provider="gemini",
+                    model=selected_model,
+                    exc=exc,
+                ) from exc
+        if selected_provider != "openai":
+            raise APIException(
+                status_code=503,
+                code="AI_TRANSCRIPTION_UNAVAILABLE",
+                message="The selected provider does not support configured transcription.",
+            )
         if not self.has_usable_api_key(settings.OPENAI_API_KEY):
             raise APIException(
                 status_code=503,
@@ -297,7 +558,7 @@ class AIProviderGateway:
         started = monotonic()
         try:
             response = await client.audio.transcriptions.create(
-                model=settings.AI_TRANSCRIPTION_MODEL,
+                model=selected_model,
                 file=(file_name, content, content_type),
                 response_format="verbose_json",
                 timestamp_granularities=["segment"],
@@ -305,7 +566,7 @@ class AIProviderGateway:
         except openai.APIError as exc:
             raise self._translate_provider_error(
                 provider="openai",
-                model=settings.AI_TRANSCRIPTION_MODEL,
+                model=selected_model,
                 exc=exc,
             ) from exc
 
@@ -327,9 +588,73 @@ class AIProviderGateway:
         return AIProviderResult(
             output=output,
             provider="openai",
-            model=settings.AI_TRANSCRIPTION_MODEL,
+            model=selected_model,
             input_tokens=0,
             output_tokens=0,
+            latency_ms=int((monotonic() - started) * 1000),
+        )
+
+    async def _gemini_transcribe_audio(
+        self,
+        *,
+        model: str,
+        content: bytes,
+        content_type: str,
+    ) -> AIProviderResult:
+        if not self.has_usable_api_key(settings.GEMINI_API_KEY):
+            raise APIException(
+                status_code=503,
+                code="AI_TRANSCRIPTION_UNAVAILABLE",
+                message="The transcription provider is not configured with a usable credential.",
+            )
+        client = self._gemini_client()
+        started = monotonic()
+        try:
+            response = await client.aio.models.generate_content(
+                model=model,
+                contents=[
+                    "Transcribe this audio. Include only timestamps and speaker labels that can "
+                    "be determined from the audio; do not invent them.",
+                    genai_types.Part.from_bytes(data=content, mime_type=content_type),
+                ],
+                config=genai_types.GenerateContentConfig(
+                    temperature=0,
+                    response_mime_type="application/json",
+                    response_schema=TranscriptionResponse,
+                    automatic_function_calling=genai_types.AutomaticFunctionCallingConfig(
+                        disable=True
+                    ),
+                ),
+            )
+        finally:
+            await client.aio.aclose()
+        parsed = getattr(response, "parsed", None)
+        raw_text = getattr(response, "text", None)
+        if parsed is None and not raw_text:
+            raise APIException(
+                status_code=502,
+                code="AI_INVALID_RESPONSE",
+                message="The AI provider returned no transcription response.",
+            )
+        try:
+            output = (
+                TranscriptionResponse.model_validate(parsed)
+                if parsed is not None
+                else self._validate_output(str(raw_text), TranscriptionResponse)
+            )
+        except ValidationError as exc:
+            raise APIException(
+                status_code=502,
+                code="AI_INVALID_RESPONSE",
+                message="The AI provider returned an invalid transcription response.",
+            ) from exc
+        usage = getattr(response, "usage_metadata", None)
+        return AIProviderResult(
+            output=output,
+            provider="gemini",
+            model=model,
+            input_tokens=int(getattr(usage, "prompt_token_count", 0) or 0),
+            output_tokens=int(getattr(usage, "candidates_token_count", 0) or 0),
             latency_ms=int((monotonic() - started) * 1000),
         )
 
@@ -396,6 +721,13 @@ class AIProviderGateway:
                     user_prompt=user_prompt,
                     output_schema=output_schema,
                 )
+            if provider == "gemini":
+                return await self._gemini_generate(
+                    model=model,
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    output_schema=output_schema,
+                )
             raise APIException(
                 status_code=503,
                 code="AI_PROVIDER_UNAVAILABLE",
@@ -403,7 +735,13 @@ class AIProviderGateway:
             )
         except APIException:
             raise
-        except (openai.APIError, anthropic.APIError) as exc:
+        except (
+            openai.APIError,
+            anthropic.APIError,
+            genai_errors.APIError,
+            httpx.RequestError,
+            TimeoutError,
+        ) as exc:
             raise self._translate_provider_error(
                 provider=provider,
                 model=model,
@@ -424,6 +762,23 @@ class AIProviderGateway:
             and settings.AI_OPENAI_FALLBACK_MODEL
         ):
             return "openai", settings.AI_OPENAI_FALLBACK_MODEL
+        if (
+            primary_provider != "gemini"
+            and AIProviderGateway.has_usable_api_key(settings.GEMINI_API_KEY)
+            and settings.AI_GEMINI_FALLBACK_MODEL
+        ):
+            return "gemini", settings.AI_GEMINI_FALLBACK_MODEL
+        if primary_provider == "gemini":
+            if (
+                AIProviderGateway.has_usable_api_key(settings.ANTHROPIC_API_KEY)
+                and settings.AI_ANTHROPIC_FALLBACK_MODEL
+            ):
+                return "anthropic", settings.AI_ANTHROPIC_FALLBACK_MODEL
+            if (
+                AIProviderGateway.has_usable_api_key(settings.OPENAI_API_KEY)
+                and settings.AI_OPENAI_FALLBACK_MODEL
+            ):
+                return "openai", settings.AI_OPENAI_FALLBACK_MODEL
         return None
 
     async def generate_structured(
@@ -439,13 +794,20 @@ class AIProviderGateway:
         selected_provider = (provider or settings.AI_PROVIDER).lower()
         selected_model = model or settings.AI_MODEL
         if web_search:
-            if selected_provider != "openai":
+            if selected_provider not in {"openai", "gemini"}:
                 raise APIException(
                     status_code=503,
                     code="AI_WEB_RESEARCH_UNAVAILABLE",
                     message="The selected provider does not support configured web research.",
                 )
             try:
+                if selected_provider == "gemini":
+                    return await self._gemini_generate_grounded(
+                        model=selected_model,
+                        system_prompt=system_prompt,
+                        user_prompt=user_prompt,
+                        output_schema=output_schema,
+                    )
                 return await self._openai_generate_grounded(
                     model=selected_model,
                     system_prompt=system_prompt,
@@ -454,9 +816,14 @@ class AIProviderGateway:
                 )
             except APIException:
                 raise
-            except openai.APIError as exc:
+            except (
+                openai.APIError,
+                genai_errors.APIError,
+                httpx.RequestError,
+                TimeoutError,
+            ) as exc:
                 raise self._translate_provider_error(
-                    provider="openai",
+                    provider=selected_provider,
                     model=selected_model,
                     exc=exc,
                 ) from exc
