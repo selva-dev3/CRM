@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import APIException, ForbiddenError
 from app.models import AIRun, User
 from app.repositories.ai_repository import AIRepository
+from app.schemas.ai import CRMSearchPlan
 from app.schemas.dashboard import DashboardAiInsightsResponse
 from app.services.ai_provider_service import AIProviderGateway, AIProviderResult
 from app.services.ai_runtime_service import AIRuntimeService
@@ -24,6 +25,134 @@ class ScoreOutput(BaseModel):
 class ResearchOutput(BaseModel):
     summary: str
     sources: list[str] = Field(default_factory=list)
+
+
+@pytest.mark.asyncio
+async def test_openrouter_generation_uses_strict_schema_and_validates_output(monkeypatch):
+    response = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content='{"score":82}'))],
+        usage=SimpleNamespace(prompt_tokens=12, completion_tokens=4),
+    )
+    client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=response))),
+        close=AsyncMock(),
+    )
+    monkeypatch.setattr("app.services.ai_provider_service.settings.OPENROUTER_API_KEY", "set")
+    monkeypatch.setattr(
+        "app.services.ai_provider_service.AsyncOpenAI",
+        lambda **kwargs: client,
+    )
+
+    result = await AIProviderGateway().generate_structured(
+        provider="openrouter",
+        model="openrouter/free",
+        system_prompt="system",
+        user_prompt="user",
+        output_schema=ScoreOutput,
+    )
+
+    assert result.output == ScoreOutput(score=82)
+    assert result.provider == "openrouter"
+    assert result.total_tokens == 16
+    request = client.chat.completions.create.await_args.kwargs
+    assert request["model"] == "openrouter/free"
+    assert request["response_format"]["type"] == "json_schema"
+    assert request["response_format"]["json_schema"]["strict"] is True
+    assert request["response_format"]["json_schema"]["schema"]["required"] == ["score"]
+    client.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_openrouter_generation_rejects_invalid_structured_output(monkeypatch):
+    response = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content='{"score":120}'))],
+        usage=None,
+    )
+    client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=response))),
+        close=AsyncMock(),
+    )
+    monkeypatch.setattr("app.services.ai_provider_service.settings.OPENROUTER_API_KEY", "set")
+    monkeypatch.setattr("app.services.ai_provider_service.AsyncOpenAI", lambda **kwargs: client)
+
+    with pytest.raises(APIException) as exc_info:
+        await AIProviderGateway().generate_structured(
+            provider="openrouter",
+            model="openrouter/free",
+            system_prompt="system",
+            user_prompt="user",
+            output_schema=ScoreOutput,
+        )
+
+    assert exc_info.value.code == "AI_INVALID_RESPONSE"
+
+
+def test_openrouter_crm_search_schema_is_strict():
+    schema = AIProviderGateway._openrouter_schema(CRMSearchPlan)
+
+    def object_schemas(value: object) -> list[dict[str, object]]:
+        if isinstance(value, dict):
+            found = [value] if value.get("type") == "object" else []
+            return found + [item for child in value.values() for item in object_schemas(child)]
+        if isinstance(value, list):
+            return [item for child in value for item in object_schemas(child)]
+        return []
+
+    for object_schema in object_schemas(schema):
+        assert object_schema["additionalProperties"] is False
+        assert object_schema["required"] == list(object_schema["properties"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error_type", "status_code", "expected_code"),
+    [
+        (openai.AuthenticationError, 401, "AI_PROVIDER_AUTH_FAILED"),
+        (openai.RateLimitError, 429, "AI_PROVIDER_RATE_LIMITED"),
+        (openai.InternalServerError, 503, "AI_PROVIDER_UNAVAILABLE"),
+    ],
+)
+async def test_openrouter_provider_errors_use_application_error_contract(
+    monkeypatch, error_type, status_code, expected_code
+):
+    response = httpx.Response(
+        status_code,
+        request=httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions"),
+    )
+    gateway = AIProviderGateway()
+    gateway._openrouter_generate = AsyncMock(
+        side_effect=error_type("provider error", response=response, body={})
+    )
+    monkeypatch.setattr("app.services.ai_provider_service.settings.OPENROUTER_API_KEY", "set")
+
+    with pytest.raises(APIException) as exc_info:
+        await gateway.generate_structured(
+            provider="openrouter",
+            model="openrouter/free",
+            system_prompt="system",
+            user_prompt="user",
+            output_schema=ScoreOutput,
+        )
+
+    assert exc_info.value.code == expected_code
+
+
+@pytest.mark.asyncio
+async def test_openrouter_timeout_uses_application_error_contract(monkeypatch):
+    gateway = AIProviderGateway()
+    gateway._openrouter_generate = AsyncMock(side_effect=TimeoutError())
+    monkeypatch.setattr("app.services.ai_provider_service.settings.OPENROUTER_API_KEY", "set")
+
+    with pytest.raises(APIException) as exc_info:
+        await gateway.generate_structured(
+            provider="openrouter",
+            model="openrouter/free",
+            system_prompt="system",
+            user_prompt="user",
+            output_schema=ScoreOutput,
+        )
+
+    assert exc_info.value.code == "AI_PROVIDER_TIMEOUT"
 
 
 def _user(*, organization_id: str | None = "org-1") -> User:
@@ -589,6 +718,33 @@ async def test_runtime_rejects_user_without_organization():
             user_prompt="user",
             output_schema=ScoreOutput,
         )
+
+
+@pytest.mark.asyncio
+async def test_runtime_overrides_stale_gemini_org_config_for_crm_search(monkeypatch):
+    repository = _repository()
+    repository.get_organization_config.return_value = SimpleNamespace(
+        enabled=True,
+        provider="gemini",
+        model_name="old-gemini-model",
+        monthly_cost_limit_usd=None,
+    )
+    monkeypatch.setattr("app.services.ai_runtime_service.settings.AI_MODEL", "openrouter/free")
+    service = AIRuntimeService(repository=repository, provider_gateway=AsyncMock())
+
+    await service._prepare_run(
+        AsyncMock(spec=AsyncSession),
+        current_user=_user(),
+        feature="crm_search",
+        entity_type=None,
+        entity_id=None,
+        prompt_version="v1",
+        provider_override="openrouter",
+    )
+
+    kwargs = repository.create_run.await_args.kwargs
+    assert kwargs["provider"] == "openrouter"
+    assert kwargs["model_name"] == "openrouter/free"
 
 
 @pytest.mark.asyncio

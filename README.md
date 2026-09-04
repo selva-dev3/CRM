@@ -49,8 +49,7 @@ uvicorn app.main:app --reload
 
 ### AI provider configuration
 
-AI model identifiers are deployment configuration, not application constants. To use Gemini,
-set `GEMINI_API_KEY`, set `AI_PROVIDER=gemini`, and set `AI_MODEL` to a Gemini model enabled for
-the API key. Optional `AI_GEMINI_WEB_SEARCH_MODEL` and `AI_GEMINI_TRANSCRIPTION_MODEL` values may
-select dedicated models; when omitted, those Gemini operations use `AI_MODEL`. Keep provider keys
-in runtime environment variables and never commit real credentials.
+AI model identifiers are deployment configuration, not application constants. For CRM natural-language
+search, set `OPENROUTER_API_KEY`, `AI_PROVIDER=openrouter`, and `AI_MODEL=openrouter/free`. Keep
+provider keys in runtime environment variables and never commit real credentials. Existing Gemini
+configuration remains available only for workflows that still explicitly use Gemini.

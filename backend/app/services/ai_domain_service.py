@@ -2,6 +2,7 @@ import json
 import re
 from datetime import UTC, datetime, timedelta
 from difflib import SequenceMatcher
+from time import monotonic
 from typing import Any, cast
 
 from fastapi import status
@@ -10,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.errors import APIException, ForbiddenError, NotFoundError
+from app.core.logging import get_logger
 from app.models import User
 from app.repositories.ai_repository import AIRepository
 from app.schemas.ai import (
@@ -51,6 +53,8 @@ from app.services.ai_runtime_service import AIRuntimeService, ai_runtime_service
 from app.services.auth_service import auth_service
 from app.services.report_service import ReportService, report_service
 from app.services.task_service import TaskService, task_service
+
+logger = get_logger(__name__)
 
 
 class AIDomainService:
@@ -329,22 +333,25 @@ class AIDomainService:
         entity_type: str | None = None,
         entity_id: str | None = None,
         web_search: bool = False,
+        provider_override: str | None = None,
     ) -> tuple[BaseModel, Any]:
         prompt = (
             f"Task instructions:\n{instructions}\n\n"
             f"Authorized CRM context:\n{json.dumps(context, default=str, ensure_ascii=False)}"
         )
-        output, run = await self.runtime.execute(
-            db,
-            current_user=current_user,
-            feature=feature,
-            system_prompt=self._system_prompt(feature),
-            user_prompt=prompt,
-            output_schema=output_schema,
-            entity_type=entity_type,
-            entity_id=entity_id,
-            web_search=web_search,
-        )
+        runtime_kwargs = {
+            "current_user": current_user,
+            "feature": feature,
+            "system_prompt": self._system_prompt(feature),
+            "user_prompt": prompt,
+            "output_schema": output_schema,
+            "entity_type": entity_type,
+            "entity_id": entity_id,
+            "web_search": web_search,
+        }
+        if provider_override:
+            runtime_kwargs["provider_override"] = provider_override
+        output, run = await self.runtime.execute(db, **runtime_kwargs)
         await self.repository.create_generated_content(
             db,
             organization_id=current_user.organization_id or "",
@@ -1193,6 +1200,7 @@ class AIDomainService:
                 "Never emit SQL or invent unsupported fields."
             ),
             output_schema=CRMSearchPlan,
+            provider_override="openrouter",
         )
         plan = CRMSearchPlan.model_validate(plan_output)
         if scope and plan.entity_type != scope:
@@ -1203,10 +1211,17 @@ class AIDomainService:
             )
         self._validate_search_plan(plan)
         self._require_search_permissions(permissions, plan)
+        crm_query_started = monotonic()
         results = await self.repository.execute_search_plan(
             db,
             organization_id=current_user.organization_id or "",
             **plan.model_dump(),
+        )
+        logger.info(
+            "CRM AI search completed provider=%s model=%s crm_query_latency_ms=%s",
+            getattr(run, "provider", "-"),
+            getattr(run, "model_name", "-"),
+            int((monotonic() - crm_query_started) * 1000),
         )
         explanation, result_count = self._search_explanation(plan, results)
         return CRMSearchResponse(
@@ -1528,6 +1543,12 @@ class AIDomainService:
             )
             if gemini_model:
                 models.append(("gemini", gemini_model))
+        if (
+            ai_provider_gateway.has_usable_api_key(settings.OPENROUTER_API_KEY)
+            and settings.AI_PROVIDER == "openrouter"
+            and settings.AI_MODEL
+        ):
+            models.append(("openrouter", settings.AI_MODEL))
         return models
 
     async def list_ai_models(self, db: AsyncSession, current_user: User) -> list[dict]:
