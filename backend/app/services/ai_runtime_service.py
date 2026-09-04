@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from time import monotonic
 
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -137,9 +138,13 @@ class AIRuntimeService:
             else settings.AI_PROVIDER
         )
         configured_model = (
-            organization_config.model_name
-            if organization_config and organization_config.model_name
-            else settings.AI_MODEL
+            settings.AI_MODEL
+            if provider_override
+            else (
+                organization_config.model_name
+                if organization_config and organization_config.model_name
+                else settings.AI_MODEL
+            )
         )
         model = model_override or (model_overrides or {}).get(provider) or configured_model
         run = await self.repository.create_run(
@@ -189,7 +194,9 @@ class AIRuntimeService:
         entity_id: str | None = None,
         prompt_version: str = "v1",
         web_search: bool = False,
+        provider_override: str | None = None,
     ) -> tuple[BaseModel, AIRun]:
+        started = monotonic()
         run = await self._prepare_run(
             db,
             current_user=current_user,
@@ -197,6 +204,7 @@ class AIRuntimeService:
             entity_type=entity_type,
             entity_id=entity_id,
             prompt_version=prompt_version,
+            provider_override=provider_override,
             model_overrides=(
                 {
                     "openai": settings.AI_WEB_SEARCH_MODEL,
@@ -225,6 +233,13 @@ class AIRuntimeService:
             raise
         self._complete_success(run, result)
         await db.commit()
+        logger.info(
+            "AI runtime completed feature=%s provider=%s model=%s total_latency_ms=%s",
+            feature,
+            result.provider,
+            result.model,
+            int((monotonic() - started) * 1000),
+        )
         return result.output, run
 
     async def execute_transcription(

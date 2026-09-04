@@ -25,6 +25,7 @@ _PLACEHOLDER_API_KEYS = {
     "your-openai-api-key",
     "your-anthropic-api-key",
     "your-gemini-api-key",
+    "your-openrouter-api-key",
 }
 
 
@@ -255,6 +256,89 @@ class AIProviderGateway:
                 code="AI_INVALID_RESPONSE",
                 message="The AI provider returned an invalid structured response.",
             ) from exc
+
+    @staticmethod
+    def _openrouter_schema(output_schema: type[OutputT]) -> dict[str, object]:
+        """Build a strict JSON Schema for OpenRouter structured output."""
+        schema = output_schema.model_json_schema()
+
+        def normalize(value: object) -> None:
+            if isinstance(value, dict):
+                if value.get("type") == "object" and isinstance(value.get("properties"), dict):
+                    value["additionalProperties"] = False
+                    value["required"] = list(value["properties"])
+                for child in value.values():
+                    normalize(child)
+            elif isinstance(value, list):
+                for child in value:
+                    normalize(child)
+
+        normalize(schema)
+        return schema
+
+    async def _openrouter_generate(
+        self,
+        *,
+        model: str,
+        system_prompt: str,
+        user_prompt: str,
+        output_schema: type[OutputT],
+    ) -> AIProviderResult:
+        if not self.has_usable_api_key(settings.OPENROUTER_API_KEY):
+            raise APIException(
+                status_code=503,
+                code="AI_PROVIDER_UNAVAILABLE",
+                message="OpenRouter is not configured with a usable credential.",
+            )
+        client = AsyncOpenAI(
+            api_key=settings.OPENROUTER_API_KEY,
+            base_url="https://openrouter.ai/api/v1",
+            timeout=settings.AI_REQUEST_TIMEOUT_SECONDS,
+            max_retries=settings.AI_MAX_RETRIES,
+        )
+        started = monotonic()
+        try:
+            response = await client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.2,
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": output_schema.__name__.lower(),
+                        "strict": True,
+                        "schema": self._openrouter_schema(output_schema),
+                    },
+                },
+            )
+        finally:
+            await client.close()
+        message = response.choices[0].message if response.choices else None
+        raw_text = getattr(message, "content", None) if message else None
+        if not raw_text:
+            raise APIException(
+                status_code=502,
+                code="AI_INVALID_RESPONSE",
+                message="The AI provider returned no structured result.",
+            )
+        usage = response.usage
+        result = AIProviderResult(
+            output=self._validate_output(raw_text, output_schema),
+            provider="openrouter",
+            model=model,
+            input_tokens=int(getattr(usage, "prompt_tokens", 0) or 0),
+            output_tokens=int(getattr(usage, "completion_tokens", 0) or 0),
+            latency_ms=int((monotonic() - started) * 1000),
+        )
+        logger.info(
+            "AI provider request completed provider=openrouter model=%s latency_ms=%s",
+            self._safe_log_value(model),
+            result.latency_ms,
+        )
+        return result
 
     @staticmethod
     def _gemini_client() -> genai.Client:
@@ -714,6 +798,13 @@ class AIProviderGateway:
                     user_prompt=user_prompt,
                     output_schema=output_schema,
                 )
+            if provider == "openrouter":
+                return await self._openrouter_generate(
+                    model=model,
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    output_schema=output_schema,
+                )
             if provider == "anthropic":
                 return await self._anthropic_generate(
                     model=model,
@@ -763,7 +854,7 @@ class AIProviderGateway:
         ):
             return "openai", settings.AI_OPENAI_FALLBACK_MODEL
         if (
-            primary_provider != "gemini"
+            primary_provider not in {"gemini", "openrouter"}
             and AIProviderGateway.has_usable_api_key(settings.GEMINI_API_KEY)
             and settings.AI_GEMINI_FALLBACK_MODEL
         ):

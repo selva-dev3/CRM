@@ -88,8 +88,9 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str | None = None
     ANTHROPIC_API_KEY: str | None = None
     GEMINI_API_KEY: str | None = None
-    AI_PROVIDER: Literal["openai", "anthropic", "gemini"] = "openai"
-    AI_MODEL: str = "gpt-4o-mini"
+    OPENROUTER_API_KEY: str | None = None
+    AI_PROVIDER: Literal["openai", "anthropic", "gemini", "openrouter"] = "openrouter"
+    AI_MODEL: str = "openrouter/free"
     AI_WEB_SEARCH_MODEL: str = "gpt-4.1-mini"
     AI_GEMINI_WEB_SEARCH_MODEL: str | None = None
     AI_OPENAI_FALLBACK_MODEL: str | None = None
@@ -99,7 +100,7 @@ class Settings(BaseSettings):
     AI_GEMINI_TRANSCRIPTION_MODEL: str | None = None
     AI_MAX_AUDIO_BYTES: int = 25 * 1024 * 1024
     AI_REQUEST_TIMEOUT_SECONDS: float = 30.0
-    AI_MAX_RETRIES: int = 2
+    AI_MAX_RETRIES: int = 0
     AI_RATE_LIMIT: str = "20/minute"
     AI_MONTHLY_COST_LIMIT_USD: float = 100.0
     AI_INPUT_COST_PER_MILLION_USD: float = 0.15
