@@ -5,8 +5,9 @@ from app.core.errors import APIException, NotFoundError
 from app.models import User
 from app.models.company import Company
 from app.repositories.company_repository import CompanyRepository
-from app.schemas.crm_schemas import CompanyCreate, CompanyUpdate
+from app.schemas.crm_schemas import CompanyCreate, CompanyUpdate, CustomFieldDefinition
 from app.services.contact_service import contact_service
+from app.services.custom_field_service import CustomFieldService, custom_field_service
 from app.services.notification_service import notification_service
 from app.services.org_service import organization_service
 
@@ -21,14 +22,20 @@ def company_to_dict(company: Company) -> dict:
         "size": str(company.employee_count) if company.employee_count else None,
         "employee_count": company.employee_count,
         "created_at": str(company.created_at),
+        "custom_fields": company.custom_fields or {},
     }
 
 
 class CompanyService:
     """Business logic for the Company domain."""
 
-    def __init__(self, repository: CompanyRepository | None = None) -> None:
+    def __init__(
+        self,
+        repository: CompanyRepository | None = None,
+        custom_field_service_instance: CustomFieldService | None = None,
+    ) -> None:
         self.repository = repository or CompanyRepository()
+        self.custom_field_service = custom_field_service_instance or custom_field_service
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
         try:
@@ -67,10 +74,24 @@ class CompanyService:
             raise NotFoundError(message=f"Company '{company_id}' not found")
         return company_to_dict(company)
 
+    async def list_custom_fields(
+        self, db: AsyncSession, current_user: User
+    ) -> list[CustomFieldDefinition]:
+        organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+        return await self.custom_field_service.list_definitions(
+            db, organization_id=organization_id, entity_type="Company"
+        )
+
     async def create_company(
         self, db: AsyncSession, payload: CompanyCreate, current_user: User | None = None
     ) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        custom_fields = await self.custom_field_service.validate_values(
+            db,
+            organization_id=org_id,
+            entity_type="Company",
+            values=payload.custom_fields,
+        )
         website = getattr(payload, "website", None) or getattr(payload, "domain", None)
         emp_raw = getattr(payload, "employee_count", None) or getattr(payload, "size", None)
         data = {
@@ -79,6 +100,7 @@ class CompanyService:
             "industry": getattr(payload, "industry", None),
             "website": website,
             "employee_count": self._parse_employee_count(emp_raw),
+            "custom_fields": custom_fields,
         }
         company = await self.repository.create(db, data=data)
         await self._commit(db, "Failed to create company")
@@ -119,6 +141,13 @@ class CompanyService:
         emp_raw = getattr(payload, "employee_count", None) or getattr(payload, "size", None)
         if emp_raw is not None:
             company.employee_count = self._parse_employee_count(emp_raw)
+        if payload.custom_fields is not None:
+            company.custom_fields = await self.custom_field_service.validate_values(
+                db,
+                organization_id=company.organization_id,
+                entity_type="Company",
+                values=payload.custom_fields,
+            )
 
         await self._commit(db, "Failed to update company")
         await db.refresh(company)

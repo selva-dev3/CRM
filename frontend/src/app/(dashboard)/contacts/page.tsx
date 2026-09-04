@@ -28,6 +28,7 @@ import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
+import { CustomFields } from '@/components/common/custom-fields';
 import {
   useContactsQuery,
   useStarredContactsQuery,
@@ -45,6 +46,7 @@ import {
 import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
 import { useCompaniesQuery } from '@/lib/api/companies';
 import { SearchableCompanySelect } from '@/components/common/searchable-company-select';
+import { useEntityCustomFieldsQuery, type CustomFieldValue } from '@/lib/api/custom-fields';
 
 export default function ContactsPage() {
   const router = useRouter();
@@ -74,6 +76,7 @@ export default function ContactsPage() {
   const [formPosition, setFormPosition] = useState('');
   const [formJobTitle, setFormJobTitle] = useState('');
   const [formCompanyId, setFormCompanyId] = useState('');
+  const [formCustomFields, setFormCustomFields] = useState<Record<string, CustomFieldValue>>({});
 
   // Merge Form State
   const [primaryContactId, setPrimaryContactId] = useState('');
@@ -88,6 +91,7 @@ export default function ContactsPage() {
     setFormPosition('');
     setFormJobTitle('');
     setFormCompanyId('');
+    setFormCustomFields({});
   };
 
   // Search Debounce
@@ -105,6 +109,11 @@ export default function ContactsPage() {
   const { data: currentOrganization } = useCurrentOrganizationQuery();
   const organizations = currentOrganization ? [currentOrganization] : [];
   const { data: companiesList = [] } = useCompaniesQuery(1, 100);
+  const {
+    data: customFields = [],
+    isLoading: isCustomFieldsLoading,
+    isError: isCustomFieldsError,
+  } = useEntityCustomFieldsQuery('Contact', isCreateModalOpen || isEditModalOpen);
 
   const contacts = activeTab === 'starred' ? starredContacts : allContacts;
 
@@ -134,6 +143,7 @@ export default function ContactsPage() {
         company_id: formCompanyId || undefined,
         position: formPosition || undefined,
         job_title: formJobTitle || formPosition || undefined,
+        custom_fields: formCustomFields,
       });
       setSuccessMessage(`Contact '${displayName}' created successfully.`);
       setIsCreateModalOpen(false);
@@ -161,6 +171,7 @@ export default function ContactsPage() {
           company_id: formCompanyId || undefined,
           position: formPosition || undefined,
           job_title: formJobTitle || formPosition || undefined,
+          custom_fields: formCustomFields,
         },
       });
       setSuccessMessage(`Contact '${displayName}' updated successfully.`);
@@ -184,6 +195,7 @@ export default function ContactsPage() {
     setFormPosition(item.position || '');
     setFormJobTitle(item.position || '');
     setFormCompanyId(item.company_id || '');
+    setFormCustomFields(item.custom_fields ?? {});
     setIsEditModalOpen(true);
   };
 
@@ -617,6 +629,17 @@ export default function ContactsPage() {
             </div>
           </div>
 
+          <CustomFields
+            fields={customFields}
+            values={formCustomFields}
+            onChange={(fieldName, value) => {
+              setFormCustomFields((current) => ({ ...current, [fieldName]: value }));
+            }}
+            isLoading={isCustomFieldsLoading}
+            isError={isCustomFieldsError}
+            idPrefix="contact-create"
+          />
+
           <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
             <Button type="button" variant="outline" size="sm" onClick={() => setIsCreateModalOpen(false)} className="cursor-pointer">
               Cancel
@@ -721,6 +744,17 @@ export default function ContactsPage() {
               />
             </div>
           </div>
+
+          <CustomFields
+            fields={customFields}
+            values={formCustomFields}
+            onChange={(fieldName, value) => {
+              setFormCustomFields((current) => ({ ...current, [fieldName]: value }));
+            }}
+            isLoading={isCustomFieldsLoading}
+            isError={isCustomFieldsError}
+            idPrefix="contact-edit"
+          />
 
           <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
             <Button type="button" variant="outline" size="sm" onClick={() => setIsEditModalOpen(false)} className="cursor-pointer">

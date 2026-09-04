@@ -10,6 +10,7 @@ from app.schemas.crm_schemas import (
     BulkDeleteRequest,
     CallLogBase,
     CallLogResponse,
+    CustomFieldDefinition,
     DocumentResponse,
     EmailResponse,
     EmailSendRequest,
@@ -87,6 +88,19 @@ async def create_lead(
     current_user: User = Depends(get_current_user),
 ):
     return await lead_service.create_lead(db, payload, current_user)
+
+
+@router.get(
+    "/custom-fields",
+    response_model=list[CustomFieldDefinition],
+    summary="List custom fields available for leads",
+    dependencies=[Depends(require_permission("leads:read"))],
+)
+async def list_lead_custom_fields(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await lead_service.list_custom_fields(db, current_user)
 
 
 @router.get(

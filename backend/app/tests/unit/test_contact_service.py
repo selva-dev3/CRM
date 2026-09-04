@@ -83,6 +83,37 @@ async def test_create_contact_resolves_org_and_serializes(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_create_contact_validates_and_persists_custom_fields(monkeypatch):
+    contact = _make_contact(custom_fields={"preferred_channel": "Email"})
+    repo: Any = ContactRepository()
+    repo.create = AsyncMock(return_value=contact)
+    custom_fields = AsyncMock()
+    custom_fields.validate_values.return_value = {"preferred_channel": "Email"}
+    service = ContactService(repository=repo, custom_field_service_instance=custom_fields)
+    monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.services.contact_service import organization_service
+
+    monkeypatch.setattr(
+        organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
+    )
+
+    result = await service.create_contact(
+        db,
+        ContactCreate(
+            name="Jane Doe",
+            email="jane@acme.com",
+            custom_fields={"preferred_channel": "Email"},
+        ),
+        _make_user(),
+    )
+
+    assert repo.create.await_args.kwargs["data"]["custom_fields"] == {"preferred_channel": "Email"}
+    assert result["custom_fields"] == {"preferred_channel": "Email"}
+
+
+@pytest.mark.asyncio
 async def test_create_contact_fires_contact_created_event(monkeypatch):
     contact = _make_contact()
     repo: Any = ContactRepository()

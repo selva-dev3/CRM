@@ -56,6 +56,8 @@ import { useUsersQuery } from '@/lib/api/users';
 import { useProductsQuery } from '@/lib/api/products';
 import type { DealPredictionResponse } from '@/lib/types';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { CustomFieldValues } from '@/components/common/custom-field-values';
+import { useEntityCustomFieldsQuery } from '@/lib/api/custom-fields';
 
 const STAGES = ['Prospecting', 'Qualification', 'Proposal', 'Negotiation', 'Closed Won', 'Closed Lost'];
 
@@ -93,6 +95,7 @@ export default function DealDetailsPage() {
 
   // Main Deal Query
   const { data: deal, isLoading, isError, refetch } = useDealQuery(dealId);
+  const { data: customFields = [] } = useEntityCustomFieldsQuery('Deal');
   const { data: users = [] } = useUsersQuery();
   const { data: catalogProducts = [] } = useProductsQuery();
 
@@ -490,6 +493,8 @@ export default function DealDetailsPage() {
           </div>
         </div>
       </div>
+
+      <CustomFieldValues fields={customFields} values={deal.custom_fields ?? {}} />
 
       {/* Sub-Resource Navigation Tabs */}
       <div className="flex items-center border-b border-slate-200 gap-6 text-sm font-semibold text-slate-600 overflow-x-auto">

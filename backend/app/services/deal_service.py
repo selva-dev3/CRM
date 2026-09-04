@@ -14,6 +14,7 @@ from app.schemas.crm_schemas import (
     DealUpdate,
 )
 from app.services.ai_domain_service import AIDomainService, ai_domain_service
+from app.services.custom_field_service import CustomFieldService
 from app.services.note_service import note_service
 from app.services.notification_service import notification_service
 from app.services.org_service import organization_service
@@ -58,10 +59,11 @@ class DealService:
         quote_service_instance: QuoteService | None = None,
         setting_repository: SettingRepository | None = None,
         ai_service_instance: AIDomainService | None = None,
-        ) -> None:
+    ) -> None:
         self.repository = repository or DealRepository()
         self.quote_service = quote_service_instance or quote_service
         self.setting_repository = setting_repository or SettingRepository()
+        self.custom_field_service = CustomFieldService(self.setting_repository)
         self.ai_service = ai_service_instance or ai_domain_service
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
@@ -94,18 +96,9 @@ class DealService:
         self, db: AsyncSession, current_user: User
     ) -> list[DealCustomFieldDefinition]:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
-        fields = await self.setting_repository.list_custom_fields(
+        return await self.custom_field_service.list_definitions(
             db, organization_id=org_id, entity_type="Deal"
         )
-        return [
-            DealCustomFieldDefinition(
-                field_name=field.field_name,
-                field_type=field.field_type,
-                label=field.label,
-                options=field.options or [],
-            )
-            for field in fields
-        ]
 
     async def _validate_custom_fields(
         self,
@@ -113,46 +106,12 @@ class DealService:
         organization_id: str,
         values: dict[str, DealCustomFieldValue],
     ) -> dict[str, DealCustomFieldValue]:
-        if not values:
-            return {}
-        definitions = await self.setting_repository.list_custom_fields(
-            db, organization_id=organization_id, entity_type="Deal"
+        return await self.custom_field_service.validate_values(
+            db,
+            organization_id=organization_id,
+            entity_type="Deal",
+            values=values,
         )
-        fields_by_name = {field.field_name: field for field in definitions}
-        unknown_fields = sorted(set(values) - set(fields_by_name))
-        if unknown_fields:
-            raise APIException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                code="INVALID_CUSTOM_FIELDS",
-                message=f"Unknown deal custom field(s): {', '.join(unknown_fields)}",
-            )
-
-        for field_name, value in values.items():
-            if value is None:
-                continue
-            definition = fields_by_name[field_name]
-            field_type = definition.field_type.lower()
-            valid = (
-                (field_type == "text" and isinstance(value, str))
-                or (
-                    field_type == "number"
-                    and isinstance(value, (int, float))
-                    and not isinstance(value, bool)
-                )
-                or (field_type == "boolean" and isinstance(value, bool))
-                or (
-                    field_type == "select"
-                    and isinstance(value, str)
-                    and value in (definition.options or [])
-                )
-            )
-            if not valid:
-                raise APIException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                    code="INVALID_CUSTOM_FIELD_VALUE",
-                    message=f"Invalid value for deal custom field '{field_name}'",
-                )
-        return values
 
     async def _guard_closed_won_transition(
         self, db: AsyncSession, deal: Deal, new_stage: str

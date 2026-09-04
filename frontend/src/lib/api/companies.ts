@@ -1,6 +1,7 @@
 ﻿import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
 import type { CompanyHierarchy, RelatedRecord } from '@/lib/types';
+import type { CustomFieldValue } from '@/lib/api/custom-fields';
 
 export interface CompanyItem {
   id: string;
@@ -11,6 +12,7 @@ export interface CompanyItem {
   size?: string;
   employee_count?: number;
   created_at?: string;
+  custom_fields?: Record<string, CustomFieldValue>;
 }
 
 export interface CompanyCreatePayload {
@@ -20,6 +22,7 @@ export interface CompanyCreatePayload {
   industry?: string;
   size?: string;
   employee_count?: number;
+  custom_fields?: Record<string, CustomFieldValue>;
 }
 
 export interface CompanyUpdatePayload {
@@ -29,6 +32,7 @@ export interface CompanyUpdatePayload {
   industry?: string;
   size?: string;
   employee_count?: number;
+  custom_fields?: Record<string, CustomFieldValue>;
 }
 
 // API Functions
@@ -53,6 +57,7 @@ export async function createCompanyApi(payload: CompanyCreatePayload): Promise<C
     industry: payload.industry || undefined,
     size: payload.size || (empCount ? String(empCount) : undefined),
     employee_count: empCount,
+    custom_fields: payload.custom_fields ?? {},
   });
 }
 

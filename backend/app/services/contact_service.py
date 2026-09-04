@@ -5,7 +5,8 @@ from app.core.errors import APIException, NotFoundError
 from app.models import User
 from app.models.contact import Contact
 from app.repositories.contact_repository import ContactRepository
-from app.schemas.crm_schemas import ContactCreate, ContactUpdate
+from app.schemas.crm_schemas import ContactCreate, ContactUpdate, CustomFieldDefinition
+from app.services.custom_field_service import CustomFieldService, custom_field_service
 from app.services.notification_service import notification_service
 from app.services.org_service import organization_service
 
@@ -25,14 +26,20 @@ def contact_to_dict(contact: Contact) -> dict:
         "is_starred": is_starred,
         "status": "Star Contact" if is_starred else None,
         "created_at": str(contact.created_at) if contact.created_at else None,
+        "custom_fields": contact.custom_fields or {},
     }
 
 
 class ContactService:
     """Business logic for the Contact domain."""
 
-    def __init__(self, repository: ContactRepository | None = None) -> None:
+    def __init__(
+        self,
+        repository: ContactRepository | None = None,
+        custom_field_service_instance: CustomFieldService | None = None,
+    ) -> None:
         self.repository = repository or ContactRepository()
+        self.custom_field_service = custom_field_service_instance or custom_field_service
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
         try:
@@ -61,6 +68,14 @@ class ContactService:
     async def get_starred_contacts(self, db: AsyncSession) -> list[dict]:
         contacts = await self.repository.list_starred(db)
         return [contact_to_dict(c) for c in contacts]
+
+    async def list_custom_fields(
+        self, db: AsyncSession, current_user: User
+    ) -> list[CustomFieldDefinition]:
+        organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+        return await self.custom_field_service.list_definitions(
+            db, organization_id=organization_id, entity_type="Contact"
+        )
 
     async def get_contact(self, db: AsyncSession, contact_id: str) -> dict:
         contact = await self.repository.get_by_id(db, contact_id)
@@ -100,6 +115,12 @@ class ContactService:
             or "Representative"
         )
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        custom_fields = await self.custom_field_service.validate_values(
+            db,
+            organization_id=org_id,
+            entity_type="Contact",
+            values=payload.custom_fields or {},
+        )
         data = {
             "organization_id": org_id,
             "name": full_name,
@@ -107,6 +128,7 @@ class ContactService:
             "phone": getattr(payload, "phone", None),
             "position": position,
             "company_id": getattr(payload, "company_id", None),
+            "custom_fields": custom_fields,
         }
         contact = await self.repository.create(db, data=data)
         await self._commit(db, "Failed to create contact")
@@ -154,6 +176,14 @@ class ContactService:
         position = getattr(payload, "position", None) or getattr(payload, "job_title", None)
         if position is not None:
             contact.position = position
+
+        if payload.custom_fields is not None:
+            contact.custom_fields = await self.custom_field_service.validate_values(
+                db,
+                organization_id=contact.organization_id,
+                entity_type="Contact",
+                values=payload.custom_fields,
+            )
 
         await self._commit(db, "Failed to update contact")
         await db.refresh(contact)

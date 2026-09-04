@@ -65,6 +65,32 @@ async def test_create_company_serializes_domain_and_size(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_create_company_validates_and_persists_custom_fields(monkeypatch):
+    company = _make_company(custom_fields={"account_tier": "Gold"})
+    repo: Any = CompanyRepository()
+    repo.create = AsyncMock(return_value=company)
+    custom_fields = AsyncMock()
+    custom_fields.validate_values.return_value = {"account_tier": "Gold"}
+    service = CompanyService(repository=repo, custom_field_service_instance=custom_fields)
+    monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.services.company_service import organization_service
+
+    monkeypatch.setattr(
+        organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
+    )
+
+    result = await service.create_company(
+        db,
+        CompanyCreate(name="Acme Inc", custom_fields={"account_tier": "Gold"}),
+    )
+
+    assert repo.create.await_args.kwargs["data"]["custom_fields"] == {"account_tier": "Gold"}
+    assert result["custom_fields"] == {"account_tier": "Gold"}
+
+
+@pytest.mark.asyncio
 async def test_create_company_fires_company_created_event(monkeypatch):
     company = _make_company()
     repo: Any = CompanyRepository()

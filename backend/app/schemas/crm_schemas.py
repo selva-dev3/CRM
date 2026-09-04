@@ -328,6 +328,16 @@ class SubscriptionCheckoutVerifyResponse(BaseModel):
 
 
 # 5. Lead Schemas
+CustomFieldValue = str | float | bool | None
+
+
+class CustomFieldDefinition(BaseModel):
+    field_name: str
+    field_type: Literal["text", "number", "boolean", "select"]
+    label: str
+    options: list[str] = Field(default_factory=list)
+
+
 class LeadBase(BaseModel):
     title: str
     company: str
@@ -348,6 +358,7 @@ class LeadBase(BaseModel):
     assigned_to: str | None = None
     is_archived: bool | None = False
     organization_id: str | None = "org-1"
+    custom_fields: dict[str, CustomFieldValue] = Field(default_factory=dict)
 
 
 class LeadCreate(LeadBase):
@@ -374,6 +385,7 @@ class LeadUpdate(BaseModel):
     assigned_to: str | None = None
     is_archived: bool | None = None
     organization_id: str | None = None
+    custom_fields: dict[str, CustomFieldValue] | None = None
 
 
 class LeadResponse(LeadBase):
@@ -399,6 +411,7 @@ class ContactBase(BaseModel):
     company_id: str | None = None
     position: str | None = None
     job_title: str | None = None
+    custom_fields: dict[str, CustomFieldValue] | None = None
 
 
 class ContactCreate(ContactBase):
@@ -406,7 +419,7 @@ class ContactCreate(ContactBase):
 
 
 class ContactUpdate(ContactBase):
-    pass
+    custom_fields: dict[str, CustomFieldValue] | None = None
 
 
 class ContactResponse(BaseModel):
@@ -421,6 +434,7 @@ class ContactResponse(BaseModel):
     is_starred: bool | None = False
     status: str | None = None
     created_at: str | None = None
+    custom_fields: dict[str, CustomFieldValue] = Field(default_factory=dict)
 
 
 # 7. Company Schemas
@@ -431,6 +445,7 @@ class CompanyBase(BaseModel):
     industry: str | None = None
     size: str | None = None
     employee_count: int | None = None
+    custom_fields: dict[str, CustomFieldValue] = Field(default_factory=dict)
 
 
 class CompanyCreate(CompanyBase):
@@ -444,6 +459,7 @@ class CompanyUpdate(BaseModel):
     industry: str | None = None
     size: str | None = None
     employee_count: int | None = None
+    custom_fields: dict[str, CustomFieldValue] | None = None
 
 
 class CompanyResponse(BaseModel):
@@ -455,17 +471,12 @@ class CompanyResponse(BaseModel):
     size: str | None = None
     employee_count: int | None = None
     created_at: str | None = None
+    custom_fields: dict[str, CustomFieldValue] = Field(default_factory=dict)
 
 
 # 8. Deal Schemas
-DealCustomFieldValue = str | float | bool | None
-
-
-class DealCustomFieldDefinition(BaseModel):
-    field_name: str
-    field_type: Literal["text", "number", "boolean", "select"]
-    label: str
-    options: list[str] = Field(default_factory=list)
+DealCustomFieldValue = CustomFieldValue
+DealCustomFieldDefinition = CustomFieldDefinition
 
 
 class DealBase(BaseModel):

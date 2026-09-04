@@ -43,6 +43,8 @@ import {
   getCompanyHierarchyApi
 } from '@/lib/api/companies';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { CustomFieldValues } from '@/components/common/custom-field-values';
+import { useEntityCustomFieldsQuery } from '@/lib/api/custom-fields';
 
 export default function CompanyDetailsPage() {
   const params = useParams();
@@ -73,6 +75,7 @@ export default function CompanyDetailsPage() {
 
   // Main Company Data Query
   const { data: company, isLoading, isError, refetch } = useCompanyQuery(companyId);
+  const { data: customFields = [] } = useEntityCustomFieldsQuery('Company');
 
   // Sub-resource queries
   const { data: contacts = [] } = useQuery({
@@ -305,6 +308,8 @@ export default function CompanyDetailsPage() {
           </div>
         </div>
       </div>
+
+      <CustomFieldValues fields={customFields} values={company.custom_fields ?? {}} />
 
       {/* Sub-Resource Navigation Tabs */}
       <div className="flex items-center border-b border-slate-200 gap-6 text-sm font-semibold text-slate-600 overflow-x-auto">

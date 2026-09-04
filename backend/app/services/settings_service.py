@@ -15,6 +15,7 @@ from app.models import Organization, User
 from app.repositories.role_repository import RoleRepository
 from app.repositories.setting_repository import SettingRepository
 from app.schemas.crm_schemas import SystemSettings
+from app.services.custom_field_service import normalize_custom_field_entity_type
 from app.services.org_service import organization_service
 from app.services.role_service import ALL_STANDARD_PERMISSIONS
 
@@ -205,8 +206,11 @@ class SettingsService:
         self, db: AsyncSession, entity_type: str | None, current_user: User
     ) -> list[dict]:
         org_id = await self._resolve_org_id(db, current_user)
+        normalized_entity_type = (
+            normalize_custom_field_entity_type(entity_type) if entity_type else None
+        )
         fields = await self.repository.list_custom_fields(
-            db, organization_id=org_id, entity_type=entity_type
+            db, organization_id=org_id, entity_type=normalized_entity_type
         )
         return [
             {
@@ -233,6 +237,7 @@ class SettingsService:
         current_user: User,
     ) -> dict:
         org_id = await self._resolve_org_id(db, current_user)
+        canonical_entity_type = normalize_custom_field_entity_type(entity_type)
         normalized_type = field_type.strip().lower()
         if normalized_type not in {"text", "number", "boolean", "select"}:
             raise APIException(
@@ -249,7 +254,7 @@ class SettingsService:
             )
         data = {
             "organization_id": org_id,
-            "entity_type": entity_type,
+            "entity_type": canonical_entity_type,
             "field_name": field_name,
             "field_type": normalized_type,
             "label": label,
@@ -257,7 +262,10 @@ class SettingsService:
         }
         await self.repository.create_custom_field(db, data=data)
         await self._commit(db, "Failed to create custom field")
-        return {"message": f"Custom field '{label}' added to {entity_type}", "status": "success"}
+        return {
+            "message": f"Custom field '{label}' added to {canonical_entity_type}",
+            "status": "success",
+        }
 
     async def delete_custom_field(
         self, db: AsyncSession, field_id: str, current_user: User

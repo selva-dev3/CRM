@@ -122,6 +122,37 @@ async def test_create_lead_resolves_org_and_serializes(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_create_lead_validates_and_persists_custom_fields(monkeypatch):
+    lead = _make_lead(custom_fields={"territory": "South"})
+    repo: Any = LeadRepository()
+    repo.create = AsyncMock(return_value=lead)
+    repo.get_organization = AsyncMock(return_value=object())
+    custom_fields = AsyncMock()
+    custom_fields.validate_values.return_value = {"territory": "South"}
+    service = LeadService(repository=repo, custom_field_service_instance=custom_fields)
+    monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())
+    db = AsyncMock(spec=AsyncSession)
+
+    payload = LeadCreate(
+        title="Acme Corp",
+        company="Acme Inc",
+        contact_name="Jane Doe",
+        email="jane@acme.com",
+        custom_fields={"territory": "South"},
+    )
+    result = await service.create_lead(db, payload)
+
+    assert repo.create.await_args.kwargs["data"]["custom_fields"] == {"territory": "South"}
+    assert result["custom_fields"] == {"territory": "South"}
+    custom_fields.validate_values.assert_awaited_once_with(
+        db,
+        organization_id="org-1",
+        entity_type="Lead",
+        values={"territory": "South"},
+    )
+
+
+@pytest.mark.asyncio
 async def test_create_lead_fires_lead_created_event(monkeypatch):
     lead = _make_lead()
     repo: Any = LeadRepository()

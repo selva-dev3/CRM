@@ -5,6 +5,7 @@ from alembic.script import ScriptDirectory
 
 BACKEND_ROOT = Path(__file__).resolve().parents[3]
 MERGE_REVISION = "e8f9a0b1c2d3"
+HEAD_REVISION = "f0a1b2c3d4e5"
 EXPECTED_PARENTS = {"d4e5f6a7b8c0", "d6e7f8a9b0c1"}
 
 
@@ -17,7 +18,7 @@ def _script_directory() -> ScriptDirectory:
 def test_alembic_revision_graph_has_one_head():
     script = _script_directory()
 
-    assert script.get_heads() == [MERGE_REVISION]
+    assert script.get_heads() == [HEAD_REVISION]
 
 
 def test_merge_revision_joins_ai_and_deal_custom_field_heads():

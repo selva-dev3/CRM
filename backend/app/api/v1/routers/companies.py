@@ -11,6 +11,7 @@ from app.schemas.crm_schemas import (
     CompanyResponse,
     CompanyUpdate,
     ContactResponse,
+    CustomFieldDefinition,
     DealResponse,
     DocumentResponse,
     InvoiceResponse,
@@ -52,6 +53,19 @@ async def create_company(
     current_user: User = Depends(get_current_user),
 ):
     return await company_service.create_company(db, payload, current_user)
+
+
+@router.get(
+    "/custom-fields",
+    response_model=list[CustomFieldDefinition],
+    summary="List custom fields available for companies",
+    dependencies=[Depends(require_permission("companies:read"))],
+)
+async def list_company_custom_fields(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await company_service.list_custom_fields(db, current_user)
 
 
 @router.post(

@@ -79,6 +79,8 @@ import { useUsersQuery } from '@/lib/api/users';
 import { useQueryClient } from '@tanstack/react-query';
 import { BASE_URL } from '@/lib/api/client';
 import { formatDate, formatDateTime } from '@/lib/formatters/date';
+import { CustomFieldValues } from '@/components/common/custom-field-values';
+import { useEntityCustomFieldsQuery } from '@/lib/api/custom-fields';
 
 const UNASSIGNED_VALUE = '__unassigned__';
 
@@ -93,6 +95,7 @@ export default function LeadDetailPage() {
 
   // Queries
   const { data: lead, isLoading, isError, error, refetch } = useLeadQuery(leadId);
+  const { data: customFields = [] } = useEntityCustomFieldsQuery('Lead');
   const { data: currentOrganization, isLoading: isOrgsLoading } = useCurrentOrganizationQuery();
   const organizations = useMemo(
     () => (currentOrganization ? [currentOrganization] : []),
@@ -661,6 +664,8 @@ export default function LeadDetailPage() {
                 </div>
               </div>
             </Card>
+
+            <CustomFieldValues fields={customFields} values={lead.custom_fields ?? {}} />
 
             <Card className="p-6 bg-white border border-[#E5E7EB] shadow-saas-sm rounded-card space-y-6">
               <div className="border-b border-[#E5E7EB] pb-4">

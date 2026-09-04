@@ -1,5 +1,6 @@
-﻿import { useQuery, useMutation, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
+﻿import { useQuery, useMutation, useQueryClient, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import { customFieldKeys } from '@/lib/api/custom-fields';
 
 export interface SystemSettings {
   organization_name: string;
@@ -197,14 +198,24 @@ export function useCustomFieldsQuery(entityType?: string) {
 }
 
 export function useCreateCustomFieldMutation() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: createCustomFieldApi,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['custom-fields'] });
+      void queryClient.invalidateQueries({ queryKey: customFieldKeys.all });
+    },
   });
 }
 
 export function useDeleteCustomFieldMutation() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: deleteCustomFieldApi,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['custom-fields'] });
+      void queryClient.invalidateQueries({ queryKey: customFieldKeys.all });
+    },
   });
 }
 

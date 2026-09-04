@@ -1,6 +1,7 @@
 ﻿import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
 import type { RelatedRecord } from '@/lib/types';
+import type { CustomFieldValue } from '@/lib/api/custom-fields';
 
 export interface ContactItem {
   id: string;
@@ -12,6 +13,7 @@ export interface ContactItem {
   is_starred?: boolean;
   status?: string;
   created_at?: string;
+  custom_fields?: Record<string, CustomFieldValue>;
 }
 
 export interface ContactCreatePayload {
@@ -23,6 +25,7 @@ export interface ContactCreatePayload {
   company_id?: string;
   position?: string;
   job_title?: string;
+  custom_fields?: Record<string, CustomFieldValue>;
 }
 
 export interface ContactUpdatePayload {
@@ -34,6 +37,7 @@ export interface ContactUpdatePayload {
   company_id?: string;
   position?: string;
   job_title?: string;
+  custom_fields?: Record<string, CustomFieldValue>;
 }
 
 // API Functions
@@ -63,6 +67,7 @@ export async function createContactApi(payload: ContactCreatePayload): Promise<C
     company_id: payload.company_id || null,
     position: payload.position || 'Representative',
     job_title: payload.job_title || payload.position || 'Representative',
+    custom_fields: payload.custom_fields ?? {},
   });
 }
 

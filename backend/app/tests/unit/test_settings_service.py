@@ -358,6 +358,32 @@ async def test_create_custom_field_resolves_org(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_create_custom_field_normalizes_entity_type(monkeypatch):
+    repo: Any = SettingRepository()
+    repo.create_custom_field = AsyncMock()
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.services.settings_service import organization_service
+
+    monkeypatch.setattr(
+        organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
+    )
+
+    await service.create_custom_field(
+        db,
+        entity_type=" lead ",
+        field_name="priority",
+        field_type="text",
+        label="Priority",
+        options=[],
+        current_user=_current_user(),
+    )
+
+    assert repo.create_custom_field.await_args.kwargs["data"]["entity_type"] == "Lead"
+
+
+@pytest.mark.asyncio
 async def test_list_custom_fields_is_scoped_to_current_organization(monkeypatch):
     repo: Any = SettingRepository()
     repo.list_custom_fields = AsyncMock(return_value=[])

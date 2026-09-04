@@ -93,6 +93,10 @@ vi.mock('@/lib/api/users', () => ({
   useUsersQuery: (...args: unknown[]) => useUsersQueryMock(...args),
 }));
 
+vi.mock('@/lib/api/custom-fields', () => ({
+  useEntityCustomFieldsQuery: () => ({ data: [] }),
+}));
+
 import LeadDetailPage from './page';
 
 const lead = {

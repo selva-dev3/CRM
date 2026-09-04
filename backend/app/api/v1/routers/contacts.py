@@ -11,6 +11,7 @@ from app.schemas.crm_schemas import (
     ContactCreate,
     ContactResponse,
     ContactUpdate,
+    CustomFieldDefinition,
     DealResponse,
     EmailResponse,
     MessageResponse,
@@ -53,6 +54,19 @@ async def create_contact(
     current_user: User = Depends(get_current_user),
 ):
     return await contact_service.create_contact(db, payload, current_user)
+
+
+@router.get(
+    "/custom-fields",
+    response_model=list[CustomFieldDefinition],
+    summary="List custom fields available for contacts",
+    dependencies=[Depends(require_permission("contacts:read"))],
+)
+async def list_contact_custom_fields(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await contact_service.list_custom_fields(db, current_user)
 
 
 @router.get(
