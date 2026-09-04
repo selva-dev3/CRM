@@ -21,6 +21,9 @@ class Task(Base):
     assigned_to: Mapped[str] = mapped_column(
         String, ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
+    project_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("projects.id", ondelete="SET NULL"), index=True
+    )
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), onupdate=func.now(), server_default=func.now()

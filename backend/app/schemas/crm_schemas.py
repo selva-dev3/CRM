@@ -488,6 +488,7 @@ class DealBase(BaseModel):
     company_id: str | None = None
     contact_id: str | None = None
     assigned_to: str | None = None
+    project_id: str | None = None
     custom_fields: dict[str, DealCustomFieldValue] = Field(default_factory=dict)
 
 
@@ -504,6 +505,7 @@ class DealUpdate(BaseModel):
     company_id: str | None = None
     contact_id: str | None = None
     assigned_to: str | None = None
+    project_id: str | None = None
     custom_fields: dict[str, DealCustomFieldValue] | None = None
 
 
@@ -521,6 +523,7 @@ class TaskBase(BaseModel):
     due_date: str | None = None
     status: str = "Pending"
     assigned_to: str | None = None
+    project_id: str | None = None
 
 
 class TaskCreate(TaskBase):
@@ -530,6 +533,7 @@ class TaskCreate(TaskBase):
 class TaskUpdate(BaseModel):
     status: str | None = None
     priority: str | None = None
+    project_id: str | None = None
 
 
 class TaskResponse(TaskBase):

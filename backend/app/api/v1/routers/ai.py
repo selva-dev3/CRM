@@ -1,9 +1,13 @@
+import json
+
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
 from app.core.config import settings
 from app.core.errors import APIException
+from app.core.logging import get_logger
 from app.db.session import get_db
 from app.models import User
 from app.schemas.ai import (
@@ -11,6 +15,8 @@ from app.schemas.ai import (
     AIActionExecutionResponse,
     AIChatRequest,
     AIChatResponse,
+    AIConversationDetail,
+    AIConversationSummary,
     AIOrganizationConfigResponse,
     AIOrganizationConfigUpdate,
     AISalesForecastResponse,
@@ -51,6 +57,7 @@ from app.schemas.crm_schemas import MessageResponse
 from app.services.ai_domain_service import ai_domain_service
 
 router = APIRouter()
+logger = get_logger(__name__)
 
 
 @router.get(
@@ -179,6 +186,102 @@ async def sales_assistant_chat(
 ):
     return await ai_domain_service.sales_assistant_chat(
         db, payload.message, payload.conversation_id, current_user
+    )
+
+
+@router.get(
+    "/sales-assistant/conversations",
+    response_model=list[AIConversationSummary],
+    dependencies=[Depends(require_permission("ai:read"))],
+)
+async def list_sales_assistant_conversations(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await ai_domain_service.list_conversations(db, current_user)
+
+
+@router.get(
+    "/sales-assistant/conversations/{conversation_id}",
+    response_model=AIConversationDetail,
+    dependencies=[Depends(require_permission("ai:read"))],
+)
+async def get_sales_assistant_conversation(
+    conversation_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await ai_domain_service.get_conversation_history(db, conversation_id, current_user)
+
+
+@router.delete(
+    "/sales-assistant/conversations/{conversation_id}",
+    response_model=MessageResponse,
+    dependencies=[Depends(require_permission("ai:generate"))],
+)
+async def delete_sales_assistant_conversation(
+    conversation_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await ai_domain_service.delete_conversation(db, conversation_id, current_user)
+    return {"message": "Conversation deleted"}
+
+
+@router.post(
+    "/sales-assistant/chat/stream",
+    dependencies=[Depends(require_permission("ai:generate"))],
+)
+async def stream_sales_assistant_chat(
+    payload: AIChatRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Stream validated chat output; CRM data is never emitted before authorization."""
+
+    def event(name: str, data: object) -> str:
+        return f"event: {name}\ndata: {json.dumps(data, default=str)}\n\n"
+
+    async def generate():
+        yield event("status", {"message": "Searching authorized CRM data"})
+        try:
+            result = await ai_domain_service.sales_assistant_chat(
+                db, payload.message, payload.conversation_id, current_user
+            )
+            metadata = result.get("metadata") or {}
+            if metadata.get("fallback_used"):
+                yield event(
+                    "fallback",
+                    {"message": "The first AI model was unavailable. Another model responded."},
+                )
+            response_text = str(result.get("response", ""))
+            for start in range(0, len(response_text), 80):
+                yield event("delta", {"text": response_text[start : start + 80]})
+            yield event("complete", result)
+        except APIException as exc:
+            yield event(
+                "error",
+                {
+                    "code": exc.code,
+                    "message": exc.message,
+                    "retryable": exc.status_code >= 500 or exc.status_code == 429,
+                },
+            )
+        except Exception:
+            logger.exception("Unexpected AI chat streaming failure")
+            yield event(
+                "error",
+                {
+                    "code": "AI_CHAT_FAILED",
+                    "message": "The AI assistant could not complete the request.",
+                    "retryable": True,
+                },
+            )
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 

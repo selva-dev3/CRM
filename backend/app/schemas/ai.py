@@ -3,6 +3,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.schemas.report_schemas import ReportTypeEnum
+
 
 class AIEvidence(BaseModel):
     entity_type: str
@@ -34,6 +36,8 @@ class AIResponseMetadata(BaseModel):
     run_id: str | None = None
     provider: str | None = None
     model: str | None = None
+    fallback_used: bool = False
+    attempted_model_count: int = 1
     generated_at: str
 
 
@@ -152,6 +156,33 @@ class AIChatResponse(BaseModel):
     follow_up_questions: list[str] = Field(default_factory=list)
     run_id: str | None = None
     metadata: AIResponseMetadata | None = None
+
+
+class AIConversationSummary(BaseModel):
+    id: str
+    title: str
+    model_name: str
+    created_at: str
+    updated_at: str
+
+
+class AIConversationMessage(BaseModel):
+    id: str
+    user_prompt: str
+    ai_response: str
+    result_blocks: list[AIResultBlock] = Field(default_factory=list)
+    evidence: list[AIEvidence] = Field(default_factory=list)
+    follow_up_questions: list[str] = Field(default_factory=list)
+    provider: str | None = None
+    model: str | None = None
+    fallback_used: bool = False
+    created_at: str
+
+
+class AIConversationDetail(BaseModel):
+    id: str
+    title: str
+    messages: list[AIConversationMessage]
 
 
 class LeadIntelligenceResponse(BaseModel):
@@ -428,7 +459,9 @@ class CRMSearchPlan(BaseModel):
         "calendar_event",
         "activity",
         "user",
+        "report",
     ]
+    report_type: ReportTypeEnum | None = None
     result_key: str | None = Field(default=None, min_length=1, max_length=50)
     title: str | None = Field(default=None, min_length=1, max_length=120)
     text_query: str | None = None
@@ -463,6 +496,10 @@ class CRMSearchPlan(BaseModel):
 
     @model_validator(mode="after")
     def validate_intent(self) -> "CRMSearchPlan":
+        if self.entity_type == "report" and not self.report_type:
+            raise ValueError("Report queries require report_type")
+        if self.entity_type != "report" and self.report_type:
+            raise ValueError("report_type requires the report entity")
         if self.intent == "aggregate" and not (self.aggregate and self.aggregate_field):
             raise ValueError("Aggregate queries require aggregate and aggregate_field")
         if self.intent != "aggregate" and (self.aggregate or self.aggregate_field):

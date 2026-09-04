@@ -9,6 +9,7 @@ export interface TaskItem {
   due_date?: string;
   status?: string; // 'Pending' | 'In Progress' | 'Completed'
   assigned_to?: string;
+  project_id?: string;
   created_at?: string;
 }
 
@@ -19,6 +20,7 @@ export interface TaskCreatePayload {
   due_date?: string;
   status?: string;
   assigned_to?: string;
+  project_id?: string;
 }
 
 export interface TaskUpdatePayload {
@@ -28,6 +30,7 @@ export interface TaskUpdatePayload {
   due_date?: string;
   status?: string;
   assigned_to?: string;
+  project_id?: string;
 }
 
 export interface FetchTasksParams {

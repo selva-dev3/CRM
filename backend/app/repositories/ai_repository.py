@@ -395,6 +395,58 @@ class AIRepository:
         )
         return result.scalars().first()
 
+    async def list_conversations(
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        user_id: str,
+        limit: int = 50,
+    ) -> list[tuple[AIConversation, datetime]]:
+        last_message = (
+            select(
+                AIPrompt.conversation_id,
+                func.max(AIPrompt.created_at).label("last_message_at"),
+            )
+            .group_by(AIPrompt.conversation_id)
+            .subquery()
+        )
+        result = await db.execute(
+            select(
+                AIConversation,
+                func.coalesce(last_message.c.last_message_at, AIConversation.created_at),
+            )
+            .outerjoin(last_message, last_message.c.conversation_id == AIConversation.id)
+            .where(
+                AIConversation.organization_id == organization_id,
+                AIConversation.user_id == user_id,
+            )
+            .order_by(
+                func.coalesce(last_message.c.last_message_at, AIConversation.created_at).desc()
+            )
+            .limit(limit)
+        )
+        return [(conversation, updated_at) for conversation, updated_at in result.all()]
+
+    async def delete_conversation(
+        self,
+        db: AsyncSession,
+        *,
+        conversation_id: str,
+        organization_id: str,
+        user_id: str,
+    ) -> bool:
+        conversation = await self.get_conversation(
+            db,
+            conversation_id=conversation_id,
+            organization_id=organization_id,
+            user_id=user_id,
+        )
+        if not conversation:
+            return False
+        await db.delete(conversation)
+        return True
+
     async def list_conversation_prompts(
         self,
         db: AsyncSession,
@@ -416,6 +468,12 @@ class AIRepository:
             .limit(limit)
         )
         return list(reversed(result.scalars().all()))
+
+    async def get_runs_by_ids(self, db: AsyncSession, *, run_ids: set[str]) -> dict[str, AIRun]:
+        if not run_ids:
+            return {}
+        result = await db.execute(select(AIRun).where(AIRun.id.in_(run_ids)))
+        return {run.id: run for run in result.scalars().all()}
 
     async def create_action(
         self,
@@ -685,12 +743,20 @@ class AIRepository:
         user_prompt: str,
         ai_response: str,
         tokens_used: int,
+        run_id: str | None = None,
+        result_blocks_json: str = "[]",
+        evidence_json: str = "[]",
+        follow_up_questions_json: str = "[]",
     ) -> AIPrompt:
         prompt = AIPrompt(
             conversation_id=conversation_id,
             user_prompt=user_prompt,
             ai_response=ai_response,
             tokens_used=tokens_used,
+            run_id=run_id,
+            result_blocks_json=result_blocks_json,
+            evidence_json=evidence_json,
+            follow_up_questions_json=follow_up_questions_json,
         )
         db.add(prompt)
         return prompt
@@ -953,6 +1019,40 @@ class AIRepository:
             .correlate(Deal)
             .scalar_subquery()
         )
+        deal_project_name = (
+            select(Project.name)
+            .where(Project.id == Deal.project_id, Project.organization_id == organization_id)
+            .correlate(Deal)
+            .scalar_subquery()
+        )
+        task_project_name = (
+            select(Project.name)
+            .where(Project.id == Task.project_id, Project.organization_id == organization_id)
+            .correlate(Task)
+            .scalar_subquery()
+        )
+        project_pending_task_count = (
+            select(func.count(Task.id))
+            .where(
+                Task.organization_id == organization_id,
+                Task.project_id == Project.id,
+                func.lower(Task.status) != "completed",
+            )
+            .correlate(Project)
+            .scalar_subquery()
+        )
+        project_deal_count = (
+            select(func.count(Deal.id))
+            .where(Deal.organization_id == organization_id, Deal.project_id == Project.id)
+            .correlate(Project)
+            .scalar_subquery()
+        )
+        project_deal_value = (
+            select(func.coalesce(func.sum(Deal.amount), 0.0))
+            .where(Deal.organization_id == organization_id, Deal.project_id == Project.id)
+            .correlate(Project)
+            .scalar_subquery()
+        )
         call_contact_name = (
             select(Contact.name)
             .where(Contact.id == CallLog.contact_id, Contact.organization_id == organization_id)
@@ -1004,6 +1104,11 @@ class AIRepository:
             ("contact", "company_name"): contact_company_name,
             ("deal", "company_name"): deal_company_name,
             ("deal", "contact_name"): deal_contact_name,
+            ("deal", "project_name"): deal_project_name,
+            ("task", "project_name"): task_project_name,
+            ("project", "pending_task_count"): project_pending_task_count,
+            ("project", "deal_count"): project_deal_count,
+            ("project", "deal_value"): project_deal_value,
             ("call", "contact_name"): call_contact_name,
             ("document", "uploaded_by_name"): document_uploader_name,
             ("quote", "deal_title"): quote_deal_title,
@@ -1049,6 +1154,7 @@ class AIRepository:
                 "expected_close_date": Deal.expected_close_date,
                 "created_at": Deal.created_at,
                 "updated_at": Deal.updated_at,
+                "project_id": Deal.project_id,
             },
             "task": {
                 "title": Task.title,
@@ -1057,6 +1163,7 @@ class AIRepository:
                 "due_date": Task.due_date,
                 "created_at": Task.created_at,
                 "updated_at": Task.updated_at,
+                "project_id": Task.project_id,
             },
             "project": {
                 "name": Project.name,
@@ -1211,6 +1318,9 @@ class AIRepository:
                 "probability",
                 "score",
                 "budget",
+                "pending_task_count",
+                "deal_count",
+                "deal_value",
                 "completion_percentage",
                 "duration_seconds",
                 "file_size",
@@ -1443,8 +1553,24 @@ class AIRepository:
             "lead": ("id", "title", "company", "status", "score", "updated_at"),
             "contact": ("id", "name", "position", "company_id", "updated_at"),
             "company": ("id", "name", "industry", "employee_count", "updated_at"),
-            "deal": ("id", "title", "amount", "stage", "probability", "updated_at"),
-            "task": ("id", "title", "status", "priority", "due_date", "updated_at"),
+            "deal": (
+                "id",
+                "title",
+                "amount",
+                "stage",
+                "probability",
+                "project_id",
+                "updated_at",
+            ),
+            "task": (
+                "id",
+                "title",
+                "status",
+                "priority",
+                "project_id",
+                "due_date",
+                "updated_at",
+            ),
             "project": (
                 "id",
                 "name",

@@ -6,6 +6,7 @@ from app.models import User
 from app.models.deal import Deal
 from app.repositories.deal_repository import DealRepository
 from app.repositories.invoice_repository import invoice_repository
+from app.repositories.project_repository import ProjectRepository
 from app.repositories.setting_repository import SettingRepository
 from app.schemas.crm_schemas import (
     DealCreate,
@@ -44,6 +45,7 @@ def deal_to_dict(d: Deal) -> dict:
         "assigned_to": d.assigned_to,
         "company_id": d.company_id,
         "contact_id": d.contact_id,
+        "project_id": getattr(d, "project_id", None),
         "custom_fields": d.custom_fields or {},
         "organization_id": d.organization_id,
         "created_at": str(d.created_at) if d.created_at else None,
@@ -59,12 +61,26 @@ class DealService:
         quote_service_instance: QuoteService | None = None,
         setting_repository: SettingRepository | None = None,
         ai_service_instance: AIDomainService | None = None,
+        project_repository: ProjectRepository | None = None,
     ) -> None:
         self.repository = repository or DealRepository()
         self.quote_service = quote_service_instance or quote_service
         self.setting_repository = setting_repository or SettingRepository()
         self.custom_field_service = CustomFieldService(self.setting_repository)
         self.ai_service = ai_service_instance or ai_domain_service
+        self.project_repository = project_repository or ProjectRepository()
+
+    async def _validate_project(
+        self, db: AsyncSession, project_id: str | None, organization_id: str
+    ) -> str | None:
+        if not project_id or project_id in {"null", "None"}:
+            return None
+        project = await self.project_repository.get(
+            db, project_id=project_id, organization_id=organization_id
+        )
+        if not project:
+            raise NotFoundError(message=f"Project '{project_id}' not found")
+        return project.id
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
         try:
@@ -154,6 +170,7 @@ class DealService:
     ) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
         custom_fields = await self._validate_custom_fields(db, org_id, payload.custom_fields)
+        project_id = await self._validate_project(db, payload.project_id, org_id)
 
         assigned_user_id = payload.assigned_to
         if assigned_user_id:
@@ -184,6 +201,7 @@ class DealService:
                 "assigned_to": assigned_user_id,
                 "company_id": comp_id,
                 "contact_id": cont_id,
+                "project_id": project_id,
                 "custom_fields": custom_fields,
             },
         )
@@ -301,6 +319,9 @@ class DealService:
                 d.contact_id = None
             elif await self.repository.contact_exists(db, payload.contact_id):
                 d.contact_id = payload.contact_id
+
+        if payload.project_id is not None:
+            d.project_id = await self._validate_project(db, payload.project_id, d.organization_id)
 
         if payload.custom_fields is not None:
             d.custom_fields = await self._validate_custom_fields(

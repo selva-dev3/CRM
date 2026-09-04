@@ -27,6 +27,7 @@ export interface DealItem {
   organization_id?: string;
   created_at?: string;
   custom_fields?: Record<string, CustomFieldValue>;
+  project_id?: string;
 }
 
 export type DealCustomFieldDefinition = CustomFieldDefinition;
@@ -38,6 +39,7 @@ export interface DealCreatePayload {
   probability?: number;
   assigned_to?: string;
   custom_fields?: Record<string, CustomFieldValue>;
+  project_id?: string;
 }
 
 export interface DealUpdatePayload {
@@ -47,6 +49,7 @@ export interface DealUpdatePayload {
   probability?: number;
   assigned_to?: string;
   custom_fields?: Record<string, CustomFieldValue>;
+  project_id?: string;
 }
 
 // API Functions

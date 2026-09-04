@@ -96,6 +96,34 @@ async def test_create_deal_falls_back_to_first_user(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_create_deal_rejects_project_outside_current_organization(monkeypatch):
+    repo: Any = DealRepository()
+    repo.create = AsyncMock()
+    project_repository = AsyncMock()
+    project_repository.get.return_value = None
+    service = DealService(repository=repo, project_repository=project_repository)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.services.deal_service import organization_service
+
+    monkeypatch.setattr(
+        organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
+    )
+
+    with pytest.raises(NotFoundError):
+        await service.create_deal(
+            db,
+            DealCreate(title="Project deal", project_id="project-2"),
+            _user(),
+        )
+
+    project_repository.get.assert_awaited_once_with(
+        db, project_id="project-2", organization_id="org-1"
+    )
+    repo.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_create_deal_validates_and_persists_custom_fields(monkeypatch):
     deal = _make_deal(custom_fields={"decision_maker": "CTO"})
     repo: Any = DealRepository()

@@ -28,6 +28,9 @@ class Deal(Base):
     company_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("companies.id", ondelete="SET NULL")
     )
+    project_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("projects.id", ondelete="SET NULL"), index=True
+    )
     custom_fields: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(

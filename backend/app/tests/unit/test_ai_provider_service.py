@@ -106,6 +106,7 @@ async def test_openrouter_rejects_refusal_or_empty_content(monkeypatch, message)
         close=AsyncMock(),
     )
     monkeypatch.setattr("app.services.ai_provider_service.settings.OPENROUTER_API_KEY", "set")
+    monkeypatch.setattr("app.services.ai_provider_service.settings.OPENROUTER_MODEL_POOL", "")
     monkeypatch.setattr("app.services.ai_provider_service.AsyncOpenAI", lambda **kwargs: client)
 
     with pytest.raises(APIException) as exc_info:
@@ -119,6 +120,49 @@ async def test_openrouter_rejects_refusal_or_empty_content(monkeypatch, message)
 
     assert exc_info.value.code == "AI_INVALID_RESPONSE"
     client.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_openrouter_uses_ordered_fallback_for_retryable_failures(monkeypatch):
+    gateway = AIProviderGateway()
+    successful = AIProviderResult(
+        output=ScoreOutput(score=80),
+        provider="openrouter",
+        model="model-b",
+        input_tokens=10,
+        output_tokens=5,
+        latency_ms=20,
+    )
+    gateway._generate_once = AsyncMock(
+        side_effect=[
+            APIException(
+                status_code=429,
+                code="AI_PROVIDER_RATE_LIMITED",
+                message="The AI provider is temporarily rate limited.",
+            ),
+            successful,
+        ]
+    )
+    monkeypatch.setattr(
+        "app.services.ai_provider_service.settings.OPENROUTER_MODEL_POOL",
+        "model-a,model-b,model-c",
+    )
+
+    result = await gateway.generate_structured(
+        provider="openrouter",
+        model="model-a",
+        system_prompt="system",
+        user_prompt="user",
+        output_schema=ScoreOutput,
+    )
+
+    assert result.model == "model-b"
+    assert result.fallback_used is True
+    assert result.attempted_models == ("model-a", "model-b")
+    assert [call.kwargs["model"] for call in gateway._generate_once.await_args_list] == [
+        "model-a",
+        "model-b",
+    ]
 
 
 def test_openrouter_crm_search_schema_is_strict():

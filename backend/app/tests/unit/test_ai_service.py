@@ -91,6 +91,9 @@ def _repository() -> Any:
     repository.search_transcripts = AsyncMock(return_value=[])
     repository.get_conversation = AsyncMock()
     repository.list_conversation_prompts = AsyncMock(return_value=[])
+    repository.list_conversations = AsyncMock(return_value=[])
+    repository.get_runs_by_ids = AsyncMock(return_value={})
+    repository.delete_conversation = AsyncMock(return_value=False)
     repository.get_organization_config = AsyncMock(return_value=None)
     repository.set_organization_model = AsyncMock()
     repository.update_organization_config = AsyncMock()
@@ -430,6 +433,45 @@ async def test_sales_assistant_rejects_cross_tenant_conversation():
 
 
 @pytest.mark.asyncio
+async def test_conversation_history_is_scoped_to_current_user_and_organization():
+    repository = _repository()
+    repository.get_conversation.return_value = SimpleNamespace(
+        id="conversation-1", title="Pipeline", model_name="model-a"
+    )
+    repository.list_conversation_prompts.return_value = []
+    service = AIDomainService(repository=repository, runtime=AsyncMock())
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.get_conversation_history(db, "conversation-1", _user())
+
+    assert result == {"id": "conversation-1", "title": "Pipeline", "messages": []}
+    repository.get_conversation.assert_awaited_once_with(
+        db,
+        conversation_id="conversation-1",
+        organization_id="org-1",
+        user_id="user-1",
+    )
+
+
+@pytest.mark.asyncio
+async def test_delete_conversation_does_not_delete_cross_tenant_record():
+    repository = _repository()
+    service = AIDomainService(repository=repository, runtime=AsyncMock())
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(NotFoundError):
+        await service.delete_conversation(db, "foreign-conversation", _user())
+
+    repository.delete_conversation.assert_awaited_once_with(
+        db,
+        conversation_id="foreign-conversation",
+        organization_id="org-1",
+        user_id="user-1",
+    )
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_sales_assistant_planner_receives_only_permitted_crm_catalog():
     repository = _repository()
     repository.execute_search_plan.return_value = [{"count": 1}]
@@ -594,6 +636,64 @@ async def test_sales_assistant_checks_every_operation_permission_before_querying
         )
 
     repository.execute_search_plan.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_project_task_metrics_require_both_project_and_task_permissions():
+    repository = _repository()
+    plan = CRMChatPlan(
+        operations=[
+            CRMSearchPlan(
+                entity_type="project",
+                include_fields=["pending_task_count"],
+                filters=[
+                    {
+                        "field": "pending_task_count",
+                        "operator": "gte",
+                        "value": 1,
+                    }
+                ],
+            )
+        ]
+    )
+    runtime = _runtime(plan)
+    service = AIDomainService(repository=repository, runtime=runtime)
+    service._permission_keys = AsyncMock(return_value={"ai:generate", "projects:read"})
+
+    with pytest.raises(ForbiddenError, match="tasks:read"):
+        await service.sales_assistant_chat(
+            AsyncMock(spec=AsyncSession), "Which projects have pending tasks?", None, _user()
+        )
+
+    repository.execute_search_plan.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_sales_assistant_uses_tenant_scoped_report_service():
+    repository = _repository()
+    reports = AsyncMock()
+    reports.get_pipeline_velocity_report.return_value = {
+        "report_type": "Pipeline Velocity",
+        "metrics": {"open_deals": 4},
+        "generated_at": "2026-09-04",
+    }
+    plan = CRMChatPlan(
+        operations=[CRMSearchPlan(entity_type="report", report_type="pipeline-velocity")]
+    )
+    service = AIDomainService(
+        repository=repository,
+        runtime=_chat_runtime(plan, AIChatGeneratedOutput(response="There are 4 open deals.")),
+        report_service_instance=reports,
+    )
+    service._permission_keys = AsyncMock(return_value={"ai:generate", "reports:read", "deals:read"})
+    db = AsyncMock(spec=AsyncSession)
+    user = _user()
+
+    result = await service.sales_assistant_chat(db, "Show pipeline velocity", None, user)
+
+    reports.get_pipeline_velocity_report.assert_awaited_once_with(db, current_user=user)
+    repository.execute_search_plan.assert_not_awaited()
+    assert result["result_blocks"][0]["results"][0]["metrics"]["open_deals"] == 4
 
 
 @pytest.mark.asyncio
