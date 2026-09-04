@@ -107,19 +107,19 @@ export default function AIIntelligencePage() {
   ];
 
   return (
-    <main className="mx-auto max-w-[1500px] space-y-7 pb-14">
-      <header className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white px-6 py-7 shadow-saas-sm sm:px-8">
-        <div className="pointer-events-none absolute -right-20 -top-28 h-72 w-72 rounded-full bg-blue-100/60 blur-3xl" />
-        <div className="relative flex flex-col justify-between gap-6 md:flex-row md:items-end">
+    <main className="mx-auto max-w-[1500px] space-y-5 pb-12">
+      <header className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-saas-sm sm:px-7 sm:py-6">
+        <div className="pointer-events-none absolute -right-20 -top-32 h-72 w-72 rounded-full bg-blue-100/60 blur-3xl" />
+        <div className="relative flex flex-col justify-between gap-4 md:flex-row md:items-center">
           <div>
             <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.16em] text-blue-700">
               <Sparkles className="h-3.5 w-3.5" />
               Authorized AI
             </div>
-            <h1 className="mt-4 text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
+            <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950 sm:text-[2.15rem]">
               AI Intelligence
             </h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 sm:text-base">
+            <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-600">
               Search CRM records and create sales content using only data your role may access.
             </p>
           </div>
@@ -132,17 +132,17 @@ export default function AIIntelligencePage() {
         </div>
       </header>
 
-      <section className="grid gap-4 sm:grid-cols-3" aria-label="AI usage">
+      <section className="grid gap-3 sm:grid-cols-3" aria-label="AI usage">
         {usageCards.map(({ label, value, icon: Icon }) => (
-          <Card key={String(label)} className="relative overflow-hidden border-slate-200 bg-white p-5 shadow-saas-sm">
+          <Card key={String(label)} className="relative overflow-hidden border-slate-200 bg-white p-4 shadow-saas-sm sm:p-5">
             <div className="flex items-start justify-between">
               <p className="text-xs font-medium text-slate-500">{label}</p>
               <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-50 text-blue-600">
                 <Icon className="h-4 w-4" />
               </span>
             </div>
-            <p className="mt-4 text-2xl font-semibold tracking-tight text-slate-950">{value}</p>
-            <div className="mt-4 h-1 w-12 rounded-full bg-blue-600" />
+            <p className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">{value}</p>
+            <div className="mt-3 h-1 w-10 rounded-full bg-blue-600" />
           </Card>
         ))}
       </section>
@@ -155,9 +155,9 @@ export default function AIIntelligencePage() {
         </div>
       )}
 
-      <div className="grid items-start gap-5 xl:grid-cols-[1.08fr_0.92fr]">
-        <Card className="overflow-hidden border-slate-200 bg-white shadow-saas-sm">
-          <div className="border-b border-slate-100 px-6 py-5 sm:px-7">
+      <div className="grid items-stretch gap-4 xl:grid-cols-[1.08fr_0.92fr]">
+        <Card className="flex h-full flex-col overflow-hidden border-slate-200 bg-white shadow-saas-sm">
+          <div className="border-b border-slate-100 px-5 py-4 sm:px-6">
             <div className="flex items-start gap-3">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
                 <Search className="h-5 w-5" />
@@ -168,7 +168,7 @@ export default function AIIntelligencePage() {
               </div>
             </div>
           </div>
-          <div className="space-y-5 p-6 sm:p-7">
+          <div className="flex flex-1 flex-col space-y-5 p-5 sm:p-6">
             <form className="space-y-5" onSubmit={handleSearch}>
               <div className="space-y-2">
                 <Label htmlFor="ai-search-scope" className="text-xs font-semibold text-slate-700">Record type</Label>
@@ -198,7 +198,7 @@ export default function AIIntelligencePage() {
                   disabled={!canGenerate || isSearching}
                 />
               </div>
-              <Button type="submit" className="h-11 rounded-xl px-5 shadow-sm" disabled={!canGenerate || isSearching || !query.trim()}>
+              <Button type="submit" className="h-11 rounded-xl px-5 shadow-sm disabled:bg-blue-200 disabled:text-blue-800 disabled:opacity-100" disabled={!canGenerate || isSearching || !query.trim()}>
                 {isSearching && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Search authorized CRM data
               </Button>
@@ -209,6 +209,18 @@ export default function AIIntelligencePage() {
                 <Button type="button" variant="outline" size="sm" className="rounded-lg bg-white" disabled={isSearching} onClick={() => void runSearch()}>
                   Retry
                 </Button>
+              </div>
+            )}
+            {!searchResult && !searchError && !isSearching && (
+              <div className="flex items-center gap-3 rounded-xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-4 text-xs leading-5 text-slate-500">
+                <Search className="h-4 w-4 shrink-0 text-blue-500" />
+                <p>Choose a record type, ask a question, and let AI find the authorized records for you.</p>
+              </div>
+            )}
+            {isSearching && (
+              <div className="flex items-center gap-3 rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-4 text-sm text-blue-800" aria-live="polite">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Searching authorized CRM data…
               </div>
             )}
             {searchResult && (
@@ -238,8 +250,8 @@ export default function AIIntelligencePage() {
           </div>
         </Card>
 
-        <Card className="overflow-hidden border-slate-200 bg-white shadow-saas-sm">
-          <div className="border-b border-slate-100 px-6 py-5 sm:px-7">
+        <Card className="flex h-full flex-col overflow-hidden border-slate-200 bg-white shadow-saas-sm">
+          <div className="border-b border-slate-100 px-5 py-4 sm:px-6">
             <div className="flex items-start gap-3">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
                 <Mail className="h-5 w-5" />
@@ -250,7 +262,7 @@ export default function AIIntelligencePage() {
               </div>
             </div>
           </div>
-          <div className="space-y-5 p-6 sm:p-7">
+          <div className="flex flex-1 flex-col space-y-5 p-5 sm:p-6">
             <form className="space-y-5" onSubmit={handleEmailGeneration}>
               <div className="space-y-2">
                 <Label htmlFor="ai-email-prompt" className="text-xs font-semibold text-slate-700">Instructions and authorized context</Label>
@@ -264,12 +276,24 @@ export default function AIIntelligencePage() {
                   disabled={!canGenerate || isGeneratingEmail}
                 />
               </div>
-              <Button type="submit" className="h-11 rounded-xl bg-slate-950 px-5 shadow-sm hover:bg-slate-800" disabled={!canGenerate || isGeneratingEmail || !emailPrompt.trim()}>
+              <Button type="submit" className="h-11 rounded-xl bg-slate-950 px-5 shadow-sm hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-600 disabled:opacity-100" disabled={!canGenerate || isGeneratingEmail || !emailPrompt.trim()}>
                 {isGeneratingEmail && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Generate email
               </Button>
             </form>
             {emailError && <p className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">{emailError}</p>}
+            {!emailResult && !emailError && !isGeneratingEmail && (
+              <div className="mt-auto flex items-start gap-3 rounded-xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-4 text-xs leading-5 text-slate-500">
+                <Mail className="mt-0.5 h-4 w-4 shrink-0 text-violet-500" />
+                <p>Describe the audience, goal, and tone. AI will draft a polished message using your authorized context.</p>
+              </div>
+            )}
+            {isGeneratingEmail && (
+              <div className="mt-auto flex items-center gap-3 rounded-xl border border-violet-100 bg-violet-50/60 px-4 py-4 text-sm text-violet-800" aria-live="polite">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Drafting your email…
+              </div>
+            )}
             {emailResult && (
               <article className="space-y-4 rounded-2xl border border-violet-100 bg-gradient-to-br from-violet-50/70 to-blue-50/50 p-5" aria-live="polite">
                 <div>
