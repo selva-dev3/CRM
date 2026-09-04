@@ -70,6 +70,13 @@ export const PERMISSIONS = {
     ASSIGN: 'tasks:assign',
     COMPLETE: 'tasks:complete',
   },
+  PROJECTS: {
+    READ: 'projects:read',
+    CREATE: 'projects:create',
+    UPDATE: 'projects:update',
+    DELETE: 'projects:delete',
+    ASSIGN: 'projects:assign',
+  },
   MEETINGS: {
     READ: 'meetings:read',
     CREATE: 'meetings:create',

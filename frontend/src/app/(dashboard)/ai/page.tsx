@@ -23,7 +23,7 @@ import {
 import { PERMISSIONS } from '@/lib/permissions';
 import { getErrorMessage } from '@/lib/utils';
 
-type SearchScope = 'auto' | 'lead' | 'contact' | 'company' | 'deal' | 'task';
+type SearchScope = 'auto' | 'lead' | 'contact' | 'company' | 'deal' | 'task' | 'project';
 
 function ResultValue({ value }: { readonly value: unknown }) {
   if (value === null || value === undefined || value === '') return <span>—</span>;
@@ -185,6 +185,7 @@ export default function AIIntelligencePage() {
                   <option value="contact">Contacts</option>
                   <option value="deal">Deals</option>
                   <option value="task">Tasks</option>
+                  <option value="project">Projects</option>
                 </select>
               </div>
               <div className="space-y-2">

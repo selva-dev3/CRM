@@ -51,6 +51,7 @@ from app.models.organization import (
     SubscriptionPlan,
 )
 from app.models.product import Product, ProductCategory
+from app.models.project import Project
 from app.models.quote import Quote, QuoteItem
 from app.models.rbac import Permission, Role, RolePermission, UserRole
 from app.models.report import CustomReport, ReportExport, ScheduledReport
@@ -156,4 +157,5 @@ __all__ = [
     "Currency",
     "Language",
     "Timezone",
+    "Project",
 ]

@@ -21,6 +21,7 @@ from app.api.v1.routers import (
     notifications,
     organizations,
     products,
+    projects,
     quotes,
     reports,
     roles,
@@ -88,6 +89,12 @@ api_router.include_router(
     tasks.router,
     prefix="/tasks",
     tags=["10. Task Management"],
+    dependencies=[Depends(get_current_user)],
+)
+api_router.include_router(
+    projects.router,
+    prefix="/projects",
+    tags=["10. Project Management"],
     dependencies=[Depends(get_current_user)],
 )
 api_router.include_router(
