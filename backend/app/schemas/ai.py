@@ -129,6 +129,18 @@ class AIChatGeneratedOutput(BaseModel):
     response: str
     evidence: list[AIEvidence] = Field(default_factory=list)
     proposed_actions: list[AIActionProposal] = Field(default_factory=list)
+    follow_up_questions: list[str] = Field(default_factory=list, max_length=3)
+
+
+class AIResultBlock(BaseModel):
+    key: str
+    title: str
+    entity_type: str
+    intent: str
+    results: list[dict[str, Any]] = Field(default_factory=list)
+    result_count: int = Field(ge=0)
+    explanation: str
+    generated_at: str
 
 
 class AIChatResponse(BaseModel):
@@ -136,6 +148,8 @@ class AIChatResponse(BaseModel):
     response: str
     evidence: list[AIEvidence] = Field(default_factory=list)
     proposed_actions: list[AIActionProposal] = Field(default_factory=list)
+    result_blocks: list[AIResultBlock] = Field(default_factory=list)
+    follow_up_questions: list[str] = Field(default_factory=list)
     run_id: str | None = None
     metadata: AIResponseMetadata | None = None
 
@@ -389,58 +403,42 @@ class CRMSearchRequest(BaseModel):
 
 
 class CRMSearchFilter(BaseModel):
-    field: Literal[
-        "name",
-        "title",
-        "company",
-        "contact_name",
-        "email",
-        "industry",
-        "employee_count",
-        "city",
-        "country",
-        "source",
-        "status",
-        "stage",
-        "priority",
-        "amount",
-        "probability",
-        "score",
-        "created_at",
-        "updated_at",
-        "due_date",
-        "expected_close_date",
-        "open_deal_value",
-        "last_contact_at",
-        "description",
-        "owner_id",
-        "start_date",
-        "budget",
-        "completion_percentage",
-    ]
+    field: str = Field(min_length=1, max_length=50)
     operator: Literal["equals", "contains", "gte", "lte", "before", "after"]
     value: str | int | float | bool
 
 
 class CRMSearchPlan(BaseModel):
     intent: Literal["list", "detail", "count", "aggregate", "comparison"] = "list"
-    entity_type: Literal["lead", "contact", "company", "deal", "task", "project"]
+    entity_type: Literal[
+        "lead",
+        "contact",
+        "company",
+        "deal",
+        "task",
+        "project",
+        "call",
+        "meeting",
+        "email",
+        "note",
+        "document",
+        "product",
+        "quote",
+        "invoice",
+        "calendar_event",
+        "activity",
+        "user",
+    ]
+    result_key: str | None = Field(default=None, min_length=1, max_length=50)
+    title: str | None = Field(default=None, min_length=1, max_length=120)
     text_query: str | None = None
     status: str | None = None
     filters: list[CRMSearchFilter] = Field(default_factory=list, max_length=10)
+    include_fields: list[str] = Field(default_factory=list, max_length=10)
     aggregate: Literal["sum", "average", "minimum", "maximum"] | None = None
-    aggregate_field: (
-        Literal[
-            "amount", "probability", "score", "open_deal_value", "budget", "completion_percentage"
-        ]
-        | None
-    ) = None
-    group_by: (
-        Literal["status", "stage", "industry", "city", "country", "priority", "owner_id"] | None
-    ) = None
-    date_field: (
-        Literal["created_at", "updated_at", "due_date", "expected_close_date", "start_date"] | None
-    ) = None
+    aggregate_field: str | None = Field(default=None, max_length=50)
+    group_by: str | None = Field(default=None, max_length=50)
+    date_field: str | None = Field(default=None, max_length=50)
     date_range: (
         Literal[
             "today",
@@ -457,25 +455,7 @@ class CRMSearchPlan(BaseModel):
     ) = None
     start_date: date | None = None
     end_date: date | None = None
-    sort_by: (
-        Literal[
-            "name",
-            "title",
-            "amount",
-            "probability",
-            "score",
-            "created_at",
-            "updated_at",
-            "due_date",
-            "expected_close_date",
-            "open_deal_value",
-            "last_contact_at",
-            "start_date",
-            "budget",
-            "completion_percentage",
-        ]
-        | None
-    ) = None
+    sort_by: str | None = Field(default=None, max_length=50)
     sort_direction: Literal["asc", "desc"] = "asc"
     inactive_days: int | None = Field(default=None, ge=1, le=3650)
     minimum_open_deal_amount: float | None = Field(default=None, ge=0)
@@ -499,6 +479,25 @@ class CRMSearchPlan(BaseModel):
             raise ValueError("Explicit dates require a custom date range")
         if self.start_date and self.end_date and self.end_date < self.start_date:
             raise ValueError("End date must not be before start date")
+        return self
+
+
+class CRMChatPlan(BaseModel):
+    operations: list[CRMSearchPlan] = Field(default_factory=list, max_length=5)
+    needs_clarification: bool = False
+    clarification_question: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def validate_plan(self) -> "CRMChatPlan":
+        if self.needs_clarification and not self.clarification_question:
+            raise ValueError("Clarification plans require a question")
+        if self.needs_clarification and self.operations:
+            raise ValueError("Clarification plans must not execute CRM operations")
+        if not self.needs_clarification and not self.operations:
+            raise ValueError("Answerable questions require at least one operation")
+        keys = [item.result_key for item in self.operations if item.result_key]
+        if len(keys) != len(set(keys)):
+            raise ValueError("Operation result keys must be unique")
         return self
 
 
