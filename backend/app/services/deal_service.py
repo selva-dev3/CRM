@@ -13,7 +13,6 @@ from app.schemas.crm_schemas import (
     DealCustomFieldValue,
     DealUpdate,
 )
-from app.schemas.crm_schemas import DealCreate, DealUpdate
 from app.services.ai_domain_service import AIDomainService, ai_domain_service
 from app.services.note_service import note_service
 from app.services.notification_service import notification_service
@@ -58,14 +57,11 @@ class DealService:
         repository: DealRepository | None = None,
         quote_service_instance: QuoteService | None = None,
         setting_repository: SettingRepository | None = None,
-    ) -> None:
+        ai_service_instance: AIDomainService | None = None,
+        ) -> None:
         self.repository = repository or DealRepository()
         self.quote_service = quote_service_instance or quote_service
         self.setting_repository = setting_repository or SettingRepository()
-        ai_service_instance: AIDomainService | None = None,
-    ) -> None:
-        self.repository = repository or DealRepository()
-        self.quote_service = quote_service_instance or quote_service
         self.ai_service = ai_service_instance or ai_domain_service
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:

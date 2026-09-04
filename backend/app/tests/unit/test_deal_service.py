@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.errors import APIException, NotFoundError
-from app.core.errors import NotFoundError
 from app.models import User
 from app.models.deal import Deal
 from app.repositories.deal_repository import DealRepository
