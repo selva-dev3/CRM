@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { fetchCompaniesApi, fetchCompaniesPageApi } from './companies';
-import { fetchContactsApi, fetchContactsPageApi } from './contacts';
+import {
+  fetchContactsApi,
+  fetchContactsPageApi,
+  fetchStarredContactsApi,
+} from './contacts';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -42,6 +46,17 @@ describe('company and contact list pagination', () => {
       await expect(request()).rejects.toThrow('List unavailable');
     },
   );
+
+  it('propagates starred-contact API errors', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(response(500, { message: 'Starred contacts unavailable' })),
+    );
+
+    await expect(fetchStarredContactsApi()).rejects.toThrow(
+      'Starred contacts unavailable',
+    );
+  });
 
   it.each([fetchCompaniesPageApi, fetchContactsPageApi])(
     'rejects missing pagination metadata',

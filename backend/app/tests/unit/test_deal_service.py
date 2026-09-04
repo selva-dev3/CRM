@@ -379,6 +379,25 @@ async def test_add_deal_product_recalculates_amount():
 
 
 @pytest.mark.asyncio
+async def test_recalculate_deal_amount_uses_transaction_helper():
+    deal = _make_deal(amount=25000.0)
+    repo: Any = DealRepository()
+    repo.list_deal_products = AsyncMock(
+        return_value=[type("DP", (), {"quantity": 2, "unit_price": 500.0})()]
+    )
+    repo.get_by_id = AsyncMock(return_value=deal)
+    service = _service_with(repo)
+    service._commit = AsyncMock()
+    db = AsyncMock(spec=AsyncSession)
+
+    await service._recalculate_deal_amount(db, "deal-1", force=True)
+
+    assert deal.amount == 1000.0
+    service._commit.assert_awaited_once_with(db, "Failed to recalculate deal amount")
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_custom_deal_product_uses_deal_organization():
     deal = _make_deal(organization_id="org-2")
     product = type("P", (), {"id": "prod-2", "price": 500.0})()

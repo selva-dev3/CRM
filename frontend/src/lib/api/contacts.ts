@@ -91,13 +91,7 @@ export async function createContactApi(payload: ContactCreatePayload): Promise<C
 }
 
 export async function fetchStarredContactsApi(): Promise<ContactItem[]> {
-  try {
-    const data = await apiClient.get<ContactItem[]>('/contacts/starred');
-    if (Array.isArray(data)) return data;
-  } catch {
-    // Fallback empty
-  }
-  return [];
+  return apiClient.get<ContactItem[]>('/contacts/starred');
 }
 
 export async function mergeContactsApi(payload: { primaryId: string; secondaryId: string }): Promise<{ message: string; status: string }> {

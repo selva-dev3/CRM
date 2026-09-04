@@ -114,7 +114,11 @@ export default function ContactsPage() {
     debouncedSearchTerm,
   );
   const allContacts = contactsPage?.items ?? [];
-  const { data: starredContacts = [], refetch: refetchStarred } = useStarredContactsQuery();
+  const {
+    data: starredContacts = [],
+    isError: isStarredContactsError,
+    refetch: refetchStarred,
+  } = useStarredContactsQuery();
   const { data: currentOrganization } = useCurrentOrganizationQuery();
   const organizations = currentOrganization ? [currentOrganization] : [];
   const { data: companiesList = [] } = useCompaniesQuery(1, 100);
@@ -457,6 +461,12 @@ export default function ContactsPage() {
         <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-sm font-medium flex items-center gap-2">
           <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
           <span>Contacts could not be loaded. Please try again.</span>
+        </div>
+      )}
+      {activeTab === 'starred' && isStarredContactsError && (
+        <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-sm font-medium flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+          <span>Starred contacts could not be loaded. Please try again.</span>
         </div>
       )}
 

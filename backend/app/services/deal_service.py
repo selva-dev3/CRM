@@ -451,7 +451,7 @@ class DealService:
         deal = await self.repository.get_by_id(db, deal_id)
         if deal and (force or total > 0):
             deal.amount = total
-            await db.commit()
+            await self._commit(db, "Failed to recalculate deal amount")
 
     async def add_deal_product(
         self,
