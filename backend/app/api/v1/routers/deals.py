@@ -8,6 +8,7 @@ from app.schemas.crm_schemas import (
     BulkActionResponse,
     BulkDeleteRequest,
     DealCreate,
+    DealCustomFieldDefinition,
     DealResponse,
     DealUpdate,
     InvoiceResponse,
@@ -60,6 +61,7 @@ async def create_deal(
 
 @router.get(
     "/custom-fields",
+    response_model=list[DealCustomFieldDefinition],
     summary="List custom fields available for deals",
     dependencies=[Depends(require_permission("deals:read"))],
 )

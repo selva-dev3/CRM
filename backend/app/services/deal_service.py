@@ -13,7 +13,12 @@ from app.models.deal import Deal
 from app.repositories.deal_repository import DealRepository
 from app.repositories.invoice_repository import invoice_repository
 from app.repositories.setting_repository import SettingRepository
-from app.schemas.crm_schemas import DealCreate, DealUpdate
+from app.schemas.crm_schemas import (
+    DealCreate,
+    DealCustomFieldDefinition,
+    DealCustomFieldValue,
+    DealUpdate,
+)
 from app.services.note_service import note_service
 from app.services.notification_service import notification_service
 from app.services.org_service import organization_service
@@ -90,24 +95,29 @@ class DealService:
                 code="INVALID_DEAL_STAGE",
             )
 
-    async def list_custom_fields(self, db: AsyncSession, current_user: User) -> list[dict]:
+    async def list_custom_fields(
+        self, db: AsyncSession, current_user: User
+    ) -> list[DealCustomFieldDefinition]:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
         fields = await self.setting_repository.list_custom_fields(
             db, organization_id=org_id, entity_type="Deal"
         )
         return [
-            {
-                "field_name": field.field_name,
-                "field_type": field.field_type,
-                "label": field.label,
-                "options": field.options or [],
-            }
+            DealCustomFieldDefinition(
+                field_name=field.field_name,
+                field_type=field.field_type,
+                label=field.label,
+                options=field.options or [],
+            )
             for field in fields
         ]
 
     async def _validate_custom_fields(
-        self, db: AsyncSession, organization_id: str, values: dict
-    ) -> dict:
+        self,
+        db: AsyncSession,
+        organization_id: str,
+        values: dict[str, DealCustomFieldValue],
+    ) -> dict[str, DealCustomFieldValue]:
         if not values:
             return {}
         definitions = await self.setting_repository.list_custom_fields(

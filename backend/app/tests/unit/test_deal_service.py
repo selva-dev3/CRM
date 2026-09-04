@@ -10,7 +10,7 @@ from app.core.errors import APIException, NotFoundError
 from app.models import User
 from app.models.deal import Deal
 from app.repositories.deal_repository import DealRepository
-from app.schemas.crm_schemas import DealCreate, DealUpdate
+from app.schemas.crm_schemas import DealCreate, DealCustomFieldDefinition, DealUpdate
 from app.services.deal_service import DealService, deal_to_dict
 from app.services.integration_service import integration_service
 from app.services.quote_service import QuoteService
@@ -137,6 +137,46 @@ async def test_create_deal_validates_and_persists_custom_fields(monkeypatch):
 
     assert repo.create.await_args.kwargs["data"]["custom_fields"] == {"decision_maker": "CTO"}
     assert result["custom_fields"] == {"decision_maker": "CTO"}
+
+
+@pytest.mark.asyncio
+async def test_list_custom_fields_returns_typed_definitions(monkeypatch):
+    repo: Any = DealRepository()
+    field_repo = AsyncMock()
+    field_repo.list_custom_fields.return_value = [
+        type(
+            "Field",
+            (),
+            {
+                "field_name": "sales_region",
+                "field_type": "select",
+                "label": "Sales Region",
+                "options": ["North", "South"],
+            },
+        )()
+    ]
+    service = DealService(repository=repo, setting_repository=field_repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.services.deal_service import organization_service
+
+    monkeypatch.setattr(
+        organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
+    )
+
+    result = await service.list_custom_fields(db, _user())
+
+    assert result == [
+        DealCustomFieldDefinition(
+            field_name="sales_region",
+            field_type="select",
+            label="Sales Region",
+            options=["North", "South"],
+        )
+    ]
+    field_repo.list_custom_fields.assert_awaited_once_with(
+        db, organization_id="org-1", entity_type="Deal"
+    )
 
 
 @pytest.mark.asyncio

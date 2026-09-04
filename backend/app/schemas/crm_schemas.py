@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
@@ -458,6 +458,16 @@ class CompanyResponse(BaseModel):
 
 
 # 8. Deal Schemas
+DealCustomFieldValue = str | float | bool | None
+
+
+class DealCustomFieldDefinition(BaseModel):
+    field_name: str
+    field_type: Literal["text", "number", "boolean", "select"]
+    label: str
+    options: list[str] = Field(default_factory=list)
+
+
 class DealBase(BaseModel):
     title: str
     amount: float = 0.0
@@ -467,7 +477,7 @@ class DealBase(BaseModel):
     company_id: str | None = None
     contact_id: str | None = None
     assigned_to: str | None = None
-    custom_fields: dict[str, str | float | bool | None] = Field(default_factory=dict)
+    custom_fields: dict[str, DealCustomFieldValue] = Field(default_factory=dict)
 
 
 class DealCreate(DealBase):
@@ -483,7 +493,7 @@ class DealUpdate(BaseModel):
     company_id: str | None = None
     contact_id: str | None = None
     assigned_to: str | None = None
-    custom_fields: dict[str, str | float | bool | None] | None = None
+    custom_fields: dict[str, DealCustomFieldValue] | None = None
 
 
 class DealResponse(DealBase):
