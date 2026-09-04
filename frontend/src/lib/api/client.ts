@@ -1,5 +1,7 @@
 // Central API Client for CRM Backend Integration (FastAPI)
 const DEFAULT_API_URL = 'http://localhost:8000/api/v1';
+export const API_REQUEST_TIMEOUT_MS = 15_000;
+const REFRESH_REQUEST_TIMEOUT_MS = 10_000;
 
 export function resolveApiBaseUrl(
   configuredUrl = process.env.NEXT_PUBLIC_API_URL,
@@ -54,18 +56,63 @@ export interface ApiResponse<T> {
   status: number;
 }
 
+export type ApiErrorKind = 'http' | 'network' | 'timeout';
+
+export class ApiError extends Error {
+  readonly status: number | null;
+  readonly kind: ApiErrorKind;
+
+  constructor(message: string, kind: ApiErrorKind, status: number | null = null) {
+    super(message);
+    this.name = 'ApiError';
+    this.kind = kind;
+    this.status = status;
+  }
+}
+
 function canRefresh(endpoint: string): boolean {
   return !NON_REFRESHABLE_AUTH_ENDPOINTS.some((authEndpoint) =>
     endpoint.startsWith(authEndpoint),
   );
 }
 
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  const callerSignal = init.signal;
+  const abortFromCaller = () => controller.abort(callerSignal?.reason);
+
+  callerSignal?.addEventListener('abort', abortFromCaller, { once: true });
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (timedOut) {
+      throw new ApiError('The request timed out. Please try again.', 'timeout');
+    }
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw error;
+    }
+    throw new ApiError('Unable to reach the server. Please check your connection.', 'network');
+  } finally {
+    clearTimeout(timeoutId);
+    callerSignal?.removeEventListener('abort', abortFromCaller);
+  }
+}
+
 async function refreshSession(): Promise<boolean> {
   try {
-    const response = await fetch(`${BASE_URL}/auth/refresh-token`, {
+    const response = await fetchWithTimeout(`${BASE_URL}/auth/refresh-token`, {
       method: 'POST',
       credentials: 'include',
-    });
+    }, REFRESH_REQUEST_TIMEOUT_MS);
     return response.ok;
   } catch {
     return false;
@@ -105,20 +152,20 @@ async function request<T>(
     headers['Content-Type'] = 'application/json';
   }
 
-  let response = await fetch(`${BASE_URL}${endpoint}`, {
+  let response = await fetchWithTimeout(`${BASE_URL}${endpoint}`, {
     ...options,
     headers,
     credentials: 'include',
-  });
+  }, API_REQUEST_TIMEOUT_MS);
 
   if (response.status === 401 && allowRefresh && canRefresh(endpoint)) {
     const refreshed = await getRefreshRequest();
     if (refreshed) {
-      response = await fetch(`${BASE_URL}${endpoint}`, {
+      response = await fetchWithTimeout(`${BASE_URL}${endpoint}`, {
         ...options,
         headers,
         credentials: 'include',
-      });
+      }, API_REQUEST_TIMEOUT_MS);
     }
   }
 
@@ -127,7 +174,11 @@ async function request<T>(
       handleUnauthorized();
     }
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || errorData.message || 'An unexpected error occurred');
+    throw new ApiError(
+      errorData.detail || errorData.message || 'An unexpected error occurred',
+      'http',
+      response.status,
+    );
   }
 
   return {

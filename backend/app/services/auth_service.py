@@ -70,6 +70,15 @@ class AuthService:
         )
         return refresh_token
 
+    async def _create_access_token(self, db: AsyncSession, user_id: str) -> str:
+        access_token = create_access_token(user_id)
+        await self.repository.create_access_session(
+            db,
+            token_digest=sha256(access_token.encode("utf-8")).hexdigest(),
+            user_id=user_id,
+        )
+        return access_token
+
     async def get_user_role_name(self, db: AsyncSession, user: User) -> str:
         """Resolve human-readable role name (e.g. 'Admin', 'Super Admin') for a user."""
         try:
@@ -166,7 +175,7 @@ class AuthService:
                 status_code=status.HTTP_401_UNAUTHORIZED, message="Invalid email or password"
             )
 
-        access_token = create_access_token(user.id)
+        access_token = await self._create_access_token(db, user.id)
         refresh_token = await self._create_refresh_token(db, user.id)
         await self._commit(db, "Unable to create refresh token")
         user_role_name = await self.get_user_role_name(db, user)
@@ -260,7 +269,9 @@ class AuthService:
                 status_code=status.HTTP_400_BAD_REQUEST, message=f"Registration failed: {str(e)}"
             ) from e
 
-    async def refresh_token(self, db: AsyncSession, refresh_token: str) -> dict:
+    async def refresh_token(
+        self, db: AsyncSession, refresh_token: str, access_token: str | None = None
+    ) -> dict:
         token_digest = sha256(refresh_token.strip().encode("utf-8")).hexdigest()
         stored_token = await self.repository.get_active_refresh_token(
             db, token_digest=token_digest, now=datetime.now(UTC)
@@ -277,16 +288,25 @@ class AuthService:
                 message="Invalid or expired refresh token",
             )
         await self.repository.revoke_refresh_token(stored_token)
+        if access_token:
+            previous_session = await self.repository.get_session_by_access_token(
+                db, sha256(access_token.strip().encode("utf-8")).hexdigest()
+            )
+            if previous_session:
+                await self.repository.revoke_access_session(previous_session)
         next_refresh_token = await self._create_refresh_token(db, user.id)
+        next_access_token = await self._create_access_token(db, user.id)
         await self._commit(db, "Unable to rotate refresh token")
         return {
-            "access_token": create_access_token(user.id),
+            "access_token": next_access_token,
             "refresh_token": next_refresh_token,
             "token_type": "bearer",
             "expires_in": 86400,
         }
 
-    async def logout(self, db: AsyncSession, refresh_token: str | None) -> dict:
+    async def logout(
+        self, db: AsyncSession, refresh_token: str | None, access_token: str | None = None
+    ) -> dict:
         """Revoke the current refresh token when present; logout remains idempotent."""
         if refresh_token:
             token_digest = sha256(refresh_token.strip().encode("utf-8")).hexdigest()
@@ -296,6 +316,13 @@ class AuthService:
             if stored_token:
                 await self.repository.revoke_refresh_token(stored_token)
                 await self._commit(db, "Unable to revoke refresh token")
+        if access_token:
+            session = await self.repository.get_session_by_access_token(
+                db, sha256(access_token.strip().encode("utf-8")).hexdigest()
+            )
+            if session and session.is_current:
+                await self.repository.revoke_access_session(session)
+                await self._commit(db, "Unable to revoke access session")
         return {"message": "Logged out successfully", "status": "success"}
 
     async def forgot_password(self, db: AsyncSession, payload: PasswordResetRequest) -> dict:
@@ -499,9 +526,10 @@ class AuthService:
                 message="No active CRM account is linked to this OAuth identity",
             )
         refresh_token = await self._create_refresh_token(db, user.id)
+        access_token = await self._create_access_token(db, user.id)
         await self._commit(db, "Unable to create refresh token")
         return {
-            "access_token": create_access_token(user.id),
+            "access_token": access_token,
             "refresh_token": refresh_token,
             "token_type": "bearer",
             "expires_in": 86400,
@@ -634,10 +662,10 @@ class AuthService:
                 await db.flush()
             await self.repository.assign_user_role(db, user_id=user.id, role_id=role.id)
             refresh_token = await self._create_refresh_token(db, user.id)
+            access_token = await self._create_access_token(db, user.id)
             inv.status = "accepted"
             await db.commit()
 
-            access_token = create_access_token(user.id)
             user_permissions = await self.get_user_permissions(
                 db, user, resolved_role_name=role.name
             )
@@ -741,9 +769,10 @@ class AuthService:
             )
         await self.repository.consume_magic_link(magic_link)
         refresh_token = await self._create_refresh_token(db, user.id)
+        access_token = await self._create_access_token(db, user.id)
         await self._commit(db, "Unable to complete magic link login")
         return {
-            "access_token": create_access_token(user.id),
+            "access_token": access_token,
             "refresh_token": refresh_token,
             "token_type": "bearer",
             "expires_in": 86400,

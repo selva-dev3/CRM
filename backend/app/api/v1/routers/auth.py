@@ -52,7 +52,7 @@ def _set_token_cookies(response: Response, result: dict, *, persistent_access: b
     set_auth_cookie(response, result["access_token"], persistent=persistent_access)
     refresh_token = result.get("refresh_token")
     if refresh_token:
-        set_refresh_cookie(response, refresh_token)
+        set_refresh_cookie(response, refresh_token, persistent=persistent_access)
     return result | {"refresh_token": None}
 
 
@@ -99,7 +99,11 @@ async def refresh_token(
             status_code=status.HTTP_401_UNAUTHORIZED,
             message="Refresh token missing",
         )
-    result = await auth_service.refresh_token(db, refresh_token_value)
+    access_token_value = request.cookies.get(settings.AUTH_COOKIE_NAME)
+    if access_token_value:
+        result = await auth_service.refresh_token(db, refresh_token_value, access_token_value)
+    else:
+        result = await auth_service.refresh_token(db, refresh_token_value)
     return _set_token_cookies(response, result)
 
 
@@ -110,7 +114,12 @@ async def logout(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
-    result = await auth_service.logout(db, request.cookies.get(settings.AUTH_REFRESH_COOKIE_NAME))
+    refresh_token_value = request.cookies.get(settings.AUTH_REFRESH_COOKIE_NAME)
+    access_token_value = request.cookies.get(settings.AUTH_COOKIE_NAME)
+    if access_token_value:
+        result = await auth_service.logout(db, refresh_token_value, access_token_value)
+    else:
+        result = await auth_service.logout(db, refresh_token_value)
     clear_auth_cookie(response)
     clear_refresh_cookie(response)
     return result

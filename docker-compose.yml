@@ -80,6 +80,10 @@ services:
     env_file:
       - ./backend/.env
     environment:
+      - ENVIRONMENT=development
+      - REDIS_PORT=6379
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - AWS_ENDPOINT_URL=${AWS_ENDPOINT_URL:-http://minio:9000}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-minioadmin}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-minioadmin}

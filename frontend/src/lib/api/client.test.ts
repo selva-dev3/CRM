@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { apiClient, BASE_URL, clearSessionToken, resolveApiBaseUrl } from './client';
+import { API_REQUEST_TIMEOUT_MS, apiClient, BASE_URL, clearSessionToken, resolveApiBaseUrl } from './client';
 
 describe('apiClient cookie authentication', () => {
   afterEach(() => {
@@ -174,5 +174,22 @@ describe('apiClient cookie authentication', () => {
     expect(fetchMock.mock.calls[0][1]?.body).toBe(body);
     expect(fetchMock.mock.calls[2][1]?.body).toBe(body);
     expect(new Headers(fetchMock.mock.calls[2][1]?.headers).has('Content-Type')).toBe(false);
+  });
+
+  it('rejects a request when the server does not respond before the timeout', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockImplementation((_url: string, options?: RequestInit) =>
+      new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const request = apiClient.get('/auth/me');
+    const rejection = expect(request).rejects.toMatchObject({ kind: 'timeout' });
+    await vi.advanceTimersByTimeAsync(API_REQUEST_TIMEOUT_MS);
+
+    await rejection;
+    vi.useRealTimers();
   });
 });
