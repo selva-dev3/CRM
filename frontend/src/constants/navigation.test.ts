@@ -67,6 +67,7 @@ describe('getRoutePermission', () => {
     expect(getRoutePermission('/notifications')).toBe(PERMISSIONS.NOTIFICATIONS.READ);
     expect(getRoutePermission('/users')).toBe(PERMISSIONS.USERS.READ);
     expect(getRoutePermission('/roles')).toBe(PERMISSIONS.ROLES.READ);
+    expect(getRoutePermission('/ai')).toBe(PERMISSIONS.AI.READ);
   });
 
   it('lets detail routes inherit the parent permission', () => {

@@ -42,6 +42,7 @@ import {
   Settings,
   Building,
   Layers,
+  Sparkles,
   ChevronDown,
   ChevronRight
 } from 'lucide-react';
@@ -68,7 +69,8 @@ const ICON_MAP: Record<string, React.ElementType> = {
   ShieldCheck,
   Settings,
   Building,
-  Layers
+  Layers,
+  Sparkles,
 };
 
 type UserProfile = { name: string; email: string; role: string; organizationName?: string };
