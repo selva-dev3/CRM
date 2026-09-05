@@ -1,4 +1,6 @@
 from datetime import UTC, datetime
+from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
@@ -85,6 +87,9 @@ def _make_invoice(**overrides) -> Invoice:
         "amount": 1000.0,
         "subtotal": 1000.0,
         "status": INVOICE_STATUS_DRAFT,
+        "billing_snapshot": {"email": "a@b.com"},
+        "delivery_attempts": 0,
+        "reminder_count": 0,
         "due_date": datetime(2026, 9, 30, tzinfo=UTC),
         "created_at": datetime(2026, 8, 25, tzinfo=UTC),
     }
@@ -93,6 +98,17 @@ def _make_invoice(**overrides) -> Invoice:
 
 
 def _service_with(repo: InvoiceRepository) -> InvoiceService:
+    repo.lock_numbering = AsyncMock(
+        return_value=SimpleNamespace(
+            id="org-1",
+            is_active=True,
+            invoice_prefix="INV",
+            invoice_sequence=0,
+            currency="USD",
+        )
+    )
+    repo.advance_numbering = AsyncMock(return_value=1)
+    repo.record_creation = AsyncMock()
     quotes = MagicMock(spec=QuoteRepository)
     quotes.get_automatic = AsyncMock(return_value=None)
     return InvoiceService(repository=repo, quote_repository=quotes)
@@ -161,7 +177,7 @@ async def test_conversion_maps_customer_and_line_items(patched_org):
     product = _make_product()
     repo: Any = InvoiceRepository()
     repo.get_deal_scoped = AsyncMock(return_value=deal)
-    repo.get_by_deal = AsyncMock(return_value=None)
+    repo.get_by_deal_scoped = AsyncMock(return_value=None)
     repo.list_deal_products = AsyncMock(return_value=[_make_deal_product()])
     repo.get_product_scoped = AsyncMock(return_value=product)
     created_invoice = _make_invoice()
@@ -179,11 +195,16 @@ async def test_conversion_maps_customer_and_line_items(patched_org):
                 {
                     "id": "it-1",
                     "product_id": "prod-1",
+                    "product_name": "Enterprise License",
                     "description": "Enterprise License",
                     "quantity": 2,
                     "unit_price": 500.0,
                     "discount_percent": 0.0,
                     "tax_percent": 0.0,
+                    "subtotal": 1000.0,
+                    "discount_total": 0.0,
+                    "tax_total": 0.0,
+                    "total": 1000.0,
                 },
             )()
         ]
@@ -217,7 +238,7 @@ async def test_conversion_computes_totals_server_side(patched_org):
     """Client-supplied numbers are ignored; totals derive from line items."""
     repo: Any = InvoiceRepository()
     repo.get_deal_scoped = AsyncMock(return_value=_make_deal())
-    repo.get_by_deal = AsyncMock(return_value=None)
+    repo.get_by_deal_scoped = AsyncMock(return_value=None)
     repo.list_deal_products = AsyncMock(
         return_value=[
             _make_deal_product(product_id="p1", quantity=3, unit_price=199.99),
@@ -239,17 +260,17 @@ async def test_conversion_computes_totals_server_side(patched_org):
 
     data = repo.create.await_args_list[-1].kwargs["data"]
     # subtotal = round(3*199.99 + 1*50.05, 2) = round(650.02, 2)
-    assert data["subtotal"] == 650.02
-    assert data["tax_total"] == 0.0
-    assert data["discount_total"] == 0.0
-    assert data["amount"] == 650.02
+    assert data["subtotal"] == Decimal("650.02")
+    assert data["tax_total"] == Decimal("0.00")
+    assert data["discount_total"] == Decimal("0.00")
+    assert data["amount"] == Decimal("650.02")
 
 
 @pytest.mark.asyncio
 async def test_creation_leaves_payment_state_unpaid(patched_org):
     repo: Any = InvoiceRepository()
     repo.get_deal_scoped = AsyncMock(return_value=_make_deal())
-    repo.get_by_deal = AsyncMock(return_value=None)
+    repo.get_by_deal_scoped = AsyncMock(return_value=None)
     repo.list_deal_products = AsyncMock(return_value=[_make_deal_product()])
     repo.get_product_scoped = AsyncMock(return_value=_make_product())
     repo.create = AsyncMock(return_value=_make_invoice())
@@ -273,7 +294,7 @@ async def test_creation_leaves_payment_state_unpaid(patched_org):
 async def test_missing_customer_rejected(patched_org):
     repo: Any = InvoiceRepository()
     repo.get_deal_scoped = AsyncMock(return_value=_make_deal(company_id=None, contact_id=None))
-    repo.get_by_deal = AsyncMock(return_value=None)
+    repo.get_by_deal_scoped = AsyncMock(return_value=None)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
@@ -286,7 +307,7 @@ async def test_missing_customer_rejected(patched_org):
 async def test_no_billable_items_rejected(patched_org):
     repo: Any = InvoiceRepository()
     repo.get_deal_scoped = AsyncMock(return_value=_make_deal())
-    repo.get_by_deal = AsyncMock(return_value=None)
+    repo.get_by_deal_scoped = AsyncMock(return_value=None)
     repo.list_deal_products = AsyncMock(return_value=[])
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -300,7 +321,7 @@ async def test_no_billable_items_rejected(patched_org):
 async def test_invalid_quantity_rejected(patched_org):
     repo: Any = InvoiceRepository()
     repo.get_deal_scoped = AsyncMock(return_value=_make_deal())
-    repo.get_by_deal = AsyncMock(return_value=None)
+    repo.get_by_deal_scoped = AsyncMock(return_value=None)
     repo.list_deal_products = AsyncMock(return_value=[_make_deal_product(quantity=0)])
     repo.get_product_scoped = AsyncMock(return_value=_make_product())
     service = _service_with(repo)
@@ -316,7 +337,7 @@ async def test_cross_tenant_product_rejected(patched_org):
     """A product belonging to another organization cannot be invoiced."""
     repo: Any = InvoiceRepository()
     repo.get_deal_scoped = AsyncMock(return_value=_make_deal())
-    repo.get_by_deal = AsyncMock(return_value=None)
+    repo.get_by_deal_scoped = AsyncMock(return_value=None)
     repo.list_deal_products = AsyncMock(return_value=[_make_deal_product()])
     repo.get_product_scoped = AsyncMock(return_value=None)
     service = _service_with(repo)
@@ -337,7 +358,7 @@ async def test_duplicate_conversion_returns_existing_invoice(patched_org):
     existing = _make_invoice()
     repo: Any = InvoiceRepository()
     repo.get_deal_scoped = AsyncMock(return_value=_make_deal())
-    repo.get_by_deal = AsyncMock(return_value=existing)
+    repo.get_by_deal_scoped = AsyncMock(return_value=existing)
     repo.list_items = AsyncMock(return_value=[])
     repo.create = AsyncMock()
     service = _service_with(repo)
@@ -358,7 +379,7 @@ async def test_concurrent_conversion_returns_existing_on_unique_violation(patche
     repo.get_deal_scoped = AsyncMock(return_value=_make_deal())
     # 1st call (pre-check): none exists. 2nd call (post-conflict): the concurrent
     # request's invoice is already committed.
-    repo.get_by_deal = AsyncMock(side_effect=[None, winner])
+    repo.get_by_deal_scoped = AsyncMock(side_effect=[None, winner])
     repo.list_deal_products = AsyncMock(return_value=[_make_deal_product()])
     repo.get_product_scoped = AsyncMock(return_value=_make_product())
     repo.create = AsyncMock(return_value=_make_invoice(id="inv-race"))
@@ -378,7 +399,7 @@ async def test_concurrent_conversion_returns_existing_on_unique_violation(patche
 async def test_unique_violation_without_winner_raises_conflict(patched_org):
     repo: Any = InvoiceRepository()
     repo.get_deal_scoped = AsyncMock(return_value=_make_deal())
-    repo.get_by_deal = AsyncMock(return_value=None)
+    repo.get_by_deal_scoped = AsyncMock(return_value=None)
     repo.list_deal_products = AsyncMock(return_value=[_make_deal_product()])
     repo.get_product_scoped = AsyncMock(return_value=_make_product())
     repo.create = AsyncMock(return_value=_make_invoice(id="inv-race"))
@@ -397,7 +418,7 @@ async def test_unique_violation_without_winner_raises_conflict(patched_org):
 async def test_commit_failure_rolls_back_no_partial_invoice(patched_org):
     repo: Any = InvoiceRepository()
     repo.get_deal_scoped = AsyncMock(return_value=_make_deal())
-    repo.get_by_deal = AsyncMock(return_value=None)
+    repo.get_by_deal_scoped = AsyncMock(return_value=None)
     repo.list_deal_products = AsyncMock(return_value=[_make_deal_product()])
     repo.get_product_scoped = AsyncMock(return_value=_make_product())
     repo.create = AsyncMock(return_value=_make_invoice())
@@ -425,7 +446,7 @@ async def test_line_items_use_flushed_invoice_id(patched_org):
     invoice_items.invoice_id arrived as NULL on real PostgreSQL."""
     repo: Any = InvoiceRepository()
     repo.get_deal_scoped = AsyncMock(return_value=_make_deal())
-    repo.get_by_deal = AsyncMock(return_value=None)
+    repo.get_by_deal_scoped = AsyncMock(return_value=None)
     repo.list_deal_products = AsyncMock(return_value=[_make_deal_product()])
     repo.get_product_scoped = AsyncMock(return_value=_make_product())
 
@@ -459,10 +480,11 @@ async def test_line_items_use_flushed_invoice_id(patched_org):
 
 
 @pytest.mark.asyncio
-async def test_send_promotes_draft_to_pending(patched_org):
+async def test_send_queues_real_delivery(patched_org):
     invoice = _make_invoice(status=INVOICE_STATUS_DRAFT)
     repo: Any = InvoiceRepository()
     repo.get_scoped = AsyncMock(return_value=invoice)
+    repo.queue_delivery = AsyncMock()
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
@@ -470,15 +492,18 @@ async def test_send_promotes_draft_to_pending(patched_org):
         db, invoice_id="inv-1", organization_id="org-1", recipient_email="a@b.com"
     )
 
-    assert invoice.status == INVOICE_STATUS_PENDING
-    assert invoice.sent_at is not None
+    assert invoice.status == INVOICE_STATUS_DRAFT
+    assert invoice.sent_at is None
+    repo.queue_delivery.assert_awaited_once()
+    db.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_send_does_not_touch_overdue_or_paid(patched_org):
+async def test_send_queues_overdue_invoice_without_faking_sent_state(patched_org):
     invoice = _make_invoice(status="Overdue")
     repo: Any = InvoiceRepository()
     repo.get_scoped = AsyncMock(return_value=invoice)
+    repo.queue_delivery = AsyncMock()
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
@@ -487,7 +512,8 @@ async def test_send_does_not_touch_overdue_or_paid(patched_org):
     )
 
     assert invoice.status == "Overdue"
-    assert invoice.sent_at is not None
+    assert invoice.sent_at is None
+    repo.queue_delivery.assert_awaited_once()
 
 
 @pytest.mark.asyncio

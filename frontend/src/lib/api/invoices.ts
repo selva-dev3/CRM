@@ -4,11 +4,16 @@ import { apiClient } from '@/lib/api/client';
 export interface InvoiceLineItem {
   id: string;
   product_id: string;
+  product_name?: string | null;
   description?: string | null;
   quantity: number;
   unit_price: number;
   discount_percent: number;
   tax_percent: number;
+  subtotal?: number;
+  discount_total?: number;
+  tax_total?: number;
+  total?: number;
 }
 
 export interface InvoiceItem {
@@ -27,6 +32,11 @@ export interface InvoiceItem {
   due_date?: string | null;
   notes?: string | null;
   sent_at?: string | null;
+  delivery_status?: string | null;
+  pdf_available?: boolean;
+  recipient_email?: string | null;
+  reminder_count?: number;
+  last_reminded_at?: string | null;
   stripe_checkout_url?: string | null;
   created_at?: string | null;
   items?: InvoiceLineItem[];
@@ -135,10 +145,6 @@ export async function sendInvoiceEmailApi(invoiceId: string, recipient_email: st
 
 export async function createStripeCheckoutApi(invoiceId: string): Promise<{ checkout_url: string }> {
   return apiClient.post<{ checkout_url: string }>(`/invoices/${invoiceId}/stripe-checkout`);
-}
-
-export async function markInvoicePaidApi(invoiceId: string, payment_method: string = 'Bank Transfer'): Promise<MessageResponse> {
-  return apiClient.post<MessageResponse>(`/invoices/${invoiceId}/mark-paid?payment_method=${encodeURIComponent(payment_method)}`);
 }
 
 export async function sendPaymentReminderApi(invoiceId: string): Promise<MessageResponse> {
@@ -285,18 +291,6 @@ export function useSendInvoiceEmailMutation(options?: UseMutationOptions<Message
 export function useCreateStripeCheckoutMutation(options?: UseMutationOptions<{ checkout_url: string }, Error, string>) {
   return useMutation<{ checkout_url: string }, Error, string>({
     mutationFn: createStripeCheckoutApi,
-    ...options,
-  });
-}
-
-export function useMarkInvoicePaidMutation(options?: UseMutationOptions<MessageResponse, Error, { id: string; payment_method?: string }>) {
-  const queryClient = useQueryClient();
-  return useMutation<MessageResponse, Error, { id: string; payment_method?: string }>({
-    mutationFn: ({ id, payment_method }) => markInvoicePaidApi(id, payment_method),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['invoices'] });
-      queryClient.invalidateQueries({ queryKey: ['invoices', variables.id] });
-    },
     ...options,
   });
 }

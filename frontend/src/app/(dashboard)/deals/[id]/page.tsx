@@ -23,7 +23,6 @@ import {
   Plus,
   CheckCircle2,
   AlertCircle,
-  Loader2,
   Lock,
   Receipt,
   Search
@@ -35,8 +34,6 @@ import { Label } from '@/components/ui/label';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
 import { PageTabs } from '@/components/common/page-tabs';
-import { PermissionGate } from '@/components/common/permission-gate';
-import { PERMISSIONS } from '@/lib/permissions';
 import {
   useDealQuery,
   useUpdateDealMutation,
@@ -54,7 +51,7 @@ import {
   cloneDealApi,
   getDealCommissionApi
 } from '@/lib/api/deals';
-import { useDealInvoicesQuery, useConvertDealToInvoiceMutation } from '@/lib/api/invoices';
+import { useDealInvoicesQuery } from '@/lib/api/invoices';
 import { useUsersQuery } from '@/lib/api/users';
 import { useProductsQuery } from '@/lib/api/products';
 import type { DealPredictionResponse } from '@/lib/types';
@@ -154,19 +151,6 @@ export default function DealDetailsPage() {
   const isClosedWon = deal?.stage === 'Closed Won';
   const { data: dealInvoices = [] } = useDealInvoicesQuery(dealId);
   const dealInvoice = dealInvoices.length > 0 ? dealInvoices[0] : null;
-  const convertToInvoiceMutation = useConvertDealToInvoiceMutation();
-
-  const handleCreateInvoice = async () => {
-    if (!deal) return;
-    try {
-      setErrorMessage(null);
-      const invoice = await convertToInvoiceMutation.mutateAsync(dealId);
-      setSuccessMessage(`Invoice '${invoice.invoice_number}' created as Draft.`);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to create invoice.';
-      setErrorMessage(message);
-    }
-  };
 
   const addProductMutation = useMutation({
     mutationFn: (payload: { product_id: string; quantity: number; unit_price?: number; custom_name?: string }) =>
@@ -362,22 +346,10 @@ export default function DealDetailsPage() {
           </Button>
 
           {isClosedWon && !dealInvoice && (
-            <PermissionGate permission={PERMISSIONS.INVOICES.CREATE}>
-              <Button
-                size="sm"
-                onClick={handleCreateInvoice}
-                disabled={convertToInvoiceMutation.isPending}
-                title="Generate a Draft invoice from this Closed Won deal"
-                className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs gap-1.5 cursor-pointer disabled:opacity-50"
-              >
-                {convertToInvoiceMutation.isPending ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Receipt className="w-3.5 h-3.5" />
-                )}
-                <span>Create Invoice</span>
-              </Button>
-            </PermissionGate>
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-50 border border-amber-200 text-[11px] font-medium text-amber-700">
+              <Lock className="w-3 h-3" />
+              <span>Invoice is created after customer accepts the quote</span>
+            </span>
           )}
 
           {!isClosedWon && (
@@ -386,7 +358,7 @@ export default function DealDetailsPage() {
               className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 border border-slate-200 text-[11px] font-medium text-slate-500"
             >
               <Lock className="w-3 h-3" />
-              <span>Invoice available after Closed Won</span>
+              <span>Closing the deal creates its quote automatically</span>
             </span>
           )}
 

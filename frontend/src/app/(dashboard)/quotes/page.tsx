@@ -5,7 +5,6 @@ import { Input } from "@/components/ui/input";
 import { ResponsiveSelect } from '@/components/common/responsive-select';
 
 import { ActionMenu } from '@/components/common/action-menu';
-import { Button } from '@/components/ui/button';
 import { getErrorMessage } from '@/lib/utils';
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -13,9 +12,6 @@ import {
   FileCode,
   Calendar,
   DollarSign,
-  Plus,
-  Download,
-  Upload,
   Trash2,
   Edit,
   Send,
@@ -23,7 +19,6 @@ import {
   AlertCircle,
   X,
   Loader2,
-  Receipt
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
@@ -38,10 +33,6 @@ import {
   useDeleteQuoteMutation,
   useBulkDeleteQuotesMutation,
   useSendQuoteEmailMutation,
-  useAcceptQuoteMutation,
-  useConvertQuoteToInvoiceMutation,
-  useImportQuotesCsvMutation,
-  exportQuotesCsvApi,
   QuoteItem,
   QuoteCreatePayload
 } from '@/lib/api/quotes';
@@ -67,7 +58,7 @@ export default function QuotesPage() {
 
   // Form states
   const [quoteNumber, setQuoteNumber] = useState('');
-  const [totalAmount, setTotalAmount] = useState('15000');
+  const [totalAmount, setTotalAmount] = useState('0');
   const [status, setStatus] = useState('Draft');
   const [dealId, setDealId] = useState('');
 
@@ -100,21 +91,13 @@ export default function QuotesPage() {
   const deleteQuoteMutation = useDeleteQuoteMutation();
   const bulkDeleteMutation = useBulkDeleteQuotesMutation();
   const sendEmailMutation = useSendQuoteEmailMutation();
-  const acceptQuoteMutation = useAcceptQuoteMutation();
-  const convertInvoiceMutation = useConvertQuoteToInvoiceMutation();
-  const importCsvMutation = useImportQuotesCsvMutation();
 
   const resetForm = () => {
     setQuoteNumber('');
-    setTotalAmount('15000');
+    setTotalAmount('0');
     setStatus('Draft');
     setDealId('');
     setEditingQuote(null);
-  };
-
-  const handleOpenCreateModal = () => {
-    resetForm();
-    setIsQuoteModalOpen(true);
   };
 
   const handleOpenEditModal = (q: QuoteItem) => {
@@ -138,7 +121,7 @@ export default function QuotesPage() {
     }
     const payload: QuoteCreatePayload = {
       deal_id: dealId,
-      quote_number: quoteNumber.trim() || `QUO-2026-${Math.floor(1000 + Math.random() * 9000)}`,
+      quote_number: quoteNumber.trim(),
       total_amount: parseFloat(totalAmount || '0'),
       status: status,
     };
@@ -166,49 +149,12 @@ export default function QuotesPage() {
         id: sendModalQuote.id,
         recipient_email: recipientEmailInput.trim(),
       });
-      setSuccessMessage(`Quote proposal email sent to ${recipientEmailInput.trim()}.`);
+      setSuccessMessage(`Quote proposal queued for delivery to ${recipientEmailInput.trim()}.`);
       setIsSendEmailModalOpen(false);
       setSendModalQuote(null);
       setRecipientEmailInput('');
     } catch (err: unknown) {
       setErrorMessage(getErrorMessage(err, 'Failed to send quote email.'));
-    }
-  };
-
-  const handleAcceptQuote = async (q: QuoteItem) => {
-    try {
-      await acceptQuoteMutation.mutateAsync(q.id);
-      setSuccessMessage(`Quote "${q.quote_number}" marked as Accepted.`);
-    } catch (err: unknown) {
-      setErrorMessage(getErrorMessage(err, 'Failed to mark quote as accepted.'));
-    }
-  };
-
-  const handleConvertToInvoice = async (q: QuoteItem) => {
-    try {
-      const res = await convertInvoiceMutation.mutateAsync(q.id);
-      setSuccessMessage(`Quote "${q.quote_number}" converted into Invoice #${res.invoice_number}!`);
-    } catch (err: unknown) {
-      setErrorMessage(getErrorMessage(err, 'Failed to convert quote into invoice.'));
-    }
-  };
-
-  const handleExportCsv = async () => {
-    try {
-      const res = await exportQuotesCsvApi();
-      setSuccessMessage('Quotes list exported. Download started.');
-      window.open(res.download_url, '_blank');
-    } catch (err: unknown) {
-      setErrorMessage(getErrorMessage(err, 'Failed to export quotes CSV.'));
-    }
-  };
-
-  const handleImportCsv = async () => {
-    try {
-      const res = await importCsvMutation.mutateAsync();
-      setSuccessMessage(res.message || 'Quotes CSV import processing completed.');
-    } catch (err: unknown) {
-      setErrorMessage(getErrorMessage(err, 'Failed to import quotes CSV.'));
     }
   };
 
@@ -295,7 +241,7 @@ export default function QuotesPage() {
       cell: (item) => (
         <div className="flex items-center gap-1.5 text-slate-700 text-xs font-medium">
           <Calendar className="w-3.5 h-3.5 text-slate-400" />
-          <span>{item.created_at ? item.created_at.substring(0, 10) : '2026-08-05'}</span>
+          <span>{item.created_at ? item.created_at.substring(0, 10) : '—'}</span>
         </div>
       ),
     },
@@ -308,8 +254,7 @@ export default function QuotesPage() {
           label="Open quote actions"
           onTriggerClick={(event) => event.stopPropagation()}
           actions={[
-            { label: 'Send proposal email', permission: PERMISSIONS.QUOTES.SEND, icon: <Send className="w-4 h-4 text-blue-600" />, onSelect: () => { setSendModalQuote(item); setRecipientEmailInput('client@company.com'); setIsSendEmailModalOpen(true); } },
-            ...(item.status !== 'Accepted' ? [{ label: 'Mark as accepted', permission: PERMISSIONS.QUOTES.APPROVE, icon: <CheckCircle2 className="w-4 h-4 text-emerald-600" />, onSelect: () => handleAcceptQuote(item) }] : [{ label: 'Convert to invoice', permission: PERMISSIONS.QUOTES.CREATE, icon: <Receipt className="w-4 h-4 text-purple-600" />, onSelect: () => handleConvertToInvoice(item) }]),
+            ...(item.status === 'Approved' && item.delivery_status === 'Failed' ? [{ label: 'Retry quote delivery', permission: PERMISSIONS.QUOTES.SEND, icon: <Send className="w-4 h-4 text-blue-600" />, onSelect: () => { setSendModalQuote(item); setRecipientEmailInput(item.recipient_email || ''); setIsSendEmailModalOpen(true); } }] : []),
             { label: 'Edit quote', permission: PERMISSIONS.QUOTES.UPDATE, icon: <Edit className="w-4 h-4 text-indigo-600" />, onSelect: () => handleOpenEditModal(item) },
             { label: 'Delete quote', permission: PERMISSIONS.QUOTES.DELETE, icon: <Trash2 className="w-4 h-4" />, variant: 'destructive', onSelect: () => setQuoteToDelete(item) },
           ]}
@@ -352,19 +297,10 @@ export default function QuotesPage() {
             <FileCode className="w-7 h-7 text-indigo-600" />
             Quotes & Sales Proposals
           </h1>
-          <p className="text-slate-500 text-sm mt-0.5">Create, send, track client approvals, generate PDF reports & convert quotes directly to invoices</p>
+          <p className="text-slate-500 text-sm mt-0.5">Quotes are created from won deals; customer acceptance creates invoices automatically.</p>
         </div>
 
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-          <PermissionGate permission={PERMISSIONS.QUOTES.CREATE}>
-            <Button onClick={handleOpenCreateModal} className="w-full gap-2 text-xs font-semibold sm:w-auto">
-              <Plus className="w-4 h-4" />Create Quote
-            </Button>
-          </PermissionGate>
-          <ActionMenu label="More" className="w-full text-xs font-semibold sm:w-auto" actions={[
-            { label: 'Export CSV', icon: <Download className="w-4 h-4 text-slate-600" />, onSelect: handleExportCsv },
-            { label: 'Import CSV', icon: importCsvMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4 text-indigo-600" />, disabled: importCsvMutation.isPending, onSelect: handleImportCsv },
-          ]} />
         </div>
       </div>
 
@@ -377,7 +313,7 @@ export default function QuotesPage() {
         getRowKey={(item) => item.id}
         onRowClick={(item) => router.push(`/quotes/${item.id}`)}
         emptyTitle="No sales quotes found"
-        emptyDescription="Create a new quote proposal or adjust your status filter."
+        emptyDescription="Quotes are created automatically when deals are marked won. Try adjusting your status filter."
         searchValue={searchTerm}
         onSearchChange={setSearchTerm}
         searchPlaceholder="Search quote number or client..."
@@ -505,8 +441,7 @@ export default function QuotesPage() {
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
                 >
                   <option value="Draft">Draft</option>
-                  <option value="Sent">Sent</option>
-                  <option value="Accepted">Accepted</option>
+                  <option value="Pending Approval">Pending Approval</option>
                 </ResponsiveSelect>
               </div>
             </div>
@@ -539,7 +474,7 @@ export default function QuotesPage() {
           title={
             <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
               <Send className="w-5 h-5 text-blue-600" />
-              Send Quote Proposal
+              Retry Quote Delivery
             </h3>
           }
         >
@@ -566,7 +501,7 @@ export default function QuotesPage() {
                 className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
               >
                 {sendEmailMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                Send Proposal
+                Retry Delivery
               </button>
             </div>
           </form>

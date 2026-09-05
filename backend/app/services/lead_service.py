@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.errors import APIException, ForbiddenError, NotFoundError
-from app.core.security import generate_random_code, get_password_hash
 from app.models import Lead, User
 from app.repositories.company_repository import CompanyRepository
 from app.repositories.contact_repository import ContactRepository
@@ -66,8 +65,8 @@ def lead_to_dict(lead: Lead) -> dict:
         "assigned_to": getattr(lead, "assigned_to", None),
         "is_archived": getattr(lead, "is_archived", False),
         "custom_fields": getattr(lead, "custom_fields", None) or {},
-        "organization_id": getattr(lead, "organization_id", "org-1"),
-        "created_at": str(lead.created_at) if getattr(lead, "created_at", None) else "2026-01-01",
+        "organization_id": lead.organization_id,
+        "created_at": str(lead.created_at) if lead.created_at else "",
     }
 
 
@@ -93,13 +92,19 @@ class LeadService:
         self,
         db: AsyncSession,
         *,
+        organization_id: str,
         page: int,
         limit: int,
         search: str | None = None,
         lead_status: str | None = None,
     ) -> list[dict]:
         leads = await self.repository.list_leads(
-            db, page=page, limit=limit, search=search, status=lead_status
+            db,
+            page=page,
+            limit=limit,
+            organization_id=organization_id,
+            search=search,
+            status=lead_status,
         )
         return [lead_to_dict(lead) for lead in leads]
 
@@ -107,10 +112,16 @@ class LeadService:
         self,
         db: AsyncSession,
         *,
+        organization_id: str,
         search: str | None = None,
         lead_status: str | None = None,
     ) -> int:
-        return await self.repository.count_leads(db, search=search, status=lead_status)
+        return await self.repository.count_leads(
+            db,
+            organization_id=organization_id,
+            search=search,
+            status=lead_status,
+        )
 
     async def list_custom_fields(
         self, db: AsyncSession, current_user: User
@@ -120,31 +131,29 @@ class LeadService:
             db, organization_id=organization_id, entity_type="Lead"
         )
 
-    async def get_lead(self, db: AsyncSession, lead_id: str) -> dict:
-        lead = await self.repository.get_by_id(db, lead_id)
+    async def require_lead(self, db: AsyncSession, lead_id: str, *, organization_id: str) -> Lead:
+        lead = await self.repository.get_by_id_for_org(db, lead_id, organization_id)
         if not lead:
             raise NotFoundError(message=f"Lead '{lead_id}' not found")
+        return lead
+
+    async def get_lead(self, db: AsyncSession, lead_id: str, *, organization_id: str) -> dict:
+        lead = await self.require_lead(db, lead_id, organization_id=organization_id)
         return lead_to_dict(lead)
 
     async def _resolve_organization_id(
         self, db: AsyncSession, org_id: str | None, current_user: User | None = None
     ) -> str | None:
-        if org_id and await self.repository.get_organization(db, org_id):
-            user_org = current_user.organization_id if current_user else None
-            if user_org and user_org != org_id:
-                raise APIException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    message="Organization does not match the current user's organization.",
-                )
-            return org_id
-        if current_user and getattr(current_user, "organization_id", None):
-            user_org_record = await self.repository.get_organization(
-                db, current_user.organization_id
+        user_org = current_user.organization_id if current_user else None
+        if not user_org:
+            return None
+        if org_id and org_id != user_org:
+            raise APIException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                message="Organization does not match the current user's organization.",
             )
-            if user_org_record:
-                return user_org_record.id
-        first = await self.repository.get_first_organization(db)
-        return first.id if first else None
+        organization = await self.repository.get_organization(db, user_org)
+        return organization.id if organization else None
 
     async def _resolve_assigned_to(
         self, db: AsyncSession, assigned_to: str | None, organization_id: str | None
@@ -245,8 +254,19 @@ class LeadService:
                 values=updates["custom_fields"] or {},
             )
 
+        becoming_qualified = updates.get("status") == "Qualified" and lead.status != "Qualified"
+        if becoming_qualified and (
+            not lead.company.strip() or not lead.contact_name.strip() or not lead.email.strip()
+        ):
+            raise APIException(
+                status_code=422,
+                message="Company, contact name and email are required to qualify a lead",
+            )
+
         for field, value in updates.items():
             setattr(lead, field, value)
+        if becoming_qualified:
+            await self.repository.record_qualification(db, lead, actor_id=current_user.id)
         await self._commit(db, "Failed to update lead")
         await notification_service.notify(
             db,
@@ -264,18 +284,16 @@ class LeadService:
         )
         return lead_to_dict(lead)
 
-    async def delete_lead(self, db: AsyncSession, lead_id: str) -> dict:
-        lead = await self.repository.get_by_id(db, lead_id)
-        if not lead:
-            raise NotFoundError(message=f"Lead '{lead_id}' not found")
+    async def delete_lead(self, db: AsyncSession, lead_id: str, *, organization_id: str) -> dict:
+        lead = await self.require_lead(db, lead_id, organization_id=organization_id)
         await self.repository.delete(db, lead)
         await self._commit(db, "Failed to delete lead")
         return {"message": f"Lead {lead_id} deleted successfully", "status": "success"}
 
-    async def bulk_delete(self, db: AsyncSession, ids: list[str]) -> dict:
+    async def bulk_delete(self, db: AsyncSession, ids: list[str], *, organization_id: str) -> dict:
         if not ids:
             return {"affected_count": 0, "message": "No lead IDs provided"}
-        leads = await self.repository.list_by_ids(db, ids)
+        leads = await self.repository.list_by_ids(db, ids, organization_id=organization_id)
         for lead in leads:
             await self.repository.delete(db, lead)
         await self._commit(db, "Bulk delete failed")
@@ -284,10 +302,10 @@ class LeadService:
             "message": f"Successfully deleted {len(leads)} lead(s)",
         }
 
-    async def bulk_archive(self, db: AsyncSession, ids: list[str]) -> dict:
+    async def bulk_archive(self, db: AsyncSession, ids: list[str], *, organization_id: str) -> dict:
         if not ids:
             return {"affected_count": 0, "message": "No lead IDs provided"}
-        leads = await self.repository.list_by_ids(db, ids)
+        leads = await self.repository.list_by_ids(db, ids, organization_id=organization_id)
         for lead in leads:
             lead.is_archived = True
         await self._commit(db, "Bulk archive failed")
@@ -296,7 +314,14 @@ class LeadService:
             "message": f"Successfully archived {len(leads)} lead(s)",
         }
 
-    async def bulk_update_status(self, db: AsyncSession, ids: list[str], status_value: str) -> dict:
+    async def bulk_update_status(
+        self,
+        db: AsyncSession,
+        ids: list[str],
+        status_value: str,
+        *,
+        organization_id: str,
+    ) -> dict:
         if not ids:
             return {"affected_count": 0, "message": "No lead IDs provided"}
 
@@ -308,7 +333,7 @@ class LeadService:
                 message=f"Unsupported lead status '{status_value}'.",
             )
 
-        leads = await self.repository.list_by_ids(db, ids)
+        leads = await self.repository.list_by_ids(db, ids, organization_id=organization_id)
         for lead in leads:
             lead.status = canonical_status
         await self._commit(db, "Bulk status update failed")
@@ -317,8 +342,8 @@ class LeadService:
             "message": f"Status updated to {canonical_status}",
         }
 
-    async def check_duplicate(self, db: AsyncSession, email: str) -> dict:
-        duplicate = await self.repository.get_by_email(db, email)
+    async def check_duplicate(self, db: AsyncSession, email: str, *, organization_id: str) -> dict:
+        duplicate = await self.repository.get_by_email(db, email, organization_id=organization_id)
         return {
             "is_duplicate": bool(duplicate),
             "matched_lead_id": duplicate.id if duplicate else None,
@@ -336,45 +361,86 @@ class LeadService:
                 raise NotFoundError(message="Lead not found")
             if lead.status == "Converted" or lead.converted_at is not None:
                 if not lead.converted_contact_id or not lead.converted_company_id:
-                    raise APIException(status_code=409, message="Converted lead has missing customer links")
+                    raise APIException(
+                        status_code=409, message="Converted lead has missing customer links"
+                    )
                 result = self._conversion_result(lead)
                 await db.commit()
                 return result
             if lead.status != "Qualified" or lead.is_archived:
-                raise APIException(status_code=409, message="Only an active qualified lead can be converted")
+                raise APIException(
+                    status_code=409, message="Only an active qualified lead can be converted"
+                )
             if not lead.company.strip() or not lead.contact_name.strip() or not lead.email.strip():
-                raise APIException(status_code=422, message="Company, contact name and email are required")
+                raise APIException(
+                    status_code=422, message="Company, contact name and email are required"
+                )
             companies, contacts = await self.repository.conversion_customers(
                 db, organization_id, lead.company, lead.email
             )
             if len(companies) > 1 or len(contacts) > 1:
-                raise APIException(status_code=409, message="Resolve duplicate customers before conversion")
-            company = companies[0] if companies else await CompanyRepository().create(db, data={
-                "id": str(uuid.uuid4()), "organization_id": organization_id,
-                "name": lead.company.strip(), "industry": lead.industry, "website": lead.website,
-            })
+                raise APIException(
+                    status_code=409, message="Resolve duplicate customers before conversion"
+                )
+            company = (
+                companies[0]
+                if companies
+                else await CompanyRepository().create(
+                    db,
+                    data={
+                        "id": str(uuid.uuid4()),
+                        "organization_id": organization_id,
+                        "name": lead.company.strip(),
+                        "industry": lead.industry,
+                        "website": lead.website,
+                    },
+                )
+            )
             await db.flush()
-            contact = contacts[0] if contacts else await ContactRepository().create(db, data={
-                "id": str(uuid.uuid4()), "organization_id": organization_id,
-                "name": lead.contact_name.strip(), "email": lead.email.strip(), "phone": lead.phone,
-                "company_id": company.id,
-            })
+            contact = (
+                contacts[0]
+                if contacts
+                else await ContactRepository().create(
+                    db,
+                    data={
+                        "id": str(uuid.uuid4()),
+                        "organization_id": organization_id,
+                        "name": lead.contact_name.strip(),
+                        "email": lead.email.strip(),
+                        "phone": lead.phone,
+                        "company_id": company.id,
+                    },
+                )
+            )
             if contact.company_id and contact.company_id != company.id:
-                raise APIException(status_code=409, message="Existing contact belongs to a different company")
+                raise APIException(
+                    status_code=409, message="Existing contact belongs to a different company"
+                )
             await self.repository.link_conversion_contact(db, contact, company.id)
             await db.flush()
             deal = None
             if payload.create_deal:
-                deal = await DealRepository().create(db, data={
-                    "id": str(uuid.uuid4()), "organization_id": organization_id,
-                    "title": payload.deal_title or lead.title,
-                    "amount": payload.deal_amount or 0, "stage": "Prospecting",
-                    "assigned_to": current_user.id, "company_id": company.id, "contact_id": contact.id,
-                })
+                deal = await DealRepository().create(
+                    db,
+                    data={
+                        "id": str(uuid.uuid4()),
+                        "organization_id": organization_id,
+                        "title": payload.deal_title or lead.title,
+                        "amount": payload.deal_amount or 0,
+                        "stage": "Prospecting",
+                        "assigned_to": current_user.id,
+                        "company_id": company.id,
+                        "contact_id": contact.id,
+                    },
+                )
                 await db.flush()
             await self.repository.save_conversion(
-                db, lead, company_id=company.id, contact_id=contact.id,
-                deal_id=deal.id if deal else None, actor_id=current_user.id,
+                db,
+                lead,
+                company_id=company.id,
+                contact_id=contact.id,
+                deal_id=deal.id if deal else None,
+                actor_id=current_user.id,
                 converted_at=datetime.now(UTC),
             )
             result = self._conversion_result(lead)
@@ -386,16 +452,18 @@ class LeadService:
 
     @staticmethod
     def _conversion_result(lead: Lead) -> dict:
-        return {"message": "Lead converted successfully",
-                "contact_id": lead.converted_contact_id,
-                "company_id": lead.converted_company_id,
-                "deal_id": lead.converted_deal_id}
+        return {
+            "message": "Lead converted successfully",
+            "contact_id": lead.converted_contact_id,
+            "company_id": lead.converted_company_id,
+            "deal_id": lead.converted_deal_id,
+        }
 
-    async def assign_lead(self, db: AsyncSession, lead_id: str, user_id: str) -> dict:
-        lead = await self.repository.get_by_id(db, lead_id)
-        if not lead:
-            raise NotFoundError(message=f"Lead '{lead_id}' not found")
-        lead.assigned_to = user_id
+    async def assign_lead(
+        self, db: AsyncSession, lead_id: str, user_id: str, *, organization_id: str
+    ) -> dict:
+        lead = await self.require_lead(db, lead_id, organization_id=organization_id)
+        lead.assigned_to = await self._resolve_assigned_to(db, user_id, organization_id)
         await self._commit(db, "Failed to assign lead")
         await notification_service.notify(
             db,
@@ -408,10 +476,10 @@ class LeadService:
         )
         return {"message": f"Lead {lead_id} assigned to user {user_id}", "status": "success"}
 
-    async def get_timeline(self, db: AsyncSession, lead_id: str) -> list[dict]:
-        lead = await self.repository.get_by_id(db, lead_id)
-        if not lead:
-            raise NotFoundError(message=f"Lead '{lead_id}' not found")
+    async def get_timeline(
+        self, db: AsyncSession, lead_id: str, *, organization_id: str
+    ) -> list[dict]:
+        lead = await self.require_lead(db, lead_id, organization_id=organization_id)
 
         timeline = [
             {
@@ -481,7 +549,9 @@ class LeadService:
                 }
             )
 
-        contact_id = await self.repository.get_contact_id_by_email(db, lead.email)
+        contact_id = await self.repository.get_contact_id_by_email(
+            db, lead.email, organization_id=organization_id
+        )
         if contact_id:
             for call in await self.repository.list_calls(
                 db, organization_id=lead.organization_id, lead_tag=lead_tag
@@ -499,25 +569,13 @@ class LeadService:
         timeline.sort(key=lambda item: item.get("timestamp", ""), reverse=True)
         return timeline
 
-    async def _resolve_author(self, db: AsyncSession, organization_id: str) -> str:
-        user = await self.repository.get_first_user(db)
-        if user:
-            return user.id
-        user = await self.repository.create_user(
-            db,
-            email="system@crm.com",
-            name="System User",
-            hashed_password=get_password_hash(generate_random_code(32)),
-        )
-        await db.flush()
-        user.organization_id = organization_id
-        return user.id
-
-    async def get_notes(self, db: AsyncSession, lead_id: str) -> list[dict]:
-        await self.get_lead(db, lead_id)
+    async def get_notes(
+        self, db: AsyncSession, lead_id: str, *, organization_id: str
+    ) -> list[dict]:
+        await self.require_lead(db, lead_id, organization_id=organization_id)
         notes = await self.repository.list_notes(db, lead_id)
         users_map = {}
-        for user in await self.repository.list_users(db):
+        for user in await self.repository.list_users(db, organization_id=organization_id):
             name = (user.name or "").strip()
             users_map[user.id] = name if name else (user.email or "System User")
         return [
@@ -532,13 +590,18 @@ class LeadService:
             for note in notes
         ]
 
-    async def add_note(self, db: AsyncSession, lead_id: str, content: str) -> dict:
-        lead = await self.repository.get_by_id(db, lead_id)
-        if not lead:
-            raise NotFoundError(message=f"Lead '{lead_id}' not found")
-        created_by = await self._resolve_author(db, lead.organization_id)
+    async def add_note(
+        self,
+        db: AsyncSession,
+        lead_id: str,
+        content: str,
+        *,
+        organization_id: str,
+        actor_id: str,
+    ) -> dict:
+        await self.require_lead(db, lead_id, organization_id=organization_id)
         note = await self.repository.create_note(
-            db, lead_id=lead_id, content=content, created_by=created_by
+            db, lead_id=lead_id, content=content, created_by=actor_id
         )
         await self._commit(db, "Failed to add note")
         return {
@@ -550,10 +613,10 @@ class LeadService:
             "created_at": str(note.created_at),
         }
 
-    async def get_tasks(self, db: AsyncSession, lead_id: str) -> list[dict]:
-        lead = await self.repository.get_by_id(db, lead_id)
-        if not lead:
-            raise NotFoundError(message=f"Lead '{lead_id}' not found")
+    async def get_tasks(
+        self, db: AsyncSession, lead_id: str, *, organization_id: str
+    ) -> list[dict]:
+        lead = await self.require_lead(db, lead_id, organization_id=organization_id)
         lead_tag = f"[Lead:{lead_id}]"
         tasks = await self.repository.list_tasks(
             db, organization_id=lead.organization_id, lead_tag=lead_tag
@@ -577,25 +640,22 @@ class LeadService:
             )
         return output
 
-    async def create_task(self, db: AsyncSession, lead_id: str, payload: TaskCreate) -> dict:
-        lead = await self.repository.get_by_id(db, lead_id)
-        if not lead:
-            raise NotFoundError(message=f"Lead '{lead_id}' not found")
+    async def create_task(
+        self,
+        db: AsyncSession,
+        lead_id: str,
+        payload: TaskCreate,
+        *,
+        organization_id: str,
+        actor_id: str,
+    ) -> dict:
+        lead = await self.require_lead(db, lead_id, organization_id=organization_id)
         assigned_user_id = payload.assigned_to
         if not assigned_user_id:
-            first_user = await self.repository.get_first_user(db)
-            if first_user:
-                assigned_user_id = first_user.id
-            else:
-                user = await self.repository.create_user(
-                    db,
-                    email="system@crm.com",
-                    name="System User",
-                    hashed_password=get_password_hash(generate_random_code(32)),
-                )
-                await db.flush()
-                user.organization_id = lead.organization_id
-                assigned_user_id = user.id
+            assigned_user_id = actor_id
+        assigned_user_id = await self._resolve_assigned_to(db, assigned_user_id, organization_id)
+        if not assigned_user_id:
+            raise ForbiddenError(message="A valid same-organization task assignee is required.")
 
         due_dt = None
         if payload.due_date:
@@ -604,7 +664,7 @@ class LeadService:
             except Exception:
                 due_dt = datetime.utcnow()
         else:
-            due_dt = datetime.utcnow()
+            due_dt = datetime.now(UTC)
 
         lead_tag = f"[Lead:{lead_id}]"
         raw_desc = payload.description or ""
@@ -649,10 +709,10 @@ class LeadService:
             "created_at": str(task.created_at),
         }
 
-    async def get_emails(self, db: AsyncSession, lead_id: str) -> list[dict]:
-        lead = await self.repository.get_by_id(db, lead_id)
-        if not lead:
-            raise NotFoundError(message=f"Lead '{lead_id}' not found")
+    async def get_emails(
+        self, db: AsyncSession, lead_id: str, *, organization_id: str
+    ) -> list[dict]:
+        lead = await self.require_lead(db, lead_id, organization_id=organization_id)
         lead_tag = f"[Lead:{lead_id}]"
         emails = await self.repository.list_emails(
             db, organization_id=lead.organization_id, lead_tag=lead_tag
@@ -668,10 +728,15 @@ class LeadService:
             for email in emails
         ]
 
-    async def send_email(self, db: AsyncSession, lead_id: str, payload: EmailSendRequest) -> dict:
-        lead = await self.repository.get_by_id(db, lead_id)
-        if not lead:
-            raise NotFoundError(message=f"Lead '{lead_id}' not found")
+    async def send_email(
+        self,
+        db: AsyncSession,
+        lead_id: str,
+        payload: EmailSendRequest,
+        *,
+        organization_id: str,
+    ) -> dict:
+        lead = await self.require_lead(db, lead_id, organization_id=organization_id)
         to_addr = payload.to[0] if payload.to else lead.email
         lead_tag = f"[Lead:{lead_id}]"
         raw_body = payload.body or ""
@@ -696,10 +761,10 @@ class LeadService:
             "sent_at": str(email.sent_at),
         }
 
-    async def get_calls(self, db: AsyncSession, lead_id: str) -> list[dict]:
-        lead = await self.repository.get_by_id(db, lead_id)
-        if not lead:
-            raise NotFoundError(message=f"Lead '{lead_id}' not found")
+    async def get_calls(
+        self, db: AsyncSession, lead_id: str, *, organization_id: str
+    ) -> list[dict]:
+        lead = await self.require_lead(db, lead_id, organization_id=organization_id)
         lead_tag = f"[Lead:{lead_id}]"
         calls = await self.repository.list_calls(
             db, organization_id=lead.organization_id, lead_tag=lead_tag
@@ -721,16 +786,28 @@ class LeadService:
             )
         return output
 
-    async def log_call(self, db: AsyncSession, lead_id: str, payload: CallLogBase) -> dict:
-        lead = await self.repository.get_by_id(db, lead_id)
-        if not lead:
-            raise NotFoundError(message=f"Lead '{lead_id}' not found")
-        contact_id = await self.repository.get_contact_id_by_email(db, lead.email)
+    async def log_call(
+        self,
+        db: AsyncSession,
+        lead_id: str,
+        payload: CallLogBase,
+        *,
+        organization_id: str,
+    ) -> dict:
+        lead = await self.require_lead(db, lead_id, organization_id=organization_id)
+        if not lead.email:
+            raise APIException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                message="Lead email is required before logging a call",
+            )
+        contact_id = await self.repository.get_contact_id_by_email(
+            db, lead.email, organization_id=organization_id
+        )
         if not contact_id:
             contact = await self.repository.create_contact(
                 db,
                 name=lead.contact_name or "Unknown Lead",
-                email=lead.email or f"lead-{lead.id}@placeholder.com",
+                email=lead.email,
                 organization_id=lead.organization_id,
             )
             await db.flush()
@@ -759,8 +836,10 @@ class LeadService:
             "timestamp": str(call.timestamp),
         }
 
-    async def get_documents(self, db: AsyncSession, lead_id: str) -> list[dict]:
-        await self.get_lead(db, lead_id)
+    async def get_documents(
+        self, db: AsyncSession, lead_id: str, *, organization_id: str
+    ) -> list[dict]:
+        await self.require_lead(db, lead_id, organization_id=organization_id)
         attachments = await self.repository.list_attachments(db, lead_id)
         output = []
         for attachment in attachments:
@@ -872,18 +951,14 @@ class LeadService:
             ),
         }
 
-    async def archive_lead(self, db: AsyncSession, lead_id: str) -> dict:
-        lead = await self.repository.get_by_id(db, lead_id)
-        if not lead:
-            raise NotFoundError(message=f"Lead '{lead_id}' not found")
+    async def archive_lead(self, db: AsyncSession, lead_id: str, *, organization_id: str) -> dict:
+        lead = await self.require_lead(db, lead_id, organization_id=organization_id)
         lead.is_archived = True
         await self._commit(db, "Failed to archive lead")
         return {"message": f"Lead {lead_id} archived", "status": "success"}
 
-    async def unarchive_lead(self, db: AsyncSession, lead_id: str) -> dict:
-        lead = await self.repository.get_by_id(db, lead_id)
-        if not lead:
-            raise NotFoundError(message=f"Lead '{lead_id}' not found")
+    async def unarchive_lead(self, db: AsyncSession, lead_id: str, *, organization_id: str) -> dict:
+        lead = await self.require_lead(db, lead_id, organization_id=organization_id)
         lead.is_archived = False
         await self._commit(db, "Failed to unarchive lead")
         return {"message": f"Lead {lead_id} restored", "status": "success"}

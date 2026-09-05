@@ -34,6 +34,92 @@ async def _deliver_pending_quotes():
         await engine.dispose()
 
 
+@celery_app.task(name="app.workers.tasks.deliver_pending_invoices", ignore_result=True)
+def deliver_pending_invoices():
+    return asyncio.run(_deliver_pending_invoices())
+
+
+async def _deliver_pending_invoices():
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.core.config import settings
+    from app.services.invoice_delivery_service import invoice_delivery_service
+
+    engine = create_async_engine(settings.DATABASE_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    count = 0
+    try:
+        for _ in range(10):
+            if not await invoice_delivery_service.deliver_one(factory):
+                break
+            count += 1
+        return count
+    finally:
+        await engine.dispose()
+
+
+@celery_app.task(name="app.workers.tasks.deliver_pending_payment_receipts", ignore_result=True)
+def deliver_pending_payment_receipts():
+    return asyncio.run(_deliver_pending_payment_receipts())
+
+
+async def _deliver_pending_payment_receipts():
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.core.config import settings
+    from app.services.invoice_delivery_service import invoice_delivery_service
+
+    engine = create_async_engine(settings.DATABASE_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    count = 0
+    try:
+        for _ in range(10):
+            if not await invoice_delivery_service.deliver_receipt_one(factory):
+                break
+            count += 1
+        return count
+    finally:
+        await engine.dispose()
+
+
+@celery_app.task(name="app.workers.tasks.send_due_invoice_reminders", ignore_result=True)
+def send_due_invoice_reminders():
+    return asyncio.run(_send_due_invoice_reminders())
+
+
+async def _send_due_invoice_reminders():
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.core.config import settings
+    from app.core.errors import APIException
+    from app.repositories.invoice_repository import invoice_repository
+    from app.services.invoice_delivery_service import invoice_delivery_service
+
+    engine = create_async_engine(settings.DATABASE_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    sent = 0
+    failed = 0
+    try:
+        async with factory() as db:
+            candidates = await invoice_repository.list_due_reminder_candidates(
+                db, now=datetime.now(UTC)
+            )
+        for invoice_id, organization_id in candidates:
+            async with factory() as db:
+                try:
+                    await invoice_delivery_service.send_reminder(
+                        db,
+                        invoice_id=invoice_id,
+                        organization_id=organization_id,
+                    )
+                    sent += 1
+                except APIException:
+                    failed += 1
+        return {"sent": sent, "failed": failed}
+    finally:
+        await engine.dispose()
+
+
 logger = get_logger(__name__)
 
 # Scheduled download links must comfortably outlive the hourly delivery

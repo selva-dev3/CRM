@@ -109,8 +109,12 @@ async def create_deal_stage(
     summary="Get aggregated Kanban board layout by stage",
     dependencies=[Depends(require_permission("deals:read"))],
 )
-async def get_kanban_board(db: AsyncSession = Depends(get_db)):
-    return await deal_service.get_kanban_board(db)
+async def get_kanban_board(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await deal_service.get_kanban_board(db, organization_id=organization_id)
 
 
 @router.get(
@@ -118,8 +122,12 @@ async def get_kanban_board(db: AsyncSession = Depends(get_db)):
     summary="Get win/loss ratio & reason breakdown",
     dependencies=[Depends(require_permission("deals:read"))],
 )
-async def get_win_loss_analytics(db: AsyncSession = Depends(get_db)):
-    return await deal_service.get_win_loss_analytics()
+async def get_win_loss_analytics(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await deal_service.get_win_loss_analytics(db, organization_id=organization_id)
 
 
 @router.get(
@@ -147,8 +155,13 @@ async def import_deals_csv(db: AsyncSession = Depends(get_db)):
     summary="Bulk delete deals",
     dependencies=[Depends(require_permission("deals:bulk_delete"))],
 )
-async def bulk_delete_deals(payload: BulkDeleteRequest, db: AsyncSession = Depends(get_db)):
-    return await deal_service.bulk_delete(db, payload.ids)
+async def bulk_delete_deals(
+    payload: BulkDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await deal_service.bulk_delete(db, payload.ids, organization_id=organization_id)
 
 
 @router.post(
@@ -158,11 +171,15 @@ async def bulk_delete_deals(payload: BulkDeleteRequest, db: AsyncSession = Depen
     dependencies=[Depends(require_permission("deals:update"))],
 )
 async def bulk_update_deal_stage(
-    payload: BulkDeleteRequest, stage: str, db: AsyncSession = Depends(get_db),
+    payload: BulkDeleteRequest,
+    stage: str,
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await deal_service.bulk_update_stage(db, payload.ids, stage,
-        organization_id=current_user.organization_id, actor_id=current_user.id)
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await deal_service.bulk_update_stage(
+        db, payload.ids, stage, organization_id=organization_id, actor_id=current_user.id
+    )
 
 
 @router.get(
@@ -171,8 +188,13 @@ async def bulk_update_deal_stage(
     summary="Get deal details by ID",
     dependencies=[Depends(require_permission("deals:read"))],
 )
-async def get_deal(deal_id: str, db: AsyncSession = Depends(get_db)):
-    return await deal_service.get_deal(db, deal_id)
+async def get_deal(
+    deal_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await deal_service.get_deal(db, deal_id, organization_id=organization_id)
 
 
 @router.put(
@@ -181,10 +203,16 @@ async def get_deal(deal_id: str, db: AsyncSession = Depends(get_db)):
     summary="Update deal details by ID",
     dependencies=[Depends(require_permission("deals:update"))],
 )
-async def update_deal(deal_id: str, payload: DealUpdate, db: AsyncSession = Depends(get_db),
-                      current_user: User = Depends(get_current_user)):
-    return await deal_service.update_deal(db, deal_id, payload,
-        organization_id=current_user.organization_id, actor_id=current_user.id)
+async def update_deal(
+    deal_id: str,
+    payload: DealUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await deal_service.update_deal(
+        db, deal_id, payload, organization_id=organization_id, actor_id=current_user.id
+    )
 
 
 @router.delete(
@@ -193,8 +221,13 @@ async def update_deal(deal_id: str, payload: DealUpdate, db: AsyncSession = Depe
     summary="Delete deal by ID",
     dependencies=[Depends(require_permission("deals:delete"))],
 )
-async def delete_deal(deal_id: str, db: AsyncSession = Depends(get_db)):
-    return await deal_service.delete_deal(db, deal_id)
+async def delete_deal(
+    deal_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await deal_service.delete_deal(db, deal_id, organization_id=organization_id)
 
 
 @router.post(
@@ -202,10 +235,16 @@ async def delete_deal(deal_id: str, db: AsyncSession = Depends(get_db)):
     summary="Update deal pipeline stage (drag and drop)",
     dependencies=[Depends(require_permission("deals:update"))],
 )
-async def update_deal_stage(deal_id: str, stage: str, db: AsyncSession = Depends(get_db),
-                            current_user: User = Depends(get_current_user)):
-    return await deal_service.update_deal_stage(db, deal_id, stage,
-        organization_id=current_user.organization_id, actor_id=current_user.id)
+async def update_deal_stage(
+    deal_id: str,
+    stage: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await deal_service.update_deal_stage(
+        db, deal_id, stage, organization_id=organization_id, actor_id=current_user.id
+    )
 
 
 @router.post(
@@ -214,11 +253,18 @@ async def update_deal_stage(deal_id: str, stage: str, db: AsyncSession = Depends
     dependencies=[Depends(require_permission("deals:update"))],
 )
 async def mark_deal_won(
-    deal_id: str, final_amount: float | None = None, db: AsyncSession = Depends(get_db),
+    deal_id: str,
+    final_amount: float | None = None,
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     return await deal_service.mark_deal_won(
-        db, deal_id, final_amount, organization_id=current_user.organization_id, actor_id=current_user.id,
+        db,
+        deal_id,
+        final_amount,
+        organization_id=organization_id,
+        actor_id=current_user.id,
     )
 
 
@@ -228,8 +274,14 @@ async def mark_deal_won(
     summary="Mark deal as Closed Lost",
     dependencies=[Depends(require_permission("deals:update"))],
 )
-async def mark_deal_lost(deal_id: str, reason: str, db: AsyncSession = Depends(get_db)):
-    return await deal_service.mark_deal_lost(db, deal_id, reason)
+async def mark_deal_lost(
+    deal_id: str,
+    reason: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await deal_service.mark_deal_lost(db, deal_id, reason, organization_id=organization_id)
 
 
 @router.post(
@@ -238,8 +290,14 @@ async def mark_deal_lost(deal_id: str, reason: str, db: AsyncSession = Depends(g
     summary="Assign deal to sales rep",
     dependencies=[Depends(require_permission("deals:assign"))],
 )
-async def assign_deal(deal_id: str, user_id: str, db: AsyncSession = Depends(get_db)):
-    return await deal_service.assign_deal(db, deal_id, user_id)
+async def assign_deal(
+    deal_id: str,
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await deal_service.assign_deal(db, deal_id, user_id, organization_id=organization_id)
 
 
 @router.get(
@@ -248,8 +306,13 @@ async def assign_deal(deal_id: str, user_id: str, db: AsyncSession = Depends(get
     summary="List products attached to deal",
     dependencies=[Depends(require_permission("deals:read"))],
 )
-async def get_deal_products(deal_id: str, db: AsyncSession = Depends(get_db)):
-    return await deal_service.get_deal_products(db, deal_id)
+async def get_deal_products(
+    deal_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await deal_service.get_deal_products(db, deal_id, organization_id=organization_id)
 
 
 @router.post(
@@ -269,6 +332,7 @@ async def add_deal_product(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     return await deal_service.add_deal_product(
         db,
         deal_id=deal_id,
@@ -276,7 +340,7 @@ async def add_deal_product(
         quantity=quantity,
         unit_price=unit_price,
         custom_name=custom_name,
-        organization_id=current_user.organization_id,
+        organization_id=organization_id,
         discount_percent=discount_percent,
         tax_percent=tax_percent,
     )
@@ -288,10 +352,16 @@ async def add_deal_product(
     summary="Remove product item from deal",
     dependencies=[Depends(require_permission("deals:delete"))],
 )
-async def remove_deal_product(deal_id: str, product_id: str, db: AsyncSession = Depends(get_db),
-                              current_user: User = Depends(get_current_user)):
-    return await deal_service.remove_deal_product(db, deal_id=deal_id, product_id=product_id,
-        organization_id=current_user.organization_id)
+async def remove_deal_product(
+    deal_id: str,
+    product_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await deal_service.remove_deal_product(
+        db, deal_id=deal_id, product_id=product_id, organization_id=organization_id
+    )
 
 
 @router.get(
@@ -299,8 +369,13 @@ async def remove_deal_product(deal_id: str, product_id: str, db: AsyncSession = 
     summary="Get deal stage history timeline",
     dependencies=[Depends(require_permission("deals:read"))],
 )
-async def get_deal_timeline(deal_id: str, db: AsyncSession = Depends(get_db)):
-    return await deal_service.get_deal_timeline(db, deal_id)
+async def get_deal_timeline(
+    deal_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await deal_service.get_deal_timeline(db, deal_id, organization_id=organization_id)
 
 
 @router.get(
@@ -375,8 +450,19 @@ async def predict_deal_win_rate(
     summary="Clone an existing deal",
     dependencies=[Depends(require_permission("deals:create"))],
 )
-async def clone_deal(deal_id: str, new_title: str, db: AsyncSession = Depends(get_db)):
-    return await deal_service.clone_deal(db, deal_id=deal_id, new_title=new_title)
+async def clone_deal(
+    deal_id: str,
+    new_title: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await deal_service.clone_deal(
+        db,
+        deal_id=deal_id,
+        new_title=new_title,
+        organization_id=organization_id,
+    )
 
 
 @router.get(
@@ -384,8 +470,13 @@ async def clone_deal(deal_id: str, new_title: str, db: AsyncSession = Depends(ge
     summary="Calculate sales rep commission split for deal",
     dependencies=[Depends(require_permission("deals:read"))],
 )
-async def get_deal_commission(deal_id: str, db: AsyncSession = Depends(get_db)):
-    return await deal_service.get_deal_commission(db, deal_id)
+async def get_deal_commission(
+    deal_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await deal_service.get_deal_commission(db, deal_id, organization_id=organization_id)
 
 
 @router.post(

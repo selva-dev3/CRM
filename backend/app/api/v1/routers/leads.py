@@ -29,6 +29,7 @@ from app.services.lead_service import (
     LEAD_STATUSES,
     lead_service,
 )
+from app.services.org_service import organization_service
 
 router = APIRouter()
 
@@ -46,11 +47,23 @@ async def list_leads(
     search: str | None = Query(None),
     lead_status: str | None = Query(None, alias="status"),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     leads = await lead_service.list_leads(
-        db, page=page, limit=limit, search=search, lead_status=lead_status
+        db,
+        page=page,
+        limit=limit,
+        organization_id=organization_id,
+        search=search,
+        lead_status=lead_status,
     )
-    total = await lead_service.count_leads(db, search=search, lead_status=lead_status)
+    total = await lead_service.count_leads(
+        db,
+        organization_id=organization_id,
+        search=search,
+        lead_status=lead_status,
+    )
     response.headers["X-Total-Count"] = str(total)
     return leads
 
@@ -61,8 +74,13 @@ async def list_leads(
     summary="Bulk delete leads",
     dependencies=[Depends(require_permission("leads:bulk_delete"))],
 )
-async def bulk_delete_leads(payload: BulkDeleteRequest, db: AsyncSession = Depends(get_db)):
-    return await lead_service.bulk_delete(db, payload.ids)
+async def bulk_delete_leads(
+    payload: BulkDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await lead_service.bulk_delete(db, payload.ids, organization_id=organization_id)
 
 
 @router.post(
@@ -71,8 +89,13 @@ async def bulk_delete_leads(payload: BulkDeleteRequest, db: AsyncSession = Depen
     summary="Bulk archive leads",
     dependencies=[Depends(require_permission("leads:bulk_update"))],
 )
-async def bulk_archive_leads(payload: BulkDeleteRequest, db: AsyncSession = Depends(get_db)):
-    return await lead_service.bulk_archive(db, payload.ids)
+async def bulk_archive_leads(
+    payload: BulkDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await lead_service.bulk_archive(db, payload.ids, organization_id=organization_id)
 
 
 @router.post(
@@ -147,9 +170,13 @@ async def create_lead_status(status_name: str):
     dependencies=[Depends(require_permission("leads:read"))],
 )
 async def check_duplicate_lead(
-    email: str, phone: str | None = None, db: AsyncSession = Depends(get_db)
+    email: str,
+    phone: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    return await lead_service.check_duplicate(db, email)
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await lead_service.check_duplicate(db, email, organization_id=organization_id)
 
 
 @router.get(
@@ -187,9 +214,15 @@ async def import_leads_csv():
     dependencies=[Depends(require_permission("leads:bulk_update"))],
 )
 async def bulk_update_lead_status(
-    payload: BulkDeleteRequest, status_value: str, db: AsyncSession = Depends(get_db)
+    payload: BulkDeleteRequest,
+    status_value: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    return await lead_service.bulk_update_status(db, payload.ids, status_value)
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await lead_service.bulk_update_status(
+        db, payload.ids, status_value, organization_id=organization_id
+    )
 
 
 @router.get(
@@ -198,8 +231,13 @@ async def bulk_update_lead_status(
     summary="Get lead details by ID",
     dependencies=[Depends(require_permission("leads:read"))],
 )
-async def get_lead(lead_id: str, db: AsyncSession = Depends(get_db)):
-    return await lead_service.get_lead(db, lead_id)
+async def get_lead(
+    lead_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await lead_service.get_lead(db, lead_id, organization_id=organization_id)
 
 
 @router.put(
@@ -223,8 +261,13 @@ async def update_lead(
     summary="Delete lead by ID",
     dependencies=[Depends(require_permission("leads:delete"))],
 )
-async def delete_lead(lead_id: str, db: AsyncSession = Depends(get_db)):
-    return await lead_service.delete_lead(db, lead_id)
+async def delete_lead(
+    lead_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await lead_service.delete_lead(db, lead_id, organization_id=organization_id)
 
 
 @router.post(
@@ -233,7 +276,9 @@ async def delete_lead(lead_id: str, db: AsyncSession = Depends(get_db)):
     dependencies=[Depends(require_permission("leads:convert"))],
 )
 async def convert_lead(
-    lead_id: str, payload: LeadConvertRequest, db: AsyncSession = Depends(get_db),
+    lead_id: str,
+    payload: LeadConvertRequest,
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     return await lead_service.convert_lead(db, lead_id, payload, current_user)
@@ -245,8 +290,14 @@ async def convert_lead(
     summary="Assign lead to specific sales rep",
     dependencies=[Depends(require_permission("leads:assign"))],
 )
-async def assign_lead(lead_id: str, user_id: str, db: AsyncSession = Depends(get_db)):
-    return await lead_service.assign_lead(db, lead_id, user_id)
+async def assign_lead(
+    lead_id: str,
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await lead_service.assign_lead(db, lead_id, user_id, organization_id=organization_id)
 
 
 @router.post(
@@ -270,8 +321,13 @@ async def recalculate_lead_score(
     summary="Get activity timeline for lead",
     dependencies=[Depends(require_permission("leads:read"))],
 )
-async def get_lead_timeline(lead_id: str, db: AsyncSession = Depends(get_db)):
-    return await lead_service.get_timeline(db, lead_id)
+async def get_lead_timeline(
+    lead_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await lead_service.get_timeline(db, lead_id, organization_id=organization_id)
 
 
 @router.get(
@@ -280,8 +336,13 @@ async def get_lead_timeline(lead_id: str, db: AsyncSession = Depends(get_db)):
     summary="List notes attached to lead",
     dependencies=[Depends(require_permission("leads:read"))],
 )
-async def get_lead_notes(lead_id: str, db: AsyncSession = Depends(get_db)):
-    return await lead_service.get_notes(db, lead_id)
+async def get_lead_notes(
+    lead_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await lead_service.get_notes(db, lead_id, organization_id=organization_id)
 
 
 @router.post(
@@ -290,8 +351,20 @@ async def get_lead_notes(lead_id: str, db: AsyncSession = Depends(get_db)):
     summary="Add note to lead",
     dependencies=[Depends(require_permission("leads:create"))],
 )
-async def add_lead_note(lead_id: str, content: str, db: AsyncSession = Depends(get_db)):
-    return await lead_service.add_note(db, lead_id, content)
+async def add_lead_note(
+    lead_id: str,
+    content: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await lead_service.add_note(
+        db,
+        lead_id,
+        content,
+        organization_id=organization_id,
+        actor_id=current_user.id,
+    )
 
 
 @router.get(
@@ -300,8 +373,13 @@ async def add_lead_note(lead_id: str, content: str, db: AsyncSession = Depends(g
     summary="List tasks assigned to lead",
     dependencies=[Depends(require_permission("leads:read"))],
 )
-async def get_lead_tasks(lead_id: str, db: AsyncSession = Depends(get_db)):
-    return await lead_service.get_tasks(db, lead_id)
+async def get_lead_tasks(
+    lead_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await lead_service.get_tasks(db, lead_id, organization_id=organization_id)
 
 
 @router.post(
@@ -310,8 +388,20 @@ async def get_lead_tasks(lead_id: str, db: AsyncSession = Depends(get_db)):
     summary="Create task for lead",
     dependencies=[Depends(require_permission("leads:create"))],
 )
-async def create_lead_task(lead_id: str, payload: TaskCreate, db: AsyncSession = Depends(get_db)):
-    return await lead_service.create_task(db, lead_id, payload)
+async def create_lead_task(
+    lead_id: str,
+    payload: TaskCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await lead_service.create_task(
+        db,
+        lead_id,
+        payload,
+        organization_id=organization_id,
+        actor_id=current_user.id,
+    )
 
 
 @router.get(
@@ -320,8 +410,13 @@ async def create_lead_task(lead_id: str, payload: TaskCreate, db: AsyncSession =
     summary="List emails exchanged with lead",
     dependencies=[Depends(require_permission("leads:read"))],
 )
-async def get_lead_emails(lead_id: str, db: AsyncSession = Depends(get_db)):
-    return await lead_service.get_emails(db, lead_id)
+async def get_lead_emails(
+    lead_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await lead_service.get_emails(db, lead_id, organization_id=organization_id)
 
 
 @router.post(
@@ -331,9 +426,13 @@ async def get_lead_emails(lead_id: str, db: AsyncSession = Depends(get_db)):
     dependencies=[Depends(require_permission("emails:send"))],
 )
 async def send_lead_email(
-    lead_id: str, payload: EmailSendRequest, db: AsyncSession = Depends(get_db)
+    lead_id: str,
+    payload: EmailSendRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    return await lead_service.send_email(db, lead_id, payload)
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await lead_service.send_email(db, lead_id, payload, organization_id=organization_id)
 
 
 @router.get(
@@ -342,8 +441,13 @@ async def send_lead_email(
     summary="List call logs for lead",
     dependencies=[Depends(require_permission("leads:read"))],
 )
-async def get_lead_calls(lead_id: str, db: AsyncSession = Depends(get_db)):
-    return await lead_service.get_calls(db, lead_id)
+async def get_lead_calls(
+    lead_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await lead_service.get_calls(db, lead_id, organization_id=organization_id)
 
 
 @router.post(
@@ -352,8 +456,14 @@ async def get_lead_calls(lead_id: str, db: AsyncSession = Depends(get_db)):
     summary="Log call with lead",
     dependencies=[Depends(require_permission("leads:create"))],
 )
-async def log_lead_call(lead_id: str, payload: CallLogBase, db: AsyncSession = Depends(get_db)):
-    return await lead_service.log_call(db, lead_id, payload)
+async def log_lead_call(
+    lead_id: str,
+    payload: CallLogBase,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await lead_service.log_call(db, lead_id, payload, organization_id=organization_id)
 
 
 @router.get(
@@ -362,8 +472,13 @@ async def log_lead_call(lead_id: str, payload: CallLogBase, db: AsyncSession = D
     summary="List documents attached to lead",
     dependencies=[Depends(require_permission("leads:read"))],
 )
-async def get_lead_documents(lead_id: str, db: AsyncSession = Depends(get_db)):
-    return await lead_service.get_documents(db, lead_id)
+async def get_lead_documents(
+    lead_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await lead_service.get_documents(db, lead_id, organization_id=organization_id)
 
 
 @router.get(
@@ -408,8 +523,13 @@ async def upload_lead_document(
     summary="Archive lead",
     dependencies=[Depends(require_permission("leads:update"))],
 )
-async def archive_lead(lead_id: str, db: AsyncSession = Depends(get_db)):
-    return await lead_service.archive_lead(db, lead_id)
+async def archive_lead(
+    lead_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await lead_service.archive_lead(db, lead_id, organization_id=organization_id)
 
 
 @router.post(
@@ -418,5 +538,10 @@ async def archive_lead(lead_id: str, db: AsyncSession = Depends(get_db)):
     summary="Unarchive lead",
     dependencies=[Depends(require_permission("leads:update"))],
 )
-async def unarchive_lead(lead_id: str, db: AsyncSession = Depends(get_db)):
-    return await lead_service.unarchive_lead(db, lead_id)
+async def unarchive_lead(
+    lead_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await lead_service.unarchive_lead(db, lead_id, organization_id=organization_id)

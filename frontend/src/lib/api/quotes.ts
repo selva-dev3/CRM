@@ -23,6 +23,7 @@ export interface QuoteItem {
   recipient_email?: string | null;
   pdf_available?: boolean;
   expires_at?: string | null;
+  rejection_reason?: string | null;
   invoice_id?: string | null;
   invoice_number?: string | null;
   invoice_status?: string | null;
@@ -63,15 +64,6 @@ export interface BulkActionResponse {
 export interface MessageResponse {
   message: string;
   status: string;
-}
-
-export interface InvoiceConversionResponse {
-  id: string;
-  invoice_number: string;
-  amount: number;
-  status: string;
-  due_date: string;
-  created_at: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -120,20 +112,13 @@ export async function sendQuoteEmailApi(quoteId: string, recipient_email: string
   return apiClient.post<MessageResponse>(`/quotes/${quoteId}/send?recipient_email=${encodeURIComponent(recipient_email)}`);
 }
 
-export async function acceptQuoteApi(quoteId: string): Promise<MessageResponse> {
-  return apiClient.post<MessageResponse>(`/quotes/${quoteId}/accept`);
-}
-
 export async function rejectQuoteApi(quoteId: string, reason?: string): Promise<MessageResponse> {
-  return apiClient.post<MessageResponse>(`/quotes/${quoteId}/reject?reason=${encodeURIComponent(reason || 'Budget constraints')}`);
+  const query = reason ? `?reason=${encodeURIComponent(reason)}` : '';
+  return apiClient.post<MessageResponse>(`/quotes/${quoteId}/reject${query}`);
 }
 
 export async function fetchQuotePdfApi(quoteId: string): Promise<{ pdf_url: string }> {
   return apiClient.get<{ pdf_url: string }>(`/quotes/${quoteId}/pdf`);
-}
-
-export async function convertQuoteToInvoiceApi(quoteId: string): Promise<InvoiceConversionResponse> {
-  return apiClient.post<InvoiceConversionResponse>(`/quotes/${quoteId}/convert-to-invoice`);
 }
 
 export async function createQuoteRevisionApi(quoteId: string): Promise<QuoteItem> {
@@ -236,18 +221,6 @@ export function useSendQuoteEmailMutation(options?: UseMutationOptions<MessageRe
   });
 }
 
-export function useAcceptQuoteMutation(options?: UseMutationOptions<MessageResponse, Error, string>) {
-  const queryClient = useQueryClient();
-  return useMutation<MessageResponse, Error, string>({
-    mutationFn: acceptQuoteApi,
-    onSuccess: (_, quoteId) => {
-      queryClient.invalidateQueries({ queryKey: ['quotes'] });
-      queryClient.invalidateQueries({ queryKey: ['quotes', quoteId] });
-    },
-    ...options,
-  });
-}
-
 export function useRejectQuoteMutation(options?: UseMutationOptions<MessageResponse, Error, { id: string; reason?: string }>) {
   const queryClient = useQueryClient();
   return useMutation<MessageResponse, Error, { id: string; reason?: string }>({
@@ -255,18 +228,6 @@ export function useRejectQuoteMutation(options?: UseMutationOptions<MessageRespo
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['quotes'] });
       queryClient.invalidateQueries({ queryKey: ['quotes', variables.id] });
-    },
-    ...options,
-  });
-}
-
-export function useConvertQuoteToInvoiceMutation(options?: UseMutationOptions<InvoiceConversionResponse, Error, string>) {
-  const queryClient = useQueryClient();
-  return useMutation<InvoiceConversionResponse, Error, string>({
-    mutationFn: convertQuoteToInvoiceApi,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['quotes'] });
-      queryClient.invalidateQueries({ queryKey: ['invoices'] });
     },
     ...options,
   });

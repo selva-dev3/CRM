@@ -51,9 +51,7 @@ class Invoice(Base):
     contact_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("contacts.id", ondelete="SET NULL")
     )
-    invoice_number: Mapped[str] = mapped_column(
-        String(100), index=True, nullable=False
-    )
+    invoice_number: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
     currency: Mapped[str] = mapped_column(String(10), default="USD")
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
     subtotal: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
@@ -65,6 +63,15 @@ class Invoice(Base):
     due_date: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     notes: Mapped[str | None] = mapped_column(Text)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    delivery_id: Mapped[str | None] = mapped_column(String(36))
+    delivery_status: Mapped[str | None] = mapped_column(String(30), index=True)
+    delivery_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    delivery_claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    recipient_email: Mapped[str | None] = mapped_column(String(255))
+    provider_message_id: Mapped[str | None] = mapped_column(String(255))
+    pdf_s3_key: Mapped[str | None] = mapped_column(String(500))
+    reminder_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    last_reminded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     stripe_checkout_url: Mapped[str | None] = mapped_column(String(500))
     stripe_checkout_session_id: Mapped[str | None] = mapped_column(String(255), unique=True)
     stripe_checkout_generation: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
@@ -81,8 +88,15 @@ class InvoiceItem(Base):
     product_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("products.id", ondelete="SET NULL"), index=True
     )
+    product_name: Mapped[str] = mapped_column(
+        String(255), nullable=False, default="Line item", server_default="Line item"
+    )
     description: Mapped[str | None] = mapped_column(String(255))
     quantity: Mapped[int] = mapped_column(Integer, default=1)
     unit_price: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
     discount_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=0)
     tax_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=0)
+    subtotal: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    discount_total: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    tax_total: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    total: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)

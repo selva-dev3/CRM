@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
@@ -14,6 +14,7 @@ from app.schemas.crm_schemas import (
     InvoiceResponse,
     MessageResponse,
 )
+from app.services.invoice_delivery_service import invoice_delivery_service
 from app.services.invoice_payment_service import invoice_payment_service
 from app.services.invoice_service import invoice_service
 
@@ -74,14 +75,7 @@ async def create_invoice(
     Totals are recalculated server-side from the deal's billable line items;
     the invoice always starts in Draft regardless of client-supplied values.
     """
-    try:
-        return await invoice_service.create_invoice_from_deal(db, payload.deal_id, current_user)
-    except APIException:
-        raise
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to create invoice: {exc}"
-        ) from exc
+    return await invoice_service.create_invoice_from_deal(db, payload.deal_id, current_user)
 
 
 @router.get(
@@ -105,22 +99,11 @@ async def get_overdue_invoices(
     dependencies=[Depends(require_permission("invoices:read"))],
 )
 async def list_recurring_invoices(db: AsyncSession = Depends(get_db)):
-    return [
-        {
-            "id": "rec-inv-1",
-            "customer_name": "Acme Global Corp",
-            "amount": 12000.0,
-            "interval": "Monthly",
-            "next_billing_date": "2026-09-01",
-        },
-        {
-            "id": "rec-inv-2",
-            "customer_name": "Nexus Tech",
-            "amount": 3500.0,
-            "interval": "Quarterly",
-            "next_billing_date": "2026-10-01",
-        },
-    ]
+    raise APIException(
+        message="Recurring invoice schedules are not implemented",
+        code="RECURRING_INVOICES_UNAVAILABLE",
+        status_code=501,
+    )
 
 
 @router.post(
@@ -135,10 +118,11 @@ async def create_recurring_invoice(
     interval: str = Query("Monthly"),
     db: AsyncSession = Depends(get_db),
 ):
-    return {
-        "message": f"Recurring {interval} invoice created for {customer_id}",
-        "status": "success",
-    }
+    raise APIException(
+        message="Recurring invoice schedules are not implemented",
+        code="RECURRING_INVOICES_UNAVAILABLE",
+        status_code=501,
+    )
 
 
 @router.get(
@@ -147,7 +131,7 @@ async def create_recurring_invoice(
     dependencies=[Depends(require_permission("invoices:read"))],
 )
 async def export_invoices_csv(db: AsyncSession = Depends(get_db)):
-    return {"download_url": "https://api.crm.com/exports/invoices_export.csv"}
+    raise APIException(message="Invoice export is not implemented", status_code=501)
 
 
 @router.post(
@@ -157,7 +141,7 @@ async def export_invoices_csv(db: AsyncSession = Depends(get_db)):
     dependencies=[Depends(require_permission("invoices:create"))],
 )
 async def import_invoices_csv(db: AsyncSession = Depends(get_db)):
-    return {"message": "Invoices CSV import processing completed", "status": "success"}
+    raise APIException(message="Invoice import is not implemented", status_code=501)
 
 
 @router.post(
@@ -199,7 +183,7 @@ async def bulk_remind_invoices(
     reminded = 0
     for invoice_id in payload.ids:
         try:
-            await invoice_service.require_invoice(
+            await invoice_delivery_service.send_reminder(
                 db, invoice_id=invoice_id, organization_id=organization_id
             )
             reminded += 1
@@ -271,15 +255,18 @@ async def delete_invoice(
 )
 async def send_invoice_email(
     invoice_id: str,
-    recipient_email: str = Query("client@company.com"),
+    recipient_email: str = Query(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await invoice_service.resolve_organization_id(db, current_user)
-    await invoice_service.mark_sent(
+    invoice = await invoice_service.mark_sent(
         db, invoice_id=invoice_id, organization_id=organization_id, recipient_email=recipient_email
     )
-    return {"message": f"Invoice email sent to {recipient_email}", "status": "success"}
+    return {
+        "message": f"Invoice delivery queued for {recipient_email}",
+        "status": invoice.get("delivery_status") or "Pending",
+    }
 
 
 @router.post(
@@ -293,29 +280,25 @@ async def create_stripe_checkout(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await invoice_service.resolve_organization_id(db, current_user)
-    return await invoice_payment_service.checkout(db, invoice_id=invoice_id, organization_id=organization_id)
+    return await invoice_payment_service.checkout(
+        db, invoice_id=invoice_id, organization_id=organization_id
+    )
 
 
 @router.post(
     "/{invoice_id}/mark-paid",
     response_model=MessageResponse,
-    summary="Manually mark invoice status as Paid",
+    summary="Manual mark-paid is disabled; use verified payment processing",
     dependencies=[Depends(require_permission("invoices:payment"))],
 )
 async def mark_invoice_paid(
     invoice_id: str,
-    payment_method: str = Query("Bank Transfer"),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
-    organization_id = await invoice_service.resolve_organization_id(db, current_user)
-    await invoice_service.mark_paid(
-        db, invoice_id=invoice_id, organization_id=organization_id, payment_method=payment_method
+    raise APIException(
+        message="Payment must be recorded through a verified provider or a dedicated offline-payment workflow",
+        code="PAYMENT_VERIFICATION_REQUIRED",
+        status_code=501,
     )
-    return {
-        "message": f"Invoice {invoice_id} marked as Paid via {payment_method}",
-        "status": "success",
-    }
 
 
 @router.post(
@@ -330,10 +313,9 @@ async def send_payment_reminder(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await invoice_service.resolve_organization_id(db, current_user)
-    await invoice_service.require_invoice(
+    return await invoice_delivery_service.send_reminder(
         db, invoice_id=invoice_id, organization_id=organization_id
     )
-    return {"message": f"Payment reminder sent for invoice {invoice_id}", "status": "success"}
 
 
 @router.get(
@@ -347,10 +329,10 @@ async def get_invoice_pdf(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await invoice_service.resolve_organization_id(db, current_user)
-    invoice = await invoice_service.require_invoice(
+    pdf_url = await invoice_delivery_service.pdf_url(
         db, invoice_id=invoice_id, organization_id=organization_id
     )
-    return {"pdf_url": f"https://api.crm.com/invoices/{invoice.id}.pdf"}
+    return {"pdf_url": pdf_url}
 
 
 @router.post(
@@ -370,7 +352,8 @@ async def issue_credit_memo(
     await invoice_service.require_invoice(
         db, invoice_id=invoice_id, organization_id=organization_id
     )
-    return {
-        "message": f"Credit memo of ${amount} issued against invoice {invoice_id}",
-        "status": "success",
-    }
+    raise APIException(
+        message="Credit memos are not implemented",
+        code="CREDIT_MEMO_UNAVAILABLE",
+        status_code=501,
+    )

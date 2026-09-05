@@ -84,14 +84,18 @@ class OrganizationRepository:
     async def count_members(self, db: AsyncSession, org_id: str) -> int:
         result = await db.execute(select(func.count(User.id)).where(User.organization_id == org_id))
         count = result.scalar() or 0
-        return max(count, 1)
+        return count
 
     async def list_members(self, db: AsyncSession, org_id: str) -> list[User]:
         result = await db.execute(select(User).where(User.organization_id == org_id))
         return list(result.scalars().all())
 
-    async def get_user_by_id(self, db: AsyncSession, user_id: str) -> User | None:
-        result = await db.execute(select(User).where(User.id == user_id))
+    async def get_user_by_id(
+        self, db: AsyncSession, *, user_id: str, organization_id: str
+    ) -> User | None:
+        result = await db.execute(
+            select(User).where(User.id == user_id, User.organization_id == organization_id)
+        )
         return result.scalars().first()
 
     async def delete_user(self, db: AsyncSession, user: User) -> None:

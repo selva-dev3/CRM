@@ -33,6 +33,10 @@ def _service_with(repo: TaskRepository) -> TaskService:
     return TaskService(repository=repo)
 
 
+def _actor() -> User:
+    return User(id="usr-1", email="owner@crm.com", organization_id="org-1")
+
+
 def test_parse_datetime_handles_iso_date_and_invalid_input():
     assert parse_datetime("2026-08-01") == datetime(2026, 8, 1)
     assert parse_datetime("2026-08-01T10:30:00") == datetime(2026, 8, 1, 10, 30)
@@ -51,7 +55,9 @@ async def test_get_task_raises_not_found_when_missing():
     db = AsyncMock(spec=AsyncSession)
 
     with pytest.raises(NotFoundError):
-        await service.get_task(db, "missing-task")
+        await service.get_task(db, "missing-task", "org-1")
+
+    repo.get_by_id.assert_awaited_once_with(db, task_id="missing-task", organization_id="org-1")
 
 
 @pytest.mark.asyncio
@@ -60,7 +66,6 @@ async def test_create_task_resolves_org_and_serializes(monkeypatch):
     repo: Any = TaskRepository()
     repo.create = AsyncMock(return_value=task)
     repo.get_user_by_id_name_email = AsyncMock(return_value=None)
-    repo.get_first_user = AsyncMock(return_value=User(id="usr-2"))
     service = _service_with(repo)
     monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())
     db = AsyncMock(spec=AsyncSession)
@@ -72,12 +77,13 @@ async def test_create_task_resolves_org_and_serializes(monkeypatch):
     )
 
     payload = TaskCreate(title="Follow up")
-    result = await service.create_task(db, payload)
+    result = await service.create_task(db, payload, _actor())
 
     assert result["id"] == "task-1"
     assert result["status"] == "Pending"
     assert result["priority"] == "Medium"
     repo.create.assert_awaited_once()
+    assert repo.create.await_args.kwargs["data"]["assigned_to"] == "usr-1"
 
 
 @pytest.mark.asyncio
@@ -85,7 +91,6 @@ async def test_create_task_rejects_project_outside_current_organization(monkeypa
     repo: Any = TaskRepository()
     repo.create = AsyncMock()
     repo.get_user_by_id_name_email = AsyncMock(return_value=None)
-    repo.get_first_user = AsyncMock(return_value=User(id="usr-2"))
     project_repository = AsyncMock()
     project_repository.get.return_value = None
     service = TaskService(repository=repo, project_repository=project_repository)
@@ -98,7 +103,9 @@ async def test_create_task_rejects_project_outside_current_organization(monkeypa
     )
 
     with pytest.raises(NotFoundError):
-        await service.create_task(db, TaskCreate(title="Follow up", project_id="project-2"))
+        await service.create_task(
+            db, TaskCreate(title="Follow up", project_id="project-2"), _actor()
+        )
 
     project_repository.get.assert_awaited_once_with(
         db, project_id="project-2", organization_id="org-1"
@@ -112,7 +119,6 @@ async def test_create_task_fires_task_created_event(monkeypatch):
     repo: Any = TaskRepository()
     repo.create = AsyncMock(return_value=task)
     repo.get_user_by_id_name_email = AsyncMock(return_value=None)
-    repo.get_first_user = AsyncMock(return_value=User(id="usr-2"))
     service = _service_with(repo)
     notify = AsyncMock()
     monkeypatch.setattr(integration_service, "notify_slack_event", notify)
@@ -124,7 +130,7 @@ async def test_create_task_fires_task_created_event(monkeypatch):
         organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
     )
 
-    await service.create_task(db, TaskCreate(title="Follow up"))
+    await service.create_task(db, TaskCreate(title="Follow up"), _actor())
 
     notify.assert_awaited_once()
     kwargs = notify.await_args_list[-1].kwargs
@@ -143,7 +149,7 @@ async def test_complete_task_fires_task_completed_event(monkeypatch):
     monkeypatch.setattr(integration_service, "notify_slack_event", notify)
     db = AsyncMock(spec=AsyncSession)
 
-    await service.complete_task(db, "task-1")
+    await service.complete_task(db, "task-1", "org-1")
 
     notify.assert_awaited_once()
     kwargs = notify.await_args_list[-1].kwargs
@@ -160,7 +166,7 @@ async def test_update_task_applies_only_provided_fields():
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.update_task(db, "task-1", TaskUpdate(status="Completed"))
+    result = await service.update_task(db, "task-1", TaskUpdate(status="Completed"), "org-1")
 
     assert task.status == "Completed"
     assert task.priority == "Medium"
@@ -177,7 +183,7 @@ async def test_bulk_complete_updates_all_matching_tasks():
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.bulk_complete(db, ["t1", "t2"])
+    result = await service.bulk_complete(db, ["t1", "t2"], "org-1")
 
     assert result["affected_count"] == 2
     assert t1.status == "Completed"
@@ -194,10 +200,13 @@ async def test_assign_task_resolves_user_id(monkeypatch):
     monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.assign_task(db, "task-1", "usr-9")
+    result = await service.assign_task(db, "task-1", "usr-9", "org-1")
 
     assert task.assigned_to == "usr-9"
     assert result["status"] == "success"
+    repo.get_user_by_id_name_email.assert_awaited_once_with(
+        db, value="usr-9", organization_id="org-1"
+    )
 
 
 @pytest.mark.asyncio
@@ -211,7 +220,7 @@ async def test_assign_task_fires_task_assigned_event(monkeypatch):
     monkeypatch.setattr(integration_service, "notify_slack_event", notify)
     db = AsyncMock(spec=AsyncSession)
 
-    await service.assign_task(db, "task-1", "usr-9")
+    await service.assign_task(db, "task-1", "usr-9", "org-1")
 
     notify.assert_awaited_once()
     kwargs = notify.await_args_list[-1].kwargs
@@ -230,7 +239,7 @@ async def test_update_task_fires_priority_changed_event(monkeypatch):
     monkeypatch.setattr(integration_service, "notify_slack_event", notify)
     db = AsyncMock(spec=AsyncSession)
 
-    await service.update_task(db, "task-1", TaskUpdate(priority="High"))
+    await service.update_task(db, "task-1", TaskUpdate(priority="High"), "org-1")
 
     assert task.priority == "High"
     notify.assert_awaited_once()
@@ -250,6 +259,21 @@ async def test_update_task_no_priority_event_when_unchanged(monkeypatch):
     monkeypatch.setattr(integration_service, "notify_slack_event", notify)
     db = AsyncMock(spec=AsyncSession)
 
-    await service.update_task(db, "task-1", TaskUpdate(status="Completed"))
+    await service.update_task(db, "task-1", TaskUpdate(status="Completed"), "org-1")
 
     notify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_assign_task_rejects_user_outside_organization():
+    task = _make_task()
+    repo: Any = TaskRepository()
+    repo.get_by_id = AsyncMock(return_value=task)
+    repo.get_user_by_id_name_email = AsyncMock(return_value=None)
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(NotFoundError):
+        await service.assign_task(db, "task-1", "cross-org-user", "org-1")
+
+    assert task.assigned_to == "usr-1"

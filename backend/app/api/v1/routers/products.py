@@ -2,9 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import get_valid_org_id, require_permission
+from app.api.v1.deps import get_current_user, require_permission
+from app.core.errors import APIException
 from app.db.session import get_db
-from app.models import Product, ProductCategory
+from app.models import Product, ProductCategory, User
 from app.schemas.crm_schemas import (
     BulkActionResponse,
     BulkDeleteRequest,
@@ -26,9 +27,10 @@ async def list_products(
     category: str | None = Query(None),
     search: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     try:
-        stmt = select(Product)
+        stmt = select(Product).where(Product.organization_id == current_user.organization_id)
         if search and search.strip():
             stmt = stmt.where(
                 (Product.name.ilike(f"%{search.strip()}%"))
@@ -59,11 +61,14 @@ async def list_products(
     summary="Create new product catalog item",
     dependencies=[Depends(require_permission("products:create"))],
 )
-async def create_product(payload: ProductBase, db: AsyncSession = Depends(get_db)):
+async def create_product(
+    payload: ProductBase,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     try:
-        org_id = await get_valid_org_id(db)
         p = Product(
-            organization_id=org_id,
+            organization_id=current_user.organization_id,
             name=payload.name,
             sku=payload.sku or f"SKU-{payload.name[:4].upper()}",
             price=payload.price or 0.0,
@@ -93,8 +98,15 @@ async def create_product(payload: ProductBase, db: AsyncSession = Depends(get_db
     summary="Get product categories list",
     dependencies=[Depends(require_permission("products:read"))],
 )
-async def get_product_categories(db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(ProductCategory))
+async def get_product_categories(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    res = await db.execute(
+        select(ProductCategory).where(
+            ProductCategory.organization_id == current_user.organization_id
+        )
+    )
     cats = res.scalars().all()
     if not cats:
         return ["Software", "Hardware", "Professional Services", "Subscription", "Support Tier"]
@@ -107,10 +119,13 @@ async def get_product_categories(db: AsyncSession = Depends(get_db)):
     summary="Create new product category",
     dependencies=[Depends(require_permission("products:create"))],
 )
-async def create_product_category(name: str, db: AsyncSession = Depends(get_db)):
+async def create_product_category(
+    name: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     try:
-        org_id = await get_valid_org_id(db)
-        cat = ProductCategory(organization_id=org_id, name=name)
+        cat = ProductCategory(organization_id=current_user.organization_id, name=name)
         db.add(cat)
         await db.commit()
         return {"message": f"Category '{name}' created", "status": "success"}
@@ -125,16 +140,11 @@ async def create_product_category(name: str, db: AsyncSession = Depends(get_db))
     dependencies=[Depends(require_permission("products:read"))],
 )
 async def list_price_books(db: AsyncSession = Depends(get_db)):
-    return [
-        {
-            "id": "pb-1",
-            "name": "Standard Enterprise Pricing",
-            "currency": "USD",
-            "is_default": True,
-        },
-        {"id": "pb-2", "name": "EMEA Partner Pricing", "currency": "EUR", "is_default": False},
-        {"id": "pb-3", "name": "APAC Wholesale Book", "currency": "USD", "is_default": False},
-    ]
+    raise APIException(
+        message="Price books are not implemented",
+        code="PRICE_BOOKS_UNAVAILABLE",
+        status_code=501,
+    )
 
 
 @router.post(
@@ -144,7 +154,11 @@ async def list_price_books(db: AsyncSession = Depends(get_db)):
     dependencies=[Depends(require_permission("products:create"))],
 )
 async def create_price_book(name: str, currency: str = "USD", db: AsyncSession = Depends(get_db)):
-    return {"message": f"Price book '{name}' ({currency}) created", "status": "success"}
+    raise APIException(
+        message="Price books are not implemented",
+        code="PRICE_BOOKS_UNAVAILABLE",
+        status_code=501,
+    )
 
 
 @router.get(
@@ -153,11 +167,11 @@ async def create_price_book(name: str, currency: str = "USD", db: AsyncSession =
     dependencies=[Depends(require_permission("products:read"))],
 )
 async def get_tax_rates(db: AsyncSession = Depends(get_db)):
-    return [
-        {"id": "tax-1", "name": "Standard VAT (18%)", "rate_percentage": 18.0},
-        {"id": "tax-2", "name": "US Sales Tax (8.5%)", "rate_percentage": 8.5},
-        {"id": "tax-3", "name": "Zero Rated Tax (0%)", "rate_percentage": 0.0},
-    ]
+    raise APIException(
+        message="Organization tax rates are not configured",
+        code="TAX_CONFIGURATION_UNAVAILABLE",
+        status_code=501,
+    )
 
 
 @router.get(
@@ -166,7 +180,11 @@ async def get_tax_rates(db: AsyncSession = Depends(get_db)):
     dependencies=[Depends(require_permission("products:export"))],
 )
 async def export_products_csv(db: AsyncSession = Depends(get_db)):
-    return {"download_url": "https://api.crm.com/exports/products_catalog_export.csv"}
+    raise APIException(
+        message="Product CSV export is not implemented",
+        code="PRODUCT_EXPORT_UNAVAILABLE",
+        status_code=501,
+    )
 
 
 @router.post(
@@ -176,7 +194,11 @@ async def export_products_csv(db: AsyncSession = Depends(get_db)):
     dependencies=[Depends(require_permission("products:import"))],
 )
 async def import_products_csv(db: AsyncSession = Depends(get_db)):
-    return {"message": "Product catalog CSV import processing completed", "status": "success"}
+    raise APIException(
+        message="Product CSV import is not implemented",
+        code="PRODUCT_IMPORT_UNAVAILABLE",
+        status_code=501,
+    )
 
 
 @router.post(
@@ -185,9 +207,16 @@ async def import_products_csv(db: AsyncSession = Depends(get_db)):
     summary="Bulk delete products",
     dependencies=[Depends(require_permission("products:delete"))],
 )
-async def bulk_delete_products(payload: BulkDeleteRequest, db: AsyncSession = Depends(get_db)):
+async def bulk_delete_products(
+    payload: BulkDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     try:
-        stmt = select(Product).where(Product.id.in_(payload.ids))
+        stmt = select(Product).where(
+            Product.id.in_(payload.ids),
+            Product.organization_id == current_user.organization_id,
+        )
         res = await db.execute(stmt)
         items = res.scalars().all()
         for item in items:
@@ -204,8 +233,17 @@ async def bulk_delete_products(payload: BulkDeleteRequest, db: AsyncSession = De
     summary="Get product details by ID",
     dependencies=[Depends(require_permission("products:read"))],
 )
-async def get_product(product_id: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(Product).where(Product.id == product_id))
+async def get_product(
+    product_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    res = await db.execute(
+        select(Product).where(
+            Product.id == product_id,
+            Product.organization_id == current_user.organization_id,
+        )
+    )
     p = res.scalars().first()
     if not p:
         raise HTTPException(
@@ -227,8 +265,18 @@ async def get_product(product_id: str, db: AsyncSession = Depends(get_db)):
     summary="Update product catalog item",
     dependencies=[Depends(require_permission("products:update"))],
 )
-async def update_product(product_id: str, payload: ProductBase, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(Product).where(Product.id == product_id))
+async def update_product(
+    product_id: str,
+    payload: ProductBase,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    res = await db.execute(
+        select(Product).where(
+            Product.id == product_id,
+            Product.organization_id == current_user.organization_id,
+        )
+    )
     p = res.scalars().first()
     if not p:
         raise HTTPException(
@@ -260,8 +308,17 @@ async def update_product(product_id: str, payload: ProductBase, db: AsyncSession
     summary="Delete product item by ID",
     dependencies=[Depends(require_permission("products:delete"))],
 )
-async def delete_product(product_id: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(Product).where(Product.id == product_id))
+async def delete_product(
+    product_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    res = await db.execute(
+        select(Product).where(
+            Product.id == product_id,
+            Product.organization_id == current_user.organization_id,
+        )
+    )
     p = res.scalars().first()
     if not p:
         raise HTTPException(
@@ -282,8 +339,17 @@ async def delete_product(product_id: str, db: AsyncSession = Depends(get_db)):
     summary="Get inventory stock history",
     dependencies=[Depends(require_permission("products:read"))],
 )
-async def get_product_inventory(product_id: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(Product).where(Product.id == product_id))
+async def get_product_inventory(
+    product_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    res = await db.execute(
+        select(Product).where(
+            Product.id == product_id,
+            Product.organization_id == current_user.organization_id,
+        )
+    )
     p = res.scalars().first()
     if not p:
         raise HTTPException(
@@ -293,8 +359,8 @@ async def get_product_inventory(product_id: str, db: AsyncSession = Depends(get_
     return {
         "product_id": product_id,
         "in_stock_quantity": getattr(p, "in_stock_quantity", 100) or 100,
-        "reorder_level": 50,
-        "warehouse_location": "Main Warehouse Section A-4",
+        "reorder_level": None,
+        "warehouse_location": None,
     }
 
 
@@ -305,9 +371,17 @@ async def get_product_inventory(product_id: str, db: AsyncSession = Depends(get_
     dependencies=[Depends(require_permission("products:update"))],
 )
 async def update_product_inventory(
-    product_id: str, quantity_delta: int = Query(...), db: AsyncSession = Depends(get_db)
+    product_id: str,
+    quantity_delta: int = Query(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    res = await db.execute(select(Product).where(Product.id == product_id))
+    res = await db.execute(
+        select(Product).where(
+            Product.id == product_id,
+            Product.organization_id == current_user.organization_id,
+        )
+    )
     p = res.scalars().first()
     if not p:
         raise HTTPException(

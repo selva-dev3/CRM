@@ -78,12 +78,12 @@ async def test_count_companies_is_scoped_to_current_organization(monkeypatch):
 @pytest.mark.asyncio
 async def test_get_company_raises_not_found_when_missing():
     repo: Any = CompanyRepository()
-    repo.get_by_id = AsyncMock(return_value=None)
+    repo.get_by_id_scoped = AsyncMock(return_value=None)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
     with pytest.raises(NotFoundError):
-        await service.get_company(db, "missing-company")
+        await service.get_company(db, "missing-company", organization_id="org-1")
 
 
 @pytest.mark.asyncio
@@ -171,13 +171,18 @@ async def test_create_company_fires_company_created_event(monkeypatch):
 async def test_update_company_fires_company_updated_event(monkeypatch):
     company = _make_company()
     repo: Any = CompanyRepository()
-    repo.get_by_id = AsyncMock(return_value=company)
+    repo.get_by_id_scoped = AsyncMock(return_value=company)
     service = _service_with(repo)
     notify = AsyncMock()
     monkeypatch.setattr(integration_service, "notify_slack_event", notify)
     db = AsyncMock(spec=AsyncSession)
 
-    await service.update_company(db, "cmp-1", CompanyUpdate(industry="Fintech"))
+    await service.update_company(
+        db,
+        "cmp-1",
+        CompanyUpdate(industry="Fintech"),
+        organization_id="org-1",
+    )
 
     notify.assert_awaited_once()
     kwargs = notify.await_args_list[-1].kwargs
@@ -197,9 +202,9 @@ async def test_employee_count_parse_handles_invalid_input():
 @pytest.mark.asyncio
 async def test_get_company_deals_requires_existing_company():
     repo: Any = CompanyRepository()
-    repo.get_by_id = AsyncMock(return_value=None)
+    repo.get_by_id_scoped = AsyncMock(return_value=None)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
     with pytest.raises(NotFoundError):
-        await service.get_company_deals(db, "missing-company")
+        await service.get_company_deals(db, "missing-company", organization_id="org-1")

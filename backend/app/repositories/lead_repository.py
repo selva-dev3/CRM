@@ -15,7 +15,9 @@ from app.models import (
     Task,
     User,
 )
+from app.models.audit import AuditLog
 from app.models.company import Company
+from app.models.deal import DealActivity
 from app.models.lead import LeadActivity
 
 
@@ -27,38 +29,92 @@ class LeadRepository:
 
     async def lock_conversion(self, db: AsyncSession, lead_id: str, organization_id: str):
         # Serialize conversions within a tenant, including customer deduplication.
-        await db.execute(select(Organization.id).where(
-            Organization.id == organization_id
-        ).with_for_update())
-        result = await db.execute(select(Lead).where(
-            Lead.id == lead_id, Lead.organization_id == organization_id
-        ).with_for_update().execution_options(populate_existing=True))
+        await db.execute(
+            select(Organization.id).where(Organization.id == organization_id).with_for_update()
+        )
+        result = await db.execute(
+            select(Lead)
+            .where(Lead.id == lead_id, Lead.organization_id == organization_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
         return result.scalar_one_or_none()
 
-    async def conversion_customers(self, db: AsyncSession, organization_id: str,
-                                   company_name: str, email: str):
-        companies = await db.execute(select(Company).where(
-            Company.organization_id == organization_id,
-            func.lower(func.trim(Company.name)) == company_name.strip().lower(),
-        ).limit(2))
-        contacts = await db.execute(select(Contact).where(
-            Contact.organization_id == organization_id,
-            func.lower(func.trim(Contact.email)) == email.strip().lower(),
-        ).limit(2))
+    async def conversion_customers(
+        self, db: AsyncSession, organization_id: str, company_name: str, email: str
+    ):
+        companies = await db.execute(
+            select(Company)
+            .where(
+                Company.organization_id == organization_id,
+                func.lower(func.trim(Company.name)) == company_name.strip().lower(),
+            )
+            .limit(2)
+        )
+        contacts = await db.execute(
+            select(Contact)
+            .where(
+                Contact.organization_id == organization_id,
+                func.lower(func.trim(Contact.email)) == email.strip().lower(),
+            )
+            .limit(2)
+        )
         return list(companies.scalars().all()), list(contacts.scalars().all())
 
-    async def save_conversion(self, db: AsyncSession, lead: Lead, *, company_id: str,
-                              contact_id: str, deal_id: str | None, actor_id: str,
-                              converted_at: datetime) -> None:
+    async def save_conversion(
+        self,
+        db: AsyncSession,
+        lead: Lead,
+        *,
+        company_id: str,
+        contact_id: str,
+        deal_id: str | None,
+        actor_id: str,
+        converted_at: datetime,
+    ) -> None:
         lead.converted_company_id = company_id
         lead.converted_contact_id = contact_id
         lead.converted_deal_id = deal_id
         lead.converted_at = converted_at
         lead.status = "Converted"
         db.add(LeadActivity(lead_id=lead.id, action="Lead converted", performed_by=actor_id))
+        if deal_id:
+            db.add(
+                DealActivity(
+                    deal_id=deal_id,
+                    action=f"Deal created from lead {lead.id}",
+                    performed_by=actor_id,
+                )
+            )
+        db.add(
+            AuditLog(
+                organization_id=lead.organization_id,
+                user_id=actor_id,
+                action="lead.converted",
+                details=lead.id,
+            )
+        )
 
-    async def link_conversion_contact(self, db: AsyncSession, contact: Contact,
-                                      company_id: str) -> None:
+    async def record_qualification(self, db: AsyncSession, lead: Lead, *, actor_id: str) -> None:
+        db.add(
+            LeadActivity(
+                lead_id=lead.id,
+                action="Lead qualified",
+                performed_by=actor_id,
+            )
+        )
+        db.add(
+            AuditLog(
+                organization_id=lead.organization_id,
+                user_id=actor_id,
+                action="lead.qualified",
+                details=lead.id,
+            )
+        )
+
+    async def link_conversion_contact(
+        self, db: AsyncSession, contact: Contact, company_id: str
+    ) -> None:
         contact.company_id = company_id
 
     @staticmethod
@@ -88,12 +144,16 @@ class LeadRepository:
         *,
         page: int,
         limit: int,
+        organization_id: str,
         search: str | None = None,
         status: str | None = None,
     ) -> list[Lead]:
         stmt = (
             select(Lead)
-            .where(*self._list_filters(search=search, status=status))
+            .where(
+                Lead.organization_id == organization_id,
+                *self._list_filters(search=search, status=status),
+            )
             .offset((page - 1) * limit)
             .limit(limit)
         )
@@ -104,13 +164,17 @@ class LeadRepository:
         self,
         db: AsyncSession,
         *,
+        organization_id: str,
         search: str | None = None,
         status: str | None = None,
     ) -> int:
         stmt = (
             select(func.count())
             .select_from(Lead)
-            .where(*self._list_filters(search=search, status=status))
+            .where(
+                Lead.organization_id == organization_id,
+                *self._list_filters(search=search, status=status),
+            )
         )
         result = await db.execute(stmt)
         return int(result.scalar_one())
@@ -130,12 +194,20 @@ class LeadRepository:
         )
         return result.scalars().first()
 
-    async def list_by_ids(self, db: AsyncSession, ids: list[str]) -> list[Lead]:
-        result = await db.execute(select(Lead).where(Lead.id.in_(ids)))
+    async def list_by_ids(
+        self, db: AsyncSession, ids: list[str], *, organization_id: str
+    ) -> list[Lead]:
+        result = await db.execute(
+            select(Lead).where(Lead.id.in_(ids), Lead.organization_id == organization_id)
+        )
         return list(result.scalars().all())
 
-    async def get_by_email(self, db: AsyncSession, email: str) -> Lead | None:
-        result = await db.execute(select(Lead).where(Lead.email == email))
+    async def get_by_email(
+        self, db: AsyncSession, email: str, *, organization_id: str
+    ) -> Lead | None:
+        result = await db.execute(
+            select(Lead).where(Lead.email == email, Lead.organization_id == organization_id)
+        )
         return result.scalars().first()
 
     async def create(self, db: AsyncSession, *, data: dict) -> Lead:
@@ -307,12 +379,14 @@ class LeadRepository:
         result = await db.execute(select(User).where(User.id == user_id))
         return result.scalars().first()
 
-    async def get_first_user(self, db: AsyncSession) -> User | None:
-        result = await db.execute(select(User).limit(1))
+    async def get_first_user(self, db: AsyncSession, *, organization_id: str) -> User | None:
+        result = await db.execute(
+            select(User).where(User.organization_id == organization_id).limit(1)
+        )
         return result.scalars().first()
 
-    async def list_users(self, db: AsyncSession) -> list[User]:
-        result = await db.execute(select(User))
+    async def list_users(self, db: AsyncSession, *, organization_id: str) -> list[User]:
+        result = await db.execute(select(User).where(User.organization_id == organization_id))
         return list(result.scalars().all())
 
     async def create_user(
@@ -326,8 +400,17 @@ class LeadRepository:
         db.add(user)
         return user
 
-    async def get_contact_id_by_email(self, db: AsyncSession, email: str) -> str | None:
-        result = await db.execute(select(Contact.id).where(Contact.email == email).limit(1))
+    async def get_contact_id_by_email(
+        self, db: AsyncSession, email: str, *, organization_id: str
+    ) -> str | None:
+        result = await db.execute(
+            select(Contact.id)
+            .where(
+                Contact.email == email,
+                Contact.organization_id == organization_id,
+            )
+            .limit(1)
+        )
         return result.scalars().first()
 
     async def create_contact(

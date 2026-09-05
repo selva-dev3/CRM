@@ -21,6 +21,7 @@ from app.schemas.crm_schemas import (
 )
 from app.services.company_service import company_service
 from app.services.note_service import note_service
+from app.services.org_service import organization_service
 
 router = APIRouter()
 
@@ -113,8 +114,13 @@ async def import_companies_csv():
     summary="Bulk delete companies",
     dependencies=[Depends(require_permission("companies:bulk_delete"))],
 )
-async def bulk_delete_companies(payload: BulkDeleteRequest, db: AsyncSession = Depends(get_db)):
-    return await company_service.bulk_delete(db, payload.ids)
+async def bulk_delete_companies(
+    payload: BulkDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await company_service.bulk_delete(db, payload.ids, organization_id=organization_id)
 
 
 @router.get(
@@ -123,8 +129,13 @@ async def bulk_delete_companies(payload: BulkDeleteRequest, db: AsyncSession = D
     summary="Get company details by ID",
     dependencies=[Depends(require_permission("companies:read"))],
 )
-async def get_company(company_id: str, db: AsyncSession = Depends(get_db)):
-    return await company_service.get_company(db, company_id)
+async def get_company(
+    company_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await company_service.get_company(db, company_id, organization_id=organization_id)
 
 
 @router.put(
@@ -134,9 +145,15 @@ async def get_company(company_id: str, db: AsyncSession = Depends(get_db)):
     dependencies=[Depends(require_permission("companies:update"))],
 )
 async def update_company(
-    company_id: str, payload: CompanyUpdate, db: AsyncSession = Depends(get_db)
+    company_id: str,
+    payload: CompanyUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    return await company_service.update_company(db, company_id, payload)
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await company_service.update_company(
+        db, company_id, payload, organization_id=organization_id
+    )
 
 
 @router.delete(
@@ -145,8 +162,13 @@ async def update_company(
     summary="Delete company by ID",
     dependencies=[Depends(require_permission("companies:delete"))],
 )
-async def delete_company(company_id: str, db: AsyncSession = Depends(get_db)):
-    return await company_service.delete_company(db, company_id)
+async def delete_company(
+    company_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await company_service.delete_company(db, company_id, organization_id=organization_id)
 
 
 @router.get(
@@ -155,8 +177,15 @@ async def delete_company(company_id: str, db: AsyncSession = Depends(get_db)):
     summary="List contacts working at company",
     dependencies=[Depends(require_permission("companies:read"))],
 )
-async def get_company_contacts(company_id: str, db: AsyncSession = Depends(get_db)):
-    return await company_service.get_company_contacts(db, company_id)
+async def get_company_contacts(
+    company_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await company_service.get_company_contacts(
+        db, company_id, organization_id=organization_id
+    )
 
 
 @router.get(
@@ -165,8 +194,13 @@ async def get_company_contacts(company_id: str, db: AsyncSession = Depends(get_d
     summary="List deals linked to company",
     dependencies=[Depends(require_permission("companies:read"))],
 )
-async def get_company_deals(company_id: str, db: AsyncSession = Depends(get_db)):
-    return await company_service.get_company_deals(db, company_id)
+async def get_company_deals(
+    company_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await company_service.get_company_deals(db, company_id, organization_id=organization_id)
 
 
 @router.get(
@@ -174,8 +208,15 @@ async def get_company_deals(company_id: str, db: AsyncSession = Depends(get_db))
     summary="Get parent/child corporate structure",
     dependencies=[Depends(require_permission("companies:read"))],
 )
-async def get_company_hierarchy(company_id: str, db: AsyncSession = Depends(get_db)):
-    return await company_service.get_company_hierarchy(db, company_id)
+async def get_company_hierarchy(
+    company_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await company_service.get_company_hierarchy(
+        db, company_id, organization_id=organization_id
+    )
 
 
 @router.post(
@@ -184,8 +225,19 @@ async def get_company_hierarchy(company_id: str, db: AsyncSession = Depends(get_
     summary="Set parent company ID",
     dependencies=[Depends(require_permission("companies:update"))],
 )
-async def set_parent_company(company_id: str, parent_id: str, db: AsyncSession = Depends(get_db)):
-    return await company_service.set_parent_company(db, company_id, parent_id)
+async def set_parent_company(
+    company_id: str,
+    parent_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await company_service.set_parent_company(
+        db,
+        company_id,
+        parent_id,
+        organization_id=organization_id,
+    )
 
 
 @router.get(
@@ -194,8 +246,13 @@ async def set_parent_company(company_id: str, parent_id: str, db: AsyncSession =
     summary="List quotes generated for company",
     dependencies=[Depends(require_permission("companies:read"))],
 )
-async def get_company_quotes(company_id: str, db: AsyncSession = Depends(get_db)):
-    return await company_service.get_company_quotes(db, company_id)
+async def get_company_quotes(
+    company_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await company_service.get_company_quotes(db, company_id, organization_id=organization_id)
 
 
 @router.get(
@@ -204,8 +261,15 @@ async def get_company_quotes(company_id: str, db: AsyncSession = Depends(get_db)
     summary="List invoices billed to company",
     dependencies=[Depends(require_permission("companies:read"))],
 )
-async def get_company_invoices(company_id: str, db: AsyncSession = Depends(get_db)):
-    return await company_service.get_company_invoices(db, company_id)
+async def get_company_invoices(
+    company_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await company_service.get_company_invoices(
+        db, company_id, organization_id=organization_id
+    )
 
 
 @router.get(
@@ -257,5 +321,12 @@ async def add_company_note(
     summary="List documents attached to company",
     dependencies=[Depends(require_permission("companies:read"))],
 )
-async def get_company_documents(company_id: str, db: AsyncSession = Depends(get_db)):
-    return await company_service.get_company_documents(db, company_id)
+async def get_company_documents(
+    company_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await company_service.get_company_documents(
+        db, company_id, organization_id=organization_id
+    )

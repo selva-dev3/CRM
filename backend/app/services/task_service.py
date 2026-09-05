@@ -4,7 +4,6 @@ from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, NotFoundError
-from app.core.security import generate_random_code, get_password_hash
 from app.models import User
 from app.models.task import Task
 from app.repositories.project_repository import ProjectRepository
@@ -74,21 +73,23 @@ class TaskService:
                 status_code=status.HTTP_400_BAD_REQUEST, message=error_message
             ) from e
 
-    async def _resolve_user_id(self, db: AsyncSession, assigned_input: str | None = None) -> str:
+    async def _resolve_user_id(
+        self,
+        db: AsyncSession,
+        *,
+        assigned_input: str | None,
+        organization_id: str,
+        default_user_id: str,
+    ) -> str:
         if assigned_input and str(assigned_input).strip():
             value = str(assigned_input).strip()
-            user = await self.repository.get_user_by_id_name_email(db, value)
+            user = await self.repository.get_user_by_id_name_email(
+                db, value=value, organization_id=organization_id
+            )
             if user:
                 return user.id
-
-        first_user = await self.repository.get_first_user(db)
-        if first_user:
-            return first_user.id
-
-        user = await self.repository.create_system_user(
-            db, hashed_password=get_password_hash(generate_random_code(32))
-        )
-        return user.id
+            raise NotFoundError(message=f"User '{value}' not found")
+        return default_user_id
 
     async def list_tasks(
         self,
@@ -96,16 +97,22 @@ class TaskService:
         *,
         page: int,
         limit: int,
+        organization_id: str,
         status: str | None = None,
         priority: str | None = None,
     ) -> list[dict]:
         tasks = await self.repository.list(
-            db, page=page, limit=limit, status=status, priority=priority
+            db,
+            page=page,
+            limit=limit,
+            organization_id=organization_id,
+            status=status,
+            priority=priority,
         )
         return [task_to_dict(t) for t in tasks]
 
-    async def get_task(self, db: AsyncSession, task_id: str) -> dict:
-        task = await self.repository.get_by_id(db, task_id)
+    async def get_task(self, db: AsyncSession, task_id: str, organization_id: str) -> dict:
+        task = await self.repository.get_by_id(db, task_id=task_id, organization_id=organization_id)
         if not task:
             raise NotFoundError(message=f"Task '{task_id}' not found")
         return task_to_dict(task)
@@ -113,9 +120,18 @@ class TaskService:
     async def create_task(
         self, db: AsyncSession, payload: TaskCreate, current_user: User | None = None
     ) -> dict:
-        due_dt = parse_datetime(payload.due_date)
-        assigned_user = await self._resolve_user_id(db, payload.assigned_to)
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        if current_user is None:
+            raise APIException(
+                status_code=status.HTTP_401_UNAUTHORIZED, message="Authentication required"
+            )
+        due_dt = parse_datetime(payload.due_date)
+        assigned_user = await self._resolve_user_id(
+            db,
+            assigned_input=payload.assigned_to,
+            organization_id=org_id,
+            default_user_id=current_user.id,
+        )
         project_id = await self._validate_project(db, payload.project_id, org_id)
         data = {
             "organization_id": org_id,
@@ -149,16 +165,18 @@ class TaskService:
         )
         return task_to_dict(task)
 
-    async def get_overdue_tasks(self, db: AsyncSession) -> list[dict]:
-        tasks = await self.repository.list_pending(db)
-        return [task_to_dict(t) for t in tasks]
+    async def get_overdue_tasks(self, db: AsyncSession, organization_id: str) -> list[dict]:
+        tasks = await self.repository.list_pending(db, organization_id=organization_id)
+        today = datetime.now().astimezone().date()
+        return [task_to_dict(t) for t in tasks if t.due_date and t.due_date.date() < today]
 
-    async def get_today_tasks(self, db: AsyncSession) -> list[dict]:
-        tasks = await self.repository.list_pending(db)
-        return [task_to_dict(t) for t in tasks]
+    async def get_today_tasks(self, db: AsyncSession, organization_id: str) -> list[dict]:
+        tasks = await self.repository.list_pending(db, organization_id=organization_id)
+        today = datetime.now().astimezone().date()
+        return [task_to_dict(t) for t in tasks if t.due_date and t.due_date.date() == today]
 
-    async def get_board_view(self, db: AsyncSession) -> dict:
-        tasks = await self.repository.list_all(db)
+    async def get_board_view(self, db: AsyncSession, organization_id: str) -> dict:
+        tasks = await self.repository.list_all(db, organization_id=organization_id)
         board: dict[str, list[dict]] = {}
         for task in tasks:
             board.setdefault(task.status, []).append(
@@ -172,8 +190,10 @@ class TaskService:
             )
         return board
 
-    async def update_task(self, db: AsyncSession, task_id: str, payload: TaskUpdate) -> dict:
-        task = await self.repository.get_by_id(db, task_id)
+    async def update_task(
+        self, db: AsyncSession, task_id: str, payload: TaskUpdate, organization_id: str
+    ) -> dict:
+        task = await self.repository.get_by_id(db, task_id=task_id, organization_id=organization_id)
         if not task:
             raise NotFoundError(message=f"Task '{task_id}' not found")
 
@@ -207,30 +227,30 @@ class TaskService:
             )
         return task_to_dict(task)
 
-    async def delete_task(self, db: AsyncSession, task_id: str) -> dict:
-        task = await self.repository.get_by_id(db, task_id)
+    async def delete_task(self, db: AsyncSession, task_id: str, organization_id: str) -> dict:
+        task = await self.repository.get_by_id(db, task_id=task_id, organization_id=organization_id)
         if not task:
             raise NotFoundError(message=f"Task '{task_id}' not found")
         await self.repository.delete(db, task)
         await self._commit(db, "Failed to delete task")
         return {"message": f"Task {task_id} deleted successfully", "status": "success"}
 
-    async def bulk_delete(self, db: AsyncSession, ids: list[str]) -> dict:
-        tasks = await self.repository.list_by_ids(db, ids)
+    async def bulk_delete(self, db: AsyncSession, ids: list[str], organization_id: str) -> dict:
+        tasks = await self.repository.list_by_ids(db, ids=ids, organization_id=organization_id)
         for task in tasks:
             await self.repository.delete(db, task)
         await self._commit(db, "Failed to bulk delete tasks")
         return {"affected_count": len(tasks), "message": "Tasks deleted successfully"}
 
-    async def bulk_complete(self, db: AsyncSession, ids: list[str]) -> dict:
-        tasks = await self.repository.list_by_ids(db, ids)
+    async def bulk_complete(self, db: AsyncSession, ids: list[str], organization_id: str) -> dict:
+        tasks = await self.repository.list_by_ids(db, ids=ids, organization_id=organization_id)
         for task in tasks:
             task.status = "Completed"
         await self._commit(db, "Failed to mark tasks complete")
         return {"affected_count": len(tasks), "message": "Tasks marked complete"}
 
-    async def complete_task(self, db: AsyncSession, task_id: str) -> dict:
-        task = await self.repository.get_by_id(db, task_id)
+    async def complete_task(self, db: AsyncSession, task_id: str, organization_id: str) -> dict:
+        task = await self.repository.get_by_id(db, task_id=task_id, organization_id=organization_id)
         if not task:
             raise NotFoundError(message=f"Task '{task_id}' not found")
         task.status = "Completed"
@@ -246,19 +266,26 @@ class TaskService:
         )
         return {"message": f"Task {task_id} marked as Completed", "status": "success"}
 
-    async def reopen_task(self, db: AsyncSession, task_id: str) -> dict:
-        task = await self.repository.get_by_id(db, task_id)
+    async def reopen_task(self, db: AsyncSession, task_id: str, organization_id: str) -> dict:
+        task = await self.repository.get_by_id(db, task_id=task_id, organization_id=organization_id)
         if not task:
             raise NotFoundError(message=f"Task '{task_id}' not found")
         task.status = "Pending"
         await self._commit(db, "Failed to reopen task")
         return {"message": f"Task {task_id} reopened", "status": "success"}
 
-    async def assign_task(self, db: AsyncSession, task_id: str, user_id: str) -> dict:
-        task = await self.repository.get_by_id(db, task_id)
+    async def assign_task(
+        self, db: AsyncSession, task_id: str, user_id: str, organization_id: str
+    ) -> dict:
+        task = await self.repository.get_by_id(db, task_id=task_id, organization_id=organization_id)
         if not task:
             raise NotFoundError(message=f"Task '{task_id}' not found")
-        task.assigned_to = await self._resolve_user_id(db, user_id)
+        task.assigned_to = await self._resolve_user_id(
+            db,
+            assigned_input=user_id,
+            organization_id=organization_id,
+            default_user_id=user_id,
+        )
         await self._commit(db, "Failed to assign task")
         await notification_service.notify(
             db,
@@ -271,25 +298,33 @@ class TaskService:
         )
         return {"message": f"Task {task_id} assigned to user {user_id}", "status": "success"}
 
-    async def require_task(self, db: AsyncSession, task_id: str) -> None:
-        task = await self.repository.get_by_id(db, task_id)
+    async def require_task(self, db: AsyncSession, task_id: str, organization_id: str) -> None:
+        task = await self.repository.get_by_id(db, task_id=task_id, organization_id=organization_id)
         if not task:
             raise NotFoundError(message=f"Task '{task_id}' not found")
 
     async def export_csv(self) -> dict:
-        return {"download_url": "https://api.crm.com/exports/tasks.csv"}
+        raise APIException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED, message="Task export is not available"
+        )
 
     async def import_csv(self) -> dict:
-        return {"message": "Import completed successfully", "status": "success"}
+        raise APIException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED, message="Task import is not available"
+        )
 
     async def list_subtasks(self) -> list:
         return []
 
     async def add_subtask(self, task_id: str, title: str) -> dict:
-        return {"message": f"Subtask '{title}' added to task {task_id}", "status": "success"}
+        raise APIException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED, message="Subtasks are not available"
+        )
 
     async def set_reminder(self, task_id: str, reminder_time: str) -> dict:
-        return {"message": f"Reminder set for {reminder_time}", "status": "success"}
+        raise APIException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED, message="Task reminders are not available"
+        )
 
 
 task_service = TaskService()

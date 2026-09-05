@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ForbiddenError, NotFoundError
-from app.models import Organization, User
+from app.models import Organization, OrganizationSubscription, User
 from app.repositories.organization_repository import OrganizationRepository
 from app.services.organization_service import (
     DEFAULT_PLANS,
@@ -34,6 +34,14 @@ def _service_with(repo: OrganizationRepository) -> OrganizationDomainService:
     return OrganizationDomainService(repository=repo)
 
 
+def _actor(organization_id: str = "org-1") -> User:
+    return User(
+        id="admin-1",
+        email="admin@example.com",
+        organization_id=organization_id,
+    )
+
+
 @pytest.mark.asyncio
 async def test_get_organization_by_id_not_found():
     repo: Any = OrganizationRepository()
@@ -42,20 +50,19 @@ async def test_get_organization_by_id_not_found():
     db = AsyncMock(spec=AsyncSession)
 
     with pytest.raises(NotFoundError):
-        await service.get_organization_by_id(db, "missing-org")
+        await service.get_organization_by_id(db, "missing-org", _actor())
 
 
 @pytest.mark.asyncio
-async def test_get_organization_falls_back_to_default(monkeypatch):
+async def test_get_organization_uses_authenticated_organization():
     org = _make_org()
     repo: Any = OrganizationRepository()
-    repo.get_first = AsyncMock(return_value=None)
-    repo.get_or_create_default = AsyncMock(return_value=org)
+    repo.get_by_id = AsyncMock(return_value=org)
     repo.count_members = AsyncMock(return_value=5)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.get_organization(db, None)
+    result = await service.get_organization(db, _actor())
 
     assert result["members_count"] == 5
     assert result["plan"] == "Enterprise"
@@ -171,15 +178,43 @@ async def test_list_subscription_plans_falls_back_to_defaults():
 
 
 @pytest.mark.asyncio
-async def test_remove_member_missing_user_returns_message():
+async def test_get_subscription_does_not_fabricate_next_billing_date():
+    org = _make_org()
+    subscription = OrganizationSubscription(
+        id="sub-1",
+        organization_id=org.id,
+        plan_id=None,
+        status="active",
+        billing_cycle="Monthly",
+        amount=0.0,
+        currency="INR",
+        next_billing=None,
+    )
+    repo: Any = OrganizationRepository()
+    repo.get_by_id = AsyncMock(return_value=org)
+    repo.get_subscription = AsyncMock(return_value=subscription)
+    repo.get_plan_by_slug = AsyncMock(return_value=None)
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.get_subscription(db, _actor())
+
+    assert result["next_billing"] is None
+
+
+@pytest.mark.asyncio
+async def test_remove_member_missing_or_cross_tenant_user_is_not_found():
     repo: Any = OrganizationRepository()
     repo.get_user_by_id = AsyncMock(return_value=None)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.remove_member(db, "ghost-user")
+    actor = User(id="admin-1", organization_id="org-1")
+    with pytest.raises(NotFoundError):
+        await service.remove_member(db, "ghost-user", actor)
 
-    assert result["status"] == "success"
+    repo.get_user_by_id.assert_awaited_once_with(db, user_id="ghost-user", organization_id="org-1")
+    db.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -187,7 +222,7 @@ async def test_get_usage_reports_limits():
     org = _make_org(plan="Business")
     sub = type("S", (), {"storage_used_gb": 2.0, "status": "active", "plan_id": None})()
     repo: Any = OrganizationRepository()
-    repo.get_first = AsyncMock(return_value=org)
+    repo.get_by_id = AsyncMock(return_value=org)
     repo.get_subscription = AsyncMock(return_value=None)
     repo.get_plan_by_slug = AsyncMock(return_value=None)
     repo.create_subscription = AsyncMock(return_value=sub)
@@ -195,7 +230,7 @@ async def test_get_usage_reports_limits():
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.get_usage(db, None)
+    result = await service.get_usage(db, _actor())
 
     assert result["users_used"] == 4
     assert result["users_limit"] == DEFAULT_PLANS["business"]["max_users"]

@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, func
+from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -10,6 +10,9 @@ from app.db.base import Base
 
 class Quote(Base):
     __tablename__ = "quotes"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "quote_number", name="uq_quotes_org_number"),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     organization_id: Mapped[str] = mapped_column(
@@ -22,16 +25,23 @@ class Quote(Base):
         String, ForeignKey("deals.id", ondelete="RESTRICT"), unique=True
     )
     currency: Mapped[str | None] = mapped_column(String(10))
-    company_id: Mapped[str | None] = mapped_column(String, ForeignKey("companies.id", ondelete="RESTRICT"))
-    contact_id: Mapped[str | None] = mapped_column(String, ForeignKey("contacts.id", ondelete="RESTRICT"))
-    quote_number: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
+    company_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("companies.id", ondelete="RESTRICT")
+    )
+    contact_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("contacts.id", ondelete="RESTRICT")
+    )
+    quote_number: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
     total_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
     status: Mapped[str] = mapped_column(String(50), default="Draft", index=True)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    approved_by: Mapped[str | None] = mapped_column(String, ForeignKey("users.id", ondelete="SET NULL"))
+    approved_by: Mapped[str | None] = mapped_column(
+        String, ForeignKey("users.id", ondelete="SET NULL")
+    )
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    rejection_reason: Mapped[str | None] = mapped_column(String(500))
     accepted_by: Mapped[str | None] = mapped_column(String(255))
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     public_token_hash: Mapped[str | None] = mapped_column(String(64), unique=True)

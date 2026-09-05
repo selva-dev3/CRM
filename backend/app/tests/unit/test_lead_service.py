@@ -67,13 +67,13 @@ async def test_list_leads_returns_serialized_dicts():
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.list_leads(db, page=1, limit=20)
+    result = await service.list_leads(db, page=1, limit=20, organization_id="org-1")
 
     assert len(result) == 1
     assert result[0]["id"] == "lead-1"
     assert result[0]["contact_name"] == "Jane Doe"
     assert result[0]["organization_id"] == "org-1"
-    assert result[0]["created_at"] == "2026-01-01"
+    assert result[0]["created_at"] == ""
 
 
 @pytest.mark.asyncio
@@ -83,21 +83,25 @@ async def test_count_leads_forwards_filters():
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.count_leads(db, search="Acme", lead_status="New")
+    result = await service.count_leads(
+        db, organization_id="org-1", search="Acme", lead_status="New"
+    )
 
     assert result == 7
-    repo.count_leads.assert_awaited_once_with(db, search="Acme", status="New")
+    repo.count_leads.assert_awaited_once_with(
+        db, organization_id="org-1", search="Acme", status="New"
+    )
 
 
 @pytest.mark.asyncio
 async def test_get_lead_raises_not_found_when_missing():
     repo: Any = LeadRepository()
-    repo.get_by_id = AsyncMock(return_value=None)
+    repo.get_by_id_for_org = AsyncMock(return_value=None)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
     with pytest.raises(NotFoundError):
-        await service.get_lead(db, "missing-lead")
+        await service.get_lead(db, "missing-lead", organization_id="org-1")
 
 
 @pytest.mark.asyncio
@@ -105,7 +109,7 @@ async def test_create_lead_resolves_org_and_serializes(monkeypatch):
     lead = _make_lead()
     repo: Any = LeadRepository()
     repo.create = AsyncMock(return_value=lead)
-    repo.get_organization = AsyncMock(return_value=object())
+    repo.get_organization = AsyncMock(return_value=SimpleNamespace(id="org-1"))
     repo.get_user = AsyncMock(return_value=None)
     service = _service_with(repo)
     monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())
@@ -114,7 +118,7 @@ async def test_create_lead_resolves_org_and_serializes(monkeypatch):
     payload = LeadCreate(
         title="Acme Corp", company="Acme Inc", contact_name="Jane Doe", email="jane@acme.com"
     )
-    result = await service.create_lead(db, payload)
+    result = await service.create_lead(db, payload, _make_user())
 
     assert result["id"] == "lead-1"
     assert result["status"] == "New"
@@ -126,7 +130,7 @@ async def test_create_lead_validates_and_persists_custom_fields(monkeypatch):
     lead = _make_lead(custom_fields={"territory": "South"})
     repo: Any = LeadRepository()
     repo.create = AsyncMock(return_value=lead)
-    repo.get_organization = AsyncMock(return_value=object())
+    repo.get_organization = AsyncMock(return_value=SimpleNamespace(id="org-1"))
     custom_fields = AsyncMock()
     custom_fields.validate_values.return_value = {"territory": "South"}
     service = LeadService(repository=repo, custom_field_service_instance=custom_fields)
@@ -140,7 +144,7 @@ async def test_create_lead_validates_and_persists_custom_fields(monkeypatch):
         email="jane@acme.com",
         custom_fields={"territory": "South"},
     )
-    result = await service.create_lead(db, payload)
+    result = await service.create_lead(db, payload, _make_user())
 
     assert repo.create.await_args.kwargs["data"]["custom_fields"] == {"territory": "South"}
     assert result["custom_fields"] == {"territory": "South"}
@@ -157,7 +161,7 @@ async def test_create_lead_fires_lead_created_event(monkeypatch):
     lead = _make_lead()
     repo: Any = LeadRepository()
     repo.create = AsyncMock(return_value=lead)
-    repo.get_organization = AsyncMock(return_value=object())
+    repo.get_organization = AsyncMock(return_value=SimpleNamespace(id="org-1"))
     repo.get_user = AsyncMock(return_value=None)
     service = _service_with(repo)
     notify = AsyncMock()
@@ -167,7 +171,7 @@ async def test_create_lead_fires_lead_created_event(monkeypatch):
     payload = LeadCreate(
         title="Acme Corp", company="Acme Inc", contact_name="Jane Doe", email="jane@acme.com"
     )
-    await service.create_lead(db, payload)
+    await service.create_lead(db, payload, _make_user())
 
     notify.assert_awaited_once()
     kwargs = notify.await_args_list[-1].kwargs
@@ -182,6 +186,7 @@ async def test_update_lead_only_applies_provided_fields(monkeypatch):
     lead = _make_lead()
     repo: Any = LeadRepository()
     repo.get_by_id_for_org = AsyncMock(return_value=lead)
+    repo.record_qualification = AsyncMock()
     service = _service_with(repo)
     monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())
     db = AsyncMock(spec=AsyncSession)
@@ -194,6 +199,25 @@ async def test_update_lead_only_applies_provided_fields(monkeypatch):
     assert lead.status == "Qualified"
     assert lead.title == "Acme Corp"
     repo.get_by_id_for_org.assert_awaited_once_with(db, "lead-1", "org-1")
+    repo.record_qualification.assert_awaited_once_with(db, lead, actor_id="usr-1")
+
+
+@pytest.mark.asyncio
+async def test_update_lead_rejects_qualification_without_customer_details():
+    lead = _make_lead(company="")
+    repo: Any = LeadRepository()
+    repo.get_by_id_for_org = AsyncMock(return_value=lead)
+    repo.record_qualification = AsyncMock()
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.schemas.crm_schemas import LeadUpdate
+
+    with pytest.raises(APIException, match="required to qualify"):
+        await service.update_lead(db, "lead-1", LeadUpdate(status="Qualified"), _make_user())
+
+    repo.record_qualification.assert_not_awaited()
+    db.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -262,7 +286,7 @@ async def test_bulk_update_status_returns_early_for_empty_ids():
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.bulk_update_status(db, [], "Qualified")
+    result = await service.bulk_update_status(db, [], "Qualified", organization_id="org-1")
 
     assert result == {"affected_count": 0, "message": "No lead IDs provided"}
     repo.list_by_ids.assert_not_awaited()
@@ -277,7 +301,7 @@ async def test_bulk_update_status_rejects_unknown_status():
     db = AsyncMock(spec=AsyncSession)
 
     with pytest.raises(APIException, match="Unsupported lead status"):
-        await service.bulk_update_status(db, ["lead-1"], "anything")
+        await service.bulk_update_status(db, ["lead-1"], "anything", organization_id="org-1")
 
     repo.list_by_ids.assert_not_awaited()
     db.commit.assert_not_awaited()
@@ -291,7 +315,9 @@ async def test_bulk_update_status_stores_canonical_status():
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.bulk_update_status(db, ["lead-1"], " qualified ")
+    result = await service.bulk_update_status(
+        db, ["lead-1"], " qualified ", organization_id="org-1"
+    )
 
     assert lead.status == "Qualified"
     assert result["message"] == "Status updated to Qualified"
@@ -384,13 +410,14 @@ async def test_upload_document_rejects_unsupported_content_type(monkeypatch):
 async def test_assign_lead_fires_lead_assigned_event(monkeypatch):
     lead = _make_lead()
     repo: Any = LeadRepository()
-    repo.get_by_id = AsyncMock(return_value=lead)
+    repo.get_by_id_for_org = AsyncMock(return_value=lead)
+    repo.get_user = AsyncMock(return_value=_make_user(id="usr-9"))
     service = _service_with(repo)
     notify = AsyncMock()
     monkeypatch.setattr(integration_service, "notify_slack_event", notify)
     db = AsyncMock(spec=AsyncSession)
 
-    await service.assign_lead(db, "lead-1", "usr-9")
+    await service.assign_lead(db, "lead-1", "usr-9", organization_id="org-1")
 
     notify.assert_awaited_once()
     kwargs = notify.await_args_list[-1].kwargs
@@ -413,16 +440,21 @@ async def test_lead_create_task_fires_task_created_event(monkeypatch):
         assigned_to="usr-1",
     )
     repo: Any = LeadRepository()
-    repo.get_by_id = AsyncMock(return_value=lead)
-    repo.get_first_user = AsyncMock(return_value=None)
-    repo.create_user = AsyncMock(return_value=type("U", (), {"id": "usr-1"})())
+    repo.get_by_id_for_org = AsyncMock(return_value=lead)
+    repo.get_user = AsyncMock(return_value=_make_user())
     repo.create_task = AsyncMock(return_value=task)
     service = _service_with(repo)
     notify = AsyncMock()
     monkeypatch.setattr(integration_service, "notify_slack_event", notify)
     db = AsyncMock(spec=AsyncSession)
 
-    await service.create_task(db, "lead-1", TaskCreate(title="Call back"))
+    await service.create_task(
+        db,
+        "lead-1",
+        TaskCreate(title="Call back"),
+        organization_id="org-1",
+        actor_id="usr-1",
+    )
 
     notify.assert_awaited_once()
     kwargs = notify.await_args_list[-1].kwargs

@@ -251,6 +251,29 @@ class AuthService:
                     "role": "Admin",
                 },
             )
+            await db.flush()
+            await self.repository.create_organization_setting(
+                db,
+                organization_id=org.id,
+                timezone=org.timezone or "Asia/Kolkata",
+                currency=org.currency or "INR",
+            )
+            await self.repository.create_organization_subscription(
+                db,
+                organization_id=org.id,
+                currency=org.currency or "INR",
+            )
+            admin_role = await self.repository.get_role_for_organization(db, "Admin", org.id)
+            if not admin_role:
+                raise APIException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    code="RBAC_NOT_INITIALIZED",
+                    message="Default roles are not initialized",
+                )
+            await self.repository.assign_user_role(db, user_id=user.id, role_id=admin_role.id)
+            await self.repository.record_organization_initialization(
+                db, organization_id=org.id, user_id=user.id
+            )
             await db.commit()
             return {
                 "message": "Registration successful",
@@ -265,8 +288,10 @@ class AuthService:
             raise
         except Exception as e:
             await db.rollback()
+            logger.exception("Registration transaction failed")
             raise APIException(
-                status_code=status.HTTP_400_BAD_REQUEST, message=f"Registration failed: {str(e)}"
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Registration failed. Please try again.",
             ) from e
 
     async def refresh_token(
@@ -475,7 +500,9 @@ class AuthService:
                 response.raise_for_status()
                 claims = response.json()
             except (httpx.HTTPError, ValueError) as exc:
-                raise APIException(status_code=401, message="Invalid Google identity token") from exc
+                raise APIException(
+                    status_code=401, message="Invalid Google identity token"
+                ) from exc
             if claims.get("aud") != client_id or claims.get("iss") not in {
                 "accounts.google.com",
                 "https://accounts.google.com",
@@ -717,9 +744,7 @@ class AuthService:
             for s in sessions
         ]
 
-    async def revoke_session(
-        self, db: AsyncSession, session_id: str, current_user: User
-    ) -> dict:
+    async def revoke_session(self, db: AsyncSession, session_id: str, current_user: User) -> dict:
         session = await self.repository.get_session_by_id(db, session_id, current_user.id)
         if not session:
             raise NotFoundError(message=f"Session '{session_id}' not found")

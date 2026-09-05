@@ -6,16 +6,12 @@ import { ResponsiveSelect } from '@/components/common/responsive-select';
 import { DatePicker } from '@/components/common/date-picker';
 
 import { ActionMenu } from '@/components/common/action-menu';
-import { Button } from '@/components/ui/button';
 import { getErrorMessage } from '@/lib/utils';
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   FileText,
   DollarSign,
-  Plus,
-  Download,
-  Upload,
   Trash2,
   Edit,
   Send,
@@ -24,13 +20,11 @@ import {
   X,
   Loader2,
   CreditCard,
-  Repeat,
   Receipt
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
-import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
 import {
   useInvoicesQuery,
@@ -41,10 +35,6 @@ import {
   useBulkRemindInvoicesMutation,
   useSendInvoiceEmailMutation,
   useCreateStripeCheckoutMutation,
-  useMarkInvoicePaidMutation,
-  useCreateRecurringInvoiceMutation,
-  useImportInvoicesCsvMutation,
-  exportInvoicesCsvApi,
   InvoiceItem,
   InvoiceCreatePayload
 } from '@/lib/api/invoices';
@@ -63,10 +53,9 @@ export default function InvoicesPage() {
 
   // Modal states
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
-  const [isRecurringModalOpen, setIsRecurringModalOpen] = useState(false);
   const [isSendModalOpen, setIsSendModalOpen] = useState(false);
   const [sendModalInvoice, setSendModalInvoice] = useState<InvoiceItem | null>(null);
-  const [recipientEmailInput, setRecipientEmailInput] = useState('billing@client.com');
+  const [recipientEmailInput, setRecipientEmailInput] = useState('');
   const [editingInvoice, setEditingInvoice] = useState<InvoiceItem | null>(null);
   const [invoiceToDelete, setInvoiceToDelete] = useState<InvoiceItem | null>(null);
 
@@ -74,13 +63,8 @@ export default function InvoicesPage() {
   const [formDealId, setFormDealId] = useState('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [amount, setAmount] = useState('14500');
-  const [dueDate, setDueDate] = useState('2026-09-01');
+  const [dueDate, setDueDate] = useState('');
   const [status, setStatus] = useState('Pending');
-
-  // Recurring Form states
-  const [recCustomerId, setRecCustomerId] = useState('Acme Global Corp');
-  const [recAmount, setRecAmount] = useState('12000');
-  const [recInterval, setRecInterval] = useState('Monthly');
 
   // Toast / Alert notifications
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -114,29 +98,21 @@ export default function InvoicesPage() {
   const bulkRemindMutation = useBulkRemindInvoicesMutation();
   const sendEmailMutation = useSendInvoiceEmailMutation();
   const stripeCheckoutMutation = useCreateStripeCheckoutMutation();
-  const markPaidMutation = useMarkInvoicePaidMutation();
-  const createRecurringMutation = useCreateRecurringInvoiceMutation();
-  const importCsvMutation = useImportInvoicesCsvMutation();
 
   const resetInvoiceForm = () => {
     setFormDealId('');
     setInvoiceNumber('');
     setAmount('14500');
-    setDueDate('2026-09-01');
+    setDueDate('');
     setStatus('Pending');
     setEditingInvoice(null);
-  };
-
-  const handleOpenCreateModal = () => {
-    resetInvoiceForm();
-    setIsInvoiceModalOpen(true);
   };
 
   const handleOpenEditModal = (inv: InvoiceItem) => {
     setEditingInvoice(inv);
     setInvoiceNumber(inv.invoice_number);
     setAmount(String(inv.amount || 0));
-    setDueDate(inv.due_date ? inv.due_date.substring(0, 10) : '2026-09-01');
+    setDueDate(inv.due_date ? inv.due_date.substring(0, 10) : '');
     setStatus(inv.status || 'Pending');
     setIsInvoiceModalOpen(true);
   };
@@ -175,22 +151,6 @@ export default function InvoicesPage() {
     }
   };
 
-  const handleCreateRecurringSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!recCustomerId.trim()) return;
-    try {
-      await createRecurringMutation.mutateAsync({
-        customer_id: recCustomerId.trim(),
-        amount: parseFloat(recAmount || '0'),
-        interval: recInterval,
-      });
-      setSuccessMessage(`Recurring ${recInterval} invoice schedule created for ${recCustomerId.trim()}.`);
-      setIsRecurringModalOpen(false);
-    } catch (err: unknown) {
-      setErrorMessage(getErrorMessage(err, 'Failed to create recurring schedule.'));
-    }
-  };
-
   const handleSendEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!sendModalInvoice || !recipientEmailInput.trim()) return;
@@ -214,34 +174,6 @@ export default function InvoicesPage() {
       window.open(res.checkout_url, '_blank');
     } catch (err: unknown) {
       setErrorMessage(getErrorMessage(err, 'Failed to generate Stripe Checkout session.'));
-    }
-  };
-
-  const handleMarkPaid = async (inv: InvoiceItem) => {
-    try {
-      await markPaidMutation.mutateAsync({ id: inv.id, payment_method: 'Stripe Online' });
-      setSuccessMessage(`Invoice "${inv.invoice_number}" marked as Paid.`);
-    } catch (err: unknown) {
-      setErrorMessage(getErrorMessage(err, 'Failed to mark invoice as paid.'));
-    }
-  };
-
-  const handleExportCsv = async () => {
-    try {
-      const res = await exportInvoicesCsvApi();
-      setSuccessMessage('Invoices list exported. Download started.');
-      window.open(res.download_url, '_blank');
-    } catch (err: unknown) {
-      setErrorMessage(getErrorMessage(err, 'Failed to export invoices CSV.'));
-    }
-  };
-
-  const handleImportCsv = async () => {
-    try {
-      const res = await importCsvMutation.mutateAsync();
-      setSuccessMessage(res.message || 'Invoices CSV import processing completed.');
-    } catch (err: unknown) {
-      setErrorMessage(getErrorMessage(err, 'Failed to import invoices CSV.'));
     }
   };
 
@@ -297,7 +229,7 @@ export default function InvoicesPage() {
             >
               {item.invoice_number}
             </div>
-            <div className="text-[11px] text-slate-400 font-mono">Due: {item.due_date ? item.due_date.substring(0, 10) : '2026-09-01'}</div>
+            <div className="text-[11px] text-slate-400 font-mono">Due: {item.due_date ? item.due_date.substring(0, 10) : 'Not set'}</div>
           </div>
         </div>
       ),
@@ -342,8 +274,7 @@ export default function InvoicesPage() {
           onTriggerClick={(event) => event.stopPropagation()}
           actions={[
             { label: 'Stripe checkout', permission: PERMISSIONS.INVOICES.PAYMENT, icon: <CreditCard className="w-4 h-4 text-purple-600" />, onSelect: () => handleStripeCheckout(item) },
-            { label: 'Send invoice email', permission: PERMISSIONS.INVOICES.SEND, icon: <Send className="w-4 h-4 text-blue-600" />, onSelect: () => { setSendModalInvoice(item); setIsSendModalOpen(true); } },
-            ...(item.status !== 'Paid' ? [{ label: 'Mark as paid', permission: PERMISSIONS.INVOICES.PAYMENT, icon: <CheckCircle2 className="w-4 h-4 text-emerald-600" />, onSelect: () => handleMarkPaid(item) }] : []),
+            { label: 'Send invoice email', permission: PERMISSIONS.INVOICES.SEND, icon: <Send className="w-4 h-4 text-blue-600" />, onSelect: () => { setSendModalInvoice(item); setRecipientEmailInput(item.recipient_email || ''); setIsSendModalOpen(true); } },
             { label: 'Edit invoice', permission: PERMISSIONS.INVOICES.UPDATE, icon: <Edit className="w-4 h-4 text-indigo-600" />, onSelect: () => handleOpenEditModal(item) },
             { label: 'Delete invoice', permission: PERMISSIONS.INVOICES.DELETE, icon: <Trash2 className="w-4 h-4" />, variant: 'destructive', onSelect: () => setInvoiceToDelete(item) },
           ]}
@@ -386,21 +317,9 @@ export default function InvoicesPage() {
             <Receipt className="w-7 h-7 text-indigo-600" />
             Invoices & Billing Gateway
           </h1>
-          <p className="text-slate-500 text-sm mt-0.5">Generate invoices, automated recurring billing, Stripe checkout links, credit memos & reminders</p>
+          <p className="text-slate-500 text-sm mt-0.5">Accepted quotes create invoices automatically; Stripe webhooks verify payment.</p>
         </div>
 
-        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-          <PermissionGate permission={PERMISSIONS.INVOICES.CREATE}>
-            <Button onClick={handleOpenCreateModal} className="w-full gap-2 text-xs font-semibold sm:w-auto">
-              <Plus className="w-4 h-4" />Generate Invoice
-            </Button>
-          </PermissionGate>
-          <ActionMenu label="More" className="w-full text-xs font-semibold sm:w-auto" actions={[
-            { label: 'Export CSV', icon: <Download className="w-4 h-4 text-slate-600" />, onSelect: handleExportCsv },
-            { label: 'Import CSV', icon: importCsvMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4 text-indigo-600" />, disabled: importCsvMutation.isPending, onSelect: handleImportCsv },
-            { label: 'Recurring schedule', icon: <Repeat className="w-4 h-4 text-amber-500" />, onSelect: () => setIsRecurringModalOpen(true) },
-          ]} />
-        </div>
       </div>
 
 
@@ -571,76 +490,6 @@ export default function InvoicesPage() {
                   <Loader2 className="w-4 h-4 animate-spin" />
                 )}
                 {editingInvoice ? 'Save Changes' : 'Generate Invoice'}
-              </button>
-            </div>
-          </form>
-        </ModalShell>
-      )}
-
-      {/* Create Recurring Invoice Modal */}
-      {isRecurringModalOpen && (
-        <ModalShell
-          isOpen={isRecurringModalOpen}
-          onClose={() => setIsRecurringModalOpen(false)}
-          size="md"
-          title={
-            <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-              <Repeat className="w-5 h-5 text-amber-500" />
-              Create Recurring Billing Schedule
-            </h3>
-          }
-        >
-          <form onSubmit={handleCreateRecurringSubmit} className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Customer / Client Name *</label>
-              <Input
-                type="text"
-                required
-                value={recCustomerId}
-                onChange={(e) => setRecCustomerId(e.target.value)}
-                placeholder="e.g. Acme Global Corp"
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-amber-500"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Recurring Amount</label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  required
-                  value={recAmount}
-                  onChange={(e) => setRecAmount(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-amber-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Billing Cycle</label>
-                <ResponsiveSelect
-                  value={recInterval}
-                  onValueChange={setRecInterval}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-amber-500"
-                >
-                  <option value="Monthly">Monthly</option>
-                  <option value="Quarterly">Quarterly</option>
-                  <option value="Annual">Annual</option>
-                </ResponsiveSelect>
-              </div>
-            </div>
-
-            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3 pt-2">
-              <button type="button" onClick={() => setIsRecurringModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={createRecurringMutation.isPending}
-                className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
-              >
-                {createRecurringMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                Create Schedule
               </button>
             </div>
           </form>

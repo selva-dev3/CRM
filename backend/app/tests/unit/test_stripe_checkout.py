@@ -219,6 +219,35 @@ async def test_create_checkout_generic_error_on_stripe_failure(org_service, mock
         assert "Unable to initialize checkout with the payment provider" in exc_info.value.message
 
 
+@pytest.mark.asyncio
+async def test_create_checkout_rejects_provider_session_without_url(
+    org_service, mock_db, monkeypatch
+):
+    mock_repo = org_service.repository
+    mock_repo.get_by_id = AsyncMock(return_value=Organization(id="org-1", name="Acme Corp"))
+    mock_repo.get_plan_by_slug = AsyncMock(
+        return_value=SubscriptionPlan(
+            id="p-1", name="Starter", slug="starter", price_monthly=999.0, is_active=True
+        )
+    )
+    incomplete_session = MagicMock(id="cs_test_incomplete", url=None)
+
+    async def run_inline(function, *args, **kwargs):
+        return function(*args, **kwargs)
+
+    monkeypatch.setattr("app.services.organization_service.run_in_threadpool", run_inline)
+
+    with (
+        patch("app.core.config.settings.STRIPE_SECRET_KEY", "sk_test_mock_key"),
+        patch("stripe.checkout.Session.create", return_value=incomplete_session),
+        pytest.raises(APIException) as exc_info,
+    ):
+        await org_service.create_subscription_checkout(mock_db, plan_slug="starter", org_id="org-1")
+
+    assert exc_info.value.status_code == status.HTTP_502_BAD_GATEWAY
+    assert "usable checkout session" in exc_info.value.message
+
+
 # ==============================================================================
 # 2. STRIPE WEBHOOK & TRANSACTIONAL UPGRADE TESTS
 # ==============================================================================

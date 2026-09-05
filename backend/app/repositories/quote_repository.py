@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Invoice, Quote
 from app.models.audit import AuditLog
+from app.models.deal import DealActivity
 from app.models.organization import Organization
 from app.models.quote import QuoteItem
 
@@ -17,75 +18,184 @@ class QuoteRepository:
     """Database access for quotes, with explicit organization scoping."""
 
     async def get_invoice_reference(self, db: AsyncSession, *, quote_id: str, organization_id: str):
-        result = await db.execute(select(Invoice).where(
-            Invoice.quote_id == quote_id, Invoice.organization_id == organization_id))
+        result = await db.execute(
+            select(Invoice).where(
+                Invoice.quote_id == quote_id, Invoice.organization_id == organization_id
+            )
+        )
         return result.scalar_one_or_none()
 
-    async def get_automatic(self, db: AsyncSession, *, deal_id: str, organization_id: str) -> Quote | None:
-        result = await db.execute(select(Quote).where(
-            Quote.automatic_deal_id == deal_id, Quote.organization_id == organization_id,
-        ))
+    async def get_automatic(
+        self, db: AsyncSession, *, deal_id: str, organization_id: str
+    ) -> Quote | None:
+        result = await db.execute(
+            select(Quote).where(
+                Quote.automatic_deal_id == deal_id,
+                Quote.organization_id == organization_id,
+            )
+        )
         return result.scalar_one_or_none()
 
     async def get_organization(self, db: AsyncSession, organization_id: str) -> Organization | None:
         result = await db.execute(select(Organization).where(Organization.id == organization_id))
         return result.scalar_one_or_none()
 
+    async def lock_numbering(self, db: AsyncSession, organization_id: str) -> Organization | None:
+        result = await db.execute(
+            select(Organization)
+            .where(Organization.id == organization_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return result.scalar_one_or_none()
+
+    async def advance_numbering(self, db: AsyncSession, organization: Organization) -> int:
+        organization.quote_sequence += 1
+        return organization.quote_sequence
+
     async def add_items(self, db: AsyncSession, items: list[dict]) -> None:
         db.add_all([QuoteItem(**item) for item in items])
 
-    async def list_items(self, db: AsyncSession, *, quote_id: str, organization_id: str) -> list[QuoteItem]:
-        result = await db.execute(select(QuoteItem).join(Quote).where(
-            Quote.id == quote_id, Quote.organization_id == organization_id,
-        ))
+    async def list_items(
+        self, db: AsyncSession, *, quote_id: str, organization_id: str
+    ) -> list[QuoteItem]:
+        result = await db.execute(
+            select(QuoteItem)
+            .join(Quote)
+            .where(
+                Quote.id == quote_id,
+                Quote.organization_id == organization_id,
+            )
+        )
         return list(result.scalars().all())
 
-    async def record_automatic_creation(self, db: AsyncSession, quote: Quote, actor_id: str) -> None:
-        db.add(AuditLog(organization_id=quote.organization_id, user_id=actor_id,
-                       action="deal.won", details=quote.deal_id))
-        db.add(AuditLog(organization_id=quote.organization_id, user_id=actor_id,
-                       action="quote.auto_created", details=quote.id))
+    async def record_automatic_creation(
+        self, db: AsyncSession, quote: Quote, actor_id: str
+    ) -> None:
+        db.add(
+            AuditLog(
+                organization_id=quote.organization_id,
+                user_id=actor_id,
+                action="deal.won",
+                details=quote.deal_id,
+            )
+        )
+        db.add(
+            AuditLog(
+                organization_id=quote.organization_id,
+                user_id=actor_id,
+                action="quote.auto_created",
+                details=quote.id,
+            )
+        )
 
-    async def lock_scoped(self, db: AsyncSession, *, quote_id: str, organization_id: str) -> Quote | None:
-        result = await db.execute(select(Quote).where(
-            Quote.id == quote_id, Quote.organization_id == organization_id,
-        ).with_for_update().execution_options(populate_existing=True))
+    async def lock_scoped(
+        self, db: AsyncSession, *, quote_id: str, organization_id: str
+    ) -> Quote | None:
+        result = await db.execute(
+            select(Quote)
+            .where(
+                Quote.id == quote_id,
+                Quote.organization_id == organization_id,
+            )
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
         return result.scalar_one_or_none()
 
     async def lock_public(self, db: AsyncSession, token_hash: str) -> Quote | None:
-        result = await db.execute(select(Quote).where(Quote.public_token_hash == token_hash)
-            .with_for_update().execution_options(populate_existing=True))
+        result = await db.execute(
+            select(Quote)
+            .where(Quote.public_token_hash == token_hash)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
         return result.scalar_one_or_none()
 
-    async def approve(self, db: AsyncSession, quote: Quote, *, actor_id: str, at, expires_at) -> None:
+    async def approve(
+        self, db: AsyncSession, quote: Quote, *, actor_id: str, at, expires_at
+    ) -> None:
         quote.status = "Approved"
         quote.approved_at = at
         quote.approved_by = actor_id
         quote.expires_at = expires_at
-        db.add(AuditLog(organization_id=quote.organization_id, user_id=actor_id,
-                       action="quote.approved", details=quote.id))
+        if quote.deal_id:
+            db.add(
+                DealActivity(
+                    deal_id=quote.deal_id,
+                    action=f"Quote {quote.quote_number} approved",
+                    performed_by=actor_id,
+                )
+            )
+        db.add(
+            AuditLog(
+                organization_id=quote.organization_id,
+                user_id=actor_id,
+                action="quote.approved",
+                details=quote.id,
+            )
+        )
 
-    async def accept_public(self, db: AsyncSession, quote: Quote, *, customer_email: str, at) -> None:
+    async def accept_public(
+        self, db: AsyncSession, quote: Quote, *, customer_email: str, at
+    ) -> None:
         quote.status = "Accepted"
         quote.accepted_at = at
         quote.accepted_by = customer_email
-        db.add(AuditLog(organization_id=quote.organization_id, action="quote.accepted", details=quote.id))
+        if quote.deal_id:
+            db.add(
+                DealActivity(
+                    deal_id=quote.deal_id,
+                    action=f"Quote {quote.quote_number} accepted by customer",
+                )
+            )
+        db.add(
+            AuditLog(
+                organization_id=quote.organization_id, action="quote.accepted", details=quote.id
+            )
+        )
 
-    async def reject_public(self, db: AsyncSession, quote: Quote) -> None:
+    async def reject_public(
+        self, db: AsyncSession, quote: Quote, *, reason: str | None = None
+    ) -> None:
         quote.status = "Rejected"
         quote.rejected_at = datetime.now(UTC)
-        db.add(AuditLog(organization_id=quote.organization_id, action="quote.rejected", details=quote.id))
+        quote.rejection_reason = reason
+        if quote.deal_id:
+            db.add(
+                DealActivity(
+                    deal_id=quote.deal_id,
+                    action=f"Quote {quote.quote_number} rejected by customer",
+                )
+            )
+        db.add(
+            AuditLog(
+                organization_id=quote.organization_id, action="quote.rejected", details=quote.id
+            )
+        )
 
-    async def queue_delivery(self, db: AsyncSession, quote: Quote, *, delivery_id: str,
-                             recipient_email: str, token_hash: str) -> None:
+    async def queue_delivery(
+        self,
+        db: AsyncSession,
+        quote: Quote,
+        *,
+        delivery_id: str,
+        recipient_email: str,
+        token_hash: str,
+    ) -> None:
         quote.delivery_id = delivery_id
         quote.recipient_email = recipient_email
         quote.public_token_hash = token_hash
         quote.delivery_status = "Pending"
 
     async def claim_delivery(self, db: AsyncSession, now: datetime) -> Quote | None:
-        result = await db.execute(select(Quote).where(Quote.delivery_status == "Pending",
-            Quote.delivery_attempts < 3).order_by(Quote.created_at).with_for_update(skip_locked=True).limit(1))
+        result = await db.execute(
+            select(Quote)
+            .where(Quote.delivery_status == "Pending", Quote.delivery_attempts < 3)
+            .order_by(Quote.created_at)
+            .with_for_update(skip_locked=True)
+            .limit(1)
+        )
         quote = result.scalar_one_or_none()
         if quote:
             quote.delivery_status = "Processing"
@@ -93,9 +203,16 @@ class QuoteRepository:
             quote.delivery_attempts += 1
         return quote
 
-    async def delivery_result(self, db: AsyncSession, quote: Quote, *, state: str,
-                              pdf_key: str | None = None, message_id: str | None = None,
-                              at: datetime | None = None) -> None:
+    async def delivery_result(
+        self,
+        db: AsyncSession,
+        quote: Quote,
+        *,
+        state: str,
+        pdf_key: str | None = None,
+        message_id: str | None = None,
+        at: datetime | None = None,
+    ) -> None:
         quote.delivery_status = state
         if pdf_key:
             quote.pdf_s3_key = pdf_key
@@ -103,11 +220,28 @@ class QuoteRepository:
             quote.provider_message_id = message_id
             quote.sent_at = at
             quote.status = "Sent"
-            db.add(AuditLog(organization_id=quote.organization_id, action="quote.sent", details=quote.id))
+            if quote.deal_id:
+                db.add(
+                    DealActivity(
+                        deal_id=quote.deal_id,
+                        action=f"Quote {quote.quote_number} sent to customer",
+                    )
+                )
+            db.add(
+                AuditLog(
+                    organization_id=quote.organization_id, action="quote.sent", details=quote.id
+                )
+            )
 
     async def expire_delivery_claims(self, db: AsyncSession, now: datetime) -> None:
-        result = await db.execute(select(Quote).where(Quote.delivery_status == "Processing",
-            Quote.delivery_claimed_at < now - timedelta(minutes=10)).with_for_update(skip_locked=True))
+        result = await db.execute(
+            select(Quote)
+            .where(
+                Quote.delivery_status == "Processing",
+                Quote.delivery_claimed_at < now - timedelta(minutes=10),
+            )
+            .with_for_update(skip_locked=True)
+        )
         for quote in result.scalars():
             quote.delivery_status = "Unknown"
 
