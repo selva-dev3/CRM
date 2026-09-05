@@ -3,7 +3,7 @@
 import { Input } from "@/components/ui/input";
 
 import { getErrorMessage } from '@/lib/utils';
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useHasPermission } from '@/hooks/use-has-permission';
 import { useParams, useRouter } from 'next/navigation';
@@ -35,6 +35,19 @@ import {
   useDeleteQuoteMutation
 } from '@/lib/api/quotes';
 
+function maskEmail(email?: string | null): string {
+  if (!email) return 'Not available';
+  const [local, domain] = email.split('@');
+  if (!domain || local.length < 3) return email;
+  return `${local.slice(0, 2)}${'*'.repeat(Math.max(3, local.length - 2))}@${domain}`;
+}
+
+function maskIdentifier(value?: string | null): string {
+  if (!value) return 'Not available';
+  if (value.length <= 8) return '••••••••';
+  return `${value.slice(0, 4)}…${value.slice(-4)}`;
+}
+
 export default function QuoteDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -57,6 +70,7 @@ export default function QuoteDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['reports'] });
     } });
   const deleteMutation = useDeleteQuoteMutation();
+  const awaitingDeliverySuccessRef = useRef(false);
 
   // State
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -67,12 +81,26 @@ export default function QuoteDetailPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (
+      awaitingDeliverySuccessRef.current &&
+      quote?.delivery_status === 'Sent' &&
+      quote.provider_message_id
+    ) {
+      setSuccessMessage(
+        `Quote approved and email sent successfully to ${maskEmail(quote.recipient_email)}`,
+      );
+      awaitingDeliverySuccessRef.current = false;
+    }
+  }, [quote?.delivery_status, quote?.provider_message_id, quote?.recipient_email]);
+
   const handleSendEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!recipientEmailInput.trim() || sendEmailMutation.isPending) return;
     try {
-      const result = await sendEmailMutation.mutateAsync({ id: quoteId, recipient_email: recipientEmailInput.trim() });
-      setSuccessMessage(result.message);
+      awaitingDeliverySuccessRef.current = true;
+      await sendEmailMutation.mutateAsync({ id: quoteId, recipient_email: recipientEmailInput.trim() });
+      setErrorMessage(null);
       setIsSendEmailModalOpen(false);
     } catch (err: unknown) {
       setErrorMessage(getErrorMessage(err, 'Failed to send email.'));
@@ -82,8 +110,9 @@ export default function QuoteDetailPage() {
   const handleApproveQuote = async () => {
     if (approveMutation.isPending) return;
     try {
+      awaitingDeliverySuccessRef.current = true;
       await approveMutation.mutateAsync(quoteId);
-      setSuccessMessage('Quote approved. PDF generation and customer delivery are now queued.');
+      setErrorMessage(null);
     } catch (err: unknown) {
       setErrorMessage(getErrorMessage(err, 'Failed to approve quote.'));
     }
@@ -128,6 +157,33 @@ export default function QuoteDetailPage() {
   }
 
   const s = quote.status || 'Draft';
+  const deliveryStatus = quote.delivery_status || 'Not queued';
+  const pdfAvailable = quote.pdf_available === true;
+  const deliveryMessage =
+    deliveryStatus === 'Pending'
+      ? 'Email delivery queued'
+      : deliveryStatus === 'Processing'
+      ? 'Generating PDF and sending email...'
+      : deliveryStatus === 'Sent'
+      ? 'Email sent successfully'
+      : deliveryStatus === 'Delivered'
+      ? 'Email delivered to customer'
+      : deliveryStatus === 'Failed' || deliveryStatus === 'Bounced'
+      ? 'Email delivery failed'
+      : deliveryStatus === 'Unknown'
+      ? 'Email delivery status could not be confirmed'
+      : 'Email delivery has not been queued';
+  const pdfMessage = pdfAvailable
+    ? 'Available ✓'
+    : deliveryStatus === 'Processing'
+    ? 'Generating and uploading...'
+    : deliveryStatus === 'Pending'
+    ? 'Waiting for processing'
+    : deliveryStatus === 'Failed' || deliveryStatus === 'Bounced'
+    ? 'Not available — delivery failed'
+    : deliveryStatus === 'Unknown'
+    ? 'Unavailable — reconciliation required'
+    : 'Not generated';
   const badgeStyle =
     s === 'Accepted'
       ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -152,7 +208,7 @@ export default function QuoteDetailPage() {
               Quote: {quote.quote_number}
             </h1>
             <span className={`px-3 py-0.5 rounded-full text-xs font-semibold border ${badgeStyle}`}>
-              {s}
+              {s === 'Approved' ? 'Approved ✓' : s === 'Sent' ? 'Sent ✓' : s}
             </span>
           </div>
         </div>
@@ -208,22 +264,49 @@ export default function QuoteDetailPage() {
         </div>
       </div>
 
-      {/* Toast Feedback */}
-      {quote.delivery_status && <p role="status" className="rounded border p-3 text-sm">
-        Delivery: {quote.delivery_status}. {quote.delivery_status === 'Pending'
-          ? 'Customer email delivery is queued.'
-          : quote.delivery_status === 'Processing'
-          ? 'The quote is being prepared and sent to the customer.'
-          : quote.delivery_status === 'Sent'
-          ? 'The email provider accepted the quote email; inbox delivery is not confirmed.'
-          : quote.delivery_status === 'Delivered'
-          ? 'The email provider confirmed delivery to the customer.'
-          : quote.delivery_status === 'Unknown'
-          ? 'The provider outcome must be reconciled before another send.'
-          : quote.delivery_status === 'Failed' || quote.delivery_status === 'Bounced'
-          ? 'Quote email delivery failed. Retry is available when it is safe.'
-          : 'Delivery status is being processed.'}
-      </p>}
+      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-900">Customer Email Delivery</h2>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+            Quote: {s}
+          </span>
+        </div>
+        <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Recipient</p>
+            <p className="mt-1 font-semibold text-slate-900">{maskEmail(quote.recipient_email || quote.contact_email)}</p>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Email status</p>
+            <p className={`mt-1 font-semibold ${deliveryStatus === 'Failed' || deliveryStatus === 'Bounced' ? 'text-rose-700' : deliveryStatus === 'Delivered' ? 'text-emerald-700' : 'text-slate-900'}`}>
+              {deliveryMessage}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">PDF</p>
+            <p className={`mt-1 font-semibold ${pdfAvailable ? 'text-emerald-700' : 'text-slate-900'}`}>{pdfMessage}</p>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Sent at</p>
+            <p className="mt-1 font-semibold text-slate-900">{quote.sent_at ? new Date(quote.sent_at).toLocaleString() : 'Not sent'}</p>
+          </div>
+        </div>
+        <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-slate-100 pt-4 text-xs text-slate-500">
+          <span>Delivery ID: {maskIdentifier(quote.delivery_id)}</span>
+          {quote.provider_message_id && <span>Provider message: {maskIdentifier(quote.provider_message_id)}</span>}
+          {deliveryStatus === 'Sent' && <span>Email provider accepted the request; inbox delivery is not confirmed.</span>}
+        </div>
+        {deliveryStatus === 'Failed' && (
+          <p role="alert" className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs font-medium text-rose-800">
+            PDF generation or email delivery failed. Retry is available when the existing delivery rules allow it.
+          </p>
+        )}
+        {deliveryStatus === 'Unknown' && (
+          <p role="alert" className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-900">
+            Email delivery status could not be confirmed. Do not resend until provider reconciliation completes.
+          </p>
+        )}
+      </section>
       {successMessage && (
         <div className="flex items-center justify-between p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl shadow-sm">
           <div className="flex items-center gap-2 text-sm font-medium">

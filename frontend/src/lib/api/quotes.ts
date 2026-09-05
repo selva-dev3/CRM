@@ -25,6 +25,9 @@ export interface QuoteItem {
   deal_id?: string | null;
   currency?: string | null;
   delivery_status?: string | null;
+  delivery_id?: string | null;
+  provider_message_id?: string | null;
+  sent_at?: string | null;
   recipient_email?: string | null;
   pdf_available?: boolean;
   expires_at?: string | null;
