@@ -137,6 +137,42 @@ class DealService:
             values=values,
         )
 
+    async def _validate_customer_links(
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        company_id: str | None,
+        contact_id: str | None,
+    ) -> None:
+        if company_id and not await self.repository.company_exists(
+            db, company_id, organization_id=organization_id
+        ):
+            raise NotFoundError(message="Company not found")
+        if not contact_id:
+            return
+        if not company_id:
+            raise APIException(
+                message="Select a company before selecting a contact",
+                code="DEAL_COMPANY_REQUIRED",
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            )
+        if not await self.repository.contact_exists(
+            db, contact_id, organization_id=organization_id
+        ):
+            raise NotFoundError(message="Contact not found")
+        if not await self.repository.contact_belongs_to_company(
+            db,
+            contact_id,
+            company_id,
+            organization_id=organization_id,
+        ):
+            raise APIException(
+                message="The selected contact is not linked to the selected company",
+                code="DEAL_CONTACT_COMPANY_MISMATCH",
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            )
+
     async def _guard_closed_won_transition(
         self, db: AsyncSession, deal: Deal, new_stage: str
     ) -> None:
@@ -192,16 +228,13 @@ class DealService:
             assigned_user_id = current_user.id
 
         comp_id = payload.company_id
-        if comp_id and not await self.repository.company_exists(
-            db, comp_id, organization_id=org_id
-        ):
-            raise NotFoundError(message="Company not found")
-
         cont_id = payload.contact_id
-        if cont_id and not await self.repository.contact_exists(
-            db, cont_id, organization_id=org_id
-        ):
-            raise NotFoundError(message="Contact not found")
+        await self._validate_customer_links(
+            db,
+            organization_id=org_id,
+            company_id=comp_id,
+            contact_id=cont_id,
+        )
 
         deal = await self.repository.create(
             db,
@@ -397,25 +430,26 @@ class DealService:
         ):
             d.assigned_to = payload.assigned_to
 
-        if payload.company_id is not None:
-            if payload.company_id in ("null", "None", ""):
-                d.company_id = None
-            elif await self.repository.company_exists(
-                db, payload.company_id, organization_id=d.organization_id
-            ):
-                d.company_id = payload.company_id
-            else:
-                raise NotFoundError(message="Company not found")
-
-        if payload.contact_id is not None:
-            if payload.contact_id in ("null", "None", ""):
-                d.contact_id = None
-            elif await self.repository.contact_exists(
-                db, payload.contact_id, organization_id=d.organization_id
-            ):
-                d.contact_id = payload.contact_id
-            else:
-                raise NotFoundError(message="Contact not found")
+        customer_fields = payload.model_fields_set & {"company_id", "contact_id"}
+        if customer_fields:
+            company_id = d.company_id
+            contact_id = d.contact_id
+            if "company_id" in customer_fields:
+                company_id = (
+                    None if payload.company_id in (None, "null", "None", "") else payload.company_id
+                )
+            if "contact_id" in customer_fields:
+                contact_id = (
+                    None if payload.contact_id in (None, "null", "None", "") else payload.contact_id
+                )
+            await self._validate_customer_links(
+                db,
+                organization_id=d.organization_id,
+                company_id=company_id,
+                contact_id=contact_id,
+            )
+            d.company_id = company_id
+            d.contact_id = contact_id
 
         if payload.project_id is not None:
             d.project_id = await self._validate_project(db, payload.project_id, d.organization_id)

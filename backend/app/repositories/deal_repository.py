@@ -155,6 +155,25 @@ class DealRepository:
         )
         return result.scalars().first() is not None
 
+    async def contact_belongs_to_company(
+        self,
+        db: AsyncSession,
+        contact_id: str,
+        company_id: str,
+        *,
+        organization_id: str,
+    ) -> bool:
+        result = await db.execute(
+            select(Contact.id)
+            .where(
+                Contact.id == contact_id,
+                Contact.company_id == company_id,
+                Contact.organization_id == organization_id,
+            )
+            .limit(1)
+        )
+        return result.scalars().first() is not None
+
     async def list_stages(
         self, db: AsyncSession, *, organization_id: str
     ) -> builtins.list[DealStage]:

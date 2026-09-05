@@ -1,6 +1,7 @@
 ﻿'use client';
 
 import { ResponsiveSelect } from '@/components/common/responsive-select';
+import { SearchableCompanySelect } from '@/components/common/searchable-company-select';
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
@@ -46,6 +47,8 @@ import {
   DealItem
 } from '@/lib/api/deals';
 import { useUsersQuery } from '@/lib/api/users';
+import { useCompaniesQuery } from '@/lib/api/companies';
+import { useContactsQuery } from '@/lib/api/contacts';
 
 const STAGES = ['Prospecting', 'Qualification', 'Proposal', 'Negotiation', 'Closed Won', 'Closed Lost'];
 
@@ -72,6 +75,8 @@ export default function DealsPage() {
   const [formStage, setFormStage] = useState('Prospecting');
   const [formProbability, setFormProbability] = useState<number | ''>(10);
   const [formAssignedTo, setFormAssignedTo] = useState('');
+  const [formCompanyId, setFormCompanyId] = useState('');
+  const [formContactId, setFormContactId] = useState('');
   const [formCustomFields, setFormCustomFields] = useState<Record<string, string | number | boolean | null>>({});
 
   // Search Debounce
@@ -86,6 +91,9 @@ export default function DealsPage() {
   // Queries
   const { data: deals = [], refetch: refetchDeals } = useDealsQuery(page, limit, undefined, debouncedSearchTerm);
   const { data: users = [] } = useUsersQuery();
+  const { data: companies = [] } = useCompaniesQuery(1, 100);
+  const { data: contacts = [] } = useContactsQuery(1, 100);
+  const companyContacts = contacts.filter((contact) => contact.company_id === formCompanyId);
   const {
     data: customFields = [],
     isLoading: isCustomFieldsLoading,
@@ -111,6 +119,8 @@ export default function DealsPage() {
     setFormStage('Prospecting');
     setFormProbability(10);
     setFormAssignedTo(users[0]?.id || '');
+    setFormCompanyId('');
+    setFormContactId('');
     setFormCustomFields({});
   };
 
@@ -127,6 +137,8 @@ export default function DealsPage() {
         amount: Number(formAmount) || 0,
         stage: formStage,
         probability: formProbability !== '' ? Number(formProbability) : undefined,
+        company_id: formCompanyId || undefined,
+        contact_id: formContactId || undefined,
         assigned_to: formAssignedTo || undefined,
         custom_fields: formCustomFields,
       });
@@ -151,6 +163,8 @@ export default function DealsPage() {
           amount: Number(formAmount) || 0,
           stage: formStage,
           probability: formProbability !== '' ? Number(formProbability) : undefined,
+          company_id: formCompanyId,
+          contact_id: formContactId,
           assigned_to: formAssignedTo || undefined,
           custom_fields: formCustomFields,
         },
@@ -172,6 +186,8 @@ export default function DealsPage() {
     setFormStage(item.stage);
     setFormProbability(item.probability ?? 10);
     setFormAssignedTo(item.assigned_to || '');
+    setFormCompanyId(item.company_id || '');
+    setFormContactId(item.contact_id || '');
     setFormCustomFields(item.custom_fields ?? {});
     setIsEditModalOpen(true);
   };
@@ -191,6 +207,14 @@ export default function DealsPage() {
   };
 
   const handleMarkWon = async (item: DealItem) => {
+    if (!item.company_id) {
+      setErrorMessage('Select a company before marking this deal won.');
+      return;
+    }
+    if (!item.contact_id) {
+      setErrorMessage('Select a contact before marking this deal won.');
+      return;
+    }
     try {
       await markWonMutation.mutateAsync({ id: item.id, final_amount: item.amount });
       setSuccessMessage(`Deal '${item.title}' marked as Closed Won! ðŸŽ‰`);
@@ -550,6 +574,42 @@ export default function DealsPage() {
               </div>
             </div>
 
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="font-semibold text-slate-700">Company</Label>
+                <SearchableCompanySelect
+                  value={formCompanyId}
+                  onChange={(companyId) => {
+                    setFormCompanyId(companyId);
+                    setFormContactId('');
+                  }}
+                  companies={companies}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="font-semibold text-slate-700">Contact</Label>
+                <ResponsiveSelect
+                  value={formContactId}
+                  onValueChange={setFormContactId}
+                  disabled={!formCompanyId}
+                  className="w-full h-9 rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer disabled:cursor-not-allowed disabled:bg-slate-50"
+                >
+                  <option value="">
+                    {formCompanyId ? '-- Select Contact --' : '-- Select Company First --'}
+                  </option>
+                  {companyContacts.map((contact) => (
+                    <option key={contact.id} value={contact.id}>
+                      {contact.name} ({contact.email})
+                    </option>
+                  ))}
+                </ResponsiveSelect>
+              </div>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              A linked company and contact are required before marking the deal won.
+            </p>
+
             <DealCustomFields
               fields={customFields}
               values={formCustomFields}
@@ -649,6 +709,42 @@ export default function DealsPage() {
                 </ResponsiveSelect>
               </div>
             </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="font-semibold text-slate-700">Company</Label>
+                <SearchableCompanySelect
+                  value={formCompanyId}
+                  onChange={(companyId) => {
+                    setFormCompanyId(companyId);
+                    setFormContactId('');
+                  }}
+                  companies={companies}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="font-semibold text-slate-700">Contact</Label>
+                <ResponsiveSelect
+                  value={formContactId}
+                  onValueChange={setFormContactId}
+                  disabled={!formCompanyId}
+                  className="w-full h-9 rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer disabled:cursor-not-allowed disabled:bg-slate-50"
+                >
+                  <option value="">
+                    {formCompanyId ? '-- Select Contact --' : '-- Select Company First --'}
+                  </option>
+                  {companyContacts.map((contact) => (
+                    <option key={contact.id} value={contact.id}>
+                      {contact.name} ({contact.email})
+                    </option>
+                  ))}
+                </ResponsiveSelect>
+              </div>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              A linked company and contact are required before marking the deal won.
+            </p>
 
             <DealCustomFields
               fields={customFields}

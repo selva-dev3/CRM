@@ -121,6 +121,69 @@ async def test_create_deal_defaults_to_authenticated_user(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_create_deal_rejects_contact_without_company(monkeypatch):
+    repo: Any = DealRepository()
+    repo.create = AsyncMock()
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.services.deal_service import organization_service
+
+    monkeypatch.setattr(
+        organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
+    )
+
+    with pytest.raises(APIException) as exc_info:
+        await service.create_deal(
+            db,
+            DealCreate(title="Acme Corp Deal", contact_id="contact-1"),
+            _user(),
+        )
+
+    assert exc_info.value.code == "DEAL_COMPANY_REQUIRED"
+    assert exc_info.value.status_code == 422
+    repo.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_create_deal_rejects_contact_linked_to_different_company(monkeypatch):
+    repo: Any = DealRepository()
+    repo.create = AsyncMock()
+    repo.company_exists = AsyncMock(return_value=True)
+    repo.contact_exists = AsyncMock(return_value=True)
+    repo.contact_belongs_to_company = AsyncMock(return_value=False)
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.services.deal_service import organization_service
+
+    monkeypatch.setattr(
+        organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
+    )
+
+    with pytest.raises(APIException) as exc_info:
+        await service.create_deal(
+            db,
+            DealCreate(
+                title="Acme Corp Deal",
+                company_id="company-1",
+                contact_id="contact-1",
+            ),
+            _user(),
+        )
+
+    assert exc_info.value.code == "DEAL_CONTACT_COMPANY_MISMATCH"
+    assert exc_info.value.status_code == 422
+    repo.contact_belongs_to_company.assert_awaited_once_with(
+        db,
+        "contact-1",
+        "company-1",
+        organization_id="org-1",
+    )
+    repo.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_create_deal_rejects_project_outside_current_organization(monkeypatch):
     repo: Any = DealRepository()
     repo.create = AsyncMock()
@@ -347,6 +410,31 @@ async def test_update_deal_nulls_company_on_sentinel():
     assert deal.company_id is None
     assert deal.title == "Renamed"
     assert result["company_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_update_deal_rejects_company_contact_mismatch():
+    deal = _make_deal(company_id="company-1", contact_id="contact-1")
+    repo: Any = DealRepository()
+    repo.get_by_id_scoped = AsyncMock(return_value=deal)
+    repo.company_exists = AsyncMock(return_value=True)
+    repo.contact_exists = AsyncMock(return_value=True)
+    repo.contact_belongs_to_company = AsyncMock(return_value=False)
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(APIException) as exc_info:
+        await service.update_deal(
+            db,
+            "deal-1",
+            DealUpdate(company_id="company-2"),
+            organization_id="org-1",
+            actor_id="user-1",
+        )
+
+    assert exc_info.value.code == "DEAL_CONTACT_COMPANY_MISMATCH"
+    assert deal.company_id == "company-1"
+    assert deal.contact_id == "contact-1"
 
 
 @pytest.mark.asyncio

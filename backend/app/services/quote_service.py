@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
+from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, NotFoundError
@@ -262,15 +263,41 @@ class QuoteService:
             raise APIException(
                 message="Configure the organization currency and quote prefix before closing a deal"
             )
+        if not deal.company_id:
+            raise APIException(
+                message="Select a company before marking the deal won",
+                code="DEAL_COMPANY_REQUIRED",
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            )
+        if not deal.contact_id:
+            raise APIException(
+                message="Select a contact before marking the deal won",
+                code="DEAL_CONTACT_REQUIRED",
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            )
         company, contact = await self.deal_repository.get_sales_customer(
             db,
             organization_id=deal.organization_id,
             company_id=deal.company_id,
             contact_id=deal.contact_id,
         )
-        if not company or not contact or contact.company_id != company.id:
+        if not company:
             raise APIException(
-                message="A same-organization company and linked contact are required"
+                message="The selected company is not available in this organization",
+                code="DEAL_COMPANY_REQUIRED",
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            )
+        if not contact:
+            raise APIException(
+                message="The selected contact is not available in this organization",
+                code="DEAL_CONTACT_REQUIRED",
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            )
+        if contact.company_id != company.id:
+            raise APIException(
+                message="The selected contact is not linked to the selected company",
+                code="DEAL_CONTACT_COMPANY_MISMATCH",
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             )
         lines = await self.deal_repository.list_deal_products(
             db, deal.id, organization_id=deal.organization_id

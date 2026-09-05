@@ -277,6 +277,32 @@ async def test_closed_won_quote_uses_org_sequence_and_snapshot_totals(monkeypatc
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("deal_overrides", "expected_code"),
+    [
+        ({"company_id": None, "contact_id": "contact-1"}, "DEAL_COMPANY_REQUIRED"),
+        ({"company_id": "company-1", "contact_id": None}, "DEAL_CONTACT_REQUIRED"),
+    ],
+)
+async def test_closed_won_quote_reports_missing_customer_link(deal_overrides, expected_code):
+    deal = make_deal(stage="Closed Won", **deal_overrides)
+    service, repository, deal_repository = make_service(deal=deal)
+    repository.get_automatic = AsyncMock(return_value=None)
+    repository.lock_numbering = AsyncMock(
+        return_value=SimpleNamespace(currency="INR", quote_prefix="QUO")
+    )
+
+    with pytest.raises(APIException) as exc_info:
+        await service.create_from_won_deal(
+            AsyncMock(spec=AsyncSession), deal=deal, actor_id="user-1"
+        )
+
+    assert exc_info.value.code == expected_code
+    assert exc_info.value.status_code == 422
+    deal_repository.get_sales_customer.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_list_quotes_uses_scoped_repository():
     service, repository, _ = make_service()
     repository.list_scoped = AsyncMock(return_value=[make_quote()])

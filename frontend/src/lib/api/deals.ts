@@ -23,6 +23,8 @@ export interface DealItem {
   stage: string;
   probability?: number;
   expected_close_date?: string;
+  company_id?: string;
+  contact_id?: string;
   assigned_to?: string;
   organization_id?: string;
   created_at?: string;
@@ -37,6 +39,8 @@ export interface DealCreatePayload {
   amount: number;
   stage: string;
   probability?: number;
+  company_id?: string;
+  contact_id?: string;
   assigned_to?: string;
   custom_fields?: Record<string, CustomFieldValue>;
   project_id?: string;
@@ -47,6 +51,8 @@ export interface DealUpdatePayload {
   amount?: number;
   stage?: string;
   probability?: number;
+  company_id?: string;
+  contact_id?: string;
   assigned_to?: string;
   custom_fields?: Record<string, CustomFieldValue>;
   project_id?: string;
