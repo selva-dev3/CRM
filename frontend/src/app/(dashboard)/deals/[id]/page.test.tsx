@@ -6,6 +6,7 @@ import DealDetailsPage from './page';
 
 const push = vi.fn();
 const updateDealMutateAsync = vi.fn();
+const markWonMutateAsync = vi.fn();
 
 vi.mock('next/navigation', () => ({
   useParams: () => ({ id: 'deal-1' }),
@@ -16,7 +17,7 @@ vi.mock('@/lib/api/deals', () => ({
   useDealQuery: vi.fn(),
   useUpdateDealMutation: () => ({ mutateAsync: updateDealMutateAsync, isPending: false }),
   useDeleteDealMutation: () => ({ mutateAsync: vi.fn() }),
-  useMarkDealWonMutation: () => ({ mutateAsync: vi.fn() }),
+  useMarkDealWonMutation: () => ({ mutateAsync: markWonMutateAsync, isPending: false }),
   useMarkDealLostMutation: () => ({ mutateAsync: vi.fn() }),
   getDealProductsApi: vi.fn().mockResolvedValue([]),
   addDealProductApi: vi.fn(),
@@ -48,6 +49,23 @@ vi.mock('@/lib/api/invoices', async () => {
 
 vi.mock('@/lib/api/users', () => ({
   useUsersQuery: () => ({ data: [] }),
+}));
+
+vi.mock('@/lib/api/companies', () => ({
+  useCompaniesQuery: () => ({ data: [{ id: 'company-1', name: 'Acme Corp' }] }),
+}));
+
+vi.mock('@/lib/api/contacts', () => ({
+  useContactsQuery: () => ({
+    data: [
+      {
+        id: 'contact-1',
+        name: 'Alice Buyer',
+        email: 'alice@acme.example',
+        company_id: 'company-1',
+      },
+    ],
+  }),
 }));
 
 vi.mock('@/lib/api/products', () => ({
@@ -95,6 +113,8 @@ const baseDeal = {
   amount: 25000,
   stage: 'Qualification',
   probability: 20,
+  company_id: 'company-1',
+  contact_id: 'contact-1',
   custom_fields: { decision_maker: 'CTO' },
 };
 
@@ -188,9 +208,29 @@ describe('DealDetailsPage invoice lifecycle UX', () => {
       expect(updateDealMutateAsync).toHaveBeenCalledWith(
         expect.objectContaining({
           id: 'deal-1',
-          data: expect.objectContaining({ custom_fields: { decision_maker: 'CFO' } }),
+          data: expect.objectContaining({
+            company_id: 'company-1',
+            contact_id: 'contact-1',
+            custom_fields: { decision_maker: 'CFO' },
+          }),
         }),
       );
     });
+  });
+
+  it('blocks Mark Won until a company is selected', async () => {
+    const user = userEvent.setup();
+    vi.mocked(useDealQuery).mockReturnValue({
+      data: { ...baseDeal, company_id: undefined, contact_id: undefined },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as never);
+    renderPage();
+
+    await user.click(await screen.findByRole('button', { name: 'Mark Won' }));
+
+    expect(screen.getByText('Select a company before marking this deal won.')).toBeInTheDocument();
+    expect(markWonMutateAsync).not.toHaveBeenCalled();
   });
 });
