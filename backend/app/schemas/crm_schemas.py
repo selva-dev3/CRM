@@ -730,6 +730,24 @@ class InvoiceResponse(BaseModel):
     items: list[InvoiceItemSchema] = Field(default_factory=list)
 
 
+class PaymentResponse(BaseModel):
+    id: str
+    invoice_id: str
+    invoice_number: str
+    company_name: str | None = None
+    contact_name: str | None = None
+    contact_email: str | None = None
+    amount: float = 0.0
+    currency: str
+    payment_method: str | None = None
+    status: str
+    provider: str
+    provider_payment_id: str
+    checkout_session_id: str
+    paid_at: str
+    created_at: str | None = None
+
+
 # 18. Notification Schemas
 class NotificationItem(BaseModel):
     id: str

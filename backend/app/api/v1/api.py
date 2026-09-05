@@ -21,6 +21,7 @@ from app.api.v1.routers import (
     notifications,
     organizations,
     payment_webhooks,
+    payments,
     products,
     projects,
     public_quotes,
@@ -36,6 +37,12 @@ from app.api.v1.routers import (
 api_router = APIRouter()
 api_router.include_router(public_quotes.router, prefix="/public/quotes", tags=["Customer Quotes"])
 api_router.include_router(payment_webhooks.router, prefix="/payments/webhooks", tags=["Payment Webhooks"])
+api_router.include_router(
+    payments.router,
+    prefix="/payments",
+    tags=["Payments"],
+    dependencies=[Depends(get_current_user)],
+)
 
 # Public Authentication endpoints
 api_router.include_router(auth.router, prefix="/auth", tags=["1. Authentication & Security"])

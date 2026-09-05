@@ -1,9 +1,9 @@
 from datetime import datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AuditLog, Deal, DealActivity, Invoice, Payment
+from app.models import AuditLog, Company, Contact, Deal, DealActivity, Invoice, Payment
 from app.repositories.notification_repository import NotificationRepository
 
 
@@ -11,6 +11,60 @@ class PaymentRepository:
     async def get_by_id(self, db: AsyncSession, payment_id: str) -> Payment | None:
         result = await db.execute(select(Payment).where(Payment.id == payment_id))
         return result.scalar_one_or_none()
+
+    async def list_scoped(
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        page: int,
+        limit: int,
+        status: str | None = None,
+        search: str | None = None,
+        invoice_id: str | None = None,
+    ) -> list[tuple[Payment, str, str | None, str | None, str | None]]:
+        stmt = (
+            select(Payment, Invoice.invoice_number, Company.name, Contact.name, Contact.email)
+            .join(Invoice, Invoice.id == Payment.invoice_id)
+            .outerjoin(Company, Company.id == Invoice.company_id)
+            .outerjoin(Contact, Contact.id == Invoice.contact_id)
+            .where(Payment.organization_id == organization_id, Invoice.organization_id == organization_id)
+        )
+        if status and status.strip():
+            stmt = stmt.where(Payment.status == status.strip())
+        if invoice_id:
+            stmt = stmt.where(Payment.invoice_id == invoice_id)
+        if search and search.strip():
+            term = f"%{search.strip()}%"
+            stmt = stmt.where(
+                or_(
+                    Payment.id.ilike(term),
+                    Payment.provider_payment_id.ilike(term),
+                    Invoice.invoice_number.ilike(term),
+                    Company.name.ilike(term),
+                    Contact.name.ilike(term),
+                    Contact.email.ilike(term),
+                )
+            )
+        stmt = stmt.order_by(Payment.paid_at.desc()).offset((page - 1) * limit).limit(limit)
+        result = await db.execute(stmt)
+        return list(result.all())
+
+    async def get_scoped(
+        self, db: AsyncSession, *, payment_id: str, organization_id: str
+    ) -> tuple[Payment, str, str | None, str | None, str | None] | None:
+        result = await db.execute(
+            select(Payment, Invoice.invoice_number, Company.name, Contact.name, Contact.email)
+            .join(Invoice, Invoice.id == Payment.invoice_id)
+            .outerjoin(Company, Company.id == Invoice.company_id)
+            .outerjoin(Contact, Contact.id == Invoice.contact_id)
+            .where(
+                Payment.id == payment_id,
+                Payment.organization_id == organization_id,
+                Invoice.organization_id == organization_id,
+            )
+        )
+        return result.first()
 
     async def lock_invoice(
         self, db: AsyncSession, *, invoice_id: str, organization_id: str

@@ -34,7 +34,8 @@ export const navigationSections: NavSection[] = [
       { title: 'Documents', href: '/documents', icon: 'FileText', permission: PERMISSIONS.DOCUMENTS.READ },
       { title: 'Products', href: '/products', icon: 'Package', permission: PERMISSIONS.PRODUCTS.READ },
       { title: 'Quotes', href: '/quotes', icon: 'FileSpreadsheet', permission: PERMISSIONS.QUOTES.READ },
-      { title: 'Invoices', href: '/invoices', icon: 'Receipt', permission: PERMISSIONS.INVOICES.READ }
+      { title: 'Invoices', href: '/invoices', icon: 'Receipt', permission: PERMISSIONS.INVOICES.READ },
+      { title: 'Payments', href: '/payments', icon: 'CreditCard', permission: PERMISSIONS.INVOICES.READ }
     ]
   },
   {
@@ -80,6 +81,7 @@ export const protectedRoutes: Record<string, PermissionKey> = {
   products: PERMISSIONS.PRODUCTS.READ,
   quotes: PERMISSIONS.QUOTES.READ,
   invoices: PERMISSIONS.INVOICES.READ,
+  payments: PERMISSIONS.INVOICES.READ,
   reports: PERMISSIONS.REPORTS.READ,
   calendar: PERMISSIONS.CALENDAR.READ,
   users: PERMISSIONS.USERS.READ,
