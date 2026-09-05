@@ -1,6 +1,7 @@
 'use client';
 
 import { ActionMenu } from '@/components/common/action-menu';
+import { DateTimePicker } from '@/components/common/date-picker';
 import { Button } from '@/components/ui/button';
 import { getErrorMessage } from '@/lib/utils';
 import React, { useState, useEffect } from 'react';
@@ -437,25 +438,25 @@ export default function CalendarPage() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                <label htmlFor="calendar-event-start" className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
                   Start Time
                 </label>
-                <input
-                  type="datetime-local"
+                <DateTimePicker
+                  id="calendar-event-start"
                   value={start}
-                  onChange={(e) => setStart(e.target.value)}
+                  onValueChange={setStart}
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                <label htmlFor="calendar-event-end" className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
                   End Time
                 </label>
-                <input
-                  type="datetime-local"
+                <DateTimePicker
+                  id="calendar-event-end"
                   value={end}
-                  onChange={(e) => setEnd(e.target.value)}
+                  onValueChange={setEnd}
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
                 />
               </div>

@@ -1,6 +1,7 @@
 ﻿'use client';
 
 import { ResponsiveSelect } from '@/components/common/responsive-select';
+import { DatePicker } from '@/components/common/date-picker';
 
 import { ActionMenu } from '@/components/common/action-menu';
 import { Button } from '@/components/ui/button';
@@ -544,13 +545,13 @@ export default function InvoicesPage() {
             )}
 
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+              <label htmlFor="invoice-due-date" className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
                 Payment Due Date
               </label>
-              <input
-                type="date"
+              <DatePicker
+                id="invoice-due-date"
                 value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
+                onValueChange={setDueDate}
                 className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
               />
             </div>

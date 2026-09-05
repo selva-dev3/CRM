@@ -1,6 +1,7 @@
 ﻿'use client';
 
 import { ResponsiveSelect } from '@/components/common/responsive-select';
+import { DatePicker } from '@/components/common/date-picker';
 
 import { ActionMenu } from '@/components/common/action-menu';
 import { getErrorMessage } from '@/lib/utils';
@@ -659,13 +660,13 @@ export default function TasksPage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+              <label htmlFor="task-form-due-date" className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
                 Due Date
               </label>
-              <input
-                type="date"
+              <DatePicker
+                id="task-form-due-date"
                 value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
+                onValueChange={setDueDate}
                 className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
               />
             </div>
