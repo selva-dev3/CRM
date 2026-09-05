@@ -668,6 +668,9 @@ class QuoteResponse(BaseModel):
     items: list[QuoteItemSchema] = Field(default_factory=list)
     currency: str | None = None
     delivery_status: str | None = None
+    delivery_id: str | None = None
+    provider_message_id: str | None = None
+    sent_at: str | None = None
     recipient_email: str | None = None
     pdf_available: bool = False
     expires_at: str | None = None
