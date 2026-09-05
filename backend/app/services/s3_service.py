@@ -87,6 +87,7 @@ class S3Service:
     ) -> str:
         """Uploads a file object to MinIO S3 bucket and returns the object key."""
         try:
+            self._ensure_bucket_exists()
             self.minio_client.put_object(
                 self.bucket_name,
                 object_name,
@@ -94,6 +95,7 @@ class S3Service:
                 self._stream_length(file_obj),
                 content_type=content_type or "application/octet-stream",
             )
+            self.minio_client.stat_object(self.bucket_name, object_name)
             return object_name
         except MinioException as exc:
             raise RuntimeError(f"Failed to upload object {object_name} to S3: {exc}") from exc

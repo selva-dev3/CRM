@@ -10,6 +10,7 @@ from pydantic import EmailStr, TypeAdapter, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, NotFoundError
+from app.core.logging import get_logger
 from app.models import User
 from app.models.deal import Deal
 from app.models.quote import Quote
@@ -28,6 +29,7 @@ from app.services.sales_totals import calculate_line, decimal_value
 EDITABLE_QUOTE_STATUSES = {"Draft", "Pending Approval"}
 DEFAULT_QUOTE_TERM_DAYS = 30
 _email_adapter = TypeAdapter(EmailStr)
+logger = get_logger(__name__)
 
 
 def quote_to_dict(quote: Quote) -> dict:
@@ -151,6 +153,12 @@ class QuoteService:
                 },
             )
             await db.commit()
+            logger.info(
+                "Quote approved and delivery queued organization_id=%s quote_id=%s delivery_id=%s",
+                organization_id,
+                quote.id,
+                quote.delivery_id,
+            )
             return quote_to_dict(quote)
         except Exception:
             await db.rollback()

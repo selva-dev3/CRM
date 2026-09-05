@@ -69,7 +69,6 @@ def test_ensure_bucket_exists_does_not_create_after_storage_errors(error: Except
 
 def test_upload_file_uses_minio_put_object():
     service = _service()
-    service._ensure_bucket_exists = Mock()
     stream = BytesIO(b"document")
 
     result = service.upload_file(stream, "documents/test.txt", "text/plain")
@@ -82,8 +81,10 @@ def test_upload_file_uses_minio_put_object():
         8,
         content_type="text/plain",
     )
-    service._ensure_bucket_exists.assert_not_called()
-    service.minio_client.bucket_exists.assert_not_called()
+    service.minio_client.bucket_exists.assert_called_once_with(service.bucket_name)
+    service.minio_client.stat_object.assert_called_once_with(
+        service.bucket_name, "documents/test.txt"
+    )
 
 
 def test_upload_file_preserves_default_content_type():
@@ -96,6 +97,14 @@ def test_upload_file_preserves_default_content_type():
     assert service.minio_client.put_object.call_args.kwargs["content_type"] == (
         "application/octet-stream"
     )
+
+
+def test_upload_file_fails_when_object_verification_fails():
+    service = _service()
+    service.minio_client.stat_object.side_effect = RuntimeError("object unavailable")
+
+    with pytest.raises(RuntimeError, match="object unavailable"):
+        service.upload_file(BytesIO(b"document"), "documents/test.txt", "text/plain")
 
 
 @pytest.mark.parametrize(

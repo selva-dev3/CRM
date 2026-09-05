@@ -79,7 +79,7 @@ services:
       - "${BACKEND_PORT:-8000}:8000"
     env_file:
       - ./backend/.env
-    environment:
+    environment: &backend-runtime-environment
       - ENVIRONMENT=development
       - REDIS_PORT=6379
       - CELERY_BROKER_URL=redis://redis:6379/0
@@ -89,6 +89,54 @@ services:
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-minioadmin}
       - AWS_S3_BUCKET=${AWS_S3_BUCKET:-crm-enterprise-bucket}
       - AWS_REGION=${AWS_REGION:-us-east-1}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      createbuckets:
+        condition: service_completed_successfully
+    volumes:
+      - ./backend:/app
+    networks:
+      - crm_network
+
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: crm_celery_worker
+    restart: unless-stopped
+    command: celery -A app.workers.celery_app:celery_app worker --loglevel=INFO
+    env_file:
+      - ./backend/.env
+    environment: *backend-runtime-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      createbuckets:
+        condition: service_completed_successfully
+    volumes:
+      - ./backend:/app
+    networks:
+      - crm_network
+
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: crm_celery_beat
+    restart: unless-stopped
+    command: celery -A app.workers.celery_app:celery_app beat --loglevel=INFO
+    env_file:
+      - ./backend/.env
+    environment: *backend-runtime-environment
     depends_on:
       postgres:
         condition: service_healthy

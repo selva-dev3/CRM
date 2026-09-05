@@ -116,6 +116,12 @@ class QuoteDeliveryService:
                 await db.commit()
                 return False
             quote_id, org_id, delivery_id = quote.id, quote.organization_id, quote.delivery_id
+            logger.info(
+                "Quote delivery claimed organization_id=%s quote_id=%s delivery_id=%s",
+                org_id,
+                quote_id,
+                delivery_id,
+            )
             try:
                 if quote.status != "Approved" or not quote.expires_at or quote.expires_at <= now:
                     raise ValueError("Quote is no longer eligible for delivery")
@@ -181,6 +187,14 @@ class QuoteDeliveryService:
                     db, quote, state="Failed", failure_reason=str(exc)
                 )
                 await db.commit()
+                logger.warning(
+                    "Quote delivery failed before provider stage organization_id=%s quote_id=%s "
+                    "delivery_id=%s reason=%s",
+                    org_id,
+                    quote_id,
+                    delivery_id,
+                    str(exc),
+                )
                 return True
             await db.commit()
 
@@ -190,14 +204,49 @@ class QuoteDeliveryService:
         failure_reason = None
         email_started = False
         try:
+            logger.info(
+                "Quote PDF generation started organization_id=%s quote_id=%s delivery_id=%s",
+                org_id,
+                quote_id,
+                delivery_id,
+            )
             pdf = await asyncio.to_thread(render_quote_pdf, **document)
+            if not pdf.startswith(b"%PDF-") or b"%%EOF" not in pdf:
+                raise ValueError("Generated quote PDF failed signature validation")
+            logger.info(
+                "Quote PDF generated organization_id=%s quote_id=%s delivery_id=%s bytes=%s",
+                org_id,
+                quote_id,
+                delivery_id,
+                len(pdf),
+            )
+            logger.info(
+                "Quote PDF upload started organization_id=%s quote_id=%s delivery_id=%s",
+                org_id,
+                quote_id,
+                delivery_id,
+            )
             pdf_key = await asyncio.to_thread(
                 s3_service.upload_file,
                 BytesIO(pdf),
                 f"{org_id}/quotes/{quote_id}/{delivery_id}.pdf",
                 "application/pdf",
             )
+            logger.info(
+                "Quote PDF uploaded organization_id=%s quote_id=%s delivery_id=%s",
+                org_id,
+                quote_id,
+                delivery_id,
+            )
             pdf_url = await asyncio.to_thread(s3_service.generate_presigned_url, pdf_key, 604800)
+            if not pdf_url:
+                raise ValueError("Generated quote PDF URL is empty")
+            logger.info(
+                "Quote PDF presigned URL generated organization_id=%s quote_id=%s delivery_id=%s",
+                org_id,
+                quote_id,
+                delivery_id,
+            )
             link = f"{settings.FRONTEND_URL.rstrip('/')}/public/quote#{acceptance_token(quote_id, delivery_id)}"
             body = (
                 f"<p>Hello {escape(document['customer']['name'])},</p>"
@@ -208,6 +257,12 @@ class QuoteDeliveryService:
                 f'<p><a href="{escape(pdf_url, quote=True)}">Download quote PDF (link valid for 7 days)</a></p>'
             )
             email_started = True
+            logger.info(
+                "Quote Brevo submission started organization_id=%s quote_id=%s delivery_id=%s",
+                org_id,
+                quote_id,
+                delivery_id,
+            )
             message_id = await asyncio.to_thread(
                 send_tracked_email,
                 to_email=recipient,
@@ -216,6 +271,12 @@ class QuoteDeliveryService:
                 idempotency_key=delivery_id,
             )
             state = "Sent"
+            logger.info(
+                "Quote delivery provider accepted organization_id=%s quote_id=%s delivery_id=%s",
+                org_id,
+                quote_id,
+                delivery_id,
+            )
         except EmailDeliveryUnknownError as exc:
             state = "Unknown"
             failure_reason = str(exc)
@@ -226,7 +287,11 @@ class QuoteDeliveryService:
             state = "Unknown" if email_started else "Failed"
             failure_reason = type(exc).__name__
             logger.warning(
-                "Quote delivery failed quote_id=%s error_type=%s", quote_id, type(exc).__name__
+                "Quote delivery failed organization_id=%s quote_id=%s delivery_id=%s error_type=%s",
+                org_id,
+                quote_id,
+                delivery_id,
+                type(exc).__name__,
             )
 
         async with session_factory() as db:
@@ -244,6 +309,13 @@ class QuoteDeliveryService:
                     failure_reason=failure_reason,
                 )
                 await db.commit()
+                logger.info(
+                    "Quote delivery finalized organization_id=%s quote_id=%s delivery_id=%s state=%s",
+                    org_id,
+                    quote_id,
+                    delivery_id,
+                    state,
+                )
         return True
 
 
