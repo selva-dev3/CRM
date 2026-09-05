@@ -25,6 +25,7 @@ from app.api.v1.routers import (
     products,
     projects,
     public_quotes,
+    quote_webhooks,
     quotes,
     reports,
     roles,
@@ -37,6 +38,7 @@ from app.api.v1.routers import (
 api_router = APIRouter()
 api_router.include_router(public_quotes.router, prefix="/public/quotes", tags=["Customer Quotes"])
 api_router.include_router(payment_webhooks.router, prefix="/payments/webhooks", tags=["Payment Webhooks"])
+api_router.include_router(quote_webhooks.router, prefix="/quotes/webhooks", tags=["Quote Webhooks"])
 api_router.include_router(
     payments.router,
     prefix="/payments",

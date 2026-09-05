@@ -9,9 +9,12 @@ from io import BytesIO
 from typing import Any
 from uuid import uuid4
 
+from pydantic import EmailStr, TypeAdapter, ValidationError
+
 from app.core.config import settings
 from app.core.errors import APIException, NotFoundError
 from app.core.logging import get_logger
+from app.models.quote_delivery import QuoteDeliveryAttempt
 from app.repositories.deal_repository import DealRepository
 from app.repositories.quote_repository import quote_repository
 from app.services.email_service import EmailDeliveryUnknownError, send_tracked_email
@@ -19,6 +22,7 @@ from app.services.quote_pdf_service import render_quote_pdf
 from app.services.s3_service import s3_service
 
 logger = get_logger(__name__)
+_email_adapter = TypeAdapter(EmailStr)
 
 
 def acceptance_token(quote_id: str, delivery_id: str) -> str:
@@ -64,7 +68,15 @@ class QuoteDeliveryService:
             )
             if not company or not contact or contact.company_id != company.id:
                 raise APIException(message="Quote customer is invalid")
-            if recipient_email.strip().casefold() != contact.email.strip().casefold():
+            try:
+                contact_email = str(_email_adapter.validate_python(contact.email))
+            except ValidationError as exc:
+                raise APIException(
+                    message="The linked customer contact has an invalid email address",
+                    code="INVALID_CONTACT_EMAIL",
+                    status_code=422,
+                ) from exc
+            if recipient_email.strip().casefold() != contact_email.casefold():
                 raise APIException(message="Send the quote only to its customer contact")
             delivery_id = str(uuid4())
             token = acceptance_token(quote.id, delivery_id)
@@ -72,8 +84,18 @@ class QuoteDeliveryService:
                 db,
                 quote,
                 delivery_id=delivery_id,
-                recipient_email=contact.email,
+                recipient_email=contact_email,
                 token_hash=hashlib.sha256(token.encode()).hexdigest(),
+            )
+            db.add(
+                QuoteDeliveryAttempt(
+                    quote_id=quote.id,
+                    organization_id=organization_id,
+                    delivery_id=delivery_id,
+                    recipient_email=contact_email,
+                    delivery_status="Pending",
+                    attempt_number=(quote.delivery_attempts or 0) + 1,
+                )
             )
             await db.commit()
             return {
@@ -154,8 +176,10 @@ class QuoteDeliveryService:
                     ],
                 }
                 recipient = quote.recipient_email
-            except ValueError:
-                await quote_repository.delivery_result(db, quote, state="Failed")
+            except ValueError as exc:
+                await quote_repository.delivery_result(
+                    db, quote, state="Failed", failure_reason=str(exc)
+                )
                 await db.commit()
                 return True
             await db.commit()
@@ -163,6 +187,7 @@ class QuoteDeliveryService:
         pdf_key = None
         message_id = None
         state = "Failed"
+        failure_reason = None
         email_started = False
         try:
             pdf = await asyncio.to_thread(render_quote_pdf, **document)
@@ -191,12 +216,15 @@ class QuoteDeliveryService:
                 idempotency_key=delivery_id,
             )
             state = "Sent"
-        except EmailDeliveryUnknownError:
+        except EmailDeliveryUnknownError as exc:
             state = "Unknown"
-        except ValueError:
+            failure_reason = str(exc)
+        except ValueError as exc:
             state = "Failed"
+            failure_reason = str(exc)
         except Exception as exc:
             state = "Unknown" if email_started else "Failed"
+            failure_reason = type(exc).__name__
             logger.warning(
                 "Quote delivery failed quote_id=%s error_type=%s", quote_id, type(exc).__name__
             )
@@ -213,6 +241,7 @@ class QuoteDeliveryService:
                     pdf_key=pdf_key,
                     message_id=message_id,
                     at=datetime.now(UTC),
+                    failure_reason=failure_reason,
                 )
                 await db.commit()
         return True

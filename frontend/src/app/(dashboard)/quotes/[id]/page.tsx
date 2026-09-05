@@ -158,7 +158,7 @@ export default function QuoteDetailPage() {
         </div>
 
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-          {hasPermission('quotes:send') && s === 'Approved' && quote.delivery_status === 'Failed' && <Button
+          {hasPermission('quotes:send') && s === 'Approved' && ['Failed', 'Bounced'].includes(quote.delivery_status || '') && <Button
             disabled={['Pending', 'Processing', 'Unknown'].includes(quote.delivery_status || '')}
             onClick={() => { setRecipientEmailInput(quote.recipient_email || ''); setIsSendEmailModalOpen(true); }}
             className="w-full gap-2 text-xs font-semibold sm:w-auto"
@@ -210,9 +210,19 @@ export default function QuoteDetailPage() {
 
       {/* Toast Feedback */}
       {quote.delivery_status && <p role="status" className="rounded border p-3 text-sm">
-        Delivery: {quote.delivery_status}. {quote.delivery_status === 'Unknown'
+        Delivery: {quote.delivery_status}. {quote.delivery_status === 'Pending'
+          ? 'Customer email delivery is queued.'
+          : quote.delivery_status === 'Processing'
+          ? 'The quote is being prepared and sent to the customer.'
+          : quote.delivery_status === 'Sent'
+          ? 'The email provider accepted the quote email; inbox delivery is not confirmed.'
+          : quote.delivery_status === 'Delivered'
+          ? 'The email provider confirmed delivery to the customer.'
+          : quote.delivery_status === 'Unknown'
           ? 'The provider outcome must be reconciled before another send.'
-          : 'Sent means accepted by the email provider, not confirmed inbox delivery.'}
+          : quote.delivery_status === 'Failed' || quote.delivery_status === 'Bounced'
+          ? 'Quote email delivery failed. Retry is available when it is safe.'
+          : 'Delivery status is being processed.'}
       </p>}
       {successMessage && (
         <div className="flex items-center justify-between p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl shadow-sm">

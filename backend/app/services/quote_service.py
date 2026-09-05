@@ -6,12 +6,14 @@ from decimal import Decimal
 from uuid import uuid4
 
 from fastapi import status
+from pydantic import EmailStr, TypeAdapter, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, NotFoundError
 from app.models import User
 from app.models.deal import Deal
 from app.models.quote import Quote
+from app.models.quote_delivery import QuoteDeliveryAttempt
 from app.repositories.deal_repository import DealRepository
 from app.repositories.invoice_repository import invoice_repository
 from app.repositories.notification_repository import NotificationRepository
@@ -25,6 +27,7 @@ from app.services.sales_totals import calculate_line, decimal_value
 
 EDITABLE_QUOTE_STATUSES = {"Draft", "Pending Approval"}
 DEFAULT_QUOTE_TERM_DAYS = 30
+_email_adapter = TypeAdapter(EmailStr)
 
 
 def quote_to_dict(quote: Quote) -> dict:
@@ -97,6 +100,14 @@ class QuoteService:
             )
             if not company or not contact or contact.company_id != company.id or not contact.email:
                 raise APIException(message="A valid customer and contact email are required")
+            try:
+                contact_email = str(_email_adapter.validate_python(contact.email))
+            except ValidationError as exc:
+                raise APIException(
+                    message="The linked customer contact has an invalid email address",
+                    code="INVALID_CONTACT_EMAIL",
+                    status_code=422,
+                ) from exc
             if not already_approved:
                 now = datetime.now(UTC)
                 await self.repository.approve(
@@ -109,8 +120,18 @@ class QuoteService:
                     db,
                     quote,
                     delivery_id=delivery_id,
-                    recipient_email=contact.email,
+                    recipient_email=contact_email,
                     token_hash=hashlib.sha256(token.encode()).hexdigest(),
+                )
+                db.add(
+                    QuoteDeliveryAttempt(
+                        quote_id=quote.id,
+                        organization_id=organization_id,
+                        delivery_id=delivery_id,
+                        recipient_email=contact_email,
+                        delivery_status="Pending",
+                        attempt_number=(quote.delivery_attempts or 0) + 1,
+                    )
                 )
             deal = await self.deal_repository.get_by_id_scoped(
                 db, deal_id=quote.deal_id, organization_id=organization_id

@@ -12,6 +12,7 @@ from app.models.audit import AuditLog
 from app.models.deal import DealActivity
 from app.models.organization import Organization
 from app.models.quote import QuoteItem
+from app.models.quote_delivery import QuoteDeliveryAttempt
 from app.services.quote_state import assert_quote_transition
 
 
@@ -205,6 +206,14 @@ class QuoteRepository:
             quote.delivery_status = "Processing"
             quote.delivery_claimed_at = now
             quote.delivery_attempts += 1
+            attempt = await db.scalar(
+                select(QuoteDeliveryAttempt).where(
+                    QuoteDeliveryAttempt.delivery_id == quote.delivery_id
+                )
+            )
+            if attempt:
+                attempt.delivery_status = "Processing"
+                attempt.processing_at = now
         return quote
 
     async def delivery_result(
@@ -216,6 +225,7 @@ class QuoteRepository:
         pdf_key: str | None = None,
         message_id: str | None = None,
         at: datetime | None = None,
+        failure_reason: str | None = None,
     ) -> None:
         quote.delivery_status = state
         if pdf_key:
@@ -237,6 +247,19 @@ class QuoteRepository:
                     organization_id=quote.organization_id, action="quote.sent", details=quote.id
                 )
             )
+        attempt = await db.scalar(
+            select(QuoteDeliveryAttempt).where(
+                QuoteDeliveryAttempt.delivery_id == quote.delivery_id
+            )
+        )
+        if attempt:
+            attempt.delivery_status = state
+            if message_id:
+                attempt.provider_message_id = message_id
+                attempt.submitted_at = at
+            if state in {"Failed", "Unknown"}:
+                attempt.failed_at = at
+                attempt.failure_reason = failure_reason
 
     async def expire_delivery_claims(self, db: AsyncSession, now: datetime) -> None:
         result = await db.execute(

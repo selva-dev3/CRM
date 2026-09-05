@@ -54,6 +54,7 @@ from app.models.payment import Payment
 from app.models.product import Product, ProductCategory
 from app.models.project import Project
 from app.models.quote import Quote, QuoteItem
+from app.models.quote_delivery import QuoteDeliveryAttempt
 from app.models.rbac import Permission, Role, RolePermission, UserRole
 from app.models.report import CustomReport, ReportExport, ScheduledReport
 from app.models.system import (
@@ -129,6 +130,7 @@ __all__ = [
     "Product",
     "Quote",
     "QuoteItem",
+    "QuoteDeliveryAttempt",
     "Invoice",
     "InvoiceItem",
     "Notification",
