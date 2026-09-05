@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.errors import APIException, ForbiddenError
-from app.core.permissions import UserRole, check_permission
+from app.core.permissions import UserRole, check_permission, is_super_admin_user
 from app.core.security import ALGORITHM
 from app.db.session import get_db
 from app.models import Organization, User, UserSession
@@ -167,3 +167,17 @@ def require_permission(permission: str):
         return current_user
 
     return permission_dependency
+
+
+def require_global_super_admin():
+    """Require the platform-level super-admin role for global RBAC mutations."""
+
+    async def super_admin_dependency(
+        current_user: User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ) -> User:
+        if not await is_super_admin_user(db, current_user):
+            raise ForbiddenError(message="Only global super_admin users may perform this action")
+        return current_user
+
+    return super_admin_dependency

@@ -143,7 +143,7 @@ async def test_create_role_with_permissions(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_create_permission_fallback_on_error():
+async def test_create_permission_reports_database_error():
     repo: Any = RoleRepository()
     repo.create_permission = AsyncMock(return_value=None)
     service = RoleService(repository=repo)
@@ -154,10 +154,12 @@ async def test_create_permission_fallback_on_error():
 
     db.commit = AsyncMock(side_effect=commit_fail)
 
-    result = await service.create_permission(db, PermissionCreate(key="x:y", name="X Y"))
+    with pytest.raises(APIException) as exc_info:
+        await service.create_permission(db, PermissionCreate(key="x:y", name="X Y"))
 
-    assert result["key"] == "x:y"
-    assert result["id"].startswith("perm-")
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.message == "Failed to create permission"
+    db.rollback.assert_awaited_once()
 
 
 @pytest.mark.asyncio
