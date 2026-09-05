@@ -163,14 +163,14 @@ export async function getDealProductsApi(id: string): Promise<DealProductItem[]>
   }
 }
 
-export async function addDealProductApi(payload: { id: string; product_id: string; quantity?: number; unit_price?: number; custom_name?: string }): Promise<DealProductItem> {
+export async function addDealProductApi(payload: { id: string; product_id: string; quantity?: number; unit_price?: number; custom_name?: string }): Promise<ActionResponse> {
   const query = new URLSearchParams({
     product_id: payload.product_id,
     quantity: String(payload.quantity || 1),
   });
   if (payload.unit_price !== undefined) query.append('unit_price', String(payload.unit_price));
   if (payload.custom_name) query.append('custom_name', payload.custom_name);
-  return apiClient.post<DealProductItem>(`/deals/${payload.id}/products?${query.toString()}`);
+  return apiClient.post<ActionResponse>(`/deals/${payload.id}/products?${query.toString()}`);
 }
 
 export async function removeDealProductApi(payload: { id: string; product_id: string }): Promise<ActionResponse> {
