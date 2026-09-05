@@ -12,6 +12,7 @@ from app.schemas.crm_schemas import (
     MessageResponse,
     ProductBase,
 )
+from app.services.org_service import organization_service
 
 router = APIRouter()
 
@@ -30,7 +31,8 @@ async def list_products(
     current_user: User = Depends(get_current_user),
 ):
     try:
-        stmt = select(Product).where(Product.organization_id == current_user.organization_id)
+        organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+        stmt = select(Product).where(Product.organization_id == organization_id)
         if search and search.strip():
             stmt = stmt.where(
                 (Product.name.ilike(f"%{search.strip()}%"))
