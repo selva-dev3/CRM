@@ -27,6 +27,8 @@ def render_quote_pdf(*, organization: dict, customer: dict, quote: dict, items: 
         paragraph(f"Quote: {quote['quote_number']}", "Heading2"),
         paragraph(f"Currency: {quote['currency']}"),
         paragraph(f"Valid until: {quote.get('expires_at') or 'Awaiting approval'}"),
+        paragraph(f"Payment terms: {quote.get('payment_terms') or 'Not specified'}"),
+        paragraph(f"Due date: {quote.get('due_date') or 'Not specified'}"),
         Spacer(1, 5 * mm), paragraph("Prepared for", "Heading3"),
         paragraph(customer["company"]), paragraph(customer["name"]), paragraph(customer["email"]),
         Spacer(1, 6 * mm)]

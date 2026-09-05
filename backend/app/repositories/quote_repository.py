@@ -12,6 +12,7 @@ from app.models.audit import AuditLog
 from app.models.deal import DealActivity
 from app.models.organization import Organization
 from app.models.quote import QuoteItem
+from app.services.quote_state import assert_quote_transition
 
 
 class QuoteRepository:
@@ -115,6 +116,7 @@ class QuoteRepository:
     async def approve(
         self, db: AsyncSession, quote: Quote, *, actor_id: str, at, expires_at
     ) -> None:
+        assert_quote_transition(quote.status, "Approved")
         quote.status = "Approved"
         quote.approved_at = at
         quote.approved_by = actor_id
@@ -139,6 +141,7 @@ class QuoteRepository:
     async def accept_public(
         self, db: AsyncSession, quote: Quote, *, customer_email: str, at
     ) -> None:
+        assert_quote_transition(quote.status, "Accepted")
         quote.status = "Accepted"
         quote.accepted_at = at
         quote.accepted_by = customer_email
@@ -158,6 +161,7 @@ class QuoteRepository:
     async def reject_public(
         self, db: AsyncSession, quote: Quote, *, reason: str | None = None
     ) -> None:
+        assert_quote_transition(quote.status, "Rejected")
         quote.status = "Rejected"
         quote.rejected_at = datetime.now(UTC)
         quote.rejection_reason = reason
@@ -219,6 +223,7 @@ class QuoteRepository:
         if message_id:
             quote.provider_message_id = message_id
             quote.sent_at = at
+            assert_quote_transition(quote.status, "Sent")
             quote.status = "Sent"
             if quote.deal_id:
                 db.add(

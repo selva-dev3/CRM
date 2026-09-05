@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AuditLog, Company, Contact, Deal, DealActivity, Invoice, Payment
 from app.repositories.notification_repository import NotificationRepository
+from app.services.invoice_state import assert_invoice_transition
 
 
 class PaymentRepository:
@@ -141,6 +142,7 @@ class PaymentRepository:
             receipt_delivery_status="Pending",
         )
         db.add(payment)
+        assert_invoice_transition(invoice.status, "Paid")
         invoice.status = "Paid"
         invoice.paid_amount = invoice.amount
         if invoice.deal_id:

@@ -44,6 +44,8 @@ class Quote(Base):
     rejection_reason: Mapped[str | None] = mapped_column(String(500))
     accepted_by: Mapped[str | None] = mapped_column(String(255))
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    payment_terms: Mapped[str | None] = mapped_column(String(100))
+    due_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     public_token_hash: Mapped[str | None] = mapped_column(String(64), unique=True)
     delivery_id: Mapped[str | None] = mapped_column(String(36))
     delivery_status: Mapped[str | None] = mapped_column(String(30), index=True)

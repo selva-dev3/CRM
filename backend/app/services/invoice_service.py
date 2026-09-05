@@ -16,6 +16,7 @@ from app.repositories.deal_repository import DealRepository
 from app.repositories.invoice_repository import InvoiceRepository
 from app.repositories.notification_repository import NotificationRepository
 from app.repositories.quote_repository import QuoteRepository
+from app.services.invoice_state import assert_invoice_transition
 from app.services.notification_service import notification_service
 from app.services.org_service import organization_service
 from app.services.sales_totals import calculate_line, decimal_value
@@ -187,7 +188,7 @@ class InvoiceService:
                 "tax_total": sum((line.tax for line in totals), Decimal(0)),
                 "paid_amount": 0,
                 "status": INVOICE_STATUS_PENDING,
-                "due_date": now + timedelta(days=DEFAULT_PAYMENT_TERM_DAYS),
+                "due_date": quote.due_date or (now + timedelta(days=DEFAULT_PAYMENT_TERM_DAYS)),
                 "billing_snapshot": {
                     "company": company.name,
                     "contact": contact.name,
@@ -540,11 +541,7 @@ class InvoiceService:
         if amount is not None:
             invoice.amount = decimal_value(amount)
         if status is not None:
-            if status not in INVOICE_STATUSES:
-                raise APIException(
-                    message=f"Invalid invoice status '{status}'.",
-                    code="INVALID_INVOICE_STATUS",
-                )
+            assert_invoice_transition(invoice.status, status)
             invoice.status = status
         if due_date is not None:
             invoice.due_date = due_date

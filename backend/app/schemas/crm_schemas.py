@@ -637,6 +637,8 @@ class QuoteBase(BaseModel):
     quote_number: str
     total_amount: float
     status: str = "Draft"
+    payment_terms: str | None = None
+    due_date: str | None = None
 
 
 class QuoteItemSchema(BaseModel):
@@ -646,6 +648,9 @@ class QuoteItemSchema(BaseModel):
     product_name: str | None = None
     discount_percent: float = 0
     tax_percent: float = 0
+    subtotal: float | None = None
+    discount_total: float | None = None
+    tax_total: float | None = None
     total: float | None = None
 
 
@@ -667,6 +672,11 @@ class QuoteResponse(BaseModel):
     recipient_email: str | None = None
     pdf_available: bool = False
     expires_at: str | None = None
+    due_date: str | None = None
+    payment_terms: str | None = None
+    company_name: str | None = None
+    contact_name: str | None = None
+    contact_email: str | None = None
     rejection_reason: str | None = None
     invoice_id: str | None = None
     invoice_number: str | None = None
