@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
+from app.core.errors import APIException
 from app.db.session import get_db
 from app.models import User
 from app.schemas.crm_schemas import (
@@ -200,8 +201,9 @@ async def get_contact_deals(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    await contact_service.get_contact(db, contact_id, organization_id=organization_id)
-    return []
+    return await contact_service.list_contact_deals(
+        db, contact_id, organization_id=organization_id
+    )
 
 
 @router.get(
@@ -216,7 +218,11 @@ async def get_contact_activities(
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     await contact_service.get_contact(db, contact_id, organization_id=organization_id)
-    return []
+    raise APIException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        code="CONTACT_ACTIVITY_RELATION_UNAVAILABLE",
+        message="Contact activities are not available",
+    )
 
 
 @router.post(
@@ -264,6 +270,8 @@ async def get_contact_notes(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    await contact_service.get_contact(db, contact_id, organization_id=organization_id)
     return await note_service.list_for_entity(
         db,
         entity_type="contact",
@@ -286,6 +294,8 @@ async def add_contact_note(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    await contact_service.get_contact(db, contact_id, organization_id=organization_id)
     note_content = content
     if not note_content and isinstance(payload, dict):
         note_content = payload.get("content")
@@ -313,7 +323,11 @@ async def get_contact_emails(
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     await contact_service.get_contact(db, contact_id, organization_id=organization_id)
-    return []
+    raise APIException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        code="CONTACT_EMAIL_RELATION_UNAVAILABLE",
+        message="Contact email history is not available because emails are not linked to CRM entities",
+    )
 
 
 @router.get(
@@ -328,5 +342,6 @@ async def get_contact_calls(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    await contact_service.get_contact(db, contact_id, organization_id=organization_id)
-    return []
+    return await contact_service.list_contact_calls(
+        db, contact_id, organization_id=organization_id
+    )

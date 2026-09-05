@@ -42,6 +42,32 @@ class DealRepository:
         )
         return list(result.scalars().all())
 
+    async def list_by_contact(
+        self, db: AsyncSession, *, contact_id: str, organization_id: str
+    ) -> builtins.list[Deal]:
+        result = await db.execute(
+            select(Deal)
+            .where(
+                Deal.contact_id == contact_id,
+                Deal.organization_id == organization_id,
+            )
+            .order_by(Deal.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def list_by_company(
+        self, db: AsyncSession, *, company_id: str, organization_id: str
+    ) -> builtins.list[Deal]:
+        result = await db.execute(
+            select(Deal)
+            .where(
+                Deal.company_id == company_id,
+                Deal.organization_id == organization_id,
+            )
+            .order_by(Deal.created_at.desc())
+        )
+        return list(result.scalars().all())
+
     async def get_by_id_scoped(
         self, db: AsyncSession, *, deal_id: str, organization_id: str, lock: bool = False
     ) -> Deal | None:

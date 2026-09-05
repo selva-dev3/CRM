@@ -316,6 +316,19 @@ class QuoteRepository:
         )
         return list(result.scalars().all())
 
+    async def list_by_company(
+        self, db: AsyncSession, *, company_id: str, organization_id: str
+    ) -> list[Quote]:
+        result = await db.execute(
+            select(Quote)
+            .where(
+                Quote.company_id == company_id,
+                Quote.organization_id == organization_id,
+            )
+            .order_by(Quote.created_at.desc())
+        )
+        return list(result.scalars().all())
+
     async def create(self, db: AsyncSession, *, data: dict) -> Quote:
         quote = Quote(**data)
         db.add(quote)

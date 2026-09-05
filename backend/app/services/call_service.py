@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import APIException, NotFoundError
 from app.models import CallLog, User
 from app.repositories.call_repository import CallRepository
+from app.repositories.contact_repository import ContactRepository
 from app.schemas.crm_schemas import CallLogBase
 from app.services.ai_domain_service import AIDomainService, ai_domain_service
 from app.services.org_service import organization_service
@@ -16,9 +17,9 @@ from app.services.s3_service import s3_service
 def call_to_dict(call: CallLog) -> dict:
     return {
         "id": call.id,
-        "contact_id": call.contact_id or "c-101",
+        "contact_id": call.contact_id,
         "call_type": call.call_type or "Outbound",
-        "duration_seconds": call.duration_seconds or 120,
+        "duration_seconds": call.duration_seconds or 0,
         "notes": call.notes,
         "timestamp": str(call.timestamp),
     }
@@ -33,6 +34,7 @@ class CallService:
         ai_service_instance: AIDomainService | None = None,
     ) -> None:
         self.repository = repository or CallRepository()
+        self.contact_repository = ContactRepository()
         self.ai_service = ai_service_instance or ai_domain_service
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
@@ -74,9 +76,20 @@ class CallService:
 
     async def log_call(self, db: AsyncSession, payload: CallLogBase, current_user: User) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        if not payload.contact_id:
+            raise APIException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                code="CONTACT_REQUIRED",
+                message="A valid contact is required to log a call",
+            )
+        contact = await self.contact_repository.get_by_id_scoped(
+            db, contact_id=payload.contact_id, organization_id=org_id
+        )
+        if not contact:
+            raise NotFoundError(message=f"Contact '{payload.contact_id}' not found")
         data = {
             "organization_id": org_id,
-            "contact_id": payload.contact_id or "c-101",
+            "contact_id": contact.id,
             "call_type": payload.call_type or "Outbound",
             "duration_seconds": payload.duration_seconds or 0,
             "notes": payload.notes,
@@ -124,7 +137,11 @@ class CallService:
                 s3_service.generate_presigned_url, f"recordings/{call_id}.mp3"
             )
         except Exception:
-            recording_url = f"https://api.crm.com/audio/recordings/{call_id}.mp3"
+            raise APIException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                code="CALL_RECORDING_UNAVAILABLE",
+                message="Call recording storage is currently unavailable",
+            )
         return {
             "call_id": call_id,
             "recording_url": recording_url,

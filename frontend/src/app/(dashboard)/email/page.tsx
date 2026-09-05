@@ -272,7 +272,7 @@ export default function EmailPage() {
           </div>
           <div>
             <div className="font-bold text-slate-900 text-xs">
-              {item.from_email || (item.to && item.to[0]) || 'client@example.com'}
+              {item.from_email || (item.to && item.to[0]) || 'Unknown sender'}
             </div>
             <div className="text-[11px] text-slate-400 font-mono">To: {item.to ? item.to.join(', ') : 'Me'}</div>
           </div>

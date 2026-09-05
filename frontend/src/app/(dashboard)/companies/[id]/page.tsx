@@ -90,43 +90,43 @@ export default function CompanyDetailsPage() {
   } = useEntityCustomFieldsQuery('Company');
 
   // Sub-resource queries
-  const { data: contacts = [] } = useQuery({
+  const { data: contacts = [], isError: isContactsError } = useQuery({
     queryKey: ['company-contacts', companyId],
     queryFn: () => getCompanyContactsApi(companyId),
     enabled: !!companyId,
   });
 
-  const { data: deals = [] } = useQuery({
+  const { data: deals = [], isError: isDealsError } = useQuery({
     queryKey: ['company-deals', companyId],
     queryFn: () => getCompanyDealsApi(companyId),
     enabled: !!companyId,
   });
 
-  const { data: notes = [], refetch: refetchNotes } = useQuery({
+  const { data: notes = [], isError: isNotesError, refetch: refetchNotes } = useQuery({
     queryKey: ['company-notes', companyId],
     queryFn: () => getCompanyNotesApi(companyId),
     enabled: !!companyId,
   });
 
-  const { data: quotes = [] } = useQuery({
+  const { data: quotes = [], isError: isQuotesError } = useQuery({
     queryKey: ['company-quotes', companyId],
     queryFn: () => getCompanyQuotesApi(companyId),
     enabled: !!companyId,
   });
 
-  const { data: invoices = [] } = useQuery({
+  const { data: invoices = [], isError: isInvoicesError } = useQuery({
     queryKey: ['company-invoices', companyId],
     queryFn: () => getCompanyInvoicesApi(companyId),
     enabled: !!companyId,
   });
 
-  const { data: documents = [] } = useQuery({
+  const { data: documents = [], isError: isDocumentsError } = useQuery({
     queryKey: ['company-documents', companyId],
     queryFn: () => getCompanyDocumentsApi(companyId),
     enabled: !!companyId,
   });
 
-  const { data: hierarchy } = useQuery({
+  const { data: hierarchy, isError: isHierarchyError } = useQuery({
     queryKey: ['company-hierarchy', companyId],
     queryFn: () => getCompanyHierarchyApi(companyId),
     enabled: !!companyId,
@@ -135,6 +135,14 @@ export default function CompanyDetailsPage() {
   // Mutations
   const updateCompanyMutation = useUpdateCompanyMutation();
   const deleteCompanyMutation = useDeleteCompanyMutation();
+  const hasRelationshipError =
+    isContactsError ||
+    isDealsError ||
+    isNotesError ||
+    isQuotesError ||
+    isInvoicesError ||
+    isDocumentsError ||
+    isHierarchyError;
 
   const addNoteMutation = useMutation({
     mutationFn: (content: string) => addCompanyNoteApi({ id: companyId, content }),
@@ -339,6 +347,12 @@ export default function CompanyDetailsPage() {
         ]}
         listClassName="border-b border-slate-200"
       />
+
+      {hasRelationshipError && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs font-medium text-amber-900">
+          Some related company records could not be loaded. Retry the page to try again.
+        </div>
+      )}
 
       {/* TAB CONTENT: Contacts */}
       {activeTab === 'contacts' && (

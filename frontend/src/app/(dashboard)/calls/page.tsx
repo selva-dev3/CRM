@@ -115,9 +115,13 @@ export default function CallsPage() {
 
   const handleLogCallSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!contactId.trim()) {
+      setErrorMessage('A Contact ID is required to log a call.');
+      return;
+    }
     const duration = parseInt(durationMinutes || '0', 10) * 60;
     const payload: CallLogBasePayload = {
-      contact_id: contactId.trim() || 'Contact-101',
+      contact_id: contactId.trim(),
       call_type: callType,
       duration_seconds: duration,
       notes: notes.trim() || undefined,
@@ -136,10 +140,14 @@ export default function CallsPage() {
   const handleTriggerDialSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!phoneNumber.trim()) return;
+    if (!contactId.trim()) {
+      setErrorMessage('A Contact ID is required to initiate a call.');
+      return;
+    }
     try {
       const res = await triggerDialMutation.mutateAsync({
         phone_number: phoneNumber.trim(),
-        contact_id: contactId.trim() || 'c-101',
+        contact_id: contactId.trim(),
       });
       setSuccessMessage(`Click-to-dial initiated (Call SID: ${res.call_sid}) to ${res.to}`);
       setIsDialModalOpen(false);
@@ -151,9 +159,13 @@ export default function CallsPage() {
 
   const handleVoicemailDropSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!voicemailContactId.trim()) {
+      setErrorMessage('A Contact ID is required to log a voicemail drop.');
+      return;
+    }
     try {
       await voicemailDropMutation.mutateAsync({
-        contact_id: voicemailContactId.trim() || 'c-101',
+        contact_id: voicemailContactId.trim(),
         voicemail_template_id: voicemailTemplateId,
       });
       setSuccessMessage(`Voicemail drop executed for contact.`);

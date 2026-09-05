@@ -101,6 +101,19 @@ class InvoiceRepository:
         result = await db.execute(stmt)
         return list(result.scalars().all())
 
+    async def list_by_company(
+        self, db: AsyncSession, *, company_id: str, organization_id: str
+    ) -> list[Invoice]:
+        result = await db.execute(
+            select(Invoice)
+            .where(
+                Invoice.company_id == company_id,
+                Invoice.organization_id == organization_id,
+            )
+            .order_by(Invoice.created_at.desc())
+        )
+        return list(result.scalars().all())
+
     async def get_by_deal(self, db: AsyncSession, deal_id: str) -> Invoice | None:
         result = await db.execute(select(Invoice).where(Invoice.deal_id == deal_id))
         return result.scalars().first()
