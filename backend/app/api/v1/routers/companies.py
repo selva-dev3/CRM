@@ -283,6 +283,8 @@ async def get_company_notes(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    await company_service.get_company(db, company_id, organization_id=organization_id)
     return await note_service.list_for_entity(
         db, entity_type="company", entity_id=company_id, current_user=current_user
     )
@@ -301,6 +303,8 @@ async def add_company_note(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    await company_service.get_company(db, company_id, organization_id=organization_id)
     note_content = content
     if not note_content and isinstance(payload, dict):
         note_content = payload.get("content")

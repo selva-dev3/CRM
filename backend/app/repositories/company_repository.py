@@ -71,6 +71,22 @@ class CompanyRepository:
         )
         return list(result.scalars().all())
 
+    async def list_subsidiaries(
+        self, db: AsyncSession, *, parent_company_id: str, organization_id: str
+    ) -> list[Company]:
+        result = await db.execute(
+            select(Company)
+            .where(
+                Company.parent_company_id == parent_company_id,
+                Company.organization_id == organization_id,
+            )
+            .order_by(Company.name.asc())
+        )
+        return list(result.scalars().all())
+
+    async def set_parent(self, company: Company, parent_company_id: str | None) -> None:
+        company.parent_company_id = parent_company_id
+
     async def create(self, db: AsyncSession, *, data: dict) -> Company:
         company = Company(**data)
         db.add(company)

@@ -5,6 +5,8 @@ from app.core.errors import APIException, NotFoundError
 from app.models import User
 from app.models.contact import Contact
 from app.repositories.contact_repository import ContactRepository
+from app.repositories.call_repository import CallRepository
+from app.repositories.deal_repository import DealRepository
 from app.schemas.crm_schemas import ContactCreate, ContactUpdate, CustomFieldDefinition
 from app.services.custom_field_service import CustomFieldService, custom_field_service
 from app.services.notification_service import notification_service
@@ -39,6 +41,8 @@ class ContactService:
         custom_field_service_instance: CustomFieldService | None = None,
     ) -> None:
         self.repository = repository or ContactRepository()
+        self.deal_repository = DealRepository()
+        self.call_repository = CallRepository()
         self.custom_field_service = custom_field_service_instance or custom_field_service
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
@@ -295,6 +299,28 @@ class ContactService:
             db, company_id, organization_id=organization_id
         )
         return [contact_to_dict(c) for c in contacts]
+
+    async def list_contact_deals(
+        self, db: AsyncSession, contact_id: str, *, organization_id: str
+    ) -> list[dict]:
+        await self.require_contact(db, contact_id, organization_id=organization_id)
+        from app.services.deal_service import deal_to_dict
+
+        deals = await self.deal_repository.list_by_contact(
+            db, contact_id=contact_id, organization_id=organization_id
+        )
+        return [deal_to_dict(deal) for deal in deals]
+
+    async def list_contact_calls(
+        self, db: AsyncSession, contact_id: str, *, organization_id: str
+    ) -> list[dict]:
+        await self.require_contact(db, contact_id, organization_id=organization_id)
+        from app.services.call_service import call_to_dict
+
+        calls = await self.call_repository.list_by_contact(
+            db, contact_id=contact_id, organization_id=organization_id
+        )
+        return [call_to_dict(call) for call in calls]
 
 
 contact_service = ContactService()

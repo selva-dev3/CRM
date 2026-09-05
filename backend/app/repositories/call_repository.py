@@ -52,6 +52,19 @@ class CallRepository:
         )
         return list(result.scalars().all())
 
+    async def list_by_contact(
+        self, db: AsyncSession, *, contact_id: str, organization_id: str
+    ) -> builtins.list[CallLog]:
+        result = await db.execute(
+            select(CallLog)
+            .where(
+                CallLog.contact_id == contact_id,
+                CallLog.organization_id == organization_id,
+            )
+            .order_by(CallLog.timestamp.desc())
+        )
+        return list(result.scalars().all())
+
     async def create(self, db: AsyncSession, *, data: dict) -> CallLog:
         call = CallLog(**data)
         db.add(call)

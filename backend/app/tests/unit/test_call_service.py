@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import NotFoundError
 from app.models import CallLog, User
 from app.repositories.call_repository import CallRepository
+from app.repositories.contact_repository import ContactRepository
 from app.schemas.crm_schemas import CallLogBase
 from app.services.call_service import CallService
 
@@ -26,8 +27,15 @@ def _make_call(**overrides) -> CallLog:
     return CallLog(**defaults)
 
 
-def _service_with(repo: CallRepository, ai_service: Any | None = None) -> CallService:
-    return CallService(repository=repo, ai_service_instance=ai_service)
+def _service_with(
+    repo: CallRepository,
+    ai_service: Any | None = None,
+    contact_repository: ContactRepository | None = None,
+) -> CallService:
+    service = CallService(repository=repo, ai_service_instance=ai_service)
+    if contact_repository is not None:
+        service.contact_repository = contact_repository
+    return service
 
 
 def _user() -> User:
@@ -59,7 +67,9 @@ async def test_log_call_resolves_org_and_serializes(monkeypatch):
     call = _make_call()
     repo: Any = CallRepository()
     repo.create = AsyncMock(return_value=call)
-    service = _service_with(repo)
+    contact_repository: Any = ContactRepository()
+    contact_repository.get_by_id_scoped = AsyncMock(return_value=object())
+    service = _service_with(repo, contact_repository=contact_repository)
     db = AsyncMock(spec=AsyncSession)
 
     from app.services.call_service import organization_service
@@ -68,13 +78,33 @@ async def test_log_call_resolves_org_and_serializes(monkeypatch):
         organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
     )
 
-    payload = CallLogBase(call_type="Inbound", duration_seconds=90, notes="Call back")
+    payload = CallLogBase(
+        contact_id="c-101", call_type="Inbound", duration_seconds=90, notes="Call back"
+    )
     result = await service.log_call(db, payload, _user())
 
     assert result["id"] == "call-1"
     assert result["call_type"] == "Outbound"
     assert result["notes"] == "Discussed pricing"
     repo.create.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_log_call_rejects_unknown_contact():
+    repo: Any = CallRepository()
+    contact_repository: Any = ContactRepository()
+    contact_repository.get_by_id_scoped = AsyncMock(return_value=None)
+    service = _service_with(repo, contact_repository=contact_repository)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(NotFoundError):
+        await service.log_call(
+            db,
+            CallLogBase(contact_id="missing-contact", notes="Call back"),
+            _user(),
+        )
+
+    repo.create.assert_not_called()
 
 
 @pytest.mark.asyncio

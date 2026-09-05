@@ -76,8 +76,8 @@ export async function logCallApi(payload: CallLogBasePayload): Promise<CallLogIt
   return apiClient.post<CallLogItem>('/calls', payload);
 }
 
-export async function triggerOutboundCallApi(phone_number: string, contact_id?: string): Promise<OutboundCallResponse> {
-  return apiClient.post<OutboundCallResponse>(`/calls/trigger-outbound?phone_number=${encodeURIComponent(phone_number)}&contact_id=${encodeURIComponent(contact_id || 'c-101')}`);
+export async function triggerOutboundCallApi(phone_number: string, contact_id: string): Promise<OutboundCallResponse> {
+  return apiClient.post<OutboundCallResponse>(`/calls/trigger-outbound?phone_number=${encodeURIComponent(phone_number)}&contact_id=${encodeURIComponent(contact_id)}`);
 }
 
 export async function fetchCallDispositionsApi(): Promise<string[]> {
@@ -185,8 +185,8 @@ export function useLogCallMutation(options?: UseMutationOptions<CallLogItem, Err
   });
 }
 
-export function useTriggerOutboundCallMutation(options?: UseMutationOptions<OutboundCallResponse, Error, { phone_number: string; contact_id?: string }>) {
-  return useMutation<OutboundCallResponse, Error, { phone_number: string; contact_id?: string }>({
+export function useTriggerOutboundCallMutation(options?: UseMutationOptions<OutboundCallResponse, Error, { phone_number: string; contact_id: string }>) {
+  return useMutation<OutboundCallResponse, Error, { phone_number: string; contact_id: string }>({
     mutationFn: ({ phone_number, contact_id }) => triggerOutboundCallApi(phone_number, contact_id),
     ...options,
   });

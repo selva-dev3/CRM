@@ -133,27 +133,15 @@ export async function unstarContactApi(id: string): Promise<{ message: string; s
 }
 
 export async function getContactDealsApi(id: string): Promise<RelatedRecord[]> {
-  try {
-    return await apiClient.get<RelatedRecord[]>(`/contacts/${id}/deals`);
-  } catch {
-    return [];
-  }
+  return apiClient.get<RelatedRecord[]>(`/contacts/${id}/deals`);
 }
 
 export async function getContactActivitiesApi(id: string): Promise<RelatedRecord[]> {
-  try {
-    return await apiClient.get<RelatedRecord[]>(`/contacts/${id}/activities`);
-  } catch {
-    return [];
-  }
+  return apiClient.get<RelatedRecord[]>(`/contacts/${id}/activities`);
 }
 
 export async function getContactNotesApi(id: string): Promise<RelatedRecord[]> {
-  try {
-    return await apiClient.get<RelatedRecord[]>(`/contacts/${id}/notes`);
-  } catch {
-    return [];
-  }
+  return apiClient.get<RelatedRecord[]>(`/contacts/${id}/notes`);
 }
 
 export async function addContactNoteApi(payload: { id: string; content: string }): Promise<RelatedRecord> {
@@ -163,19 +151,11 @@ export async function addContactNoteApi(payload: { id: string; content: string }
 }
 
 export async function getContactEmailsApi(id: string): Promise<RelatedRecord[]> {
-  try {
-    return await apiClient.get<RelatedRecord[]>(`/contacts/${id}/emails`);
-  } catch {
-    return [];
-  }
+  return apiClient.get<RelatedRecord[]>(`/contacts/${id}/emails`);
 }
 
 export async function getContactCallsApi(id: string): Promise<RelatedRecord[]> {
-  try {
-    return await apiClient.get<RelatedRecord[]>(`/contacts/${id}/calls`);
-  } catch {
-    return [];
-  }
+  return apiClient.get<RelatedRecord[]>(`/contacts/${id}/calls`);
 }
 
 // TanStack Query & Mutation Hooks

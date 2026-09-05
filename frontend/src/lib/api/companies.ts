@@ -113,27 +113,15 @@ export async function getCompanyApi(id: string): Promise<CompanyItem> {
 }
 
 export async function getCompanyContactsApi(id: string): Promise<RelatedRecord[]> {
-  try {
-    return await apiClient.get<RelatedRecord[]>(`/companies/${id}/contacts`);
-  } catch {
-    return [];
-  }
+  return apiClient.get<RelatedRecord[]>(`/companies/${id}/contacts`);
 }
 
 export async function getCompanyDealsApi(id: string): Promise<RelatedRecord[]> {
-  try {
-    return await apiClient.get<RelatedRecord[]>(`/companies/${id}/deals`);
-  } catch {
-    return [];
-  }
+  return apiClient.get<RelatedRecord[]>(`/companies/${id}/deals`);
 }
 
 export async function getCompanyNotesApi(id: string): Promise<RelatedRecord[]> {
-  try {
-    return await apiClient.get<RelatedRecord[]>(`/companies/${id}/notes`);
-  } catch {
-    return [];
-  }
+  return apiClient.get<RelatedRecord[]>(`/companies/${id}/notes`);
 }
 
 export async function addCompanyNoteApi(payload: { id: string; content: string }): Promise<RelatedRecord> {
@@ -143,35 +131,19 @@ export async function addCompanyNoteApi(payload: { id: string; content: string }
 }
 
 export async function getCompanyQuotesApi(id: string): Promise<RelatedRecord[]> {
-  try {
-    return await apiClient.get<RelatedRecord[]>(`/companies/${id}/quotes`);
-  } catch {
-    return [];
-  }
+  return apiClient.get<RelatedRecord[]>(`/companies/${id}/quotes`);
 }
 
 export async function getCompanyInvoicesApi(id: string): Promise<RelatedRecord[]> {
-  try {
-    return await apiClient.get<RelatedRecord[]>(`/companies/${id}/invoices`);
-  } catch {
-    return [];
-  }
+  return apiClient.get<RelatedRecord[]>(`/companies/${id}/invoices`);
 }
 
 export async function getCompanyDocumentsApi(id: string): Promise<RelatedRecord[]> {
-  try {
-    return await apiClient.get<RelatedRecord[]>(`/companies/${id}/documents`);
-  } catch {
-    return [];
-  }
+  return apiClient.get<RelatedRecord[]>(`/companies/${id}/documents`);
 }
 
 export async function getCompanyHierarchyApi(id: string): Promise<CompanyHierarchy | null> {
-  try {
-    return await apiClient.get<CompanyHierarchy>(`/companies/${id}/hierarchy`);
-  } catch {
-    return null;
-  }
+  return apiClient.get<CompanyHierarchy>(`/companies/${id}/hierarchy`);
 }
 
 // TanStack Query & Mutation Hooks

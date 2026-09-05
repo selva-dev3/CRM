@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import NotFoundError
 from app.models.company import Company
+from app.models.deal import Deal
 from app.repositories.company_repository import CompanyRepository
 from app.schemas.crm_schemas import CompanyCreate, CompanyUpdate
 from app.services.company_service import CompanyService
@@ -84,6 +85,64 @@ async def test_get_company_raises_not_found_when_missing():
 
     with pytest.raises(NotFoundError):
         await service.get_company(db, "missing-company", organization_id="org-1")
+
+
+@pytest.mark.asyncio
+async def test_get_company_deals_is_scoped_and_serialized():
+    company = _make_company()
+    repo: Any = CompanyRepository()
+    repo.get_by_id_scoped = AsyncMock(return_value=company)
+    service = _service_with(repo)
+    service.deal_repository.list_by_company = AsyncMock(
+        return_value=[Deal(id="deal-1", organization_id="org-1", title="Expansion")]
+    )
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.get_company_deals(db, "cmp-1", organization_id="org-1")
+
+    assert result[0]["id"] == "deal-1"
+    service.deal_repository.list_by_company.assert_awaited_once_with(
+        db, company_id="cmp-1", organization_id="org-1"
+    )
+
+
+@pytest.mark.asyncio
+async def test_set_parent_company_rejects_self_reference():
+    company = _make_company()
+    repo: Any = CompanyRepository()
+    repo.get_by_id_scoped = AsyncMock(return_value=company)
+    repo.set_parent = AsyncMock()
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.core.errors import APIException
+
+    with pytest.raises(APIException):
+        await service.set_parent_company(
+            db, "cmp-1", "cmp-1", organization_id="org-1"
+        )
+
+    repo.set_parent.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_set_parent_company_rejects_hierarchy_cycle():
+    company = _make_company(id="cmp-1")
+    parent = _make_company(id="cmp-2", parent_company_id="cmp-1")
+    repo: Any = CompanyRepository()
+    repo.get_by_id_scoped = AsyncMock(side_effect=[company, parent, company])
+    repo.set_parent = AsyncMock()
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.core.errors import APIException
+
+    with pytest.raises(APIException):
+        await service.set_parent_company(
+            db, "cmp-1", "cmp-2", organization_id="org-1"
+        )
+
+    repo.set_parent.assert_not_called()
 
 
 @pytest.mark.asyncio

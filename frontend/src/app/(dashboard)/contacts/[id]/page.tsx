@@ -89,31 +89,31 @@ export default function ContactDetailsPage() {
   } = useEntityCustomFieldsQuery('Contact');
 
   // Sub-resource queries
-  const { data: deals = [] } = useQuery({
+  const { data: deals = [], isError: isDealsError } = useQuery({
     queryKey: ['contact-deals', contactId],
     queryFn: () => getContactDealsApi(contactId),
     enabled: !!contactId,
   });
 
-  const { data: activities = [] } = useQuery({
+  const { data: activities = [], isError: isActivitiesError } = useQuery({
     queryKey: ['contact-activities', contactId],
     queryFn: () => getContactActivitiesApi(contactId),
     enabled: !!contactId,
   });
 
-  const { data: notes = [], refetch: refetchNotes } = useQuery({
+  const { data: notes = [], isError: isNotesError, refetch: refetchNotes } = useQuery({
     queryKey: ['contact-notes', contactId],
     queryFn: () => getContactNotesApi(contactId),
     enabled: !!contactId,
   });
 
-  const { data: emails = [] } = useQuery({
+  const { data: emails = [], isError: isEmailsError } = useQuery({
     queryKey: ['contact-emails', contactId],
     queryFn: () => getContactEmailsApi(contactId),
     enabled: !!contactId,
   });
 
-  const { data: calls = [] } = useQuery({
+  const { data: calls = [], isError: isCallsError } = useQuery({
     queryKey: ['contact-calls', contactId],
     queryFn: () => getContactCallsApi(contactId),
     enabled: !!contactId,
@@ -212,6 +212,8 @@ export default function ContactDetailsPage() {
   const companyName = contact?.company_id
     ? companiesList.find((c) => c.id === contact.company_id)?.name || 'Enterprise Partner'
     : 'Primary Organization';
+  const hasRelationshipError =
+    isDealsError || isActivitiesError || isNotesError || isEmailsError || isCallsError;
 
   if (isLoading) {
     return (
@@ -341,6 +343,12 @@ export default function ContactDetailsPage() {
         ]}
         listClassName="border-b border-slate-200"
       />
+
+      {hasRelationshipError && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs font-medium text-amber-900">
+          Some related contact records could not be loaded. Retry the page to try again.
+        </div>
+      )}
 
       {/* TAB CONTENT: Overview */}
       {activeTab === 'overview' && (

@@ -5,6 +5,9 @@ from app.core.errors import APIException, NotFoundError
 from app.models import User
 from app.models.company import Company
 from app.repositories.company_repository import CompanyRepository
+from app.repositories.deal_repository import DealRepository
+from app.repositories.invoice_repository import invoice_repository
+from app.repositories.quote_repository import quote_repository
 from app.schemas.crm_schemas import CompanyCreate, CompanyUpdate, CustomFieldDefinition
 from app.services.contact_service import contact_service
 from app.services.custom_field_service import CustomFieldService, custom_field_service
@@ -35,6 +38,7 @@ class CompanyService:
         custom_field_service_instance: CustomFieldService | None = None,
     ) -> None:
         self.repository = repository or CompanyRepository()
+        self.deal_repository = DealRepository()
         self.custom_field_service = custom_field_service_instance or custom_field_service
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
@@ -231,31 +235,65 @@ class CompanyService:
         self, db: AsyncSession, company_id: str, *, organization_id: str
     ) -> list:
         await self.require_company(db, company_id, organization_id=organization_id)
-        return []
+        from app.services.deal_service import deal_to_dict
+
+        deals = await self.deal_repository.list_by_company(
+            db, company_id=company_id, organization_id=organization_id
+        )
+        return [deal_to_dict(deal) for deal in deals]
 
     async def get_company_quotes(
         self, db: AsyncSession, company_id: str, *, organization_id: str
     ) -> list:
         await self.require_company(db, company_id, organization_id=organization_id)
-        return []
+        from app.services.quote_service import quote_to_dict
+
+        quotes = await quote_repository.list_by_company(
+            db, company_id=company_id, organization_id=organization_id
+        )
+        return [quote_to_dict(quote) for quote in quotes]
 
     async def get_company_invoices(
         self, db: AsyncSession, company_id: str, *, organization_id: str
     ) -> list:
         await self.require_company(db, company_id, organization_id=organization_id)
-        return []
+        from app.services.invoice_service import invoice_to_dict
+
+        invoices = await invoice_repository.list_by_company(
+            db, company_id=company_id, organization_id=organization_id
+        )
+        return [invoice_to_dict(invoice) for invoice in invoices]
 
     async def get_company_documents(
         self, db: AsyncSession, company_id: str, *, organization_id: str
     ) -> list:
         await self.require_company(db, company_id, organization_id=organization_id)
-        return []
+        raise APIException(
+            message="Company documents are not linked to a CRM entity yet",
+            code="COMPANY_DOCUMENT_RELATION_UNAVAILABLE",
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        )
 
     async def get_company_hierarchy(
         self, db: AsyncSession, company_id: str, *, organization_id: str
     ) -> dict:
-        await self.require_company(db, company_id, organization_id=organization_id)
-        return {"parent_company": None, "subsidiaries": []}
+        company = await self.require_company(db, company_id, organization_id=organization_id)
+        parent = None
+        if company.parent_company_id:
+            parent_record = await self.repository.get_by_id_scoped(
+                db,
+                company_id=company.parent_company_id,
+                organization_id=organization_id,
+            )
+            if parent_record:
+                parent = company_to_dict(parent_record)
+        subsidiaries = await self.repository.list_subsidiaries(
+            db, parent_company_id=company_id, organization_id=organization_id
+        )
+        return {
+            "parent_company": parent,
+            "subsidiaries": [company_to_dict(item) for item in subsidiaries],
+        }
 
     async def set_parent_company(
         self,
@@ -265,13 +303,33 @@ class CompanyService:
         *,
         organization_id: str,
     ) -> dict:
-        await self.require_company(db, company_id, organization_id=organization_id)
-        await self.require_company(db, parent_id, organization_id=organization_id)
-        raise APIException(
-            message="Company hierarchy changes are not implemented",
-            code="COMPANY_HIERARCHY_UNAVAILABLE",
-            status_code=501,
-        )
+        company = await self.require_company(db, company_id, organization_id=organization_id)
+        parent = await self.require_company(db, parent_id, organization_id=organization_id)
+        if company.id == parent.id:
+            raise APIException(
+                message="A company cannot be its own parent",
+                code="INVALID_COMPANY_HIERARCHY",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        ancestor_id = parent.parent_company_id
+        visited: set[str] = {parent.id}
+        while ancestor_id:
+            if ancestor_id == company.id or ancestor_id in visited:
+                raise APIException(
+                    message="Company hierarchy would create a cycle",
+                    code="INVALID_COMPANY_HIERARCHY",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+            visited.add(ancestor_id)
+            ancestor = await self.repository.get_by_id_scoped(
+                db, company_id=ancestor_id, organization_id=organization_id
+            )
+            if not ancestor:
+                break
+            ancestor_id = ancestor.parent_company_id
+        await self.repository.set_parent(company, parent.id)
+        await self._commit(db, "Failed to update company hierarchy")
+        return {"message": "Parent company updated successfully", "status": "success"}
 
     async def lookup_domain(self, domain: str) -> dict:
         raise APIException(

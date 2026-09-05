@@ -82,7 +82,13 @@ class EmailDomainService:
         self, db: AsyncSession, payload: EmailSendRequest, current_user: User
     ) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
-        to_addr = str(payload.to[0]) if payload.to else "client@example.com"
+        if not payload.to:
+            raise APIException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                code="EMAIL_RECIPIENT_REQUIRED",
+                message="At least one email recipient is required",
+            )
+        to_addr = str(payload.to[0])
         email = await self.repository.create_email(
             db,
             data={

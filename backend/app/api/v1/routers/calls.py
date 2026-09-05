@@ -60,7 +60,7 @@ async def log_call(
     summary="Trigger click-to-dial call via Twilio/telephony",
     dependencies=[Depends(require_permission("calls:create"))],
 )
-async def trigger_outbound_call(phone_number: str = "+1234567890", contact_id: str = "c-101"):
+async def trigger_outbound_call(phone_number: str, contact_id: str):
     return await call_service.trigger_outbound(phone_number, contact_id)
 
 
@@ -98,7 +98,7 @@ async def get_call_stats():
     summary="Log voicemail drop execution",
     dependencies=[Depends(require_permission("calls:create"))],
 )
-async def log_voicemail_drop(contact_id: str = "c-101", voicemail_template_id: str = "vm-1"):
+async def log_voicemail_drop(contact_id: str, voicemail_template_id: str):
     return await call_service.log_voicemail_drop(contact_id, voicemail_template_id)
 
 

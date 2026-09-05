@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import NotFoundError
 from app.models import User
 from app.models.contact import Contact
+from app.models.deal import Deal
 from app.repositories.contact_repository import ContactRepository
 from app.schemas.crm_schemas import ContactCreate, ContactUpdate
 from app.services.contact_service import ContactService
@@ -74,6 +75,24 @@ async def test_get_contact_raises_not_found_when_missing():
 
     with pytest.raises(NotFoundError):
         await service.get_contact(db, "missing-contact", organization_id="org-1")
+
+
+@pytest.mark.asyncio
+async def test_list_contact_deals_is_scoped_and_serialized():
+    repo: Any = ContactRepository()
+    repo.get_by_id_scoped = AsyncMock(return_value=_make_contact())
+    service = _service_with(repo)
+    service.deal_repository.list_by_contact = AsyncMock(
+        return_value=[Deal(id="deal-1", organization_id="org-1", title="Renewal")]
+    )
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.list_contact_deals(db, "cnt-1", organization_id="org-1")
+
+    assert result[0]["id"] == "deal-1"
+    service.deal_repository.list_by_contact.assert_awaited_once_with(
+        db, contact_id="cnt-1", organization_id="org-1"
+    )
 
 
 @pytest.mark.asyncio
