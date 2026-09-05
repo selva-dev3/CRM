@@ -34,6 +34,7 @@ import {
   Input, 
   Alert, 
   AlertDescription,
+  Checkbox,
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
@@ -1143,12 +1144,10 @@ export default function LeadsPage() {
                   </div>
 
                   <div className="flex items-center gap-2 pb-2">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       id="isArchivedCheck"
                       checked={isArchived}
-                      onChange={(e) => setIsArchived(e.target.checked)}
-                      className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
+                      onCheckedChange={(checked) => setIsArchived(checked === true)}
                     />
                     <label htmlFor="isArchivedCheck" className="text-xs font-black text-slate-800 cursor-pointer select-none">
                       Archive this lead

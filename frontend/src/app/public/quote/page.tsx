@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { publicQuoteApi, QuoteItem } from '@/lib/api/quotes';
 import { Button } from '@/components/ui/button';
+import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 export default function CustomerQuotePage() {
   const [quote, setQuote] = useState<QuoteItem | null>(null);
@@ -63,13 +64,13 @@ export default function CustomerQuotePage() {
       {quote && <>
         <div><h2 className="font-semibold">{quote.quote_number}</h2><p>Status: {quote.status}</p>
           {quote.expires_at && <p>Valid until {new Date(quote.expires_at).toLocaleDateString()}</p>}</div>
-        <div className="overflow-x-auto"><table className="w-full text-left text-sm">
-          <caption className="sr-only">Quoted products and prices</caption>
-          <thead><tr><th className="py-3">Product / service</th><th>Quantity</th><th>Unit price</th><th>Total</th></tr></thead>
-          <tbody>{quote.items?.map((item, index) => <tr key={index} className="border-t">
-            <td className="py-3">{item.product_name || item.name}</td><td>{item.quantity}</td>
-            <td>{Number(item.unit_price).toFixed(2)}</td><td>{Number(item.total).toFixed(2)}</td>
-          </tr>)}</tbody></table></div>
+        <div className="overflow-x-auto"><Table className="w-full text-left text-sm">
+          <TableCaption className="sr-only">Quoted products and prices</TableCaption>
+          <TableHeader><TableRow><TableHead className="py-3">Product / service</TableHead><TableHead>Quantity</TableHead><TableHead>Unit price</TableHead><TableHead>Total</TableHead></TableRow></TableHeader>
+          <TableBody>{quote.items?.map((item, index) => <TableRow key={index} className="border-t">
+            <TableCell className="py-3">{item.product_name || item.name}</TableCell><TableCell>{item.quantity}</TableCell>
+            <TableCell>{Number(item.unit_price).toFixed(2)}</TableCell><TableCell>{Number(item.total).toFixed(2)}</TableCell>
+          </TableRow>)}</TableBody></Table></div>
         <p className="text-xl font-semibold">Total: {quote.currency} {Number(quote.total_amount).toFixed(2)}</p>
         {quote.status === 'Sent' && <div className="space-y-3">
           <p>Accepting this quote confirms the listed items and total and automatically creates your invoice.</p>

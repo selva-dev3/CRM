@@ -89,7 +89,7 @@ describe('LeadsPage list UX', () => {
     await user.click(await screen.findByRole('menuitem', { name: 'Bulk Delete (1)' }));
 
     expect(bulkDeleteMutateAsync).not.toHaveBeenCalled();
-    expect(screen.getByRole('dialog')).toHaveTextContent('This bulk action cannot be undone.');
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('This bulk action cannot be undone.');
 
     await user.click(screen.getByRole('button', { name: 'Delete 1 Leads' }));
 
@@ -106,7 +106,7 @@ describe('LeadsPage list UX', () => {
     await user.click(await screen.findByRole('menuitem', { name: 'Bulk Delete (1)' }));
     await user.click(screen.getByRole('button', { name: 'Delete 1 Leads' }));
 
-    const dialog = screen.getByRole('dialog');
+    const dialog = screen.getByRole('alertdialog');
     expect(await within(dialog).findByText('Deletion service unavailable')).toBeVisible();
   });
 });

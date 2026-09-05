@@ -34,6 +34,7 @@ import {
 import { DataTable, type DataTableColumn, type TableActionOption } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
+import { PageTabs } from '@/components/common/page-tabs';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { 
   useUsersQuery, 
@@ -553,42 +554,17 @@ export default function UsersPage() {
         </div>
       </div>
 
-      {/* Tabs Navigation Bar */}
-      <div className="flex items-center gap-2 flex-wrap border-b border-[#E5E7EB] pb-3">
-        <button
-          type="button"
-          onClick={() => setActiveTab('all')}
-          className={`px-4 py-2 text-button font-medium rounded-btn transition-colors cursor-pointer flex items-center gap-2 ${
-            activeTab === 'all'
-              ? 'bg-[#2563EB]/10 text-[#2563EB] font-semibold border border-[#2563EB]/20 shadow-saas-sm'
-              : 'text-[#6B7280] hover:text-[#111827] hover:bg-[#F3F4F6]'
-          }`}
-        >
-          <User className="w-4 h-4" />
-          <span>All Users</span>
-          <span className="px-2 py-0.5 rounded-full bg-[#E5E7EB] text-[#374151] text-badge font-semibold">
-            {users.length}
-          </span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('invites')}
-          className={`px-4 py-2 text-button font-medium rounded-btn transition-colors cursor-pointer flex items-center gap-2 ${
-            activeTab === 'invites'
-              ? 'bg-[#2563EB]/10 text-[#2563EB] font-semibold border border-[#2563EB]/20 shadow-saas-sm'
-              : 'text-[#6B7280] hover:text-[#111827] hover:bg-[#F3F4F6]'
-          }`}
-        >
-          <Mail className="w-4 h-4" />
-          <span>Pending Invites</span>
-          {invitations.length > 0 && (
-            <span className="px-2 py-0.5 rounded-full bg-[#F59E0B]/20 text-[#D97706] text-badge font-semibold">
-              {invitations.length}
-            </span>
-          )}
-        </button>
-      </div>
+      <PageTabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        variant="default"
+        tabs={[
+          { value: 'all', icon: <User className="size-4" />, label: <>All Users <span className="rounded-full bg-[#E5E7EB] px-2 py-0.5 text-badge text-[#374151]">{users.length}</span></> },
+          { value: 'invites', icon: <Mail className="size-4" />, label: <>Pending Invites {invitations.length > 0 && <span className="rounded-full bg-[#F59E0B]/20 px-2 py-0.5 text-badge text-[#D97706]">{invitations.length}</span>}</> },
+        ]}
+        listClassName="border-b border-[#E5E7EB] bg-transparent pb-3"
+        triggerClassName="text-button data-[state=active]:bg-[#2563EB]/10 data-[state=active]:text-[#2563EB]"
+      />
 
       {/* Notifications */}
       {successMessage && (

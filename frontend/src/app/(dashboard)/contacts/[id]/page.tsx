@@ -26,6 +26,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
+import { PageTabs } from '@/components/common/page-tabs';
 import {
   useContactQuery,
   useUpdateContactMutation,
@@ -328,58 +329,18 @@ export default function ContactDetailsPage() {
 
       <CustomFieldValues fields={customFields} values={contact.custom_fields ?? {}} />
 
-      {/* Sub-Resource Tabs Bar */}
-      <div className="flex items-center border-b border-slate-200 gap-4 sm:gap-6 text-sm font-semibold text-slate-600 overflow-x-auto">
-        <button
-          onClick={() => setActiveTab('overview')}
-          className={`pb-3 cursor-pointer transition border-b-2 flex items-center gap-2 shrink-0 whitespace-nowrap ${
-            activeTab === 'overview' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
-          <Activity className="w-4 h-4" />
-          <span>Overview & Timeline ({activities.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('deals')}
-          className={`pb-3 cursor-pointer transition border-b-2 flex items-center gap-2 shrink-0 whitespace-nowrap ${
-            activeTab === 'deals' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
-          <Briefcase className="w-4 h-4" />
-          <span>Deals ({deals.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('notes')}
-          className={`pb-3 cursor-pointer transition border-b-2 flex items-center gap-2 shrink-0 whitespace-nowrap ${
-            activeTab === 'notes' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
-          <FileText className="w-4 h-4" />
-          <span>Notes ({notes.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('emails')}
-          className={`pb-3 cursor-pointer transition border-b-2 flex items-center gap-2 shrink-0 whitespace-nowrap ${
-            activeTab === 'emails' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
-          <MessageSquare className="w-4 h-4" />
-          <span>Emails ({emails.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('calls')}
-          className={`pb-3 cursor-pointer transition border-b-2 flex items-center gap-2 shrink-0 whitespace-nowrap ${
-            activeTab === 'calls' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
-          <PhoneCall className="w-4 h-4" />
-          <span>Call Logs ({calls.length})</span>
-        </button>
-      </div>
+      <PageTabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        tabs={[
+          { value: 'overview', icon: <Activity className="size-4" />, label: `Overview & Timeline (${activities.length})` },
+          { value: 'deals', icon: <Briefcase className="size-4" />, label: `Deals (${deals.length})` },
+          { value: 'notes', icon: <FileText className="size-4" />, label: `Notes (${notes.length})` },
+          { value: 'emails', icon: <MessageSquare className="size-4" />, label: `Emails (${emails.length})` },
+          { value: 'calls', icon: <PhoneCall className="size-4" />, label: `Call Logs (${calls.length})` },
+        ]}
+        listClassName="border-b border-slate-200"
+      />
 
       {/* TAB CONTENT: Overview */}
       {activeTab === 'overview' && (

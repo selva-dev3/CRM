@@ -1,5 +1,7 @@
 ﻿'use client';
 
+import { Input } from "@/components/ui/input";
+
 import { ResponsiveSelect } from '@/components/common/responsive-select';
 
 import { ActionMenu } from '@/components/common/action-menu';
@@ -435,7 +437,7 @@ export default function QuotesPage() {
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
                 Quote Reference Number
               </label>
-              <input
+              <Input
                 type="text"
                 value={quoteNumber}
                 onChange={(e) => setQuoteNumber(e.target.value)}
@@ -483,7 +485,7 @@ export default function QuotesPage() {
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
                   Total Amount (USD) *
                 </label>
-                <input
+                <Input
                   type="number"
                   step="0.01"
                   required
@@ -544,7 +546,7 @@ export default function QuotesPage() {
           <form onSubmit={handleSendEmailSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Recipient Email Address *</label>
-              <input
+              <Input
                 type="email"
                 required
                 value={recipientEmailInput}

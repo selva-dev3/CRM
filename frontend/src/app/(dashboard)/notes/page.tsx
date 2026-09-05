@@ -1,8 +1,11 @@
 ﻿'use client';
 
+import { Input } from "@/components/ui/input";
+
 import { ResponsiveSelect } from '@/components/common/responsive-select';
 
 import { ActionMenu } from '@/components/common/action-menu';
+import { Textarea } from '@/components/ui/textarea';
 import { getErrorMessage } from '@/lib/utils';
 import React, { useState, useEffect } from 'react';
 import {
@@ -393,7 +396,7 @@ export default function NotesPage() {
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
                   Entity ID / Reference
                 </label>
-                <input
+                <Input
                   type="text"
                   value={entityId}
                   onChange={(e) => setEntityId(e.target.value)}
@@ -408,7 +411,7 @@ export default function NotesPage() {
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
               Note Content *
             </label>
-            <textarea
+            <Textarea
               rows={5}
               required
               value={content}

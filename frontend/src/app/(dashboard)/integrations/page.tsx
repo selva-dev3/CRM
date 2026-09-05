@@ -13,6 +13,7 @@ import {
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -472,11 +473,10 @@ export default function IntegrationsPage() {
                     key={opt.value}
                     className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer border border-slate-200 rounded-lg px-3 py-2 hover:bg-slate-50"
                   >
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={slackEvents.includes(opt.value)}
-                      onChange={() => handleToggleSlackEvent(opt.value)}
-                      className="w-3.5 h-3.5 accent-blue-600 cursor-pointer"
+                      onCheckedChange={() => handleToggleSlackEvent(opt.value)}
+                      aria-label={`Enable ${opt.label}`}
                     />
                     <span>{opt.label}</span>
                     <code className="ml-auto text-[10px] text-slate-400 font-mono">{opt.value}</code>

@@ -10,6 +10,7 @@ import { ActionMenu } from '@/components/common/action-menu';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
+import { Checkbox } from '@/components/ui/checkbox';
 import { PermissionKey } from '@/lib/permissions';
 
 import { Input } from '@/components/ui/input';
@@ -426,23 +427,17 @@ export function DataTable<TItem>({
             <TableRow className="border-b border-[#E5E7EB] hover:bg-transparent">
               {showCheckbox && (
                 <TableHead className="w-12 p-0 text-table font-semibold">
-                  <label
+                  <div
                     className="mx-auto flex size-11 cursor-pointer items-center justify-center rounded-lg hover:bg-slate-100"
                     onClick={(event) => event.stopPropagation()}
                   >
-                    <input
-                      type="checkbox"
-                      checked={allVisibleSelected}
-                      ref={(node) => {
-                        if (node) {
-                          node.indeterminate = someVisibleSelected;
-                        }
-                      }}
-                      onChange={(event: React.ChangeEvent<HTMLInputElement>) => onToggleAllRows?.(event.target.checked)}
+                    <Checkbox
+                      checked={someVisibleSelected ? 'indeterminate' : allVisibleSelected}
+                      onCheckedChange={(checked) => onToggleAllRows?.(checked === true)}
                       aria-label="Select all rows"
-                      className="size-4 cursor-pointer rounded border-[#E5E7EB] text-[#2563EB] focus:ring-[#2563EB]/20"
+                      className="cursor-pointer"
                     />
-                  </label>
+                  </div>
                 </TableHead>
               )}
               {expandableRow && <TableHead className="w-10 px-4" aria-label="Expand row" />}
@@ -489,18 +484,17 @@ export function DataTable<TItem>({
                   >
                     {showCheckbox && (
                       <TableCell className="w-12 p-0">
-                        <label
+                        <div
                           className="mx-auto flex size-11 cursor-pointer items-center justify-center rounded-lg hover:bg-blue-100/70"
                           onClick={(event) => event.stopPropagation()}
                         >
-                          <input
-                            type="checkbox"
+                          <Checkbox
                             checked={isSelected}
-                            onChange={(event: React.ChangeEvent<HTMLInputElement>) => onToggleRow?.(item, event.target.checked)}
+                            onCheckedChange={(checked) => onToggleRow?.(item, checked === true)}
                             aria-label={getSelectionLabel?.(item) ?? 'Select row'}
-                            className="size-4 cursor-pointer"
+                            className="cursor-pointer"
                           />
-                        </label>
+                        </div>
                       </TableCell>
                     )}
                     {expandableRow && (

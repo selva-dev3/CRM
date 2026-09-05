@@ -1,7 +1,10 @@
 ﻿'use client';
 
+import { Input } from "@/components/ui/input";
+
 import { ResponsiveSelect } from '@/components/common/responsive-select';
 import { DatePicker } from '@/components/common/date-picker';
+import { Textarea } from '@/components/ui/textarea';
 
 import { ActionMenu } from '@/components/common/action-menu';
 import { getErrorMessage } from '@/lib/utils';
@@ -603,7 +606,7 @@ export default function TasksPage() {
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
               Task Title *
             </label>
-            <input
+            <Input
               type="text"
               required
               value={title}
@@ -617,7 +620,7 @@ export default function TasksPage() {
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
               Description
             </label>
-            <textarea
+            <Textarea
               rows={3}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
@@ -675,7 +678,7 @@ export default function TasksPage() {
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
                 Assigned Representative
               </label>
-              <input
+              <Input
                 type="text"
                 value={assignedTo}
                 onChange={(e) => setAssignedTo(e.target.value)}
@@ -726,7 +729,7 @@ export default function TasksPage() {
           <div className="border-2 border-dashed border-slate-300 rounded-xl p-6 text-center space-y-2 hover:border-indigo-400 transition-colors">
             <Upload className="w-8 h-8 text-slate-400 mx-auto" />
             <p className="text-xs text-slate-600 font-medium">Select a CSV file containing task headers (title, priority, due_date, status)</p>
-            <input
+            <Input
               type="file"
               accept=".csv"
               onChange={(e) => setImportFile(e.target.files?.[0] || null)}

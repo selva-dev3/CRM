@@ -36,7 +36,7 @@ describe('DataTable selection', () => {
     const row = screen.getByText('Jane Doe').closest('tr');
 
     expect(checkbox).toBeChecked();
-    expect(checkbox.closest('label')).toHaveClass('size-11');
+    expect(checkbox.parentElement).toHaveClass('size-11');
     expect(row).toHaveAttribute('aria-selected', 'true');
     expect(row).toHaveClass('bg-blue-50/80');
   });

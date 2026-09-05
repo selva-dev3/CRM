@@ -1,5 +1,7 @@
 ﻿'use client';
 
+import { Input } from "@/components/ui/input";
+
 import { getErrorMessage } from '@/lib/utils';
 import React, { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
@@ -247,7 +249,7 @@ export default function ProductDetailPage() {
           <form onSubmit={handleUpdateStockSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Quantity Delta (+/-)</label>
-              <input
+              <Input
                 type="number"
                 required
                 value={quantityDelta}

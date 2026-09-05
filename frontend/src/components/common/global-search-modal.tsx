@@ -1,32 +1,39 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import type { ElementType } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Search,
-  X,
+  ArrowRight,
+  BarChart3,
+  Bell,
+  Building2,
+  Calendar,
+  CalendarDays,
+  CheckSquare,
+  FileSpreadsheet,
+  FileText,
+  Kanban,
   LayoutDashboard,
+  Mail,
+  Package,
+  PhoneCall,
+  Receipt,
+  Settings,
+  ShieldCheck,
+  StickyNote,
+  UserCog,
   UserPlus,
   Users,
-  Building2,
-  Kanban,
-  CheckSquare,
-  CalendarDays,
-  PhoneCall,
-  Mail,
-  StickyNote,
-  FileText,
-  Package,
-  FileSpreadsheet,
-  Receipt,
-  BarChart3,
-  Calendar,
-  Bell,
-  UserCog,
-  ShieldCheck,
-  Settings,
-  ArrowRight
 } from 'lucide-react';
+
+import { Badge } from '@/components/ui/badge';
+import {
+  CommandDialog,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
 
 interface SearchItem {
   id: string;
@@ -34,7 +41,7 @@ interface SearchItem {
   category: string;
   href: string;
   description: string;
-  icon: React.ElementType;
+  icon: ElementType;
 }
 
 const SEARCH_ITEMS: SearchItem[] = [
@@ -67,197 +74,57 @@ interface GlobalSearchModalProps {
 
 export function GlobalSearchModal({ isOpen, onClose }: GlobalSearchModalProps) {
   const router = useRouter();
-  const [query, setQuery] = useState('');
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const filteredItemsRef = useRef<SearchItem[]>(SEARCH_ITEMS);
-  const selectedIndexRef = useRef(0);
 
-  // Filter items based on query
-  const filteredItems = React.useMemo(() => {
-    if (!query.trim()) return SEARCH_ITEMS;
-    const q = query.toLowerCase().trim();
-    return SEARCH_ITEMS.filter(
-      (item) =>
-        item.title.toLowerCase().includes(q) ||
-        item.category.toLowerCase().includes(q) ||
-        item.description.toLowerCase().includes(q)
-    );
-  }, [query]);
-
-  useEffect(() => {
-    filteredItemsRef.current = filteredItems;
-  }, [filteredItems]);
-
-  useEffect(() => {
-    selectedIndexRef.current = selectedIndex;
-  }, [selectedIndex]);
-
-  // Focus input when opened
-  useEffect(() => {
-    if (!isOpen) return;
-    const timeoutId = window.setTimeout(() => inputRef.current?.focus(), 50);
-    return () => window.clearTimeout(timeoutId);
-  }, [isOpen]);
-
-  const handleClose = useCallback(() => {
-    setQuery('');
-    setSelectedIndex(0);
+  const handleSelect = (href: string) => {
     onClose();
-  }, [onClose]);
-
-  const handleQueryChange = (value: string) => {
-    setQuery(value);
-    setSelectedIndex(0);
+    router.push(href);
   };
 
-  const handleSelect = useCallback((href: string) => {
-    handleClose();
-    router.push(href);
-  }, [handleClose, router]);
-
-  // Keyboard navigation inside modal
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const items = filteredItemsRef.current;
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        setSelectedIndex((prev) => (prev < items.length - 1 ? prev + 1 : 0));
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        setSelectedIndex((prev) => (prev > 0 ? prev - 1 : items.length - 1));
-      } else if (e.key === 'Enter') {
-        e.preventDefault();
-        const selectedItem = items[selectedIndexRef.current];
-        if (selectedItem) {
-          handleSelect(selectedItem.href);
-        }
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        handleClose();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, handleClose, handleSelect]);
-
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 sm:pt-24 px-4 bg-slate-900/60 backdrop-blur-xs transition-opacity animate-in fade-in duration-200">
-      {/* Backdrop click to close */}
-      <div className="fixed inset-0" onClick={handleClose} />
-
-      {/* Dialog box */}
-      <div className="relative w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col z-10 animate-in zoom-in-95 duration-150">
-        {/* Search Header Input */}
-        <div className="flex items-center px-4 border-b border-slate-100 bg-slate-50/50">
-          <Search className="w-5 h-5 text-slate-400 shrink-0" />
-          <input
-            ref={inputRef}
-            type="text"
-            value={query}
-            onChange={(e) => handleQueryChange(e.target.value)}
-            placeholder="Search CRM pages, modules, settings..."
-            className="w-full h-14 px-3 bg-transparent text-sm font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-hidden"
-          />
-          {query && (
-            <button
-              onClick={() => handleQueryChange('')}
-              className="p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-200 transition cursor-pointer"
+    <CommandDialog
+      open={isOpen}
+      onOpenChange={(open) => !open && onClose()}
+      title="Search CRM"
+      description="Search CRM pages, modules and settings"
+      showCloseButton={false}
+      className="top-16 max-w-xl translate-y-0 rounded-2xl border-slate-200 shadow-2xl sm:top-24"
+    >
+      <CommandInput placeholder="Search CRM pages, modules, settings..." />
+      <CommandList className="max-h-96 p-2">
+        <CommandEmpty>No matching CRM pages found.</CommandEmpty>
+        {SEARCH_ITEMS.map((item) => {
+          const Icon = item.icon;
+          return (
+            <CommandItem
+              key={item.id}
+              value={item.title}
+              keywords={[item.category, item.description]}
+              onSelect={() => handleSelect(item.href)}
+              className="group gap-3 rounded-xl px-3.5 py-2.5 data-[selected=true]:bg-blue-50 data-[selected=true]:text-blue-900"
             >
-              <X className="w-4 h-4" />
-            </button>
-          )}
-          <button
-            onClick={handleClose}
-            className="ml-2 px-2 py-1 text-[11px] font-bold text-slate-500 hover:text-slate-800 bg-slate-200/60 rounded-md transition cursor-pointer"
-          >
-            ESC
-          </button>
-        </div>
-
-        {/* Results List */}
-        <div className="max-h-96 overflow-y-auto p-2 divide-y divide-slate-50">
-          {filteredItems.length === 0 ? (
-            <div className="py-12 text-center text-slate-500 text-xs">
-              No pages found matching &quot;<span className="font-semibold text-slate-700">{query}</span>&quot;
-            </div>
-          ) : (
-            filteredItems.map((item, index) => {
-              const Icon = item.icon;
-              const isSelected = index === selectedIndex;
-              return (
-                <div
-                  key={item.id}
-                  onClick={() => handleSelect(item.href)}
-                  onMouseEnter={() => setSelectedIndex(index)}
-                  className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl cursor-pointer transition ${
-                    isSelected ? 'bg-blue-50 text-blue-900 font-medium' : 'hover:bg-slate-50 text-slate-700'
-                  }`}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div
-                      className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
-                        isSelected
-                          ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                          : 'bg-slate-100 text-slate-600 border-slate-200'
-                      }`}
-                    >
-                      <Icon className="w-4.5 h-4.5" />
-                    </div>
-                    <div className="flex flex-col min-w-0 text-left">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-slate-900 truncate">{item.title}</span>
-                        <span className="px-1.5 py-0.5 text-[9px] font-bold rounded-md bg-slate-100 text-slate-600 border border-slate-200 uppercase">
-                          {item.category}
-                        </span>
-                      </div>
-                      <span className="text-[11px] text-slate-500 truncate mt-0.5">{item.description}</span>
-                    </div>
-                  </div>
-
-                  <ArrowRight
-                    className={`w-4 h-4 shrink-0 transition ${
-                      isSelected ? 'text-blue-600 translate-x-0.5' : 'text-slate-300'
-                    }`}
-                  />
-                </div>
-              );
-            })
-          )}
-        </div>
-
-        {/* Footer shortcuts helper */}
-        <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-medium">
-          <div className="flex items-center gap-3">
-            <span className="flex items-center gap-1">
-              <kbd className="px-1.5 py-0.5 text-[10px] bg-white border border-slate-200 rounded-md font-mono text-slate-700 shadow-2xs">
-                ↑
-              </kbd>
-              <kbd className="px-1.5 py-0.5 text-[10px] bg-white border border-slate-200 rounded-md font-mono text-slate-700 shadow-2xs">
-                ↓
-              </kbd>
-              Navigate
-            </span>
-            <span className="flex items-center gap-1">
-              <kbd className="px-1.5 py-0.5 text-[10px] bg-white border border-slate-200 rounded-md font-mono text-slate-700 shadow-2xs">
-                ↵
-              </kbd>
-              Select
-            </span>
-          </div>
-          <span className="flex items-center gap-1">
-            <kbd className="px-1.5 py-0.5 text-[10px] bg-white border border-slate-200 rounded-md font-mono text-slate-700 shadow-2xs">
-              ESC
-            </kbd>
-            Close
-          </span>
-        </div>
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-100 text-slate-600 group-data-[selected=true]:border-blue-600 group-data-[selected=true]:bg-blue-600 group-data-[selected=true]:text-white">
+                <Icon className="size-4.5" />
+              </span>
+              <span className="min-w-0 flex-1 text-left">
+                <span className="flex items-center gap-2">
+                  <span className="truncate text-xs font-bold text-slate-900">{item.title}</span>
+                  <Badge variant="secondary" className="h-5 text-[9px] uppercase">
+                    {item.category}
+                  </Badge>
+                </span>
+                <span className="mt-0.5 block truncate text-[11px] text-slate-500">
+                  {item.description}
+                </span>
+              </span>
+              <ArrowRight className="size-4 shrink-0 text-slate-300 group-data-[selected=true]:text-blue-600" />
+            </CommandItem>
+          );
+        })}
+      </CommandList>
+      <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50 px-4 py-2.5 text-[11px] font-medium text-slate-500">
+        <span>↑ ↓ Navigate · ↵ Select</span>
+        <span>Esc Close</span>
       </div>
-    </div>
+    </CommandDialog>
   );
 }

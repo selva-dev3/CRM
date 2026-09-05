@@ -1,9 +1,12 @@
 ﻿'use client';
 
+import { Input } from "@/components/ui/input";
+
 import { ResponsiveSelect } from '@/components/common/responsive-select';
 
 import { ActionMenu } from '@/components/common/action-menu';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 import { getErrorMessage } from '@/lib/utils';
 import React, { useState, useEffect } from 'react';
 import {
@@ -554,7 +557,7 @@ export default function EmailPage() {
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
               Recipient Email (To) *
             </label>
-            <input
+            <Input
               type="email"
               required
               value={recipient}
@@ -568,7 +571,7 @@ export default function EmailPage() {
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
               Subject *
             </label>
-            <input
+            <Input
               type="text"
               required
               value={subject}
@@ -582,7 +585,7 @@ export default function EmailPage() {
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
               Email Message Body
             </label>
-            <textarea
+            <Textarea
               rows={6}
               value={body}
               onChange={(e) => setBody(e.target.value)}
@@ -632,7 +635,7 @@ export default function EmailPage() {
         <form onSubmit={handleCreateTemplateSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">Template Name *</label>
-            <input
+            <Input
               type="text"
               required
               value={tmplName}
@@ -644,7 +647,7 @@ export default function EmailPage() {
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">Subject Line *</label>
-            <input
+            <Input
               type="text"
               required
               value={tmplSubject}
@@ -656,7 +659,7 @@ export default function EmailPage() {
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">Template Body</label>
-            <textarea
+            <Textarea
               rows={4}
               value={tmplBody}
               onChange={(e) => setTmplBody(e.target.value)}
@@ -712,7 +715,7 @@ export default function EmailPage() {
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">Target Lead IDs (comma-separated)</label>
-            <input
+            <Input
               type="text"
               required
               value={targetLeadsInput}
@@ -753,7 +756,7 @@ export default function EmailPage() {
         <form onSubmit={handleSaveSignatureSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">Signature Name *</label>
-            <input
+            <Input
               type="text"
               required
               value={sigName}
@@ -765,7 +768,7 @@ export default function EmailPage() {
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">HTML Markup</label>
-            <textarea
+            <Textarea
               rows={3}
               value={sigHtml}
               onChange={(e) => setSigHtml(e.target.value)}

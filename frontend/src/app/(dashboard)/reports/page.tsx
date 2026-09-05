@@ -1,5 +1,7 @@
 'use client';
 
+import { Input } from "@/components/ui/input";
+
 import { getErrorMessage } from '@/lib/utils';
 import React, { useState } from 'react';
 import {
@@ -774,7 +776,7 @@ export default function ReportsPage() {
           <form onSubmit={handleCreateCustomSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Report Name *</label>
-              <input
+              <Input
                 type="text"
                 required
                 value={customReportName}
@@ -786,7 +788,7 @@ export default function ReportsPage() {
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Filter Rule Query</label>
-              <input
+              <Input
                 type="text"
                 value={customFilters}
                 onChange={(e) => setCustomFilters(e.target.value)}
@@ -843,7 +845,7 @@ export default function ReportsPage() {
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Recipient Email Address *</label>
-              <input
+              <Input
                 type="email"
                 required
                 value={scheduleEmail}

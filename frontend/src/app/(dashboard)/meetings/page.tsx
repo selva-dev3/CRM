@@ -1,5 +1,7 @@
 ﻿'use client';
 
+import { Input } from "@/components/ui/input";
+
 import { ActionMenu } from '@/components/common/action-menu';
 import { DateTimePicker } from '@/components/common/date-picker';
 import { Button } from '@/components/ui/button';
@@ -424,7 +426,7 @@ export default function MeetingsPage() {
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
               Meeting Title *
             </label>
-            <input
+            <Input
               type="text"
               required
               value={title}
@@ -464,7 +466,7 @@ export default function MeetingsPage() {
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
               Attendees (comma-separated emails)
             </label>
-            <input
+            <Input
               type="text"
               value={attendeesInput}
               onChange={(e) => setAttendeesInput(e.target.value)}
@@ -477,7 +479,7 @@ export default function MeetingsPage() {
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
               Meeting URL Link
             </label>
-            <input
+            <Input
               type="url"
               value={meetingLink}
               onChange={(e) => setMeetingLink(e.target.value)}
@@ -517,7 +519,7 @@ export default function MeetingsPage() {
         <form onSubmit={handleGenerateZoomSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">Meeting Topic</label>
-            <input
+            <Input
               type="text"
               value={videoTopic}
               onChange={(e) => setVideoTopic(e.target.value)}
@@ -566,7 +568,7 @@ export default function MeetingsPage() {
         <form onSubmit={handleGenerateTeamsSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">Meeting Subject</label>
-            <input
+            <Input
               type="text"
               value={videoTopic}
               onChange={(e) => setVideoTopic(e.target.value)}

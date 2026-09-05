@@ -5,7 +5,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useRegisterMutation } from '@/lib/api';
-import { Button, Input, Label, Alert, AlertTitle, AlertDescription } from '@/components/ui';
+import { Button, Input, Label, Alert, AlertTitle, AlertDescription, Checkbox } from '@/components/ui';
 import {
   ArrowRight,
   CheckCircle2,
@@ -232,11 +232,11 @@ export default function RegisterPage() {
         {/* Agree Terms Checkbox */}
         <div className="pt-1">
           <label className="flex items-start space-x-2.5 cursor-pointer">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={agreeTerms}
-              onChange={(e) => setAgreeTerms(e.target.checked)}
-              className="w-4 h-4 mt-0.5 rounded border-slate-300 bg-white text-indigo-600 focus:ring-indigo-500/20 accent-indigo-600 shrink-0"
+              onCheckedChange={(checked) => setAgreeTerms(checked === true)}
+              aria-label="Agree to the Terms of Service and Privacy Policy"
+              className="mt-0.5 shrink-0"
             />
             <span className="text-xs text-slate-500 leading-normal">
               I agree to the{' '}

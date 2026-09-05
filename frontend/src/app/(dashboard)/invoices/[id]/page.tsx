@@ -1,5 +1,7 @@
 ﻿'use client';
 
+import { Input } from "@/components/ui/input";
+
 import { getErrorMessage } from '@/lib/utils';
 import React, { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
@@ -24,6 +26,7 @@ import {
 import { ActionMenu } from '@/components/common/action-menu';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { Button } from '@/components/ui/button';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ModalShell } from '@/components/common/modal-shell';
 import {
   useInvoiceQuery,
@@ -323,28 +326,28 @@ export default function InvoiceDetailPage() {
               <div className="space-y-2 pb-2">
                 <span className="text-xs font-bold text-slate-800 uppercase tracking-wider block">Line Items</span>
                 <div className="overflow-x-auto -mx-1">
-                  <table className="w-full text-xs min-w-[420px]">
-                    <thead>
-                      <tr className="text-left text-slate-400 uppercase tracking-wider">
-                        <th className="py-2 px-1 font-semibold">Description</th>
-                        <th className="py-2 px-1 font-semibold text-right">Qty</th>
-                        <th className="py-2 px-1 font-semibold text-right">Unit Price</th>
-                        <th className="py-2 px-1 font-semibold text-right">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
+                  <Table className="w-full text-xs min-w-[420px]">
+                    <TableHeader>
+                      <TableRow className="text-left text-slate-400 uppercase tracking-wider">
+                        <TableHead className="h-auto py-2 px-1 font-semibold">Description</TableHead>
+                        <TableHead className="h-auto py-2 px-1 font-semibold text-right">Qty</TableHead>
+                        <TableHead className="h-auto py-2 px-1 font-semibold text-right">Unit Price</TableHead>
+                        <TableHead className="h-auto py-2 px-1 font-semibold text-right">Total</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody className="divide-y divide-slate-100">
                       {invoice.items.map((item) => (
-                        <tr key={item.id} className="text-slate-700">
-                          <td className="py-2 px-1 font-medium">{item.description || item.product_id}</td>
-                          <td className="py-2 px-1 text-right">{item.quantity}</td>
-                          <td className="py-2 px-1 text-right">${(item.unit_price || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                          <td className="py-2 px-1 text-right font-bold text-slate-900">
+                        <TableRow key={item.id} className="text-slate-700">
+                          <TableCell className="py-2 px-1 font-medium">{item.description || item.product_id}</TableCell>
+                          <TableCell className="py-2 px-1 text-right">{item.quantity}</TableCell>
+                          <TableCell className="py-2 px-1 text-right">${(item.unit_price || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                          <TableCell className="py-2 px-1 text-right font-bold text-slate-900">
                             ${((item.quantity || 0) * (item.unit_price || 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
               </div>
             )}
@@ -396,7 +399,7 @@ export default function InvoiceDetailPage() {
           <form onSubmit={handleCreditMemoSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Credit Amount (USD) *</label>
-              <input
+              <Input
                 type="number"
                 step="0.01"
                 required
@@ -408,7 +411,7 @@ export default function InvoiceDetailPage() {
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Adjustment Reason *</label>
-              <input
+              <Input
                 type="text"
                 required
                 value={creditMemoReason}
@@ -450,7 +453,7 @@ export default function InvoiceDetailPage() {
           <form onSubmit={handleSendEmailSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Recipient Email Address *</label>
-              <input
+              <Input
                 type="email"
                 required
                 value={recipientEmailInput}
