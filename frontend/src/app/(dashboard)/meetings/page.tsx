@@ -1,6 +1,7 @@
 ﻿'use client';
 
 import { ActionMenu } from '@/components/common/action-menu';
+import { DateTimePicker } from '@/components/common/date-picker';
 import { Button } from '@/components/ui/button';
 import { getErrorMessage } from '@/lib/utils';
 import React, { useState, useEffect } from 'react';
@@ -435,25 +436,25 @@ export default function MeetingsPage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+              <label htmlFor="meeting-start-time" className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
                 Start Time
               </label>
-              <input
-                type="datetime-local"
+              <DateTimePicker
+                id="meeting-start-time"
                 value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
+                onValueChange={setStartTime}
                 className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+              <label htmlFor="meeting-end-time" className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
                 End Time
               </label>
-              <input
-                type="datetime-local"
+              <DateTimePicker
+                id="meeting-end-time"
                 value={endTime}
-                onChange={(e) => setEndTime(e.target.value)}
+                onValueChange={setEndTime}
                 className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
               />
             </div>
@@ -613,22 +614,22 @@ export default function MeetingsPage() {
       >
         <form onSubmit={handleRescheduleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">New Start Time</label>
-            <input
-              type="datetime-local"
+            <label htmlFor="meeting-list-reschedule-start" className="block text-xs font-semibold text-slate-700 mb-1">New Start Time</label>
+            <DateTimePicker
+              id="meeting-list-reschedule-start"
               required
               value={newStartTime}
-              onChange={(e) => setNewStartTime(e.target.value)}
+              onValueChange={setNewStartTime}
               className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">New End Time</label>
-            <input
-              type="datetime-local"
+            <label htmlFor="meeting-list-reschedule-end" className="block text-xs font-semibold text-slate-700 mb-1">New End Time</label>
+            <DateTimePicker
+              id="meeting-list-reschedule-end"
               value={newEndTime}
-              onChange={(e) => setNewEndTime(e.target.value)}
+              onValueChange={setNewEndTime}
               className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>

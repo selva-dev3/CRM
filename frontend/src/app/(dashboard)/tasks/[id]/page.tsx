@@ -1,6 +1,7 @@
 ﻿'use client';
 
 import { ResponsiveSelect } from '@/components/common/responsive-select';
+import { DatePicker, DateTimePicker } from '@/components/common/date-picker';
 
 import { getErrorMessage } from '@/lib/utils';
 import React, { useState } from 'react';
@@ -438,11 +439,11 @@ export default function TaskDetailPage() {
 
             <form onSubmit={handleSetReminderSubmit} className="space-y-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Set Reminder Date & Time</label>
-                <input
-                  type="datetime-local"
+                <label htmlFor="task-reminder-time" className="block text-xs font-semibold text-slate-700 mb-1">Set Reminder Date & Time</label>
+                <DateTimePicker
+                  id="task-reminder-time"
                   value={reminderTime}
-                  onChange={(e) => setReminderTime(e.target.value)}
+                  onValueChange={setReminderTime}
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
@@ -524,11 +525,11 @@ export default function TaskDetailPage() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Due Date</label>
-                <input
-                  type="date"
+                <label htmlFor="task-due-date" className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Due Date</label>
+                <DatePicker
+                  id="task-due-date"
                   value={dueDate}
-                  onChange={(e) => setDueDate(e.target.value)}
+                  onValueChange={setDueDate}
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
                 />
               </div>

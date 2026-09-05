@@ -1,6 +1,7 @@
 ﻿'use client';
 
 import { ResponsiveSelect } from '@/components/common/responsive-select';
+import { DateTimePicker } from '@/components/common/date-picker';
 
 import { getErrorMessage } from '@/lib/utils';
 import React, { useState } from 'react';
@@ -512,22 +513,22 @@ export default function MeetingDetailPage() {
         >
           <form onSubmit={handleRescheduleSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">New Start Time</label>
-              <input
-                type="datetime-local"
+              <label htmlFor="meeting-reschedule-start" className="block text-xs font-semibold text-slate-700 mb-1">New Start Time</label>
+              <DateTimePicker
+                id="meeting-reschedule-start"
                 required
                 value={newStartTime}
-                onChange={(e) => setNewStartTime(e.target.value)}
+                onValueChange={setNewStartTime}
                 className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">New End Time</label>
-              <input
-                type="datetime-local"
+              <label htmlFor="meeting-reschedule-end" className="block text-xs font-semibold text-slate-700 mb-1">New End Time</label>
+              <DateTimePicker
+                id="meeting-reschedule-end"
                 value={newEndTime}
-                onChange={(e) => setNewEndTime(e.target.value)}
+                onValueChange={setNewEndTime}
                 className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
