@@ -8,6 +8,8 @@ from sqlalchemy import select, update
 from app.core.logging import get_logger
 from app.workers.celery_app import celery_app
 
+logger = get_logger(__name__)
+
 
 @celery_app.task(name="app.workers.tasks.deliver_pending_quotes", ignore_result=True)
 def deliver_pending_quotes():
@@ -29,6 +31,7 @@ async def _deliver_pending_quotes():
             if not await quote_delivery_service.deliver_one(factory):
                 break
             count += 1
+        logger.info("Quote delivery sweep completed processed=%s", count)
         return count
     finally:
         await engine.dispose()
