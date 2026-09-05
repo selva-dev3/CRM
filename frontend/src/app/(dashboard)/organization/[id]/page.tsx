@@ -1,5 +1,5 @@
-import { OrganizationDetailView } from '@/components/features/organizations/organization-detail-view';
+import OrganizationDetail from '@/components/features/organization/OrganizationDetail';
 
 export default function OrganizationDetailPage() {
-  return <OrganizationDetailView />;
+  return <OrganizationDetail />;
 }

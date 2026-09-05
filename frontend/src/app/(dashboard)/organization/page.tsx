@@ -50,7 +50,7 @@ import {
   deleteOrganizationApi
 } from '@/lib/api/organizations';
 import { useQueryClient } from '@tanstack/react-query';
-import { OrganizationDetailView } from '@/components/features/organizations/organization-detail-view';
+import OrganizationDetail from '@/components/features/organization/OrganizationDetail';
 
 export default function OrganizationPage() {
   const router = useRouter();
@@ -474,7 +474,7 @@ export default function OrganizationPage() {
   };
 
   if (!isSuperAdmin) {
-    return <OrganizationDetailView isCurrentOrgView />;
+    return <OrganizationDetail isCurrentOrgView />;
   }
 
   return (

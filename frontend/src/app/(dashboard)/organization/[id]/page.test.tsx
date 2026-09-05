@@ -3,10 +3,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   useOrganizationByIdQuery: vi.fn(),
+  useParams: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({
-  useParams: () => ({}),
+  useParams: mocks.useParams,
   useRouter: () => ({ push: vi.fn() }),
 }));
 
@@ -38,11 +39,13 @@ vi.mock('@/lib/api/organizations', () => ({
   useTransferOwnershipMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
-import { OrganizationDetailView } from '@/components/features/organizations/organization-detail-view';
+import OrganizationDetailPage from './page';
+import OrganizationDetail from '@/components/features/organization/OrganizationDetail';
 
-describe('OrganizationDetailPage current organization mode', () => {
+describe('Organization detail route and current organization mode', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.useParams.mockReturnValue({});
     mocks.useOrganizationByIdQuery.mockReturnValue({
       data: undefined,
       isLoading: false,
@@ -52,9 +55,25 @@ describe('OrganizationDetailPage current organization mode', () => {
   });
 
   it('uses current organization data without enabling a by-id request', () => {
-    render(<OrganizationDetailView isCurrentOrgView />);
+    render(<OrganizationDetail isCurrentOrgView />);
 
     expect(mocks.useOrganizationByIdQuery).toHaveBeenCalledWith('', false);
     expect(screen.getByDisplayValue('Current CRM')).toBeInTheDocument();
+  });
+
+  it('renders the by-ID route without custom page props', () => {
+    mocks.useParams.mockReturnValue({ id: 'org-selected' });
+    mocks.useOrganizationByIdQuery.mockReturnValue({
+      data: { id: 'org-selected', name: 'Selected CRM', plan: 'Enterprise', status: 'active' },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+
+    render(<OrganizationDetailPage />);
+
+    expect(mocks.useOrganizationByIdQuery).toHaveBeenCalledWith('org-selected', true);
+    expect(screen.getByDisplayValue('Selected CRM')).toBeInTheDocument();
+    expect(screen.queryByDisplayValue('Current CRM')).not.toBeInTheDocument();
   });
 });

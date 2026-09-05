@@ -457,14 +457,22 @@ export default function LeadDetailPage() {
   };
 
   const handleConvertLead = async () => {
+    if (isConverting) return;
     try {
       setIsConverting(true);
-      await convertLeadApi(leadId, { create_deal: true, deal_title: `${lead?.contact_name} Deal` });
-      await refetch();
-      setSuccessMessage('Lead converted to Deal, Contact, and Company!');
+      setErrorMessage(null);
+      const result = await convertLeadApi(leadId, { create_deal: true, deal_title: `${lead?.contact_name} Deal` });
+      await Promise.all([
+        refetch(),
+        ...['leads', 'contacts', 'companies', 'deals'].map((key) =>
+          queryClient.invalidateQueries({ queryKey: [key] })),
+      ]);
+      setSuccessMessage(result.deal_id
+        ? 'Lead converted to Deal, Contact, and Company!'
+        : 'Lead converted to Contact and Company.');
       setTimeout(() => setSuccessMessage(null), 4000);
-    } catch {
-      setErrorMessage('Failed to convert lead.');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to convert lead.');
     } finally {
       setIsConverting(false);
     }

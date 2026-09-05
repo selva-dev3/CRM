@@ -41,15 +41,30 @@ class DealRepository:
         return result.scalars().first()
 
     async def get_by_id_scoped(
-        self, db: AsyncSession, *, deal_id: str, organization_id: str
+        self, db: AsyncSession, *, deal_id: str, organization_id: str, lock: bool = False
     ) -> Deal | None:
-        result = await db.execute(
-            select(Deal).where(
-                Deal.id == deal_id,
-                Deal.organization_id == organization_id,
-            )
+        stmt = select(Deal).where(
+            Deal.id == deal_id, Deal.organization_id == organization_id,
         )
+        if lock:
+            stmt = stmt.with_for_update().execution_options(populate_existing=True)
+        result = await db.execute(stmt)
         return result.scalars().first()
+
+    async def set_won(self, db: AsyncSession, deal: Deal, amount: float) -> None:
+        deal.stage = "Closed Won"
+        deal.probability = 100
+        deal.amount = amount
+
+    async def get_sales_customer(self, db: AsyncSession, *, organization_id: str,
+                                 company_id: str | None, contact_id: str | None):
+        company = await db.execute(select(Company).where(
+            Company.id == company_id, Company.organization_id == organization_id,
+        ))
+        contact = await db.execute(select(Contact).where(
+            Contact.id == contact_id, Contact.organization_id == organization_id,
+        ))
+        return company.scalar_one_or_none(), contact.scalar_one_or_none()
 
     async def list_by_ids(self, db: AsyncSession, ids: builtins.list[str]) -> builtins.list[Deal]:
         result = await db.execute(select(Deal).where(Deal.id.in_(ids)))
@@ -133,6 +148,31 @@ class DealRepository:
     async def get_product_by_name(self, db: AsyncSession, name: str) -> Product | None:
         result = await db.execute(select(Product).where(Product.name.ilike(name)).limit(1))
         return result.scalars().first()
+
+    async def get_product_scoped(self, db: AsyncSession, *, product_id: str,
+                                 organization_id: str) -> Product | None:
+        result = await db.execute(select(Product).where(
+            Product.id == product_id, Product.organization_id == organization_id,
+        ))
+        return result.scalar_one_or_none()
+
+    async def get_product_by_sku(self, db: AsyncSession, *, organization_id: str, sku: str) -> Product | None:
+        result = await db.execute(select(Product).where(
+            Product.sku == sku, Product.organization_id == organization_id,
+        ))
+        return result.scalar_one_or_none()
+
+    async def save_product_snapshot(self, db: AsyncSession, line: DealProduct, *,
+                                    product_name: str, quantity: int, unit_price: object,
+                                    discount_percent: object, tax_percent: object) -> None:
+        line.product_name = product_name
+        line.quantity = quantity
+        line.unit_price = unit_price
+        line.discount_percent = discount_percent
+        line.tax_percent = tax_percent
+
+    async def set_amount(self, db: AsyncSession, deal: Deal, amount: float) -> None:
+        deal.amount = amount
 
     async def create_product(
         self, db: AsyncSession, *, organization_id: str, name: str, sku: str, price: float

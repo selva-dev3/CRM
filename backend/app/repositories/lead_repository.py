@@ -15,6 +15,8 @@ from app.models import (
     Task,
     User,
 )
+from app.models.company import Company
+from app.models.lead import LeadActivity
 
 
 class LeadRepository:
@@ -22,6 +24,42 @@ class LeadRepository:
     and the related task/email/call records used to build a lead timeline).
     No business logic lives here.
     """
+
+    async def lock_conversion(self, db: AsyncSession, lead_id: str, organization_id: str):
+        # Serialize conversions within a tenant, including customer deduplication.
+        await db.execute(select(Organization.id).where(
+            Organization.id == organization_id
+        ).with_for_update())
+        result = await db.execute(select(Lead).where(
+            Lead.id == lead_id, Lead.organization_id == organization_id
+        ).with_for_update().execution_options(populate_existing=True))
+        return result.scalar_one_or_none()
+
+    async def conversion_customers(self, db: AsyncSession, organization_id: str,
+                                   company_name: str, email: str):
+        companies = await db.execute(select(Company).where(
+            Company.organization_id == organization_id,
+            func.lower(func.trim(Company.name)) == company_name.strip().lower(),
+        ).limit(2))
+        contacts = await db.execute(select(Contact).where(
+            Contact.organization_id == organization_id,
+            func.lower(func.trim(Contact.email)) == email.strip().lower(),
+        ).limit(2))
+        return list(companies.scalars().all()), list(contacts.scalars().all())
+
+    async def save_conversion(self, db: AsyncSession, lead: Lead, *, company_id: str,
+                              contact_id: str, deal_id: str | None, actor_id: str,
+                              converted_at: datetime) -> None:
+        lead.converted_company_id = company_id
+        lead.converted_contact_id = contact_id
+        lead.converted_deal_id = deal_id
+        lead.converted_at = converted_at
+        lead.status = "Converted"
+        db.add(LeadActivity(lead_id=lead.id, action="Lead converted", performed_by=actor_id))
+
+    async def link_conversion_contact(self, db: AsyncSession, contact: Contact,
+                                      company_id: str) -> None:
+        contact.company_id = company_id
 
     @staticmethod
     def _list_filters(

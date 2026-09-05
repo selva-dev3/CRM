@@ -8,6 +8,32 @@ from sqlalchemy import select, update
 from app.core.logging import get_logger
 from app.workers.celery_app import celery_app
 
+
+@celery_app.task(name="app.workers.tasks.deliver_pending_quotes", ignore_result=True)
+def deliver_pending_quotes():
+    return asyncio.run(_deliver_pending_quotes())
+
+
+async def _deliver_pending_quotes():
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.core.config import settings
+    from app.services.quote_delivery_service import quote_delivery_service
+
+    # Celery invokes a fresh event loop per task; do not reuse another loop's pool.
+    engine = create_async_engine(settings.DATABASE_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    count = 0
+    try:
+        for _ in range(10):
+            if not await quote_delivery_service.deliver_one(factory):
+                break
+            count += 1
+        return count
+    finally:
+        await engine.dispose()
+
+
 logger = get_logger(__name__)
 
 # Scheduled download links must comfortably outlive the hourly delivery

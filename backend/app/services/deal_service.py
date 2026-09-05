@@ -1,3 +1,6 @@
+from decimal import Decimal
+from uuid import NAMESPACE_URL, uuid5
+
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +23,7 @@ from app.services.note_service import note_service
 from app.services.notification_service import notification_service
 from app.services.org_service import organization_service
 from app.services.quote_service import QuoteService, quote_service
+from app.services.sales_totals import calculate_line, decimal_value, rounded_value
 
 # Canonical pipeline stages (mirrors dashboard_service and the frontend STAGES constant).
 DEAL_STAGE_CLOSED_WON = "Closed Won"
@@ -168,6 +172,8 @@ class DealService:
     async def create_deal(
         self, db: AsyncSession, payload: DealCreate, current_user: User | None
     ) -> dict:
+        if payload.stage == DEAL_STAGE_CLOSED_WON:
+            raise APIException(message="Create the deal and add products before marking it Closed Won")
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
         custom_fields = await self._validate_custom_fields(db, org_id, payload.custom_fields)
         project_id = await self._validate_project(db, payload.project_id, org_id)
@@ -272,21 +278,45 @@ class DealService:
         await self._commit(db, "Failed to bulk delete deals")
         return {"affected_count": len(deals), "message": "Deals deleted successfully"}
 
-    async def bulk_update_stage(self, db: AsyncSession, ids: list[str], stage: str) -> dict:
-        deals = await self.repository.list_by_ids(db, ids)
-        for organization_id in {deal.organization_id for deal in deals}:
+    async def bulk_update_stage(self, db: AsyncSession, ids: list[str], stage: str,
+                                *, organization_id: str, actor_id: str) -> dict:
+        try:
             await self._validate_stage(db, stage, organization_id)
-        for deal in deals:
-            await self._guard_closed_won_transition(db, deal, stage)
-            deal.stage = stage
-        await self._commit(db, "Failed to bulk update deal stage")
-        return {"affected_count": len(deals), "message": f"Updated stage to {stage}"}
+            for deal_id in sorted(set(ids)):
+                deal = await self.repository.get_by_id_scoped(
+                    db, deal_id=deal_id, organization_id=organization_id, lock=True,
+                )
+                if not deal:
+                    raise NotFoundError(message="Deal not found")
+                if stage == DEAL_STAGE_CLOSED_WON:
+                    await self._apply_won(db, deal, actor_id)
+                else:
+                    await self._guard_closed_won_transition(db, deal, stage)
+                    deal.stage = stage
+            await db.commit()
+            return {"affected_count": len(set(ids)), "message": f"Updated stage to {stage}"}
+        except Exception:
+            await db.rollback()
+            raise
 
     async def get_deal(self, db: AsyncSession, deal_id: str) -> dict:
         return deal_to_dict(await self.require_deal(db, deal_id))
 
-    async def update_deal(self, db: AsyncSession, deal_id: str, payload: DealUpdate) -> dict:
-        d = await self.require_deal(db, deal_id)
+    async def update_deal(self, db: AsyncSession, deal_id: str, payload: DealUpdate,
+                          *, organization_id: str | None = None, actor_id: str | None = None) -> dict:
+        d = await self.repository.get_by_id_scoped(
+            db, deal_id=deal_id, organization_id=organization_id, lock=True,
+        ) if organization_id else await self.require_deal(db, deal_id)
+        if not d:
+            raise NotFoundError(message="Deal not found")
+        if payload.stage == DEAL_STAGE_CLOSED_WON:
+            if not organization_id or not actor_id:
+                raise APIException(message="Organization and actor are required to close a deal")
+            if payload.model_fields_set - {"stage", "amount"}:
+                raise APIException(message="Save other deal changes before marking it Closed Won",
+                                   code="MIXED_DEAL_CLOSE_UPDATE", status_code=409)
+            await self.mark_deal_won(db, deal_id, None, organization_id=organization_id, actor_id=actor_id)
+            return deal_to_dict(d)
 
         prev_amount = d.amount
         prev_probability = d.probability
@@ -294,6 +324,7 @@ class DealService:
         if payload.stage is not None:
             await self._validate_stage(db, payload.stage, d.organization_id)
             await self._guard_closed_won_transition(db, d, payload.stage)
+            d.stage = payload.stage
         if payload.title is not None:
             d.title = payload.title
         if payload.amount is not None:
@@ -368,8 +399,16 @@ class DealService:
         await self._commit(db, "Failed to delete deal")
         return {"message": f"Deal {deal_id} deleted successfully", "status": "success"}
 
-    async def update_deal_stage(self, db: AsyncSession, deal_id: str, stage: str) -> dict:
-        d = await self.require_deal(db, deal_id)
+    async def update_deal_stage(self, db: AsyncSession, deal_id: str, stage: str,
+                                *, organization_id: str, actor_id: str) -> dict:
+        if stage == DEAL_STAGE_CLOSED_WON:
+            return await self.mark_deal_won(db, deal_id, None,
+                                            organization_id=organization_id, actor_id=actor_id)
+        d = await self.repository.get_by_id_scoped(
+            db, deal_id=deal_id, organization_id=organization_id, lock=True,
+        )
+        if not d:
+            raise NotFoundError(message="Deal not found")
         await self._validate_stage(db, stage, d.organization_id)
         await self._guard_closed_won_transition(db, d, stage)
         d.stage = stage
@@ -386,24 +425,29 @@ class DealService:
         return {"message": f"Deal {deal_id} moved to {stage}", "status": "success"}
 
     async def mark_deal_won(
-        self, db: AsyncSession, deal_id: str, final_amount: float | None
+        self, db: AsyncSession, deal_id: str, final_amount: float | None,
+        *, organization_id: str, actor_id: str,
     ) -> dict:
-        d = await self.require_deal(db, deal_id)
-        d.stage = DEAL_STAGE_CLOSED_WON
-        d.probability = 100.0
-        if final_amount:
-            d.amount = final_amount
-        await self._commit(db, "Failed to mark deal as won")
-        await notification_service.notify(
-            db,
-            event_name="deal.won",
-            organization_id=d.organization_id,
-            entity_type="deal",
-            entity_id=d.id,
-            assigned_to=d.assigned_to,
-            data={"id": d.id, "title": d.title, "amount": d.amount, "stage": d.stage},
-        )
-        return {"message": f"Deal {deal_id} marked as Closed Won!", "status": "success"}
+        try:
+            d = await self.repository.get_by_id_scoped(
+                db, deal_id=deal_id, organization_id=organization_id, lock=True,
+            )
+            if not d:
+                raise NotFoundError(message="Deal not found")
+            quote = await self._apply_won(db, d, actor_id)
+            await db.commit()
+            return {"message": "Deal won; quote created", "status": "success",
+                    "deal_id": d.id, "stage": d.stage,
+                    "quote_id": quote.id, "quote_status": quote.status}
+        except Exception:
+            await db.rollback()
+            raise
+
+    async def _apply_won(self, db: AsyncSession, deal: Deal, actor_id: str):
+        await self.repository.set_won(db, deal, deal.amount)
+        quote = await self.quote_service.create_from_won_deal(db, deal=deal, actor_id=actor_id)
+        await self.repository.set_won(db, deal, float(quote.total_amount))
+        return quote
 
     async def mark_deal_lost(self, db: AsyncSession, deal_id: str, reason: str) -> dict:
         d = await self.require_deal(db, deal_id)
@@ -483,52 +527,77 @@ class DealService:
         quantity: int,
         unit_price: float | None,
         custom_name: str | None,
+        organization_id: str,
+        discount_percent: float = 0,
+        tax_percent: float = 0,
     ) -> dict:
-        deal = await self.require_deal(db, deal_id)
-        p = await self.repository.get_product(db, product_id)
-
-        if not p and custom_name:
-            p = await self.repository.get_product_by_name(db, custom_name)
-            if not p:
-                sku_gen = f"SKU-{custom_name.replace(' ', '-').upper()[:10]}"
-                p = await self.repository.create_product(
-                    db,
-                    organization_id=deal.organization_id,
-                    name=custom_name,
-                    sku=sku_gen,
-                    price=unit_price or 0.0,
-                )
-                await db.commit()
-                await db.refresh(p)
-                product_id = p.id
-            else:
-                product_id = p.id
-
-        price = unit_price if unit_price is not None else (p.price if p else 0.0)
-
-        existing_dp = await self.repository.get_deal_product(
-            db, deal_id=deal_id, product_id=product_id
-        )
-        if existing_dp:
-            existing_dp.quantity += quantity
-            if unit_price is not None:
-                existing_dp.unit_price = unit_price
-        else:
-            await self.repository.create_deal_product(
-                db, deal_id=deal_id, product_id=product_id, quantity=quantity, unit_price=price
+        try:
+            deal = await self._mutable_sales_deal(db, deal_id, organization_id)
+            p = await self.repository.get_product_scoped(
+                db, product_id=product_id, organization_id=organization_id,
             )
+            if not p and not product_id and custom_name and custom_name.strip():
+                decimal_value(unit_price)
+                sku = f"CUSTOM-{uuid5(NAMESPACE_URL, organization_id + ':' + custom_name.strip().casefold()).hex}"
+                p = await self.repository.get_product_by_sku(db, organization_id=organization_id, sku=sku)
+                if not p:
+                    p = await self.repository.create_product(db, organization_id=organization_id,
+                        name=custom_name.strip(), sku=sku, price=unit_price)
+                    await db.flush()
+            if not p or p.organization_id != organization_id:
+                raise NotFoundError(message="Product not found")
+            if not p.is_active:
+                raise APIException(message="Inactive products cannot be added to a deal")
+            price = unit_price if unit_price is not None else p.price
+            calculate_line(quantity, price, discount_percent, tax_percent)
+            line = await self.repository.get_deal_product(db, deal_id=deal_id, product_id=p.id)
+            if not line:
+                line = await self.repository.create_deal_product(db, deal_id=deal_id,
+                    product_id=p.id, quantity=quantity, unit_price=price)
+            # Upsert absolute quantity, rather than incrementing on a retried request.
+            await self.repository.save_product_snapshot(db, line, product_name=p.name,
+                quantity=quantity, unit_price=rounded_value(price),
+                discount_percent=rounded_value(discount_percent, maximum=Decimal(100)),
+                tax_percent=rounded_value(tax_percent, maximum=Decimal(100)))
+            await db.flush()
+            await self._update_sales_total(db, deal)
+            await db.commit()
+            return {"message": "Deal product saved", "status": "success"}
+        except Exception:
+            await db.rollback()
+            raise
 
-        await self._commit(db, "Failed to add product to deal")
-        await self._recalculate_deal_amount(db, deal_id, force=False)
-        return {"message": f"Added product item to deal {deal_id}", "status": "success"}
+    async def _mutable_sales_deal(self, db: AsyncSession, deal_id: str, organization_id: str) -> Deal:
+        deal = await self.repository.get_by_id_scoped(db, deal_id=deal_id,
+            organization_id=organization_id, lock=True)
+        if not deal:
+            raise NotFoundError(message="Deal not found")
+        quote = await self.quote_service.repository.get_automatic(db, deal_id=deal_id,
+            organization_id=organization_id)
+        if deal.stage == DEAL_STAGE_CLOSED_WON or quote:
+            raise ConflictError(message="Products on a closed or quoted deal cannot be changed")
+        return deal
 
-    async def remove_deal_product(self, db: AsyncSession, *, deal_id: str, product_id: str) -> dict:
-        dp = await self.repository.get_deal_product(db, deal_id=deal_id, product_id=product_id)
-        if dp:
-            await self.repository.delete_deal_product(db, dp)
-            await self._commit(db, "Failed to remove product from deal")
-        await self._recalculate_deal_amount(db, deal_id, force=True)
-        return {"message": f"Removed product {product_id} from deal {deal_id}", "status": "success"}
+    async def _update_sales_total(self, db: AsyncSession, deal: Deal) -> None:
+        lines = await self.repository.list_deal_products(db, deal.id)
+        total = sum((calculate_line(line.quantity, line.unit_price,
+            line.discount_percent or 0, line.tax_percent or 0).total for line in lines), Decimal(0))
+        await self.repository.set_amount(db, deal, float(decimal_value(total)))
+
+    async def remove_deal_product(self, db: AsyncSession, *, deal_id: str, product_id: str,
+                                   organization_id: str) -> dict:
+        try:
+            deal = await self._mutable_sales_deal(db, deal_id, organization_id)
+            dp = await self.repository.get_deal_product(db, deal_id=deal_id, product_id=product_id)
+            if dp:
+                await self.repository.delete_deal_product(db, dp)
+            await db.flush()
+            await self._update_sales_total(db, deal)
+            await db.commit()
+            return {"message": "Deal product removed", "status": "success"}
+        except Exception:
+            await db.rollback()
+            raise
 
     async def get_deal_timeline(self, db: AsyncSession, deal_id: str) -> list:
         await self.require_deal(db, deal_id)

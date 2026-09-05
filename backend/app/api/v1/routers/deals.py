@@ -158,9 +158,11 @@ async def bulk_delete_deals(payload: BulkDeleteRequest, db: AsyncSession = Depen
     dependencies=[Depends(require_permission("deals:update"))],
 )
 async def bulk_update_deal_stage(
-    payload: BulkDeleteRequest, stage: str, db: AsyncSession = Depends(get_db)
+    payload: BulkDeleteRequest, stage: str, db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    return await deal_service.bulk_update_stage(db, payload.ids, stage)
+    return await deal_service.bulk_update_stage(db, payload.ids, stage,
+        organization_id=current_user.organization_id, actor_id=current_user.id)
 
 
 @router.get(
@@ -179,8 +181,10 @@ async def get_deal(deal_id: str, db: AsyncSession = Depends(get_db)):
     summary="Update deal details by ID",
     dependencies=[Depends(require_permission("deals:update"))],
 )
-async def update_deal(deal_id: str, payload: DealUpdate, db: AsyncSession = Depends(get_db)):
-    return await deal_service.update_deal(db, deal_id, payload)
+async def update_deal(deal_id: str, payload: DealUpdate, db: AsyncSession = Depends(get_db),
+                      current_user: User = Depends(get_current_user)):
+    return await deal_service.update_deal(db, deal_id, payload,
+        organization_id=current_user.organization_id, actor_id=current_user.id)
 
 
 @router.delete(
@@ -195,24 +199,27 @@ async def delete_deal(deal_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.post(
     "/{deal_id}/stage",
-    response_model=MessageResponse,
     summary="Update deal pipeline stage (drag and drop)",
     dependencies=[Depends(require_permission("deals:update"))],
 )
-async def update_deal_stage(deal_id: str, stage: str, db: AsyncSession = Depends(get_db)):
-    return await deal_service.update_deal_stage(db, deal_id, stage)
+async def update_deal_stage(deal_id: str, stage: str, db: AsyncSession = Depends(get_db),
+                            current_user: User = Depends(get_current_user)):
+    return await deal_service.update_deal_stage(db, deal_id, stage,
+        organization_id=current_user.organization_id, actor_id=current_user.id)
 
 
 @router.post(
     "/{deal_id}/win",
-    response_model=MessageResponse,
     summary="Mark deal as Closed Won",
     dependencies=[Depends(require_permission("deals:update"))],
 )
 async def mark_deal_won(
-    deal_id: str, final_amount: float | None = None, db: AsyncSession = Depends(get_db)
+    deal_id: str, final_amount: float | None = None, db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    return await deal_service.mark_deal_won(db, deal_id, final_amount)
+    return await deal_service.mark_deal_won(
+        db, deal_id, final_amount, organization_id=current_user.organization_id, actor_id=current_user.id,
+    )
 
 
 @router.post(
@@ -257,7 +264,10 @@ async def add_deal_product(
     quantity: int = 1,
     unit_price: float | None = None,
     custom_name: str | None = None,
+    discount_percent: float = Query(0, ge=0, le=100, allow_inf_nan=False),
+    tax_percent: float = Query(0, ge=0, le=100, allow_inf_nan=False),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     return await deal_service.add_deal_product(
         db,
@@ -266,6 +276,9 @@ async def add_deal_product(
         quantity=quantity,
         unit_price=unit_price,
         custom_name=custom_name,
+        organization_id=current_user.organization_id,
+        discount_percent=discount_percent,
+        tax_percent=tax_percent,
     )
 
 
@@ -275,8 +288,10 @@ async def add_deal_product(
     summary="Remove product item from deal",
     dependencies=[Depends(require_permission("deals:delete"))],
 )
-async def remove_deal_product(deal_id: str, product_id: str, db: AsyncSession = Depends(get_db)):
-    return await deal_service.remove_deal_product(db, deal_id=deal_id, product_id=product_id)
+async def remove_deal_product(deal_id: str, product_id: str, db: AsyncSession = Depends(get_db),
+                              current_user: User = Depends(get_current_user)):
+    return await deal_service.remove_deal_product(db, deal_id=deal_id, product_id=product_id,
+        organization_id=current_user.organization_id)
 
 
 @router.get(

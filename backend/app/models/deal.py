@@ -1,6 +1,7 @@
 import uuid
+from decimal import Decimal
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, func
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, Numeric, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -71,6 +72,9 @@ class DealProduct(Base):
     deal_id: Mapped[str] = mapped_column(
         String, ForeignKey("deals.id", ondelete="CASCADE"), index=True
     )
-    product_id: Mapped[str] = mapped_column(String, index=True)
+    product_id: Mapped[str] = mapped_column(String, ForeignKey("products.id", ondelete="RESTRICT"), index=True)
     quantity: Mapped[int] = mapped_column(Integer, default=1)
-    unit_price: Mapped[float] = mapped_column(Float, default=0.0)
+    unit_price: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    product_name: Mapped[str | None] = mapped_column(String(255))
+    discount_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=0, server_default="0")
+    tax_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=0, server_default="0")
