@@ -34,6 +34,16 @@ class Lead(Base):
     )
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False)
     custom_fields: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    converted_company_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("companies.id", ondelete="RESTRICT")
+    )
+    converted_contact_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("contacts.id", ondelete="RESTRICT")
+    )
+    converted_deal_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("deals.id", ondelete="RESTRICT")
+    )
+    converted_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), onupdate=func.now(), server_default=func.now()

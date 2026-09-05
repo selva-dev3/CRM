@@ -1,7 +1,7 @@
 import asyncio
 import io
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +10,9 @@ from app.core.config import settings
 from app.core.errors import APIException, ForbiddenError, NotFoundError
 from app.core.security import generate_random_code, get_password_hash
 from app.models import Lead, User
+from app.repositories.company_repository import CompanyRepository
+from app.repositories.contact_repository import ContactRepository
+from app.repositories.deal_repository import DealRepository
 from app.repositories.lead_repository import LeadRepository
 from app.schemas.crm_schemas import (
     CallLogBase,
@@ -322,15 +325,71 @@ class LeadService:
         }
 
     async def convert_lead(
-        self, db: AsyncSession, lead_id: str, payload: LeadConvertRequest
+        self, db: AsyncSession, lead_id: str, payload: LeadConvertRequest, current_user: User
     ) -> dict:
-        await self.get_lead(db, lead_id)
-        return {
-            "message": "Lead converted successfully",
-            "contact_id": "cnt-200",
-            "company_id": "cmp-300",
-            "deal_id": "dl-400",
-        }
+        organization_id = current_user.organization_id
+        if not organization_id:
+            raise ForbiddenError(message="Organization membership is required")
+        try:
+            lead = await self.repository.lock_conversion(db, lead_id, organization_id)
+            if not lead:
+                raise NotFoundError(message="Lead not found")
+            if lead.status == "Converted" or lead.converted_at is not None:
+                if not lead.converted_contact_id or not lead.converted_company_id:
+                    raise APIException(status_code=409, message="Converted lead has missing customer links")
+                result = self._conversion_result(lead)
+                await db.commit()
+                return result
+            if lead.status != "Qualified" or lead.is_archived:
+                raise APIException(status_code=409, message="Only an active qualified lead can be converted")
+            if not lead.company.strip() or not lead.contact_name.strip() or not lead.email.strip():
+                raise APIException(status_code=422, message="Company, contact name and email are required")
+            companies, contacts = await self.repository.conversion_customers(
+                db, organization_id, lead.company, lead.email
+            )
+            if len(companies) > 1 or len(contacts) > 1:
+                raise APIException(status_code=409, message="Resolve duplicate customers before conversion")
+            company = companies[0] if companies else await CompanyRepository().create(db, data={
+                "id": str(uuid.uuid4()), "organization_id": organization_id,
+                "name": lead.company.strip(), "industry": lead.industry, "website": lead.website,
+            })
+            await db.flush()
+            contact = contacts[0] if contacts else await ContactRepository().create(db, data={
+                "id": str(uuid.uuid4()), "organization_id": organization_id,
+                "name": lead.contact_name.strip(), "email": lead.email.strip(), "phone": lead.phone,
+                "company_id": company.id,
+            })
+            if contact.company_id and contact.company_id != company.id:
+                raise APIException(status_code=409, message="Existing contact belongs to a different company")
+            await self.repository.link_conversion_contact(db, contact, company.id)
+            await db.flush()
+            deal = None
+            if payload.create_deal:
+                deal = await DealRepository().create(db, data={
+                    "id": str(uuid.uuid4()), "organization_id": organization_id,
+                    "title": payload.deal_title or lead.title,
+                    "amount": payload.deal_amount or 0, "stage": "Prospecting",
+                    "assigned_to": current_user.id, "company_id": company.id, "contact_id": contact.id,
+                })
+                await db.flush()
+            await self.repository.save_conversion(
+                db, lead, company_id=company.id, contact_id=contact.id,
+                deal_id=deal.id if deal else None, actor_id=current_user.id,
+                converted_at=datetime.now(UTC),
+            )
+            result = self._conversion_result(lead)
+            await db.commit()
+            return result
+        except Exception:
+            await db.rollback()
+            raise
+
+    @staticmethod
+    def _conversion_result(lead: Lead) -> dict:
+        return {"message": "Lead converted successfully",
+                "contact_id": lead.converted_contact_id,
+                "company_id": lead.converted_company_id,
+                "deal_id": lead.converted_deal_id}
 
     async def assign_lead(self, db: AsyncSession, lead_id: str, user_id: str) -> dict:
         lead = await self.repository.get_by_id(db, lead_id)

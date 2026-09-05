@@ -2,6 +2,8 @@
 
 import { getErrorMessage } from '@/lib/utils';
 import React, { useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useHasPermission } from '@/hooks/use-has-permission';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -11,7 +13,6 @@ import {
   CheckCircle2,
   Download,
   Receipt,
-  Repeat,
   AlertCircle,
   X,
   Loader2,
@@ -27,9 +28,7 @@ import {
   useQuotePdfQuery,
   useQuoteRevisionsQuery,
   useSendQuoteEmailMutation,
-  useAcceptQuoteMutation,
-  useConvertQuoteToInvoiceMutation,
-  useCreateQuoteRevisionMutation,
+  approveQuoteApi,
   useDeleteQuoteMutation
 } from '@/lib/api/quotes';
 
@@ -37,23 +36,26 @@ export default function QuoteDetailPage() {
   const params = useParams();
   const router = useRouter();
   const quoteId = (params?.id as string) || '';
+  const queryClient = useQueryClient();
+  const { hasPermission } = useHasPermission();
 
   // Queries
-  const { data: quote, isLoading, isError } = useQuoteQuery(quoteId);
-  const { data: pdfData } = useQuotePdfQuery(quoteId);
+  const { data: quote, isLoading, isError } = useQuoteQuery(quoteId, {
+    refetchInterval: query => ['Pending', 'Processing'].includes(query.state.data?.delivery_status || '') ? 5000 : false,
+  });
+  const { data: pdfData } = useQuotePdfQuery(quoteId, { enabled: !!quote?.pdf_available });
   const { data: revisions = [] } = useQuoteRevisionsQuery(quoteId);
 
   // Mutations
   const sendEmailMutation = useSendQuoteEmailMutation();
-  const acceptMutation = useAcceptQuoteMutation();
-  const convertInvoiceMutation = useConvertQuoteToInvoiceMutation();
-  const createRevisionMutation = useCreateQuoteRevisionMutation();
+  const approveMutation = useMutation({ mutationFn: approveQuoteApi,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['quotes'] }) });
   const deleteMutation = useDeleteQuoteMutation();
 
   // State
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isSendEmailModalOpen, setIsSendEmailModalOpen] = useState(false);
-  const [recipientEmailInput, setRecipientEmailInput] = useState('client@company.com');
+  const [recipientEmailInput, setRecipientEmailInput] = useState('');
 
   // Toast / Alert notifications
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -61,40 +63,23 @@ export default function QuoteDetailPage() {
 
   const handleSendEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!recipientEmailInput.trim()) return;
+    if (!recipientEmailInput.trim() || sendEmailMutation.isPending) return;
     try {
-      await sendEmailMutation.mutateAsync({ id: quoteId, recipient_email: recipientEmailInput.trim() });
-      setSuccessMessage(`Quote proposal email sent to ${recipientEmailInput.trim()}.`);
+      const result = await sendEmailMutation.mutateAsync({ id: quoteId, recipient_email: recipientEmailInput.trim() });
+      setSuccessMessage(result.message);
       setIsSendEmailModalOpen(false);
     } catch (err: unknown) {
       setErrorMessage(getErrorMessage(err, 'Failed to send email.'));
     }
   };
 
-  const handleAcceptQuote = async () => {
+  const handleApproveQuote = async () => {
+    if (approveMutation.isPending) return;
     try {
-      await acceptMutation.mutateAsync(quoteId);
-      setSuccessMessage(`Quote proposal marked as Accepted.`);
+      await approveMutation.mutateAsync(quoteId);
+      setSuccessMessage('Quote approved. You can now send it for customer acceptance.');
     } catch (err: unknown) {
-      setErrorMessage(getErrorMessage(err, 'Failed to accept quote.'));
-    }
-  };
-
-  const handleConvertToInvoice = async () => {
-    try {
-      const res = await convertInvoiceMutation.mutateAsync(quoteId);
-      setSuccessMessage(`Quote converted directly into Invoice #${res.invoice_number}!`);
-    } catch (err: unknown) {
-      setErrorMessage(getErrorMessage(err, 'Failed to convert quote into invoice.'));
-    }
-  };
-
-  const handleCreateRevision = async () => {
-    try {
-      const res = await createRevisionMutation.mutateAsync(quoteId);
-      setSuccessMessage(`New revision created: ${res.quote_number}.`);
-    } catch (err: unknown) {
-      setErrorMessage(getErrorMessage(err, 'Failed to create quote revision.'));
+      setErrorMessage(getErrorMessage(err, 'Failed to approve quote.'));
     }
   };
 
@@ -167,32 +152,30 @@ export default function QuoteDetailPage() {
         </div>
 
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-          <Button
-            onClick={() => setIsSendEmailModalOpen(true)}
+          {hasPermission('quotes:send') && s === 'Approved' && <Button
+            disabled={['Pending', 'Processing', 'Unknown'].includes(quote.delivery_status || '')}
+            onClick={() => { setRecipientEmailInput(quote.recipient_email || ''); setIsSendEmailModalOpen(true); }}
             className="w-full gap-2 text-xs font-semibold sm:w-auto"
           >
             <Send className="w-4 h-4" />
             Send to Client
-          </Button>
+          </Button>}
 
-          {s !== 'Accepted' && (
+          {hasPermission('quotes:approve') && ['Draft', 'Pending Approval'].includes(s) && (
             <Button
-              onClick={handleAcceptQuote}
+              onClick={handleApproveQuote}
+              disabled={approveMutation.isPending}
               className="w-full gap-2 bg-emerald-600 text-xs font-semibold hover:bg-emerald-700 sm:w-auto"
             >
               <CheckCircle2 className="w-4 h-4" />
-              Accept Quote
+              Approve Quote
             </Button>
           )}
 
-          {s === 'Accepted' && (
-            <Button
-              onClick={handleConvertToInvoice}
-              className="w-full gap-2 bg-purple-600 text-xs font-semibold hover:bg-purple-700 sm:w-auto"
-            >
-              <Receipt className="w-4 h-4" />
-              Convert to Invoice
-            </Button>
+          {quote.invoice_id && (
+            <Button asChild variant="outline"><Link href={`/invoices/${quote.invoice_id}`}>
+              <Receipt className="mr-2 h-4 w-4" />View generated invoice
+            </Link></Button>
           )}
 
           {pdfData?.pdf_url && (
@@ -209,11 +192,6 @@ export default function QuoteDetailPage() {
             className="w-full text-xs font-semibold sm:w-auto"
             actions={[
               {
-                label: 'Create revision (v2)',
-                icon: <Repeat className="w-4 h-4 text-amber-500" />,
-                onSelect: handleCreateRevision,
-              },
-              {
                 label: 'Delete quote',
                 icon: <Trash2 className="w-4 h-4" />,
                 variant: 'destructive',
@@ -225,6 +203,11 @@ export default function QuoteDetailPage() {
       </div>
 
       {/* Toast Feedback */}
+      {quote.delivery_status && <p role="status" className="rounded border p-3 text-sm">
+        Delivery: {quote.delivery_status}. {quote.delivery_status === 'Unknown'
+          ? 'The provider outcome must be reconciled before another send.'
+          : 'Sent means accepted by the email provider, not confirmed inbox delivery.'}
+      </p>}
       {successMessage && (
         <div className="flex items-center justify-between p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl shadow-sm">
           <div className="flex items-center gap-2 text-sm font-medium">
@@ -272,7 +255,7 @@ export default function QuoteDetailPage() {
                   {quote.items && quote.items.length > 0 ? (
                     quote.items.map((item, idx) => (
                       <tr key={idx}>
-                        <td className="p-3 font-semibold text-slate-900">{item.name}</td>
+                        <td className="p-3 font-semibold text-slate-900">{item.product_name || item.name}</td>
                         <td className="p-3 text-center font-mono">{item.quantity}</td>
                         <td className="p-3 text-right">${item.unit_price.toLocaleString()}</td>
                         <td className="p-3 text-right font-bold text-slate-900">${item.total.toLocaleString()}</td>

@@ -135,9 +135,16 @@ export async function updateDealStageApi(payload: { id: string; stage: string })
   return apiClient.post<ActionResponse>(`/deals/${payload.id}/stage?stage=${encodeURIComponent(payload.stage)}`);
 }
 
-export async function markDealWonApi(payload: { id: string; final_amount?: number }): Promise<ActionResponse> {
+export interface DealWonResponse extends ActionResponse {
+  deal_id: string;
+  stage: string;
+  quote_id: string;
+  quote_status: string;
+}
+
+export async function markDealWonApi(payload: { id: string; final_amount?: number }): Promise<DealWonResponse> {
   const query = payload.final_amount ? `?final_amount=${payload.final_amount}` : '';
-  return apiClient.post<ActionResponse>(`/deals/${payload.id}/win${query}`);
+  return apiClient.post<DealWonResponse>(`/deals/${payload.id}/win${query}`);
 }
 
 export async function markDealLostApi(payload: { id: string; reason: string }): Promise<ActionResponse> {

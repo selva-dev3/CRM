@@ -20,8 +20,10 @@ from app.api.v1.routers import (
     notes,
     notifications,
     organizations,
+    payment_webhooks,
     products,
     projects,
+    public_quotes,
     quotes,
     reports,
     roles,
@@ -32,6 +34,8 @@ from app.api.v1.routers import (
 )
 
 api_router = APIRouter()
+api_router.include_router(public_quotes.router, prefix="/public/quotes", tags=["Customer Quotes"])
+api_router.include_router(payment_webhooks.router, prefix="/payments/webhooks", tags=["Payment Webhooks"])
 
 # Public Authentication endpoints
 api_router.include_router(auth.router, prefix="/auth", tags=["1. Authentication & Security"])

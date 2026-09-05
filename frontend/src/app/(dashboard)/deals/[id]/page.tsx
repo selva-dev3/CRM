@@ -253,14 +253,18 @@ export default function DealDetailsPage() {
   };
 
   const handleMarkWon = async () => {
-    if (!deal) return;
+    if (!deal || markWonMutation.isPending) return;
     try {
       setErrorMessage(null);
-      await markWonMutation.mutateAsync({ id: dealId, final_amount: deal.amount });
-      setSuccessMessage(`Deal '${deal.title}' marked as Closed Won! 🎉`);
-      refetch();
-    } catch {
-      setErrorMessage('Failed to mark deal as won.');
+      const result = await markWonMutation.mutateAsync({ id: dealId });
+      setSuccessMessage(`Deal won. Quote created (${result.quote_status}) and ready for review.`);
+      await Promise.all([
+        refetch(),
+        queryClient.invalidateQueries({ queryKey: ['quotes'] }),
+        queryClient.invalidateQueries({ queryKey: ['deal-quotes', dealId] }),
+      ]);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to mark deal as won.');
     }
   };
 

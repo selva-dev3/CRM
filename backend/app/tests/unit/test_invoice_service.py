@@ -11,6 +11,7 @@ from app.models import Product, User
 from app.models.deal import Deal, DealProduct
 from app.models.invoice import Invoice
 from app.repositories.invoice_repository import InvoiceRepository
+from app.repositories.quote_repository import QuoteRepository
 from app.services.integration_service import integration_service
 from app.services.invoice_service import (
     INVOICE_STATUS_DRAFT,
@@ -92,7 +93,9 @@ def _make_invoice(**overrides) -> Invoice:
 
 
 def _service_with(repo: InvoiceRepository) -> InvoiceService:
-    return InvoiceService(repository=repo)
+    quotes = MagicMock(spec=QuoteRepository)
+    quotes.get_automatic = AsyncMock(return_value=None)
+    return InvoiceService(repository=repo, quote_repository=quotes)
 
 
 @pytest.fixture
@@ -488,22 +491,21 @@ async def test_send_does_not_touch_overdue_or_paid(patched_org):
 
 
 @pytest.mark.asyncio
-async def test_mark_paid_sets_paid_amount_and_fires_event(patched_org):
+async def test_manual_mark_paid_does_not_bypass_provider_verification(patched_org):
     invoice = _make_invoice(status=INVOICE_STATUS_PENDING)
     repo: Any = InvoiceRepository()
     repo.get_scoped = AsyncMock(return_value=invoice)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
-    await service.mark_paid(
-        db, invoice_id="inv-1", organization_id="org-1", payment_method="Stripe"
-    )
-
-    assert invoice.status == INVOICE_STATUS_PAID
-    assert invoice.paid_amount == 1000.0
+    with pytest.raises(ConflictError, match="verified by the provider"):
+        await service.mark_paid(
+            db, invoice_id="inv-1", organization_id="org-1", payment_method="Stripe"
+        )
+    assert invoice.status == INVOICE_STATUS_PENDING
+    db.commit.assert_not_awaited()
     notify = cast(Any, integration_service).notify_slack_event
-    kwargs = notify.await_args_list[-1].kwargs
-    assert kwargs["event_name"] == "invoice.paid"
+    notify.assert_not_awaited()
 
 
 @pytest.mark.asyncio

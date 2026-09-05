@@ -232,7 +232,7 @@ export async function recalculateLeadScoreApi(leadId: string): Promise<LeadIntel
   return apiClient.post<LeadIntelligenceResult>(`/leads/${leadId}/score`);
 }
 
-export async function convertLeadApi(leadId: string, payload: { create_deal?: boolean; deal_title?: string; deal_amount?: number }): Promise<{ message: string; contact_id: string; company_id: string; deal_id: string }> {
+export async function convertLeadApi(leadId: string, payload: { create_deal?: boolean; deal_title?: string; deal_amount?: number }): Promise<{ message: string; contact_id: string; company_id: string; deal_id: string | null }> {
   return apiClient.post(`/leads/${leadId}/convert`, payload);
 }
 

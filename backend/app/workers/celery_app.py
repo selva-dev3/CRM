@@ -13,6 +13,7 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
+    imports=("app.workers.tasks",),
 )
 
 # Hourly sweep of scheduled report deliveries (see workers/tasks.py).
@@ -20,5 +21,9 @@ celery_app.conf.beat_schedule = {
     "deliver-due-scheduled-reports": {
         "task": "app.workers.tasks.deliver_due_scheduled_reports",
         "schedule": crontab(minute=0),
+    },
+    "deliver-pending-quotes": {
+        "task": "app.workers.tasks.deliver_pending_quotes",
+        "schedule": 60.0,
     },
 }

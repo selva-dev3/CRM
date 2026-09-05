@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from uuid import uuid4
 
 from sqlalchemy.exc import IntegrityError
@@ -11,9 +12,14 @@ from app.core.errors import APIException, ConflictError, NotFoundError
 from app.core.logging import get_logger
 from app.models import User
 from app.models.invoice import Invoice, InvoiceItem
+from app.models.quote import Quote
+from app.repositories.deal_repository import DealRepository
 from app.repositories.invoice_repository import InvoiceRepository
+from app.repositories.notification_repository import NotificationRepository
+from app.repositories.quote_repository import QuoteRepository
 from app.services.notification_service import notification_service
 from app.services.org_service import organization_service
+from app.services.sales_totals import calculate_line, decimal_value
 
 logger = get_logger(__name__)
 
@@ -53,6 +59,7 @@ def invoice_to_dict(
 ) -> dict:
     data: dict[str, object] = {
         "id": inv.id,
+        "quote_id": inv.quote_id,
         "invoice_number": inv.invoice_number or f"INV-{inv.id[:6]}",
         "deal_id": inv.deal_id,
         "company_id": inv.company_id,
@@ -95,8 +102,71 @@ class InvoiceService:
     authenticated user.
     """
 
-    def __init__(self, repository: InvoiceRepository | None = None) -> None:
+    def __init__(self, repository: InvoiceRepository | None = None,
+                 quote_repository: QuoteRepository | None = None) -> None:
         self.repository = repository or InvoiceRepository()
+        self.quote_repository = quote_repository or QuoteRepository()
+
+    async def create_from_accepted_quote(self, db: AsyncSession, quote: Quote) -> Invoice:
+        """The caller owns the quote lock and commits acceptance and invoice together."""
+        if quote.status != "Accepted" or not quote.approved_at or not quote.accepted_at:
+            raise ConflictError(message="The quote must be approved and accepted")
+        existing = await self.repository.get_by_quote(db, quote_id=quote.id,
+            organization_id=quote.organization_id)
+        if existing:
+            return existing
+        deal = await self.repository.get_deal_scoped(db, deal_id=quote.deal_id,
+            organization_id=quote.organization_id)
+        if not deal or deal.stage != DEAL_STAGE_CLOSED_WON:
+            raise DealNotClosedWonError(message="The quoted deal must still be Closed Won")
+        company, contact = await DealRepository().get_sales_customer(db,
+            organization_id=quote.organization_id, company_id=quote.company_id, contact_id=quote.contact_id)
+        if not company or not contact or contact.company_id != company.id:
+            raise APIException(message="The quoted customer is invalid")
+        address = await self.repository.get_billing_address(db, contact.id)
+        if not address or not address.street or not address.country:
+            raise APIException(message="Customer billing street and country are required", code="BILLING_ADDRESS_REQUIRED")
+        lines = await self.quote_repository.list_items(db, quote_id=quote.id, organization_id=quote.organization_id)
+        if not lines or not quote.currency:
+            raise APIException(message="Quote items and currency are required")
+        totals = [calculate_line(line.quantity, line.unit_price, line.discount_percent, line.tax_percent) for line in lines]
+        total = sum((line.total for line in totals), Decimal(0))
+        if total != decimal_value(quote.total_amount) or total <= 0:
+            raise APIException(message="Quote total is invalid", code="INVALID_QUOTE_TOTAL")
+        if any(not line.product_name for line in lines):
+            raise APIException(message="Quote product snapshots are incomplete")
+        organization = await self.repository.lock_numbering(db, quote.organization_id)
+        if not organization or not organization.is_active:
+            raise NotFoundError(message="Organization not found")
+        sequence = await self.repository.advance_numbering(db, organization)
+        now = datetime.now(UTC)
+        invoice = await self.repository.create(db, data={
+            "id": str(uuid4()), "organization_id": quote.organization_id,
+            "quote_id": quote.id, "deal_id": quote.deal_id, "company_id": company.id,
+            "contact_id": contact.id, "currency": quote.currency,
+            "invoice_number": f"{organization.invoice_prefix}-{now.year}-{sequence:06d}",
+            "amount": total, "subtotal": sum((line.subtotal for line in totals), Decimal(0)),
+            "discount_total": sum((line.discount for line in totals), Decimal(0)),
+            "tax_total": sum((line.tax for line in totals), Decimal(0)), "paid_amount": 0,
+            "status": INVOICE_STATUS_PENDING, "due_date": now + timedelta(days=DEFAULT_PAYMENT_TERM_DAYS),
+            "billing_snapshot": {"company": company.name, "contact": contact.name, "email": contact.email,
+                "street": address.street, "city": address.city, "state": address.state,
+                "country": address.country, "postal_code": address.postal_code},
+        })
+        await db.flush()
+        await self.repository.add_items(db, items=[{
+            "invoice_id": invoice.id, "product_id": line.product_id, "description": line.product_name,
+            "quantity": line.quantity, "unit_price": line.unit_price,
+            "discount_percent": line.discount_percent, "tax_percent": line.tax_percent,
+        } for line in lines])
+        await self.repository.record_creation(db, invoice)
+        await NotificationRepository().create_for_scoped_user(db, data={
+            "organization_id": quote.organization_id, "user_id": quote.approved_by,
+            "event_name": "invoice.created", "entity_type": "invoice", "entity_id": invoice.id,
+            "title": "Invoice automatically created", "message": f"Invoice {invoice.invoice_number} is pending payment.",
+        })
+        await db.flush()
+        return invoice
 
     async def require_invoice(
         self, db: AsyncSession, *, invoice_id: str, organization_id: str
@@ -149,6 +219,15 @@ class InvoiceService:
         return the already-existing invoice instead of creating a second one.
         """
         organization_id = await self.resolve_organization_id(db, current_user)
+
+        generated_quote = await self.quote_repository.get_automatic(db, deal_id=deal_id,
+            organization_id=organization_id)
+        if generated_quote:
+            existing_invoice = await self.repository.get_by_quote(db,
+                quote_id=generated_quote.id, organization_id=organization_id)
+            if existing_invoice:
+                return await self.get_invoice(db, invoice_id=existing_invoice.id, organization_id=organization_id)
+            raise ConflictError(message="The invoice is created automatically when the customer accepts the quote")
 
         deal = await self.repository.get_deal_scoped(
             db, deal_id=deal_id, organization_id=organization_id
@@ -338,6 +417,10 @@ class InvoiceService:
         invoice = await self.require_invoice(
             db, invoice_id=invoice_id, organization_id=organization_id
         )
+        if invoice.quote_id or invoice.status == INVOICE_STATUS_PAID:
+            raise ConflictError(message="Generated or paid invoices cannot be edited")
+        if status == INVOICE_STATUS_PAID:
+            raise ConflictError(message="Paid status requires verified payment evidence")
         if amount is not None:
             invoice.amount = amount
         if status is not None:
@@ -360,6 +443,8 @@ class InvoiceService:
         invoice = await self.require_invoice(
             db, invoice_id=invoice_id, organization_id=organization_id
         )
+        if invoice.quote_id or invoice.status == INVOICE_STATUS_PAID:
+            raise ConflictError(message="Generated or paid invoices cannot be deleted")
         await self.repository.delete(db, invoice)
         await db.commit()
         return invoice
@@ -384,30 +469,14 @@ class InvoiceService:
         invoice = await self.require_invoice(
             db, invoice_id=invoice_id, organization_id=organization_id
         )
+        if invoice.quote_id:
+            raise ConflictError(message="Generated invoices require a verified payment; manual mark-paid is disabled")
         if invoice.status == INVOICE_STATUS_PAID:
             raise ConflictError(
                 message="Invoice is already marked as Paid.", code="INVOICE_ALREADY_PAID"
             )
-        invoice.status = INVOICE_STATUS_PAID
-        invoice.paid_amount = invoice.amount or 0.0
-        await db.commit()
-        await db.refresh(invoice)
-        await notification_service.notify(
-            db,
-            event_name="invoice.paid",
-            organization_id=organization_id,
-            entity_type="invoice",
-            entity_id=invoice.id,
-            data={
-                "id": invoice.id,
-                "invoice_number": invoice.invoice_number,
-                "amount": invoice.amount,
-                "paid_amount": invoice.paid_amount,
-                "status": invoice.status,
-                "payment_method": payment_method,
-            },
-        )
-        return invoice_to_dict(invoice)
+        raise ConflictError(message="Payment must be verified by the provider; manual mark-paid is disabled",
+                            code="PAYMENT_VERIFICATION_REQUIRED")
 
 
 invoice_service = InvoiceService()

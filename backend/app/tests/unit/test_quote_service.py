@@ -58,8 +58,11 @@ def make_service(
 ) -> tuple[QuoteService, Any, Any]:
     quote_repository: Any = QuoteRepository()
     quote_repository.get_scoped = AsyncMock(return_value=quote)
+    quote_repository.list_items = AsyncMock(return_value=[])
+    quote_repository.get_invoice_reference = AsyncMock(return_value=None)
     deal_repository: Any = DealRepository()
     deal_repository.get_by_id_scoped = AsyncMock(return_value=deal)
+    deal_repository.get_sales_customer = AsyncMock(return_value=(None, None))
     return (
         QuoteService(
             repository=quote_repository,
@@ -279,37 +282,29 @@ async def test_bulk_delete_preserves_scoped_affected_count(affected, ids, expect
 
 
 @pytest.mark.asyncio
-async def test_quote_actions_preserve_success_responses():
+async def test_quote_actions_do_not_fabricate_documents(monkeypatch):
     service, _, _ = make_service(quote=make_quote())
     db = AsyncMock(spec=AsyncSession)
 
-    sent = await service.send_quote(
-        db,
-        quote_id="quote-1",
-        recipient_email="buyer@example.com",
-        organization_id="org-1",
-    )
-    accepted = await service.accept_quote(db, quote_id="quote-1", organization_id="org-1")
+    with pytest.raises(APIException, match="secure acceptance"):
+        await service.accept_quote(db, quote_id="quote-1", organization_id="org-1")
     rejected = await service.reject_quote(
         db,
         quote_id="quote-1",
         reason="Budget constraints",
         organization_id="org-1",
     )
-    pdf = await service.get_quote_pdf(db, quote_id="quote-1", organization_id="org-1")
-    invoice = await service.convert_quote_to_invoice(
-        db, quote_id="quote-1", organization_id="org-1"
-    )
-    revision = await service.create_quote_revision(db, quote_id="quote-1", organization_id="org-1")
+    with pytest.raises(NotFoundError):
+        await service.get_quote_pdf(db, quote_id="quote-1", organization_id="org-1")
+    monkeypatch.setattr("app.services.quote_service.invoice_repository.get_by_quote", AsyncMock(return_value=None))
+    with pytest.raises(APIException):
+        await service.convert_quote_to_invoice(db, quote_id="quote-1", organization_id="org-1")
+    with pytest.raises(APIException):
+        await service.create_quote_revision(db, quote_id="quote-1", organization_id="org-1")
     revisions = await service.get_quote_revisions(db, quote_id="quote-1", organization_id="org-1")
 
-    assert sent["message"] == "Quote proposal sent to buyer@example.com"
-    assert accepted["status"] == "success"
     assert rejected["message"].endswith("Budget constraints")
-    assert pdf == {"pdf_url": "https://api.crm.com/quotes/quote-1.pdf"}
-    assert invoice["invoice_number"] == "INV-Q-1"
-    assert revision["quote_number"] == "Q-1-v2"
-    assert len(revisions) == 2
+    assert revisions == []
 
 
 @pytest.mark.asyncio

@@ -18,6 +18,7 @@ export function resolveApiBaseUrl(
 export const BASE_URL = resolveApiBaseUrl();
 
 const NON_REFRESHABLE_AUTH_ENDPOINTS = [
+  '/public/quotes/',
   '/auth/login',
   '/auth/register',
   '/auth/forgot-password',
@@ -165,7 +166,7 @@ async function request<T>(
   let response = await fetchWithTimeout(`${BASE_URL}${endpoint}`, {
     ...options,
     headers,
-    credentials: 'include',
+    credentials: options.credentials ?? 'include',
   }, API_REQUEST_TIMEOUT_MS);
 
   if (response.status === 401 && allowRefresh && canRefresh(endpoint)) {
@@ -174,7 +175,7 @@ async function request<T>(
       response = await fetchWithTimeout(`${BASE_URL}${endpoint}`, {
         ...options,
         headers,
-        credentials: 'include',
+        credentials: options.credentials ?? 'include',
       }, API_REQUEST_TIMEOUT_MS);
     }
   }

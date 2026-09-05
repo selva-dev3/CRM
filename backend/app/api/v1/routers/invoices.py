@@ -14,6 +14,7 @@ from app.schemas.crm_schemas import (
     InvoiceResponse,
     MessageResponse,
 )
+from app.services.invoice_payment_service import invoice_payment_service
 from app.services.invoice_service import invoice_service
 
 router = APIRouter()
@@ -292,13 +293,7 @@ async def create_stripe_checkout(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await invoice_service.resolve_organization_id(db, current_user)
-    invoice = await invoice_service.require_invoice(
-        db, invoice_id=invoice_id, organization_id=organization_id
-    )
-    return {
-        "checkout_url": invoice.stripe_checkout_url
-        or f"https://checkout.stripe.com/pay/session_{invoice.id}"
-    }
+    return await invoice_payment_service.checkout(db, invoice_id=invoice_id, organization_id=organization_id)
 
 
 @router.post(

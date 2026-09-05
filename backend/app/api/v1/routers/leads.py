@@ -233,9 +233,10 @@ async def delete_lead(lead_id: str, db: AsyncSession = Depends(get_db)):
     dependencies=[Depends(require_permission("leads:convert"))],
 )
 async def convert_lead(
-    lead_id: str, payload: LeadConvertRequest, db: AsyncSession = Depends(get_db)
+    lead_id: str, payload: LeadConvertRequest, db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    return await lead_service.convert_lead(db, lead_id, payload)
+    return await lead_service.convert_lead(db, lead_id, payload, current_user)
 
 
 @router.post(

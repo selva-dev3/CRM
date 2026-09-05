@@ -17,6 +17,14 @@ from app.services.quote_service import quote_service
 router = APIRouter()
 
 
+@router.post("/{quote_id}/approve", response_model=QuoteResponse,
+             dependencies=[Depends(require_permission("quotes:approve"))])
+async def approve_quote(quote_id: str, db: AsyncSession = Depends(get_db),
+                        current_user: User = Depends(get_current_user)):
+    return await quote_service.approve_quote(db, quote_id=quote_id,
+        organization_id=current_user.organization_id, actor_id=current_user.id)
+
+
 @router.get(
     "",
     summary="List quotes with pagination & filter",
@@ -143,6 +151,7 @@ async def delete_quote(
 
 @router.post(
     "/{quote_id}/send",
+    status_code=202,
     response_model=MessageResponse,
     summary="Send quote proposal email to client",
     dependencies=[Depends(require_permission("quotes:send"))],

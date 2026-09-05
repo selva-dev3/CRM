@@ -4,12 +4,38 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Invoice, InvoiceItem
+from app.models.audit import AuditLog
+from app.models.contact import ContactAddress
 from app.models.deal import Deal, DealProduct
+from app.models.organization import Organization
 from app.models.product import Product
 
 
 class InvoiceRepository:
     """DB query layer for the Invoice domain. All queries are organization-scoped."""
+
+    async def get_by_quote(self, db: AsyncSession, *, quote_id: str, organization_id: str) -> Invoice | None:
+        result = await db.execute(select(Invoice).where(
+            Invoice.quote_id == quote_id, Invoice.organization_id == organization_id,
+        ))
+        return result.scalar_one_or_none()
+
+    async def lock_numbering(self, db: AsyncSession, organization_id: str) -> Organization | None:
+        result = await db.execute(select(Organization).where(
+            Organization.id == organization_id,
+        ).with_for_update().execution_options(populate_existing=True))
+        return result.scalar_one_or_none()
+
+    async def advance_numbering(self, db: AsyncSession, organization: Organization) -> int:
+        organization.invoice_sequence += 1
+        return organization.invoice_sequence
+
+    async def get_billing_address(self, db: AsyncSession, contact_id: str) -> ContactAddress | None:
+        result = await db.execute(select(ContactAddress).where(ContactAddress.contact_id == contact_id).limit(1))
+        return result.scalar_one_or_none()
+
+    async def record_creation(self, db: AsyncSession, invoice: Invoice) -> None:
+        db.add(AuditLog(organization_id=invoice.organization_id, action="invoice.auto_created", details=invoice.id))
 
     async def get_scoped(
         self, db: AsyncSession, *, invoice_id: str, organization_id: str
