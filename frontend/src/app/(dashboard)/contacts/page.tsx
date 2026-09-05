@@ -1,5 +1,7 @@
 ﻿'use client';
 
+import { ResponsiveSelect } from '@/components/common/responsive-select';
+
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -807,9 +809,9 @@ export default function ContactsPage() {
         <form onSubmit={handleMergeSubmit} className="space-y-4 text-xs">
           <div className="space-y-1">
             <Label className="font-semibold text-slate-700">Primary Contact (To Keep)</Label>
-            <select
+            <ResponsiveSelect
               value={primaryContactId}
-              onChange={(e) => setPrimaryContactId(e.target.value)}
+              onValueChange={setPrimaryContactId}
               className="w-full h-9 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-900"
             >
               <option value="">Select primary contact...</option>
@@ -818,14 +820,14 @@ export default function ContactsPage() {
                   {c.name} ({c.email})
                 </option>
               ))}
-            </select>
+            </ResponsiveSelect>
           </div>
 
           <div className="space-y-1">
             <Label className="font-semibold text-slate-700">Secondary Contact (To Merge &amp; Remove)</Label>
-            <select
+            <ResponsiveSelect
               value={secondaryContactId}
-              onChange={(e) => setSecondaryContactId(e.target.value)}
+              onValueChange={setSecondaryContactId}
               className="w-full h-9 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-900"
             >
               <option value="">Select secondary contact...</option>
@@ -834,7 +836,7 @@ export default function ContactsPage() {
                   {c.name} ({c.email})
                 </option>
               ))}
-            </select>
+            </ResponsiveSelect>
           </div>
 
           <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">

@@ -1,5 +1,7 @@
 ﻿'use client';
 
+import { ResponsiveSelect } from '@/components/common/responsive-select';
+
 import { ActionMenu } from '@/components/common/action-menu';
 import { getErrorMessage } from '@/lib/utils';
 import React, { useState, useEffect } from 'react';
@@ -274,9 +276,9 @@ export default function NotesPage() {
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
-          <select
+          <ResponsiveSelect
             value={entityTypeFilter}
-            onChange={(e) => setEntityTypeFilter(e.target.value)}
+            onValueChange={setEntityTypeFilter}
             className="bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold text-slate-700 outline-none shadow-xs"
           >
             <option value="">All Entity Types</option>
@@ -284,7 +286,7 @@ export default function NotesPage() {
             <option value="Contact">Contacts</option>
             <option value="Deal">Deals</option>
             <option value="Company">Companies</option>
-          </select>
+          </ResponsiveSelect>
 
           <PermissionGate permission={PERMISSIONS.NOTES.CREATE}>
             <button
@@ -375,16 +377,16 @@ export default function NotesPage() {
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
                   Entity Type
                 </label>
-                <select
+                <ResponsiveSelect
                   value={entityType}
-                  onChange={(e) => setEntityType(e.target.value)}
+                  onValueChange={setEntityType}
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
                 >
                   <option value="Lead">Lead</option>
                   <option value="Contact">Contact</option>
                   <option value="Deal">Deal</option>
                   <option value="Company">Company</option>
-                </select>
+                </ResponsiveSelect>
               </div>
 
               <div>

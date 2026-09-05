@@ -1,5 +1,7 @@
 ﻿'use client';
 
+import { ResponsiveSelect } from '@/components/common/responsive-select';
+
 import { getErrorMessage } from '@/lib/utils';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 /* eslint-disable @next/next/no-img-element -- remote organization logo URL */
@@ -776,10 +778,10 @@ export default function OrganizationPage() {
 
               <div>
                 <Label htmlFor="edit-plan">Subscription Plan</Label>
-                <select
+                <ResponsiveSelect
                   id="edit-plan"
                   value={formPlan}
-                  onChange={(e) => setFormPlan(e.target.value)}
+                  onValueChange={setFormPlan}
                   className="w-full h-10 rounded-btn border border-[#E5E7EB] bg-white px-3 text-body font-medium text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
                 >
                   <option value="Free">Free Plan</option>
@@ -787,7 +789,7 @@ export default function OrganizationPage() {
                   <option value="Professional">Professional Plan</option>
                   <option value="Business">Business Plan</option>
                   <option value="Enterprise">Enterprise Plan</option>
-                </select>
+                </ResponsiveSelect>
               </div>
 
               <div>

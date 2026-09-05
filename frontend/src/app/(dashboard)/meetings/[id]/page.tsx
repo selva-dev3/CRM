@@ -1,5 +1,7 @@
 ﻿'use client';
 
+import { ResponsiveSelect } from '@/components/common/responsive-select';
+
 import { getErrorMessage } from '@/lib/utils';
 import React, { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
@@ -395,15 +397,15 @@ export default function MeetingDetailPage() {
                 placeholder="Attendee Email..."
                 className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
               />
-              <select
+              <ResponsiveSelect
                 value={rsvpStatus}
-                onChange={(e) => setRsvpStatus(e.target.value)}
+                onValueChange={setRsvpStatus}
                 className="w-full bg-slate-50 border border-slate-300 text-xs rounded-lg px-3 py-1.5 outline-none focus:ring-2 focus:ring-indigo-500"
               >
                 <option value="Accepted">Accepted</option>
                 <option value="Declined">Declined</option>
                 <option value="Tentative">Tentative</option>
-              </select>
+              </ResponsiveSelect>
               <button
                 type="submit"
                 disabled={rsvpMutation.isPending}

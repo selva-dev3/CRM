@@ -1,5 +1,7 @@
 ﻿'use client';
 
+import { ResponsiveSelect } from '@/components/common/responsive-select';
+
 import { ActionMenu } from '@/components/common/action-menu';
 import { getErrorMessage } from '@/lib/utils';
 import React, { useState, useEffect } from 'react';
@@ -430,31 +432,31 @@ export default function TasksPage() {
           {/* Status Dropdown */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">Status</label>
-            <select
+            <ResponsiveSelect
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              onValueChange={setStatusFilter}
               className="w-full bg-slate-50 border border-slate-300 text-slate-800 text-xs rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
             >
               <option value="">All Statuses</option>
               <option value="Pending">Pending</option>
               <option value="In Progress">In Progress</option>
               <option value="Completed">Completed</option>
-            </select>
+            </ResponsiveSelect>
           </div>
 
           {/* Priority Dropdown */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">Priority</label>
-            <select
+            <ResponsiveSelect
               value={priorityFilter}
-              onChange={(e) => setPriorityFilter(e.target.value)}
+              onValueChange={setPriorityFilter}
               className="w-full bg-slate-50 border border-slate-300 text-slate-800 text-xs rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
             >
               <option value="">All Priorities</option>
               <option value="High">High Priority</option>
               <option value="Medium">Medium Priority</option>
               <option value="Low">Low Priority</option>
-            </select>
+            </ResponsiveSelect>
           </div>
         </div>
       )}
@@ -628,30 +630,30 @@ export default function TasksPage() {
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
                 Priority Level
               </label>
-              <select
+              <ResponsiveSelect
                 value={priority}
-                onChange={(e) => setPriority(e.target.value)}
+                onValueChange={setPriority}
                 className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
               >
                 <option value="Low">Low</option>
                 <option value="Medium">Medium</option>
                 <option value="High">High</option>
-              </select>
+              </ResponsiveSelect>
             </div>
 
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
                 Status
               </label>
-              <select
+              <ResponsiveSelect
                 value={status}
-                onChange={(e) => setStatus(e.target.value)}
+                onValueChange={setStatus}
                 className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
               >
                 <option value="Pending">Pending</option>
                 <option value="In Progress">In Progress</option>
                 <option value="Completed">Completed</option>
-              </select>
+              </ResponsiveSelect>
             </div>
           </div>
 

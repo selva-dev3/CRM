@@ -1,5 +1,7 @@
 ﻿'use client';
 
+import { ResponsiveSelect } from '@/components/common/responsive-select';
+
 import { ActionMenu } from '@/components/common/action-menu';
 import { Button } from '@/components/ui/button';
 import { getErrorMessage } from '@/lib/utils';
@@ -413,9 +415,9 @@ export default function InvoicesPage() {
         searchPlaceholder="Search invoice number..."
         toolbarActions={
           <div className="flex items-center gap-3">
-            <select
+            <ResponsiveSelect
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              onValueChange={setStatusFilter}
               className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-700 outline-none shadow-xs"
             >
               <option value="">All Payment Statuses</option>
@@ -423,7 +425,7 @@ export default function InvoicesPage() {
               <option value="Pending">Pending</option>
               <option value="Paid">Paid</option>
               <option value="Overdue">Overdue</option>
-            </select>
+            </ResponsiveSelect>
 
             {selectedIds.size > 0 && (
               <div className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1 sm:w-auto">
@@ -472,10 +474,10 @@ export default function InvoicesPage() {
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
                   Closed Won Deal *
                 </label>
-                <select
+                <ResponsiveSelect
                   required
                   value={formDealId}
-                  onChange={(e) => setFormDealId(e.target.value)}
+                  onValueChange={setFormDealId}
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
                 >
                   <option value="">-- Select a Closed Won deal --</option>
@@ -484,7 +486,7 @@ export default function InvoicesPage() {
                       {d.title} (${d.amount ? d.amount.toLocaleString() : '0'})
                     </option>
                   ))}
-                </select>
+                </ResponsiveSelect>
                 <p className="text-[11px] text-slate-400 mt-1">
                   Invoices are generated from Closed Won deals. Amount and line items are derived
                   from the deal.
@@ -526,16 +528,16 @@ export default function InvoicesPage() {
                     <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
                       Payment Status
                     </label>
-                    <select
+                    <ResponsiveSelect
                       value={status}
-                      onChange={(e) => setStatus(e.target.value)}
+                      onValueChange={setStatus}
                       className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
                     >
                       <option value="Draft">Draft</option>
                       <option value="Pending">Pending</option>
                       <option value="Paid">Paid</option>
                       <option value="Overdue">Overdue</option>
-                    </select>
+                    </ResponsiveSelect>
                   </div>
                 </div>
               </>
@@ -613,15 +615,15 @@ export default function InvoicesPage() {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Billing Cycle</label>
-                <select
+                <ResponsiveSelect
                   value={recInterval}
-                  onChange={(e) => setRecInterval(e.target.value)}
+                  onValueChange={setRecInterval}
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-amber-500"
                 >
                   <option value="Monthly">Monthly</option>
                   <option value="Quarterly">Quarterly</option>
                   <option value="Annual">Annual</option>
-                </select>
+                </ResponsiveSelect>
               </div>
             </div>
 

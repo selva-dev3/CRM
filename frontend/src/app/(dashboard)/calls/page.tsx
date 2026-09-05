@@ -1,5 +1,7 @@
 ﻿'use client';
 
+import { ResponsiveSelect } from '@/components/common/responsive-select';
+
 import { ActionMenu } from '@/components/common/action-menu';
 import { Button } from '@/components/ui/button';
 import { getErrorMessage } from '@/lib/utils';
@@ -397,14 +399,14 @@ export default function CallsPage() {
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
                 Call Direction
               </label>
-              <select
+              <ResponsiveSelect
                 value={callType}
-                onChange={(e) => setCallType(e.target.value)}
+                onValueChange={setCallType}
                 className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
               >
                 <option value="Outbound">Outbound</option>
                 <option value="Inbound">Inbound</option>
-              </select>
+              </ResponsiveSelect>
             </div>
 
             <div>
@@ -517,14 +519,14 @@ export default function CallsPage() {
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">Select Voicemail Template</label>
-            <select
+            <ResponsiveSelect
               value={voicemailTemplateId}
-              onChange={(e) => setVoicemailTemplateId(e.target.value)}
+              onValueChange={setVoicemailTemplateId}
               className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
             >
               <option value="vm-template-1">Follow-up Call Audio Drop #1</option>
               <option value="vm-template-2">Product Pitch Voicemail #2</option>
-            </select>
+            </ResponsiveSelect>
           </div>
 
           <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">

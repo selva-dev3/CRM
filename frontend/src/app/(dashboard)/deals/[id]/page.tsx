@@ -1,5 +1,7 @@
 ﻿'use client';
 
+import { ResponsiveSelect } from '@/components/common/responsive-select';
+
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
@@ -809,9 +811,9 @@ export default function DealDetailsPage() {
 
               <div className="space-y-1">
                 <Label className="font-semibold text-slate-700">Pipeline Stage</Label>
-                <select
+                <ResponsiveSelect
                   value={formStage}
-                  onChange={(e) => setFormStage(e.target.value)}
+                  onValueChange={setFormStage}
                   className="w-full h-9 rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
                 >
                   {STAGES.map((s) => (
@@ -819,7 +821,7 @@ export default function DealDetailsPage() {
                       {s}
                     </option>
                   ))}
-                </select>
+                </ResponsiveSelect>
               </div>
             </div>
 
@@ -836,9 +838,9 @@ export default function DealDetailsPage() {
 
               <div className="space-y-1">
                 <Label className="font-semibold text-slate-700">Assigned Sales Rep</Label>
-                <select
+                <ResponsiveSelect
                   value={formAssignedTo}
-                  onChange={(e) => setFormAssignedTo(e.target.value)}
+                  onValueChange={setFormAssignedTo}
                   className="w-full h-9 rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
                 >
                   <option value="">-- Select Sales Rep --</option>
@@ -847,7 +849,7 @@ export default function DealDetailsPage() {
                       {u.name || u.email} ({u.email})
                     </option>
                   ))}
-                </select>
+                </ResponsiveSelect>
               </div>
             </div>
 
@@ -961,10 +963,9 @@ export default function DealDetailsPage() {
             {/* Select from dropdown as alternative */}
             <div className="space-y-1">
               <Label className="font-semibold text-slate-500 text-[11px]">Or select directly from full catalog</Label>
-              <select
+              <ResponsiveSelect
                 value={selectedProductId}
-                onChange={(e) => {
-                  const pid = e.target.value;
+                onValueChange={(pid) => {
                   setSelectedProductId(pid);
                   const found = catalogProducts.find((p) => p.id === pid);
                   if (found) {
@@ -981,7 +982,7 @@ export default function DealDetailsPage() {
                     {p.name} ({p.sku}) - ${p.price?.toLocaleString()}
                   </option>
                 ))}
-              </select>
+              </ResponsiveSelect>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

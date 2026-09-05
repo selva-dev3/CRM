@@ -54,7 +54,8 @@ describe('QuotesPage creation flow', () => {
     const dealSelect = screen.getByRole('combobox', { name: 'Deal *' });
     expect(dealSelect).toBeInTheDocument();
 
-    await user.selectOptions(dealSelect, 'deal-1');
+    dealSelect.focus();
+    await user.keyboard('{Enter}{ArrowDown}{Enter}');
     const submitButtons = screen.getAllByRole('button', { name: /^Create Quote$/ });
     await user.click(submitButtons[submitButtons.length - 1]);
 
