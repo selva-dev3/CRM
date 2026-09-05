@@ -1,5 +1,7 @@
 ﻿'use client';
 
+import { ResponsiveSelect } from '@/components/common/responsive-select';
+
 import { ActionMenu } from '@/components/common/action-menu';
 import { Button } from '@/components/ui/button';
 import { getErrorMessage } from '@/lib/utils';
@@ -379,9 +381,9 @@ export default function QuotesPage() {
         searchPlaceholder="Search quote number or client..."
         toolbarActions={
           <div className="flex items-center gap-3">
-            <select
+            <ResponsiveSelect
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              onValueChange={setStatusFilter}
               className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-700 outline-none shadow-xs"
             >
               <option value="">All Statuses</option>
@@ -389,7 +391,7 @@ export default function QuotesPage() {
               <option value="Sent">Sent</option>
               <option value="Accepted">Accepted</option>
               <option value="Rejected">Rejected</option>
-            </select>
+            </ResponsiveSelect>
 
             {selectedIds.size > 0 && (
               <div className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1 sm:w-auto">
@@ -459,11 +461,11 @@ export default function QuotesPage() {
                   No deals are available for quote creation.
                 </p>
               ) : (
-                <select
+                <ResponsiveSelect
                   id="quote-deal"
                   required
                   value={dealId}
-                  onChange={(e) => setDealId(e.target.value)}
+                  onValueChange={setDealId}
                   className="w-full min-w-0 bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
                 >
                   <option value="">Select a deal</option>
@@ -472,7 +474,7 @@ export default function QuotesPage() {
                       {deal.title} · {deal.stage} · ${deal.amount.toLocaleString()}
                     </option>
                   ))}
-                </select>
+                </ResponsiveSelect>
               )}
             </div>
 
@@ -495,15 +497,15 @@ export default function QuotesPage() {
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
                   Initial Status
                 </label>
-                <select
+                <ResponsiveSelect
                   value={status}
-                  onChange={(e) => setStatus(e.target.value)}
+                  onValueChange={setStatus}
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
                 >
                   <option value="Draft">Draft</option>
                   <option value="Sent">Sent</option>
                   <option value="Accepted">Accepted</option>
-                </select>
+                </ResponsiveSelect>
               </div>
             </div>
 

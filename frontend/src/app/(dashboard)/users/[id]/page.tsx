@@ -1,5 +1,7 @@
 ﻿'use client';
 
+import { ResponsiveSelect } from '@/components/common/responsive-select';
+
 import React, { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -725,15 +727,15 @@ export default function UserDetailPage() {
 
             <div className="space-y-1">
               <Label className="text-slate-700 font-semibold">Role in Team</Label>
-              <select
+              <ResponsiveSelect
                 value={newTeamRole}
-                onChange={(e) => setNewTeamRole(e.target.value)}
+                onValueChange={setNewTeamRole}
                 className="w-full h-9 rounded-md border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
               >
                 <option value="Member">Member</option>
                 <option value="Team Lead">Team Lead</option>
                 <option value="Manager">Manager</option>
-              </select>
+              </ResponsiveSelect>
             </div>
 
             <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">

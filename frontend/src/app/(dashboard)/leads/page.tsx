@@ -1,5 +1,7 @@
 'use client';
 
+import { ResponsiveSelect } from '@/components/common/responsive-select';
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
@@ -909,9 +911,9 @@ export default function LeadsPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <Label className="text-xs font-black text-black">Select Company *</Label>
-                    <select
+                    <ResponsiveSelect
                       value={company}
-                      onChange={(e) => setCompany(e.target.value)}
+                      onValueChange={setCompany}
                       className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     >
                       {isCompaniesLoading ? (
@@ -924,7 +926,7 @@ export default function LeadsPage() {
                         ))
                       )}
                       <option value="other">+ Enter Custom Company...</option>
-                    </select>
+                    </ResponsiveSelect>
                   </div>
 
                   <div className="space-y-1.5">
@@ -967,9 +969,9 @@ export default function LeadsPage() {
 
                   <div className="space-y-1.5">
                     <Label className="text-xs font-black text-black">Company Size</Label>
-                    <select
+                    <ResponsiveSelect
                       value={companySize}
-                      onChange={(e) => setCompanySize(e.target.value)}
+                      onValueChange={setCompanySize}
                       className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     >
                       <option value="">Select Company Size...</option>
@@ -978,7 +980,7 @@ export default function LeadsPage() {
                       <option value="51-200">51-200 Employees</option>
                       <option value="201-500">201-500 Employees</option>
                       <option value="500+">500+ Employees</option>
-                    </select>
+                    </ResponsiveSelect>
                   </div>
                 </div>
               </div>
@@ -1057,9 +1059,9 @@ export default function LeadsPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="space-y-1.5">
                     <Label className="text-xs font-black text-black">Lead Status</Label>
-                    <select
+                    <ResponsiveSelect
                       value={status}
-                      onChange={(e) => setStatus(e.target.value)}
+                      onValueChange={setStatus}
                       className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     >
                       <option value="New">New</option>
@@ -1067,14 +1069,14 @@ export default function LeadsPage() {
                       <option value="Qualified">Qualified</option>
                       <option value="Unqualified">Unqualified</option>
                       <option value="Converted">Converted</option>
-                    </select>
+                    </ResponsiveSelect>
                   </div>
 
                   <div className="space-y-1.5">
                     <Label className="text-xs font-black text-black">Lead Source</Label>
-                    <select
+                    <ResponsiveSelect
                       value={source}
-                      onChange={(e) => setSource(e.target.value)}
+                      onValueChange={setSource}
                       className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     >
                       <option value="Website">Website</option>
@@ -1083,14 +1085,14 @@ export default function LeadsPage() {
                       <option value="Cold Call">Cold Call</option>
                       <option value="Event">Event</option>
                       <option value="Partner">Partner</option>
-                    </select>
+                    </ResponsiveSelect>
                   </div>
 
                   <div className="space-y-1.5">
                     <Label className="text-xs font-black text-black">Organization *</Label>
-                    <select
+                    <ResponsiveSelect
                       value={organizationId}
-                      onChange={(e) => setOrganizationId(e.target.value)}
+                      onValueChange={setOrganizationId}
                       className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     >
                       {isOrgsLoading ? (
@@ -1102,7 +1104,7 @@ export default function LeadsPage() {
                           </option>
                         ))
                       )}
-                    </select>
+                    </ResponsiveSelect>
                   </div>
                 </div>
 
@@ -1122,9 +1124,9 @@ export default function LeadsPage() {
 
                   <div className="space-y-1.5">
                     <Label className="text-xs font-black text-black">Assigned To User</Label>
-                    <select
+                    <ResponsiveSelect
                       value={assignedTo}
-                      onChange={(e) => setAssignedTo(e.target.value)}
+                      onValueChange={setAssignedTo}
                       className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     >
                       <option value="">Unassigned (None)</option>
@@ -1137,7 +1139,7 @@ export default function LeadsPage() {
                           </option>
                         ))
                       )}
-                    </select>
+                    </ResponsiveSelect>
                   </div>
 
                   <div className="flex items-center gap-2 pb-2">
@@ -1393,9 +1395,9 @@ export default function LeadsPage() {
 
               {/* Dropdown Select Menu */}
               <div className="pt-1">
-                <select
+                <ResponsiveSelect
                   value={selectedUserId}
-                  onChange={(e) => setSelectedUserId(e.target.value)}
+                  onValueChange={setSelectedUserId}
                   className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
                 >
                   <option value="">Unassigned (No Owner)</option>
@@ -1404,7 +1406,7 @@ export default function LeadsPage() {
                       {u.name} ({u.role || 'Sales Rep'}) - {u.email}
                     </option>
                   ))}
-                </select>
+                </ResponsiveSelect>
               </div>
             </div>
 

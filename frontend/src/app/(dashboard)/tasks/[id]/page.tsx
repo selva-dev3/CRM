@@ -1,5 +1,7 @@
 ﻿'use client';
 
+import { ResponsiveSelect } from '@/components/common/responsive-select';
+
 import { getErrorMessage } from '@/lib/utils';
 import React, { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
@@ -405,9 +407,9 @@ export default function TaskDetailPage() {
 
             <form onSubmit={handleAssignUserSubmit} className="space-y-2 pt-2">
               <label className="block text-xs font-semibold text-slate-700">Reassign Task</label>
-              <select
+              <ResponsiveSelect
                 value={selectedUser}
-                onChange={(e) => setSelectedUser(e.target.value)}
+                onValueChange={setSelectedUser}
                 className="w-full bg-slate-50 border border-slate-300 text-slate-800 text-xs rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
               >
                 <option value="">Select Representative...</option>
@@ -416,7 +418,7 @@ export default function TaskDetailPage() {
                     {u.name} ({u.role || u.email})
                   </option>
                 ))}
-              </select>
+              </ResponsiveSelect>
               <button
                 type="submit"
                 disabled={!selectedUser || assignTaskMutation.isPending}
@@ -495,28 +497,28 @@ export default function TaskDetailPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Priority</label>
-                <select
+                <ResponsiveSelect
                   value={priority}
-                  onChange={(e) => setPriority(e.target.value)}
+                  onValueChange={setPriority}
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
                 >
                   <option value="Low">Low</option>
                   <option value="Medium">Medium</option>
                   <option value="High">High</option>
-                </select>
+                </ResponsiveSelect>
               </div>
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Status</label>
-                <select
+                <ResponsiveSelect
                   value={status}
-                  onChange={(e) => setStatus(e.target.value)}
+                  onValueChange={setStatus}
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
                 >
                   <option value="Pending">Pending</option>
                   <option value="In Progress">In Progress</option>
                   <option value="Completed">Completed</option>
-                </select>
+                </ResponsiveSelect>
               </div>
             </div>
 

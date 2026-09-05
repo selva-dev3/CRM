@@ -1,5 +1,7 @@
 ﻿'use client';
 
+import { ResponsiveSelect } from '@/components/common/responsive-select';
+
 import { ActionMenu } from '@/components/common/action-menu';
 import { Button } from '@/components/ui/button';
 import { getErrorMessage } from '@/lib/utils';
@@ -694,9 +696,9 @@ export default function EmailPage() {
         <form onSubmit={handleSendCampaignSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">Select Email Template</label>
-            <select
+            <ResponsiveSelect
               value={selectedTemplateId}
-              onChange={(e) => setSelectedTemplateId(e.target.value)}
+              onValueChange={setSelectedTemplateId}
               className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
             >
               <option value="">Choose Template...</option>
@@ -705,7 +707,7 @@ export default function EmailPage() {
                   {t.name} ({t.category})
                 </option>
               ))}
-            </select>
+            </ResponsiveSelect>
           </div>
 
           <div>

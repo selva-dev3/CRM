@@ -1,5 +1,7 @@
 'use client';
 
+import { ResponsiveSelect } from '@/components/common/responsive-select';
+
 import { getErrorMessage } from '@/lib/utils';
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -872,9 +874,9 @@ export default function RolesPage() {
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">Target Role</label>
-            <select
+            <ResponsiveSelect
               value={assignRoleId}
-              onChange={(e) => setAssignRoleId(e.target.value)}
+              onValueChange={setAssignRoleId}
               className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="">Select a role...</option>
@@ -883,7 +885,7 @@ export default function RolesPage() {
                   {r.name}
                 </option>
               ))}
-            </select>
+            </ResponsiveSelect>
           </div>
 
           <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3 pt-2">
@@ -989,9 +991,9 @@ export default function RolesPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Category / Module</label>
-                  <select
+                  <ResponsiveSelect
                     value={permCategory}
-                    onChange={(e) => setPermCategory(e.target.value)}
+                    onValueChange={setPermCategory}
                     className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
                   >
                     <option value="Leads">Leads</option>
@@ -1000,7 +1002,7 @@ export default function RolesPage() {
                     <option value="Invoices">Invoices</option>
                     <option value="Reports">Reports</option>
                     <option value="Settings">Settings</option>
-                  </select>
+                  </ResponsiveSelect>
                 </div>
 
                 <div>
