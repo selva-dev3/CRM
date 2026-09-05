@@ -2,9 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import get_valid_org_id, require_permission
+from app.api.v1.deps import get_current_user, get_valid_org_id, require_permission
 from app.db.session import get_db
-from app.models import Product, ProductCategory
+from app.models import Product, ProductCategory, User
+from app.services.org_service import organization_service
 from app.schemas.crm_schemas import (
     BulkActionResponse,
     BulkDeleteRequest,
@@ -26,9 +27,13 @@ async def list_products(
     category: str | None = Query(None),
     search: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     try:
-        stmt = select(Product)
+        organization_id = await organization_service.resolve_valid_org_id(
+            db, current_user
+        )
+        stmt = select(Product).where(Product.organization_id == organization_id)
         if search and search.strip():
             stmt = stmt.where(
                 (Product.name.ilike(f"%{search.strip()}%"))
