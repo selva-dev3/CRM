@@ -9,6 +9,8 @@ from app.api.v1.routers.reports import (
     delete_scheduled_report,
     export_report_csv,
     export_report_pdf,
+    get_financial_overview_report,
+    get_quote_conversion_report,
     get_sales_performance_report,
     list_custom_reports,
     list_scheduled_reports,
@@ -56,6 +58,34 @@ async def test_get_sales_performance_router_passes_current_user(monkeypatch):
 
     assert res["report_type"] == "Sales Performance"
     mock_service_call.assert_awaited_once_with(db, current_user=user)
+
+
+@pytest.mark.asyncio
+async def test_financial_and_quote_reports_pass_authenticated_user(monkeypatch):
+    user = _make_user(org_id="org-finance")
+    db = AsyncMock(spec=AsyncSession)
+    financial = AsyncMock(
+        return_value={
+            "report_type": "Financial Overview",
+            "metrics": {},
+            "generated_at": "2026-09-05",
+        }
+    )
+    quotes = AsyncMock(
+        return_value={
+            "report_type": "Quote Conversion",
+            "metrics": {},
+            "generated_at": "2026-09-05",
+        }
+    )
+    monkeypatch.setattr(report_service, "get_financial_overview_report", financial)
+    monkeypatch.setattr(report_service, "get_quote_conversion_report", quotes)
+
+    await get_financial_overview_report(current_user=user, db=db)
+    await get_quote_conversion_report(current_user=user, db=db)
+
+    financial.assert_awaited_once_with(db, current_user=user)
+    quotes.assert_awaited_once_with(db, current_user=user)
 
 
 @pytest.mark.asyncio

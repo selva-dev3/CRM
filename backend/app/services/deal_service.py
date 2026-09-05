@@ -252,6 +252,7 @@ class DealService:
             },
         )
         await db.flush()
+        await self.repository.create_initial_stage_history(db, deal=deal, actor_id=current_user.id)
         await self.repository.add_activity(
             db, deal_id=deal.id, action="Deal created", actor_id=current_user.id
         )
@@ -364,7 +365,9 @@ class DealService:
                     await self._apply_won(db, deal, actor_id)
                 else:
                     await self._guard_closed_won_transition(db, deal, stage)
-                    deal.stage = stage
+                    await self.repository.transition_stage(
+                        db, deal=deal, stage=stage, actor_id=actor_id
+                    )
             await db.commit()
             return {"affected_count": len(set(ids)), "message": f"Updated stage to {stage}"}
         except Exception:
@@ -413,7 +416,9 @@ class DealService:
         if payload.stage is not None:
             await self._validate_stage(db, payload.stage, d.organization_id)
             await self._guard_closed_won_transition(db, d, payload.stage)
-            d.stage = payload.stage
+            await self.repository.transition_stage(
+                db, deal=d, stage=payload.stage, actor_id=actor_id
+            )
         if payload.title is not None:
             d.title = payload.title
         if payload.amount is not None:
@@ -516,7 +521,9 @@ class DealService:
             raise NotFoundError(message="Deal not found")
         await self._validate_stage(db, stage, d.organization_id)
         await self._guard_closed_won_transition(db, d, stage)
-        d.stage = stage
+        changed = await self.repository.transition_stage(db, deal=d, stage=stage, actor_id=actor_id)
+        if not changed:
+            return {"message": f"Deal {deal_id} is already in {stage}", "status": "success"}
         await self.repository.add_activity(
             db,
             deal_id=d.id,
@@ -569,6 +576,10 @@ class DealService:
 
     async def _apply_won(self, db: AsyncSession, deal: Deal, actor_id: str):
         was_won = deal.stage == DEAL_STAGE_CLOSED_WON
+        if not was_won:
+            await self.repository.transition_stage(
+                db, deal=deal, stage=DEAL_STAGE_CLOSED_WON, actor_id=actor_id
+            )
         await self.repository.set_won(db, deal, deal.amount)
         quote = await self.quote_service.create_from_won_deal(db, deal=deal, actor_id=actor_id)
         await self.repository.set_won(db, deal, float(quote.total_amount))
@@ -582,11 +593,19 @@ class DealService:
         return quote
 
     async def mark_deal_lost(
-        self, db: AsyncSession, deal_id: str, reason: str, *, organization_id: str
+        self,
+        db: AsyncSession,
+        deal_id: str,
+        reason: str,
+        *,
+        organization_id: str,
+        actor_id: str | None = None,
     ) -> dict:
         d = await self.require_deal(db, deal_id, organization_id=organization_id, lock=True)
         await self._guard_closed_won_transition(db, d, DEAL_STAGE_CLOSED_LOST)
-        d.stage = DEAL_STAGE_CLOSED_LOST
+        await self.repository.transition_stage(
+            db, deal=d, stage=DEAL_STAGE_CLOSED_LOST, actor_id=actor_id
+        )
         d.probability = 0.0
         # Persist the caller-supplied reason so win/loss and churn reports can
         # aggregate real loss reasons instead of placeholders.

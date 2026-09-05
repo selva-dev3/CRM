@@ -47,6 +47,8 @@ _REPORT_GETTERS = {
     ReportTypeEnum.CUSTOMER_LIFETIME_VALUE.value: "get_ltv_report",
     ReportTypeEnum.CHURN_ANALYSIS.value: "get_churn_analysis_report",
     ReportTypeEnum.QUOTA_ATTAINMENT.value: "get_quota_attainment_report",
+    ReportTypeEnum.FINANCIAL_OVERVIEW.value: "get_financial_overview_report",
+    ReportTypeEnum.QUOTE_CONVERSION.value: "get_quote_conversion_report",
 }
 
 
@@ -65,6 +67,14 @@ def _build_export_object_key(org_id: str, file_format: str) -> str:
 
 def today_str() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%d")
+
+
+async def _cleanup_export_object(s3_key: str) -> None:
+    """Best-effort cleanup when export metadata cannot be committed."""
+    try:
+        await asyncio.to_thread(s3_service.delete_file, s3_key)
+    except Exception:
+        logger.exception("Failed to clean up orphaned report export object key=%s", s3_key)
 
 
 def compute_next_run(frequency: str, start_dt: datetime | None = None) -> datetime:
@@ -533,31 +543,17 @@ class ReportService:
         *,
         internal: bool = False,
     ) -> dict:
-        target_org = await self._resolve_org_id(db, org_id, current_user, internal=internal)
-        customer_count = await self.repository.count_deals_in_stage(
-            db, target_org, CLOSED_WON_STAGE
-        )
-        won_rev = await self.repository.total_won_revenue(db, target_org)
-        avg_revenue_per_customer = round(won_rev / customer_count, 2) if customer_count > 0 else 0.0
-
-        # Marketing-spend data is not captured anywhere in the schema, so spend-based
-        # CAC figures cannot be computed; only acquisition volume and value are reported.
-        table_rows = []
-        if customer_count > 0:
-            table_rows.append(
-                {
-                    "segment": "Acquired Customers (Closed Won)",
-                    "customer_count": customer_count,
-                    "avg_ltv": avg_revenue_per_customer,
-                }
-            )
+        await self._resolve_org_id(db, org_id, current_user, internal=internal)
 
         return {
             "report_type": "Customer Acquisition Cost",
             "metrics": {
-                "customer_count": customer_count,
-                "avg_revenue_per_customer": avg_revenue_per_customer,
-                "table_rows": table_rows,
+                "available": False,
+                "reason": (
+                    "Customer acquisition cost is unavailable because marketing and sales "
+                    "spend is not captured by this CRM."
+                ),
+                "table_rows": [],
             },
             "generated_at": today_str(),
         }
@@ -570,30 +566,17 @@ class ReportService:
         *,
         internal: bool = False,
     ) -> dict:
-        target_org = await self._resolve_org_id(db, org_id, current_user, internal=internal)
-        row = await self.repository.won_aggregate(db, target_org)
-        won_cnt = int(row[0] if row else 0)
-        tot_rev = float(row[1] if row else 0.0)
-        avg_ltv = round(tot_rev / won_cnt, 2) if won_cnt > 0 else 0.0
-
-        table_rows = []
-        if won_cnt > 0:
-            table_rows.append(
-                {
-                    "segment": "Active Customer Cohort",
-                    "customer_count": won_cnt,
-                    "total_revenue": round(tot_rev, 2),
-                    "avg_ltv": avg_ltv,
-                }
-            )
+        await self._resolve_org_id(db, org_id, current_user, internal=internal)
 
         return {
             "report_type": "Customer Lifetime Value",
             "metrics": {
-                "avg_ltv": avg_ltv,
-                "customer_count": won_cnt,
-                "total_revenue": round(tot_rev, 2),
-                "table_rows": table_rows,
+                "available": False,
+                "reason": (
+                    "Customer lifetime value is unavailable because customer-level verified "
+                    "payment history and retention periods are not captured."
+                ),
+                "table_rows": [],
             },
             "generated_at": today_str(),
         }
@@ -606,35 +589,17 @@ class ReportService:
         *,
         internal: bool = False,
     ) -> dict:
-        target_org = await self._resolve_org_id(db, org_id, current_user, internal=internal)
-        row = await self.repository.lost_aggregate(db, target_org)
-        lost_cnt = int(row[0] if row else 0)
-        lost_arr = float(row[1] if row else 0.0)
-        tot_cnt = await self.repository.count_deals(db, target_org)
-        churn_rate = round((lost_cnt / tot_cnt * 100.0), 1) if tot_cnt > 0 else 0.0
-
-        top_churn_reason = await self.repository.top_loss_reason(db, target_org)
-
-        table_rows = []
-        if tot_cnt > 0:
-            table_rows.append(
-                {
-                    "account_segment": "Organization Deals",
-                    "active_accounts": tot_cnt - lost_cnt,
-                    "churned_accounts": lost_cnt,
-                    "churn_rate_pct": churn_rate,
-                    "lost_arr": round(lost_arr, 2),
-                    "top_churn_reason": top_churn_reason,
-                }
-            )
+        await self._resolve_org_id(db, org_id, current_user, internal=internal)
 
         return {
             "report_type": "Churn Analysis",
             "metrics": {
-                "annual_churn_rate": churn_rate,
-                "lost_arr": round(lost_arr, 2),
-                "top_loss_reason": top_churn_reason,
-                "table_rows": table_rows,
+                "available": False,
+                "reason": (
+                    "Customer churn is unavailable because customer subscriptions, renewals, "
+                    "and cancellation events are not captured. Closed Lost deals are not churn."
+                ),
+                "table_rows": [],
             },
             "generated_at": today_str(),
         }
@@ -690,6 +655,82 @@ class ReportService:
                 "team_attainment_pct": team_attainment,
                 "reps_with_quota": sum(1 for r in table_rows if r["assigned_quota"] is not None),
                 "table_rows": table_rows,
+            },
+            "generated_at": today_str(),
+        }
+
+    async def get_financial_overview_report(
+        self,
+        db: AsyncSession,
+        org_id: str | None = None,
+        current_user: User | None = None,
+        *,
+        internal: bool = False,
+    ) -> dict:
+        target_org = await self._resolve_org_id(db, org_id, current_user, internal=internal)
+        totals = await self.repository.financial_overview(db, target_org)
+        invoice_rows = await self.repository.invoice_status_breakdown(db, target_org)
+        currency = await self.repository.organization_currency(db, target_org)
+        return {
+            "report_type": "Financial Overview",
+            "metrics": {
+                **{
+                    key: round(value, 2) if isinstance(value, float) else value
+                    for key, value in totals.items()
+                },
+                "currency": currency,
+                "table_rows": [
+                    {
+                        "status": row.status or "Unknown",
+                        "invoice_count": int(row.invoice_count or 0),
+                        "invoice_value": round(float(row.invoice_value or 0), 2),
+                        "paid_value": round(float(row.paid_value or 0), 2),
+                        "outstanding_amount": round(
+                            max(float(row.invoice_value or 0) - float(row.paid_value or 0), 0), 2
+                        ),
+                    }
+                    for row in invoice_rows
+                ],
+            },
+            "generated_at": today_str(),
+        }
+
+    async def get_quote_conversion_report(
+        self,
+        db: AsyncSession,
+        org_id: str | None = None,
+        current_user: User | None = None,
+        *,
+        internal: bool = False,
+    ) -> dict:
+        target_org = await self._resolve_org_id(db, org_id, current_user, internal=internal)
+        rows = await self.repository.quote_status_breakdown(db, target_org)
+        currency = await self.repository.organization_currency(db, target_org)
+        accepted_count, invoiced_count = await self.repository.quote_conversion_counts(
+            db, target_org
+        )
+        total_quotes = sum(int(row.quote_count or 0) for row in rows)
+        return {
+            "report_type": "Quote Conversion",
+            "metrics": {
+                "total_quotes": total_quotes,
+                "accepted_quotes": accepted_count,
+                "invoiced_quotes": invoiced_count,
+                "quote_acceptance_rate": (
+                    round(accepted_count / total_quotes * 100.0, 1) if total_quotes else 0.0
+                ),
+                "quote_to_invoice_rate": (
+                    round(invoiced_count / accepted_count * 100.0, 1) if accepted_count else 0.0
+                ),
+                "currency": currency,
+                "table_rows": [
+                    {
+                        "status": row.status or "Unknown",
+                        "quote_count": int(row.quote_count or 0),
+                        "quote_value": round(float(row.quote_value or 0), 2),
+                    }
+                    for row in rows
+                ],
             },
             "generated_at": today_str(),
         }
@@ -914,10 +955,11 @@ class ReportService:
             await self._commit(db, "Failed to record PDF export")
             await db.refresh(export)
             return {"pdf_url": pdf_url, "export_id": export.id}
-        except APIException:
-            raise
         except Exception as e:
             await db.rollback()
+            await _cleanup_export_object(s3_key)
+            if isinstance(e, APIException):
+                raise
             logger.exception(
                 "Failed to record PDF export for org=%s report=%s", target_org, report_type_value
             )
@@ -1087,10 +1129,11 @@ class ReportService:
             await self._commit(db, "Failed to record CSV export")
             await db.refresh(export)
             return {"csv_url": csv_url, "export_id": export.id}
-        except APIException:
-            raise
         except Exception as e:
             await db.rollback()
+            await _cleanup_export_object(s3_key)
+            if isinstance(e, APIException):
+                raise
             logger.exception(
                 "Failed to record CSV export for org=%s report=%s", target_org, report_type_value
             )
@@ -1161,6 +1204,7 @@ class ReportService:
         items = await self.repository.list_scheduled_reports(
             db, target_org, limit=limit, offset=offset
         )
+        now = datetime.now(UTC)
         return [
             {
                 "id": s.id,
@@ -1168,6 +1212,11 @@ class ReportService:
                 "email": s.email,
                 "frequency": s.frequency,
                 "next_run": s.next_run.strftime("%Y-%m-%d") if s.next_run else today_str(),  # type: ignore[attr-defined]
+                "status": (
+                    "Processing"
+                    if s.claimed_until is not None and s.claimed_until > now
+                    else "Scheduled"
+                ),
             }
             for s in items
         ]

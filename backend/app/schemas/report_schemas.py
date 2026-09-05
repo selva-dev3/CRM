@@ -16,6 +16,8 @@ class ReportTypeEnum(StrEnum):
     CUSTOMER_LIFETIME_VALUE = "customer-lifetime-value"
     CHURN_ANALYSIS = "churn-analysis"
     QUOTA_ATTAINMENT = "quota-attainment"
+    FINANCIAL_OVERVIEW = "financial-overview"
+    QUOTE_CONVERSION = "quote-conversion"
 
 
 class ReportFrequencyEnum(StrEnum):
@@ -45,6 +47,7 @@ class ScheduledReportItem(BaseModel):
     email: str
     frequency: str
     next_run: str | None = None
+    status: str
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -65,3 +68,57 @@ class PdfExportResponse(BaseModel):
 
 class CsvExportResponse(BaseModel):
     csv_url: str
+
+
+class FinancialInvoiceStatusRow(BaseModel):
+    status: str
+    invoice_count: int = Field(ge=0)
+    invoice_value: float
+    paid_value: float
+    outstanding_amount: float
+
+
+class FinancialOverviewMetrics(BaseModel):
+    pipeline_value: float
+    booked_value: float
+    quote_count: int = Field(ge=0)
+    quoted_value: float
+    total_quote_value: float
+    accepted_quote_value: float
+    invoice_count: int = Field(ge=0)
+    invoiced_value: float
+    invoice_paid_value: float
+    outstanding_amount: float
+    overdue_amount: float
+    payment_count: int = Field(ge=0)
+    collected_revenue: float
+    currency: str = Field(min_length=3, max_length=3)
+    table_rows: list[FinancialInvoiceStatusRow]
+
+
+class FinancialOverviewResponse(BaseModel):
+    report_type: str
+    metrics: FinancialOverviewMetrics
+    generated_at: str
+
+
+class QuoteStatusRow(BaseModel):
+    status: str
+    quote_count: int = Field(ge=0)
+    quote_value: float
+
+
+class QuoteConversionMetrics(BaseModel):
+    total_quotes: int = Field(ge=0)
+    accepted_quotes: int = Field(ge=0)
+    invoiced_quotes: int = Field(ge=0)
+    quote_acceptance_rate: float = Field(ge=0, le=100)
+    quote_to_invoice_rate: float = Field(ge=0, le=100)
+    currency: str = Field(min_length=3, max_length=3)
+    table_rows: list[QuoteStatusRow]
+
+
+class QuoteConversionResponse(BaseModel):
+    report_type: str
+    metrics: QuoteConversionMetrics
+    generated_at: str

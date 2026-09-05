@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import builtins
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Company, Contact, User
-from app.models.deal import Deal, DealActivity, DealProduct, DealStage
+from app.models.deal import Deal, DealActivity, DealProduct, DealStage, DealStageHistory
 from app.models.product import Product
 
 
@@ -41,10 +42,6 @@ class DealRepository:
         )
         return list(result.scalars().all())
 
-    async def get_by_id(self, db: AsyncSession, deal_id: str) -> Deal | None:
-        result = await db.execute(select(Deal).where(Deal.id == deal_id))
-        return result.scalars().first()
-
     async def get_by_id_scoped(
         self, db: AsyncSession, *, deal_id: str, organization_id: str, lock: bool = False
     ) -> Deal | None:
@@ -61,6 +58,57 @@ class DealRepository:
         deal.stage = "Closed Won"
         deal.probability = 100
         deal.amount = amount
+
+    async def create_initial_stage_history(
+        self, db: AsyncSession, *, deal: Deal, actor_id: str | None
+    ) -> DealStageHistory:
+        history = DealStageHistory(
+            organization_id=deal.organization_id,
+            deal_id=deal.id,
+            stage=deal.stage,
+            actor_id=actor_id,
+        )
+        db.add(history)
+        return history
+
+    async def transition_stage(
+        self,
+        db: AsyncSession,
+        *,
+        deal: Deal,
+        stage: str,
+        actor_id: str | None,
+    ) -> bool:
+        """Record a stage transition and update its reporting timestamps atomically."""
+        if deal.stage == stage:
+            return False
+
+        now = datetime.now(UTC)
+        current_result = await db.execute(
+            select(DealStageHistory)
+            .where(
+                DealStageHistory.deal_id == deal.id,
+                DealStageHistory.organization_id == deal.organization_id,
+                DealStageHistory.exited_at.is_(None),
+            )
+            .with_for_update()
+        )
+        current = current_result.scalar_one_or_none()
+        if current:
+            current.exited_at = now
+
+        db.add(
+            DealStageHistory(
+                organization_id=deal.organization_id,
+                deal_id=deal.id,
+                stage=stage,
+                entered_at=now,
+                actor_id=actor_id,
+            )
+        )
+        deal.stage = stage
+        deal.closed_at = now if stage in {"Closed Won", "Closed Lost"} else None
+        return True
 
     async def add_activity(
         self, db: AsyncSession, *, deal_id: str, action: str, actor_id: str | None

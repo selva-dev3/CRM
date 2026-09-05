@@ -52,7 +52,10 @@ export default function QuoteDetailPage() {
   // Mutations
   const sendEmailMutation = useSendQuoteEmailMutation();
   const approveMutation = useMutation({ mutationFn: approveQuoteApi,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['quotes'] }) });
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['quotes'] });
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
+    } });
   const deleteMutation = useDeleteQuoteMutation();
 
   // State

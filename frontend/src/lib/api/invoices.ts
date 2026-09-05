@@ -197,6 +197,7 @@ export function useConvertDealToInvoiceMutation(options?: UseMutationOptions<Inv
     onSuccess: (invoice, dealId) => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
       queryClient.invalidateQueries({ queryKey: ['invoices', 'deal', dealId] });
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
     },
     ...options,
   });
@@ -235,6 +236,7 @@ export function useCreateInvoiceMutation(options?: UseMutationOptions<InvoiceIte
     mutationFn: createInvoiceApi,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
     },
     ...options,
   });
@@ -247,6 +249,7 @@ export function useUpdateInvoiceMutation(options?: UseMutationOptions<InvoiceIte
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
       queryClient.invalidateQueries({ queryKey: ['invoices', variables.id] });
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
     },
     ...options,
   });
@@ -258,6 +261,7 @@ export function useDeleteInvoiceMutation(options?: UseMutationOptions<MessageRes
     mutationFn: deleteInvoiceApi,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
     },
     ...options,
   });
@@ -269,6 +273,7 @@ export function useBulkDeleteInvoicesMutation(options?: UseMutationOptions<BulkA
     mutationFn: bulkDeleteInvoicesApi,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
     },
     ...options,
   });
@@ -309,6 +314,7 @@ export function useIssueCreditMemoMutation(options?: UseMutationOptions<MessageR
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
       queryClient.invalidateQueries({ queryKey: ['invoices', variables.id] });
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
     },
     ...options,
   });
@@ -320,6 +326,7 @@ export function useCreateRecurringInvoiceMutation(options?: UseMutationOptions<M
     mutationFn: ({ customer_id, amount, interval }) => createRecurringInvoiceApi(customer_id, amount, interval),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['invoices', 'recurring'] });
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
     },
     ...options,
   });
@@ -331,6 +338,7 @@ export function useImportInvoicesCsvMutation(options?: UseMutationOptions<Messag
     mutationFn: importInvoicesCsvApi,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
     },
     ...options,
   });

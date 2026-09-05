@@ -175,6 +175,7 @@ export function useCreateQuoteMutation(options?: UseMutationOptions<QuoteItem, E
     mutationFn: createQuoteApi,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['quotes'] });
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
     },
     ...options,
   });
@@ -187,6 +188,7 @@ export function useUpdateQuoteMutation(options?: UseMutationOptions<QuoteItem, E
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['quotes'] });
       queryClient.invalidateQueries({ queryKey: ['quotes', variables.id] });
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
     },
     ...options,
   });
@@ -198,6 +200,7 @@ export function useDeleteQuoteMutation(options?: UseMutationOptions<MessageRespo
     mutationFn: deleteQuoteApi,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['quotes'] });
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
     },
     ...options,
   });
@@ -209,14 +212,20 @@ export function useBulkDeleteQuotesMutation(options?: UseMutationOptions<BulkAct
     mutationFn: bulkDeleteQuotesApi,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['quotes'] });
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
     },
     ...options,
   });
 }
 
 export function useSendQuoteEmailMutation(options?: UseMutationOptions<MessageResponse, Error, { id: string; recipient_email: string }>) {
+  const queryClient = useQueryClient();
   return useMutation<MessageResponse, Error, { id: string; recipient_email: string }>({
     mutationFn: ({ id, recipient_email }) => sendQuoteEmailApi(id, recipient_email),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['quotes', variables.id] });
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
+    },
     ...options,
   });
 }
@@ -228,6 +237,7 @@ export function useRejectQuoteMutation(options?: UseMutationOptions<MessageRespo
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['quotes'] });
       queryClient.invalidateQueries({ queryKey: ['quotes', variables.id] });
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
     },
     ...options,
   });

@@ -1,7 +1,18 @@
 import uuid
 from decimal import Decimal
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, Numeric, String, func
+from sqlalchemy import (
+    JSON,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    func,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -20,6 +31,7 @@ class Deal(Base):
     probability: Mapped[float] = mapped_column(Float, default=50.0)
     loss_reason: Mapped[str | None] = mapped_column(String(255))
     expected_close_date: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
+    closed_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), index=True)
     assigned_to: Mapped[str] = mapped_column(
         String, ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
@@ -65,6 +77,35 @@ class DealActivity(Base):
     timestamp: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class DealStageHistory(Base):
+    __tablename__ = "deal_stage_history"
+    __table_args__ = (
+        Index(
+            "uq_deal_stage_history_current",
+            "deal_id",
+            unique=True,
+            postgresql_where=text("exited_at IS NULL"),
+            sqlite_where=text("exited_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    organization_id: Mapped[str] = mapped_column(
+        String, ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    deal_id: Mapped[str] = mapped_column(
+        String, ForeignKey("deals.id", ondelete="CASCADE"), index=True
+    )
+    stage: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    entered_at: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), index=True
+    )
+    exited_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), index=True)
+    actor_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+
+
 class DealProduct(Base):
     __tablename__ = "deal_products"
 
@@ -72,7 +113,9 @@ class DealProduct(Base):
     deal_id: Mapped[str] = mapped_column(
         String, ForeignKey("deals.id", ondelete="CASCADE"), index=True
     )
-    product_id: Mapped[str] = mapped_column(String, ForeignKey("products.id", ondelete="RESTRICT"), index=True)
+    product_id: Mapped[str] = mapped_column(
+        String, ForeignKey("products.id", ondelete="RESTRICT"), index=True
+    )
     quantity: Mapped[int] = mapped_column(Integer, default=1)
     unit_price: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
     product_name: Mapped[str | None] = mapped_column(String(255))
