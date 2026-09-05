@@ -76,6 +76,7 @@ class Settings(BaseSettings):
     EMAILS_FROM_NAME: str = "Enterprise CRM Support"
     RESET_TOKEN_EXPIRE_MINUTES: int = 60
     BREVO_API_KEY: str | None = None
+    BREVO_WEBHOOK_SECRET: str | None = None
     # Resend Email API (primary — HTTPS based email delivery)
     RESEND_API_KEY: str | None = None
 

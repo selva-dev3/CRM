@@ -148,6 +148,36 @@ async def test_repeated_quote_approval_does_not_duplicate_delivery():
 
 
 @pytest.mark.asyncio
+async def test_approve_quote_rejects_invalid_contact_email_without_mutation():
+    quote = make_quote(currency="INR", delivery_status=None)
+    service, repository, deal_repository = make_service(quote=quote, deal=make_deal())
+    repository.lock_scoped = AsyncMock(return_value=quote)
+    repository.approve = AsyncMock()
+    repository.list_items = AsyncMock(
+        return_value=[
+            SimpleNamespace(quantity=1, unit_price=1000, discount_percent=0, tax_percent=0)
+        ]
+    )
+    deal_repository.get_sales_customer = AsyncMock(
+        return_value=(
+            SimpleNamespace(id="company-1"),
+            SimpleNamespace(id="contact-1", company_id="company-1", email="invalid-email"),
+        )
+    )
+
+    with pytest.raises(APIException, match="invalid email"):
+        await service.approve_quote(
+            AsyncMock(spec=AsyncSession),
+            quote_id=quote.id,
+            organization_id="org-1",
+            actor_id="user-1",
+        )
+
+    repository.approve.assert_not_awaited()
+    repository.queue_delivery.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_create_quote_requires_closed_won_automation(monkeypatch):
     service, repository, deal_repository = make_service(deal=make_deal())
     repository.create = AsyncMock(return_value=make_quote())
