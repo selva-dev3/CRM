@@ -35,6 +35,7 @@ import {
   useSendPaymentReminderMutation,
   useDeleteInvoiceMutation
 } from '@/lib/api/invoices';
+import { usePaymentsQuery } from '@/lib/api/payments';
 
 export default function InvoiceDetailPage() {
   const params = useParams();
@@ -43,6 +44,7 @@ export default function InvoiceDetailPage() {
 
   // Queries
   const { data: invoice, isLoading, isError } = useInvoiceQuery(invoiceId);
+  const paymentsQuery = usePaymentsQuery({ invoice_id: invoiceId }, { enabled: Boolean(invoiceId) });
   const { data: pdfData } = useInvoicePdfQuery(invoiceId, {
     enabled: Boolean(invoice?.pdf_available),
   });
@@ -350,6 +352,14 @@ export default function InvoiceDetailPage() {
           </div>
         </div>
       </div>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="mb-4 flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-900"><CreditCard className="h-4 w-4 text-indigo-600" /> Verified payments</h2>
+          <span className="text-xs text-slate-500">Read-only provider records</span>
+        </div>
+        {paymentsQuery.isLoading ? <p className="text-sm text-slate-500">Loading payment records…</p> : paymentsQuery.isError ? <div className="flex items-center justify-between gap-3 text-sm text-rose-700"><span>Payment records could not be loaded.</span><button type="button" className="font-semibold underline" onClick={() => void paymentsQuery.refetch()}>Retry</button></div> : paymentsQuery.data?.length ? <div className="overflow-x-auto"><Table className="min-w-[680px] text-xs"><TableHeader><TableRow><TableHead>Payment ID</TableHead><TableHead>Amount</TableHead><TableHead>Method</TableHead><TableHead>Status</TableHead><TableHead>Transaction</TableHead><TableHead>Paid date</TableHead></TableRow></TableHeader><TableBody>{paymentsQuery.data.map((payment) => <TableRow key={payment.id}><TableCell className="font-mono">{payment.id}</TableCell><TableCell className="font-semibold">{payment.currency} {payment.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell><TableCell>{payment.payment_method || 'Unavailable'}</TableCell><TableCell>{payment.status}</TableCell><TableCell className="max-w-[180px] truncate font-mono" title={payment.provider_payment_id}>{payment.provider_payment_id}</TableCell><TableCell>{new Date(payment.paid_at).toLocaleString()}</TableCell></TableRow>)}</TableBody></Table></div> : <p className="text-sm text-slate-500">No verified payments have been recorded for this invoice.</p>}
+      </section>
 
       {/* Send Email Modal */}
       {isSendEmailModalOpen && (
