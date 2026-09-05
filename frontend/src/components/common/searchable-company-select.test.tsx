@@ -13,12 +13,12 @@ describe('SearchableCompanySelect', () => {
     const user = userEvent.setup();
     render(<SearchableCompanySelect value="company-1" onChange={vi.fn()} companies={companies} />);
 
-    expect(screen.getByRole('button', { name: /Acme Corporation/ })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /Acme Corporation/ }));
+    expect(screen.getByRole('combobox', { name: /Acme Corporation/ })).toBeInTheDocument();
+    await user.click(screen.getByRole('combobox', { name: /Acme Corporation/ }));
     await user.type(screen.getByPlaceholderText('Search company by name...'), 'beta');
 
-    expect(screen.getByRole('button', { name: 'Beta Industries' })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Acme Corporation' })).toHaveLength(1);
+    expect(screen.getByRole('option', { name: 'Beta Industries' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Acme Corporation' })).not.toBeInTheDocument();
   });
 
   it('selects and clears a company', async () => {
@@ -26,12 +26,12 @@ describe('SearchableCompanySelect', () => {
     const onChange = vi.fn();
     render(<SearchableCompanySelect value="" onChange={onChange} companies={companies} />);
 
-    await user.click(screen.getByRole('button', { name: /Select Company/ }));
-    await user.click(screen.getByRole('button', { name: 'Beta Industries' }));
+    await user.click(screen.getByRole('combobox', { name: /Select Company/ }));
+    await user.click(screen.getByRole('option', { name: 'Beta Industries' }));
     expect(onChange).toHaveBeenCalledWith('company-2');
 
-    await user.click(screen.getByRole('button', { name: /Select Company/ }));
-    await user.click(screen.getByRole('button', { name: /None \/ Clear Selection/ }));
+    await user.click(screen.getByRole('combobox', { name: /Select Company/ }));
+    await user.click(screen.getByRole('option', { name: /None \/ Clear Selection/ }));
     expect(onChange).toHaveBeenLastCalledWith('');
   });
 
@@ -39,7 +39,7 @@ describe('SearchableCompanySelect', () => {
     const user = userEvent.setup();
     render(<SearchableCompanySelect value="" onChange={vi.fn()} companies={companies} />);
 
-    await user.click(screen.getByRole('button', { name: /Select Company/ }));
+    await user.click(screen.getByRole('combobox', { name: /Select Company/ }));
     await user.type(screen.getByPlaceholderText('Search company by name...'), 'missing');
 
     expect(screen.getByText('No matching companies')).toBeInTheDocument();

@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import DashboardLayout from './layout';
@@ -86,9 +86,12 @@ describe('DashboardLayout', () => {
     const menuButton = container.querySelector('header button');
     expect(menuButton).toBeTruthy();
     await user.click(menuButton as HTMLButtonElement);
-    expect(container.querySelector('aside')).toHaveClass('translate-x-0');
+    const navigation = screen.getByRole('dialog', { name: 'CRM navigation' });
+    expect(navigation).toBeInTheDocument();
 
-    await user.click(screen.getByRole('link', { name: 'Leads' }));
-    expect(container.querySelector('aside')).not.toHaveClass('translate-x-0');
+    await user.click(within(navigation).getByRole('link', { name: 'Leads' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'CRM navigation' })).not.toBeInTheDocument();
+    });
   });
 });

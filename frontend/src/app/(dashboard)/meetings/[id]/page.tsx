@@ -1,7 +1,10 @@
 ﻿'use client';
 
+import { Input } from "@/components/ui/input";
+
 import { ResponsiveSelect } from '@/components/common/responsive-select';
 import { DateTimePicker } from '@/components/common/date-picker';
+import { Textarea } from '@/components/ui/textarea';
 
 import { getErrorMessage } from '@/lib/utils';
 import React, { useState } from 'react';
@@ -390,7 +393,7 @@ export default function MeetingDetailPage() {
             {/* RSVP Form */}
             <form onSubmit={handleRsvpSubmit} className="space-y-2 pt-3 border-t border-slate-100">
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-600">Update RSVP</label>
-              <input
+              <Input
                 type="email"
                 required
                 value={rsvpEmail}
@@ -425,7 +428,7 @@ export default function MeetingDetailPage() {
             </h3>
 
             <form onSubmit={handleTranscriptSubmit} className="space-y-3">
-              <textarea
+              <Textarea
                 rows={4}
                 value={transcriptText}
                 onChange={(e) => setTranscriptText(e.target.value)}
@@ -462,7 +465,7 @@ export default function MeetingDetailPage() {
           <form onSubmit={handleSaveEdit} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Meeting Title *</label>
-              <input
+              <Input
                 type="text"
                 required
                 value={title}
@@ -473,7 +476,7 @@ export default function MeetingDetailPage() {
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Meeting Room URL</label>
-              <input
+              <Input
                 type="url"
                 value={meetingLink}
                 onChange={(e) => setMeetingLink(e.target.value)}

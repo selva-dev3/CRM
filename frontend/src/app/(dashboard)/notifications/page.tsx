@@ -1,6 +1,9 @@
 ﻿'use client';
 
+import { Input } from "@/components/ui/input";
+
 import { ResponsiveSelect } from '@/components/common/responsive-select';
+import { Textarea } from '@/components/ui/textarea';
 
 import { getErrorMessage } from '@/lib/utils';
 import React, { useState } from 'react';
@@ -22,6 +25,9 @@ import {
 } from 'lucide-react';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
+import { PageTabs } from '@/components/common/page-tabs';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import {
   useNotificationsQuery,
   useUnreadCountQuery,
@@ -260,25 +266,18 @@ export default function NotificationsPage() {
       {/* Notifications Feed Container */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden space-y-4 p-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-slate-100">
-          <div className="flex items-center gap-2 flex-wrap">
-            <button
-              onClick={() => setActiveTab('all')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-                activeTab === 'all' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              All Notifications ({notifications.length})
-            </button>
-
-            <button
-              onClick={() => setActiveTab('unread')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-                activeTab === 'unread' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              Unread Only ({unreadData?.unread_count ?? notifications.filter((n) => !n.is_read).length})
-            </button>
-          </div>
+          <PageTabs
+            value={activeTab}
+            onValueChange={setActiveTab}
+            variant="default"
+            className="w-auto"
+            tabs={[
+              { value: 'all', label: `All Notifications (${notifications.length})` },
+              { value: 'unread', label: `Unread Only (${unreadData?.unread_count ?? notifications.filter((notification) => !notification.is_read).length})` },
+            ]}
+            listClassName="bg-slate-100"
+            triggerClassName="text-xs font-bold data-[state=active]:bg-indigo-600 data-[state=active]:text-white"
+          />
 
           {selectedIds.size > 0 && (
             <div className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1 sm:w-auto">
@@ -316,13 +315,13 @@ export default function NotificationsPage() {
                 }`}
               >
                 <div className="flex items-start gap-3.5">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={selectedIds.has(n.id)}
-                    onChange={(e) => {
-                      e.stopPropagation();
+                    onClick={(event) => event.stopPropagation()}
+                    onCheckedChange={() => {
                       toggleSelectNotification(n.id);
                     }}
+                    aria-label={`Select notification: ${n.title || 'System Notification'}`}
                     className="mt-1 h-4 w-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
                   />
 
@@ -385,7 +384,7 @@ export default function NotificationsPage() {
           <form onSubmit={handleSendAlertSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Alert Title *</label>
-              <input
+              <Input
                 type="text"
                 required
                 value={alertTitle}
@@ -397,7 +396,7 @@ export default function NotificationsPage() {
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Alert Message *</label>
-              <textarea
+              <Textarea
                 required
                 rows={3}
                 value={alertMessage}
@@ -439,44 +438,41 @@ export default function NotificationsPage() {
         >
           <form onSubmit={handleSavePreferencesSubmit} className="space-y-4">
             <div className="space-y-3">
-              <label className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200 cursor-pointer">
+              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200">
                 <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
                   <Mail className="w-4 h-4 text-indigo-600" />
                   <span>Email Notifications</span>
                 </div>
-                <input
-                  type="checkbox"
+                <Switch
                   checked={prefEmail}
-                  onChange={(e) => setPrefEmail(e.target.checked)}
-                  className="h-4 w-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                  onCheckedChange={setPrefEmail}
+                  aria-label="Enable email notifications"
                 />
-              </label>
+              </div>
 
-              <label className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200 cursor-pointer">
+              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200">
                 <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
                   <Smartphone className="w-4 h-4 text-purple-600" />
                   <span>WebPush Browser Push Alerts</span>
                 </div>
-                <input
-                  type="checkbox"
+                <Switch
                   checked={prefWebpush}
-                  onChange={(e) => setPrefWebpush(e.target.checked)}
-                  className="h-4 w-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                  onCheckedChange={setPrefWebpush}
+                  aria-label="Enable browser push notifications"
                 />
-              </label>
+              </div>
 
-              <label className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200 cursor-pointer">
+              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200">
                 <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
                   <MessageSquare className="w-4 h-4 text-emerald-600" />
                   <span>Slack Channel Webhook Alerts</span>
                 </div>
-                <input
-                  type="checkbox"
+                <Switch
                   checked={prefSlack}
-                  onChange={(e) => setPrefSlack(e.target.checked)}
-                  className="h-4 w-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                  onCheckedChange={setPrefSlack}
+                  aria-label="Enable Slack notifications"
                 />
-              </label>
+              </div>
             </div>
 
             <div>

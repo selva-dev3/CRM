@@ -38,7 +38,7 @@ vi.mock('@/lib/api/organizations', () => ({
   useTransferOwnershipMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
-import OrganizationDetailPage from './page';
+import { OrganizationDetailView } from '@/components/features/organizations/organization-detail-view';
 
 describe('OrganizationDetailPage current organization mode', () => {
   beforeEach(() => {
@@ -52,7 +52,7 @@ describe('OrganizationDetailPage current organization mode', () => {
   });
 
   it('uses current organization data without enabling a by-id request', () => {
-    render(<OrganizationDetailPage isCurrentOrgView />);
+    render(<OrganizationDetailView isCurrentOrgView />);
 
     expect(mocks.useOrganizationByIdQuery).toHaveBeenCalledWith('', false);
     expect(screen.getByDisplayValue('Current CRM')).toBeInTheDocument();

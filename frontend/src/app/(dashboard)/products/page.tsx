@@ -1,5 +1,7 @@
 ﻿'use client';
 
+import { Input } from "@/components/ui/input";
+
 import { ResponsiveSelect } from '@/components/common/responsive-select';
 
 import { ActionMenu } from '@/components/common/action-menu';
@@ -438,7 +440,7 @@ export default function ProductsPage() {
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
               Product Name *
             </label>
-            <input
+            <Input
               type="text"
               required
               value={prodName}
@@ -453,7 +455,7 @@ export default function ProductsPage() {
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
                 SKU Identifier
               </label>
-              <input
+              <Input
                 type="text"
                 value={prodSku}
                 onChange={(e) => setProdSku(e.target.value)}
@@ -466,7 +468,7 @@ export default function ProductsPage() {
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
                 Price (USD) *
               </label>
-              <input
+              <Input
                 type="number"
                 step="0.01"
                 required
@@ -527,7 +529,7 @@ export default function ProductsPage() {
         <form onSubmit={handleCreateCategorySubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">Category Name *</label>
-            <input
+            <Input
               type="text"
               required
               value={newCatName}
@@ -568,7 +570,7 @@ export default function ProductsPage() {
         <form onSubmit={handleCreatePriceBookSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">Price Book Name *</label>
-            <input
+            <Input
               type="text"
               required
               value={pbName}
@@ -624,7 +626,7 @@ export default function ProductsPage() {
           <form onSubmit={handleUpdateInventorySubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Stock Delta (+/- Quantity)</label>
-              <input
+              <Input
                 type="number"
                 required
                 value={quantityDelta}

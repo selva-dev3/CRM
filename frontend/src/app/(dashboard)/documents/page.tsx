@@ -1,5 +1,7 @@
 ﻿'use client';
 
+import { Input } from "@/components/ui/input";
+
 import { ActionMenu } from '@/components/common/action-menu';
 import { getErrorMessage } from '@/lib/utils';
 import React, { useState, useEffect, useRef } from 'react';
@@ -326,7 +328,7 @@ export default function DocumentsPage() {
               isDragging ? 'border-indigo-500 bg-indigo-50' : 'border-slate-300 hover:border-indigo-400 bg-slate-50'
             }`}
           >
-            <input ref={fileInputRef} type="file" onChange={handleFileChange} className="hidden" />
+            <Input ref={fileInputRef} type="file" onChange={handleFileChange} className="hidden" />
             <UploadCloud className="w-10 h-10 text-indigo-600 mx-auto mb-2" />
             <p className="text-xs font-bold text-slate-800">
               {selectedFile ? selectedFile.name : 'Click or drag & drop file to upload'}

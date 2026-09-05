@@ -1,5 +1,7 @@
 ﻿'use client';
 
+import { Input } from "@/components/ui/input";
+
 import { ResponsiveSelect } from '@/components/common/responsive-select';
 import { DatePicker } from '@/components/common/date-picker';
 
@@ -501,7 +503,7 @@ export default function InvoicesPage() {
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
                     Invoice Reference Number
                   </label>
-                  <input
+                  <Input
                     type="text"
                     value={invoiceNumber}
                     onChange={(e) => setInvoiceNumber(e.target.value)}
@@ -515,7 +517,7 @@ export default function InvoicesPage() {
                     <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
                       Invoice Amount (USD) *
                     </label>
-                    <input
+                    <Input
                       type="number"
                       step="0.01"
                       required
@@ -591,7 +593,7 @@ export default function InvoicesPage() {
           <form onSubmit={handleCreateRecurringSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Customer / Client Name *</label>
-              <input
+              <Input
                 type="text"
                 required
                 value={recCustomerId}
@@ -604,7 +606,7 @@ export default function InvoicesPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Recurring Amount</label>
-                <input
+                <Input
                   type="number"
                   step="0.01"
                   required
@@ -661,7 +663,7 @@ export default function InvoicesPage() {
           <form onSubmit={handleSendEmailSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Recipient Email Address *</label>
-              <input
+              <Input
                 type="email"
                 required
                 value={recipientEmailInput}

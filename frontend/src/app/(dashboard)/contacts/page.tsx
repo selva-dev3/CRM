@@ -48,6 +48,7 @@ import {
 import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
 import { useCompaniesQuery } from '@/lib/api/companies';
 import { SearchableCompanySelect } from '@/components/common/searchable-company-select';
+import { PageTabs } from '@/components/common/page-tabs';
 import { useEntityCustomFieldsQuery, type CustomFieldValue } from '@/lib/api/custom-fields';
 
 export default function ContactsPage() {
@@ -472,39 +473,25 @@ export default function ContactsPage() {
         </div>
       )}
 
-      {/* Navigation Sub-Tabs */}
-      <div className="flex items-center border-b border-slate-200 gap-4 sm:gap-6 text-sm font-semibold text-slate-600 overflow-x-auto">
-        <button
-          onClick={() => {
-            setActiveTab('all');
-            setPage(1);
-          }}
-          className={`pb-3 cursor-pointer transition border-b-2 flex items-center gap-2 shrink-0 whitespace-nowrap ${
-            activeTab === 'all' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
-          <span>All Contacts</span>
-          <Badge variant="outline" className="bg-slate-100 text-slate-700 text-[10px]">
-            {allContacts.length}
-          </Badge>
-        </button>
-
-        <button
-          onClick={() => {
-            setActiveTab('starred');
-            setPage(1);
-          }}
-          className={`pb-3 cursor-pointer transition border-b-2 flex items-center gap-2 shrink-0 whitespace-nowrap ${
-            activeTab === 'starred' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
-          <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
-          <span>Starred Contacts</span>
-          <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 text-[10px]">
-            {starredContacts.length}
-          </Badge>
-        </button>
-      </div>
+      <PageTabs
+        value={activeTab}
+        onValueChange={(tab) => {
+          setActiveTab(tab);
+          setPage(1);
+        }}
+        tabs={[
+          {
+            value: 'all',
+            label: <><span>All Contacts</span><Badge variant="outline" className="bg-slate-100 text-[10px] text-slate-700">{allContacts.length}</Badge></>,
+          },
+          {
+            value: 'starred',
+            icon: <Star className="size-3.5 fill-amber-400 text-amber-500" />,
+            label: <><span>Starred Contacts</span><Badge variant="outline" className="border-amber-200 bg-amber-50 text-[10px] text-amber-700">{starredContacts.length}</Badge></>,
+          },
+        ]}
+        listClassName="border-b border-slate-200"
+      />
 
       {/* Contacts DataTable */}
       <DataTable

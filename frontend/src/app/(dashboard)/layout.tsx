@@ -12,6 +12,8 @@ import { getCurrentUserApi, logoutApi } from '@/lib/api';
 import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
 import { PERMISSIONS } from '@/lib/permissions';
 import { useHasPermission, notifyAuthUserChanged } from '@/hooks/use-has-permission';
+import { Button } from '@/components/ui/button';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import {
   LogOut,
   Loader2,
@@ -19,7 +21,6 @@ import {
   ShieldCheck,
   ShieldAlert,
   Menu,
-  X,
   Search,
   LayoutDashboard,
   UserPlus,
@@ -238,21 +239,114 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return null;
   }
 
+  const sidebarBody = (
+    <>
+      <nav className="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-thin">
+        {visibleSections.map((section, idx: number) => {
+          const hasTitle = Boolean(section.title);
+          const sectionKey = section.title || `section-${idx}`;
+          const isOpen = openSections[sectionKey] !== false;
+
+          return (
+            <div key={sectionKey} className="space-y-1">
+              {hasTitle && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => toggleSection(sectionKey)}
+                  className="h-auto w-full justify-between px-2 py-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500 hover:text-slate-900"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <span className="size-1.5 rounded-full bg-blue-500/60" />
+                    {section.title}
+                  </span>
+                  {isOpen ? (
+                    <ChevronDown className="size-3.5 text-slate-400" />
+                  ) : (
+                    <ChevronRight className="size-3.5 text-slate-400" />
+                  )}
+                </Button>
+              )}
+
+              {isOpen && (
+                <div className={hasTitle ? 'pl-2 space-y-0.5 border-l-2 border-slate-100 ml-2.5' : 'space-y-0.5'}>
+                  {section.items.map((item) => {
+                    const isActive = pathname === item.href || (item.href === '/email' && pathname === '/emails');
+                    const IconComponent = ICON_MAP[item.icon] || LayoutDashboard;
+
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={closeMobileMenu}
+                        className={`flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition duration-150 relative ${isActive
+                            ? 'bg-blue-50 text-blue-600 font-bold border-l-4 border-blue-600'
+                            : 'text-slate-600 hover:text-blue-600 hover:bg-slate-50'
+                          }`}
+                      >
+                        <IconComponent
+                          className={`w-4 h-4 shrink-0 ${isActive ? 'text-blue-600' : 'text-slate-400'}`}
+                        />
+                        <span className="truncate">{item.title}</span>
+                        {item.badge && (
+                          <span className="ml-auto px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-blue-100 text-blue-700">
+                            {item.badge}
+                          </span>
+                        )}
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </nav>
+
+      <Link
+        href="/settings"
+        onClick={closeMobileMenu}
+        title="Organization & User Settings"
+        className="p-3 border-t border-[#E5E7EB] bg-[#F9FAFB] hover:bg-slate-100 text-[#374151] shrink-0 transition flex items-center justify-between group"
+      >
+        <div className="flex items-center space-x-2 text-xs font-bold min-w-0">
+          <div className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold shrink-0 shadow-xs">
+            {(userProfile.name || userProfile.email || 'A').charAt(0).toUpperCase()}
+          </div>
+          <div className="flex flex-col min-w-0 text-left">
+            <span className="truncate group-hover:text-blue-600 transition font-bold text-xs text-slate-900 leading-tight">
+              {currentOrg?.name || userProfile.organizationName || 'Organization'}
+            </span>
+            <span className="text-[10px] font-semibold text-blue-600 leading-tight truncate">
+              Role: {userProfile.role}
+            </span>
+          </div>
+        </div>
+        <Settings className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition shrink-0" />
+      </Link>
+    </>
+  );
+
   return (
     <div className="flex h-screen bg-[#F9FAFB] text-[#111827] overflow-hidden font-sans relative">
-      {/* Mobile Backdrop Overlay */}
-      {isMobileMenuOpen && (
-        <div
-          onClick={() => setIsMobileMenuOpen(false)}
-          className="fixed inset-0 z-40 bg-[#111827]/40 backdrop-blur-xs lg:hidden transition-opacity"
-        />
-      )}
+      <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
+        <SheetContent side="left" className="w-64 gap-0 p-0 sm:max-w-64 lg:hidden">
+          <SheetTitle className="sr-only">CRM navigation</SheetTitle>
+          <div className="p-4 border-b border-[#E5E7EB] flex items-center gap-3 shrink-0">
+            <div className="w-9 h-9 rounded-xl bg-[#2563EB] flex items-center justify-center font-bold text-white shadow-xs shrink-0">
+              <Zap className="w-5 h-5 fill-white/20 text-white" />
+            </div>
+            <div className="flex flex-col min-w-0 pr-8">
+              <span className="font-bold text-base text-[#111827] tracking-tight leading-none truncate">Enterprise CRM</span>
+              <span className="text-[10px] text-[#2563EB] font-bold tracking-wider uppercase mt-1 truncate">Salesforce Style</span>
+            </div>
+          </div>
+          {sidebarBody}
+        </SheetContent>
+      </Sheet>
 
       {/* Fixed Sidebar (Width w-64 / 256px) */}
-      <aside
-        className={`fixed inset-y-0 left-0 z-50 w-64 border-r border-[#E5E7EB] bg-white flex flex-col shadow-sm transform transition-transform duration-200 ease-in-out ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-          }`}
-      >
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-[#E5E7EB] bg-white shadow-sm lg:flex">
         {/* Brand Header */}
         <div className="p-4 border-b border-[#E5E7EB] flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
@@ -268,99 +362,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </span>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setIsMobileMenuOpen(false)}
-            className="lg:hidden p-1.5 rounded text-[#111827] hover:bg-[#F3F4F6] transition cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
         </div>
-
-        {/* Structured Nav Sections */}
-        <nav className="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-thin">
-          {visibleSections.map((section, idx: number) => {
-            const hasTitle = Boolean(section.title);
-            const sectionKey = section.title || `section-${idx}`;
-            const isOpen = openSections[sectionKey] !== false;
-
-            return (
-              <div key={sectionKey} className="space-y-1">
-                {hasTitle && (
-                  <button
-                    type="button"
-                    onClick={() => toggleSection(sectionKey)}
-                    className="w-full flex items-center justify-between px-2 py-1.5 text-[11px] font-bold tracking-wider text-slate-500 uppercase hover:text-slate-900 cursor-pointer transition select-none group"
-                  >
-                    <span className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500/60 group-hover:bg-blue-600 transition" />
-                      {section.title}
-                    </span>
-                    {isOpen ? (
-                      <ChevronDown className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600" />
-                    ) : (
-                      <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600" />
-                    )}
-                  </button>
-                )}
-
-                {isOpen && (
-                  <div className={hasTitle ? 'pl-2 space-y-0.5 border-l-2 border-slate-100 ml-2.5' : 'space-y-0.5'}>
-                    {section.items.map((item) => {
-                      const isActive = pathname === item.href || (item.href === '/email' && pathname === '/emails');
-                      const IconComponent = ICON_MAP[item.icon] || LayoutDashboard;
-
-                      return (
-                        <Link
-                          key={item.href}
-                          href={item.href}
-                          onClick={closeMobileMenu}
-                          className={`flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition duration-150 relative ${isActive
-                              ? 'bg-blue-50 text-blue-600 font-bold border-l-4 border-blue-600'
-                              : 'text-slate-600 hover:text-blue-600 hover:bg-slate-50'
-                            }`}
-                        >
-                          <IconComponent
-                            className={`w-4 h-4 shrink-0 ${isActive ? 'text-blue-600' : 'text-slate-400'}`}
-                          />
-                          <span className="truncate">{item.title}</span>
-                          {item.badge && (
-                            <span className="ml-auto px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-blue-100 text-blue-700">
-                              {item.badge}
-                            </span>
-                          )}
-                        </Link>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </nav>
-
-        {/* Footer Org Badge & Logged In Role */}
-        <Link
-          href="/settings"
-          onClick={closeMobileMenu}
-          title="Organization & User Settings"
-          className="p-3 border-t border-[#E5E7EB] bg-[#F9FAFB] hover:bg-slate-100 text-[#374151] shrink-0 transition flex items-center justify-between group"
-        >
-          <div className="flex items-center space-x-2 text-xs font-bold min-w-0">
-            <div className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold shrink-0 shadow-xs">
-              {(userProfile.name || userProfile.email || 'A').charAt(0).toUpperCase()}
-            </div>
-            <div className="flex flex-col min-w-0 text-left">
-              <span className="truncate group-hover:text-blue-600 transition font-bold text-xs text-slate-900 leading-tight">
-                {currentOrg?.name || userProfile.organizationName || 'Organization'}
-              </span>
-              <span className="text-[10px] font-semibold text-blue-600 leading-tight truncate">
-                Role: {userProfile.role}
-              </span>
-            </div>
-          </div>
-          <Settings className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition shrink-0" />
-        </Link>
+        {sidebarBody}
       </aside>
 
       {/* Main Content Area (padded left for fixed sidebar w-64) */}
@@ -368,13 +371,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {/* Header */}
         <header className="h-16 border-b border-[#E5E7EB] bg-white/95 backdrop-blur px-4 sm:px-6 flex items-center justify-between shadow-xs shrink-0">
           <div className="flex items-center gap-3">
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-sm"
               onClick={() => setIsMobileMenuOpen(true)}
-              className="p-1.5 rounded-lg text-[#111827] hover:bg-[#F3F4F6] lg:hidden transition cursor-pointer"
+              className="text-[#111827] lg:hidden"
+              aria-label="Open navigation"
             >
               <Menu className="w-5 h-5" />
-            </button>
+            </Button>
             <h2 className="text-base font-bold text-[#111827] tracking-tight truncate">
               {pageTitle}
             </h2>

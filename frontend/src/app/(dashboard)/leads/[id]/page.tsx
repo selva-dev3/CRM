@@ -1,6 +1,7 @@
 'use client';
 
 import { ResponsiveSelect } from '@/components/common/responsive-select';
+import { Textarea } from '@/components/ui/textarea';
 
 import { getErrorMessage } from '@/lib/utils';
 import React, { useState, useMemo } from 'react';
@@ -42,8 +43,10 @@ import {
   Snowflake,
   AlertTriangle,
 } from 'lucide-react';
-import { Button, Card, Label, Input, Alert, AlertDescription } from '@/components/ui';
+import { Button, Card, Label, Input, Alert, AlertDescription, Checkbox } from '@/components/ui';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ModalShell } from '@/components/common/modal-shell';
+import { PageTabs } from '@/components/common/page-tabs';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
 import {
@@ -605,37 +608,23 @@ export default function LeadDetailPage() {
         </div>
       </div>
 
-      {/* Enterprise Tabbed Interface Header */}
-      <div className="sticky top-0 z-20 -mx-1 border-b border-[#E5E7EB] bg-slate-50/95 px-1 pt-2 backdrop-blur-sm sm:-mx-2 sm:px-2 overflow-x-auto scrollbar-none">
-        <nav className="flex space-x-2 min-w-max pb-1">
-          {([
-            { id: 'overview', label: 'Overview & Details', icon: Briefcase },
-            { id: 'notes', label: `Notes (${notes.length})`, icon: FileText },
-            { id: 'tasks', label: `Tasks (${tasks.length})`, icon: CheckSquare },
-            { id: 'emails', label: `Emails (${emails.length})`, icon: Send },
-            { id: 'calls', label: `Calls (${calls.length})`, icon: PhoneCall },
-            { id: 'documents', label: `Documents (${documents.length})`, icon: Paperclip },
-            { id: 'actions', label: 'Actions & Convert', icon: Zap },
-          ] as const).map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-2 text-button font-medium rounded-btn transition cursor-pointer border ${isActive
-                    ? 'bg-[#2563EB] text-white border-[#2563EB] shadow-saas-sm font-semibold'
-                    : 'bg-white text-[#374151] hover:bg-[#F3F4F6] border-[#E5E7EB]'
-                  }`}
-              >
-                <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-[#6B7280]'}`} />
-                {tab.label}
-              </button>
-            );
-          })}
-        </nav>
-      </div>
+      <PageTabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        variant="default"
+        className="sticky top-0 z-20 -mx-1 border-b border-[#E5E7EB] bg-slate-50/95 px-1 pt-2 backdrop-blur-sm sm:-mx-2 sm:px-2"
+        tabs={[
+          { value: 'overview', icon: <Briefcase className="size-4" />, label: 'Overview & Details' },
+          { value: 'notes', icon: <FileText className="size-4" />, label: `Notes (${notes.length})` },
+          { value: 'tasks', icon: <CheckSquare className="size-4" />, label: `Tasks (${tasks.length})` },
+          { value: 'emails', icon: <Send className="size-4" />, label: `Emails (${emails.length})` },
+          { value: 'calls', icon: <PhoneCall className="size-4" />, label: `Calls (${calls.length})` },
+          { value: 'documents', icon: <Paperclip className="size-4" />, label: `Documents (${documents.length})` },
+          { value: 'actions', icon: <Zap className="size-4" />, label: 'Actions & Convert' },
+        ]}
+        listClassName="bg-transparent pb-1"
+        triggerClassName="border border-[#E5E7EB] bg-white text-button data-[state=active]:border-[#2563EB] data-[state=active]:bg-[#2563EB] data-[state=active]:text-white"
+      />
 
       {/* TAB CONTENTS */}
 
@@ -894,24 +883,24 @@ export default function LeadDetailPage() {
             </div>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-slate-200">
-              <table className="w-full min-w-[560px] text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-black uppercase text-slate-700 tracking-wider">
-                    <th className="py-3 px-4">Note Content</th>
-                    <th className="py-3 px-4">Author / Created By</th>
-                    <th className="py-3 px-4">Created Date</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
+              <Table className="w-full min-w-[560px] text-left border-collapse text-xs">
+                <TableHeader>
+                  <TableRow className="bg-slate-50 border-b border-slate-200 text-[11px] font-black uppercase text-slate-700 tracking-wider">
+                    <TableHead className="py-3 px-4">Note Content</TableHead>
+                    <TableHead className="py-3 px-4">Author / Created By</TableHead>
+                    <TableHead className="py-3 px-4">Created Date</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className="divide-y divide-slate-100">
                   {notes.map((n) => (
-                    <tr key={n.id} className="hover:bg-slate-50 transition">
-                      <td className="py-3.5 px-4 font-bold text-slate-900 max-w-md">{n.content}</td>
-                      <td className="py-3.5 px-4 font-bold text-indigo-600">{n.created_by || 'System User'}</td>
-                      <td className="py-3.5 px-4 font-bold text-slate-600">{formatDateTime(n.created_at, { timeZone: leadTimeZone })}</td>
-                    </tr>
+                    <TableRow key={n.id} className="hover:bg-slate-50 transition">
+                      <TableCell className="py-3.5 px-4 font-bold text-slate-900 max-w-md">{n.content}</TableCell>
+                      <TableCell className="py-3.5 px-4 font-bold text-indigo-600">{n.created_by || 'System User'}</TableCell>
+                      <TableCell className="py-3.5 px-4 font-bold text-slate-600">{formatDateTime(n.created_at, { timeZone: leadTimeZone })}</TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           )}
         </Card>
@@ -948,39 +937,39 @@ export default function LeadDetailPage() {
             </div>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-slate-200">
-              <table className="w-full min-w-[560px] text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-black uppercase text-slate-700 tracking-wider">
-                    <th className="py-3 px-4">Task Title & Description</th>
-                    <th className="py-3 px-4">Priority</th>
-                    <th className="py-3 px-4">Status</th>
-                    <th className="py-3 px-4">Due Date</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
+              <Table className="w-full min-w-[560px] text-left border-collapse text-xs">
+                <TableHeader>
+                  <TableRow className="bg-slate-50 border-b border-slate-200 text-[11px] font-black uppercase text-slate-700 tracking-wider">
+                    <TableHead className="py-3 px-4">Task Title & Description</TableHead>
+                    <TableHead className="py-3 px-4">Priority</TableHead>
+                    <TableHead className="py-3 px-4">Status</TableHead>
+                    <TableHead className="py-3 px-4">Due Date</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className="divide-y divide-slate-100">
                   {tasks.map((t) => (
-                    <tr key={t.id} className="hover:bg-slate-50 transition">
-                      <td className="py-3.5 px-4 space-y-0.5">
+                    <TableRow key={t.id} className="hover:bg-slate-50 transition">
+                      <TableCell className="py-3.5 px-4 space-y-0.5">
                         <div className="font-black text-slate-900">{t.title}</div>
                         {t.description && <div className="text-[11px] font-bold text-slate-500">{t.description}</div>}
-                      </td>
-                      <td className="py-3.5 px-4 font-bold">
+                      </TableCell>
+                      <TableCell className="py-3.5 px-4 font-bold">
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${t.priority === 'High' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
                             t.priority === 'Medium' ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-slate-100 text-slate-700'
                           }`}>
                           {t.priority || 'Medium'}
                         </span>
-                      </td>
-                      <td className="py-3.5 px-4 font-bold">
+                      </TableCell>
+                      <TableCell className="py-3.5 px-4 font-bold">
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200">
                           {t.status || 'Pending'}
                         </span>
-                      </td>
-                      <td className="py-3.5 px-4 font-bold text-slate-600">{formatDate(t.due_date)}</td>
-                    </tr>
+                      </TableCell>
+                      <TableCell className="py-3.5 px-4 font-bold text-slate-600">{formatDate(t.due_date)}</TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           )}
         </Card>
@@ -1020,26 +1009,26 @@ export default function LeadDetailPage() {
             </div>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-slate-200">
-              <table className="w-full min-w-[560px] text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-black uppercase text-slate-700 tracking-wider">
-                    <th className="py-3 px-4">Subject Line</th>
-                    <th className="py-3 px-4">Recipient (To)</th>
-                    <th className="py-3 px-4">Sender (From)</th>
-                    <th className="py-3 px-4">Sent Date</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
+              <Table className="w-full min-w-[560px] text-left border-collapse text-xs">
+                <TableHeader>
+                  <TableRow className="bg-slate-50 border-b border-slate-200 text-[11px] font-black uppercase text-slate-700 tracking-wider">
+                    <TableHead className="py-3 px-4">Subject Line</TableHead>
+                    <TableHead className="py-3 px-4">Recipient (To)</TableHead>
+                    <TableHead className="py-3 px-4">Sender (From)</TableHead>
+                    <TableHead className="py-3 px-4">Sent Date</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className="divide-y divide-slate-100">
                   {emails.map((e) => (
-                    <tr key={e.id} className="hover:bg-slate-50 transition">
-                      <td className="py-3.5 px-4 font-black text-slate-900">{e.subject}</td>
-                      <td className="py-3.5 px-4 font-bold text-indigo-600">{e.to.join(', ')}</td>
-                      <td className="py-3.5 px-4 font-bold text-slate-600">{e.from_email}</td>
-                      <td className="py-3.5 px-4 font-bold text-slate-600">{formatDateTime(e.sent_at, { timeZone: leadTimeZone })}</td>
-                    </tr>
+                    <TableRow key={e.id} className="hover:bg-slate-50 transition">
+                      <TableCell className="py-3.5 px-4 font-black text-slate-900">{e.subject}</TableCell>
+                      <TableCell className="py-3.5 px-4 font-bold text-indigo-600">{e.to.join(', ')}</TableCell>
+                      <TableCell className="py-3.5 px-4 font-bold text-slate-600">{e.from_email}</TableCell>
+                      <TableCell className="py-3.5 px-4 font-bold text-slate-600">{formatDateTime(e.sent_at, { timeZone: leadTimeZone })}</TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           )}
         </Card>
@@ -1076,31 +1065,31 @@ export default function LeadDetailPage() {
             </div>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-slate-200">
-              <table className="w-full min-w-[560px] text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-black uppercase text-slate-700 tracking-wider">
-                    <th className="py-3 px-4">Direction</th>
-                    <th className="py-3 px-4">Duration</th>
-                    <th className="py-3 px-4">Call Notes</th>
-                    <th className="py-3 px-4">Date & Time</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
+              <Table className="w-full min-w-[560px] text-left border-collapse text-xs">
+                <TableHeader>
+                  <TableRow className="bg-slate-50 border-b border-slate-200 text-[11px] font-black uppercase text-slate-700 tracking-wider">
+                    <TableHead className="py-3 px-4">Direction</TableHead>
+                    <TableHead className="py-3 px-4">Duration</TableHead>
+                    <TableHead className="py-3 px-4">Call Notes</TableHead>
+                    <TableHead className="py-3 px-4">Date & Time</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className="divide-y divide-slate-100">
                   {calls.map((c) => (
-                    <tr key={c.id} className="hover:bg-slate-50 transition">
-                      <td className="py-3.5 px-4 font-bold">
+                    <TableRow key={c.id} className="hover:bg-slate-50 transition">
+                      <TableCell className="py-3.5 px-4 font-bold">
                         <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${c.call_type === 'Outbound' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                           }`}>
                           {c.call_type} Call
                         </span>
-                      </td>
-                      <td className="py-3.5 px-4 font-black text-slate-900">{Math.floor(c.duration_seconds / 60)}m {c.duration_seconds % 60}s</td>
-                      <td className="py-3.5 px-4 font-bold text-slate-700">{c.notes || 'N/A'}</td>
-                      <td className="py-3.5 px-4 font-bold text-slate-600">{formatDateTime(c.timestamp, { timeZone: leadTimeZone })}</td>
-                    </tr>
+                      </TableCell>
+                      <TableCell className="py-3.5 px-4 font-black text-slate-900">{Math.floor(c.duration_seconds / 60)}m {c.duration_seconds % 60}s</TableCell>
+                      <TableCell className="py-3.5 px-4 font-bold text-slate-700">{c.notes || 'N/A'}</TableCell>
+                      <TableCell className="py-3.5 px-4 font-bold text-slate-600">{formatDateTime(c.timestamp, { timeZone: leadTimeZone })}</TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           )}
         </Card>
@@ -1137,27 +1126,27 @@ export default function LeadDetailPage() {
             </div>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-slate-200">
-              <table className="w-full min-w-[560px] text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-black uppercase text-slate-700 tracking-wider">
-                    <th className="py-3 px-4">Filename</th>
-                    <th className="py-3 px-4">File Size</th>
-                    <th className="py-3 px-4">MIME Type</th>
-                    <th className="py-3 px-4">Uploaded Date</th>
-                    <th className="py-3 px-4 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
+              <Table className="w-full min-w-[560px] text-left border-collapse text-xs">
+                <TableHeader>
+                  <TableRow className="bg-slate-50 border-b border-slate-200 text-[11px] font-black uppercase text-slate-700 tracking-wider">
+                    <TableHead className="py-3 px-4">Filename</TableHead>
+                    <TableHead className="py-3 px-4">File Size</TableHead>
+                    <TableHead className="py-3 px-4">MIME Type</TableHead>
+                    <TableHead className="py-3 px-4">Uploaded Date</TableHead>
+                    <TableHead className="py-3 px-4 text-right">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className="divide-y divide-slate-100">
                   {documents.map((d) => (
-                    <tr key={d.id} className="hover:bg-slate-50 transition">
-                      <td className="py-3.5 px-4 font-black text-slate-900 flex items-center gap-2">
+                    <TableRow key={d.id} className="hover:bg-slate-50 transition">
+                      <TableCell className="py-3.5 px-4 font-black text-slate-900 flex items-center gap-2">
                         <Paperclip className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
                         <span className="truncate max-w-[200px]">{d.filename}</span>
-                      </td>
-                      <td className="py-3.5 px-4 font-bold text-slate-700">{formatFileSize(d.file_size)}</td>
-                      <td className="py-3.5 px-4 font-bold text-slate-600">{d.mime_type || 'application/pdf'}</td>
-                      <td className="py-3.5 px-4 font-bold text-slate-600">{formatDateTime(d.uploaded_at, { timeZone: leadTimeZone })}</td>
-                      <td className="py-3.5 px-4 text-right">
+                      </TableCell>
+                      <TableCell className="py-3.5 px-4 font-bold text-slate-700">{formatFileSize(d.file_size)}</TableCell>
+                      <TableCell className="py-3.5 px-4 font-bold text-slate-600">{d.mime_type || 'application/pdf'}</TableCell>
+                      <TableCell className="py-3.5 px-4 font-bold text-slate-600">{formatDateTime(d.uploaded_at, { timeZone: leadTimeZone })}</TableCell>
+                      <TableCell className="py-3.5 px-4 text-right">
                         {d.download_url && (
                           <a
                             href={
@@ -1172,11 +1161,11 @@ export default function LeadDetailPage() {
                             <Download className="w-3 h-3 mr-1" /> Download
                           </a>
                         )}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           )}
         </Card>
@@ -1332,7 +1321,7 @@ export default function LeadDetailPage() {
           <form onSubmit={handleAddNote} className="space-y-4">
             <div className="space-y-1.5">
               <Label className="text-xs font-black text-black">Note Content *</Label>
-              <textarea
+              <Textarea
                 required
                 rows={4}
                 placeholder="Type note regarding conversation, follow-up, or lead requirement..."
@@ -1429,7 +1418,7 @@ export default function LeadDetailPage() {
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-black text-black">Email Body</Label>
-              <textarea rows={4} placeholder="Hi, following up on our recent demo..." value={emailBody} onChange={(e) => setEmailBody(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              <Textarea rows={4} placeholder="Hi, following up on our recent demo..." value={emailBody} onChange={(e) => setEmailBody(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500" />
             </div>
             <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2 border-t border-slate-100">
               <Button type="button" variant="outline" onClick={() => setIsEmailModalOpen(false)} className="border-slate-300 text-black font-bold text-xs">
@@ -1510,7 +1499,7 @@ export default function LeadDetailPage() {
           <form onSubmit={handleUploadDocument} className="space-y-4">
             <div className="space-y-1.5">
               <Label className="text-xs font-black text-black">Choose File *</Label>
-              <input
+              <Input
                 type="file"
                 required
                 onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
@@ -1811,12 +1800,10 @@ export default function LeadDetailPage() {
                 </div>
 
                 <div className="flex items-center gap-2 pb-2">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     id="isArchivedCheckForm"
                     checked={isArchived}
-                    onChange={(e) => setIsArchived(e.target.checked)}
-                    className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
+                    onCheckedChange={(checked) => setIsArchived(checked === true)}
                   />
                   <label htmlFor="isArchivedCheckForm" className="text-xs font-black text-slate-800 cursor-pointer select-none">
                     Archive this lead

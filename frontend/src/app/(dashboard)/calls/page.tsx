@@ -1,9 +1,12 @@
 ﻿'use client';
 
+import { Input } from "@/components/ui/input";
+
 import { ResponsiveSelect } from '@/components/common/responsive-select';
 
 import { ActionMenu } from '@/components/common/action-menu';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 import { getErrorMessage } from '@/lib/utils';
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -385,7 +388,7 @@ export default function CallsPage() {
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
               Contact / Client Name or ID
             </label>
-            <input
+            <Input
               type="text"
               value={contactId}
               onChange={(e) => setContactId(e.target.value)}
@@ -413,7 +416,7 @@ export default function CallsPage() {
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
                 Duration (Minutes)
               </label>
-              <input
+              <Input
                 type="number"
                 min="1"
                 value={durationMinutes}
@@ -427,7 +430,7 @@ export default function CallsPage() {
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
               Call Notes & Outcome
             </label>
-            <textarea
+            <Textarea
               rows={3}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
@@ -467,7 +470,7 @@ export default function CallsPage() {
         <form onSubmit={handleTriggerDialSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">Phone Number *</label>
-            <input
+            <Input
               type="tel"
               required
               value={phoneNumber}
@@ -508,7 +511,7 @@ export default function CallsPage() {
         <form onSubmit={handleVoicemailDropSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">Target Contact ID or Name</label>
-            <input
+            <Input
               type="text"
               value={voicemailContactId}
               onChange={(e) => setVoicemailContactId(e.target.value)}
@@ -568,7 +571,7 @@ export default function CallsPage() {
         <form onSubmit={handleCreateDispositionSubmit} className="space-y-3 pt-2 border-t border-slate-100">
           <label className="block text-xs font-bold uppercase tracking-wider text-slate-600">Add New Disposition Tag</label>
           <div className="flex gap-2">
-            <input
+            <Input
               type="text"
               value={newDispositionName}
               onChange={(e) => setNewDispositionName(e.target.value)}

@@ -1,5 +1,7 @@
 'use client';
 
+import { Input } from "@/components/ui/input";
+
 import { getErrorMessage } from '@/lib/utils';
 import React, { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
@@ -24,6 +26,7 @@ import {
 import { ActionMenu } from '@/components/common/action-menu';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { ModalShell } from '@/components/common/modal-shell';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { PermissionGate } from '@/components/common/permission-gate';
@@ -500,7 +503,7 @@ export default function RoleDetailPage() {
             <div className="space-y-3">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Permission Action Key</label>
-                <input
+                <Input
                   type="text"
                   value={testPerm}
                   onChange={(e) => setTestPerm(e.target.value)}
@@ -540,7 +543,7 @@ export default function RoleDetailPage() {
           <form onSubmit={handleCloneRoleSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">New Cloned Role Name *</label>
-              <input
+              <Input
                 type="text"
                 required
                 value={cloneNewName}
@@ -650,11 +653,11 @@ export default function RoleDetailPage() {
                             </span>
                             {p.key && <span className="text-[10px] font-mono text-slate-500 block">{p.key}</span>}
                           </div>
-                          <input
-                            type="checkbox"
+                          <Checkbox
                             checked={isChecked}
-                            onChange={() => toggleAddPermissionSelection(p)}
-                            className="h-4 w-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 mt-0.5 shrink-0"
+                            onCheckedChange={() => toggleAddPermissionSelection(p)}
+                            aria-label={`Select ${p.name || p.key || 'permission'}`}
+                            className="mt-0.5 shrink-0"
                           />
                         </label>
                       );

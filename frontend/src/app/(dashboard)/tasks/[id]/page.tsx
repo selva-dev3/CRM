@@ -1,7 +1,10 @@
 ﻿'use client';
 
+import { Input } from "@/components/ui/input";
+
 import { ResponsiveSelect } from '@/components/common/responsive-select';
 import { DatePicker, DateTimePicker } from '@/components/common/date-picker';
+import { Textarea } from '@/components/ui/textarea';
 
 import { getErrorMessage } from '@/lib/utils';
 import React, { useState } from 'react';
@@ -355,7 +358,7 @@ export default function TaskDetailPage() {
             </h3>
 
             <form onSubmit={handleAddSubtaskSubmit} className="flex gap-2">
-              <input
+              <Input
                 type="text"
                 value={newSubtaskTitle}
                 onChange={(e) => setNewSubtaskTitle(e.target.value)}
@@ -476,7 +479,7 @@ export default function TaskDetailPage() {
           <form onSubmit={handleSaveEdit} className="space-y-4">
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Task Title *</label>
-              <input
+              <Input
                 type="text"
                 required
                 value={title}
@@ -487,7 +490,7 @@ export default function TaskDetailPage() {
 
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Description</label>
-              <textarea
+              <Textarea
                 rows={3}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
@@ -536,7 +539,7 @@ export default function TaskDetailPage() {
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Assigned Representative</label>
-                <input
+                <Input
                   type="text"
                   value={assignedTo}
                   onChange={(e) => setAssignedTo(e.target.value)}

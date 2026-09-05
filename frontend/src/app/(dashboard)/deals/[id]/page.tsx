@@ -34,6 +34,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
+import { PageTabs } from '@/components/common/page-tabs';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
 import {
@@ -511,58 +512,18 @@ export default function DealDetailsPage() {
 
       <CustomFieldValues fields={customFields} values={deal.custom_fields ?? {}} />
 
-      {/* Sub-Resource Navigation Tabs */}
-      <div className="flex items-center border-b border-slate-200 gap-6 text-sm font-semibold text-slate-600 overflow-x-auto">
-        <button
-          onClick={() => setActiveTab('products')}
-          className={`pb-3 cursor-pointer transition border-b-2 flex items-center gap-2 whitespace-nowrap ${
-            activeTab === 'products' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
-          <Package className="w-4 h-4" />
-          <span>Products ({products.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('timeline')}
-          className={`pb-3 cursor-pointer transition border-b-2 flex items-center gap-2 whitespace-nowrap ${
-            activeTab === 'timeline' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
-          <History className="w-4 h-4" />
-          <span>Stage History</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('notes')}
-          className={`pb-3 cursor-pointer transition border-b-2 flex items-center gap-2 whitespace-nowrap ${
-            activeTab === 'notes' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
-          <FileText className="w-4 h-4" />
-          <span>Notes ({notes.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('quotes')}
-          className={`pb-3 cursor-pointer transition border-b-2 flex items-center gap-2 whitespace-nowrap ${
-            activeTab === 'quotes' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
-          <DollarSign className="w-4 h-4" />
-          <span>Quotes ({quotes.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('commission')}
-          className={`pb-3 cursor-pointer transition border-b-2 flex items-center gap-2 whitespace-nowrap ${
-            activeTab === 'commission' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
-          <Calculator className="w-4 h-4" />
-          <span>Rep Commission Split</span>
-        </button>
-      </div>
+      <PageTabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        tabs={[
+          { value: 'products', icon: <Package className="size-4" />, label: `Products (${products.length})` },
+          { value: 'timeline', icon: <History className="size-4" />, label: 'Stage History' },
+          { value: 'notes', icon: <FileText className="size-4" />, label: `Notes (${notes.length})` },
+          { value: 'quotes', icon: <DollarSign className="size-4" />, label: `Quotes (${quotes.length})` },
+          { value: 'commission', icon: <Calculator className="size-4" />, label: 'Rep Commission Split' },
+        ]}
+        listClassName="border-b border-slate-200"
+      />
 
       {/* TAB CONTENT: Products */}
       {activeTab === 'products' && (

@@ -28,6 +28,8 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Switch } from '@/components/ui/switch';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { CustomSelect } from '@/components/common/custom-select';
 import { ModalShell } from '@/components/common/modal-shell';
@@ -375,69 +377,47 @@ export default function SettingsPage() {
       )}
 
       {/* Navigation Sub-Tabs */}
-      <div className="flex items-center border-b border-slate-200 gap-6 text-sm font-semibold text-slate-600 overflow-x-auto">
-        <button
-          onClick={() => setActiveTab('general')}
-          className={`pb-3 cursor-pointer transition border-b-2 shrink-0 flex items-center gap-1.5 ${
-            activeTab === 'general' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => setActiveTab(value as typeof activeTab)}
+      >
+        <TabsList
+          variant="line"
+          className="h-auto w-full justify-start gap-6 overflow-x-auto rounded-none border-b border-slate-200 p-0 text-sm font-semibold text-slate-600"
         >
+        <TabsTrigger value="general" className="h-auto flex-none cursor-pointer rounded-none px-0 pb-3 pt-0">
           <Globe className="w-4 h-4" />
           <span>General Settings</span>
-        </button>
+        </TabsTrigger>
 
-        <button
-          onClick={() => setActiveTab('fields')}
-          className={`pb-3 cursor-pointer transition border-b-2 shrink-0 flex items-center gap-1.5 ${
-            activeTab === 'fields' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
+        <TabsTrigger value="fields" className="h-auto flex-none cursor-pointer rounded-none px-0 pb-3 pt-0">
           <Sliders className="w-4 h-4" />
           <span>Custom Metadata Fields</span>
-        </button>
+        </TabsTrigger>
 
-        <button
-          onClick={() => setActiveTab('webhooks')}
-          className={`pb-3 cursor-pointer transition border-b-2 shrink-0 flex items-center gap-1.5 ${
-            activeTab === 'webhooks' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
+        <TabsTrigger value="webhooks" className="h-auto flex-none cursor-pointer rounded-none px-0 pb-3 pt-0">
           <WebhookIcon className="w-4 h-4" />
           <span>Webhooks & Integration</span>
-        </button>
+        </TabsTrigger>
 
-        <button
-          onClick={() => setActiveTab('sla')}
-          className={`pb-3 cursor-pointer transition border-b-2 shrink-0 flex items-center gap-1.5 ${
-            activeTab === 'sla' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
+        <TabsTrigger value="sla" className="h-auto flex-none cursor-pointer rounded-none px-0 pb-3 pt-0">
           <Clock className="w-4 h-4" />
           <span>SLA Policies</span>
-        </button>
+        </TabsTrigger>
 
-        <button
-          onClick={() => setActiveTab('backups')}
-          className={`pb-3 cursor-pointer transition border-b-2 shrink-0 flex items-center gap-1.5 ${
-            activeTab === 'backups' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
+        <TabsTrigger value="backups" className="h-auto flex-none cursor-pointer rounded-none px-0 pb-3 pt-0">
           <Database className="w-4 h-4" />
           <span>Database & Maintenance</span>
-        </button>
+        </TabsTrigger>
 
         <PermissionGate permission={PERMISSIONS.SETTINGS.SECURITY}>
-          <button
-            onClick={() => setActiveTab('audit')}
-            className={`pb-3 cursor-pointer transition border-b-2 shrink-0 flex items-center gap-1.5 ${
-              activeTab === 'audit' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-            }`}
-          >
+          <TabsTrigger value="audit" className="h-auto flex-none cursor-pointer rounded-none px-0 pb-3 pt-0">
             <ShieldAlert className="w-4 h-4" />
             <span>Security Audit Trail</span>
-          </button>
+          </TabsTrigger>
         </PermissionGate>
-      </div>
+        </TabsList>
+      </Tabs>
 
       {/* TAB 1: GENERAL SYSTEM SETTINGS */}
       {activeTab === 'general' && (
@@ -497,11 +477,10 @@ export default function SettingsPage() {
                     <div className="text-[11px] text-slate-500">Enable Brevo/SendGrid transactional email system</div>
                   </div>
                 </div>
-                <input
-                  type="checkbox"
+                <Switch
                   checked={smtpEnabled}
-                  onChange={(e) => setSmtpEnabled(e.target.checked)}
-                  className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  onCheckedChange={setSmtpEnabled}
+                  aria-label="Enable SMTP email delivery"
                 />
               </div>
 
@@ -513,11 +492,10 @@ export default function SettingsPage() {
                     <div className="text-[11px] text-slate-500">Enable automated deal predictions & smart summary generation</div>
                   </div>
                 </div>
-                <input
-                  type="checkbox"
+                <Switch
                   checked={aiEnabled}
-                  onChange={(e) => setAiEnabled(e.target.checked)}
-                  className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  onCheckedChange={setAiEnabled}
+                  aria-label="Enable AI sales assistant and lead scoring"
                 />
               </div>
             </div>

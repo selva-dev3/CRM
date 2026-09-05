@@ -26,13 +26,13 @@ describe('UserSelect', () => {
     const onChange = vi.fn();
     render(<UserSelect value="user-1" onChange={onChange} />);
 
-    expect(screen.getByRole('button', { name: /Ada Lovelace \(ada@example.com\)/ })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /Ada Lovelace/ }));
-    await user.click(screen.getByRole('button', { name: /Grace Hopper/ }));
+    expect(screen.getByRole('combobox', { name: /Ada Lovelace \(ada@example.com\)/ })).toBeInTheDocument();
+    await user.click(screen.getByRole('combobox', { name: /Ada Lovelace/ }));
+    await user.click(screen.getByRole('option', { name: /Grace Hopper/ }));
     expect(onChange).toHaveBeenCalledWith('user-2');
 
-    await user.click(screen.getByRole('button', { name: /Ada Lovelace/ }));
-    await user.click(screen.getByRole('button', { name: /None \/ Clear Selection/ }));
+    await user.click(screen.getByRole('combobox', { name: /Ada Lovelace/ }));
+    await user.click(screen.getByRole('option', { name: /None \/ Clear Selection/ }));
     expect(onChange).toHaveBeenLastCalledWith('');
   });
 
@@ -40,7 +40,7 @@ describe('UserSelect', () => {
     vi.useFakeTimers();
     useUsersQueryMock.mockReturnValue({ data: [], isLoading: true });
     render(<UserSelect value="" onChange={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: /Select User Account/ }));
+    fireEvent.click(screen.getByRole('combobox', { name: /Select User Account/ }));
     expect(screen.getByText('Searching users via API...')).toBeInTheDocument();
 
     const input = screen.getByPlaceholderText('Search user by name or email...');

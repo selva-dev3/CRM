@@ -1,6 +1,9 @@
 'use client';
 
+import { Input } from "@/components/ui/input";
+
 import { ResponsiveSelect } from '@/components/common/responsive-select';
+import { Textarea } from '@/components/ui/textarea';
 
 import { getErrorMessage } from '@/lib/utils';
 import React, { useState, useEffect } from 'react';
@@ -27,6 +30,7 @@ import {
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
 import { PermissionGate } from '@/components/common/permission-gate';
@@ -679,7 +683,7 @@ export default function RolesPage() {
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
               Role Name *
             </label>
-            <input
+            <Input
               type="text"
               required
               value={roleName}
@@ -693,7 +697,7 @@ export default function RolesPage() {
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
               Description
             </label>
-            <textarea
+            <Textarea
               rows={2}
               value={roleDescription}
               onChange={(e) => setRoleDescription(e.target.value)}
@@ -732,14 +736,10 @@ export default function RolesPage() {
                     <div key={category} className="space-y-2 bg-white p-3 rounded-xl border border-slate-200">
                       <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                         <label className="flex items-center gap-2 cursor-pointer select-none">
-                          <input
-                            type="checkbox"
-                            checked={allSelected}
-                            ref={(el) => {
-                              if (el) el.indeterminate = someSelected && !allSelected;
-                            }}
-                            onChange={() => toggleModulePermissions(category)}
-                            className="h-4 w-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
+                          <Checkbox
+                            checked={someSelected && !allSelected ? 'indeterminate' : allSelected}
+                            onCheckedChange={() => toggleModulePermissions(category)}
+                            aria-label={`Select all ${category} permissions`}
                           />
                           <span className="px-2.5 py-0.5 bg-indigo-50 text-indigo-700 font-bold rounded-md text-xs border border-indigo-100">
                             {category}
@@ -776,11 +776,11 @@ export default function RolesPage() {
                                   </span>
                                 )}
                               </div>
-                              <input
-                                type="checkbox"
+                              <Checkbox
                                 checked={isChecked}
-                                onChange={() => togglePermissionSelection(p)}
-                                className="h-4 w-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 mt-0.5 shrink-0"
+                                onCheckedChange={() => togglePermissionSelection(p)}
+                                aria-label={`Select ${p.name || p.key || 'permission'}`}
+                                className="mt-0.5 shrink-0"
                               />
                             </label>
                           );
@@ -826,7 +826,7 @@ export default function RolesPage() {
         <form onSubmit={handleCloneRoleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">New Cloned Role Name *</label>
-            <input
+            <Input
               type="text"
               required
               value={cloneNewName}
@@ -966,7 +966,7 @@ export default function RolesPage() {
             <form onSubmit={handleCreatePermSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Permission Name *</label>
-                <input
+                <Input
                   type="text"
                   required
                   value={permName}
@@ -978,7 +978,7 @@ export default function RolesPage() {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Permission Action Key *</label>
-                <input
+                <Input
                   type="text"
                   required
                   value={permKey}
@@ -1007,7 +1007,7 @@ export default function RolesPage() {
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Description</label>
-                  <input
+                  <Input
                     type="text"
                     value={permDesc}
                     onChange={(e) => setPermDesc(e.target.value)}
@@ -1041,7 +1041,7 @@ export default function RolesPage() {
                     {jsonFileName ? `File selected: ${jsonFileName}` : 'Click or drop permissions.json here'}
                   </span>
                   <span className="text-[10px] text-slate-400 block">Supports standard permissions JSON array</span>
-                  <input
+                  <Input
                     type="file"
                     accept=".json,application/json"
                     onChange={handleFileUpload}
@@ -1052,7 +1052,7 @@ export default function RolesPage() {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Or Paste Permissions JSON Content</label>
-                <textarea
+                <Textarea
                   rows={6}
                   value={jsonText}
                   onChange={(e) => setJsonText(e.target.value)}

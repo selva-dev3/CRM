@@ -35,6 +35,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
+import { PageTabs } from '@/components/common/page-tabs';
 import { PermissionGate } from '@/components/common/permission-gate';
 import {
   useUserQuery,
@@ -490,41 +491,17 @@ export default function UserDetailPage() {
         </Card>
       </div>
 
-      {/* Navigation Tabs */}
-      <div className="flex items-center border-b border-slate-200 gap-4 sm:gap-6 overflow-x-auto text-sm font-semibold text-slate-600">
-        <button
-          onClick={() => setActiveTab('profile')}
-          className={`shrink-0 whitespace-nowrap pb-3 cursor-pointer transition border-b-2 ${
-            activeTab === 'profile' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
-          Profile & Teams
-        </button>
-        <button
-          onClick={() => setActiveTab('performance')}
-          className={`shrink-0 whitespace-nowrap pb-3 cursor-pointer transition border-b-2 ${
-            activeTab === 'performance' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
-          Sales Quota & Performance
-        </button>
-        <button
-          onClick={() => setActiveTab('security')}
-          className={`shrink-0 whitespace-nowrap pb-3 cursor-pointer transition border-b-2 ${
-            activeTab === 'security' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
-          Security & Permissions
-        </button>
-        <button
-          onClick={() => setActiveTab('activity')}
-          className={`shrink-0 whitespace-nowrap pb-3 cursor-pointer transition border-b-2 ${
-            activeTab === 'activity' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
-          Activity Timeline
-        </button>
-      </div>
+      <PageTabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        tabs={[
+          { value: 'profile', label: 'Profile & Teams' },
+          { value: 'performance', label: 'Sales Quota & Performance' },
+          { value: 'security', label: 'Security & Permissions' },
+          { value: 'activity', label: 'Activity Timeline' },
+        ]}
+        listClassName="border-b border-slate-200"
+      />
 
       {/* Tab Contents */}
       {activeTab === 'profile' && (

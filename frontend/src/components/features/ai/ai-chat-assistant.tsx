@@ -7,6 +7,16 @@ import type { AIActionProposal, AIEvidence, AIResultBlock } from '@/lib/api/ai';
 import { aiService } from '@/lib/api/ai';
 import { PERMISSIONS } from '@/lib/permissions';
 import { getErrorMessage } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet';
 
 interface ChatMessage {
   id: string;
@@ -101,34 +111,44 @@ export function AIChatAssistant() {
   if (!hasPermission(PERMISSIONS.AI.GENERATE)) return null;
 
   return (
-    <div className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] z-50">
-      {!isOpen ? (
-        <button
-          type="button"
-          onClick={() => setIsOpen(true)}
-          title="AI Sales Assistant"
-          aria-label="Open AI Sales Assistant"
-          className="bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-full w-12 h-12 sm:w-14 sm:h-14 shadow-lg flex items-center justify-center transition cursor-pointer"
-        >
-          <Sparkles className="w-6 h-6" />
-        </button>
-      ) : (
-        <div className="flex h-[min(36rem,calc(100dvh-2rem))] w-[calc(100vw-2rem)] max-w-md flex-col rounded-xl border border-gray-800 bg-gray-900 p-4 shadow-2xl sm:w-[28rem]">
+    <Sheet open={isOpen} onOpenChange={setIsOpen}>
+      <div className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] z-40">
+        <SheetTrigger asChild>
+          <Button
+            type="button"
+            title="AI Sales Assistant"
+            aria-label="Open AI Sales Assistant"
+            className="size-12 rounded-full bg-indigo-600 text-white shadow-lg hover:bg-indigo-700 active:scale-95 sm:size-14"
+          >
+            <Sparkles className="size-6" />
+          </Button>
+        </SheetTrigger>
+      </div>
+      <SheetContent
+        side="right"
+        showCloseButton={false}
+        aria-describedby={undefined}
+        className="w-full gap-0 border-gray-800 bg-gray-900 p-4 text-gray-200 sm:max-w-md"
+      >
           <div className="flex justify-between items-center pb-2 border-b border-gray-800">
-            <h3 className="font-semibold text-white flex items-center gap-2">
+            <SheetTitle className="font-semibold text-white flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-indigo-400" />
               <span>AI Sales Assistant</span>
-            </h3>
-            <button
-              type="button"
-              onClick={() => setIsOpen(false)}
-              className="text-gray-400 hover:text-white cursor-pointer transition p-1"
-              aria-label="Close AI Sales Assistant"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            </SheetTitle>
+            <SheetClose asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-gray-400 hover:bg-gray-800 hover:text-white"
+                aria-label="Close AI Sales Assistant"
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </SheetClose>
           </div>
-          <div className="flex-1 overflow-y-auto my-2 space-y-2 text-sm text-gray-300">
+          <ScrollArea className="my-2 min-h-0 flex-1 text-sm text-gray-300">
+            <div className="space-y-2 pr-3">
             {messages.length === 0 && (
               <p className="text-gray-500 italic text-center mt-10">How can I assist your sales team today?</p>
             )}
@@ -230,9 +250,10 @@ export function AIChatAssistant() {
               </div>
             )}
             {error && <p className="rounded bg-red-950 p-2 text-red-200" role="alert">{error}</p>}
-          </div>
+            </div>
+          </ScrollArea>
           <div className="flex gap-2 pt-2 border-t border-gray-800">
-            <input
+            <Input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -245,19 +266,18 @@ export function AIChatAssistant() {
               placeholder="Ask AI..."
               aria-label="Message AI Sales Assistant"
               disabled={isSending}
-              className="min-w-0 flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-1 text-sm text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+              className="min-w-0 flex-1 border-gray-700 bg-gray-800 text-sm text-white placeholder:text-gray-500 focus-visible:ring-indigo-400"
             />
-            <button
+            <Button
               type="button"
               onClick={handleSend}
               disabled={isSending || !input.trim()}
-              className="bg-indigo-600 hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50 text-white px-3 py-1 rounded text-sm cursor-pointer"
+              className="bg-indigo-600 text-white hover:bg-indigo-700"
             >
               Send
-            </button>
+            </Button>
           </div>
-        </div>
-      )}
-    </div>
+      </SheetContent>
+    </Sheet>
   );
 }

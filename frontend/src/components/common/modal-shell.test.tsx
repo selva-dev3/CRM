@@ -20,7 +20,7 @@ describe('ModalShell', () => {
       </ModalShell>,
     );
     expect(screen.getByRole('button', { name: 'Close dialog' })).toBeInTheDocument();
-    expect(screen.getByText('Edit Deal')).toBeInTheDocument();
+    expect(screen.getAllByText('Edit Deal')).toHaveLength(2);
   });
 
   it('gives title-less dialogs a generic accessible name', () => {
@@ -62,10 +62,11 @@ describe('ModalShell', () => {
       </>,
     );
 
-    const dialog = screen.getByRole('dialog');
-    // rAF-deferred focus lands on the panel itself.
+    // Radix moves focus to the first interactive control.
     await vi.waitFor(() => {
-      expect(document.activeElement).toBe(dialog);
+      expect(document.activeElement).toBe(
+        screen.getByRole('button', { name: 'Close dialog' }),
+      );
     });
 
     await userEvent.keyboard('{Escape}');
@@ -86,52 +87,29 @@ describe('ModalShell', () => {
   });
 
   it('keeps Tab cycling inside the panel (focus trap)', async () => {
-    // jsdom performs no layout, so offsetParent is always null and the
-    // shell's "visible element" filter would hide every control. Stub it
-    // so the trap behaves like a real browser here.
-    const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetParent');
-    Object.defineProperty(HTMLElement.prototype, 'offsetParent', {
-      configurable: true,
-      get(this: HTMLElement) {
-        return this.parentNode ? {} : null;
-      },
+    render(
+      <ModalShell isOpen onClose={vi.fn()}>
+        <button type="button">First</button>
+        <button type="button">Last</button>
+      </ModalShell>,
+    );
+    const closeButton = screen.getByRole('button', { name: 'Close dialog' });
+    const first = screen.getByRole('button', { name: 'First' });
+    const last = screen.getByRole('button', { name: 'Last' });
+
+    await vi.waitFor(() => {
+      expect(document.activeElement).toBe(closeButton);
     });
 
-    try {
-      render(
-        <ModalShell isOpen onClose={vi.fn()}>
-          <button type="button">First</button>
-          <button type="button">Last</button>
-        </ModalShell>,
-      );
-      const dialog = screen.getByRole('dialog');
-      // Title-less shell: close button renders first, so it is the wrap target.
-      const closeButton = screen.getByRole('button', { name: 'Close dialog' });
-      const first = screen.getByRole('button', { name: 'First' });
-      const last = screen.getByRole('button', { name: 'Last' });
+    await userEvent.tab();
+    expect(document.activeElement).toBe(first);
+    await userEvent.tab();
+    expect(document.activeElement).toBe(last);
+    await userEvent.tab();
+    expect(document.activeElement).toBe(closeButton);
 
-      // Let the open-effect rAF settle its initial focus before interacting.
-      await vi.waitFor(() => {
-        expect(document.activeElement).toBe(dialog);
-      });
-
-      last.focus();
-      await userEvent.tab();
-      expect(document.activeElement).toBe(closeButton);
-
-      closeButton.focus();
-      await userEvent.tab({ shift: true });
-      expect(document.activeElement).toBe(last);
-
-      // Sanity: in-flow controls still tab in DOM order between wraps.
-      closeButton.focus();
-      await userEvent.tab();
-      expect(document.activeElement).toBe(first);
-    } finally {
-      if (original) {
-        Object.defineProperty(HTMLElement.prototype, 'offsetParent', original);
-      }
-    }
+    await userEvent.tab({ shift: true });
+    expect(document.activeElement).toBe(last);
   });
 
   it('clicking the close button invokes onClose', async () => {

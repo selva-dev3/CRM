@@ -1,5 +1,7 @@
 ﻿'use client';
 
+import { Input } from "@/components/ui/input";
+
 import { getErrorMessage } from '@/lib/utils';
 import React, { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
@@ -21,6 +23,7 @@ import {
 import { ActionMenu } from '@/components/common/action-menu';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { Button } from '@/components/ui/button';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ModalShell } from '@/components/common/modal-shell';
 import {
   useQuoteQuery,
@@ -259,43 +262,43 @@ export default function QuoteDetailPage() {
             </h3>
 
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-slate-700">
-                <thead className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                  <tr>
-                    <th className="p-3">ITEM DESCRIPTION</th>
-                    <th className="p-3 text-center">QTY</th>
-                    <th className="p-3 text-right">UNIT PRICE</th>
-                    <th className="p-3 text-right">TOTAL</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
+              <Table className="w-full text-left text-xs text-slate-700">
+                <TableHeader className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  <TableRow>
+                    <TableHead className="p-3">ITEM DESCRIPTION</TableHead>
+                    <TableHead className="p-3 text-center">QTY</TableHead>
+                    <TableHead className="p-3 text-right">UNIT PRICE</TableHead>
+                    <TableHead className="p-3 text-right">TOTAL</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className="divide-y divide-slate-100">
                   {quote.items && quote.items.length > 0 ? (
                     quote.items.map((item, idx) => (
-                      <tr key={idx}>
-                        <td className="p-3 font-semibold text-slate-900">{item.name}</td>
-                        <td className="p-3 text-center font-mono">{item.quantity}</td>
-                        <td className="p-3 text-right">${item.unit_price.toLocaleString()}</td>
-                        <td className="p-3 text-right font-bold text-slate-900">${item.total.toLocaleString()}</td>
-                      </tr>
+                      <TableRow key={idx}>
+                        <TableCell className="p-3 font-semibold text-slate-900">{item.name}</TableCell>
+                        <TableCell className="p-3 text-center font-mono">{item.quantity}</TableCell>
+                        <TableCell className="p-3 text-right">${item.unit_price.toLocaleString()}</TableCell>
+                        <TableCell className="p-3 text-right font-bold text-slate-900">${item.total.toLocaleString()}</TableCell>
+                      </TableRow>
                     ))
                   ) : (
                     <>
-                      <tr>
-                        <td className="p-3 font-semibold text-slate-900">CRM Enterprise SaaS Annual License</td>
-                        <td className="p-3 text-center font-mono">10</td>
-                        <td className="p-3 text-right">$1,200.00</td>
-                        <td className="p-3 text-right font-bold text-slate-900">$12,000.00</td>
-                      </tr>
-                      <tr>
-                        <td className="p-3 font-semibold text-slate-900">Dedicated Enterprise Onboarding Pack</td>
-                        <td className="p-3 text-center font-mono">1</td>
-                        <td className="p-3 text-right">$3,000.00</td>
-                        <td className="p-3 text-right font-bold text-slate-900">$3,000.00</td>
-                      </tr>
+                      <TableRow>
+                        <TableCell className="p-3 font-semibold text-slate-900">CRM Enterprise SaaS Annual License</TableCell>
+                        <TableCell className="p-3 text-center font-mono">10</TableCell>
+                        <TableCell className="p-3 text-right">$1,200.00</TableCell>
+                        <TableCell className="p-3 text-right font-bold text-slate-900">$12,000.00</TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell className="p-3 font-semibold text-slate-900">Dedicated Enterprise Onboarding Pack</TableCell>
+                        <TableCell className="p-3 text-center font-mono">1</TableCell>
+                        <TableCell className="p-3 text-right">$3,000.00</TableCell>
+                        <TableCell className="p-3 text-right font-bold text-slate-900">$3,000.00</TableCell>
+                      </TableRow>
                     </>
                   )}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
 
             <div className="flex justify-end pt-4 border-t border-slate-100">
@@ -362,7 +365,7 @@ export default function QuoteDetailPage() {
           <form onSubmit={handleSendEmailSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Recipient Email Address *</label>
-              <input
+              <Input
                 type="email"
                 required
                 value={recipientEmailInput}

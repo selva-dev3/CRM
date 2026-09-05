@@ -23,7 +23,10 @@ import {
   X,
   AlertCircle
 } from 'lucide-react';
-import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui';
+import {
+  Button, Card, CardHeader, CardTitle, CardDescription, CardContent, Switch,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui';
 import { ModalShell } from '@/components/common/modal-shell';
 import { useHasPermission } from '@/hooks/use-has-permission';
 import { PERMISSIONS } from '@/lib/permissions';
@@ -531,22 +534,22 @@ export default function DashboardPage() {
             )}
             {recentDeals.length > 0 && (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm border-collapse">
-                <thead>
-                  <tr className="border-b border-slate-100 bg-slate-50/70 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                    <th className="py-3 px-3 sm:px-6">Opportunity Title</th>
-                    <th className="py-3 px-3 sm:px-6">Value</th>
-                    <th className="py-3 px-3 sm:px-6">Stage</th>
-                    <th className="py-3 px-3 sm:px-6">Sales Rep</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
+              <Table className="w-full text-left text-sm">
+                <TableHeader>
+                  <TableRow className="border-b border-slate-100 bg-slate-50/70 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    <TableHead className="py-3 px-3 sm:px-6">Opportunity Title</TableHead>
+                    <TableHead className="py-3 px-3 sm:px-6">Value</TableHead>
+                    <TableHead className="py-3 px-3 sm:px-6">Stage</TableHead>
+                    <TableHead className="py-3 px-3 sm:px-6">Sales Rep</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className="divide-y divide-slate-100">
                   {recentDeals.map((deal) => (
-                    <tr
+                    <TableRow
                       key={deal.deal_id}
                       className="hover:bg-slate-50/80 transition duration-150"
                     >
-                      <td className="py-4 px-3 sm:px-6 font-semibold text-slate-900 flex items-center gap-3">
+                      <TableCell className="py-4 px-3 sm:px-6 font-semibold text-slate-900 flex items-center gap-3">
                         <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center font-bold text-indigo-600 text-xs shrink-0">
                           {deal.title.charAt(0)}
                         </div>
@@ -556,22 +559,22 @@ export default function DashboardPage() {
                         >
                           {deal.title}
                         </Link>
-                      </td>
-                      <td className="py-4 px-3 sm:px-6 font-bold text-emerald-700 tabular-nums">
+                      </TableCell>
+                      <TableCell className="py-4 px-3 sm:px-6 font-bold text-emerald-700 tabular-nums">
                         {formatCurrency(deal.amount)}
-                      </td>
-                      <td className="py-4 px-3 sm:px-6">
+                      </TableCell>
+                      <TableCell className="py-4 px-3 sm:px-6">
                         <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">
                           {deal.stage || 'In Pipeline'}
                         </span>
-                      </td>
-                      <td className="py-4 px-3 sm:px-6 text-slate-600 text-xs font-medium">
+                      </TableCell>
+                      <TableCell className="py-4 px-3 sm:px-6 text-slate-600 text-xs font-medium">
                         {deal.owner || 'Selva Admin'}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
             )}
           </CardContent>
@@ -711,16 +714,14 @@ export default function DashboardPage() {
             {(widgetPreferences ?? widgets).map((w) => (
               <div key={w.id} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl">
                 <label htmlFor={`widget-${w.id}`} className="text-xs font-bold text-slate-800">{w.title}</label>
-                <input
+                <Switch
                   id={`widget-${w.id}`}
-                  type="checkbox"
                   checked={w.enabled}
-                  onChange={(event) => {
+                  onCheckedChange={(checked) => {
                     setWidgetPreferences((current) => (current ?? widgets).map((widget) => (
-                      widget.id === w.id ? { ...widget, enabled: event.target.checked } : widget
+                      widget.id === w.id ? { ...widget, enabled: checked } : widget
                     )));
                   }}
-                  className="w-4 h-4 accent-indigo-600 rounded cursor-pointer"
                 />
               </div>
             ))}

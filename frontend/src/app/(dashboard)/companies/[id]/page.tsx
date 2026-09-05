@@ -29,6 +29,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
+import { PageTabs } from '@/components/common/page-tabs';
 import {
   useCompanyQuery,
   useUpdateCompanyMutation,
@@ -324,78 +325,20 @@ export default function CompanyDetailsPage() {
 
       <CustomFieldValues fields={customFields} values={company.custom_fields ?? {}} />
 
-      {/* Sub-Resource Navigation Tabs */}
-      <div className="flex items-center border-b border-slate-200 gap-6 text-sm font-semibold text-slate-600 overflow-x-auto">
-        <button
-          onClick={() => setActiveTab('contacts')}
-          className={`pb-3 cursor-pointer transition border-b-2 flex items-center gap-2 whitespace-nowrap ${
-            activeTab === 'contacts' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
-          <User className="w-4 h-4" />
-          <span>Contacts ({contacts.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('deals')}
-          className={`pb-3 cursor-pointer transition border-b-2 flex items-center gap-2 whitespace-nowrap ${
-            activeTab === 'deals' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
-          <Briefcase className="w-4 h-4" />
-          <span>Deals ({deals.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('notes')}
-          className={`pb-3 cursor-pointer transition border-b-2 flex items-center gap-2 whitespace-nowrap ${
-            activeTab === 'notes' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
-          <FileText className="w-4 h-4" />
-          <span>Notes ({notes.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('quotes')}
-          className={`pb-3 cursor-pointer transition border-b-2 flex items-center gap-2 whitespace-nowrap ${
-            activeTab === 'quotes' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
-          <DollarSign className="w-4 h-4" />
-          <span>Quotes ({quotes.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('invoices')}
-          className={`pb-3 cursor-pointer transition border-b-2 flex items-center gap-2 whitespace-nowrap ${
-            activeTab === 'invoices' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
-          <FileSpreadsheet className="w-4 h-4" />
-          <span>Invoices ({invoices.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('documents')}
-          className={`pb-3 cursor-pointer transition border-b-2 flex items-center gap-2 whitespace-nowrap ${
-            activeTab === 'documents' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
-          <Folder className="w-4 h-4" />
-          <span>Documents ({documents.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('hierarchy')}
-          className={`pb-3 cursor-pointer transition border-b-2 flex items-center gap-2 whitespace-nowrap ${
-            activeTab === 'hierarchy' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-slate-900'
-          }`}
-        >
-          <Network className="w-4 h-4" />
-          <span>Corporate Hierarchy</span>
-        </button>
-      </div>
+      <PageTabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        tabs={[
+          { value: 'contacts', icon: <User className="size-4" />, label: `Contacts (${contacts.length})` },
+          { value: 'deals', icon: <Briefcase className="size-4" />, label: `Deals (${deals.length})` },
+          { value: 'notes', icon: <FileText className="size-4" />, label: `Notes (${notes.length})` },
+          { value: 'quotes', icon: <DollarSign className="size-4" />, label: `Quotes (${quotes.length})` },
+          { value: 'invoices', icon: <FileSpreadsheet className="size-4" />, label: `Invoices (${invoices.length})` },
+          { value: 'documents', icon: <Folder className="size-4" />, label: `Documents (${documents.length})` },
+          { value: 'hierarchy', icon: <Network className="size-4" />, label: 'Corporate Hierarchy' },
+        ]}
+        listClassName="border-b border-slate-200"
+      />
 
       {/* TAB CONTENT: Contacts */}
       {activeTab === 'contacts' && (

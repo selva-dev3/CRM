@@ -92,13 +92,13 @@ describe('Settings page permission gating', () => {
   it('hides the Security Audit Trail tab without settings:security', () => {
     setStoredUser([PERMISSIONS.SETTINGS.READ]);
     render(<SettingsPage />);
-    expect(screen.queryByRole('button', { name: /Security Audit Trail/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /Security Audit Trail/ })).not.toBeInTheDocument();
   });
 
   it('shows the Security Audit Trail tab with settings:security', () => {
     setStoredUser([PERMISSIONS.SETTINGS.READ, PERMISSIONS.SETTINGS.SECURITY]);
     render(<SettingsPage />);
-    expect(screen.getByRole('button', { name: /Security Audit Trail/ })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Security Audit Trail/ })).toBeInTheDocument();
   });
 
   it('hides write actions without settings:update', () => {
@@ -119,7 +119,7 @@ describe('Settings page permission gating', () => {
     render(<SettingsPage />);
     expect(screen.getByRole('link', { name: /Organization Settings/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Integrations/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Security Audit Trail/ })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Security Audit Trail/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Save General Settings/ })).toBeInTheDocument();
   });
 });

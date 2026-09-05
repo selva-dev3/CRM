@@ -1,9 +1,19 @@
 'use client';
 
-import React, { ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { AlertCircle, AlertTriangle, Loader2, Trash2 } from 'lucide-react';
+
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
-import { ModalShell } from '@/components/common/modal-shell';
+import { cn } from '@/lib/utils';
 
 export interface ConfirmModalProps {
   isOpen: boolean;
@@ -19,15 +29,6 @@ export interface ConfirmModalProps {
   icon?: ReactNode;
 }
 
-/**
- * Confirmation dialog for destructive/important actions.
- *
- * Built on ModalShell so every confirm dialog inherits the shared
- * accessibility contract (role="dialog", Escape-to-close, focus trap and
- * focus restore) plus the responsive scroll-safe layout. The public API is
- * unchanged from the original hand-rolled version; delete flows keep
- * passing the same props.
- */
 export function ConfirmModal({
   isOpen,
   onClose,
@@ -40,76 +41,82 @@ export function ConfirmModal({
   variant = 'danger',
   isLoading = false,
   icon,
-}: ConfirmModalProps): React.JSX.Element | null {
+}: ConfirmModalProps): React.JSX.Element {
   const variantStyles = {
     danger: {
       iconBg: 'bg-rose-100 text-rose-600',
-      btnBg: 'bg-rose-600 hover:bg-rose-700 text-white',
-      defaultIcon: <Trash2 className="w-5 h-5" />,
+      button: 'bg-rose-600 text-white hover:bg-rose-700',
+      defaultIcon: <Trash2 className="size-5" />,
     },
     warning: {
       iconBg: 'bg-amber-100 text-amber-600',
-      btnBg: 'bg-amber-600 hover:bg-amber-700 text-white',
-      defaultIcon: <AlertTriangle className="w-5 h-5" />,
+      button: 'bg-amber-600 text-white hover:bg-amber-700',
+      defaultIcon: <AlertTriangle className="size-5" />,
     },
     default: {
       iconBg: 'bg-blue-100 text-blue-600',
-      btnBg: 'bg-blue-600 hover:bg-blue-700 text-white',
-      defaultIcon: <AlertCircle className="w-5 h-5" />,
+      button: 'bg-blue-600 text-white hover:bg-blue-700',
+      defaultIcon: <AlertCircle className="size-5" />,
     },
-  };
-
-  const style = variantStyles[variant];
+  } as const;
+  const styles = variantStyles[variant];
 
   return (
-    <ModalShell
-      isOpen={isOpen}
-      onClose={onClose}
-      title={
-        <div className="flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${style.iconBg}`}>
-            {icon || style.defaultIcon}
+    <AlertDialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <AlertDialogContent>
+        <AlertDialogHeader className="sm:grid-cols-[auto_1fr] sm:gap-x-3">
+          <div
+            className={cn(
+              'flex size-10 shrink-0 items-center justify-center rounded-full',
+              styles.iconBg
+            )}
+          >
+            {icon ?? styles.defaultIcon}
           </div>
           <div className="min-w-0">
-            <h3 className="text-sm sm:text-base font-bold text-slate-900 break-words">{title}</h3>
-            {description && <p className="text-xs text-slate-500">{description}</p>}
+            <AlertDialogTitle className="break-words text-sm sm:text-base">
+              {title}
+            </AlertDialogTitle>
+            {description && (
+              <AlertDialogDescription className="mt-1 text-xs">
+                {description}
+              </AlertDialogDescription>
+            )}
           </div>
-        </div>
-      }
-      footer={
-        <>
-          <Button
-            type="button"
-            variant="outline"
+        </AlertDialogHeader>
+
+        {message && (
+          <div className="break-words text-xs font-medium text-slate-700">
+            {message}
+          </div>
+        )}
+
+        <AlertDialogFooter>
+          <AlertDialogCancel
             size="sm"
-            onClick={onClose}
             disabled={isLoading}
-            className="text-xs cursor-pointer border-slate-300 w-full sm:w-auto"
+            className="w-full border-slate-300 text-xs sm:w-auto"
           >
             {cancelText}
-          </Button>
+          </AlertDialogCancel>
           <Button
             type="button"
             size="sm"
             disabled={isLoading}
             onClick={onConfirm}
-            className={`text-xs font-semibold cursor-pointer w-full sm:w-auto ${style.btnBg}`}
+            className={cn('w-full text-xs font-semibold sm:w-auto', styles.button)}
           >
             {isLoading ? (
               <span className="flex items-center justify-center gap-1.5">
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>Processing...</span>
+                <Loader2 className="size-3.5 animate-spin" />
+                Processing...
               </span>
             ) : (
               confirmText
             )}
           </Button>
-        </>
-      }
-    >
-      {message && (
-        <div className="text-xs font-medium text-slate-700 break-words -mt-1">{message}</div>
-      )}
-    </ModalShell>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

@@ -123,7 +123,7 @@ const users = [
 ];
 
 async function openActionsTab() {
-  await userEvent.click(screen.getByRole('button', { name: /Actions & Convert/ }));
+  await userEvent.click(screen.getByRole('tab', { name: /Actions & Convert/ }));
 }
 
 beforeEach(() => {
