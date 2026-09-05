@@ -76,7 +76,7 @@ def make_service(
 
 
 @pytest.mark.asyncio
-async def test_approve_quote_queues_customer_delivery_in_same_transaction():
+async def test_internal_approval_is_rejected_without_mutating_quote():
     quote = make_quote(currency="INR", delivery_status=None)
     service, repository, deal_repository = make_service(quote=quote, deal=make_deal())
     repository.lock_scoped = AsyncMock(return_value=quote)
@@ -97,19 +97,17 @@ async def test_approve_quote_queues_customer_delivery_in_same_transaction():
     )
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.approve_quote(
-        db, quote_id=quote.id, organization_id="org-1", actor_id="user-1"
-    )
+    with pytest.raises(APIException, match="Internal approval"):
+        await service.approve_quote(
+            db, quote_id=quote.id, organization_id="org-1", actor_id="user-1"
+        )
 
-    repository.approve.assert_awaited_once()
-    repository.queue_delivery.assert_awaited_once()
-    assert repository.queue_delivery.await_args.kwargs["recipient_email"] == contact.email
-    db.commit.assert_awaited_once()
-    assert result["quote_number"] == "Q-1"
+    repository.approve.assert_not_awaited()
+    repository.queue_delivery.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_repeated_quote_approval_does_not_duplicate_delivery():
+async def test_internal_approval_is_not_an_idempotent_delivery_operation():
     quote = make_quote(
         currency="INR",
         status="Approved",
@@ -136,19 +134,20 @@ async def test_repeated_quote_approval_does_not_duplicate_delivery():
         )
     )
 
-    await service.approve_quote(
-        AsyncMock(spec=AsyncSession),
-        quote_id=quote.id,
-        organization_id="org-1",
-        actor_id="user-1",
-    )
+    with pytest.raises(APIException, match="Internal approval"):
+        await service.approve_quote(
+            AsyncMock(spec=AsyncSession),
+            quote_id=quote.id,
+            organization_id="org-1",
+            actor_id="user-1",
+        )
 
     repository.approve.assert_not_awaited()
     repository.queue_delivery.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_approve_quote_rejects_invalid_contact_email_without_mutation():
+async def test_internal_approval_does_not_validate_or_queue_customer_delivery():
     quote = make_quote(currency="INR", delivery_status=None)
     service, repository, deal_repository = make_service(quote=quote, deal=make_deal())
     repository.lock_scoped = AsyncMock(return_value=quote)
@@ -165,7 +164,7 @@ async def test_approve_quote_rejects_invalid_contact_email_without_mutation():
         )
     )
 
-    with pytest.raises(APIException, match="invalid email"):
+    with pytest.raises(APIException, match="Internal approval"):
         await service.approve_quote(
             AsyncMock(spec=AsyncSession),
             quote_id=quote.id,

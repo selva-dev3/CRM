@@ -671,6 +671,7 @@ class QuoteResponse(BaseModel):
     delivery_id: str | None = None
     provider_message_id: str | None = None
     sent_at: str | None = None
+    accepted_at: str | None = None
     recipient_email: str | None = None
     pdf_available: bool = False
     expires_at: str | None = None

@@ -3,7 +3,8 @@
 import asyncio
 import hashlib
 import hmac
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from html import escape
 from io import BytesIO
 from typing import Any
@@ -20,6 +21,7 @@ from app.repositories.quote_repository import quote_repository
 from app.services.email_service import EmailDeliveryUnknownError, send_tracked_email
 from app.services.quote_pdf_service import render_quote_pdf
 from app.services.s3_service import s3_service
+from app.services.sales_totals import calculate_line, decimal_value
 
 logger = get_logger(__name__)
 _email_adapter = TypeAdapter(EmailStr)
@@ -34,7 +36,7 @@ def acceptance_token(quote_id: str, delivery_id: str) -> str:
 
 
 class QuoteDeliveryService:
-    async def queue(self, db, *, quote_id: str, organization_id: str, recipient_email: str) -> dict:
+    async def queue(self, db, *, quote_id: str, organization_id: str, recipient_email: str | None) -> dict:
         try:
             quote = await quote_repository.lock_scoped(
                 db, quote_id=quote_id, organization_id=organization_id
@@ -54,9 +56,9 @@ class QuoteDeliveryService:
                     code="QUOTE_DELIVERY_UNKNOWN",
                     status_code=409,
                 )
-            if quote.status != "Approved" or not quote.approved_at:
-                raise APIException(message="Approve the quote before sending it", status_code=409)
-            if not quote.expires_at or quote.expires_at <= datetime.now(UTC):
+            if quote.status not in {"Draft", "Pending Approval", "Approved"}:
+                raise APIException(message="Quote is not ready to send", status_code=409)
+            if quote.expires_at and quote.expires_at <= datetime.now(UTC):
                 raise APIException(message="Quote has expired", status_code=410)
             if quote.delivery_attempts >= 3:
                 raise APIException(message="Quote delivery attempt limit reached", status_code=409)
@@ -76,8 +78,26 @@ class QuoteDeliveryService:
                     code="INVALID_CONTACT_EMAIL",
                     status_code=422,
                 ) from exc
-            if recipient_email.strip().casefold() != contact_email.casefold():
+            requested_email = (recipient_email or contact_email).strip()
+            if requested_email.casefold() != contact_email.casefold():
                 raise APIException(message="Send the quote only to its customer contact")
+            items = await quote_repository.list_items(
+                db, quote_id=quote_id, organization_id=organization_id
+            )
+            if not items or not quote.currency:
+                raise APIException(message="Quote must have priced items and a currency")
+            calculated = sum(
+                (
+                    calculate_line(
+                        item.quantity, item.unit_price, item.discount_percent, item.tax_percent
+                    ).total
+                    for item in items
+                ),
+                Decimal(0),
+            )
+            if calculated != decimal_value(quote.total_amount) or calculated <= 0:
+                raise APIException(message="Quote totals are invalid")
+            quote.expires_at = quote.expires_at or datetime.now(UTC) + timedelta(days=30)
             delivery_id = str(uuid4())
             token = acceptance_token(quote.id, delivery_id)
             await quote_repository.queue_delivery(
@@ -123,7 +143,7 @@ class QuoteDeliveryService:
                 delivery_id,
             )
             try:
-                if quote.status != "Approved" or not quote.expires_at or quote.expires_at <= now:
+                if quote.status not in {"Draft", "Pending Approval", "Approved"} or not quote.expires_at or quote.expires_at <= now:
                     raise ValueError("Quote is no longer eligible for delivery")
                 organization = await quote_repository.get_organization(db, org_id)
                 company, contact = await DealRepository().get_sales_customer(

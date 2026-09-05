@@ -22,6 +22,7 @@ router = APIRouter()
     "/{quote_id}/approve",
     response_model=QuoteResponse,
     dependencies=[Depends(require_permission("quotes:approve"))],
+    deprecated=True,
 )
 async def approve_quote(
     quote_id: str,
@@ -167,7 +168,7 @@ async def delete_quote(
 )
 async def send_quote_email(
     quote_id: str,
-    recipient_email: str = Query(...),
+    recipient_email: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

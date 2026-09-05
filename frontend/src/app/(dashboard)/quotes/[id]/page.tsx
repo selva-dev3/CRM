@@ -4,7 +4,6 @@ import { Input } from "@/components/ui/input";
 
 import { getErrorMessage } from '@/lib/utils';
 import React, { useEffect, useRef, useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useHasPermission } from '@/hooks/use-has-permission';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -31,7 +30,6 @@ import {
   useQuotePdfQuery,
   useQuoteRevisionsQuery,
   useSendQuoteEmailMutation,
-  approveQuoteApi,
   useDeleteQuoteMutation
 } from '@/lib/api/quotes';
 
@@ -52,7 +50,6 @@ export default function QuoteDetailPage() {
   const params = useParams();
   const router = useRouter();
   const quoteId = (params?.id as string) || '';
-  const queryClient = useQueryClient();
   const { hasPermission } = useHasPermission();
 
   // Queries
@@ -64,11 +61,6 @@ export default function QuoteDetailPage() {
 
   // Mutations
   const sendEmailMutation = useSendQuoteEmailMutation();
-  const approveMutation = useMutation({ mutationFn: approveQuoteApi,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['quotes'] });
-      queryClient.invalidateQueries({ queryKey: ['reports'] });
-    } });
   const deleteMutation = useDeleteQuoteMutation();
   const awaitingDeliverySuccessRef = useRef(false);
 
@@ -88,7 +80,7 @@ export default function QuoteDetailPage() {
       quote.provider_message_id
     ) {
       setSuccessMessage(
-        `Quote approved and email sent successfully to ${maskEmail(quote.recipient_email)}`,
+        `Quote sent successfully to ${maskEmail(quote.recipient_email)}. Waiting for customer approval.`,
       );
       awaitingDeliverySuccessRef.current = false;
     }
@@ -104,17 +96,6 @@ export default function QuoteDetailPage() {
       setIsSendEmailModalOpen(false);
     } catch (err: unknown) {
       setErrorMessage(getErrorMessage(err, 'Failed to send email.'));
-    }
-  };
-
-  const handleApproveQuote = async () => {
-    if (approveMutation.isPending) return;
-    try {
-      awaitingDeliverySuccessRef.current = true;
-      await approveMutation.mutateAsync(quoteId);
-      setErrorMessage(null);
-    } catch (err: unknown) {
-      setErrorMessage(getErrorMessage(err, 'Failed to approve quote.'));
     }
   };
 
@@ -208,29 +189,20 @@ export default function QuoteDetailPage() {
               Quote: {quote.quote_number}
             </h1>
             <span className={`px-3 py-0.5 rounded-full text-xs font-semibold border ${badgeStyle}`}>
-              {s === 'Approved' ? 'Approved ✓' : s === 'Sent' ? 'Sent ✓' : s}
+              {s === 'Accepted' ? 'Customer Accepted ✓' : s === 'Rejected' ? 'Customer Rejected' : s === 'Sent' ? 'Sent ✓' : s}
             </span>
           </div>
         </div>
 
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-          {hasPermission('quotes:send') && s === 'Approved' && ['Failed', 'Bounced'].includes(quote.delivery_status || '') && <Button
-            disabled={['Pending', 'Processing', 'Unknown'].includes(quote.delivery_status || '')}
-            onClick={() => { setRecipientEmailInput(quote.recipient_email || ''); setIsSendEmailModalOpen(true); }}
-            className="w-full gap-2 text-xs font-semibold sm:w-auto"
-          >
-            <Send className="w-4 h-4" />
-            Retry delivery
-          </Button>}
-
-          {hasPermission('quotes:approve') && ['Draft', 'Pending Approval'].includes(s) && (
+          {hasPermission('quotes:send') && ['Draft', 'Pending Approval'].includes(s) && (
             <Button
-              onClick={handleApproveQuote}
-              disabled={approveMutation.isPending}
-              className="w-full gap-2 bg-emerald-600 text-xs font-semibold hover:bg-emerald-700 sm:w-auto"
+              onClick={() => { setRecipientEmailInput(quote.contact_email || quote.recipient_email || ''); setIsSendEmailModalOpen(true); }}
+              disabled={sendEmailMutation.isPending || deliveryStatus === 'Processing'}
+              className="w-full gap-2 bg-indigo-600 text-xs font-semibold hover:bg-indigo-700 sm:w-auto"
             >
-              <CheckCircle2 className="w-4 h-4" />
-              Approve Quote
+              <Send className="w-4 h-4" />
+              {deliveryStatus === 'Failed' || deliveryStatus === 'Bounced' ? 'Retry Quote Delivery' : 'Send Quote'}
             </Button>
           )}
 
@@ -429,6 +401,21 @@ export default function QuoteDetailPage() {
         <div><p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Commercial terms</p><p className="mt-1 text-sm font-semibold text-slate-900">{quote.payment_terms || 'Not specified'}</p><p className="text-xs text-slate-500">Due {quote.due_date ? quote.due_date.substring(0, 10) : 'not set'}</p></div>
       </section>
 
+      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 className="text-sm font-bold uppercase tracking-wider text-slate-900">Customer Approval</h2>
+        <p className="mt-2 text-sm font-semibold text-slate-900">
+          {s === 'Accepted'
+            ? 'Customer accepted the quote.'
+            : s === 'Rejected'
+            ? 'Customer rejected the quote.'
+            : s === 'Sent'
+            ? 'Waiting for customer approval.'
+            : 'Quote is ready to send to the customer.'}
+        </p>
+        {quote.accepted_at && <p className="mt-1 text-xs text-slate-500">Accepted at {new Date(quote.accepted_at).toLocaleString()}</p>}
+        {quote.invoice_id && <p className="mt-2 text-xs font-medium text-emerald-700">Invoice {quote.invoice_number || quote.invoice_id} created · {quote.invoice_status || 'Pending'}</p>}
+      </section>
+
       {/* Send Email Modal */}
       {isSendEmailModalOpen && (
         <ModalShell
@@ -437,7 +424,7 @@ export default function QuoteDetailPage() {
           title={
             <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
               <Send className="w-5 h-5 text-blue-600" />
-              Retry Quote Delivery
+              {deliveryStatus === 'Failed' || deliveryStatus === 'Bounced' ? 'Retry Quote Delivery' : 'Send Quote to Customer'}
             </h3>
           }
         >
@@ -463,7 +450,7 @@ export default function QuoteDetailPage() {
                 className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
               >
                 {sendEmailMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                Retry Delivery
+                {deliveryStatus === 'Failed' || deliveryStatus === 'Bounced' ? 'Retry Delivery' : 'Send Quote'}
               </button>
             </div>
           </form>

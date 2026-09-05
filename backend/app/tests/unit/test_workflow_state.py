@@ -7,7 +7,7 @@ from app.services.quote_state import assert_quote_transition
 
 @pytest.mark.parametrize(
     ("current", "target"),
-    [("Draft", "Pending Approval"), ("Pending Approval", "Approved"), ("Approved", "Sent"),
+    [("Draft", "Pending Approval"), ("Pending Approval", "Sent"), ("Approved", "Sent"),
      ("Sent", "Accepted"), ("Sent", "Rejected"), ("Accepted", "Accepted")],
 )
 def test_quote_state_machine_allows_business_transitions(current, target):

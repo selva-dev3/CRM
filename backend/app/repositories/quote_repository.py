@@ -145,6 +145,9 @@ class QuoteRepository:
         assert_quote_transition(quote.status, "Accepted")
         quote.status = "Accepted"
         quote.accepted_at = at
+        # approved_at represents the customer's business approval. Internal
+        # users do not populate it before the quote is sent.
+        quote.approved_at = at
         quote.accepted_by = customer_email
         if quote.deal_id:
             db.add(
