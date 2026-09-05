@@ -1,6 +1,80 @@
 import { useQuery, useMutation, useQueryClient, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
 
+export const REPORT_TYPES = [
+  'sales-performance',
+  'pipeline-velocity',
+  'win-loss-ratio',
+  'lead-attribution',
+  'rep-leaderboard',
+  'revenue-forecasting',
+  'activity-metrics',
+  'deal-duration',
+  'customer-acquisition-cost',
+  'customer-lifetime-value',
+  'churn-analysis',
+  'quota-attainment',
+  'financial-overview',
+  'quote-conversion',
+] as const;
+
+export type ReportType = (typeof REPORT_TYPES)[number];
+
+export const REPORT_TYPE_OPTIONS: ReadonlyArray<{ value: ReportType; label: string }> = [
+  { value: 'sales-performance', label: 'Sales Performance' },
+  { value: 'pipeline-velocity', label: 'Pipeline Velocity' },
+  { value: 'win-loss-ratio', label: 'Win/Loss Ratio' },
+  { value: 'lead-attribution', label: 'Lead Attribution' },
+  { value: 'rep-leaderboard', label: 'Rep Leaderboard' },
+  { value: 'revenue-forecasting', label: 'Revenue Forecast' },
+  { value: 'activity-metrics', label: 'Activity Metrics' },
+  { value: 'deal-duration', label: 'Deal Duration' },
+  { value: 'customer-acquisition-cost', label: 'Customer Acquisition Cost' },
+  { value: 'customer-lifetime-value', label: 'Customer Lifetime Value' },
+  { value: 'churn-analysis', label: 'Churn Analysis' },
+  { value: 'quota-attainment', label: 'Quota Attainment' },
+  { value: 'financial-overview', label: 'Financial Overview' },
+  { value: 'quote-conversion', label: 'Quote Conversion' },
+];
+
+export function isReportType(value: string): value is ReportType {
+  return REPORT_TYPES.some((reportType) => reportType === value);
+}
+
+export type ReportCategory =
+  | 'performance'
+  | 'velocity'
+  | 'winloss'
+  | 'attribution'
+  | 'leaderboard'
+  | 'forecasting'
+  | 'activity'
+  | 'duration'
+  | 'unit-economics'
+  | 'financial'
+  | 'quote-conversion'
+  | 'quota'
+  | 'custom'
+  | 'scheduled';
+
+export const REPORT_TYPE_BY_CATEGORY: Readonly<Partial<Record<ReportCategory, ReportType>>> = {
+  performance: 'sales-performance',
+  velocity: 'pipeline-velocity',
+  winloss: 'win-loss-ratio',
+  attribution: 'lead-attribution',
+  leaderboard: 'rep-leaderboard',
+  forecasting: 'revenue-forecasting',
+  activity: 'activity-metrics',
+  duration: 'deal-duration',
+  quota: 'quota-attainment',
+  financial: 'financial-overview',
+  'quote-conversion': 'quote-conversion',
+};
+
+export function getExportReportType(category: ReportCategory): ReportType | null {
+  return REPORT_TYPE_BY_CATEGORY[category] ?? null;
+}
+
 export interface ReportData {
   report_type: string;
   metrics: ReportMetrics;
@@ -61,11 +135,19 @@ export interface ReportRow {
   email?: string;
   frequency?: string;
   next_run?: string;
+  invoice_count?: number;
+  invoice_value?: number;
+  paid_value?: number;
+  outstanding_amount?: number;
+  quote_count?: number;
+  quote_value?: number;
   id: string;
   [key: string]: string | number | string[] | null | undefined;
 }
 
 export interface ReportMetrics {
+  available?: boolean;
+  reason?: string;
   total_revenue?: number | null;
   monthly_target?: number | null;
   avg_days_to_close?: number | null;
@@ -78,6 +160,22 @@ export interface ReportMetrics {
   total_emails?: number | null;
   email_open_rate_pct?: number | null;
   total_meetings?: number | null;
+  currency?: string;
+  pipeline_value?: number;
+  booked_value?: number;
+  quoted_value?: number;
+  total_quote_value?: number;
+  accepted_quote_value?: number;
+  invoiced_value?: number;
+  collected_revenue?: number;
+  outstanding_amount?: number;
+  overdue_amount?: number;
+  payment_count?: number;
+  total_quotes?: number;
+  accepted_quotes?: number;
+  invoiced_quotes?: number;
+  quote_acceptance_rate?: number;
+  quote_to_invoice_rate?: number;
   table_rows?: ReportRow[];
   [key: string]: unknown;
 }
@@ -96,6 +194,7 @@ export interface ScheduledReportItem {
   email: string;
   frequency: string;
   next_run: string;
+  status: string;
 }
 
 export interface MessageResponse {
@@ -155,6 +254,14 @@ export async function fetchQuotaAttainmentReportApi(): Promise<ReportData> {
   return apiClient.get<ReportData>('/reports/quota-attainment');
 }
 
+export async function fetchFinancialOverviewReportApi(): Promise<ReportData> {
+  return apiClient.get<ReportData>('/reports/financial-overview');
+}
+
+export async function fetchQuoteConversionReportApi(): Promise<ReportData> {
+  return apiClient.get<ReportData>('/reports/quote-conversion');
+}
+
 export async function fetchCustomReportsApi(): Promise<CustomReportItem[]> {
   return apiClient.get<CustomReportItem[]>('/reports/custom-reports');
 }
@@ -171,15 +278,15 @@ export async function deleteCustomReportApi(reportId: string): Promise<MessageRe
   return apiClient.delete<MessageResponse>(`/reports/custom-reports/${reportId}`);
 }
 
-export async function exportReportPdfApi(report_type: string = 'sales-performance'): Promise<{ pdf_url: string }> {
+export async function exportReportPdfApi(report_type: ReportType = 'sales-performance'): Promise<{ pdf_url: string }> {
   return apiClient.post<{ pdf_url: string }>('/reports/export/pdf', { report_type });
 }
 
-export async function exportReportCsvApi(report_type: string = 'sales-performance'): Promise<{ csv_url: string }> {
+export async function exportReportCsvApi(report_type: ReportType = 'sales-performance'): Promise<{ csv_url: string }> {
   return apiClient.post<{ csv_url: string }>('/reports/export/csv', { report_type });
 }
 
-export async function scheduleReportEmailApi(report_type: string, email: string, frequency: string = 'Weekly'): Promise<MessageResponse> {
+export async function scheduleReportEmailApi(report_type: ReportType, email: string, frequency: string = 'Weekly'): Promise<MessageResponse> {
   return apiClient.post<MessageResponse>('/reports/schedule', { report_type, email, frequency });
 }
 
@@ -303,6 +410,24 @@ export function useQuotaAttainmentReportQuery(options?: Omit<UseQueryOptions<Rep
   });
 }
 
+export function useFinancialOverviewReportQuery(options?: Omit<UseQueryOptions<ReportData>, 'queryKey' | 'queryFn'>) {
+  return useQuery<ReportData>({
+    queryKey: ['reports', 'financial-overview'],
+    queryFn: fetchFinancialOverviewReportApi,
+    staleTime: 1000 * 60 * 5,
+    ...options,
+  });
+}
+
+export function useQuoteConversionReportQuery(options?: Omit<UseQueryOptions<ReportData>, 'queryKey' | 'queryFn'>) {
+  return useQuery<ReportData>({
+    queryKey: ['reports', 'quote-conversion'],
+    queryFn: fetchQuoteConversionReportApi,
+    staleTime: 1000 * 60 * 5,
+    ...options,
+  });
+}
+
 export function useCustomReportsQuery(options?: Omit<UseQueryOptions<CustomReportItem[]>, 'queryKey' | 'queryFn'>) {
   return useQuery<CustomReportItem[]>({
     queryKey: ['reports', 'custom-reports'],
@@ -343,23 +468,23 @@ export function useDeleteCustomReportMutation(options?: UseMutationOptions<Messa
   });
 }
 
-export function useExportReportPdfMutation(options?: UseMutationOptions<{ pdf_url: string }, Error, string | undefined>) {
-  return useMutation<{ pdf_url: string }, Error, string | undefined>({
+export function useExportReportPdfMutation(options?: UseMutationOptions<{ pdf_url: string }, Error, ReportType>) {
+  return useMutation<{ pdf_url: string }, Error, ReportType>({
     mutationFn: (reportType) => exportReportPdfApi(reportType),
     ...options,
   });
 }
 
-export function useExportReportCsvMutation(options?: UseMutationOptions<{ csv_url: string }, Error, string | undefined>) {
-  return useMutation<{ csv_url: string }, Error, string | undefined>({
+export function useExportReportCsvMutation(options?: UseMutationOptions<{ csv_url: string }, Error, ReportType>) {
+  return useMutation<{ csv_url: string }, Error, ReportType>({
     mutationFn: (reportType) => exportReportCsvApi(reportType),
     ...options,
   });
 }
 
-export function useScheduleReportEmailMutation(options?: UseMutationOptions<MessageResponse, Error, { report_type: string; email: string; frequency?: string }>) {
+export function useScheduleReportEmailMutation(options?: UseMutationOptions<MessageResponse, Error, { report_type: ReportType; email: string; frequency?: string }>) {
   const queryClient = useQueryClient();
-  return useMutation<MessageResponse, Error, { report_type: string; email: string; frequency?: string }>({
+  return useMutation<MessageResponse, Error, { report_type: ReportType; email: string; frequency?: string }>({
     mutationFn: ({ report_type, email, frequency }) => scheduleReportEmailApi(report_type, email, frequency),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['reports', 'scheduled'] });

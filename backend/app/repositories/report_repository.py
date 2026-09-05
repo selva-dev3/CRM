@@ -9,10 +9,15 @@ from app.models import (
     Company,
     CustomReport,
     Deal,
+    DealStageHistory,
     Email,
     EmailLog,
+    Invoice,
     Lead,
     Meeting,
+    Organization,
+    Payment,
+    Quote,
     ReportExport,
     ScheduledReport,
     User,
@@ -35,6 +40,10 @@ def _epoch_diff(col_end: Any, col_start: Any) -> Any:
 class ReportRepository:
     """Query layer for report aggregation and report entity persistence."""
 
+    async def organization_currency(self, db: AsyncSession, org_id: str) -> str:
+        result = await db.execute(select(Organization.currency).where(Organization.id == org_id))
+        return (result.scalar_one_or_none() or "USD").upper()
+
     # --- Sales Performance ---
     async def total_won_revenue(self, db: AsyncSession, org_id: str) -> float:
         res = await db.execute(
@@ -46,8 +55,9 @@ class ReportRepository:
 
     async def quotas_by_user(self, db: AsyncSession, org_id: str) -> dict[str, float]:
         res = await db.execute(
-            select(UserQuota.user_id, UserQuota.target_amount)
-            .where(UserQuota.organization_id == org_id)
+            select(UserQuota.user_id, UserQuota.target_amount).where(
+                UserQuota.organization_id == org_id
+            )
             # Stable insertion order -> deterministic float summation order.
             .order_by(UserQuota.user_id.asc())
         )
@@ -68,7 +78,7 @@ class ReportRepository:
                 ).label("revenue"),
             )
             .join(Deal, Deal.assigned_to == User.id)
-            .where(Deal.organization_id == org_id)
+            .where(Deal.organization_id == org_id, User.organization_id == org_id)
             .group_by(User.id, User.name, User.role)
             .order_by(
                 func.sum(case((Deal.stage == CLOSED_WON_STAGE, Deal.amount), else_=0.0)).desc(),
@@ -86,34 +96,43 @@ class ReportRepository:
         deals currently sitting in that stage."""
         query = (
             select(
-                Deal.stage,
+                DealStageHistory.stage,
                 func.count(Deal.id).label("deal_count"),
                 func.coalesce(func.sum(Deal.amount), 0.0).label("total_value"),
-                func.coalesce(func.avg(_epoch_diff(func.now(), Deal.created_at)), 0.0).label(
-                    "avg_age_seconds"
-                ),
+                func.coalesce(
+                    func.avg(_epoch_diff(func.now(), DealStageHistory.entered_at)), 0.0
+                ).label("avg_age_seconds"),
             )
-            .where(Deal.organization_id == org_id, Deal.stage.not_in(OPEN_STAGES_EXCLUSION))
-            .group_by(Deal.stage)
+            .join(
+                DealStageHistory,
+                (DealStageHistory.deal_id == Deal.id)
+                & (DealStageHistory.organization_id == org_id)
+                & DealStageHistory.exited_at.is_(None),
+            )
+            .where(
+                Deal.organization_id == org_id,
+                DealStageHistory.stage.not_in(OPEN_STAGES_EXCLUSION),
+            )
+            .group_by(DealStageHistory.stage)
             # Deterministic output order for exports/reports (run-to-run stable).
-            .order_by(Deal.stage.asc())
+            .order_by(DealStageHistory.stage.asc())
         )
         res = await db.execute(query)
         return list(res.all())
 
     async def closed_cycle_stats(self, db: AsyncSession, org_id: str) -> Any | None:
-        """Creation-to-last-update cycle length (seconds) of Closed Won deals.
-
-        ``updated_at`` is the closest persisted proxy for the close event;
-        the schema has no dedicated ``closed_at`` column or stage history.
-        """
-        cycle_expr = _epoch_diff(Deal.updated_at, Deal.created_at)
+        """Creation-to-close cycle length (seconds) of Closed Won deals."""
+        cycle_expr = _epoch_diff(Deal.closed_at, Deal.created_at)
         query = select(
             func.count(Deal.id).label("closed_cnt"),
             func.coalesce(func.min(cycle_expr), 0.0).label("fastest_sec"),
             func.coalesce(func.max(cycle_expr), 0.0).label("longest_sec"),
             func.coalesce(func.avg(cycle_expr), 0.0).label("avg_sec"),
-        ).where(Deal.organization_id == org_id, Deal.stage == CLOSED_WON_STAGE)
+        ).where(
+            Deal.organization_id == org_id,
+            Deal.stage == CLOSED_WON_STAGE,
+            Deal.closed_at.is_not(None),
+        )
         res = await db.execute(query)
         return res.one_or_none()
 
@@ -144,7 +163,7 @@ class ReportRepository:
                 ).label("lost_val"),
             )
             .join(Company, Deal.company_id == Company.id)
-            .where(Deal.organization_id == org_id)
+            .where(Deal.organization_id == org_id, Company.organization_id == org_id)
             .group_by(Company.industry)
             .order_by(Company.industry.asc())
             .limit(limit)
@@ -182,6 +201,7 @@ class ReportRepository:
             .join(Company, Deal.company_id == Company.id)
             .where(
                 Deal.organization_id == org_id,
+                Company.organization_id == org_id,
                 Deal.stage == CLOSED_LOST_STAGE,
                 Deal.loss_reason.is_not(None),
                 func.length(Deal.loss_reason) > 0,
@@ -204,7 +224,7 @@ class ReportRepository:
                 ),
                 func.coalesce(func.avg(Lead.score), 0.0).label("avg_score"),
             )
-            .where(Lead.organization_id == org_id)
+            .where(Lead.organization_id == org_id, Lead.is_archived.is_(False))
             .group_by(Lead.source)
             .order_by(Lead.source.asc())
             .limit(limit)
@@ -228,7 +248,7 @@ class ReportRepository:
                 ).label("revenue"),
             )
             .join(Deal, Deal.assigned_to == User.id)
-            .where(Deal.organization_id == org_id)
+            .where(Deal.organization_id == org_id, User.organization_id == org_id)
             .group_by(User.id, User.name, User.email, User.role)
             .order_by(
                 func.sum(case((Deal.stage == CLOSED_WON_STAGE, Deal.amount), else_=0.0)).desc(),
@@ -346,13 +366,148 @@ class ReportRepository:
                 func.coalesce(func.sum(open_amount), 0.0).label("pipeline"),
             )
             .join(Deal, Deal.assigned_to == User.id)
-            .where(Deal.organization_id == org_id)
+            .where(Deal.organization_id == org_id, User.organization_id == org_id)
             .group_by(User.id, User.name, User.role)
             .order_by(User.name.asc(), User.id.asc())
             .limit(limit)
         )
         res = await db.execute(query)
         return list(res.all())
+
+    # --- Financial overview ---
+    async def financial_overview(self, db: AsyncSession, org_id: str) -> dict[str, float | int]:
+        """Return independently labelled operational and verified financial totals."""
+        deal_result = await db.execute(
+            select(
+                func.coalesce(
+                    func.sum(
+                        case((Deal.stage.not_in(OPEN_STAGES_EXCLUSION), Deal.amount), else_=0.0)
+                    ),
+                    0.0,
+                ).label("pipeline_value"),
+                func.coalesce(
+                    func.sum(case((Deal.stage == CLOSED_WON_STAGE, Deal.amount), else_=0.0)),
+                    0.0,
+                ).label("booked_value"),
+            ).where(Deal.organization_id == org_id)
+        )
+        deal_row = deal_result.one()
+
+        quote_result = await db.execute(
+            select(
+                func.count(Quote.id).label("quote_count"),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (Quote.status.in_(("Sent", "Accepted")), Quote.total_amount),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("quoted_value"),
+                func.coalesce(func.sum(Quote.total_amount), 0).label("total_quote_value"),
+                func.coalesce(
+                    func.sum(case((Quote.status == "Accepted", Quote.total_amount), else_=0)), 0
+                ).label("accepted_quote_value"),
+            ).where(Quote.organization_id == org_id)
+        )
+        quote_row = quote_result.one()
+
+        outstanding = case(
+            (
+                Invoice.status.in_(("Pending", "Overdue")),
+                Invoice.amount - Invoice.paid_amount,
+            ),
+            else_=0,
+        )
+        overdue = case((Invoice.status == "Overdue", Invoice.amount - Invoice.paid_amount), else_=0)
+        invoice_result = await db.execute(
+            select(
+                func.count(Invoice.id).label("invoice_count"),
+                func.coalesce(func.sum(Invoice.amount), 0).label("invoiced_value"),
+                func.coalesce(func.sum(Invoice.paid_amount), 0).label("invoice_paid_value"),
+                func.coalesce(func.sum(outstanding), 0).label("outstanding_amount"),
+                func.coalesce(func.sum(overdue), 0).label("overdue_amount"),
+            ).where(Invoice.organization_id == org_id)
+        )
+        invoice_row = invoice_result.one()
+
+        payment_result = await db.execute(
+            select(
+                func.count(Payment.id).label("payment_count"),
+                func.coalesce(func.sum(Payment.amount), 0).label("collected_revenue"),
+            ).where(Payment.organization_id == org_id, Payment.status == "Succeeded")
+        )
+        payment_row = payment_result.one()
+
+        return {
+            "pipeline_value": float(deal_row.pipeline_value or 0),
+            "booked_value": float(deal_row.booked_value or 0),
+            "quote_count": int(quote_row.quote_count or 0),
+            "quoted_value": float(quote_row.quoted_value or 0),
+            "total_quote_value": float(quote_row.total_quote_value or 0),
+            "accepted_quote_value": float(quote_row.accepted_quote_value or 0),
+            "invoice_count": int(invoice_row.invoice_count or 0),
+            "invoiced_value": float(invoice_row.invoiced_value or 0),
+            "invoice_paid_value": float(invoice_row.invoice_paid_value or 0),
+            "outstanding_amount": float(invoice_row.outstanding_amount or 0),
+            "overdue_amount": float(invoice_row.overdue_amount or 0),
+            "payment_count": int(payment_row.payment_count or 0),
+            "collected_revenue": float(payment_row.collected_revenue or 0),
+        }
+
+    async def invoice_status_breakdown(self, db: AsyncSession, org_id: str) -> list[Any]:
+        result = await db.execute(
+            select(
+                Invoice.status,
+                func.count(Invoice.id).label("invoice_count"),
+                func.coalesce(func.sum(Invoice.amount), 0).label("invoice_value"),
+                func.coalesce(func.sum(Invoice.paid_amount), 0).label("paid_value"),
+            )
+            .where(Invoice.organization_id == org_id)
+            .group_by(Invoice.status)
+            .order_by(Invoice.status.asc())
+        )
+        return list(result.all())
+
+    async def quote_status_breakdown(self, db: AsyncSession, org_id: str) -> list[Any]:
+        result = await db.execute(
+            select(
+                Quote.status,
+                func.count(Quote.id).label("quote_count"),
+                func.coalesce(func.sum(Quote.total_amount), 0).label("quote_value"),
+            )
+            .where(Quote.organization_id == org_id)
+            .group_by(Quote.status)
+            .order_by(Quote.status.asc())
+        )
+        return list(result.all())
+
+    async def quote_conversion_counts(self, db: AsyncSession, org_id: str) -> tuple[int, int]:
+        result = await db.execute(
+            select(
+                func.coalesce(func.sum(case((Quote.status == "Accepted", 1), else_=0)), 0).label(
+                    "accepted_count"
+                ),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            ((Quote.status == "Accepted") & Invoice.id.is_not(None), 1),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("invoiced_count"),
+            )
+            .select_from(Quote)
+            .outerjoin(
+                Invoice,
+                (Invoice.quote_id == Quote.id) & (Invoice.organization_id == org_id),
+            )
+            .where(Quote.organization_id == org_id)
+        )
+        row = result.one()
+        return int(row.accepted_count or 0), int(row.invoiced_count or 0)
 
     # --- Custom Reports ---
     async def list_custom_reports(

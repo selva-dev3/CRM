@@ -24,7 +24,7 @@ from app.models.calendar import CalendarEventModel
 from app.models.call import CallLog
 from app.models.company import Company, CompanyContact
 from app.models.contact import Contact, ContactAddress, ContactTag
-from app.models.deal import Deal, DealActivity, DealProduct, DealStage
+from app.models.deal import Deal, DealActivity, DealProduct, DealStage, DealStageHistory
 from app.models.document import Document, DocumentVersion
 from app.models.email import Email, EmailLog, EmailTemplate
 from app.models.integration import ApiKey, Integration, Webhook
@@ -110,6 +110,7 @@ __all__ = [
     "Deal",
     "DealStage",
     "DealActivity",
+    "DealStageHistory",
     "DealProduct",
     "UserQuota",
     "Task",

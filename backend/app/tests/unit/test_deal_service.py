@@ -34,6 +34,16 @@ def _make_deal(**overrides) -> Deal:
 
 
 def _service_with(repo: DealRepository) -> DealService:
+    async def transition_stage(_db, *, deal, stage, actor_id):
+        del _db, actor_id
+        if deal.stage == stage:
+            return False
+        deal.stage = stage
+        deal.closed_at = datetime.now(UTC) if stage in {"Closed Won", "Closed Lost"} else None
+        return True
+
+    repo.transition_stage = AsyncMock(side_effect=transition_stage)
+    repo.create_initial_stage_history = AsyncMock()
     return DealService(repository=repo)
 
 

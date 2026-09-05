@@ -10,7 +10,9 @@ from app.schemas.report_schemas import (
     CustomReportCreate,
     CustomReportItem,
     ExportReportRequest,
+    FinancialOverviewResponse,
     PdfExportResponse,
+    QuoteConversionResponse,
     ScheduledReportItem,
     ScheduleReportCreate,
 )
@@ -176,6 +178,32 @@ async def get_quota_attainment_report(
 
 
 @router.get(
+    "/financial-overview",
+    response_model=FinancialOverviewResponse,
+    summary="Get pipeline, booked, quoted, invoiced, outstanding, and collected values",
+    dependencies=[Depends(require_permission("reports:read"))],
+)
+async def get_financial_overview_report(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await report_service.get_financial_overview_report(db, current_user=current_user)
+
+
+@router.get(
+    "/quote-conversion",
+    response_model=QuoteConversionResponse,
+    summary="Get quote lifecycle and quote-to-invoice conversion report",
+    dependencies=[Depends(require_permission("reports:read"))],
+)
+async def get_quote_conversion_report(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await report_service.get_quote_conversion_report(db, current_user=current_user)
+
+
+@router.get(
     "/custom-reports",
     response_model=list[CustomReportItem],
     summary="List saved custom report queries",
@@ -304,9 +332,11 @@ async def schedule_report_email(
         db,
         report_type=payload.report_type,
         email=str(payload.email),
-        frequency=payload.frequency.value
-        if hasattr(payload.frequency, "value")
-        else str(payload.frequency),
+        frequency=(
+            payload.frequency.value
+            if hasattr(payload.frequency, "value")
+            else str(payload.frequency)
+        ),
         current_user=current_user,
     )
 

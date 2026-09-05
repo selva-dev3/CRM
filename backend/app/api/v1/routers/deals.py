@@ -281,7 +281,13 @@ async def mark_deal_lost(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await deal_service.mark_deal_lost(db, deal_id, reason, organization_id=organization_id)
+    return await deal_service.mark_deal_lost(
+        db,
+        deal_id,
+        reason,
+        organization_id=organization_id,
+        actor_id=current_user.id,
+    )
 
 
 @router.post(

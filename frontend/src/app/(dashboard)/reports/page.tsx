@@ -35,6 +35,7 @@ import { ModalShell } from '@/components/common/modal-shell';
 import { CustomSelect } from '@/components/common/custom-select';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
+import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
 import {
   useSalesPerformanceReportQuery,
   usePipelineVelocityReportQuery,
@@ -46,29 +47,26 @@ import {
   useDealDurationReportQuery,
   useCacReportQuery,
   useQuotaAttainmentReportQuery,
+  useFinancialOverviewReportQuery,
+  useQuoteConversionReportQuery,
   useCustomReportsQuery,
   useScheduledReportsQuery,
   useCreateCustomReportMutation,
   useDeleteCustomReportMutation,
   useExportReportPdfMutation,
   useExportReportCsvMutation,
-  useScheduleReportEmailMutation
+  useScheduleReportEmailMutation,
+  getExportReportType,
+  isReportType,
+  REPORT_TYPE_OPTIONS,
 } from '@/lib/api/reports';
-import type { CustomReportItem, ReportRow, ScheduledReportItem } from '@/lib/api/reports';
-
-type ReportCategory =
-  | 'performance'
-  | 'velocity'
-  | 'winloss'
-  | 'attribution'
-  | 'leaderboard'
-  | 'forecasting'
-  | 'activity'
-  | 'duration'
-  | 'unit-economics'
-  | 'quota'
-  | 'custom'
-  | 'scheduled';
+import type {
+  CustomReportItem,
+  ReportCategory,
+  ReportRow,
+  ReportType,
+  ScheduledReportItem,
+} from '@/lib/api/reports';
 
 export default function ReportsPage() {
   const [activeCategory, setActiveCategory] = useState<ReportCategory>('performance');
@@ -82,27 +80,71 @@ export default function ReportsPage() {
   // Form States
   const [customReportName, setCustomReportName] = useState('');
   const [customFilters, setCustomFilters] = useState('Enterprise Accounts Only');
-  const [scheduleReportType, setScheduleReportType] = useState('sales-performance');
-  const [scheduleEmail, setScheduleEmail] = useState('vp_sales@company.com');
+  const [scheduleReportType, setScheduleReportType] = useState<ReportType>('sales-performance');
+  const [scheduleEmail, setScheduleEmail] = useState('');
   const [scheduleFrequency, setScheduleFrequency] = useState('Weekly');
 
   // Notifications
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const { data: currentOrganization } = useCurrentOrganizationQuery();
+  const organizationCurrency = currentOrganization?.currency || 'USD';
 
   // API Queries
-  const { data: salesData, isLoading: isSalesLoading } = useSalesPerformanceReportQuery();
-  const { data: velocityData, isLoading: isVelocityLoading } = usePipelineVelocityReportQuery();
-  const { data: winLossData, isLoading: isWinLossLoading } = useWinLossReportQuery();
-  const { data: leadAttrData, isLoading: isLeadAttrLoading } = useLeadAttributionReportQuery();
-  const { data: leaderboardData, isLoading: isLeaderboardLoading } = useRepLeaderboardReportQuery();
-  const { data: forecastData, isLoading: isForecastLoading } = useRevenueForecastingReportQuery();
-  const { data: activityData } = useActivityMetricsReportQuery();
-  const { data: durationData, isLoading: isDurationLoading } = useDealDurationReportQuery();
-  const { data: cacData, isLoading: isCacLoading } = useCacReportQuery();
-  const { data: quotaData, isLoading: isQuotaLoading } = useQuotaAttainmentReportQuery();
-  const { data: customReports = [], isLoading: isCustomLoading } = useCustomReportsQuery();
-  const { data: scheduledReports = [], isLoading: isScheduledLoading } = useScheduledReportsQuery();
+  const salesQuery = useSalesPerformanceReportQuery({ enabled: activeCategory === 'performance' });
+  const velocityQuery = usePipelineVelocityReportQuery({ enabled: activeCategory === 'velocity' });
+  const winLossQuery = useWinLossReportQuery({ enabled: activeCategory === 'winloss' });
+  const leadAttrQuery = useLeadAttributionReportQuery({ enabled: activeCategory === 'attribution' });
+  const leaderboardQuery = useRepLeaderboardReportQuery({ enabled: activeCategory === 'leaderboard' });
+  const forecastQuery = useRevenueForecastingReportQuery({ enabled: activeCategory === 'forecasting' });
+  const activityQuery = useActivityMetricsReportQuery({ enabled: activeCategory === 'activity' });
+  const durationQuery = useDealDurationReportQuery({ enabled: activeCategory === 'duration' });
+  const cacQuery = useCacReportQuery({ enabled: activeCategory === 'unit-economics' });
+  const quotaQuery = useQuotaAttainmentReportQuery({ enabled: activeCategory === 'quota' });
+  const financialQuery = useFinancialOverviewReportQuery({ enabled: activeCategory === 'financial' });
+  const quoteConversionQuery = useQuoteConversionReportQuery({ enabled: activeCategory === 'quote-conversion' });
+  const customQuery = useCustomReportsQuery({ enabled: activeCategory === 'custom' });
+  const scheduledQuery = useScheduledReportsQuery({ enabled: activeCategory === 'scheduled' });
+
+  const { data: salesData, isLoading: isSalesLoading } = salesQuery;
+  const { data: velocityData, isLoading: isVelocityLoading } = velocityQuery;
+  const { data: winLossData, isLoading: isWinLossLoading } = winLossQuery;
+  const { data: leadAttrData, isLoading: isLeadAttrLoading } = leadAttrQuery;
+  const { data: leaderboardData, isLoading: isLeaderboardLoading } = leaderboardQuery;
+  const { data: forecastData, isLoading: isForecastLoading } = forecastQuery;
+  const { data: activityData } = activityQuery;
+  const { data: durationData, isLoading: isDurationLoading } = durationQuery;
+  const { data: cacData, isLoading: isCacLoading } = cacQuery;
+  const { data: quotaData, isLoading: isQuotaLoading } = quotaQuery;
+  const { data: financialData, isLoading: isFinancialLoading } = financialQuery;
+  const { data: quoteConversionData, isLoading: isQuoteConversionLoading } = quoteConversionQuery;
+  const { data: customReports = [], isLoading: isCustomLoading } = customQuery;
+  const { data: scheduledReports = [], isLoading: isScheduledLoading } = scheduledQuery;
+
+  const activeReportQuery = {
+    performance: salesQuery,
+    velocity: velocityQuery,
+    winloss: winLossQuery,
+    attribution: leadAttrQuery,
+    leaderboard: leaderboardQuery,
+    forecasting: forecastQuery,
+    activity: activityQuery,
+    duration: durationQuery,
+    'unit-economics': cacQuery,
+    quota: quotaQuery,
+    financial: financialQuery,
+    'quote-conversion': quoteConversionQuery,
+    custom: customQuery,
+    scheduled: scheduledQuery,
+  }[activeCategory];
+  const exportReportType = getExportReportType(activeCategory);
+
+  const formatMoney = (value: number | null | undefined, currency = 'USD') =>
+    new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency,
+      maximumFractionDigits: 2,
+    }).format(value ?? 0);
 
   // Mutations
   const createCustomMutation = useCreateCustomReportMutation();
@@ -112,9 +154,13 @@ export default function ReportsPage() {
   const scheduleEmailMutation = useScheduleReportEmailMutation();
 
   const handleExportPdf = async () => {
+    if (!exportReportType) {
+      setErrorMessage('This management view cannot be exported as a standard report.');
+      return;
+    }
     try {
-      const res = await exportPdfMutation.mutateAsync(activeCategory);
-      setSuccessMessage(`PDF export generated for "${activeCategory}". Download started.`);
+      const res = await exportPdfMutation.mutateAsync(exportReportType);
+      setSuccessMessage(`PDF export generated for "${exportReportType}". Download started.`);
       window.open(res.pdf_url, '_blank');
     } catch (err: unknown) {
       setErrorMessage(getErrorMessage(err, 'Failed to export PDF.'));
@@ -122,8 +168,12 @@ export default function ReportsPage() {
   };
 
   const handleExportCsv = async () => {
+    if (!exportReportType) {
+      setErrorMessage('This management view cannot be exported as a standard report.');
+      return;
+    }
     try {
-      const res = await exportCsvMutation.mutateAsync(activeCategory);
+      const res = await exportCsvMutation.mutateAsync(exportReportType);
       setSuccessMessage(`CSV dataset uploaded to S3 bucket. Download started.`);
       window.open(res.csv_url, '_blank');
     } catch (err: unknown) {
@@ -188,8 +238,8 @@ export default function ReportsPage() {
     { id: 'deals_assigned', header: 'Assigned', className: 'text-center', cell: (row) => <span className="font-semibold">{row.deals_assigned}</span> },
     { id: 'deals_closed', header: 'Closed', className: 'text-center', cell: (row) => <span className="font-bold text-emerald-700">{row.deals_closed}</span> },
     { id: 'win_rate', header: 'Win Rate (%)', className: 'text-center', cell: (row) => <span className="font-bold">{row.win_rate}%</span> },
-    { id: 'revenue', header: 'Revenue ($)', className: 'text-right', cell: (row) => <span className="font-extrabold text-emerald-600">${row.revenue?.toLocaleString()}</span> },
-    { id: 'quota_target', header: 'Quota ($)', className: 'text-right', cell: (row) => <span className="font-mono text-slate-600">{row.quota_target != null ? `$${row.quota_target.toLocaleString()}` : '—'}</span> },
+    { id: 'revenue', header: 'Booked Value', className: 'text-right', cell: (row) => <span className="font-extrabold text-emerald-600">{formatMoney(row.revenue, organizationCurrency)}</span> },
+    { id: 'quota_target', header: 'Quota', className: 'text-right', cell: (row) => <span className="font-mono text-slate-600">{row.quota_target != null ? formatMoney(row.quota_target, organizationCurrency) : '—'}</span> },
     {
       id: 'attainment_pct',
       header: 'Attainment Progress',
@@ -209,13 +259,13 @@ export default function ReportsPage() {
         </div>
       )
     },
-    { id: 'avg_deal_size', header: 'Avg Deal Size ($)', className: 'text-right', cell: (row) => <span className="font-mono">${row.avg_deal_size?.toLocaleString()}</span> }
+    { id: 'avg_deal_size', header: 'Avg Deal Size', className: 'text-right', cell: (row) => <span className="font-mono">{formatMoney(row.avg_deal_size, organizationCurrency)}</span> }
   ];
 
   const velocityColumns: DataTableColumn<ReportRow>[] = [
     { id: 'stage', header: 'Pipeline Stage', cell: (row) => <span className="font-bold text-slate-900">{row.stage}</span> },
     { id: 'deal_count', header: 'Active Deals', className: 'text-center', cell: (row) => <span className="font-semibold">{row.deal_count}</span> },
-    { id: 'total_value', header: 'Stage Value ($)', className: 'text-right', cell: (row) => <span className="font-extrabold text-emerald-600">${row.total_value?.toLocaleString()}</span> },
+    { id: 'total_value', header: 'Stage Value', className: 'text-right', cell: (row) => <span className="font-extrabold text-emerald-600">{formatMoney(row.total_value, organizationCurrency)}</span> },
     { id: 'avg_days_in_stage', header: 'Avg Days in Stage', className: 'text-center', cell: (row) => <span className="font-bold text-indigo-600">{row.avg_days_in_stage} Days</span> },
     {
       id: 'bottleneck_risk',
@@ -235,8 +285,8 @@ export default function ReportsPage() {
     { id: 'lost_deals', header: 'Lost Deals', className: 'text-center', cell: (row) => <span className="font-bold text-rose-600">{row.lost_deals}</span> },
     { id: 'total_deals', header: 'Total Deals', className: 'text-center', cell: (row) => <span className="font-semibold">{row.total_deals}</span> },
     { id: 'win_percentage', header: 'Win Rate (%)', className: 'text-center', cell: (row) => <span className="font-extrabold text-indigo-600">{row.win_percentage}%</span> },
-    { id: 'won_value', header: 'Won Revenue ($)', className: 'text-right', cell: (row) => <span className="font-extrabold text-emerald-600">${row.won_value?.toLocaleString()}</span> },
-    { id: 'lost_value', header: 'Lost Opportunity ($)', className: 'text-right', cell: (row) => <span className="font-mono text-rose-500">${row.lost_value?.toLocaleString()}</span> },
+    { id: 'won_value', header: 'Booked Value', className: 'text-right', cell: (row) => <span className="font-extrabold text-emerald-600">{formatMoney(row.won_value, organizationCurrency)}</span> },
+    { id: 'lost_value', header: 'Lost Opportunity', className: 'text-right', cell: (row) => <span className="font-mono text-rose-500">{formatMoney(row.lost_value, organizationCurrency)}</span> },
     { id: 'primary_loss_reason', header: 'Primary Loss Reason', cell: (row) => <span className="text-slate-600">{row.primary_loss_reason}</span> }
   ];
 
@@ -262,8 +312,8 @@ export default function ReportsPage() {
     { id: 'name', header: 'Sales Executive', cell: (row) => <span className="font-bold text-slate-900">{row.name}</span> },
     { id: 'role', header: 'Role', cell: (row) => <span className="text-slate-500">{row.role}</span> },
     { id: 'deals_closed', header: 'Deals Closed', className: 'text-center', cell: (row) => <span className="font-bold text-emerald-600">{row.deals_closed}</span> },
-    { id: 'revenue', header: 'Revenue ($)', className: 'text-right', cell: (row) => <span className="font-extrabold text-emerald-600">${row.revenue?.toLocaleString()}</span> },
-    { id: 'quota_target', header: 'Quota ($)', className: 'text-right', cell: (row) => <span className="font-mono text-slate-600">{row.quota_target != null ? `$${row.quota_target.toLocaleString()}` : '—'}</span> },
+    { id: 'revenue', header: 'Booked Value', className: 'text-right', cell: (row) => <span className="font-extrabold text-emerald-600">{formatMoney(row.revenue, organizationCurrency)}</span> },
+    { id: 'quota_target', header: 'Quota', className: 'text-right', cell: (row) => <span className="font-mono text-slate-600">{row.quota_target != null ? formatMoney(row.quota_target, organizationCurrency) : '—'}</span> },
     { id: 'attainment_pct', header: 'Attainment (%)', className: 'text-center', cell: (row) => <span className="font-extrabold text-indigo-600">{row.attainment_pct != null ? `${row.attainment_pct}%` : '—'}</span> },
     {
       id: 'badge',
@@ -280,8 +330,8 @@ export default function ReportsPage() {
   const forecastColumns: DataTableColumn<ReportRow>[] = [
     { id: 'period', header: 'Forecast Period', cell: (row) => <span className="font-bold text-slate-900">{row.period}</span> },
     { id: 'open_deals', header: 'Open Deals', className: 'text-center', cell: (row) => <span className="font-semibold">{row.open_deals}</span> },
-    { id: 'pipeline_amount', header: 'Pipeline ($)', className: 'text-right', cell: (row) => <span className="font-semibold text-indigo-600">${row.pipeline_amount?.toLocaleString()}</span> },
-    { id: 'pipeline_weighted', header: 'Weighted Pipeline ($)', className: 'text-right', cell: (row) => <span className="font-extrabold text-emerald-600">${row.pipeline_weighted?.toLocaleString()}</span> }
+    { id: 'pipeline_amount', header: 'Pipeline', className: 'text-right', cell: (row) => <span className="font-semibold text-indigo-600">{formatMoney(row.pipeline_amount, organizationCurrency)}</span> },
+    { id: 'pipeline_weighted', header: 'Weighted Pipeline', className: 'text-right', cell: (row) => <span className="font-extrabold text-emerald-600">{formatMoney(row.pipeline_weighted, organizationCurrency)}</span> }
   ];
 
   const durationColumns: DataTableColumn<ReportRow>[] = [
@@ -303,9 +353,9 @@ export default function ReportsPage() {
   const quotaColumns: DataTableColumn<ReportRow>[] = [
     { id: 'rep_name', header: 'Sales Executive', cell: (row) => <span className="font-bold text-slate-900">{row.rep_name}</span> },
     { id: 'role', header: 'Role', cell: (row) => <span className="text-slate-500">{row.role}</span> },
-    { id: 'assigned_quota', header: 'Assigned Quota ($)', className: 'text-right', cell: (row) => <span className="font-mono text-slate-600">${row.assigned_quota?.toLocaleString()}</span> },
-    { id: 'closed_revenue', header: 'Closed Revenue ($)', className: 'text-right', cell: (row) => <span className="font-extrabold text-emerald-600">${row.closed_revenue?.toLocaleString()}</span> },
-    { id: 'pipeline_coverage', header: 'Pipeline Coverage ($)', className: 'text-right', cell: (row) => <span className="font-mono font-semibold text-indigo-600">${row.pipeline_coverage?.toLocaleString()}</span> },
+    { id: 'assigned_quota', header: 'Assigned Quota', className: 'text-right', cell: (row) => <span className="font-mono text-slate-600">{row.assigned_quota != null ? formatMoney(row.assigned_quota, organizationCurrency) : '—'}</span> },
+    { id: 'closed_revenue', header: 'Booked Value', className: 'text-right', cell: (row) => <span className="font-extrabold text-emerald-600">{formatMoney(row.closed_revenue, organizationCurrency)}</span> },
+    { id: 'pipeline_coverage', header: 'Pipeline Coverage', className: 'text-right', cell: (row) => <span className="font-mono font-semibold text-indigo-600">{formatMoney(row.pipeline_coverage, organizationCurrency)}</span> },
     {
       id: 'attainment_pct',
       header: 'Attainment Progress',
@@ -337,6 +387,20 @@ export default function ReportsPage() {
     }
   ];
 
+  const financialColumns: DataTableColumn<ReportRow>[] = [
+    { id: 'status', header: 'Invoice Status', cell: (row) => <span className="font-bold text-slate-900">{row.status}</span> },
+    { id: 'invoice_count', header: 'Invoices', className: 'text-center', cell: (row) => <span className="font-semibold">{row.invoice_count}</span> },
+    { id: 'invoice_value', header: 'Invoiced', className: 'text-right', cell: (row) => <span className="font-semibold">{formatMoney(row.invoice_value, financialData?.metrics.currency)}</span> },
+    { id: 'paid_value', header: 'Paid', className: 'text-right', cell: (row) => <span className="font-bold text-emerald-600">{formatMoney(row.paid_value, financialData?.metrics.currency)}</span> },
+    { id: 'outstanding_amount', header: 'Outstanding', className: 'text-right', cell: (row) => <span className="font-bold text-amber-700">{formatMoney(row.outstanding_amount, financialData?.metrics.currency)}</span> },
+  ];
+
+  const quoteConversionColumns: DataTableColumn<ReportRow>[] = [
+    { id: 'status', header: 'Quote Status', cell: (row) => <span className="font-bold text-slate-900">{row.status}</span> },
+    { id: 'quote_count', header: 'Quotes', className: 'text-center', cell: (row) => <span className="font-semibold">{row.quote_count}</span> },
+    { id: 'quote_value', header: 'Quote Value', className: 'text-right', cell: (row) => <span className="font-bold text-indigo-600">{formatMoney(row.quote_value, quoteConversionData?.metrics.currency)}</span> },
+  ];
+
   const customColumns: DataTableColumn<CustomReportItem>[] = [
     { id: 'name', header: 'Report Query Name', cell: (row) => <span className="font-bold text-slate-900">{row.name}</span> },
     { id: 'filters', header: 'Applied Filter Query', cell: (row) => <span className="text-slate-600 font-mono">{row.filters || 'Enterprise Accounts'}</span> },
@@ -363,9 +427,9 @@ export default function ReportsPage() {
       id: 'status',
       header: 'Job Status',
       className: 'text-center',
-      cell: () => (
+      cell: (row) => (
         <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-full text-[11px] font-bold">
-          Active Cron
+          {row.status}
         </span>
       )
     }
@@ -429,14 +493,14 @@ export default function ReportsPage() {
                 label: 'Export S3 CSV',
                 permission: PERMISSIONS.REPORTS.EXPORT,
                 icon: exportCsvMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4 text-emerald-600" />,
-                disabled: exportCsvMutation.isPending,
+                disabled: exportCsvMutation.isPending || !exportReportType,
                 onSelect: handleExportCsv,
               },
               {
                 label: 'Export PDF',
                 permission: PERMISSIONS.REPORTS.EXPORT,
                 icon: exportPdfMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4 text-indigo-600" />,
-                disabled: exportPdfMutation.isPending,
+                disabled: exportPdfMutation.isPending || !exportReportType,
                 onSelect: handleExportPdf,
               },
               {
@@ -463,6 +527,8 @@ export default function ReportsPage() {
           { id: 'duration', label: 'Deal Duration', icon: Clock },
           { id: 'unit-economics', label: 'Unit Economics', icon: Percent },
           { id: 'quota', label: 'Quota Attainment', icon: Layers },
+          { id: 'financial', label: 'Financial Overview', icon: DollarSign },
+          { id: 'quote-conversion', label: 'Quote Conversion', icon: FileSpreadsheet },
           { id: 'custom', label: 'Custom Reports', icon: Filter },
           { id: 'scheduled', label: 'Automated Jobs', icon: Mail },
         ].map((tab) => {
@@ -486,22 +552,56 @@ export default function ReportsPage() {
       </div>
 
       {/* Main DataTable Display Container */}
+      {activeReportQuery.isLoading ? (
+        <div className="flex min-h-56 items-center justify-center rounded-xl border border-slate-200 bg-white">
+          <div className="flex items-center gap-2 text-sm font-medium text-slate-600">
+            <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
+            Loading report data…
+          </div>
+        </div>
+      ) : activeReportQuery.isError && activeReportQuery.data === undefined ? (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 p-6 text-rose-900">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-rose-600" />
+            <div className="space-y-3">
+              <div>
+                <h2 className="font-bold">Unable to load this report</h2>
+                <p className="mt-1 text-sm text-rose-700">
+                  {getErrorMessage(activeReportQuery.error, 'The report request failed. Please try again.')}
+                </p>
+              </div>
+              <Button type="button" variant="outline" onClick={() => activeReportQuery.refetch()}>
+                Retry
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : (
       <div className="space-y-6">
+
+        {activeReportQuery.isError && activeReportQuery.data !== undefined && (
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            <span>Showing cached data because the latest refresh failed.</span>
+            <Button type="button" variant="outline" size="sm" onClick={() => activeReportQuery.refetch()}>
+              Retry refresh
+            </Button>
+          </div>
+        )}
 
         {/* 1. SALES PERFORMANCE */}
         {activeCategory === 'performance' && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="p-4 bg-emerald-50/70 border border-emerald-100 rounded-xl">
-                <span className="text-xs font-semibold text-emerald-800 uppercase tracking-wider block">Total Team Revenue</span>
+                <span className="text-xs font-semibold text-emerald-800 uppercase tracking-wider block">Total Booked Value</span>
                 <h4 className="text-2xl font-extrabold text-emerald-950 mt-1">
-                  ${salesData?.metrics?.total_revenue != null ? salesData.metrics.total_revenue.toLocaleString() : '0'}
+                  {formatMoney(salesData?.metrics?.total_revenue as number | undefined, organizationCurrency)}
                 </h4>
               </div>
               <div className="p-4 bg-indigo-50/70 border border-indigo-100 rounded-xl">
                 <span className="text-xs font-semibold text-indigo-800 uppercase tracking-wider block">Monthly Target</span>
                 <h4 className="text-2xl font-extrabold text-indigo-950 mt-1">
-                  ${salesData?.metrics?.monthly_target != null ? salesData.metrics.monthly_target.toLocaleString() : '—'}
+                  {salesData?.metrics?.monthly_target != null ? formatMoney(salesData.metrics.monthly_target as number, organizationCurrency) : '—'}
                 </h4>
               </div>
               <div className="p-4 bg-purple-50/70 border border-purple-100 rounded-xl">
@@ -689,18 +789,25 @@ export default function ReportsPage() {
         {/* 9. UNIT ECONOMICS */}
         {activeCategory === 'unit-economics' && (
           <div className="space-y-6">
-            <DataTable
-              columns={unitEconomicsColumns}
-              data={filterRows(cacData?.metrics?.table_rows || [], ['segment'])}
-              getRowKey={(item) => item.segment ?? item.id}
-              isLoading={isCacLoading}
-              emptyTitle="No Unit Economics Data"
-              emptyDescription="No customer segment records found."
-              searchValue={searchQuery}
-              onSearchChange={setSearchQuery}
-              searchPlaceholder="Search customer segment..."
-              pagination={{ pageSize: 10 }}
-            />
+            {cacData?.metrics.available === false ? (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-6">
+                <h2 className="font-bold text-amber-950">Unit economics not available</h2>
+                <p className="mt-1 text-sm text-amber-800">{String(cacData.metrics.reason)}</p>
+              </div>
+            ) : (
+              <DataTable
+                columns={unitEconomicsColumns}
+                data={filterRows(cacData?.metrics?.table_rows || [], ['segment'])}
+                getRowKey={(item) => item.segment ?? item.id}
+                isLoading={isCacLoading}
+                emptyTitle="No Unit Economics Data"
+                emptyDescription="No customer segment records found."
+                searchValue={searchQuery}
+                onSearchChange={setSearchQuery}
+                searchPlaceholder="Search customer segment..."
+                pagination={{ pageSize: 10 }}
+              />
+            )}
           </div>
         )}
 
@@ -717,6 +824,69 @@ export default function ReportsPage() {
               searchValue={searchQuery}
               onSearchChange={setSearchQuery}
               searchPlaceholder="Search rep name..."
+              pagination={{ pageSize: 10 }}
+            />
+          </div>
+        )}
+
+        {activeCategory === 'financial' && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+              {[
+                ['Pipeline Value', financialData?.metrics.pipeline_value],
+                ['Booked Value', financialData?.metrics.booked_value],
+                ['Invoiced Value', financialData?.metrics.invoiced_value],
+                ['Collected Revenue', financialData?.metrics.collected_revenue],
+                ['Outstanding', financialData?.metrics.outstanding_amount],
+              ].map(([label, value]) => (
+                <div key={String(label)} className="rounded-xl border border-slate-200 bg-white p-4">
+                  <span className="block text-xs font-semibold uppercase tracking-wider text-slate-500">{label}</span>
+                  <h4 className="mt-1 text-xl font-extrabold text-slate-900">
+                    {formatMoney(value as number | undefined, financialData?.metrics.currency)}
+                  </h4>
+                </div>
+              ))}
+            </div>
+            <DataTable
+              columns={financialColumns}
+              data={filterRows(financialData?.metrics.table_rows || [], ['status'])}
+              getRowKey={(item) => item.status ?? item.id}
+              isLoading={isFinancialLoading}
+              emptyTitle="No Invoice Data"
+              emptyDescription="No invoices were found for this organization."
+              searchValue={searchQuery}
+              onSearchChange={setSearchQuery}
+              searchPlaceholder="Search invoice status..."
+              pagination={{ pageSize: 10 }}
+            />
+          </div>
+        )}
+
+        {activeCategory === 'quote-conversion' && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {[
+                ['Total Quotes', quoteConversionData?.metrics.total_quotes ?? 0],
+                ['Accepted Quotes', quoteConversionData?.metrics.accepted_quotes ?? 0],
+                ['Acceptance Rate', `${quoteConversionData?.metrics.quote_acceptance_rate ?? 0}%`],
+                ['Quote to Invoice', `${quoteConversionData?.metrics.quote_to_invoice_rate ?? 0}%`],
+              ].map(([label, value]) => (
+                <div key={String(label)} className="rounded-xl border border-slate-200 bg-white p-4">
+                  <span className="block text-xs font-semibold uppercase tracking-wider text-slate-500">{label}</span>
+                  <h4 className="mt-1 text-xl font-extrabold text-slate-900">{value}</h4>
+                </div>
+              ))}
+            </div>
+            <DataTable
+              columns={quoteConversionColumns}
+              data={filterRows(quoteConversionData?.metrics.table_rows || [], ['status'])}
+              getRowKey={(item) => item.status ?? item.id}
+              isLoading={isQuoteConversionLoading}
+              emptyTitle="No Quote Data"
+              emptyDescription="No quotes were found for this organization."
+              searchValue={searchQuery}
+              onSearchChange={setSearchQuery}
+              searchPlaceholder="Search quote status..."
               pagination={{ pageSize: 10 }}
             />
           </div>
@@ -759,6 +929,7 @@ export default function ReportsPage() {
         )}
 
       </div>
+      )}
 
       {/* Custom Report Query Builder Modal */}
       {isCustomModalOpen && (
@@ -832,14 +1003,11 @@ export default function ReportsPage() {
               <label className="block text-xs font-semibold text-slate-700 mb-1">Target Report</label>
               <CustomSelect
                 value={scheduleReportType}
-                onChange={setScheduleReportType}
+                onChange={(value) => {
+                  if (isReportType(value)) setScheduleReportType(value);
+                }}
                 color="purple"
-                options={[
-                  { value: 'sales-performance', label: 'Sales Performance' },
-                  { value: 'pipeline-velocity', label: 'Pipeline Velocity' },
-                  { value: 'win-loss-ratio', label: 'Win/Loss Ratio' },
-                  { value: 'revenue-forecasting', label: 'Revenue Forecast' },
-                ]}
+                options={[...REPORT_TYPE_OPTIONS]}
               />
             </div>
 

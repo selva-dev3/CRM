@@ -1,5 +1,6 @@
 ﻿import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import { QueryClient, useQueryClient } from '@tanstack/react-query';
 import {
   fetchEntityCustomFieldsApi,
   useEntityCustomFieldsQuery,
@@ -230,6 +231,13 @@ export async function getDealCommissionApi(id: string): Promise<DealCommissionRe
 }
 
 // TanStack Query & Mutation Hooks
+function invalidateDealReports(queryClient: QueryClient) {
+  queryClient.invalidateQueries({ queryKey: ['deals'] });
+  queryClient.invalidateQueries({ queryKey: ['kanban-board'] });
+  queryClient.invalidateQueries({ queryKey: ['win-loss-analytics'] });
+  queryClient.invalidateQueries({ queryKey: ['reports'] });
+}
+
 export function useDealsQuery(page = 1, limit = 20, stage?: string, search?: string) {
   return useQuery({
     queryKey: ['deals', page, limit, stage, search],
@@ -272,50 +280,82 @@ export function useWinLossAnalyticsQuery() {
 }
 
 export function useCreateDealMutation() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: createDealApi,
+    onSuccess: () => invalidateDealReports(queryClient),
   });
 }
 
 export function useUpdateDealMutation() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: updateDealApi,
+    onSuccess: (_, variables) => {
+      invalidateDealReports(queryClient);
+      queryClient.invalidateQueries({ queryKey: ['deal', variables.id] });
+    },
   });
 }
 
 export function useDeleteDealMutation() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: deleteDealApi,
+    onSuccess: () => invalidateDealReports(queryClient),
   });
 }
 
 export function useUpdateDealStageMutation() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: updateDealStageApi,
+    onSuccess: (_, variables) => {
+      invalidateDealReports(queryClient);
+      queryClient.invalidateQueries({ queryKey: ['deal', variables.id] });
+    },
   });
 }
 
 export function useMarkDealWonMutation() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: markDealWonApi,
+    onSuccess: (_, variables) => {
+      invalidateDealReports(queryClient);
+      queryClient.invalidateQueries({ queryKey: ['deal', variables.id] });
+      queryClient.invalidateQueries({ queryKey: ['quotes'] });
+    },
   });
 }
 
 export function useMarkDealLostMutation() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: markDealLostApi,
+    onSuccess: (_, variables) => {
+      invalidateDealReports(queryClient);
+      queryClient.invalidateQueries({ queryKey: ['deal', variables.id] });
+    },
   });
 }
 
 export function useBulkDeleteDealsMutation() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: bulkDeleteDealsApi,
+    onSuccess: () => invalidateDealReports(queryClient),
   });
 }
 
 export function useBulkUpdateDealStageMutation() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: bulkUpdateDealStageApi,
+    onSuccess: () => {
+      invalidateDealReports(queryClient);
+      queryClient.invalidateQueries({ queryKey: ['quotes'] });
+    },
   });
 }
 

@@ -83,6 +83,66 @@ async def test_pipeline_velocity_empty_returns_zero_avg():
 
 
 @pytest.mark.asyncio
+async def test_financial_overview_separates_booked_and_collected_values():
+    repo: Any = ReportRepository()
+    repo.financial_overview = AsyncMock(
+        return_value={
+            "pipeline_value": 50000.0,
+            "booked_value": 25000.0,
+            "quote_count": 2,
+            "quoted_value": 24000.0,
+            "accepted_quote_value": 20000.0,
+            "invoice_count": 1,
+            "invoiced_value": 20000.0,
+            "invoice_paid_value": 12000.0,
+            "outstanding_amount": 8000.0,
+            "overdue_amount": 0.0,
+            "payment_count": 1,
+            "collected_revenue": 12000.0,
+        }
+    )
+    repo.invoice_status_breakdown = AsyncMock(
+        return_value=[Row(status="Pending", invoice_count=1, invoice_value=20000, paid_value=12000)]
+    )
+    repo.organization_currency = AsyncMock(return_value="INR")
+    service = ReportService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+    user = _make_user(org_id="org-finance")
+
+    result = await service.get_financial_overview_report(db, current_user=user)
+
+    repo.financial_overview.assert_awaited_once_with(db, "org-finance")
+    repo.invoice_status_breakdown.assert_awaited_once_with(db, "org-finance")
+    assert result["metrics"]["booked_value"] == 25000.0
+    assert result["metrics"]["collected_revenue"] == 12000.0
+    assert result["metrics"]["outstanding_amount"] == 8000.0
+    assert result["metrics"]["currency"] == "INR"
+    assert result["metrics"]["table_rows"][0]["outstanding_amount"] == 8000.0
+
+
+@pytest.mark.asyncio
+async def test_quote_conversion_uses_persisted_quote_and_invoice_counts():
+    repo: Any = ReportRepository()
+    repo.quote_status_breakdown = AsyncMock(
+        return_value=[
+            Row(status="Sent", quote_count=2, quote_value=30000),
+            Row(status="Accepted", quote_count=1, quote_value=20000),
+        ]
+    )
+    repo.quote_conversion_counts = AsyncMock(return_value=(1, 1))
+    repo.organization_currency = AsyncMock(return_value="INR")
+    service = ReportService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+    user = _make_user(org_id="org-quotes")
+
+    result = await service.get_quote_conversion_report(db, current_user=user)
+
+    assert result["metrics"]["total_quotes"] == 3
+    assert result["metrics"]["quote_acceptance_rate"] == 33.3
+    assert result["metrics"]["quote_to_invoice_rate"] == 100.0
+
+
+@pytest.mark.asyncio
 async def test_pipeline_velocity_computes_real_stage_age():
     repo: Any = ReportRepository()
     repo.stage_age_breakdown = AsyncMock(return_value=[("Negotiation", 2, 30000.0, 5 * 86400.0)])
@@ -316,7 +376,7 @@ async def test_deal_duration_empty_when_nothing_closed():
 
 
 @pytest.mark.asyncio
-async def test_cac_reports_acquisition_volume_and_value_only():
+async def test_cac_is_unavailable_without_marketing_spend():
     repo: Any = ReportRepository()
     repo.count_deals_in_stage = AsyncMock(return_value=8)
     repo.total_won_revenue = AsyncMock(return_value=200000.0)
@@ -327,17 +387,15 @@ async def test_cac_reports_acquisition_volume_and_value_only():
     result = await service.get_cac_report(db, current_user=user)
 
     metrics = result["metrics"]
-    assert metrics["customer_count"] == 8
-    assert metrics["avg_revenue_per_customer"] == 25000.0
-    for fabricated in ("blended_cac", "paid_cac", "organic_cac", "ltv_cac_ratio"):
-        assert fabricated not in metrics
-    row = metrics["table_rows"][0]
-    for fabricated in ("blended_cac", "paid_cac", "organic_cac", "ltv_cac_ratio"):
-        assert fabricated not in row
+    assert metrics["available"] is False
+    assert "spend" in metrics["reason"]
+    assert metrics["table_rows"] == []
+    repo.count_deals_in_stage.assert_not_awaited()
+    repo.total_won_revenue.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_ltv_reports_real_aggregates():
+async def test_ltv_is_unavailable_without_customer_payment_history():
     repo: Any = ReportRepository()
     repo.won_aggregate = AsyncMock(return_value=(5, 300000.0))
     service = ReportService(repository=repo)
@@ -347,15 +405,14 @@ async def test_ltv_reports_real_aggregates():
     result = await service.get_ltv_report(db, current_user=user)
 
     metrics = result["metrics"]
-    assert metrics["avg_ltv"] == 60000.0
-    assert metrics["customer_count"] == 5
-    assert metrics["total_revenue"] == 300000.0
-    for fabricated in ("ltv_cac_ratio", "churn_rate", "net_retention"):
-        assert fabricated not in str(metrics)
+    assert metrics["available"] is False
+    assert "payment history" in metrics["reason"]
+    assert metrics["table_rows"] == []
+    repo.won_aggregate.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_churn_analysis():
+async def test_churn_is_unavailable_without_subscription_lifecycle():
     repo: Any = ReportRepository()
     repo.lost_aggregate = AsyncMock(return_value=(2, 20000.0))
     repo.count_deals = AsyncMock(return_value=10)
@@ -366,11 +423,12 @@ async def test_churn_analysis():
 
     result = await service.get_churn_analysis_report(db, current_user=user)
 
-    assert result["metrics"]["annual_churn_rate"] == 20.0
-    assert result["metrics"]["lost_arr"] == 20000.0
-    assert result["metrics"]["table_rows"][0]["churned_accounts"] == 2
-    assert result["metrics"]["table_rows"][0]["top_churn_reason"] == "Pricing"
-    assert "net_revenue_retention" not in result["metrics"]
+    assert result["metrics"]["available"] is False
+    assert "Closed Lost deals are not churn" in result["metrics"]["reason"]
+    assert result["metrics"]["table_rows"] == []
+    repo.lost_aggregate.assert_not_awaited()
+    repo.count_deals.assert_not_awaited()
+    repo.top_loss_reason.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -748,10 +806,16 @@ async def test_export_report_pdf_raises_on_commit_failure(monkeypatch):
         "app.services.report_service.s3_service.generate_presigned_url",
         lambda *a, **kw: "https://s3.example.com/test.pdf",
     )
+    delete_file = AsyncMock(return_value=True)
+    monkeypatch.setattr(
+        "app.services.report_service._cleanup_export_object",
+        delete_file,
+    )
 
     with pytest.raises(APIException) as exc_info:
         await service.export_report_pdf(db, "sales-performance", current_user=user)
     assert exc_info.value.status_code == 500
+    delete_file.assert_awaited_once_with("exports/test.pdf")
 
 
 @pytest.mark.asyncio
