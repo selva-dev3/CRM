@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -26,6 +26,8 @@ class Organization(Base):
     postal_code: Mapped[str | None] = mapped_column(String(50))
     timezone: Mapped[str | None] = mapped_column(String(100), default="Asia/Kolkata")
     currency: Mapped[str | None] = mapped_column(String(10), default="INR")
+    invoice_prefix: Mapped[str] = mapped_column(String(20), default="INV", server_default="INV")
+    invoice_sequence: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
     language: Mapped[str | None] = mapped_column(String(10), default="en")
     logo_url: Mapped[str | None] = mapped_column(String(500))
     tax_number: Mapped[str | None] = mapped_column(String(100))

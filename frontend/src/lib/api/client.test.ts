@@ -37,6 +37,16 @@ describe('apiClient cookie authentication', () => {
     expect(new Headers(options.headers).has('Authorization')).toBe(false);
   });
 
+  it('omits CRM cookies and does not refresh authentication for public quote requests', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 401,
+      json: vi.fn().mockResolvedValue({ message: 'Invalid quote link' }) });
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(apiClient.post('/public/quotes/view', { token: 'invalid' }, { credentials: 'omit' }))
+      .rejects.toThrow('Invalid quote link');
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0][1].credentials).toBe('omit');
+  });
+
   it('removes legacy browser-readable auth data', () => {
     localStorage.setItem('token', 'legacy-token');
     sessionStorage.setItem('token', 'legacy-token');

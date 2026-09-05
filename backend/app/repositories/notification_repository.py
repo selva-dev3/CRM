@@ -3,11 +3,19 @@ from collections.abc import Sequence
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Notification
+from app.models import Notification, User
 
 
 class NotificationRepository:
     """Query layer for the Notification domain — no business logic."""
+
+    async def create_for_scoped_user(self, db: AsyncSession, *, data: dict) -> bool:
+        recipient = await db.scalar(select(User.id).where(User.id == data["user_id"],
+            User.organization_id == data["organization_id"], User.is_active.is_(True)))
+        if recipient is None:
+            return False
+        await self.create_notification(db, data=data)
+        return True
 
     async def list_notifications(
         self,

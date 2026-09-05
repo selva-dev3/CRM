@@ -2,7 +2,8 @@
 import { apiClient } from '@/lib/api/client';
 
 export interface QuoteLineItem {
-  name: string;
+  name?: string;
+  product_name?: string;
   quantity: number;
   unit_price: number;
   total: number;
@@ -17,6 +18,25 @@ export interface QuoteItem {
   status: string;
   created_at: string;
   deal_id?: string | null;
+  currency?: string | null;
+  delivery_status?: string | null;
+  recipient_email?: string | null;
+  pdf_available?: boolean;
+  expires_at?: string | null;
+  invoice_id?: string | null;
+  invoice_number?: string | null;
+  invoice_status?: string | null;
+}
+
+export function publicQuoteApi(action: 'view', token: string): Promise<QuoteItem>;
+export function publicQuoteApi(action: 'accept' | 'reject', token: string): Promise<{ status: string }>;
+export function publicQuoteApi(action: 'checkout', token: string): Promise<{ checkout_url: string }>;
+export function publicQuoteApi(action: string, token: string): Promise<unknown> {
+  return apiClient.post(`/public/quotes/${action}`, { token }, { credentials: 'omit' });
+}
+
+export function approveQuoteApi(quoteId: string): Promise<QuoteItem> {
+  return apiClient.post(`/quotes/${quoteId}/approve`);
 }
 
 export interface QuoteCreatePayload {

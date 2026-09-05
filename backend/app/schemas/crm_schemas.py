@@ -397,8 +397,8 @@ class LeadResponse(LeadBase):
 
 class LeadConvertRequest(BaseModel):
     create_deal: bool = True
-    deal_title: str | None = None
-    deal_amount: float | None = 0.0
+    deal_title: str | None = Field(default=None, min_length=1, max_length=255)
+    deal_amount: float | None = Field(default=0.0, ge=0, allow_inf_nan=False)
 
 
 # 6. Contact Schemas
@@ -640,9 +640,13 @@ class QuoteBase(BaseModel):
 
 
 class QuoteItemSchema(BaseModel):
-    product_id: str
+    product_id: str | None
     quantity: int
     unit_price: float
+    product_name: str | None = None
+    discount_percent: float = 0
+    tax_percent: float = 0
+    total: float | None = None
 
 
 class QuoteCreate(BaseModel):
@@ -657,12 +661,21 @@ class QuoteResponse(BaseModel):
     total_amount: float
     status: str
     created_at: str
+    items: list[QuoteItemSchema] = Field(default_factory=list)
+    currency: str | None = None
+    delivery_status: str | None = None
+    recipient_email: str | None = None
+    pdf_available: bool = False
+    expires_at: str | None = None
+    invoice_id: str | None = None
+    invoice_number: str | None = None
+    invoice_status: str | None = None
 
 
 # 17. Invoice Schemas
 class InvoiceItemSchema(BaseModel):
     id: str
-    product_id: str
+    product_id: str | None
     description: str | None = None
     quantity: int = 1
     unit_price: float = 0.0
@@ -686,6 +699,7 @@ class InvoiceCreate(BaseModel):
 
 class InvoiceResponse(BaseModel):
     id: str
+    quote_id: str | None = None
     invoice_number: str
     deal_id: str | None = None
     company_id: str | None = None

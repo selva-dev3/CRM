@@ -8,6 +8,44 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 
+class EmailDeliveryUnknownError(RuntimeError):
+    """Provider may have accepted the email; do not resend without reconciliation."""
+
+
+def send_tracked_email(*, to_email: str, subject: str, html_content: str,
+                       idempotency_key: str) -> str:
+    """Brevo receipt, not an assertion of inbox delivery. Never log message contents."""
+    if not settings.BREVO_API_KEY:
+        raise ValueError("Email provider is not configured")
+    try:
+        response = requests.post("https://api.brevo.com/v3/smtp/email", timeout=30,
+            headers={"accept": "application/json", "api-key": settings.BREVO_API_KEY,
+                     "content-type": "application/json"},
+            json={"sender": {"name": settings.EMAILS_FROM_NAME, "email": settings.EMAILS_FROM_EMAIL},
+                  "to": [{"email": to_email}], "subject": subject, "htmlContent": html_content,
+                  "headers": {"idempotencyKey": idempotency_key}})
+    except requests.RequestException as exc:
+        raise EmailDeliveryUnknownError("Email delivery outcome is unknown") from exc
+    if response.status_code in {200, 201}:
+        try:
+            message_id = response.json().get("messageId")
+        except ValueError as exc:
+            raise EmailDeliveryUnknownError("Email provider receipt is unreadable") from exc
+        if isinstance(message_id, str) and message_id:
+            return message_id
+        raise EmailDeliveryUnknownError("Email provider receipt is missing")
+    if response.status_code >= 500:
+        raise EmailDeliveryUnknownError("Email provider outcome requires reconciliation")
+    # Duplicate-key responses can mean a previous send succeeded before a crash.
+    try:
+        duplicate = response.json().get("code") == "duplicate_parameter"
+    except ValueError:
+        duplicate = False
+    if duplicate:
+        raise EmailDeliveryUnknownError("Email may already have been submitted")
+    raise ValueError(f"Email provider rejected the request ({response.status_code})")
+
+
 # Default sender for Resend sandbox mode (no custom domain verified yet).
 # In sandbox mode, Resend only lets you send emails using this address,
 # and only to the email address you signed up to Resend with.
