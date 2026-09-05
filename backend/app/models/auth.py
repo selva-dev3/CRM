@@ -77,6 +77,7 @@ class RefreshToken(Base):
     )
     token: Mapped[str] = mapped_column(String(500), unique=True, index=True)
     is_revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_persistent: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     expires_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

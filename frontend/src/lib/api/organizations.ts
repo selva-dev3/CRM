@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
 import { notifyAuthUserChanged } from '@/hooks/use-has-permission';
+import { persistSessionUser } from '@/lib/auth-session';
 
 export interface OrganizationItem {
   id: string;
@@ -461,7 +462,6 @@ export interface AcceptInvitationPayload {
 }
 
 export interface AcceptInvitationResponse {
-  access_token: string;
   token_type: string;
   user: {
     id: string;
@@ -508,7 +508,7 @@ export function useAcceptInvitationMutation() {
     mutationFn: acceptInvitationApi,
     onSuccess: (data) => {
       if (data.user) {
-        localStorage.setItem('user', JSON.stringify(data.user));
+        persistSessionUser(data.user, { remember: true });
         notifyAuthUserChanged();
       }
       queryClient.invalidateQueries({ queryKey: ['current-organization'] });

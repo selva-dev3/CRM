@@ -1,13 +1,13 @@
 from hashlib import sha256
 
-from fastapi import Depends, HTTPException, Query, Request, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.errors import ForbiddenError
+from app.core.errors import APIException, ForbiddenError
 from app.core.permissions import UserRole, check_permission
 from app.core.security import ALGORITHM
 from app.db.session import get_db
@@ -21,10 +21,9 @@ security_scheme = HTTPBearer(auto_error=False)
 async def get_current_user(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(security_scheme),
-    token_query: str | None = Query(None, alias="token"),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    """Validate a JWT supplied by Bearer header, HttpOnly cookie, or query string.
+    """Validate a JWT supplied by Bearer header or HttpOnly cookie.
 
     Legacy mock-token formats remain available only in development and test.
     """
@@ -33,8 +32,6 @@ async def get_current_user(
         raw_token = credentials.credentials.strip()
     elif request.cookies.get(settings.AUTH_COOKIE_NAME):
         raw_token = request.cookies[settings.AUTH_COOKIE_NAME].strip()
-    elif token_query:
-        raw_token = token_query.strip()
 
     if not raw_token:
         raise HTTPException(
@@ -78,10 +75,10 @@ async def get_current_user(
     user = res.scalars().first()
 
     if not user or not user.is_active:
-        raise HTTPException(
+        raise APIException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User session is inactive or account has been removed",
-            headers={"WWW-Authenticate": "Bearer"},
+            code="AUTH_ACCOUNT_INACTIVE",
+            message="User session is inactive or account has been removed",
         )
 
     organization_id = getattr(user, "organization_id", None)
@@ -98,7 +95,11 @@ async def get_current_user(
         )
 
     access_session = await db.get(UserSession, sha256(token.encode("utf-8")).hexdigest())
-    if access_session is not None and not access_session.is_current:
+    if (
+        access_session is None
+        or not access_session.is_current
+        or access_session.user_id != user.id
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Session has been revoked. Please log in again.",
@@ -110,14 +111,12 @@ async def get_current_user(
 async def get_current_user_optional(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(security_scheme),
-    token_query: str | None = Query(None, alias="token"),
     db: AsyncSession = Depends(get_db),
 ) -> User | None:
     try:
         return await get_current_user(
             request=request,
             credentials=credentials,
-            token_query=token_query,
             db=db,
         )
     except HTTPException as exc:

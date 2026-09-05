@@ -43,8 +43,6 @@ class UserTokenInfo(BaseModel):
 
 
 class Token(BaseModel):
-    access_token: str
-    refresh_token: str | None = None
     token_type: str = "bearer"  # noqa: S105 - OAuth token type, not a credential
     expires_in: int = 86400
     user: UserTokenInfo | None = None
@@ -54,6 +52,7 @@ class LoginRequest(BaseModel):
     email: EmailStr
     password: str
     remember_me: bool = True
+    two_factor_code: str | None = Field(default=None, min_length=6, max_length=6)
 
 
 class RegisterRequest(BaseModel):
@@ -79,7 +78,7 @@ class PasswordChangeRequest(BaseModel):
 
 class TwoFactorSetupResponse(BaseModel):
     secret: str
-    qr_code_url: str
+    otp_uri: str
 
 
 class TwoFactorVerifyRequest(BaseModel):

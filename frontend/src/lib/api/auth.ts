@@ -6,12 +6,11 @@ export interface LoginPayload {
   email: string;
   password: string;
   rememberMe: boolean;
+  twoFactorCode?: string;
 }
 
 export interface LoginResponse {
-  access_token: string;
   token_type: string;
-  refresh_token?: string;
   expires_in?: number;
   user_id?: string;
   user?: {
@@ -71,7 +70,6 @@ export interface AcceptInvitePayload {
 
 export interface AcceptInviteResponse {
   message: string;
-  access_token: string;
   token_type: string;
   user_id: string;
   email: string;
@@ -100,6 +98,7 @@ export async function loginApi(payload: LoginPayload): Promise<LoginResponse> {
       email: payload.email.trim(),
       password: payload.password,
       remember_me: payload.rememberMe,
+      two_factor_code: payload.twoFactorCode,
     }),
   });
 }

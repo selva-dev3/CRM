@@ -4,9 +4,15 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import DashboardLayout from './layout';
 
-const { routerPush, getCurrentUserApi } = vi.hoisted(() => ({
+const { routerPush, routerReplace, verifySession, logout, authState } = vi.hoisted(() => ({
   routerPush: vi.fn(),
-  getCurrentUserApi: vi.fn(),
+  routerReplace: vi.fn(),
+  verifySession: vi.fn(),
+  logout: vi.fn(),
+  authState: {
+    status: 'authenticated' as 'unknown' | 'authenticated' | 'unauthenticated',
+    user: { name: 'Jane Doe', email: 'jane@example.com', role: 'Manager', permissions: ['all'] },
+  },
 }));
 
 vi.mock('next/link', () => ({
@@ -15,12 +21,12 @@ vi.mock('next/link', () => ({
 
 vi.mock('next/navigation', () => ({
   usePathname: () => '/dashboard',
-  useRouter: () => ({ push: routerPush }),
+  useRouter: () => ({ push: routerPush, replace: routerReplace }),
 }));
 
-vi.mock('@/lib/api', () => ({
-  getCurrentUserApi,
-  logoutApi: vi.fn(),
+vi.mock('@/providers/auth-provider', () => ({
+  useAuth: () => ({ ...authState, verifySession, logout }),
+  useOptionalAuth: () => null,
 }));
 
 vi.mock('@/lib/api/organizations', () => ({
@@ -46,31 +52,36 @@ vi.mock('@/components/common/global-search-modal', () => ({
 
 describe('DashboardLayout', () => {
   beforeEach(() => {
-    getCurrentUserApi.mockReset();
+    verifySession.mockReset();
+    logout.mockReset();
     routerPush.mockReset();
+    routerReplace.mockReset();
+    authState.status = 'authenticated';
+    authState.user = { name: 'Jane Doe', email: 'jane@example.com', role: 'Manager', permissions: ['all'] };
+    verifySession.mockResolvedValue(authState.user);
     window.localStorage.clear();
     window.sessionStorage.clear();
   });
 
   it('shows the loading state before authentication resolves', () => {
-    getCurrentUserApi.mockReturnValue(new Promise(() => {}));
+    authState.status = 'unknown';
+    verifySession.mockReturnValue(new Promise(() => {}));
     render(<DashboardLayout>Page content</DashboardLayout>);
 
     expect(screen.getByText('Verifying Session Token...')).toBeInTheDocument();
   });
 
   it('renders authenticated user and organization data after authentication succeeds', async () => {
-    getCurrentUserApi.mockResolvedValue({ name: 'Jane Doe', email: 'jane@example.com', role: 'Manager' });
     render(<DashboardLayout>Page content</DashboardLayout>);
 
     expect(await screen.findByText('Page content')).toBeInTheDocument();
     expect(screen.getByText('Acme Corporation')).toBeInTheDocument();
     expect(screen.getByText('Role: Manager')).toBeInTheDocument();
-    expect(sessionStorage.getItem('user')).toContain('Jane Doe');
   });
 
   it('redirects to login when authentication fails', async () => {
-    getCurrentUserApi.mockRejectedValue(new Error('Unauthenticated'));
+    authState.status = 'unauthenticated';
+    verifySession.mockRejectedValue(new Error('Unauthenticated'));
     render(<DashboardLayout>Page content</DashboardLayout>);
 
     await waitFor(() => expect(routerPush).toHaveBeenCalledWith('/login'));
@@ -79,7 +90,6 @@ describe('DashboardLayout', () => {
 
   it('closes the mobile menu when a navigation link is clicked', async () => {
     const user = userEvent.setup();
-    getCurrentUserApi.mockResolvedValue({ name: 'Jane Doe', email: 'jane@example.com', role: 'Manager' });
     const { container } = render(<DashboardLayout>Page content</DashboardLayout>);
     await screen.findByText('Page content');
 

@@ -53,7 +53,12 @@ def _set_token_cookies(response: Response, result: dict, *, persistent_access: b
     refresh_token = result.get("refresh_token")
     if refresh_token:
         set_refresh_cookie(response, refresh_token, persistent=persistent_access)
-    return result | {"refresh_token": None}
+    public_result = {
+        key: value
+        for key, value in result.items()
+        if key not in {"access_token", "refresh_token", "persistent_access"}
+    }
+    return public_result
 
 
 @router.post("/login", response_model=Token, summary="Authenticate user & return JWT token")
@@ -104,7 +109,11 @@ async def refresh_token(
         result = await auth_service.refresh_token(db, refresh_token_value, access_token_value)
     else:
         result = await auth_service.refresh_token(db, refresh_token_value)
-    return _set_token_cookies(response, result)
+    return _set_token_cookies(
+        response,
+        result,
+        persistent_access=bool(result.get("persistent_access", True)),
+    )
 
 
 @router.post("/logout", response_model=MessageResponse, summary="Invalidate current session")

@@ -27,7 +27,7 @@ from app.core.security import (
     get_password_hash,
     verify_password,
 )
-from app.models import Role, User, UserInvitation
+from app.models import Organization, Role, User, UserInvitation
 from app.repositories.auth_repository import AuthRepository
 from app.schemas.crm_schemas import (
     AcceptInviteRequest,
@@ -59,7 +59,9 @@ class AuthService:
                 status_code=status.HTTP_400_BAD_REQUEST, message=error_message
             ) from e
 
-    async def _create_refresh_token(self, db: AsyncSession, user_id: str) -> str:
+    async def _create_refresh_token(
+        self, db: AsyncSession, user_id: str, *, is_persistent: bool = True
+    ) -> str:
         refresh_token = generate_random_code(48)
         expires_at = datetime.now(UTC) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
         await self.repository.create_refresh_token(
@@ -67,6 +69,7 @@ class AuthService:
             user_id=user_id,
             token_digest=sha256(refresh_token.encode("utf-8")).hexdigest(),
             expires_at=expires_at,
+            is_persistent=is_persistent,
         )
         return refresh_token
 
@@ -175,8 +178,25 @@ class AuthService:
                 status_code=status.HTTP_401_UNAUTHORIZED, message="Invalid email or password"
             )
 
+        await self._validate_session_principal(db, user)
+        if user.two_factor_enabled:
+            if not payload.two_factor_code:
+                raise APIException(
+                    status_code=status.HTTP_428_PRECONDITION_REQUIRED,
+                    code="TWO_FACTOR_REQUIRED",
+                    message="Enter the authentication code from your authenticator app",
+                )
+            if not self._is_valid_totp(user, payload.two_factor_code):
+                raise APIException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    code="INVALID_TWO_FACTOR_CODE",
+                    message="Invalid two-factor authentication code",
+                )
+
         access_token = await self._create_access_token(db, user.id)
-        refresh_token = await self._create_refresh_token(db, user.id)
+        refresh_token = await self._create_refresh_token(
+            db, user.id, is_persistent=payload.remember_me
+        )
         await self._commit(db, "Unable to create refresh token")
         user_role_name = await self.get_user_role_name(db, user)
         user_permissions = await self.get_user_permissions(
@@ -187,7 +207,8 @@ class AuthService:
             "access_token": access_token,
             "refresh_token": refresh_token,
             "token_type": "bearer",
-            "expires_in": 86400,
+            "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            "persistent_access": payload.remember_me,
             "user": {
                 "id": user.id,
                 "name": user.name,
@@ -312,6 +333,7 @@ class AuthService:
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 message="Invalid or expired refresh token",
             )
+        await self._validate_session_principal(db, user)
         await self.repository.revoke_refresh_token(stored_token)
         if access_token:
             previous_session = await self.repository.get_session_by_access_token(
@@ -319,14 +341,17 @@ class AuthService:
             )
             if previous_session:
                 await self.repository.revoke_access_session(previous_session)
-        next_refresh_token = await self._create_refresh_token(db, user.id)
+        next_refresh_token = await self._create_refresh_token(
+            db, user.id, is_persistent=stored_token.is_persistent
+        )
         next_access_token = await self._create_access_token(db, user.id)
         await self._commit(db, "Unable to rotate refresh token")
         return {
             "access_token": next_access_token,
             "refresh_token": next_refresh_token,
             "token_type": "bearer",
-            "expires_in": 86400,
+            "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            "persistent_access": stored_token.is_persistent,
         }
 
     async def logout(
@@ -404,6 +429,7 @@ class AuthService:
 
         await self.repository.set_user_password(user, get_password_hash(payload.new_password))
         await self.repository.mark_password_reset_used(password_reset)
+        await self.repository.revoke_all_user_sessions(db, user.id)
         await self._commit(db, "Unable to update password")
         return {"message": "Password updated successfully", "status": "success"}
 
@@ -430,6 +456,7 @@ class AuthService:
             )
 
         await self.repository.set_user_password(current_user, get_password_hash(new_password))
+        await self.repository.revoke_all_user_sessions(db, current_user.id)
         await self._commit(db, "Unable to update password")
         return {"message": "Password changed successfully", "status": "success"}
 
@@ -437,6 +464,36 @@ class AuthService:
     def _two_factor_cipher() -> Fernet:
         key = base64.urlsafe_b64encode(hashlib.sha256(settings.SECRET_KEY.encode()).digest())
         return Fernet(key)
+
+    @staticmethod
+    async def _validate_session_principal(db: AsyncSession, user: User) -> None:
+        if not user.is_active:
+            raise APIException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                code="AUTH_ACCOUNT_INACTIVE",
+                message="This account is inactive",
+            )
+        organization = await db.get(Organization, user.organization_id)
+        if not organization or not organization.is_active or organization.status != "active":
+            raise ForbiddenError(message="User organization is inactive or unavailable")
+
+    def _is_valid_totp(self, user: User, code: str) -> bool:
+        if not user.two_factor_secret or not code.isdigit() or len(code) != 6:
+            return False
+        try:
+            secret = self._two_factor_cipher().decrypt(user.two_factor_secret.encode()).decode()
+        except (InvalidToken, ValueError):
+            return False
+
+        key = base64.b32decode(secret + "=" * (-len(secret) % 8), casefold=True)
+        counter = int(time.time()) // 30
+        for offset in (-1, 0, 1):
+            digest = hmac.new(key, (counter + offset).to_bytes(8, "big"), hashlib.sha1).digest()
+            start = digest[-1] & 0x0F
+            value = int.from_bytes(digest[start : start + 4], "big") & 0x7FFFFFFF
+            if hmac.compare_digest(code, f"{value % 1_000_000:06d}"):
+                return True
+        return False
 
     async def setup_2fa(self, db: AsyncSession, user: User) -> dict:
         secret = base64.b32encode(secrets.token_bytes(20)).decode("ascii").rstrip("=")
@@ -448,32 +505,13 @@ class AuthService:
         otp_uri = f"otpauth://totp/{label}?secret={secret}&issuer={issuer}"
         return {
             "secret": secret,
-            "qr_code_url": f"https://api.qrserver.com/v1/create-qr-code/?data={quote(otp_uri)}",
+            "otp_uri": otp_uri,
         }
 
     async def verify_2fa(
         self, db: AsyncSession, user: User, payload: TwoFactorVerifyRequest
     ) -> dict:
-        if not user.two_factor_secret or not payload.code.isdigit() or len(payload.code) != 6:
-            raise APIException(
-                status_code=status.HTTP_400_BAD_REQUEST, message="Invalid 2FA authentication code"
-            )
-        try:
-            secret = self._two_factor_cipher().decrypt(user.two_factor_secret.encode()).decode()
-        except (InvalidToken, ValueError) as exc:
-            raise APIException(
-                status_code=status.HTTP_400_BAD_REQUEST, message="Invalid 2FA configuration"
-            ) from exc
-
-        key = base64.b32decode(secret + "=" * (-len(secret) % 8), casefold=True)
-        counter = int(time.time()) // 30
-        expected_codes = []
-        for offset in (-1, 0, 1):
-            digest = hmac.new(key, (counter + offset).to_bytes(8, "big"), hashlib.sha1).digest()
-            start = digest[-1] & 0x0F
-            value = int.from_bytes(digest[start : start + 4], "big") & 0x7FFFFFFF
-            expected_codes.append(f"{value % 1_000_000:06d}")
-        if not any(hmac.compare_digest(payload.code, code) for code in expected_codes):
+        if not self._is_valid_totp(user, payload.code):
             raise APIException(
                 status_code=status.HTTP_400_BAD_REQUEST, message="Invalid 2FA authentication code"
             )
@@ -552,6 +590,7 @@ class AuthService:
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 message="No active CRM account is linked to this OAuth identity",
             )
+        await self._validate_session_principal(db, user)
         refresh_token = await self._create_refresh_token(db, user.id)
         access_token = await self._create_access_token(db, user.id)
         await self._commit(db, "Unable to create refresh token")
@@ -559,7 +598,7 @@ class AuthService:
             "access_token": access_token,
             "refresh_token": refresh_token,
             "token_type": "bearer",
-            "expires_in": 86400,
+            "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         }
 
     async def google_oauth(self, db: AsyncSession, payload: OAuthLoginRequest) -> dict:
@@ -754,9 +793,13 @@ class AuthService:
 
     async def request_magic_link(self, db: AsyncSession, email: str) -> dict:
         email_clean = email.strip()
+        response = {
+            "message": "If an account exists for that email, a magic link has been sent",
+            "status": "success",
+        }
         user = await self.repository.get_user_by_email(db, email_clean)
         if not user:
-            raise NotFoundError(message=f"User with email '{email_clean}' not found")
+            return response
 
         magic_token = generate_random_code(14)
         expires_at = datetime.now(UTC) + timedelta(minutes=settings.MAGIC_LINK_EXPIRE_MINUTES)
@@ -769,7 +812,7 @@ class AuthService:
         )
         await self._commit(db, "Unable to create magic link")
         send_magic_link_email(email_to=user.email, token=magic_token, user_name=user.name)
-        return {"message": f"Magic link sent to {email_clean}", "status": "success"}
+        return response
 
     async def verify_magic_link(self, db: AsyncSession, token: str) -> dict:
         if not token or len(token) < 5:
@@ -792,6 +835,7 @@ class AuthService:
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 message="Invalid or expired magic link token",
             )
+        await self._validate_session_principal(db, user)
         await self.repository.consume_magic_link(magic_link)
         refresh_token = await self._create_refresh_token(db, user.id)
         access_token = await self._create_access_token(db, user.id)
@@ -800,7 +844,7 @@ class AuthService:
             "access_token": access_token,
             "refresh_token": refresh_token,
             "token_type": "bearer",
-            "expires_in": 86400,
+            "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         }
 
     @staticmethod

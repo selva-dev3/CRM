@@ -1,3 +1,4 @@
+from hashlib import sha256
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -118,14 +119,17 @@ async def test_get_current_user_accepts_valid_auth_cookie():
     db.get = AsyncMock(
         side_effect=[
             Organization(id="org-1", name="Acme", status="active", is_active=True),
-            None,
+            UserSession(
+                id=sha256(token.encode("utf-8")).hexdigest(),
+                user_id=user.id,
+                is_current=True,
+            ),
         ]
     )
 
     current_user = await get_current_user(
         request=request,
         credentials=None,
-        token_query=None,
         db=db,
     )
 
@@ -164,7 +168,44 @@ async def test_get_current_user_rejects_revoked_access_session():
     )
 
     with pytest.raises(HTTPException) as exc_info:
-        await get_current_user(request=request, credentials=None, token_query=None, db=db)
+        await get_current_user(request=request, credentials=None, db=db)
+
+    assert exc_info.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_rejects_jwt_without_active_session():
+    user = User(
+        id="user-1",
+        name="Alex",
+        email="alex@crm.com",
+        hashed_password="hash",  # noqa: S106 - synthetic test fixture
+        role="Admin",
+        organization_id="org-1",
+        is_active=True,
+    )
+    token = create_access_token(user.id)
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/api/v1/auth/me",
+            "headers": [(b"cookie", f"{settings.AUTH_COOKIE_NAME}={token}".encode())],
+        }
+    )
+    result = Mock()
+    result.scalars.return_value.first.return_value = user
+    db = AsyncMock(spec=AsyncSession)
+    db.execute = AsyncMock(return_value=result)
+    db.get = AsyncMock(
+        side_effect=[
+            Organization(id="org-1", name="Acme", status="active", is_active=True),
+            None,
+        ]
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await get_current_user(request=request, credentials=None, db=db)
 
     assert exc_info.value.status_code == 401
 

@@ -62,22 +62,34 @@ export type ApiErrorKind = 'http' | 'network' | 'timeout';
 export class ApiError extends Error {
   readonly status: number | null;
   readonly kind: ApiErrorKind;
+  readonly code: string | null;
+  readonly fields: Record<string, unknown> | null;
 
-  constructor(message: string, kind: ApiErrorKind, status: number | null = null) {
+  constructor(
+    message: string,
+    kind: ApiErrorKind,
+    status: number | null = null,
+    code: string | null = null,
+    fields: Record<string, unknown> | null = null,
+  ) {
     super(message);
     this.name = 'ApiError';
     this.kind = kind;
     this.status = status;
+    this.code = code;
+    this.fields = fields;
   }
 }
 
 async function throwResponseError(response: Response): Promise<never> {
-  if (response.status === 401) handleUnauthorized();
   const errorData = await response.json().catch(() => ({}));
+  if (response.status === 401) handleUnauthorized(errorData.code);
   throw new ApiError(
     errorData.detail || errorData.message || 'An unexpected error occurred',
     'http',
     response.status,
+    typeof errorData.code === 'string' ? errorData.code : null,
+    errorData.fields && typeof errorData.fields === 'object' ? errorData.fields : null,
   );
 }
 
@@ -139,9 +151,14 @@ function getRefreshRequest(): Promise<boolean> {
   return refreshRequest;
 }
 
-function handleUnauthorized(): void {
+function handleUnauthorized(code?: string): void {
   if (typeof window === 'undefined') return;
   clearSessionToken();
+  window.dispatchEvent(new Event('auth:unauthorized'));
+  if (code === 'AUTH_ACCOUNT_INACTIVE') {
+    window.location.href = '/inactive';
+    return;
+  }
   if (!window.location.pathname.startsWith('/login')) {
     window.location.href = '/login';
   }

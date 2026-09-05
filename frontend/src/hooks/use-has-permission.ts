@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { hasPermission, hasAnyPermission, hasAllPermissions, PermissionKey } from '@/lib/permissions';
+import { useOptionalAuth } from '@/providers/auth-provider';
 
 /**
  * Event name dispatched whenever the persisted user (and therefore the user's
@@ -14,7 +15,7 @@ export const AUTH_USER_CHANGED_EVENT = 'auth:user-changed';
 function getStoredPermissions(): readonly string[] {
   if (typeof window === 'undefined') return [];
   try {
-    const raw = localStorage.getItem('user') || sessionStorage.getItem('user');
+    const raw = sessionStorage.getItem('user') || localStorage.getItem('user');
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed?.permissions) ? parsed.permissions : [];
@@ -37,6 +38,7 @@ export function notifyAuthUserChanged(): void {
  *  - user changes in another tab (`storage` event)
  */
 export function useHasPermission() {
+  const auth = useOptionalAuth();
   const [permissions, setPermissions] = useState<readonly string[]>(getStoredPermissions);
 
   useEffect(() => {
@@ -49,16 +51,18 @@ export function useHasPermission() {
     };
   }, []);
 
+  const effectivePermissions = auth?.user?.permissions ?? permissions;
+
   return {
-    permissions,
-    hasPermission: useCallback((required?: PermissionKey) => hasPermission(permissions, required), [permissions]),
+    permissions: effectivePermissions,
+    hasPermission: useCallback((required?: PermissionKey) => hasPermission(effectivePermissions, required), [effectivePermissions]),
     hasAnyPermission: useCallback(
-      (required: readonly PermissionKey[]) => hasAnyPermission(permissions, required),
-      [permissions]
+      (required: readonly PermissionKey[]) => hasAnyPermission(effectivePermissions, required),
+      [effectivePermissions]
     ),
     hasAllPermissions: useCallback(
-      (required: readonly PermissionKey[]) => hasAllPermissions(permissions, required),
-      [permissions]
+      (required: readonly PermissionKey[]) => hasAllPermissions(effectivePermissions, required),
+      [effectivePermissions]
     ),
   };
 }

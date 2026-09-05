@@ -22,6 +22,7 @@ import {
   Input,
 } from '@/components/ui';
 import { notifyAuthUserChanged } from '@/hooks/use-has-permission';
+import { persistSessionUser } from '@/lib/auth-session';
 import { useAcceptInviteMutation, useUserInvitationDetailsQuery } from '@/lib/api';
 import { acceptUserInviteSchema } from '@/lib/validators';
 import { getAuthErrorMessage } from './auth-form-utils';
@@ -48,8 +49,7 @@ export function AcceptUserInviteForm() {
         name: values.name,
         password: values.password,
       });
-      sessionStorage.setItem('user', JSON.stringify(result.user));
-      localStorage.removeItem('user');
+      persistSessionUser(result.user, { remember: false });
       notifyAuthUserChanged();
       router.replace('/dashboard');
     } catch (error) {

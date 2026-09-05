@@ -49,6 +49,8 @@ EXPECTED_ACCESS_VALUE = "token-user-1"
 EXPECTED_AUTH_SCHEME = "bearer"
 TEST_REFRESH_VALUE = "refresh"
 NEXT_REFRESH_VALUE = "next"
+TEST_ENCRYPTED_2FA_SECRET = "synthetic-encrypted-secret"  # noqa: S105
+EXPECTED_2FA_ACCESS_VALUE = "synthetic-2fa-access"  # noqa: S105
 
 
 def _make_user(**overrides) -> User:
@@ -64,6 +66,10 @@ def _make_user(**overrides) -> User:
     }
     defaults.update(overrides)
     return User(**defaults)
+
+
+def _make_active_org() -> Organization:
+    return Organization(id="org-1", name="Acme", status="active", is_active=True)
 
 
 def _make_invitation(**overrides) -> UserInvitation:
@@ -90,6 +96,7 @@ async def test_login_returns_token_and_user(monkeypatch):
     repo.get_user_by_email = AsyncMock(return_value=user)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
+    db.get = AsyncMock(return_value=_make_active_org())
 
     monkeypatch.setattr("app.services.auth_service.verify_password", lambda pwd, hashed: True)
     monkeypatch.setattr(
@@ -129,6 +136,7 @@ async def test_login_returns_permissions_for_legacy_super_admin(monkeypatch):
     repo.all_permission_keys = AsyncMock(return_value=["dashboard:read", "organization:read"])
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
+    db.get = AsyncMock(return_value=_make_active_org())
     monkeypatch.setattr("app.services.auth_service.verify_password", lambda _pwd, _hashed: True)
     monkeypatch.setattr("app.services.auth_service.create_access_token", lambda _user_id: "token")
 
@@ -136,6 +144,64 @@ async def test_login_returns_permissions_for_legacy_super_admin(monkeypatch):
 
     assert result["user"]["role"] == "super_admin"
     assert result["user"]["permissions"] == ["dashboard:read", "organization:read"]
+
+
+@pytest.mark.asyncio
+async def test_login_rejects_inactive_user_before_creating_session(monkeypatch):
+    user = _make_user(is_active=False)
+    repo: Any = AuthRepository()
+    repo.get_user_by_email = AsyncMock(return_value=user)
+    service = _service_with(repo)
+    service._create_access_token = AsyncMock()
+    service._create_refresh_token = AsyncMock()
+    monkeypatch.setattr("app.services.auth_service.verify_password", lambda *_args: True)
+
+    with pytest.raises(APIException) as exc_info:
+        await service.login(
+            AsyncMock(spec=AsyncSession),
+            LoginRequest(email=user.email, password=VALID_INPUT),
+        )
+
+    assert exc_info.value.code == "AUTH_ACCOUNT_INACTIVE"
+    service._create_access_token.assert_not_awaited()
+    service._create_refresh_token.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_login_requires_valid_2fa_before_creating_session(monkeypatch):
+    user = _make_user(
+        two_factor_enabled=True,
+        two_factor_secret=TEST_ENCRYPTED_2FA_SECRET,
+    )
+    repo: Any = AuthRepository()
+    repo.get_user_by_email = AsyncMock(return_value=user)
+    service = _service_with(repo)
+    service._create_access_token = AsyncMock()
+    service._create_refresh_token = AsyncMock()
+    db = AsyncMock(spec=AsyncSession)
+    db.get = AsyncMock(return_value=_make_active_org())
+    monkeypatch.setattr("app.services.auth_service.verify_password", lambda *_args: True)
+
+    with pytest.raises(APIException) as exc_info:
+        await service.login(db, LoginRequest(email=user.email, password=VALID_INPUT))
+
+    assert exc_info.value.code == "TWO_FACTOR_REQUIRED"
+    service._create_access_token.assert_not_awaited()
+    service._create_refresh_token.assert_not_awaited()
+
+    monkeypatch.setattr(service, "_is_valid_totp", lambda _user, code: code == "123456")
+    service._create_access_token.return_value = EXPECTED_2FA_ACCESS_VALUE
+    service._create_refresh_token.return_value = "refresh"
+    repo.get_role_name_by_id = AsyncMock(return_value=None)
+    repo.get_user_role_id = AsyncMock(return_value=None)
+    repo.role_ids_for_user = AsyncMock(return_value=[])
+    repo.role_ids_by_name = AsyncMock(return_value=[])
+
+    result = await service.login(
+        db,
+        LoginRequest(email=user.email, password=VALID_INPUT, two_factor_code="123456"),
+    )
+    assert result["access_token"] == EXPECTED_2FA_ACCESS_VALUE
 
 
 @pytest.mark.asyncio
@@ -147,6 +213,7 @@ async def test_request_magic_link_persists_only_token_digest(monkeypatch):
     repo.create_magic_link = AsyncMock()
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
+    db.get = AsyncMock(return_value=_make_active_org())
     send_email = Mock(return_value=True)
     monkeypatch.setattr("app.services.auth_service.send_magic_link_email", send_email)
     monkeypatch.setattr("app.services.auth_service.generate_random_code", lambda length: TEST_CODE)
@@ -169,6 +236,7 @@ async def test_verify_magic_link_requires_active_persisted_token(monkeypatch):
     repo.get_first_user = AsyncMock(return_value=None)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
+    db.get = AsyncMock(return_value=_make_active_org())
 
     with pytest.raises(APIException) as exc_info:
         await service.verify_magic_link(db, TEST_CODE)
@@ -192,6 +260,7 @@ async def test_verify_magic_link_consumes_token_and_authenticates_owner(monkeypa
     repo.create_refresh_token = AsyncMock(return_value=RefreshToken())
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
+    db.get = AsyncMock(return_value=_make_active_org())
     monkeypatch.setattr("app.services.auth_service.create_access_token", lambda user_id: user_id)
     monkeypatch.setattr("app.services.auth_service.generate_random_code", lambda length: "refresh")
 
@@ -232,6 +301,7 @@ async def test_refresh_token_rotates_and_revokes_previous_token(monkeypatch):
     repo.create_refresh_token = AsyncMock(return_value=RefreshToken())
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
+    db.get = AsyncMock(return_value=_make_active_org())
     monkeypatch.setattr(
         "app.services.auth_service.generate_random_code", lambda length: NEXT_REFRESH_VALUE
     )
@@ -486,6 +556,7 @@ async def test_change_password_verifies_hashes_and_commits(monkeypatch):
     user = _make_user(hashed_password=OLD_STORED_VALUE)
     repo: Any = AuthRepository()
     repo.set_user_password = AsyncMock()
+    repo.revoke_all_user_sessions = AsyncMock()
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
     verifier = Mock(return_value=True)
@@ -496,6 +567,7 @@ async def test_change_password_verifies_hashes_and_commits(monkeypatch):
 
     verifier.assert_called_once_with("old-password", OLD_STORED_VALUE)
     repo.set_user_password.assert_awaited_once_with(user, "new-hash")
+    repo.revoke_all_user_sessions.assert_awaited_once_with(db, user.id)
     db.commit.assert_awaited_once()
     assert result["status"] == "success"
 
@@ -525,6 +597,7 @@ async def test_2fa_setup_and_verification_use_user_secret():
 
     setup = await service.setup_2fa(db, user)
     assert len(setup["secret"]) == 32
+    assert setup["otp_uri"].startswith("otpauth://totp/")
     assert user.two_factor_secret != setup["secret"]
     assert user.two_factor_enabled is False
 
@@ -724,6 +797,7 @@ async def test_reset_password_updates_hash_and_consumes_token(monkeypatch):
     repo.get_user_by_id = AsyncMock(return_value=user)
     repo.set_user_password = AsyncMock()
     repo.mark_password_reset_used = AsyncMock()
+    repo.revoke_all_user_sessions = AsyncMock()
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
     token = TEST_CODE
@@ -744,6 +818,7 @@ async def test_reset_password_updates_hash_and_consumes_token(monkeypatch):
     )
     repo.set_user_password.assert_awaited_once_with(user, "new-hash")
     repo.mark_password_reset_used.assert_awaited_once_with(password_reset)
+    repo.revoke_all_user_sessions.assert_awaited_once_with(db, user.id)
     db.commit.assert_awaited_once()
     assert result["status"] == "success"
 
