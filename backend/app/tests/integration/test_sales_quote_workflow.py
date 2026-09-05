@@ -98,7 +98,7 @@ async def test_http_approval_permission_and_tenant_scope(sales_database, monkeyp
     from app.db.session import get_db
     from app.services.auth_service import auth_service
 
-    sessions, org, user, _, _, product, deal = sales_database
+    sessions, org, user, _, contact, product, deal = sales_database
     async with sessions() as db:
         await DealService().add_deal_product(db, deal_id=deal.id, product_id=product.id,
             quantity=1, unit_price=100, custom_name=None, organization_id=org.id)
@@ -122,9 +122,14 @@ async def test_http_approval_permission_and_tenant_scope(sales_database, monkeyp
         user.organization_id = str(uuid4())
         assert (await client.post(endpoint)).status_code == 404
         user.organization_id = org.id
-        approved = await client.post(endpoint)
-        assert approved.status_code == 200
-        assert approved.json()["status"] == "Approved"
+        blocked = await client.post(endpoint)
+        assert blocked.status_code == 409
+        permission.return_value = ["quotes:send"]
+        sent = await client.post(
+            f"/api/v1/quotes/{result['quote_id']}/send?recipient_email={contact.email}"
+        )
+        assert sent.status_code == 202
+        assert sent.json()["status"] == "Pending"
 
 
 @pytest_asyncio.fixture
@@ -263,8 +268,9 @@ async def prepare_customer_acceptance(sales_database, *, billing=True):
             quantity=2, unit_price=100, custom_name=None, organization_id=org.id)
         won = await DealService().mark_deal_won(db, deal.id, None,
             organization_id=org.id, actor_id=user.id)
-        await QuoteService().approve_quote(db, quote_id=won["quote_id"], organization_id=org.id, actor_id=user.id)
         quote = await db.get(Quote, won["quote_id"])
+        await QuoteService().send_quote(db, quote_id=won["quote_id"], organization_id=org.id,
+            recipient_email=contact.email)
         token = secrets.token_urlsafe(32)
         quote.public_token_hash = hashlib.sha256(token.encode()).hexdigest()
         quote.sent_at = datetime.now(UTC)
@@ -294,7 +300,6 @@ async def test_durable_quote_delivery_and_customer_acceptance(sales_database, mo
         await DealService().add_deal_product(db, deal_id=deal.id, product_id=product.id,
             quantity=2, unit_price=100, custom_name=None, organization_id=org.id)
         won = await DealService().mark_deal_won(db, deal.id, None, organization_id=org.id, actor_id=user.id)
-        await QuoteService().approve_quote(db, quote_id=won["quote_id"], organization_id=org.id, actor_id=user.id)
         first = await QuoteService().send_quote(db, quote_id=won["quote_id"], organization_id=org.id,
                                               recipient_email=contact.email)
         second = await QuoteService().send_quote(db, quote_id=won["quote_id"], organization_id=org.id,
@@ -315,7 +320,7 @@ async def test_durable_quote_delivery_and_customer_acceptance(sales_database, mo
             result = await QuoteService().accept_public_quote(db, token=token)
             assert (await db.get(Invoice, result["invoice_id"])).status == "Pending"
         else:
-            assert quote.sent_at is None and quote.status == "Approved"
+            assert quote.sent_at is None and quote.status == "Draft"
             if outcome == "Failed":
                 sender.assert_not_called()
             else:

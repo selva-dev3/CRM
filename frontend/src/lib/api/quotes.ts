@@ -28,6 +28,7 @@ export interface QuoteItem {
   delivery_id?: string | null;
   provider_message_id?: string | null;
   sent_at?: string | null;
+  accepted_at?: string | null;
   recipient_email?: string | null;
   pdf_available?: boolean;
   expires_at?: string | null;

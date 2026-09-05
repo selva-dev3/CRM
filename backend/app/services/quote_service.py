@@ -45,6 +45,7 @@ def quote_to_dict(quote: Quote) -> dict:
         "delivery_id": quote.delivery_id,
         "provider_message_id": quote.provider_message_id,
         "sent_at": quote.sent_at.isoformat() if quote.sent_at else None,
+        "accepted_at": quote.accepted_at.isoformat() if quote.accepted_at else None,
         "recipient_email": quote.recipient_email,
         "pdf_available": bool(quote.pdf_s3_key),
         "expires_at": quote.expires_at.isoformat() if quote.expires_at else None,
@@ -70,102 +71,12 @@ class QuoteService:
     async def approve_quote(
         self, db: AsyncSession, *, quote_id: str, organization_id: str, actor_id: str
     ) -> dict:
-        try:
-            quote = await self.repository.lock_scoped(
-                db, quote_id=quote_id, organization_id=organization_id
-            )
-            if not quote:
-                raise NotFoundError(message="Quote not found")
-            already_approved = quote.status == "Approved" and quote.approved_at is not None
-            if not already_approved and quote.status not in {"Draft", "Pending Approval"}:
-                raise APIException(
-                    message="Quote cannot be approved in its current state", status_code=409
-                )
-            items = await self.repository.list_items(
-                db, quote_id=quote_id, organization_id=organization_id
-            )
-            if not items or not quote.currency:
-                raise APIException(message="Quote must have priced items and a currency")
-            calculated = sum(
-                (
-                    calculate_line(
-                        item.quantity, item.unit_price, item.discount_percent, item.tax_percent
-                    ).total
-                    for item in items
-                ),
-                Decimal(0),
-            )
-            if calculated != decimal_value(quote.total_amount) or calculated <= 0:
-                raise APIException(message="Quote totals are invalid")
-            company, contact = await self.deal_repository.get_sales_customer(
-                db,
-                organization_id=organization_id,
-                company_id=quote.company_id,
-                contact_id=quote.contact_id,
-            )
-            if not company or not contact or contact.company_id != company.id or not contact.email:
-                raise APIException(message="A valid customer and contact email are required")
-            try:
-                contact_email = str(_email_adapter.validate_python(contact.email))
-            except ValidationError as exc:
-                raise APIException(
-                    message="The linked customer contact has an invalid email address",
-                    code="INVALID_CONTACT_EMAIL",
-                    status_code=422,
-                ) from exc
-            if not already_approved:
-                now = datetime.now(UTC)
-                await self.repository.approve(
-                    db, quote, actor_id=actor_id, at=now, expires_at=now + timedelta(days=30)
-                )
-            if quote.delivery_status not in {"Pending", "Processing", "Sent", "Unknown"}:
-                delivery_id = str(uuid4())
-                token = acceptance_token(quote.id, delivery_id)
-                await self.repository.queue_delivery(
-                    db,
-                    quote,
-                    delivery_id=delivery_id,
-                    recipient_email=contact_email,
-                    token_hash=hashlib.sha256(token.encode()).hexdigest(),
-                )
-                db.add(
-                    QuoteDeliveryAttempt(
-                        quote_id=quote.id,
-                        organization_id=organization_id,
-                        delivery_id=delivery_id,
-                        recipient_email=contact_email,
-                        delivery_status="Pending",
-                        attempt_number=(quote.delivery_attempts or 0) + 1,
-                    )
-                )
-            deal = await self.deal_repository.get_by_id_scoped(
-                db, deal_id=quote.deal_id, organization_id=organization_id
-            )
-            if not deal:
-                raise APIException(message="Quote deal is invalid")
-            await NotificationRepository().create_for_scoped_user(
-                db,
-                data={
-                    "organization_id": organization_id,
-                    "user_id": deal.assigned_to or actor_id,
-                    "event_name": "quote.approved",
-                    "entity_type": "quote",
-                    "entity_id": quote.id,
-                    "title": "Quote approved",
-                    "message": f"Quote {quote.quote_number} is queued for customer delivery.",
-                },
-            )
-            await db.commit()
-            logger.info(
-                "Quote approved and delivery queued organization_id=%s quote_id=%s delivery_id=%s",
-                organization_id,
-                quote.id,
-                quote.delivery_id,
-            )
-            return quote_to_dict(quote)
-        except Exception:
-            await db.rollback()
-            raise
+        await self._require_quote(db, quote_id=quote_id, organization_id=organization_id)
+        raise APIException(
+            message="Internal approval is not part of the customer quote workflow; send the quote to the linked contact",
+            code="INTERNAL_APPROVAL_REMOVED",
+            status_code=409,
+        )
 
     async def accept_public_quote(self, db: AsyncSession, *, token: str) -> dict:
         try:
@@ -177,7 +88,7 @@ class QuoteService:
             if not quote.expires_at or quote.expires_at <= datetime.now(UTC):
                 raise APIException(message="Quote link has expired", status_code=410)
             if quote.status != "Accepted":
-                if quote.status != "Sent" or not quote.approved_at or not quote.sent_at:
+                if quote.status != "Sent" or not quote.sent_at:
                     raise APIException(
                         message="Only a sent, approved quote can be accepted", status_code=409
                     )
@@ -215,7 +126,7 @@ class QuoteService:
             quote = await self.repository.lock_public(
                 db, hashlib.sha256(token.encode()).hexdigest()
             )
-            if not quote or not quote.approved_at or not quote.sent_at:
+            if not quote or not quote.sent_at:
                 raise NotFoundError(message="Quote link is invalid")
             if not quote.expires_at or quote.expires_at <= datetime.now(UTC):
                 raise APIException(message="Quote link has expired", status_code=410)
@@ -243,7 +154,7 @@ class QuoteService:
             quote = await self.repository.lock_public(
                 db, hashlib.sha256(token.encode()).hexdigest()
             )
-            if not quote or not quote.approved_at or not quote.sent_at:
+            if not quote or not quote.sent_at:
                 raise NotFoundError(message="Quote link is invalid")
             if not quote.expires_at or quote.expires_at <= datetime.now(UTC):
                 raise APIException(message="Quote link has expired", status_code=410)
@@ -589,7 +500,7 @@ class QuoteService:
         db: AsyncSession,
         *,
         quote_id: str,
-        recipient_email: str,
+        recipient_email: str | None,
         organization_id: str,
     ) -> dict:
         from app.services.quote_delivery_service import quote_delivery_service
