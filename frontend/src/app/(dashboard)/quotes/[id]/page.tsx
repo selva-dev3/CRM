@@ -254,6 +254,9 @@ export default function QuoteDetailPage() {
                     <TableHead className="p-3">ITEM DESCRIPTION</TableHead>
                     <TableHead className="p-3 text-center">QTY</TableHead>
                     <TableHead className="p-3 text-right">UNIT PRICE</TableHead>
+                    <TableHead className="p-3 text-right">DISCOUNT</TableHead>
+                    <TableHead className="p-3 text-right">TAX</TableHead>
+                    <TableHead className="p-3 text-right">SUBTOTAL</TableHead>
                     <TableHead className="p-3 text-right">TOTAL</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -264,24 +267,14 @@ export default function QuoteDetailPage() {
                         <TableCell className="p-3 font-semibold text-slate-900">{item.product_name || item.name}</TableCell>
                         <TableCell className="p-3 text-center font-mono">{item.quantity}</TableCell>
                         <TableCell className="p-3 text-right">${item.unit_price.toLocaleString()}</TableCell>
+                        <TableCell className="p-3 text-right">{item.discount_percent ?? 0}%</TableCell>
+                        <TableCell className="p-3 text-right">{item.tax_percent ?? 0}%</TableCell>
+                        <TableCell className="p-3 text-right">{(item.subtotal ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
                         <TableCell className="p-3 text-right font-bold text-slate-900">${item.total.toLocaleString()}</TableCell>
                       </TableRow>
                     ))
                   ) : (
-                    <>
-                      <TableRow>
-                        <TableCell className="p-3 font-semibold text-slate-900">CRM Enterprise SaaS Annual License</TableCell>
-                        <TableCell className="p-3 text-center font-mono">10</TableCell>
-                        <TableCell className="p-3 text-right">$1,200.00</TableCell>
-                        <TableCell className="p-3 text-right font-bold text-slate-900">$12,000.00</TableCell>
-                      </TableRow>
-                      <TableRow>
-                        <TableCell className="p-3 font-semibold text-slate-900">Dedicated Enterprise Onboarding Pack</TableCell>
-                        <TableCell className="p-3 text-center font-mono">1</TableCell>
-                        <TableCell className="p-3 text-right">$3,000.00</TableCell>
-                        <TableCell className="p-3 text-right font-bold text-slate-900">$3,000.00</TableCell>
-                      </TableRow>
-                    </>
+                    <TableRow><TableCell colSpan={7} className="p-6 text-center text-slate-500">No persisted quote items are available.</TableCell></TableRow>
                   )}
                 </TableBody>
               </Table>
@@ -291,15 +284,15 @@ export default function QuoteDetailPage() {
               <div className="w-64 space-y-2 text-xs">
                 <div className="flex justify-between text-slate-600 font-medium">
                   <span>Subtotal:</span>
-                  <span>${quote.total_amount ? quote.total_amount.toLocaleString() : '15,000.00'}</span>
+                  <span>{quote.currency || 'USD'} {quote.items?.reduce((sum, item) => sum + (item.subtotal ?? item.total ?? 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                 </div>
                 <div className="flex justify-between text-slate-600 font-medium">
                   <span>Tax (0%):</span>
-                  <span>$0.00</span>
+                  <span>{quote.currency || 'USD'} {(quote.items?.reduce((sum, item) => sum + (item.tax_total ?? 0), 0) || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                 </div>
                 <div className="flex justify-between text-slate-900 font-extrabold text-sm border-t border-slate-200 pt-2">
                   <span>Grand Total:</span>
-                  <span className="text-emerald-600">${quote.total_amount ? quote.total_amount.toLocaleString() : '15,000.00'}</span>
+                  <span className="text-emerald-600">{quote.currency || 'USD'} {quote.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                 </div>
               </div>
             </div>
@@ -335,6 +328,13 @@ export default function QuoteDetailPage() {
           </div>
         </div>
       </div>
+
+      <section className="grid grid-cols-1 gap-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:grid-cols-2 lg:grid-cols-4">
+        <div><p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Company</p><p className="mt-1 text-sm font-semibold text-slate-900">{quote.company_name || 'Not available'}</p></div>
+        <div><p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Contact</p><p className="mt-1 text-sm font-semibold text-slate-900">{quote.contact_name || 'Not available'}</p><p className="text-xs text-slate-500">{quote.contact_email || 'Email not available'}</p></div>
+        <div><p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Currency / expiry</p><p className="mt-1 text-sm font-semibold text-slate-900">{quote.currency || 'Not available'}</p><p className="text-xs text-slate-500">Expires {quote.expires_at ? quote.expires_at.substring(0, 10) : 'not set'}</p></div>
+        <div><p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Commercial terms</p><p className="mt-1 text-sm font-semibold text-slate-900">{quote.payment_terms || 'Not specified'}</p><p className="text-xs text-slate-500">Due {quote.due_date ? quote.due_date.substring(0, 10) : 'not set'}</p></div>
+      </section>
 
       {/* Send Email Modal */}
       {isSendEmailModalOpen && (

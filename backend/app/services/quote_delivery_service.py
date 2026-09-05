@@ -131,6 +131,8 @@ class QuoteDeliveryService:
                         "quote_number": quote.quote_number,
                         "currency": quote.currency,
                         "expires_at": quote.expires_at.date().isoformat(),
+                        "payment_terms": quote.payment_terms,
+                        "due_date": quote.due_date.date().isoformat() if quote.due_date else None,
                         "total_amount": quote.total_amount,
                     },
                     "items": [

@@ -6,6 +6,11 @@ export interface QuoteLineItem {
   product_name?: string;
   quantity: number;
   unit_price: number;
+  discount_percent?: number;
+  tax_percent?: number;
+  subtotal?: number | null;
+  discount_total?: number | null;
+  tax_total?: number | null;
   total: number;
 }
 
@@ -23,6 +28,11 @@ export interface QuoteItem {
   recipient_email?: string | null;
   pdf_available?: boolean;
   expires_at?: string | null;
+  due_date?: string | null;
+  payment_terms?: string | null;
+  company_name?: string | null;
+  contact_name?: string | null;
+  contact_email?: string | null;
   rejection_reason?: string | null;
   invoice_id?: string | null;
   invoice_number?: string | null;

@@ -20,9 +20,11 @@ from app.schemas.crm_schemas import QuoteBase
 from app.services.invoice_service import InvoiceService
 from app.services.org_service import organization_service
 from app.services.quote_delivery_service import acceptance_token
+from app.services.quote_state import assert_quote_transition
 from app.services.sales_totals import calculate_line, decimal_value
 
 EDITABLE_QUOTE_STATUSES = {"Draft", "Pending Approval"}
+DEFAULT_QUOTE_TERM_DAYS = 30
 
 
 def quote_to_dict(quote: Quote) -> dict:
@@ -38,6 +40,11 @@ def quote_to_dict(quote: Quote) -> dict:
         "recipient_email": quote.recipient_email,
         "pdf_available": bool(quote.pdf_s3_key),
         "expires_at": quote.expires_at.isoformat() if quote.expires_at else None,
+        "due_date": quote.due_date.isoformat() if quote.due_date else None,
+        "payment_terms": quote.payment_terms,
+        "company_name": None,
+        "contact_name": None,
+        "contact_email": None,
         "rejection_reason": quote.rejection_reason,
         "created_at": str(quote.created_at) if quote.created_at else "",
     }
@@ -354,6 +361,8 @@ class QuoteService:
                 "quote_number": f"{organization.quote_prefix}-{now.year}-{sequence:06d}",
                 "status": "Draft",
                 "total_amount": total,
+                "payment_terms": f"Net {DEFAULT_QUOTE_TERM_DAYS}",
+                "due_date": now + timedelta(days=DEFAULT_QUOTE_TERM_DAYS),
             },
         )
         await db.flush()
@@ -445,17 +454,23 @@ class QuoteService:
                 "unit_price": item.unit_price,
                 "discount_percent": item.discount_percent,
                 "tax_percent": item.tax_percent,
+                "subtotal": item.subtotal,
+                "discount_total": item.discount_total,
+                "tax_total": item.tax_total,
                 "total": item.total,
             }
             for item in items
         ]
-        _, contact = await self.deal_repository.get_sales_customer(
+        company, contact = await self.deal_repository.get_sales_customer(
             db,
             organization_id=organization_id,
             company_id=quote.company_id,
             contact_id=quote.contact_id,
         )
         result["recipient_email"] = quote.recipient_email or (contact.email if contact else None)
+        result["company_name"] = company.name if company else None
+        result["contact_name"] = contact.name if contact else None
+        result["contact_email"] = contact.email if contact else None
         invoice = await self.repository.get_invoice_reference(
             db, quote_id=quote_id, organization_id=organization_id
         )
@@ -503,7 +518,16 @@ class QuoteService:
         quote.deal_id = deal.id
         quote.quote_number = payload.quote_number.strip() or quote.quote_number
         quote.total_amount = decimal_value(payload.total_amount)
+        assert_quote_transition(quote.status, payload.status)
         quote.status = payload.status
+        if payload.payment_terms:
+            quote.payment_terms = payload.payment_terms.strip()
+        if payload.due_date:
+            try:
+                parsed_due_date = datetime.fromisoformat(payload.due_date.replace("Z", "+00:00"))
+            except ValueError as exc:
+                raise APIException(message="Invalid quote due date", code="INVALID_DUE_DATE") from exc
+            quote.due_date = parsed_due_date if parsed_due_date.tzinfo else parsed_due_date.replace(tzinfo=UTC)
         await self._commit(db, "Failed to update quote")
         await db.refresh(quote)
         return quote_to_dict(quote)
@@ -562,6 +586,7 @@ class QuoteService:
         quote = await self._require_quote(db, quote_id=quote_id, organization_id=organization_id)
         if quote.automatic_deal_id or quote.status == "Accepted":
             raise APIException(message="Use the secure customer decision workflow", status_code=409)
+        assert_quote_transition(quote.status, "Rejected")
         quote.status = "Rejected"
         quote.rejection_reason = reason
         await self._commit(db, "Failed to reject quote")
