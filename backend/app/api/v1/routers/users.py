@@ -157,8 +157,12 @@ async def list_user_invitations_all(
     summary="Get user invitation details by token",
     dependencies=[Depends(require_permission("users:read"))],
 )
-async def get_invitation_details(token: str, db: AsyncSession = Depends(get_db)):
-    return await user_service.get_invitation_details(db, token)
+async def get_invitation_details(
+    token: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await user_service.get_invitation_details(db, token, current_user=current_user)
 
 
 @router.get(

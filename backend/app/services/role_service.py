@@ -1039,15 +1039,12 @@ class RoleService:
         try:
             await db.commit()
             await db.refresh(p)
-        except Exception:
+        except Exception as exc:
             await db.rollback()
-            return {
-                "id": f"perm-{int(datetime.now().timestamp())}",
-                "key": payload.key,
-                "name": payload.name,
-                "category": payload.category or "General",
-                "description": payload.description or "",
-            }
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Failed to create permission",
+            ) from exc
         return {
             "id": p.id,
             "key": p.key,

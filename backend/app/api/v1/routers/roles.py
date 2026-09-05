@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import get_current_user, require_permission
+from app.api.v1.deps import get_current_user, require_global_super_admin, require_permission
 from app.core.errors import ForbiddenError
 from app.db.session import get_db
 from app.models import User
@@ -75,7 +75,10 @@ async def get_permission_matrix(db: AsyncSession = Depends(get_db)):
     response_model=PermissionItem,
     status_code=status.HTTP_201_CREATED,
     summary="Create new permission entry",
-    dependencies=[Depends(require_permission("roles:create"))],
+    dependencies=[
+        Depends(require_permission("roles:create")),
+        Depends(require_global_super_admin()),
+    ],
 )
 async def create_permission(payload: PermissionCreate, db: AsyncSession = Depends(get_db)):
     return await role_service.create_permission(db, payload)
@@ -85,7 +88,10 @@ async def create_permission(payload: PermissionCreate, db: AsyncSession = Depend
     "/permissions/batch-import",
     response_model=MessageResponse,
     summary="Batch import permissions list from JSON",
-    dependencies=[Depends(require_permission("roles:create"))],
+    dependencies=[
+        Depends(require_permission("roles:create")),
+        Depends(require_global_super_admin()),
+    ],
 )
 async def import_permissions_batch(
     payload: list[PermissionCreate], db: AsyncSession = Depends(get_db)

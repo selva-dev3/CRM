@@ -318,9 +318,13 @@ class UserService:
             for inv in invitations
         ]
 
-    async def get_invitation_details(self, db: AsyncSession, token: str) -> dict:
+    async def get_invitation_details(
+        self, db: AsyncSession, token: str, *, current_user: User
+    ) -> dict:
         inv = await self.repository.get_invitation_by_token(db, token)
         if not inv:
+            raise NotFoundError(message="Invitation not found or token invalid")
+        if inv.organization_id != current_user.organization_id:
             raise NotFoundError(message="Invitation not found or token invalid")
         accepted_any = await self.repository.get_invitation_by_email(
             db, inv.email, status="accepted"
