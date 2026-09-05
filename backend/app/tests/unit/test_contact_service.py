@@ -68,12 +68,12 @@ async def test_count_contacts_is_scoped_to_current_organization(monkeypatch):
 @pytest.mark.asyncio
 async def test_get_contact_raises_not_found_when_missing():
     repo: Any = ContactRepository()
-    repo.get_by_id = AsyncMock(return_value=None)
+    repo.get_by_id_scoped = AsyncMock(return_value=None)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
     with pytest.raises(NotFoundError):
-        await service.get_contact(db, "missing-contact")
+        await service.get_contact(db, "missing-contact", organization_id="org-1")
 
 
 @pytest.mark.asyncio
@@ -169,13 +169,18 @@ async def test_create_contact_fires_contact_created_event(monkeypatch):
 async def test_update_contact_fires_contact_updated_event(monkeypatch):
     contact = _make_contact()
     repo: Any = ContactRepository()
-    repo.get_by_id = AsyncMock(return_value=contact)
+    repo.get_by_id_scoped = AsyncMock(return_value=contact)
     service = _service_with(repo)
     notify = AsyncMock()
     monkeypatch.setattr(integration_service, "notify_slack_event", notify)
     db = AsyncMock(spec=AsyncSession)
 
-    await service.update_contact(db, "cnt-1", ContactUpdate(email="jane@acme.io"))
+    await service.update_contact(
+        db,
+        "cnt-1",
+        ContactUpdate(email="jane@acme.io"),
+        organization_id="org-1",
+    )
 
     assert contact.email == "jane@acme.io"
     notify.assert_awaited_once()
@@ -210,12 +215,15 @@ async def test_create_contact_defaults_name_from_email(monkeypatch):
 async def test_update_contact_merges_first_and_last_name():
     contact = _make_contact(name="Jane Doe")
     repo: Any = ContactRepository()
-    repo.get_by_id = AsyncMock(return_value=contact)
+    repo.get_by_id_scoped = AsyncMock(return_value=contact)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
     result = await service.update_contact(
-        db, "cnt-1", ContactUpdate(first_name="Jane", last_name="Smith")
+        db,
+        "cnt-1",
+        ContactUpdate(first_name="Jane", last_name="Smith"),
+        organization_id="org-1",
     )
 
     assert contact.name == "Jane Smith"
@@ -225,9 +233,14 @@ async def test_update_contact_merges_first_and_last_name():
 @pytest.mark.asyncio
 async def test_set_starred_requires_existing_contact():
     repo: Any = ContactRepository()
-    repo.get_by_id = AsyncMock(return_value=None)
+    repo.get_by_id_scoped = AsyncMock(return_value=None)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
     with pytest.raises(NotFoundError):
-        await service.set_starred(db, "missing-contact", starred=True)
+        await service.set_starred(
+            db,
+            "missing-contact",
+            starred=True,
+            organization_id="org-1",
+        )

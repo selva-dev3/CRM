@@ -357,7 +357,7 @@ class LeadBase(BaseModel):
     score: float | None = 50.0
     assigned_to: str | None = None
     is_archived: bool | None = False
-    organization_id: str | None = "org-1"
+    organization_id: str | None = None
     custom_fields: dict[str, CustomFieldValue] = Field(default_factory=dict)
 
 
@@ -667,6 +667,7 @@ class QuoteResponse(BaseModel):
     recipient_email: str | None = None
     pdf_available: bool = False
     expires_at: str | None = None
+    rejection_reason: str | None = None
     invoice_id: str | None = None
     invoice_number: str | None = None
     invoice_status: str | None = None
@@ -676,11 +677,16 @@ class QuoteResponse(BaseModel):
 class InvoiceItemSchema(BaseModel):
     id: str
     product_id: str | None
+    product_name: str
     description: str | None = None
     quantity: int = 1
     unit_price: float = 0.0
     discount_percent: float = 0.0
     tax_percent: float = 0.0
+    subtotal: float = 0.0
+    discount_total: float = 0.0
+    tax_total: float = 0.0
+    total: float = 0.0
 
 
 class InvoiceBase(BaseModel):
@@ -714,9 +720,14 @@ class InvoiceResponse(BaseModel):
     due_date: str | None = None
     notes: str | None = None
     sent_at: str | None = None
+    delivery_status: str | None = None
+    pdf_available: bool = False
+    recipient_email: str | None = None
+    reminder_count: int = 0
+    last_reminded_at: str | None = None
     stripe_checkout_url: str | None = None
     created_at: str | None = None
-    items: list[InvoiceItemSchema] = []
+    items: list[InvoiceItemSchema] = Field(default_factory=list)
 
 
 # 18. Notification Schemas

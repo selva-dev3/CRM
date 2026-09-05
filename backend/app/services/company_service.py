@@ -88,8 +88,10 @@ class CompanyService:
             db, organization_id=organization_id, search=search
         )
 
-    async def get_company(self, db: AsyncSession, company_id: str) -> dict:
-        company = await self.repository.get_by_id(db, company_id)
+    async def get_company(self, db: AsyncSession, company_id: str, *, organization_id: str) -> dict:
+        company = await self.repository.get_by_id_scoped(
+            db, company_id=company_id, organization_id=organization_id
+        )
         if not company:
             raise NotFoundError(message=f"Company '{company_id}' not found")
         return company_to_dict(company)
@@ -143,9 +145,16 @@ class CompanyService:
         return company_to_dict(company)
 
     async def update_company(
-        self, db: AsyncSession, company_id: str, payload: CompanyUpdate
+        self,
+        db: AsyncSession,
+        company_id: str,
+        payload: CompanyUpdate,
+        *,
+        organization_id: str,
     ) -> dict:
-        company = await self.repository.get_by_id(db, company_id)
+        company = await self.repository.get_by_id_scoped(
+            db, company_id=company_id, organization_id=organization_id
+        )
         if not company:
             raise NotFoundError(message=f"Company '{company_id}' not found")
 
@@ -181,70 +190,109 @@ class CompanyService:
         )
         return company_to_dict(company)
 
-    async def delete_company(self, db: AsyncSession, company_id: str) -> dict:
-        company = await self.repository.get_by_id(db, company_id)
+    async def delete_company(
+        self, db: AsyncSession, company_id: str, *, organization_id: str
+    ) -> dict:
+        company = await self.repository.get_by_id_scoped(
+            db, company_id=company_id, organization_id=organization_id
+        )
         if not company:
             raise NotFoundError(message=f"Company '{company_id}' not found")
         await self.repository.delete(db, company)
         await self._commit(db, "Failed to delete company")
         return {"message": f"Company {company_id} deleted successfully", "status": "success"}
 
-    async def bulk_delete(self, db: AsyncSession, ids: list[str]) -> dict:
-        companies = await self.repository.list_by_ids(db, ids)
+    async def bulk_delete(self, db: AsyncSession, ids: list[str], *, organization_id: str) -> dict:
+        companies = await self.repository.list_by_ids(db, ids, organization_id=organization_id)
         for company in companies:
             await self.repository.delete(db, company)
         await self._commit(db, "Failed to bulk delete companies")
         return {"affected_count": len(companies), "message": "Companies deleted successfully"}
 
-    async def require_company(self, db: AsyncSession, company_id: str) -> None:
-        company = await self.repository.get_by_id(db, company_id)
+    async def require_company(
+        self, db: AsyncSession, company_id: str, *, organization_id: str
+    ) -> Company:
+        company = await self.repository.get_by_id_scoped(
+            db, company_id=company_id, organization_id=organization_id
+        )
         if not company:
             raise NotFoundError(message=f"Company '{company_id}' not found")
+        return company
 
-    async def get_company_contacts(self, db: AsyncSession, company_id: str) -> list[dict]:
-        return await contact_service.list_company_contacts(db, company_id)
+    async def get_company_contacts(
+        self, db: AsyncSession, company_id: str, *, organization_id: str
+    ) -> list[dict]:
+        await self.require_company(db, company_id, organization_id=organization_id)
+        return await contact_service.list_company_contacts(
+            db, company_id, organization_id=organization_id
+        )
 
-    async def get_company_deals(self, db: AsyncSession, company_id: str) -> list:
-        await self.require_company(db, company_id)
+    async def get_company_deals(
+        self, db: AsyncSession, company_id: str, *, organization_id: str
+    ) -> list:
+        await self.require_company(db, company_id, organization_id=organization_id)
         return []
 
-    async def get_company_quotes(self, db: AsyncSession, company_id: str) -> list:
-        await self.require_company(db, company_id)
+    async def get_company_quotes(
+        self, db: AsyncSession, company_id: str, *, organization_id: str
+    ) -> list:
+        await self.require_company(db, company_id, organization_id=organization_id)
         return []
 
-    async def get_company_invoices(self, db: AsyncSession, company_id: str) -> list:
-        await self.require_company(db, company_id)
+    async def get_company_invoices(
+        self, db: AsyncSession, company_id: str, *, organization_id: str
+    ) -> list:
+        await self.require_company(db, company_id, organization_id=organization_id)
         return []
 
-    async def get_company_documents(self, db: AsyncSession, company_id: str) -> list:
-        await self.require_company(db, company_id)
+    async def get_company_documents(
+        self, db: AsyncSession, company_id: str, *, organization_id: str
+    ) -> list:
+        await self.require_company(db, company_id, organization_id=organization_id)
         return []
 
-    async def get_company_hierarchy(self, db: AsyncSession, company_id: str) -> dict:
-        await self.require_company(db, company_id)
+    async def get_company_hierarchy(
+        self, db: AsyncSession, company_id: str, *, organization_id: str
+    ) -> dict:
+        await self.require_company(db, company_id, organization_id=organization_id)
         return {"parent_company": None, "subsidiaries": []}
 
-    async def set_parent_company(self, db: AsyncSession, company_id: str, parent_id: str) -> dict:
-        await self.require_company(db, company_id)
-        return {
-            "message": f"Set parent {parent_id} for company {company_id}",
-            "status": "success",
-        }
+    async def set_parent_company(
+        self,
+        db: AsyncSession,
+        company_id: str,
+        parent_id: str,
+        *,
+        organization_id: str,
+    ) -> dict:
+        await self.require_company(db, company_id, organization_id=organization_id)
+        await self.require_company(db, parent_id, organization_id=organization_id)
+        raise APIException(
+            message="Company hierarchy changes are not implemented",
+            code="COMPANY_HIERARCHY_UNAVAILABLE",
+            status_code=501,
+        )
 
     async def lookup_domain(self, domain: str) -> dict:
-        return {
-            "domain": domain,
-            "name": "Enriched Corp",
-            "industry": "Software",
-            "employee_count": 250,
-            "location": "San Francisco, CA",
-        }
+        raise APIException(
+            message="Company enrichment is not configured",
+            code="COMPANY_ENRICHMENT_UNAVAILABLE",
+            status_code=503,
+        )
 
     async def export_csv(self) -> dict:
-        return {"download_url": "https://api.crm.com/exports/companies.csv"}
+        raise APIException(
+            message="Company CSV export is not implemented",
+            code="COMPANY_EXPORT_UNAVAILABLE",
+            status_code=501,
+        )
 
     async def import_csv(self) -> dict:
-        return {"message": "Import completed successfully", "status": "success"}
+        raise APIException(
+            message="Company CSV import is not implemented",
+            code="COMPANY_IMPORT_UNAVAILABLE",
+            status_code=501,
+        )
 
 
 company_service = CompanyService()

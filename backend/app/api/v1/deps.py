@@ -127,24 +127,13 @@ async def get_current_user_optional(
 
 
 async def get_valid_org_id(db: AsyncSession, current_user: User | None = None) -> str:
-    """Helper function that guarantees a valid Organization foreign key exists in database."""
+    """Resolve only the authenticated user's organization; never fall back across tenants."""
     if current_user and getattr(current_user, "organization_id", None):
         user_org_id = current_user.organization_id
         res = await db.execute(select(Organization).where(Organization.id == user_org_id))
         if res.scalars().first():
             return user_org_id
-
-    res = await db.execute(select(Organization).limit(1))
-    existing_org = res.scalars().first()
-    if existing_org:
-        return existing_org.id
-
-    default_org = Organization(
-        id="org-1", name="Default Organization", slug="default-org", status="active"
-    )
-    db.add(default_org)
-    await db.commit()
-    return default_org.id
+    raise ForbiddenError(message="Authenticated user has no valid current organization")
 
 
 def require_role(*roles: UserRole):

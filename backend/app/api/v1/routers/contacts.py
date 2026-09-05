@@ -19,6 +19,7 @@ from app.schemas.crm_schemas import (
 )
 from app.services.contact_service import contact_service
 from app.services.note_service import note_service
+from app.services.org_service import organization_service
 
 router = APIRouter()
 
@@ -79,8 +80,12 @@ async def list_contact_custom_fields(
     summary="Get starred contacts list",
     dependencies=[Depends(require_permission("contacts:read"))],
 )
-async def get_starred_contacts(db: AsyncSession = Depends(get_db)):
-    return await contact_service.get_starred_contacts(db)
+async def get_starred_contacts(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await contact_service.get_starred_contacts(db, organization_id=organization_id)
 
 
 @router.post(
@@ -89,8 +94,16 @@ async def get_starred_contacts(db: AsyncSession = Depends(get_db)):
     summary="Merge two contact profiles",
     dependencies=[Depends(require_permission("contacts:update"))],
 )
-async def merge_contacts(primary_id: str, secondary_id: str, db: AsyncSession = Depends(get_db)):
-    return await contact_service.merge_contacts(db, primary_id, secondary_id)
+async def merge_contacts(
+    primary_id: str,
+    secondary_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await contact_service.merge_contacts(
+        db, primary_id, secondary_id, organization_id=organization_id
+    )
 
 
 @router.get(
@@ -118,8 +131,13 @@ async def import_contacts_csv():
     summary="Bulk delete contacts",
     dependencies=[Depends(require_permission("contacts:bulk_delete"))],
 )
-async def bulk_delete_contacts(payload: BulkDeleteRequest, db: AsyncSession = Depends(get_db)):
-    return await contact_service.bulk_delete(db, payload.ids)
+async def bulk_delete_contacts(
+    payload: BulkDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await contact_service.bulk_delete(db, payload.ids, organization_id=organization_id)
 
 
 @router.get(
@@ -128,8 +146,13 @@ async def bulk_delete_contacts(payload: BulkDeleteRequest, db: AsyncSession = De
     summary="Get contact details by ID",
     dependencies=[Depends(require_permission("contacts:read"))],
 )
-async def get_contact(contact_id: str, db: AsyncSession = Depends(get_db)):
-    return await contact_service.get_contact(db, contact_id)
+async def get_contact(
+    contact_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await contact_service.get_contact(db, contact_id, organization_id=organization_id)
 
 
 @router.put(
@@ -139,9 +162,15 @@ async def get_contact(contact_id: str, db: AsyncSession = Depends(get_db)):
     dependencies=[Depends(require_permission("contacts:update"))],
 )
 async def update_contact(
-    contact_id: str, payload: ContactUpdate, db: AsyncSession = Depends(get_db)
+    contact_id: str,
+    payload: ContactUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    return await contact_service.update_contact(db, contact_id, payload)
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await contact_service.update_contact(
+        db, contact_id, payload, organization_id=organization_id
+    )
 
 
 @router.delete(
@@ -150,8 +179,13 @@ async def update_contact(
     summary="Delete contact by ID",
     dependencies=[Depends(require_permission("contacts:delete"))],
 )
-async def delete_contact(contact_id: str, db: AsyncSession = Depends(get_db)):
-    return await contact_service.delete_contact(db, contact_id)
+async def delete_contact(
+    contact_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await contact_service.delete_contact(db, contact_id, organization_id=organization_id)
 
 
 @router.get(
@@ -160,8 +194,13 @@ async def delete_contact(contact_id: str, db: AsyncSession = Depends(get_db)):
     summary="List deals linked to contact",
     dependencies=[Depends(require_permission("contacts:read"))],
 )
-async def get_contact_deals(contact_id: str, db: AsyncSession = Depends(get_db)):
-    await contact_service.get_contact(db, contact_id)
+async def get_contact_deals(
+    contact_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    await contact_service.get_contact(db, contact_id, organization_id=organization_id)
     return []
 
 
@@ -170,8 +209,13 @@ async def get_contact_deals(contact_id: str, db: AsyncSession = Depends(get_db))
     summary="Get activity timeline for contact",
     dependencies=[Depends(require_permission("contacts:read"))],
 )
-async def get_contact_activities(contact_id: str, db: AsyncSession = Depends(get_db)):
-    await contact_service.get_contact(db, contact_id)
+async def get_contact_activities(
+    contact_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    await contact_service.get_contact(db, contact_id, organization_id=organization_id)
     return []
 
 
@@ -181,8 +225,15 @@ async def get_contact_activities(contact_id: str, db: AsyncSession = Depends(get
     summary="Star contact",
     dependencies=[Depends(require_permission("contacts:update"))],
 )
-async def star_contact(contact_id: str, db: AsyncSession = Depends(get_db)):
-    return await contact_service.set_starred(db, contact_id, starred=True)
+async def star_contact(
+    contact_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await contact_service.set_starred(
+        db, contact_id, starred=True, organization_id=organization_id
+    )
 
 
 @router.post(
@@ -191,8 +242,15 @@ async def star_contact(contact_id: str, db: AsyncSession = Depends(get_db)):
     summary="Unstar contact",
     dependencies=[Depends(require_permission("contacts:update"))],
 )
-async def unstar_contact(contact_id: str, db: AsyncSession = Depends(get_db)):
-    return await contact_service.set_starred(db, contact_id, starred=False)
+async def unstar_contact(
+    contact_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await contact_service.set_starred(
+        db, contact_id, starred=False, organization_id=organization_id
+    )
 
 
 @router.get(
@@ -248,8 +306,13 @@ async def add_contact_note(
     summary="List emails linked to contact",
     dependencies=[Depends(require_permission("contacts:read"))],
 )
-async def get_contact_emails(contact_id: str, db: AsyncSession = Depends(get_db)):
-    await contact_service.get_contact(db, contact_id)
+async def get_contact_emails(
+    contact_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    await contact_service.get_contact(db, contact_id, organization_id=organization_id)
     return []
 
 
@@ -259,6 +322,11 @@ async def get_contact_emails(contact_id: str, db: AsyncSession = Depends(get_db)
     summary="List call logs for contact",
     dependencies=[Depends(require_permission("contacts:read"))],
 )
-async def get_contact_calls(contact_id: str, db: AsyncSession = Depends(get_db)):
-    await contact_service.get_contact(db, contact_id)
+async def get_contact_calls(
+    contact_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    await contact_service.get_contact(db, contact_id, organization_id=organization_id)
     return []

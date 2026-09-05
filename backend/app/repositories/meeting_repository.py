@@ -17,24 +17,28 @@ class MeetingRepository:
         *,
         page: int,
         limit: int,
+        organization_id: str,
         search: str | None = None,
     ) -> builtins.list[Meeting]:
-        stmt = select(Meeting)
+        stmt = select(Meeting).where(Meeting.organization_id == organization_id)
         if search and search.strip():
             stmt = stmt.where(Meeting.title.ilike(f"%{search.strip()}%"))
         stmt = stmt.order_by(Meeting.start_time.asc()).offset((page - 1) * limit).limit(limit)
         result = await db.execute(stmt)
         return list(result.scalars().all())
 
-    async def list_upcoming(self, db: AsyncSession, limit: int = 10) -> builtins.list[Meeting]:
-        result = await db.execute(select(Meeting).order_by(Meeting.start_time.asc()).limit(limit))
+    async def list_upcoming(
+        self, db: AsyncSession, *, organization_id: str, limit: int = 10
+    ) -> builtins.list[Meeting]:
+        result = await db.execute(
+            select(Meeting)
+            .where(Meeting.organization_id == organization_id)
+            .order_by(Meeting.start_time.asc())
+            .limit(limit)
+        )
         return list(result.scalars().all())
 
-    async def get_by_id(self, db: AsyncSession, meeting_id: str) -> Meeting | None:
-        result = await db.execute(select(Meeting).where(Meeting.id == meeting_id))
-        return result.scalars().first()
-
-    async def get_by_id_scoped(
+    async def get_by_id(
         self, db: AsyncSession, *, meeting_id: str, organization_id: str
     ) -> Meeting | None:
         result = await db.execute(
@@ -46,9 +50,11 @@ class MeetingRepository:
         return result.scalars().first()
 
     async def list_by_ids(
-        self, db: AsyncSession, ids: builtins.list[str]
+        self, db: AsyncSession, *, ids: builtins.list[str], organization_id: str
     ) -> builtins.list[Meeting]:
-        result = await db.execute(select(Meeting).where(Meeting.id.in_(ids)))
+        result = await db.execute(
+            select(Meeting).where(Meeting.id.in_(ids), Meeting.organization_id == organization_id)
+        )
         return list(result.scalars().all())
 
     async def create(self, db: AsyncSession, *, data: dict) -> Meeting:

@@ -136,7 +136,7 @@ def org_to_dict(org: Organization, members_count: int = 1) -> dict:
         "domain": getattr(org, "domain", "") or "",
         "plan": getattr(org, "plan", "Enterprise") or "Enterprise",
         "max_users": getattr(org, "max_users", 100) or 100,
-        "created_at": str(org.created_at) if getattr(org, "created_at", None) else "2026-01-01",
+        "created_at": str(org.created_at) if getattr(org, "created_at", None) else "",
         "members_count": members_count,
     }
 
@@ -155,6 +155,21 @@ class OrganizationDomainService:
             raise APIException(
                 status_code=status.HTTP_400_BAD_REQUEST, message=error_message
             ) from e
+
+    async def _require_current_org(self, db: AsyncSession, current_user: User) -> Organization:
+        if not current_user.organization_id:
+            raise ForbiddenError(message="Authenticated user has no current organization")
+        org = await self.repository.get_by_id(db, current_user.organization_id)
+        if not org:
+            raise NotFoundError(message="Current organization not found")
+        return org
+
+    async def _require_requested_org(
+        self, db: AsyncSession, *, org_id: str, current_user: User
+    ) -> Organization:
+        if current_user.organization_id != org_id:
+            raise NotFoundError(message="Organization not found")
+        return await self._require_current_org(db, current_user)
 
     async def get_or_create_default_org(
         self, db: AsyncSession, current_user: User | None = None
@@ -219,8 +234,8 @@ class OrganizationDomainService:
             db_plan = await self.repository.get_plan_by_slug(db, plan_slug)
         return self._plan_to_info(db_plan, org)
 
-    async def get_organization(self, db: AsyncSession, current_user: User | None) -> dict:
-        org = await self.get_or_create_default_org(db, current_user)
+    async def get_organization(self, db: AsyncSession, current_user: User) -> dict:
+        org = await self._require_current_org(db, current_user)
         members_count = await self.repository.count_members(db, org.id)
         return org_to_dict(org, members_count=members_count)
 
@@ -237,11 +252,11 @@ class OrganizationDomainService:
         members_count = await self.repository.count_members(db, org.id)
         return org_to_dict(org, members_count=members_count)
 
-    async def list_members(self, db: AsyncSession, current_user: User | None) -> list[dict]:
-        org = await self.get_or_create_default_org(db, current_user)
+    async def list_members(self, db: AsyncSession, current_user: User) -> list[dict]:
+        org = await self._require_current_org(db, current_user)
         users = await self.repository.list_members(db, org.id)
         if not users:
-           raise NotFoundError(message="No members found in the organization")
+            raise NotFoundError(message="No members found in the organization")
         return [
             {
                 "id": u.id,
@@ -254,8 +269,19 @@ class OrganizationDomainService:
             for u in users
         ]
 
-    async def remove_member(self, db: AsyncSession, user_id: str) -> dict:
-        user = await self.repository.get_user_by_id(db, user_id)
+    async def remove_member(self, db: AsyncSession, user_id: str, current_user: User) -> dict:
+        if not current_user.organization_id:
+            raise ForbiddenError(message="Authenticated user has no current organization")
+        if user_id == current_user.id:
+            raise APIException(
+                message="You cannot remove your own organization membership",
+                status_code=status.HTTP_409_CONFLICT,
+            )
+        user = await self.repository.get_user_by_id(
+            db,
+            user_id=user_id,
+            organization_id=current_user.organization_id,
+        )
         if user:
             await self.repository.delete_user(db, user)
             await self._commit(db, "Failed to remove member")
@@ -265,8 +291,8 @@ class OrganizationDomainService:
             }
         raise NotFoundError(message="User not found in the organization")
 
-    async def get_subscription(self, db: AsyncSession, current_user: User | None) -> dict:
-        org = await self.get_or_create_default_org(db, current_user)
+    async def get_subscription(self, db: AsyncSession, current_user: User) -> dict:
+        org = await self._require_current_org(db, current_user)
         subscription = await self.get_or_create_subscription(db, org)
         plan_info = await self._resolve_plan_info(db, org)
 
@@ -289,9 +315,7 @@ class OrganizationDomainService:
             "current_period_end": (
                 str(subscription.current_period_end) if subscription.current_period_end else None
             ),
-            "next_billing": (
-                str(subscription.next_billing) if subscription.next_billing else "2026-09-02"
-            ),
+            "next_billing": (str(subscription.next_billing) if subscription.next_billing else None),
             "max_users": plan_info["max_users"],
             "storage_limit_gb": plan_info["max_storage_gb"],
             "ai_credits": plan_info["ai_credits"],
@@ -442,9 +466,16 @@ class OrganizationDomainService:
                 stripe.checkout.Session.create,
                 **checkout_params,
             )
+            session_id = getattr(session, "id", None)
+            checkout_url = getattr(session, "url", None)
+            if not session_id or not checkout_url:
+                raise APIException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    message="The billing provider did not return a usable checkout session.",
+                )
             return {
-                "checkout_url": session.url or f"https://checkout.stripe.com/pay/{session.id}",
-                "session_id": session.id,
+                "checkout_url": checkout_url,
+                "session_id": session_id,
                 "status": "success",
             }
         except APIException:
@@ -771,8 +802,8 @@ class OrganizationDomainService:
         org = await self.get_or_create_default_org(db)
         return await self.apply_verified_subscription_upgrade(db, org.id, plan_slug)
 
-    async def cancel_subscription(self, db: AsyncSession) -> dict:
-        org = await self.get_or_create_default_org(db)
+    async def cancel_subscription(self, db: AsyncSession, current_user: User) -> dict:
+        org = await self._require_current_org(db, current_user)
         subscription = await self.get_or_create_subscription(db, org)
 
         subscription.auto_renew = False
@@ -789,8 +820,8 @@ class OrganizationDomainService:
 
         return {"message": "Subscription cancelled successfully", "status": "success"}
 
-    async def resume_subscription(self, db: AsyncSession) -> dict:
-        org = await self.get_or_create_default_org(db)
+    async def resume_subscription(self, db: AsyncSession, current_user: User) -> dict:
+        org = await self._require_current_org(db, current_user)
         subscription = await self.get_or_create_subscription(db, org)
 
         subscription.auto_renew = True
@@ -807,8 +838,8 @@ class OrganizationDomainService:
 
         return {"message": "Subscription resumed successfully", "status": "success"}
 
-    async def get_usage(self, db: AsyncSession, current_user: User | None) -> dict:
-        org = await self.get_or_create_default_org(db, current_user)
+    async def get_usage(self, db: AsyncSession, current_user: User) -> dict:
+        org = await self._require_current_org(db, current_user)
         subscription = await self.get_or_create_subscription(db, org)
 
         users_used = await self.repository.count_members(db, org.id)
@@ -818,7 +849,7 @@ class OrganizationDomainService:
             "plan": plan_info["name"],
             "users_used": users_used,
             "users_limit": plan_info["max_users"],
-            "storage_gb_used": subscription.storage_used_gb or 0.5,
+            "storage_gb_used": subscription.storage_used_gb or 0,
             "storage_gb_limit": plan_info["max_storage_gb"],
             "ai_credits_used": 0,
             "ai_credits_limit": plan_info["ai_credits"],
@@ -831,9 +862,9 @@ class OrganizationDomainService:
         *,
         logo_file,
         primary_color: str | None,
-        current_user: User | None,
+        current_user: User,
     ) -> dict:
-        org = await self.get_or_create_default_org(db, current_user)
+        org = await self._require_current_org(db, current_user)
         try:
             logo_url = org.logo_url
             if logo_file:
@@ -877,28 +908,15 @@ class OrganizationDomainService:
                 message=f"Branding S3 upload failed: {str(e)}",
             ) from e
 
-    async def verify_domain(
-        self, db: AsyncSession, *, domain: str, current_user: User | None
-    ) -> dict:
-        org = await self.get_or_create_default_org(db, current_user)
-        org.domain = domain
-        await self.repository.create_audit_log(
-            db,
-            organization_id=org.id,
-            action="VERIFY_DOMAIN",
-            details=f"Custom domain '{domain}' verified",
+    async def verify_domain(self, db: AsyncSession, *, domain: str, current_user: User) -> dict:
+        raise APIException(
+            message="Custom domain DNS verification is not configured",
+            code="DOMAIN_VERIFICATION_UNAVAILABLE",
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
         )
-        db.add(org)
-        await self._commit(db, "Failed to verify domain")
-        return {
-            "message": f"Domain {domain} verified successfully and linked to organization",
-            "status": "success",
-        }
 
-    async def list_organization_domains(
-        self, db: AsyncSession, current_user: User | None
-    ) -> list[dict]:
-        org = await self.get_or_create_default_org(db, current_user)
+    async def list_organization_domains(self, db: AsyncSession, current_user: User) -> list[dict]:
+        org = await self._require_current_org(db, current_user)
         if org.domain:
             return [
                 {
@@ -910,21 +928,9 @@ class OrganizationDomainService:
             ]
         return []
 
-    async def get_organization_audit_logs(
-        self, db: AsyncSession, current_user: User | None
-    ) -> list[dict]:
-        org = await self.get_or_create_default_org(db, current_user)
+    async def get_organization_audit_logs(self, db: AsyncSession, current_user: User) -> list[dict]:
+        org = await self._require_current_org(db, current_user)
         logs = await self.repository.list_audit_logs(db, org.id, limit=20)
-        if not logs:
-            return [
-                {
-                    "id": "log-1",
-                    "action": "ORGANIZATION_INITIALIZED",
-                    "actor": "System Admin",
-                    "timestamp": str(org.created_at),
-                    "ip": "127.0.0.1",
-                }
-            ]
         return [
             {
                 "id": log.id,
@@ -937,13 +943,18 @@ class OrganizationDomainService:
         ]
 
     async def transfer_organization_ownership(
-        self, db: AsyncSession, new_owner_user_id: str
+        self, db: AsyncSession, new_owner_user_id: str, current_user: User
     ) -> dict:
-        org = await self.get_or_create_default_org(db)
-        user = await self.repository.get_user_by_id(db, new_owner_user_id)
-        if user:
-            user.role = "Superadmin"
-            db.add(user)
+        org = await self._require_current_org(db, current_user)
+        user = await self.repository.get_user_by_id(
+            db,
+            user_id=new_owner_user_id,
+            organization_id=org.id,
+        )
+        if not user:
+            raise NotFoundError(message="New owner was not found in the organization")
+        user.role = "Admin"
+        db.add(user)
         await self.repository.create_audit_log(
             db,
             organization_id=org.id,
@@ -956,22 +967,21 @@ class OrganizationDomainService:
             "status": "success",
         }
 
-    async def get_organization_by_id(self, db: AsyncSession, org_id: str) -> dict:
-        org = await self.repository.get_by_id(db, org_id)
-        if not org:
-            if org_id == "org-1":
-                org = await self.get_or_create_default_org(db)
-            else:
-                raise NotFoundError(message=f"Organization with ID '{org_id}' not found")
+    async def get_organization_by_id(
+        self, db: AsyncSession, org_id: str, current_user: User
+    ) -> dict:
+        org = await self._require_requested_org(db, org_id=org_id, current_user=current_user)
         m_count = await self.repository.count_members(db, org.id)
         return org_to_dict(org, members_count=m_count)
 
     async def update_organization_by_id(
-        self, db: AsyncSession, org_id: str, payload: OrganizationUpdate
+        self,
+        db: AsyncSession,
+        org_id: str,
+        payload: OrganizationUpdate,
+        current_user: User,
     ) -> dict:
-        org = await self.repository.get_by_id(db, org_id)
-        if not org:
-            org = await self.get_or_create_default_org(db)
+        org = await self._require_requested_org(db, org_id=org_id, current_user=current_user)
         try:
             for field, value in payload.model_dump(exclude_unset=True).items():
                 if value is not None and hasattr(org, field):
@@ -988,20 +998,26 @@ class OrganizationDomainService:
             await db.refresh(org)
             m_count = await self.repository.count_members(db, org.id)
             return org_to_dict(org, members_count=m_count)
+        except APIException:
+            await db.rollback()
+            raise
         except Exception as e:
             await db.rollback()
-            raise APIException(status_code=status.HTTP_400_BAD_REQUEST, message=str(e)) from e
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Failed to update organization",
+            ) from e
 
-    async def delete_organization_by_id(self, db: AsyncSession, org_id: str) -> dict:
-        org = await self.repository.get_by_id(db, org_id)
-        if org:
-            await self.repository.delete(db, org)
-            await self._commit(db, "Failed to delete organization")
-            return {
-                "message": f"Organization '{org.name}' ({org_id}) deleted successfully",
-                "status": "success",
-            }
-        return {"message": f"Organization '{org_id}' deleted successfully", "status": "success"}
+    async def delete_organization_by_id(
+        self, db: AsyncSession, org_id: str, current_user: User
+    ) -> dict:
+        org = await self._require_requested_org(db, org_id=org_id, current_user=current_user)
+        await self.repository.delete(db, org)
+        await self._commit(db, "Failed to delete organization")
+        return {
+            "message": f"Organization '{org.name}' ({org_id}) deleted successfully",
+            "status": "success",
+        }
 
 
 organization_domain_service = OrganizationDomainService()

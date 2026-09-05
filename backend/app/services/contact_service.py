@@ -77,8 +77,8 @@ class ContactService:
             db, organization_id=organization_id, search=search
         )
 
-    async def get_starred_contacts(self, db: AsyncSession) -> list[dict]:
-        contacts = await self.repository.list_starred(db)
+    async def get_starred_contacts(self, db: AsyncSession, *, organization_id: str) -> list[dict]:
+        contacts = await self.repository.list_starred(db, organization_id=organization_id)
         return [contact_to_dict(c) for c in contacts]
 
     async def list_custom_fields(
@@ -89,10 +89,18 @@ class ContactService:
             db, organization_id=organization_id, entity_type="Contact"
         )
 
-    async def get_contact(self, db: AsyncSession, contact_id: str) -> dict:
-        contact = await self.repository.get_by_id(db, contact_id)
+    async def require_contact(
+        self, db: AsyncSession, contact_id: str, *, organization_id: str
+    ) -> Contact:
+        contact = await self.repository.get_by_id_scoped(
+            db, contact_id=contact_id, organization_id=organization_id
+        )
         if not contact:
             raise NotFoundError(message=f"Contact '{contact_id}' not found")
+        return contact
+
+    async def get_contact(self, db: AsyncSession, contact_id: str, *, organization_id: str) -> dict:
+        contact = await self.require_contact(db, contact_id, organization_id=organization_id)
         return contact_to_dict(contact)
 
     async def _build_name_parts(
@@ -127,6 +135,10 @@ class ContactService:
             or "Representative"
         )
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        if payload.company_id and not await self.repository.company_exists(
+            db, company_id=payload.company_id, organization_id=org_id
+        ):
+            raise NotFoundError(message="Company not found")
         custom_fields = await self.custom_field_service.validate_values(
             db,
             organization_id=org_id,
@@ -164,11 +176,14 @@ class ContactService:
         return contact_to_dict(contact)
 
     async def update_contact(
-        self, db: AsyncSession, contact_id: str, payload: ContactUpdate
+        self,
+        db: AsyncSession,
+        contact_id: str,
+        payload: ContactUpdate,
+        *,
+        organization_id: str,
     ) -> dict:
-        contact = await self.repository.get_by_id(db, contact_id)
-        if not contact:
-            raise NotFoundError(message=f"Contact '{contact_id}' not found")
+        contact = await self.require_contact(db, contact_id, organization_id=organization_id)
 
         raw_name = getattr(payload, "name", None)
         first_name = getattr(payload, "first_name", None)
@@ -183,6 +198,12 @@ class ContactService:
         if payload.phone is not None:
             contact.phone = payload.phone
         if payload.company_id is not None:
+            if payload.company_id and not await self.repository.company_exists(
+                db,
+                company_id=payload.company_id,
+                organization_id=organization_id,
+            ):
+                raise NotFoundError(message="Company not found")
             contact.company_id = payload.company_id
 
         position = getattr(payload, "position", None) or getattr(payload, "job_title", None)
@@ -214,35 +235,52 @@ class ContactService:
         )
         return contact_to_dict(contact)
 
-    async def delete_contact(self, db: AsyncSession, contact_id: str) -> dict:
-        contact = await self.repository.get_by_id(db, contact_id)
-        if not contact:
-            raise NotFoundError(message=f"Contact '{contact_id}' not found")
+    async def delete_contact(
+        self, db: AsyncSession, contact_id: str, *, organization_id: str
+    ) -> dict:
+        contact = await self.require_contact(db, contact_id, organization_id=organization_id)
         await self.repository.delete(db, contact)
         await self._commit(db, "Failed to delete contact")
         return {"message": f"Contact {contact_id} deleted successfully", "status": "success"}
 
-    async def merge_contacts(self, db: AsyncSession, primary_id: str, secondary_id: str) -> dict:
-        primary = await self.repository.get_by_id(db, primary_id)
-        secondary = await self.repository.get_by_id(db, secondary_id)
+    async def merge_contacts(
+        self,
+        db: AsyncSession,
+        primary_id: str,
+        secondary_id: str,
+        *,
+        organization_id: str,
+    ) -> dict:
+        primary = await self.repository.get_by_id_scoped(
+            db, contact_id=primary_id, organization_id=organization_id
+        )
+        secondary = await self.repository.get_by_id_scoped(
+            db, contact_id=secondary_id, organization_id=organization_id
+        )
         if not primary or not secondary:
             raise NotFoundError(message="One or both contacts not found")
-        return {
-            "message": f"Merged contact {secondary_id} into {primary_id}",
-            "status": "success",
-        }
+        raise APIException(
+            message="Contact merging is not implemented",
+            code="CONTACT_MERGE_UNAVAILABLE",
+            status_code=501,
+        )
 
-    async def bulk_delete(self, db: AsyncSession, ids: list[str]) -> dict:
-        contacts = await self.repository.list_by_ids(db, ids)
+    async def bulk_delete(self, db: AsyncSession, ids: list[str], *, organization_id: str) -> dict:
+        contacts = await self.repository.list_by_ids(db, ids, organization_id=organization_id)
         for contact in contacts:
             await self.repository.delete(db, contact)
         await self._commit(db, "Failed to bulk delete contacts")
         return {"affected_count": len(contacts), "message": "Contacts deleted successfully"}
 
-    async def set_starred(self, db: AsyncSession, contact_id: str, *, starred: bool) -> dict:
-        contact = await self.repository.get_by_id(db, contact_id)
-        if not contact:
-            raise NotFoundError(message=f"Contact '{contact_id}' not found")
+    async def set_starred(
+        self,
+        db: AsyncSession,
+        contact_id: str,
+        *,
+        starred: bool,
+        organization_id: str,
+    ) -> dict:
+        contact = await self.require_contact(db, contact_id, organization_id=organization_id)
         contact.is_starred = starred
         await self._commit(db, "Failed to update contact")
         return {
@@ -250,8 +288,12 @@ class ContactService:
             "status": "success",
         }
 
-    async def list_company_contacts(self, db: AsyncSession, company_id: str) -> list[dict]:
-        contacts = await self.repository.list_by_company(db, company_id)
+    async def list_company_contacts(
+        self, db: AsyncSession, company_id: str, *, organization_id: str
+    ) -> list[dict]:
+        contacts = await self.repository.list_by_company(
+            db, company_id, organization_id=organization_id
+        )
         return [contact_to_dict(c) for c in contacts]
 
 

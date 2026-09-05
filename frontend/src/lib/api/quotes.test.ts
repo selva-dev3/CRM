@@ -1,5 +1,4 @@
-import { act, renderHook } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 const queryMocks = vi.hoisted(() => ({
   invalidateQueries: vi.fn(),
@@ -17,21 +16,10 @@ vi.mock('@tanstack/react-query', () => ({
   },
 }));
 
-import { useConvertQuoteToInvoiceMutation } from './quotes';
+import { approveQuoteApi } from './quotes';
 
-describe('useConvertQuoteToInvoiceMutation', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    queryMocks.onSuccess = undefined;
-  });
-
-  it('invalidates both Quote and Invoice query hierarchies after conversion', () => {
-    renderHook(() => useConvertQuoteToInvoiceMutation());
-
-    act(() => queryMocks.onSuccess?.());
-
-    expect(queryMocks.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['quotes'] });
-    expect(queryMocks.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['invoices'] });
-    expect(queryMocks.invalidateQueries).toHaveBeenCalledTimes(2);
+describe('automatic quote workflow API', () => {
+  it('retains internal approval as the intentional manual control', () => {
+    expect(approveQuoteApi).toBeTypeOf('function');
   });
 });

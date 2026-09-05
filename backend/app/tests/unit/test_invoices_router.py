@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.routers.invoices import create_invoice, mark_invoice_paid
-from app.core.errors import ForbiddenError
+from app.core.errors import APIException, ForbiddenError
 from app.models import User
 from app.schemas.crm_schemas import InvoiceBase
 from app.services.integration_service import integration_service
@@ -76,21 +76,16 @@ async def test_create_invoice_delegates_to_service_with_deal_id(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_mark_invoice_paid_scopes_by_organization(monkeypatch):
-    db = AsyncMock(spec=AsyncSession)
-    resolve = AsyncMock(return_value="org-1")
-    mark_paid = AsyncMock(return_value={"id": "inv-1", "status": "Paid"})
-    monkeypatch.setattr(invoice_service, "resolve_organization_id", resolve)
+async def test_mark_invoice_paid_rejects_unverified_manual_payment(monkeypatch):
+    mark_paid = AsyncMock()
     monkeypatch.setattr(invoice_service, "mark_paid", mark_paid)
 
-    result = await mark_invoice_paid("inv-1", "Bank Transfer", db, current_user=_current_user())
+    with pytest.raises(APIException) as exc:
+        await mark_invoice_paid("inv-1")
 
-    assert result["status"] == "success"
-    resolve.assert_awaited_once()
-    kwargs = mark_paid.await_args_list[-1].kwargs
-    assert kwargs["invoice_id"] == "inv-1"
-    assert kwargs["organization_id"] == "org-1"
-    assert kwargs["payment_method"] == "Bank Transfer"
+    assert exc.value.status_code == 501
+    assert exc.value.code == "PAYMENT_VERIFICATION_REQUIRED"
+    mark_paid.assert_not_awaited()
 
 
 @pytest.mark.asyncio

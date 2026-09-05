@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
+from app.core.errors import APIException
 from app.db.session import get_db
 from app.models import User
 from app.schemas.crm_schemas import (
@@ -17,12 +18,20 @@ from app.services.quote_service import quote_service
 router = APIRouter()
 
 
-@router.post("/{quote_id}/approve", response_model=QuoteResponse,
-             dependencies=[Depends(require_permission("quotes:approve"))])
-async def approve_quote(quote_id: str, db: AsyncSession = Depends(get_db),
-                        current_user: User = Depends(get_current_user)):
-    return await quote_service.approve_quote(db, quote_id=quote_id,
-        organization_id=current_user.organization_id, actor_id=current_user.id)
+@router.post(
+    "/{quote_id}/approve",
+    response_model=QuoteResponse,
+    dependencies=[Depends(require_permission("quotes:approve"))],
+)
+async def approve_quote(
+    quote_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await quote_service.resolve_organization_id(db, current_user)
+    return await quote_service.approve_quote(
+        db, quote_id=quote_id, organization_id=organization_id, actor_id=current_user.id
+    )
 
 
 @router.get(
@@ -70,7 +79,7 @@ async def create_quote(
     dependencies=[Depends(require_permission("quotes:read"))],
 )
 async def export_quotes_csv(db: AsyncSession = Depends(get_db)):
-    return {"download_url": "https://api.crm.com/exports/quotes_proposals_export.csv"}
+    raise APIException(message="Quote export is not implemented", status_code=501)
 
 
 @router.post(
@@ -80,7 +89,7 @@ async def export_quotes_csv(db: AsyncSession = Depends(get_db)):
     dependencies=[Depends(require_permission("quotes:create"))],
 )
 async def import_quotes_csv(db: AsyncSession = Depends(get_db)):
-    return {"message": "Quote proposals CSV import processing completed", "status": "success"}
+    raise APIException(message="Quote import is not implemented", status_code=501)
 
 
 @router.post(
@@ -189,12 +198,12 @@ async def accept_quote(
 @router.post(
     "/{quote_id}/reject",
     response_model=MessageResponse,
-    summary="Mark quote as Rejected by client",
+    summary="Reject a legacy manually-created quote",
     dependencies=[Depends(require_permission("quotes:update"))],
 )
 async def reject_quote(
     quote_id: str,
-    reason: str | None = Query("Budget constraints"),
+    reason: str | None = Query(None, max_length=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

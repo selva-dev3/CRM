@@ -21,7 +21,6 @@ import {
   CreditCard,
   BellRing,
   ShieldCheck,
-  Percent
 } from 'lucide-react';
 import { ActionMenu } from '@/components/common/action-menu';
 import { ConfirmModal } from '@/components/common/confirm-modal';
@@ -33,9 +32,7 @@ import {
   useInvoicePdfQuery,
   useSendInvoiceEmailMutation,
   useCreateStripeCheckoutMutation,
-  useMarkInvoicePaidMutation,
   useSendPaymentReminderMutation,
-  useIssueCreditMemoMutation,
   useDeleteInvoiceMutation
 } from '@/lib/api/invoices';
 
@@ -46,23 +43,20 @@ export default function InvoiceDetailPage() {
 
   // Queries
   const { data: invoice, isLoading, isError } = useInvoiceQuery(invoiceId);
-  const { data: pdfData } = useInvoicePdfQuery(invoiceId);
+  const { data: pdfData } = useInvoicePdfQuery(invoiceId, {
+    enabled: Boolean(invoice?.pdf_available),
+  });
 
   // Mutations
   const sendEmailMutation = useSendInvoiceEmailMutation();
   const stripeCheckoutMutation = useCreateStripeCheckoutMutation();
-  const markPaidMutation = useMarkInvoicePaidMutation();
   const reminderMutation = useSendPaymentReminderMutation();
-  const creditMemoMutation = useIssueCreditMemoMutation();
   const deleteMutation = useDeleteInvoiceMutation();
 
   // State
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isSendEmailModalOpen, setIsSendEmailModalOpen] = useState(false);
-  const [isCreditMemoModalOpen, setIsCreditMemoModalOpen] = useState(false);
-  const [recipientEmailInput, setRecipientEmailInput] = useState('billing@client.com');
-  const [creditMemoAmount, setCreditMemoAmount] = useState('500');
-  const [creditMemoReason, setCreditMemoReason] = useState('Service credit discount');
+  const [recipientEmailInput, setRecipientEmailInput] = useState('');
 
   // Toast / Alert notifications
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -90,33 +84,12 @@ export default function InvoiceDetailPage() {
     }
   };
 
-  const handleMarkPaid = async () => {
-    try {
-      await markPaidMutation.mutateAsync({ id: invoiceId, payment_method: 'Stripe Online' });
-      setSuccessMessage('Invoice marked as Paid.');
-    } catch (err: unknown) {
-      setErrorMessage(getErrorMessage(err, 'Failed to mark invoice as paid.'));
-    }
-  };
-
   const handleSendReminder = async () => {
     try {
       await reminderMutation.mutateAsync(invoiceId);
       setSuccessMessage('Payment reminder email sent to client.');
     } catch (err: unknown) {
       setErrorMessage(getErrorMessage(err, 'Failed to send payment reminder.'));
-    }
-  };
-
-  const handleCreditMemoSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const amt = parseFloat(creditMemoAmount || '0');
-    try {
-      await creditMemoMutation.mutateAsync({ id: invoiceId, amount: amt, reason: creditMemoReason });
-      setSuccessMessage(`Credit memo of $${amt} issued against invoice.`);
-      setIsCreditMemoModalOpen(false);
-    } catch (err: unknown) {
-      setErrorMessage(getErrorMessage(err, 'Failed to issue credit memo.'));
     }
   };
 
@@ -191,7 +164,7 @@ export default function InvoiceDetailPage() {
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
           <Button
             onClick={handleStripeCheckout}
-            disabled={stripeCheckoutMutation.isPending}
+            disabled={stripeCheckoutMutation.isPending || !['Pending', 'Overdue'].includes(s)}
             className="w-full gap-2 bg-purple-600 text-xs font-semibold hover:bg-purple-700 sm:w-auto"
           >
             {stripeCheckoutMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
@@ -199,22 +172,15 @@ export default function InvoiceDetailPage() {
           </Button>
 
           <Button
-            onClick={() => setIsSendEmailModalOpen(true)}
+            onClick={() => {
+              setRecipientEmailInput(invoice.recipient_email || '');
+              setIsSendEmailModalOpen(true);
+            }}
             className="w-full gap-2 text-xs font-semibold sm:w-auto"
           >
             <Send className="w-4 h-4" />
             Send Email
           </Button>
-
-          {s !== 'Paid' && (
-            <Button
-              onClick={handleMarkPaid}
-              className="w-full gap-2 bg-emerald-600 text-xs font-semibold hover:bg-emerald-700 sm:w-auto"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              Mark Paid
-            </Button>
-          )}
 
           {pdfData?.pdf_url && (
             <Button asChild variant="outline" className="w-full gap-2 text-xs font-semibold sm:w-auto">
@@ -235,22 +201,12 @@ export default function InvoiceDetailPage() {
                 onSelect: handleSendReminder,
               },
               {
-                label: 'Issue credit memo',
-                icon: <Percent className="w-4 h-4 text-purple-600" />,
-                onSelect: () => setIsCreditMemoModalOpen(true),
-              },
-              {
                 label: 'Delete invoice',
                 icon: <Trash2 className="w-4 h-4" />,
                 variant: 'destructive',
                 onSelect: () => setIsDeleteModalOpen(true),
               },
             ] : [
-              {
-                label: 'Issue credit memo',
-                icon: <Percent className="w-4 h-4 text-purple-600" />,
-                onSelect: () => setIsCreditMemoModalOpen(true),
-              },
               {
                 label: 'Delete invoice',
                 icon: <Trash2 className="w-4 h-4" />,
@@ -301,7 +257,7 @@ export default function InvoiceDetailPage() {
                 <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Due Date</span>
                 <div className="flex items-center gap-2 font-semibold text-sm text-slate-900">
                   <Calendar className="w-4 h-4 text-slate-400" />
-                  <span>{invoice.due_date ? invoice.due_date.substring(0, 10) : '2026-09-01'}</span>
+                  <span>{invoice.due_date ? invoice.due_date.substring(0, 10) : 'Not set'}</span>
                 </div>
               </div>
 
@@ -317,6 +273,13 @@ export default function InvoiceDetailPage() {
                 <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Payment Status</span>
                 <div className="text-slate-900 font-semibold text-sm">
                   {invoice.status || 'Pending'}
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Delivery</span>
+                <div className="text-slate-900 font-semibold text-sm">
+                  {invoice.delivery_status || 'Not queued'}
                 </div>
               </div>
             </div>
@@ -354,14 +317,18 @@ export default function InvoiceDetailPage() {
 
             <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
               <span className="text-xs font-bold text-slate-800 uppercase tracking-wider block">Stripe Online Payment URL</span>
-              <a
-                href={invoice.stripe_checkout_url || `https://checkout.stripe.com/pay/${invoice.id}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs font-mono text-indigo-600 hover:underline break-all block"
-              >
-                {invoice.stripe_checkout_url || `https://checkout.stripe.com/pay/${invoice.id}`}
-              </a>
+              {invoice.stripe_checkout_url ? (
+                <a
+                  href={invoice.stripe_checkout_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs font-mono text-indigo-600 hover:underline break-all block"
+                >
+                  {invoice.stripe_checkout_url}
+                </a>
+              ) : (
+                <p className="text-xs text-slate-500">Payment link has not been created yet.</p>
+              )}
             </div>
           </div>
         </div>
@@ -383,60 +350,6 @@ export default function InvoiceDetailPage() {
           </div>
         </div>
       </div>
-
-      {/* Credit Memo Modal */}
-      {isCreditMemoModalOpen && (
-        <ModalShell
-          isOpen={isCreditMemoModalOpen}
-          onClose={() => setIsCreditMemoModalOpen(false)}
-          title={
-            <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-              <Percent className="w-5 h-5 text-purple-600" />
-              Issue Credit Memo Adjustment
-            </h3>
-          }
-        >
-          <form onSubmit={handleCreditMemoSubmit} className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Credit Amount (USD) *</label>
-              <Input
-                type="number"
-                step="0.01"
-                required
-                value={creditMemoAmount}
-                onChange={(e) => setCreditMemoAmount(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Adjustment Reason *</label>
-              <Input
-                type="text"
-                required
-                value={creditMemoReason}
-                onChange={(e) => setCreditMemoReason(e.target.value)}
-                placeholder="e.g. Volume discount adjustment"
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
-              />
-            </div>
-
-            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
-              <button type="button" onClick={() => setIsCreditMemoModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={creditMemoMutation.isPending}
-                className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
-              >
-                {creditMemoMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                Issue Credit Memo
-              </button>
-            </div>
-          </form>
-        </ModalShell>
-      )}
 
       {/* Send Email Modal */}
       {isSendEmailModalOpen && (

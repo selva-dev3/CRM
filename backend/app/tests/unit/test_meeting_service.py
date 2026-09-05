@@ -32,6 +32,10 @@ def _service_with(repo: MeetingRepository) -> MeetingService:
     return MeetingService(repository=repo)
 
 
+def _actor() -> User:
+    return User(id="user-1", email="user@example.com", organization_id="org-1")
+
+
 def test_parse_datetime_handles_iso_date_and_empty():
     assert parse_datetime("2026-08-01") == datetime(2026, 8, 1)
     assert parse_datetime("2026-08-01T10:30:00") == datetime(2026, 8, 1, 10, 30)
@@ -48,7 +52,11 @@ async def test_get_meeting_raises_not_found_when_missing():
     db = AsyncMock(spec=AsyncSession)
 
     with pytest.raises(NotFoundError):
-        await service.get_meeting(db, "missing-meeting")
+        await service.get_meeting(db, "missing-meeting", "org-1")
+
+    repo.get_by_id.assert_awaited_once_with(
+        db, meeting_id="missing-meeting", organization_id="org-1"
+    )
 
 
 @pytest.mark.asyncio
@@ -73,7 +81,7 @@ async def test_schedule_meeting_resolves_org_and_saves_attendees(monkeypatch):
         end_time="2026-08-01T11:00:00",
         attendee_emails=["a@crm.com", "b@crm.com"],
     )
-    result = await service.schedule_meeting(db, payload)
+    result = await service.schedule_meeting(db, payload, _actor())
 
     assert result["id"] == "mtg-1"
     assert result["title"] == "Product Demo"
@@ -106,6 +114,7 @@ async def test_schedule_meeting_fires_meeting_created_event(monkeypatch):
             end_time="2026-08-01T11:00:00",
             attendee_emails=["a@crm.com"],
         ),
+        _actor(),
     )
 
     notify.assert_awaited_once()
@@ -137,7 +146,7 @@ async def test_schedule_meeting_without_attendees_skips_attendee_creation(monkey
         end_time="2026-08-01T11:00:00",
         attendee_emails=[],
     )
-    result = await service.schedule_meeting(db, payload)
+    result = await service.schedule_meeting(db, payload, _actor())
 
     assert result["id"] == "mtg-1"
     repo.create_attendee.assert_not_awaited()
@@ -153,7 +162,7 @@ async def test_rsvp_creates_missing_attendee():
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.rsvp(db, "mtg-1", "a@crm.com", "accepted")
+    result = await service.rsvp(db, "mtg-1", "a@crm.com", "accepted", "org-1")
 
     assert result["message"] == "RSVP 'accepted' recorded for a@crm.com"
     repo.create_attendee.assert_awaited_once()
@@ -162,6 +171,7 @@ async def test_rsvp_creates_missing_attendee():
 @pytest.mark.asyncio
 async def test_upload_transcript_uses_real_ai_service():
     repo: Any = MeetingRepository()
+    repo.get_by_id = AsyncMock(return_value=_make_meeting())
     ai_service = AsyncMock()
     ai_service.analyze_meeting.return_value = {"summary": "Customer approved scope"}
     service = MeetingService(repository=repo, ai_service_instance=ai_service)
@@ -179,7 +189,7 @@ async def test_upload_transcript_uses_real_ai_service():
 @pytest.mark.asyncio
 async def test_get_ai_summary_is_tenant_scoped_and_has_no_fake_fallback():
     repo: Any = MeetingRepository()
-    repo.get_by_id_scoped = AsyncMock(return_value=_make_meeting(ai_summary=None))
+    repo.get_by_id = AsyncMock(return_value=_make_meeting(ai_summary=None))
     ai_service = AsyncMock()
     ai_service.get_meeting_intelligence.return_value = None
     service = MeetingService(repository=repo, ai_service_instance=ai_service)
@@ -190,13 +200,13 @@ async def test_get_ai_summary_is_tenant_scoped_and_has_no_fake_fallback():
 
     assert result["summary"] is None
     assert result["key_decisions"] == []
-    repo.get_by_id_scoped.assert_awaited_once_with(db, meeting_id="mtg-1", organization_id="org-1")
+    repo.get_by_id.assert_awaited_once_with(db, meeting_id="mtg-1", organization_id="org-1")
 
 
 @pytest.mark.asyncio
 async def test_get_action_items_returns_only_persisted_ai_results():
     repo: Any = MeetingRepository()
-    repo.get_by_id_scoped = AsyncMock(return_value=_make_meeting())
+    repo.get_by_id = AsyncMock(return_value=_make_meeting())
     ai_service = AsyncMock()
     ai_service.get_meeting_intelligence.return_value = MeetingSummaryResponse(
         summary="Summary",

@@ -100,9 +100,7 @@ async def test_login_returns_token_and_user(monkeypatch):
     repo.role_ids_for_user = AsyncMock(return_value=["role-1"])
     repo.role_ids_by_name = AsyncMock(return_value=["role-1"])
     repo.permission_keys_for_roles = AsyncMock(return_value=["leads:all", "deals:all"])
-    repo.roles_by_ids = AsyncMock(
-        return_value=[type("R", (), {"id": "role-1", "name": "Admin"})()]
-    )
+    repo.roles_by_ids = AsyncMock(return_value=[type("R", (), {"id": "role-1", "name": "Admin"})()])
 
     result = await service.login(db, LoginRequest(email="alex@crm.com", password=VALID_INPUT))
 
@@ -128,17 +126,13 @@ async def test_login_returns_permissions_for_legacy_super_admin(monkeypatch):
             )()
         ]
     )
-    repo.all_permission_keys = AsyncMock(
-        return_value=["dashboard:read", "organization:read"]
-    )
+    repo.all_permission_keys = AsyncMock(return_value=["dashboard:read", "organization:read"])
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
     monkeypatch.setattr("app.services.auth_service.verify_password", lambda _pwd, _hashed: True)
     monkeypatch.setattr("app.services.auth_service.create_access_token", lambda _user_id: "token")
 
-    result = await service.login(
-        db, LoginRequest(email="alex@crm.com", password=VALID_INPUT)
-    )
+    result = await service.login(db, LoginRequest(email="alex@crm.com", password=VALID_INPUT))
 
     assert result["user"]["role"] == "super_admin"
     assert result["user"]["permissions"] == ["dashboard:read", "organization:read"]
@@ -414,12 +408,19 @@ async def test_get_user_role_name_preserves_legacy_super_admin_identity():
 
 @pytest.mark.asyncio
 async def test_register_creates_org_and_user(monkeypatch):
-    org = type("O", (), {"id": "org-9"})()
+    org = type("O", (), {"id": "org-9", "timezone": "Asia/Kolkata", "currency": "INR"})()
     user = _make_user()
     repo: Any = AuthRepository()
     repo.get_user_by_email = AsyncMock(return_value=None)
     repo.create_org = AsyncMock(return_value=org)
     repo.create_user = AsyncMock(return_value=user)
+    repo.create_organization_setting = AsyncMock()
+    repo.create_organization_subscription = AsyncMock()
+    repo.get_role_for_organization = AsyncMock(
+        return_value=type("Role", (), {"id": "admin-role"})()
+    )
+    repo.assign_user_role = AsyncMock()
+    repo.record_organization_initialization = AsyncMock()
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
@@ -438,6 +439,14 @@ async def test_register_creates_org_and_user(monkeypatch):
     assert create_user_call is not None
     created = create_user_call.kwargs["data"]
     assert created["hashed_password"] == EXPECTED_REGISTRATION_HASH
+    repo.create_organization_setting.assert_awaited_once_with(
+        db,
+        organization_id="org-9",
+        timezone="Asia/Kolkata",
+        currency="INR",
+    )
+    repo.assign_user_role.assert_awaited_once_with(db, user_id="user-1", role_id="admin-role")
+    db.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio

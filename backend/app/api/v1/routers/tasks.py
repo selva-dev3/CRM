@@ -12,6 +12,7 @@ from app.schemas.crm_schemas import (
     TaskResponse,
     TaskUpdate,
 )
+from app.services.org_service import organization_service
 from app.services.task_service import task_service
 
 router = APIRouter()
@@ -29,9 +30,16 @@ async def list_tasks(
     status: str | None = None,
     priority: str | None = None,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     return await task_service.list_tasks(
-        db, page=page, limit=limit, status=status, priority=priority
+        db,
+        page=page,
+        limit=limit,
+        organization_id=organization_id,
+        status=status,
+        priority=priority,
     )
 
 
@@ -56,8 +64,11 @@ async def create_task(
     summary="Get list of overdue tasks",
     dependencies=[Depends(require_permission("tasks:read"))],
 )
-async def get_overdue_tasks(db: AsyncSession = Depends(get_db)):
-    return await task_service.get_overdue_tasks(db)
+async def get_overdue_tasks(
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await task_service.get_overdue_tasks(db, organization_id)
 
 
 @router.get(
@@ -66,8 +77,11 @@ async def get_overdue_tasks(db: AsyncSession = Depends(get_db)):
     summary="Get list of tasks due today",
     dependencies=[Depends(require_permission("tasks:read"))],
 )
-async def get_today_tasks(db: AsyncSession = Depends(get_db)):
-    return await task_service.get_today_tasks(db)
+async def get_today_tasks(
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await task_service.get_today_tasks(db, organization_id)
 
 
 @router.get(
@@ -75,8 +89,11 @@ async def get_today_tasks(db: AsyncSession = Depends(get_db)):
     summary="Get tasks grouped by status for Board view",
     dependencies=[Depends(require_permission("tasks:read"))],
 )
-async def get_tasks_board_view(db: AsyncSession = Depends(get_db)):
-    return await task_service.get_board_view(db)
+async def get_tasks_board_view(
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await task_service.get_board_view(db, organization_id)
 
 
 @router.get(
@@ -104,8 +121,13 @@ async def import_tasks_csv():
     summary="Bulk delete tasks",
     dependencies=[Depends(require_permission("tasks:delete"))],
 )
-async def bulk_delete_tasks(payload: BulkDeleteRequest, db: AsyncSession = Depends(get_db)):
-    return await task_service.bulk_delete(db, payload.ids)
+async def bulk_delete_tasks(
+    payload: BulkDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await task_service.bulk_delete(db, payload.ids, organization_id)
 
 
 @router.post(
@@ -114,8 +136,13 @@ async def bulk_delete_tasks(payload: BulkDeleteRequest, db: AsyncSession = Depen
     summary="Bulk mark tasks as completed",
     dependencies=[Depends(require_permission("tasks:complete"))],
 )
-async def bulk_complete_tasks(payload: BulkDeleteRequest, db: AsyncSession = Depends(get_db)):
-    return await task_service.bulk_complete(db, payload.ids)
+async def bulk_complete_tasks(
+    payload: BulkDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await task_service.bulk_complete(db, payload.ids, organization_id)
 
 
 @router.get(
@@ -124,8 +151,13 @@ async def bulk_complete_tasks(payload: BulkDeleteRequest, db: AsyncSession = Dep
     summary="Get task details by ID",
     dependencies=[Depends(require_permission("tasks:read"))],
 )
-async def get_task(task_id: str, db: AsyncSession = Depends(get_db)):
-    return await task_service.get_task(db, task_id)
+async def get_task(
+    task_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await task_service.get_task(db, task_id, organization_id)
 
 
 @router.put(
@@ -134,8 +166,14 @@ async def get_task(task_id: str, db: AsyncSession = Depends(get_db)):
     summary="Update task by ID",
     dependencies=[Depends(require_permission("tasks:update"))],
 )
-async def update_task(task_id: str, payload: TaskUpdate, db: AsyncSession = Depends(get_db)):
-    return await task_service.update_task(db, task_id, payload)
+async def update_task(
+    task_id: str,
+    payload: TaskUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await task_service.update_task(db, task_id, payload, organization_id)
 
 
 @router.delete(
@@ -144,8 +182,13 @@ async def update_task(task_id: str, payload: TaskUpdate, db: AsyncSession = Depe
     summary="Delete task by ID",
     dependencies=[Depends(require_permission("tasks:delete"))],
 )
-async def delete_task(task_id: str, db: AsyncSession = Depends(get_db)):
-    return await task_service.delete_task(db, task_id)
+async def delete_task(
+    task_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await task_service.delete_task(db, task_id, organization_id)
 
 
 @router.post(
@@ -154,8 +197,13 @@ async def delete_task(task_id: str, db: AsyncSession = Depends(get_db)):
     summary="Mark task as completed",
     dependencies=[Depends(require_permission("tasks:complete"))],
 )
-async def complete_task(task_id: str, db: AsyncSession = Depends(get_db)):
-    return await task_service.complete_task(db, task_id)
+async def complete_task(
+    task_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await task_service.complete_task(db, task_id, organization_id)
 
 
 @router.post(
@@ -164,8 +212,13 @@ async def complete_task(task_id: str, db: AsyncSession = Depends(get_db)):
     summary="Reopen completed task",
     dependencies=[Depends(require_permission("tasks:update"))],
 )
-async def reopen_task(task_id: str, db: AsyncSession = Depends(get_db)):
-    return await task_service.reopen_task(db, task_id)
+async def reopen_task(
+    task_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await task_service.reopen_task(db, task_id, organization_id)
 
 
 @router.get(
@@ -173,8 +226,13 @@ async def reopen_task(task_id: str, db: AsyncSession = Depends(get_db)):
     summary="List sub-tasks under main task",
     dependencies=[Depends(require_permission("tasks:read"))],
 )
-async def get_subtasks(task_id: str, db: AsyncSession = Depends(get_db)):
-    await task_service.require_task(db, task_id)
+async def get_subtasks(
+    task_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    await task_service.require_task(db, task_id, organization_id)
     return await task_service.list_subtasks()
 
 
@@ -184,8 +242,14 @@ async def get_subtasks(task_id: str, db: AsyncSession = Depends(get_db)):
     summary="Add sub-task",
     dependencies=[Depends(require_permission("tasks:create"))],
 )
-async def add_subtask(task_id: str, title: str, db: AsyncSession = Depends(get_db)):
-    await task_service.require_task(db, task_id)
+async def add_subtask(
+    task_id: str,
+    title: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    await task_service.require_task(db, task_id, organization_id)
     return await task_service.add_subtask(task_id, title)
 
 
@@ -195,8 +259,14 @@ async def add_subtask(task_id: str, title: str, db: AsyncSession = Depends(get_d
     summary="Assign task to user",
     dependencies=[Depends(require_permission("tasks:assign"))],
 )
-async def assign_task(task_id: str, user_id: str, db: AsyncSession = Depends(get_db)):
-    return await task_service.assign_task(db, task_id, user_id)
+async def assign_task(
+    task_id: str,
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await task_service.assign_task(db, task_id, user_id, organization_id)
 
 
 @router.post(
@@ -205,6 +275,12 @@ async def assign_task(task_id: str, user_id: str, db: AsyncSession = Depends(get
     summary="Set automated reminder notification for task",
     dependencies=[Depends(require_permission("tasks:update"))],
 )
-async def set_task_reminder(task_id: str, reminder_time: str, db: AsyncSession = Depends(get_db)):
-    await task_service.require_task(db, task_id)
+async def set_task_reminder(
+    task_id: str,
+    reminder_time: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    await task_service.require_task(db, task_id, organization_id)
     return await task_service.set_reminder(task_id, reminder_time)

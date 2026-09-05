@@ -98,7 +98,7 @@ export interface OrganizationSubscription {
   plan_slug?: string;
   billing_cycle: string;
   amount: number;
-  next_billing: string;
+  next_billing: string | null;
 }
 
 export interface CreateSubscriptionCheckoutPayload {

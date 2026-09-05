@@ -5,8 +5,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     ApiKey,
+    AuditLog,
     MagicLinkToken,
     Organization,
+    OrganizationSetting,
+    OrganizationSubscription,
     PasswordReset,
     Permission,
     RefreshToken,
@@ -189,6 +192,48 @@ class AuthRepository:
         org = Organization(name=name)
         db.add(org)
         return org
+
+    async def create_organization_setting(
+        self, db: AsyncSession, *, organization_id: str, timezone: str, currency: str
+    ) -> OrganizationSetting:
+        setting = OrganizationSetting(
+            organization_id=organization_id,
+            timezone=timezone,
+            currency=currency,
+        )
+        db.add(setting)
+        return setting
+
+    async def create_organization_subscription(
+        self, db: AsyncSession, *, organization_id: str, currency: str
+    ) -> OrganizationSubscription:
+        subscription = OrganizationSubscription(
+            organization_id=organization_id,
+            status="active",
+            billing_cycle="Monthly",
+            amount=0,
+            currency=currency,
+            payment_provider="Stripe",
+            max_users=3,
+            current_users=1,
+            storage_limit_gb=5,
+            storage_used_gb=0,
+            ai_credits=50,
+        )
+        db.add(subscription)
+        return subscription
+
+    async def record_organization_initialization(
+        self, db: AsyncSession, *, organization_id: str, user_id: str
+    ) -> AuditLog:
+        audit = AuditLog(
+            organization_id=organization_id,
+            user_id=user_id,
+            action="organization.initialized",
+            details="Organization, settings, subscription, administrator and RBAC mapping created",
+        )
+        db.add(audit)
+        return audit
 
     async def get_invitation_by_token(
         self, db: AsyncSession, token: str, *, for_update: bool = False

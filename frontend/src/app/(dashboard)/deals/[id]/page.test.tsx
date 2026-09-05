@@ -116,15 +116,17 @@ describe('DealDetailsPage invoice lifecycle UX', () => {
     vi.clearAllMocks();
   });
 
-  it('shows a disabled hint and no Create Invoice action before Closed Won', async () => {
+  it('explains automatic quote creation before Closed Won', async () => {
     renderPage();
 
-    expect(await screen.findByText('Invoice available after Closed Won')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Closing the deal creates its quote automatically')
+    ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Create Invoice/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/View Invoice/i)).not.toBeInTheDocument();
   });
 
-  it('shows the Create Invoice action when the deal is Closed Won and has no invoice', async () => {
+  it('explains automatic invoice creation after Closed Won', async () => {
     vi.mocked(useDealQuery).mockReturnValue({
       data: { ...baseDeal, stage: 'Closed Won', probability: 100 },
       isLoading: false,
@@ -133,8 +135,10 @@ describe('DealDetailsPage invoice lifecycle UX', () => {
     } as never);
     renderPage();
 
-    expect(await screen.findByRole('button', { name: /Create Invoice/i })).toBeInTheDocument();
-    expect(screen.queryByText('Invoice available after Closed Won')).not.toBeInTheDocument();
+    expect(
+      await screen.findByText('Invoice is created after customer accepts the quote')
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Create Invoice/i })).not.toBeInTheDocument();
   });
 
   it('hides Create Invoice when the user lacks invoices:create permission', async () => {

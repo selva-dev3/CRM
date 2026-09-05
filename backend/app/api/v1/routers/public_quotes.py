@@ -14,6 +14,7 @@ router = APIRouter()
 
 class PublicQuoteRequest(BaseModel):
     token: str = Field(min_length=32, max_length=128)
+    reason: str | None = Field(default=None, max_length=500)
 
 
 class CustomerDecisionResponse(BaseModel):
@@ -33,27 +34,31 @@ class CustomerCheckoutResponse(BaseModel):
 
 @router.post("/view", response_model=QuoteResponse)
 @limiter.limit("30/minute")
-async def view_public_quote(request: Request, payload: PublicQuoteRequest,
-                            db: AsyncSession = Depends(get_db)):
+async def view_public_quote(
+    request: Request, payload: PublicQuoteRequest, db: AsyncSession = Depends(get_db)
+):
     return await quote_service.public_quote(db, token=payload.token)
 
 
 @router.post("/reject", response_model=CustomerDecisionResponse)
 @limiter.limit("10/minute")
-async def reject_public_quote(request: Request, payload: PublicQuoteRequest,
-                              db: AsyncSession = Depends(get_db)):
-    return await quote_service.reject_public_quote(db, token=payload.token)
+async def reject_public_quote(
+    request: Request, payload: PublicQuoteRequest, db: AsyncSession = Depends(get_db)
+):
+    return await quote_service.reject_public_quote(db, token=payload.token, reason=payload.reason)
 
 
 @router.post("/checkout", response_model=CustomerCheckoutResponse)
 @limiter.limit("5/minute")
-async def checkout_public_quote(request: Request, payload: PublicQuoteRequest,
-                                db: AsyncSession = Depends(get_db)):
+async def checkout_public_quote(
+    request: Request, payload: PublicQuoteRequest, db: AsyncSession = Depends(get_db)
+):
     return await quote_service.public_checkout(db, token=payload.token)
 
 
 @router.post("/accept", response_model=CustomerAcceptanceResponse)
 @limiter.limit("10/minute")
-async def accept_public_quote(request: Request, payload: PublicQuoteRequest,
-                               db: AsyncSession = Depends(get_db)):
+async def accept_public_quote(
+    request: Request, payload: PublicQuoteRequest, db: AsyncSession = Depends(get_db)
+):
     return await quote_service.accept_public_quote(db, token=payload.token)

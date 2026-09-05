@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, File, Form, Header, Request, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import get_current_user, get_current_user_optional, require_permission
+from app.api.v1.deps import get_current_user, require_permission
 from app.core.errors import APIException
 from app.db.session import get_db
 from app.models import User
@@ -26,7 +26,7 @@ router = APIRouter()
 )
 async def get_organization(
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     return await organization_domain_service.get_organization(db, current_user)
 
@@ -51,7 +51,7 @@ async def get_current_organization(
 )
 async def list_members(
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     return await organization_domain_service.list_members(db, current_user)
 
@@ -62,8 +62,12 @@ async def list_members(
     summary="Remove member from organization",
     dependencies=[Depends(require_permission("organization:update"))],
 )
-async def remove_member(user_id: str, db: AsyncSession = Depends(get_db)):
-    return await organization_domain_service.remove_member(db, user_id)
+async def remove_member(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await organization_domain_service.remove_member(db, user_id, current_user)
 
 
 @router.get(
@@ -73,7 +77,7 @@ async def remove_member(user_id: str, db: AsyncSession = Depends(get_db)):
 )
 async def get_subscription(
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     return await organization_domain_service.get_subscription(db, current_user)
 
@@ -96,7 +100,7 @@ async def list_subscription_plans(db: AsyncSession = Depends(get_db)):
 async def create_subscription_checkout(
     payload: SubscriptionCheckoutRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     return await organization_domain_service.create_subscription_checkout(
         db, plan_slug=payload.plan_slug, org_id=payload.org_id, current_user=current_user
@@ -113,7 +117,7 @@ async def verify_subscription_checkout(
     session_id: str,
     org_id: str | None = None,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     return await organization_domain_service.verify_subscription_checkout(
         db, session_id=session_id, org_id=org_id, current_user=current_user
@@ -154,8 +158,10 @@ async def upgrade_plan(plan_slug: str, db: AsyncSession = Depends(get_db)):
     summary="Cancel organization subscription",
     dependencies=[Depends(require_permission("organization:billing"))],
 )
-async def cancel_subscription(db: AsyncSession = Depends(get_db)):
-    return await organization_domain_service.cancel_subscription(db)
+async def cancel_subscription(
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    return await organization_domain_service.cancel_subscription(db, current_user)
 
 
 @router.post(
@@ -164,8 +170,10 @@ async def cancel_subscription(db: AsyncSession = Depends(get_db)):
     summary="Resume organization subscription",
     dependencies=[Depends(require_permission("organization:billing"))],
 )
-async def resume_subscription(db: AsyncSession = Depends(get_db)):
-    return await organization_domain_service.resume_subscription(db)
+async def resume_subscription(
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    return await organization_domain_service.resume_subscription(db, current_user)
 
 
 @router.get(
@@ -175,7 +183,7 @@ async def resume_subscription(db: AsyncSession = Depends(get_db)):
 )
 async def get_usage(
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     return await organization_domain_service.get_usage(db, current_user)
 
@@ -190,7 +198,7 @@ async def update_branding(
     logo_file: UploadFile | None = File(None),
     primary_color: str | None = Form("#3B82F6"),
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     return await organization_domain_service.update_branding(
         db, logo_file=logo_file, primary_color=primary_color, current_user=current_user
@@ -206,7 +214,7 @@ async def update_branding(
 async def verify_domain(
     domain: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     return await organization_domain_service.verify_domain(
         db, domain=domain, current_user=current_user
@@ -220,7 +228,7 @@ async def verify_domain(
 )
 async def list_organization_domains(
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     return await organization_domain_service.list_organization_domains(db, current_user)
 
@@ -232,7 +240,7 @@ async def list_organization_domains(
 )
 async def get_organization_audit_logs(
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     return await organization_domain_service.get_organization_audit_logs(db, current_user)
 
@@ -244,9 +252,13 @@ async def get_organization_audit_logs(
     dependencies=[Depends(require_permission("organization:update"))],
 )
 async def transfer_organization_ownership(
-    new_owner_user_id: str, db: AsyncSession = Depends(get_db)
+    new_owner_user_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    return await organization_domain_service.transfer_organization_ownership(db, new_owner_user_id)
+    return await organization_domain_service.transfer_organization_ownership(
+        db, new_owner_user_id, current_user
+    )
 
 
 @router.get(
@@ -255,8 +267,12 @@ async def transfer_organization_ownership(
     summary="Get organization details by ID",
     dependencies=[Depends(require_permission("organization:read"))],
 )
-async def get_organization_by_id(org_id: str, db: AsyncSession = Depends(get_db)):
-    return await organization_domain_service.get_organization_by_id(db, org_id)
+async def get_organization_by_id(
+    org_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await organization_domain_service.get_organization_by_id(db, org_id, current_user)
 
 
 @router.put(
@@ -266,9 +282,14 @@ async def get_organization_by_id(org_id: str, db: AsyncSession = Depends(get_db)
     dependencies=[Depends(require_permission("organization:update"))],
 )
 async def update_organization_by_id(
-    org_id: str, payload: OrganizationUpdate, db: AsyncSession = Depends(get_db)
+    org_id: str,
+    payload: OrganizationUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    return await organization_domain_service.update_organization_by_id(db, org_id, payload)
+    return await organization_domain_service.update_organization_by_id(
+        db, org_id, payload, current_user
+    )
 
 
 @router.delete(
@@ -277,5 +298,9 @@ async def update_organization_by_id(
     summary="Delete organization by ID",
     dependencies=[Depends(require_permission("organization:update"))],
 )
-async def delete_organization_by_id(org_id: str, db: AsyncSession = Depends(get_db)):
-    return await organization_domain_service.delete_organization_by_id(db, org_id)
+async def delete_organization_by_id(
+    org_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await organization_domain_service.delete_organization_by_id(db, org_id, current_user)

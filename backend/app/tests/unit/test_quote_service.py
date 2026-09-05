@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -60,6 +61,7 @@ def make_service(
     quote_repository.get_scoped = AsyncMock(return_value=quote)
     quote_repository.list_items = AsyncMock(return_value=[])
     quote_repository.get_invoice_reference = AsyncMock(return_value=None)
+    quote_repository.queue_delivery = AsyncMock()
     deal_repository: Any = DealRepository()
     deal_repository.get_by_id_scoped = AsyncMock(return_value=deal)
     deal_repository.get_sales_customer = AsyncMock(return_value=(None, None))
@@ -74,23 +76,94 @@ def make_service(
 
 
 @pytest.mark.asyncio
-async def test_create_quote_scopes_deal_and_persists_relationship(monkeypatch):
+async def test_approve_quote_queues_customer_delivery_in_same_transaction():
+    quote = make_quote(currency="INR", delivery_status=None)
+    service, repository, deal_repository = make_service(quote=quote, deal=make_deal())
+    repository.lock_scoped = AsyncMock(return_value=quote)
+    repository.approve = AsyncMock()
+    repository.list_items = AsyncMock(
+        return_value=[
+            SimpleNamespace(
+                quantity=1,
+                unit_price=1000,
+                discount_percent=0,
+                tax_percent=0,
+            )
+        ]
+    )
+    contact = SimpleNamespace(id="contact-1", company_id="company-1", email="buyer@example.com")
+    deal_repository.get_sales_customer = AsyncMock(
+        return_value=(SimpleNamespace(id="company-1"), contact)
+    )
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.approve_quote(
+        db, quote_id=quote.id, organization_id="org-1", actor_id="user-1"
+    )
+
+    repository.approve.assert_awaited_once()
+    repository.queue_delivery.assert_awaited_once()
+    assert repository.queue_delivery.await_args.kwargs["recipient_email"] == contact.email
+    db.commit.assert_awaited_once()
+    assert result["quote_number"] == "Q-1"
+
+
+@pytest.mark.asyncio
+async def test_repeated_quote_approval_does_not_duplicate_delivery():
+    quote = make_quote(
+        currency="INR",
+        status="Approved",
+        approved_at=SimpleNamespace(),
+        delivery_status="Pending",
+    )
+    service, repository, deal_repository = make_service(quote=quote, deal=make_deal())
+    repository.lock_scoped = AsyncMock(return_value=quote)
+    repository.approve = AsyncMock()
+    repository.list_items = AsyncMock(
+        return_value=[
+            SimpleNamespace(
+                quantity=1,
+                unit_price=1000,
+                discount_percent=0,
+                tax_percent=0,
+            )
+        ]
+    )
+    deal_repository.get_sales_customer = AsyncMock(
+        return_value=(
+            SimpleNamespace(id="company-1"),
+            SimpleNamespace(id="contact-1", company_id="company-1", email="buyer@example.com"),
+        )
+    )
+
+    await service.approve_quote(
+        AsyncMock(spec=AsyncSession),
+        quote_id=quote.id,
+        organization_id="org-1",
+        actor_id="user-1",
+    )
+
+    repository.approve.assert_not_awaited()
+    repository.queue_delivery.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_create_quote_requires_closed_won_automation(monkeypatch):
     service, repository, deal_repository = make_service(deal=make_deal())
     repository.create = AsyncMock(return_value=make_quote())
     db = AsyncMock(spec=AsyncSession)
     monkeypatch.setattr(service, "resolve_organization_id", AsyncMock(return_value="org-1"))
 
-    result = await service.create_quote(
-        db,
-        payload=QuoteBase(deal_id="deal-1", quote_number="Q-1", total_amount=1000),
-        current_user=make_user(),
-    )
+    with pytest.raises(APIException) as exc_info:
+        await service.create_quote(
+            db,
+            payload=QuoteBase(deal_id="deal-1", quote_number="Q-1", total_amount=1000),
+            current_user=make_user(),
+        )
 
-    deal_repository.get_by_id_scoped.assert_awaited_once_with(
-        db, deal_id="deal-1", organization_id="org-1"
-    )
-    assert repository.create.await_args_list[-1].kwargs["data"]["deal_id"] == "deal-1"
-    assert result["deal_id"] == "deal-1"
+    assert exc_info.value.code == "AUTOMATIC_QUOTE_REQUIRED"
+    deal_repository.get_by_id_scoped.assert_not_awaited()
+    repository.create.assert_not_awaited()
 
 
 def test_create_quote_requires_deal_id_at_request_boundary():
@@ -99,17 +172,18 @@ def test_create_quote_requires_deal_id_at_request_boundary():
 
 
 @pytest.mark.asyncio
-async def test_create_quote_cross_tenant_deal_is_not_found(monkeypatch):
+async def test_create_quote_does_not_probe_cross_tenant_deal(monkeypatch):
     service, repository, _ = make_service(deal=None)
     repository.create = AsyncMock()
     monkeypatch.setattr(service, "resolve_organization_id", AsyncMock(return_value="org-1"))
 
-    with pytest.raises(NotFoundError):
+    with pytest.raises(APIException) as exc_info:
         await service.create_quote(
             AsyncMock(spec=AsyncSession),
             payload=QuoteBase(deal_id="foreign-deal", quote_number="Q-1", total_amount=1000),
             current_user=make_user(),
         )
+    assert exc_info.value.code == "AUTOMATIC_QUOTE_REQUIRED"
     repository.create.assert_not_awaited()
 
 
@@ -130,25 +204,76 @@ async def test_create_quote_rejects_invalid_status(monkeypatch):
             ),
             current_user=make_user(),
         )
-    assert exc_info.value.code == "INVALID_QUOTE_STATUS"
+    assert exc_info.value.code == "AUTOMATIC_QUOTE_REQUIRED"
     repository.create.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_create_quote_rolls_back_when_commit_fails(monkeypatch):
+async def test_create_quote_never_starts_a_database_transaction(monkeypatch):
     service, repository, _ = make_service(deal=make_deal())
     repository.create = AsyncMock(return_value=make_quote())
     db = AsyncMock(spec=AsyncSession)
-    db.commit.side_effect = RuntimeError("database unavailable")
     monkeypatch.setattr(service, "resolve_organization_id", AsyncMock(return_value="org-1"))
 
-    with pytest.raises(APIException):
+    with pytest.raises(APIException) as exc_info:
         await service.create_quote(
             db,
             payload=QuoteBase(deal_id="deal-1", quote_number="Q-1", total_amount=1000),
             current_user=make_user(),
         )
-    db.rollback.assert_awaited_once()
+    assert exc_info.value.code == "AUTOMATIC_QUOTE_REQUIRED"
+    db.commit.assert_not_awaited()
+    db.rollback.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_closed_won_quote_uses_org_sequence_and_snapshot_totals(monkeypatch):
+    deal = make_deal(stage="Closed Won", company_id="company-1", contact_id="contact-1")
+    service, repository, deal_repository = make_service(deal=deal)
+    organization = SimpleNamespace(id="org-1", currency="INR", quote_prefix="QUO", quote_sequence=6)
+    line = SimpleNamespace(
+        product_id="product-1",
+        product_name="CRM License",
+        quantity=2,
+        unit_price=500,
+        discount_percent=10,
+        tax_percent=18,
+    )
+    company = SimpleNamespace(id="company-1")
+    contact = SimpleNamespace(id="contact-1", company_id="company-1")
+    product = SimpleNamespace(id="product-1", name="Mutable Product Name")
+    created_quote = make_quote(
+        quote_number="QUO-2026-000007",
+        total_amount=1062,
+        automatic_deal_id="deal-1",
+    )
+    repository.get_automatic = AsyncMock(return_value=None)
+    repository.lock_numbering = AsyncMock(return_value=organization)
+    repository.advance_numbering = AsyncMock(return_value=7)
+    repository.create = AsyncMock(return_value=created_quote)
+    repository.add_items = AsyncMock()
+    repository.record_automatic_creation = AsyncMock()
+    deal_repository.get_sales_customer = AsyncMock(return_value=(company, contact))
+    deal_repository.list_deal_products = AsyncMock(return_value=[line])
+    monkeypatch.setattr(
+        "app.services.quote_service.invoice_repository.get_product_scoped",
+        AsyncMock(return_value=product),
+    )
+    monkeypatch.setattr(
+        "app.services.quote_service.NotificationRepository.create_for_scoped_user",
+        AsyncMock(),
+    )
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.create_from_won_deal(db, deal=deal, actor_id="user-1")
+
+    assert result.quote_number == "QUO-2026-000007"
+    created_data = repository.create.await_args.kwargs["data"]
+    assert created_data["organization_id"] == "org-1"
+    assert created_data["total_amount"] == 1062
+    item = repository.add_items.await_args.args[1][0]
+    assert item["product_name"] == "CRM License"
+    assert item["total"] == 1062
 
 
 @pytest.mark.asyncio
@@ -198,7 +323,7 @@ async def test_update_quote_scopes_quote_and_deal():
         db,
         quote_id="quote-1",
         organization_id="org-1",
-        payload=QuoteBase(deal_id="deal-1", quote_number="Q-2", total_amount=1200, status="Sent"),
+        payload=QuoteBase(deal_id="deal-1", quote_number="Q-2", total_amount=1200, status="Draft"),
     )
 
     repository.get_scoped.assert_awaited_once_with(db, quote_id="quote-1", organization_id="org-1")
@@ -206,7 +331,32 @@ async def test_update_quote_scopes_quote_and_deal():
         db, deal_id="deal-1", organization_id="org-1"
     )
     assert result["quote_number"] == "Q-2"
-    assert quote.status == "Sent"
+    assert quote.status == "Draft"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("protected_status", ["Sent", "Accepted", "Rejected"])
+async def test_update_quote_cannot_bypass_delivery_or_customer_decision(protected_status):
+    quote = make_quote()
+    service, _, _ = make_service(quote=quote, deal=make_deal())
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(APIException) as exc_info:
+        await service.update_quote(
+            db,
+            quote_id="quote-1",
+            organization_id="org-1",
+            payload=QuoteBase(
+                deal_id="deal-1",
+                quote_number="Q-2",
+                total_amount=1200,
+                status=protected_status,
+            ),
+        )
+
+    assert exc_info.value.code == "INVALID_QUOTE_TRANSITION"
+    assert quote.status == "Draft"
+    db.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -224,7 +374,7 @@ async def test_update_quote_cross_tenant_deal_does_not_mutate():
                 deal_id="foreign-deal",
                 quote_number="Q-2",
                 total_amount=1200,
-                status="Sent",
+                status="Draft",
             ),
         )
 
@@ -296,15 +446,18 @@ async def test_quote_actions_do_not_fabricate_documents(monkeypatch):
     )
     with pytest.raises(NotFoundError):
         await service.get_quote_pdf(db, quote_id="quote-1", organization_id="org-1")
-    monkeypatch.setattr("app.services.quote_service.invoice_repository.get_by_quote", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        "app.services.quote_service.invoice_repository.get_by_quote", AsyncMock(return_value=None)
+    )
     with pytest.raises(APIException):
         await service.convert_quote_to_invoice(db, quote_id="quote-1", organization_id="org-1")
     with pytest.raises(APIException):
         await service.create_quote_revision(db, quote_id="quote-1", organization_id="org-1")
-    revisions = await service.get_quote_revisions(db, quote_id="quote-1", organization_id="org-1")
+    with pytest.raises(APIException) as revisions_error:
+        await service.get_quote_revisions(db, quote_id="quote-1", organization_id="org-1")
 
     assert rejected["message"].endswith("Budget constraints")
-    assert revisions == []
+    assert revisions_error.value.status_code == 501
 
 
 @pytest.mark.asyncio

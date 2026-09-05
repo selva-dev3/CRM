@@ -80,7 +80,7 @@ export default function QuoteDetailPage() {
     if (approveMutation.isPending) return;
     try {
       await approveMutation.mutateAsync(quoteId);
-      setSuccessMessage('Quote approved. You can now send it for customer acceptance.');
+      setSuccessMessage('Quote approved. PDF generation and customer delivery are now queued.');
     } catch (err: unknown) {
       setErrorMessage(getErrorMessage(err, 'Failed to approve quote.'));
     }
@@ -155,13 +155,13 @@ export default function QuoteDetailPage() {
         </div>
 
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-          {hasPermission('quotes:send') && s === 'Approved' && <Button
+          {hasPermission('quotes:send') && s === 'Approved' && quote.delivery_status === 'Failed' && <Button
             disabled={['Pending', 'Processing', 'Unknown'].includes(quote.delivery_status || '')}
             onClick={() => { setRecipientEmailInput(quote.recipient_email || ''); setIsSendEmailModalOpen(true); }}
             className="w-full gap-2 text-xs font-semibold sm:w-auto"
           >
             <Send className="w-4 h-4" />
-            Send to Client
+            Retry delivery
           </Button>}
 
           {hasPermission('quotes:approve') && ['Draft', 'Pending Approval'].includes(s) && (
@@ -341,7 +341,7 @@ export default function QuoteDetailPage() {
           title={
             <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
               <Send className="w-5 h-5 text-blue-600" />
-              Send Quote Proposal Email
+              Retry Quote Delivery
             </h3>
           }
         >
@@ -367,7 +367,7 @@ export default function QuoteDetailPage() {
                 className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
               >
                 {sendEmailMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                Send Proposal
+                Retry Delivery
               </button>
             </div>
           </form>

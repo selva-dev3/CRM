@@ -21,12 +21,7 @@ class OrganizationService:
                 raise NotFoundError(message="Current organization not found")
             return org.id
 
-        org = await self.repository.get_first(db)
-        if org:
-            return org.id
-
-        org = await self.repository.create_default(db)
-        return org.id
+        raise ForbiddenError(message="Authenticated user is required to resolve an organization")
 
 
 organization_service = OrganizationService()

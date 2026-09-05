@@ -66,13 +66,22 @@ class MeetingService:
         *,
         page: int,
         limit: int,
+        organization_id: str,
         search: str | None = None,
     ) -> list[dict]:
-        meetings = await self.repository.list(db, page=page, limit=limit, search=search)
+        meetings = await self.repository.list(
+            db,
+            page=page,
+            limit=limit,
+            organization_id=organization_id,
+            search=search,
+        )
         return [meeting_to_dict(m) for m in meetings]
 
-    async def get_meeting(self, db: AsyncSession, meeting_id: str) -> dict:
-        meeting = await self.repository.get_by_id(db, meeting_id)
+    async def get_meeting(self, db: AsyncSession, meeting_id: str, organization_id: str) -> dict:
+        meeting = await self.repository.get_by_id(
+            db, meeting_id=meeting_id, organization_id=organization_id
+        )
         if not meeting:
             raise NotFoundError(message=f"Meeting '{meeting_id}' not found")
         attendees = await self.repository.list_attendee_emails(db, meeting_id)
@@ -116,19 +125,27 @@ class MeetingService:
         )
         return meeting_to_dict(meeting, attendee_emails)
 
-    async def get_upcoming_meetings(self, db: AsyncSession) -> list[dict]:
-        meetings = await self.repository.list_upcoming(db)
+    async def get_upcoming_meetings(self, db: AsyncSession, organization_id: str) -> list[dict]:
+        meetings = await self.repository.list_upcoming(db, organization_id=organization_id)
         return [meeting_to_dict(m) for m in meetings]
 
-    async def bulk_cancel(self, db: AsyncSession, ids: list[str]) -> dict:
-        meetings = await self.repository.list_by_ids(db, ids)
+    async def bulk_cancel(self, db: AsyncSession, ids: list[str], organization_id: str) -> dict:
+        meetings = await self.repository.list_by_ids(db, ids=ids, organization_id=organization_id)
         for meeting in meetings:
             await self.repository.delete(db, meeting)
         await self._commit(db, "Failed to cancel meetings")
         return {"affected_count": len(meetings), "message": "Meetings cancelled successfully"}
 
-    async def update_meeting(self, db: AsyncSession, meeting_id: str, payload: MeetingBase) -> dict:
-        meeting = await self.repository.get_by_id(db, meeting_id)
+    async def update_meeting(
+        self,
+        db: AsyncSession,
+        meeting_id: str,
+        payload: MeetingBase,
+        organization_id: str,
+    ) -> dict:
+        meeting = await self.repository.get_by_id(
+            db, meeting_id=meeting_id, organization_id=organization_id
+        )
         if not meeting:
             raise NotFoundError(message=f"Meeting '{meeting_id}' not found")
         if payload.title:
@@ -144,8 +161,10 @@ class MeetingService:
         attendees = await self.repository.list_attendee_emails(db, meeting_id)
         return meeting_to_dict(meeting, attendees)
 
-    async def cancel_meeting(self, db: AsyncSession, meeting_id: str) -> dict:
-        meeting = await self.repository.get_by_id(db, meeting_id)
+    async def cancel_meeting(self, db: AsyncSession, meeting_id: str, organization_id: str) -> dict:
+        meeting = await self.repository.get_by_id(
+            db, meeting_id=meeting_id, organization_id=organization_id
+        )
         if not meeting:
             raise NotFoundError(message=f"Meeting '{meeting_id}' not found")
         await self.repository.delete(db, meeting)
@@ -153,9 +172,16 @@ class MeetingService:
         return {"message": f"Meeting {meeting_id} cancelled", "status": "success"}
 
     async def reschedule_meeting(
-        self, db: AsyncSession, meeting_id: str, new_start_time: str, new_end_time: str
+        self,
+        db: AsyncSession,
+        meeting_id: str,
+        new_start_time: str,
+        new_end_time: str,
+        organization_id: str,
     ) -> dict:
-        meeting = await self.repository.get_by_id(db, meeting_id)
+        meeting = await self.repository.get_by_id(
+            db, meeting_id=meeting_id, organization_id=organization_id
+        )
         if not meeting:
             raise NotFoundError(message=f"Meeting '{meeting_id}' not found")
         meeting.start_time = parse_datetime(new_start_time)
@@ -166,8 +192,17 @@ class MeetingService:
             "status": "success",
         }
 
-    async def rsvp(self, db: AsyncSession, meeting_id: str, email: str, response: str) -> dict:
-        meeting = await self.repository.get_by_id(db, meeting_id)
+    async def rsvp(
+        self,
+        db: AsyncSession,
+        meeting_id: str,
+        email: str,
+        response: str,
+        organization_id: str,
+    ) -> dict:
+        meeting = await self.repository.get_by_id(
+            db, meeting_id=meeting_id, organization_id=organization_id
+        )
         if not meeting:
             raise NotFoundError(message=f"Meeting '{meeting_id}' not found")
         attendee = await self.repository.get_attendee(db, meeting_id=meeting_id, email=email)
@@ -187,11 +222,18 @@ class MeetingService:
         transcript_text: str,
         current_user: User,
     ) -> dict:
+        meeting = await self.repository.get_by_id(
+            db,
+            meeting_id=meeting_id,
+            organization_id=current_user.organization_id or "",
+        )
+        if not meeting:
+            raise NotFoundError(message=f"Meeting '{meeting_id}' not found")
         await self.ai_service.analyze_meeting(db, meeting_id, transcript_text, current_user)
         return {"message": f"Transcript uploaded for meeting {meeting_id}", "status": "success"}
 
     async def get_ai_summary(self, db: AsyncSession, meeting_id: str, current_user: User) -> dict:
-        meeting = await self.repository.get_by_id_scoped(
+        meeting = await self.repository.get_by_id(
             db,
             meeting_id=meeting_id,
             organization_id=current_user.organization_id or "",
@@ -208,7 +250,7 @@ class MeetingService:
     async def get_action_items(
         self, db: AsyncSession, meeting_id: str, current_user: User
     ) -> list[dict]:
-        meeting = await self.repository.get_by_id_scoped(
+        meeting = await self.repository.get_by_id(
             db,
             meeting_id=meeting_id,
             organization_id=current_user.organization_id or "",
@@ -229,22 +271,22 @@ class MeetingService:
         ]
 
     async def create_zoom_link(self, topic: str) -> dict:
-        meeting_id = f"zoom-{int(datetime.now().timestamp())}"
-        return {
-            "join_url": f"https://zoom.us/j/{meeting_id}",
-            "start_url": f"https://zoom.us/s/{meeting_id}",
-            "topic": topic,
-        }
+        raise APIException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            message="Zoom integration is not configured",
+        )
 
     async def create_teams_link(self, subject: str) -> dict:
-        meeting_id = f"teams-{int(datetime.now().timestamp())}"
-        return {
-            "join_url": f"https://teams.microsoft.com/l/meetup-join/{meeting_id}",
-            "subject": subject,
-        }
+        raise APIException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            message="Microsoft Teams integration is not configured",
+        )
 
     async def export_ical(self) -> dict:
-        return {"ical_url": "https://api.crm.com/calendar/feed.ics"}
+        raise APIException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            message="iCal export is not available",
+        )
 
 
 meeting_service = MeetingService()

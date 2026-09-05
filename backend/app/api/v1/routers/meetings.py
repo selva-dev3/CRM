@@ -14,6 +14,7 @@ from app.schemas.crm_schemas import (
     MessageResponse,
 )
 from app.services.meeting_service import meeting_service
+from app.services.org_service import organization_service
 
 router = APIRouter()
 
@@ -29,8 +30,12 @@ async def list_meetings(
     limit: int = 20,
     search: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    return await meeting_service.list_meetings(db, page=page, limit=limit, search=search)
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await meeting_service.list_meetings(
+        db, page=page, limit=limit, organization_id=organization_id, search=search
+    )
 
 
 @router.post(
@@ -54,8 +59,11 @@ async def schedule_meeting(
     summary="Get upcoming meetings feed",
     dependencies=[Depends(require_permission("meetings:read"))],
 )
-async def get_upcoming_meetings(db: AsyncSession = Depends(get_db)):
-    return await meeting_service.get_upcoming_meetings(db)
+async def get_upcoming_meetings(
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await meeting_service.get_upcoming_meetings(db, organization_id)
 
 
 @router.post(
@@ -91,8 +99,13 @@ async def export_ical_feed(db: AsyncSession = Depends(get_db)):
     summary="Bulk cancel meetings",
     dependencies=[Depends(require_permission("meetings:delete"))],
 )
-async def bulk_cancel_meetings(payload: BulkDeleteRequest, db: AsyncSession = Depends(get_db)):
-    return await meeting_service.bulk_cancel(db, payload.ids)
+async def bulk_cancel_meetings(
+    payload: BulkDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await meeting_service.bulk_cancel(db, payload.ids, organization_id)
 
 
 @router.get(
@@ -101,8 +114,13 @@ async def bulk_cancel_meetings(payload: BulkDeleteRequest, db: AsyncSession = De
     summary="Get meeting details by ID",
     dependencies=[Depends(require_permission("meetings:read"))],
 )
-async def get_meeting(meeting_id: str, db: AsyncSession = Depends(get_db)):
-    return await meeting_service.get_meeting(db, meeting_id)
+async def get_meeting(
+    meeting_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await meeting_service.get_meeting(db, meeting_id, organization_id)
 
 
 @router.put(
@@ -111,8 +129,14 @@ async def get_meeting(meeting_id: str, db: AsyncSession = Depends(get_db)):
     summary="Update meeting details",
     dependencies=[Depends(require_permission("meetings:update"))],
 )
-async def update_meeting(meeting_id: str, payload: MeetingBase, db: AsyncSession = Depends(get_db)):
-    return await meeting_service.update_meeting(db, meeting_id, payload)
+async def update_meeting(
+    meeting_id: str,
+    payload: MeetingBase,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await meeting_service.update_meeting(db, meeting_id, payload, organization_id)
 
 
 @router.delete(
@@ -121,8 +145,13 @@ async def update_meeting(meeting_id: str, payload: MeetingBase, db: AsyncSession
     summary="Cancel/Delete meeting by ID",
     dependencies=[Depends(require_permission("meetings:delete"))],
 )
-async def cancel_meeting(meeting_id: str, db: AsyncSession = Depends(get_db)):
-    return await meeting_service.cancel_meeting(db, meeting_id)
+async def cancel_meeting(
+    meeting_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await meeting_service.cancel_meeting(db, meeting_id, organization_id)
 
 
 @router.post(
@@ -132,9 +161,16 @@ async def cancel_meeting(meeting_id: str, db: AsyncSession = Depends(get_db)):
     dependencies=[Depends(require_permission("meetings:update"))],
 )
 async def reschedule_meeting(
-    meeting_id: str, new_start_time: str, new_end_time: str, db: AsyncSession = Depends(get_db)
+    meeting_id: str,
+    new_start_time: str,
+    new_end_time: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    return await meeting_service.reschedule_meeting(db, meeting_id, new_start_time, new_end_time)
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await meeting_service.reschedule_meeting(
+        db, meeting_id, new_start_time, new_end_time, organization_id
+    )
 
 
 @router.post(
@@ -144,9 +180,14 @@ async def reschedule_meeting(
     dependencies=[Depends(require_permission("meetings:invite"))],
 )
 async def meeting_rsvp(
-    meeting_id: str, email: str, response: str, db: AsyncSession = Depends(get_db)
+    meeting_id: str,
+    email: str,
+    response: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    return await meeting_service.rsvp(db, meeting_id, email, response)
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await meeting_service.rsvp(db, meeting_id, email, response, organization_id)
 
 
 @router.post(
