@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
-from app.core.auth_cookies import set_auth_cookie
+from app.core.auth_cookies import set_auth_cookie, set_refresh_cookie
 from app.db.session import get_db
 from app.models import User
 from app.schemas.organization_invitation_schemas import (
@@ -125,7 +125,12 @@ async def accept_invitation(
     """
     result = await accept_organization_invitation(db, token, payload)
     set_auth_cookie(response, result["access_token"])
-    return result
+    set_refresh_cookie(response, result["refresh_token"])
+    return {
+        key: value
+        for key, value in result.items()
+        if key not in {"access_token", "refresh_token"}
+    }
 
 
 # 5. POST /api/v1/organizations/invitations/{id}/resend - Resend invitation (Protected)

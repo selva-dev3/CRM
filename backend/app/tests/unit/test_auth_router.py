@@ -62,7 +62,8 @@ async def test_login_sets_access_and_refresh_cookies_without_returning_refresh_t
         cookie for cookie in cookies if cookie.startswith(f"{settings.AUTH_COOKIE_NAME}=")
     )
     assert "Max-Age=" not in access_cookie
-    assert result["refresh_token"] is None
+    assert "access_token" not in result
+    assert "refresh_token" not in result
 
 
 @pytest.mark.asyncio
@@ -80,7 +81,8 @@ async def test_refresh_reads_cookie_rotates_both_cookies_and_hides_token(monkeyp
     cookies = response.headers.getlist("set-cookie")
     assert any(cookie.startswith(f"{settings.AUTH_COOKIE_NAME}=") for cookie in cookies)
     assert any(cookie.startswith(f"{settings.AUTH_REFRESH_COOKIE_NAME}=") for cookie in cookies)
-    assert result["refresh_token"] is None
+    assert "access_token" not in result
+    assert "refresh_token" not in result
 
 
 @pytest.mark.asyncio
@@ -143,7 +145,8 @@ async def test_accept_invitation_sets_access_and_refresh_cookies(monkeypatch):
     cookies = response.headers.getlist("set-cookie")
     assert any(cookie.startswith(f"{settings.AUTH_COOKIE_NAME}=") for cookie in cookies)
     assert any(cookie.startswith(f"{settings.AUTH_REFRESH_COOKIE_NAME}=") for cookie in cookies)
-    assert response_body["refresh_token"] is None
+    assert "access_token" not in response_body
+    assert "refresh_token" not in response_body
     assert len(background_tasks.tasks) == 1
     task = background_tasks.tasks[0]
     assert task.func is auth_router.send_welcome_email

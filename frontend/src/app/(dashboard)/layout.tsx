@@ -7,11 +7,11 @@ import { navigationSections, filterNavigationSections, getRoutePermission } from
 import { AIChatAssistant } from '@/components/features/ai/ai-chat-assistant';
 import { GlobalSearchModal } from '@/components/common/global-search-modal';
 import { NotificationBell } from '@/components/features/notifications/notification-bell';
-import { ApiError, clearSessionToken } from '@/lib/api/client';
-import { getCurrentUserApi, logoutApi } from '@/lib/api';
+import { ApiError } from '@/lib/api/client';
 import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
 import { PERMISSIONS } from '@/lib/permissions';
-import { useHasPermission, notifyAuthUserChanged } from '@/hooks/use-has-permission';
+import { useHasPermission } from '@/hooks/use-has-permission';
+import { useAuth } from '@/providers/auth-provider';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import {
@@ -19,7 +19,6 @@ import {
   Loader2,
   Zap,
   ShieldCheck,
-  ShieldAlert,
   Menu,
   Search,
   LayoutDashboard,
@@ -76,35 +75,13 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Sparkles,
 };
 
-type UserProfile = { name: string; email: string; role: string; organizationName?: string };
-
-function getStoredUserProfile(): UserProfile {
-  if (typeof window === 'undefined') {
-    return { name: 'Admin User', email: 'admin@crm.com', role: 'Admin' };
-  }
-
-  try {
-    const storedUser = localStorage.getItem('user') || sessionStorage.getItem('user');
-    if (!storedUser) throw new Error('No stored user');
-    const parsed = JSON.parse(storedUser);
-    return {
-      name: parsed?.name || parsed?.full_name || parsed?.username || 'Admin User',
-      email: parsed?.email || 'admin@crm.com',
-      role: parsed?.role || parsed?.role_name || 'Admin',
-      organizationName: parsed?.organization?.name || parsed?.organization_name || parsed?.org_name,
-    };
-  } catch {
-    return { name: 'Admin User', email: 'admin@crm.com', role: 'Admin' };
-  }
-}
-
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const { status: authStatus, user: userProfile, verifySession, logout } = useAuth();
   const [authError, setAuthError] = useState<string | null>(null);
   const [verificationAttempt, setVerificationAttempt] = useState(0);
-  const { data: currentOrg } = useCurrentOrganizationQuery(isAuthenticated === true);
+  const { data: currentOrg } = useCurrentOrganizationQuery(authStatus === 'authenticated');
   const { permissions, hasPermission } = useHasPermission();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
@@ -114,8 +91,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   });
 
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-
-  const [userProfile, setUserProfile] = useState<UserProfile>(getStoredUserProfile);
 
   // Global Ctrl+K / Cmd+K listener
   useEffect(() => {
@@ -153,33 +128,29 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const isForbidden = Boolean(requiredPermission) && !hasPermission(requiredPermission);
 
   useEffect(() => {
+    if (authStatus === 'authenticated' && isForbidden && pathname !== '/forbidden') {
+      router.replace('/forbidden');
+    }
+  }, [authStatus, isForbidden, pathname, router]);
+
+  useEffect(() => {
     let active = true;
-    void getCurrentUserApi()
-      .then((user) => {
+    void verifySession()
+      .then(() => {
         if (!active) return;
-        sessionStorage.setItem('user', JSON.stringify(user));
-        setUserProfile({
-          name: user.name || 'Admin User',
-          email: user.email || 'admin@crm.com',
-          role: user.role || 'Admin',
-        });
-        setIsAuthenticated(true);
-        notifyAuthUserChanged();
       })
       .catch((error: unknown) => {
         if (!active) return;
         if (error instanceof ApiError && error.status !== 401) {
           setAuthError(error.message);
-          setIsAuthenticated(false);
           return;
         }
-        setIsAuthenticated(false);
         router.push('/login');
       });
     return () => {
       active = false;
     };
-  }, [router, verificationAttempt]);
+  }, [router, verificationAttempt, verifySession]);
 
   const closeMobileMenu = useCallback(() => setIsMobileMenuOpen(false), []);
   const closeSearch = useCallback(() => setIsSearchOpen(false), []);
@@ -192,15 +163,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const handleLogout = async () => {
     try {
-      await logoutApi();
-    } finally {
-      clearSessionToken();
-      notifyAuthUserChanged();
+      await logout();
       router.push('/login');
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Unable to sign out. Please try again.');
     }
   };
 
-  if (isAuthenticated === null) {
+  if (authStatus === 'unknown') {
     return (
       <div className="h-dvh w-full flex flex-col items-center justify-center bg-slate-50 text-slate-900 space-y-4">
         <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
@@ -219,7 +189,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             type="button"
             className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
             onClick={() => {
-              setIsAuthenticated(null);
+              setAuthError(null);
               setVerificationAttempt((attempt) => attempt + 1);
             }}
           >
@@ -237,7 +207,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     );
   }
 
-  if (!isAuthenticated) {
+  if (authStatus !== 'authenticated' || !userProfile) {
     return null;
   }
 
@@ -313,11 +283,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       >
         <div className="flex items-center space-x-2 text-xs font-bold min-w-0">
           <div className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold shrink-0 shadow-xs">
-            {(userProfile.name || userProfile.email || 'A').charAt(0).toUpperCase()}
+            {(userProfile.name || userProfile.email).charAt(0).toUpperCase()}
           </div>
           <div className="flex flex-col min-w-0 text-left">
             <span className="truncate group-hover:text-blue-600 transition font-bold text-xs text-slate-900 leading-tight">
-              {currentOrg?.name || userProfile.organizationName || 'Organization'}
+              {currentOrg?.name || 'Organization'}
             </span>
             <span className="text-[10px] font-semibold text-blue-600 leading-tight truncate">
               Role: {userProfile.role}
@@ -422,22 +392,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* Dynamic Page View */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-50">
-          {isForbidden ? (
-            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-4">
-              <div className="w-16 h-16 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center">
-                <ShieldAlert className="w-8 h-8 text-rose-600" />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-slate-900">403 — Access Denied</h3>
-                <p className="text-sm text-slate-500 max-w-sm mx-auto">
-                  You do not have permission to view this page. Contact your administrator if you believe this is a
-                  mistake.
-                </p>
-              </div>
-            </div>
-          ) : (
-            children
-          )}
+          {!isForbidden && children}
         </main>
       </div>
 

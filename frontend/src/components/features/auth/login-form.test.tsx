@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LoginForm } from './login-form';
+import { ApiError } from '@/lib/api/client';
 
 const mocks = vi.hoisted(() => ({
   getCurrentUserApi: vi.fn(),
@@ -50,7 +51,6 @@ describe('LoginForm', () => {
   it('stores a remembered session and redirects after a valid login', async () => {
     const user = userEvent.setup();
     mocks.mutateAsync.mockResolvedValue({
-      access_token: 'access-token',
       token_type: 'bearer',
       user: { id: 'user-1', name: 'Alex', email: 'alex@crm.com', role: 'Admin' },
     });
@@ -71,6 +71,35 @@ describe('LoginForm', () => {
     expect(localStorage.getItem('user')).toContain('alex@crm.com');
     expect(sessionStorage.getItem('user')).toContain('alex@crm.com');
     expect(mocks.notifyAuthUserChanged).toHaveBeenCalledOnce();
+    expect(mocks.replace).toHaveBeenCalledWith('/dashboard');
+  });
+
+  it('requests and verifies a two-factor code before redirecting', async () => {
+    const user = userEvent.setup();
+    mocks.mutateAsync
+      .mockRejectedValueOnce(
+        new ApiError('Enter the authentication code', 'http', 428, 'TWO_FACTOR_REQUIRED'),
+      )
+      .mockResolvedValueOnce({
+        token_type: 'bearer',
+        user: { id: 'user-1', name: 'Alex', email: 'alex@crm.com', role: 'Admin' },
+      });
+    render(<LoginForm />);
+
+    await user.type(screen.getByLabelText('Work email'), 'alex@crm.com');
+    await user.type(screen.getByLabelText('Password'), 'secret');
+    await user.click(screen.getByRole('button', { name: 'Sign in to CRM' }));
+
+    const code = await screen.findByLabelText('Authentication code');
+    await user.type(code, '123456');
+    await user.click(screen.getByRole('button', { name: 'Sign in to CRM' }));
+
+    expect(mocks.mutateAsync).toHaveBeenLastCalledWith({
+      email: 'alex@crm.com',
+      password: 'secret',
+      rememberMe: false,
+      twoFactorCode: '123456',
+    });
     expect(mocks.replace).toHaveBeenCalledWith('/dashboard');
   });
 

@@ -1,3 +1,4 @@
+import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -16,6 +17,7 @@ from app.models import (
     OrganizationInvitation,
     OrganizationSetting,
     OrganizationSubscription,
+    RefreshToken,
     Role,
     SubscriptionPlan,
     User,
@@ -636,7 +638,8 @@ async def accept_organization_invitation(
     db.add(audit)
 
     # 6. Generate JWT Token and persist a revocable access-session marker.
-    access_token = create_access_token(subject=user.id, expires_delta=timedelta(days=7))
+    access_token = create_access_token(subject=user.id)
+    refresh_token = secrets.token_urlsafe(48)
     db.add(
         UserSession(
             id=sha256(access_token.encode("utf-8")).hexdigest(),
@@ -644,11 +647,20 @@ async def accept_organization_invitation(
             is_current=True,
         )
     )
+    db.add(
+        RefreshToken(
+            user_id=user.id,
+            token=sha256(refresh_token.encode("utf-8")).hexdigest(),
+            expires_at=datetime.now(UTC) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+            is_persistent=True,
+        )
+    )
     await db.commit()
     await db.refresh(user)
 
     return {
         "access_token": access_token,
+        "refresh_token": refresh_token,
         "token_type": "bearer",
         "user": {
             "id": user.id,

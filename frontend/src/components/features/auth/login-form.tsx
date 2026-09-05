@@ -25,6 +25,8 @@ import { notifyAuthUserChanged } from '@/hooks/use-has-permission';
 import { getCurrentUserApi, useLoginMutation } from '@/lib/api';
 import { loginSchema } from '@/lib/validators';
 import { getAuthErrorMessage } from './auth-form-utils';
+import { ApiError } from '@/lib/api/client';
+import { persistSessionUser } from '@/lib/auth-session';
 
 type LoginFormValues = z.infer<typeof loginSchema>;
 
@@ -32,6 +34,8 @@ export function LoginForm() {
   const router = useRouter();
   const loginMutation = useLoginMutation();
   const [showPassword, setShowPassword] = useState(false);
+  const [requiresTwoFactor, setRequiresTwoFactor] = useState(false);
+  const [twoFactorCode, setTwoFactorCode] = useState('');
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
@@ -61,20 +65,20 @@ export function LoginForm() {
         email: values.email,
         password: values.password,
         rememberMe: values.rememberMe,
+        ...(requiresTwoFactor ? { twoFactorCode } : {}),
       });
       if (data.user) {
-        const serializedUser = JSON.stringify(data.user);
-        sessionStorage.setItem('user', serializedUser);
-        if (values.rememberMe) {
-          localStorage.setItem('user', serializedUser);
-        } else {
-          localStorage.removeItem('user');
-        }
+        persistSessionUser(data.user, { remember: values.rememberMe });
         notifyAuthUserChanged();
       }
 
       router.replace('/dashboard');
     } catch (error) {
+      if (error instanceof ApiError && error.code === 'TWO_FACTOR_REQUIRED') {
+        setRequiresTwoFactor(true);
+        setTwoFactorCode('');
+        return;
+      }
       form.setError('root', {
         message: getAuthErrorMessage(
           error,
@@ -204,10 +208,28 @@ export function LoginForm() {
             )}
           />
 
+          {requiresTwoFactor && (
+            <div className="space-y-2">
+              <FormLabel htmlFor="two-factor-code">Authentication code</FormLabel>
+              <Input
+                id="two-factor-code"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="[0-9]*"
+                maxLength={6}
+                value={twoFactorCode}
+                onChange={(event) => setTwoFactorCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="6-digit code"
+                disabled={loginMutation.isPending}
+                required
+              />
+            </div>
+          )}
+
           <Button
             type="submit"
             className="h-12 w-full px-6 text-base font-semibold"
-            disabled={loginMutation.isPending}
+            disabled={loginMutation.isPending || (requiresTwoFactor && twoFactorCode.length !== 6)}
           >
             <span className="inline-flex items-center gap-2 text-white">
               {loginMutation.isPending ? (

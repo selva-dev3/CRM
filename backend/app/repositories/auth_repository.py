@@ -92,11 +92,13 @@ class AuthRepository:
         user_id: str,
         token_digest: str,
         expires_at: datetime,
+        is_persistent: bool = True,
     ) -> RefreshToken:
         refresh_token = RefreshToken(
             user_id=user_id,
             token=token_digest,
             expires_at=expires_at,
+            is_persistent=is_persistent,
         )
         db.add(refresh_token)
         return refresh_token
@@ -136,6 +138,18 @@ class AuthRepository:
 
     async def revoke_access_session(self, session: UserSession) -> None:
         session.is_current = False
+
+    async def revoke_all_user_sessions(self, db: AsyncSession, user_id: str) -> None:
+        await db.execute(
+            update(UserSession)
+            .where(UserSession.user_id == user_id, UserSession.is_current.is_(True))
+            .values(is_current=False)
+        )
+        await db.execute(
+            update(RefreshToken)
+            .where(RefreshToken.user_id == user_id, RefreshToken.is_revoked.is_(False))
+            .values(is_revoked=True)
+        )
 
     async def invalidate_password_resets(self, db: AsyncSession, user_id: str) -> None:
         await db.execute(
