@@ -76,7 +76,7 @@ async def test_create_invoice_delegates_to_service_with_deal_id(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_mark_invoice_paid_rejects_unverified_manual_payment(monkeypatch):
+async def test_legacy_mark_paid_requires_manual_payment_endpoint(monkeypatch):
     mark_paid = AsyncMock()
     monkeypatch.setattr(invoice_service, "mark_paid", mark_paid)
 
@@ -84,7 +84,7 @@ async def test_mark_invoice_paid_rejects_unverified_manual_payment(monkeypatch):
         await mark_invoice_paid("inv-1")
 
     assert exc.value.status_code == 501
-    assert exc.value.code == "PAYMENT_VERIFICATION_REQUIRED"
+    assert exc.value.code == "MANUAL_PAYMENT_REQUIRED"
     mark_paid.assert_not_awaited()
 
 

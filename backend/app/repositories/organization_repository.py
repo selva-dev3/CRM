@@ -19,6 +19,15 @@ class OrganizationRepository:
         result = await db.execute(select(Organization).where(Organization.id == org_id))
         return result.scalars().first()
 
+    async def get_by_id_for_update(self, db: AsyncSession, org_id: str) -> Organization | None:
+        result = await db.execute(
+            select(Organization)
+            .where(Organization.id == org_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return result.scalar_one_or_none()
+
     async def get_first(self, db: AsyncSession) -> Organization | None:
         result = await db.execute(select(Organization).limit(1))
         return result.scalars().first()
@@ -124,6 +133,41 @@ class OrganizationRepository:
 
     get_subscription_by_org_id = get_subscription
 
+    async def get_subscription_by_provider_id(
+        self, db: AsyncSession, subscription_id: str
+    ) -> OrganizationSubscription | None:
+        result = await db.execute(
+            select(OrganizationSubscription).where(
+                OrganizationSubscription.subscription_id == subscription_id
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def get_subscription_by_checkout_session_id(
+        self, db: AsyncSession, checkout_session_id: str
+    ) -> OrganizationSubscription | None:
+        result = await db.execute(
+            select(OrganizationSubscription).where(
+                OrganizationSubscription.checkout_session_id == checkout_session_id
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def get_processed_webhook_event(
+        self, db: AsyncSession, event_id: str
+    ) -> ProcessedWebhookEvent | None:
+        result = await db.execute(
+            select(ProcessedWebhookEvent).where(ProcessedWebhookEvent.event_id == event_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def record_processed_webhook_event(
+        self, db: AsyncSession, *, event_id: str, event_type: str
+    ) -> ProcessedWebhookEvent:
+        event = ProcessedWebhookEvent(event_id=event_id, event_type=event_type)
+        db.add(event)
+        return event
+
     async def create_subscription(
         self, db: AsyncSession, *, data: dict
     ) -> OrganizationSubscription:
@@ -162,28 +206,3 @@ class OrganizationRepository:
             .limit(limit)
         )
         return list(result.scalars().all())
-
-    async def get_subscription_by_checkout_session_id(
-        self, db: AsyncSession, checkout_session_id: str
-    ) -> OrganizationSubscription | None:
-        result = await db.execute(
-            select(OrganizationSubscription).where(
-                OrganizationSubscription.checkout_session_id == checkout_session_id
-            )
-        )
-        return result.scalars().first()
-
-    async def get_processed_webhook_event(
-        self, db: AsyncSession, event_id: str
-    ) -> ProcessedWebhookEvent | None:
-        result = await db.execute(
-            select(ProcessedWebhookEvent).where(ProcessedWebhookEvent.event_id == event_id)
-        )
-        return result.scalars().first()
-
-    async def record_processed_webhook_event(
-        self, db: AsyncSession, *, event_id: str, event_type: str
-    ) -> ProcessedWebhookEvent:
-        event = ProcessedWebhookEvent(event_id=event_id, event_type=event_type)
-        db.add(event)
-        return event

@@ -4,9 +4,11 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
+from pydantic import EmailStr, TypeAdapter, ValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.currency import normalize_currency_code
 from app.core.errors import APIException, ConflictError, NotFoundError
 from app.core.logging import get_logger
 from app.models import User
@@ -25,15 +27,6 @@ logger = get_logger(__name__)
 
 # Canonical invoice lifecycle statuses (model default + existing frontend filters).
 INVOICE_STATUS_DRAFT = "Draft"
-INVOICE_STATUS_PENDING = "Pending"
-INVOICE_STATUS_PAID = "Paid"
-INVOICE_STATUS_OVERDUE = "Overdue"
-INVOICE_STATUSES = {
-    INVOICE_STATUS_DRAFT,
-    INVOICE_STATUS_PENDING,
-    INVOICE_STATUS_PAID,
-    INVOICE_STATUS_OVERDUE,
-}
 
 # Canonical deal stage representing a confirmed sale (DealService.mark_deal_won writes this value).
 DEAL_STAGE_CLOSED_WON = "Closed Won"
@@ -65,6 +58,14 @@ def invoice_to_dict(
         "discount_total": inv.discount_total or 0.0,
         "tax_total": inv.tax_total or 0.0,
         "paid_amount": inv.paid_amount or 0.0,
+        "outstanding_amount": max(
+            Decimal(0), decimal_value(inv.amount or 0) - decimal_value(inv.paid_amount or 0)
+        ),
+        "payment_status": inv.payment_status or "Pending",
+        "finalized_at": str(inv.finalized_at) if inv.finalized_at else None,
+        "finalized_by": inv.finalized_by,
+        "accepted_at": str(inv.accepted_at) if inv.accepted_at else None,
+        "billing_snapshot": inv.billing_snapshot,
         "status": inv.status or INVOICE_STATUS_DRAFT,
         "due_date": str(inv.due_date) if inv.due_date else None,
         "notes": inv.notes,
@@ -74,7 +75,6 @@ def invoice_to_dict(
         "recipient_email": inv.recipient_email,
         "reminder_count": inv.reminder_count or 0,
         "last_reminded_at": str(inv.last_reminded_at) if inv.last_reminded_at else None,
-        "stripe_checkout_url": inv.stripe_checkout_url,
         "created_at": str(inv.created_at) if inv.created_at else None,
     }
     if items is not None:
@@ -187,7 +187,8 @@ class InvoiceService:
                 "discount_total": sum((line.discount for line in totals), Decimal(0)),
                 "tax_total": sum((line.tax for line in totals), Decimal(0)),
                 "paid_amount": 0,
-                "status": INVOICE_STATUS_PENDING,
+                "status": INVOICE_STATUS_DRAFT,
+                "payment_status": "Pending",
                 "due_date": quote.due_date or (now + timedelta(days=DEFAULT_PAYMENT_TERM_DAYS)),
                 "billing_snapshot": {
                     "company": company.name,
@@ -222,12 +223,6 @@ class InvoiceService:
                 for line, total_line in zip(lines, totals, strict=True)
             ],
         )
-        await self.repository.queue_delivery(
-            db,
-            invoice,
-            delivery_id=str(uuid4()),
-            recipient_email=contact.email,
-        )
         await self.repository.record_creation(db, invoice)
         await NotificationRepository().create_for_scoped_user(
             db,
@@ -238,7 +233,7 @@ class InvoiceService:
                 "entity_type": "invoice",
                 "entity_id": invoice.id,
                 "title": "Invoice automatically created",
-                "message": f"Invoice {invoice.invoice_number} is pending payment.",
+                "message": f"Invoice {invoice.invoice_number} is ready for review and finalization.",
             },
         )
         await db.flush()
@@ -521,6 +516,103 @@ class InvoiceService:
         )
         return [invoice_to_dict(invoice, items)]
 
+    async def finalize_invoice(
+        self, db: AsyncSession, *, invoice_id: str, organization_id: str, user_id: str
+    ) -> dict:
+        try:
+            invoice = await self.repository.lock_scoped(
+                db, invoice_id=invoice_id, organization_id=organization_id
+            )
+            if not invoice:
+                raise NotFoundError(message="Invoice not found")
+            if invoice.status != "Draft":
+                raise ConflictError(message="Only Draft invoices can be finalized")
+            company, contact = await DealRepository().get_sales_customer(
+                db,
+                organization_id=organization_id,
+                company_id=invoice.company_id,
+                contact_id=invoice.contact_id,
+            )
+            if not company or not contact or contact.company_id != company.id:
+                raise APIException(message="Invoice customer is invalid")
+            snapshot = invoice.billing_snapshot or {}
+            if any(snapshot.get(key) is not None and not isinstance(snapshot[key], str)
+                   for key in ("city", "state", "postal_code")):
+                raise APIException(message="Billing city, state and postal code must be text")
+            if not all(
+                isinstance(snapshot.get(key), str) and snapshot[key].strip()
+                for key in ("company", "contact", "email", "street", "country")
+            ):
+                raise APIException(
+                    message="Billing company, contact, email, street and country are required"
+                )
+            try:
+                TypeAdapter(EmailStr).validate_python(snapshot["email"])
+            except ValidationError as exc:
+                raise APIException(message="Billing email is invalid") from exc
+            if (
+                not contact.email
+                or snapshot["email"].strip().casefold() != contact.email.strip().casefold()
+            ):
+                raise APIException(message="Billing email must match the invoice customer")
+            try:
+                currency = normalize_currency_code(invoice.currency)
+            except ValueError as exc:
+                raise APIException(message="Invoice currency is invalid") from exc
+            if currency != invoice.currency:
+                raise APIException(message="Invoice currency is invalid")
+            if not invoice.due_date:
+                raise APIException(message="Invoice due date is required")
+            items = await self.repository.list_items(
+                db, invoice_id=invoice_id, organization_id=organization_id
+            )
+            if not items or any(
+                not item.product_name or not item.product_name.strip() for item in items
+            ):
+                raise APIException(message="Invoice needs complete line items")
+            totals = [
+                calculate_line(
+                    item.quantity, item.unit_price, item.discount_percent, item.tax_percent
+                )
+                for item in items
+            ]
+            for item, line in zip(items, totals, strict=True):
+                if any(
+                    decimal_value(getattr(item, field)) != getattr(line, calculated)
+                    for field, calculated in (
+                        ("subtotal", "subtotal"),
+                        ("discount_total", "discount"),
+                        ("tax_total", "tax"),
+                        ("total", "total"),
+                    )
+                ):
+                    raise APIException(message="Invoice line totals are inconsistent")
+            for field, calculated in (
+                ("subtotal", "subtotal"),
+                ("discount_total", "discount"),
+                ("tax_total", "tax"),
+                ("amount", "total"),
+            ):
+                if decimal_value(getattr(invoice, field)) != sum(
+                    (getattr(line, calculated) for line in totals), Decimal(0)
+                ):
+                    raise APIException(message="Invoice totals are inconsistent")
+            if (
+                decimal_value(invoice.amount) <= 0
+                or decimal_value(invoice.paid_amount or 0) > invoice.amount
+            ):
+                raise APIException(message="Invoice amount or paid balance is invalid")
+            invoice.status = "Finalized"
+            invoice.finalized_at = datetime.now(UTC)
+            invoice.finalized_by = user_id
+            await self.repository.record_event(db, invoice, "invoice.finalized")
+            result = invoice_to_dict(invoice, items)
+            await db.commit()
+            return result
+        except Exception:
+            await db.rollback()
+            raise
+
     async def update_invoice(
         self,
         db: AsyncSession,
@@ -530,35 +622,64 @@ class InvoiceService:
         amount: float | None,
         status: str | None,
         due_date: datetime | None,
+        billing_snapshot: dict | None = None,
     ) -> dict:
-        invoice = await self.require_invoice(
-            db, invoice_id=invoice_id, organization_id=organization_id
-        )
-        if invoice.quote_id or invoice.status == INVOICE_STATUS_PAID:
-            raise ConflictError(message="Generated or paid invoices cannot be edited")
-        if status == INVOICE_STATUS_PAID:
-            raise ConflictError(message="Paid status requires verified payment evidence")
-        if amount is not None:
-            invoice.amount = decimal_value(amount)
-        if status is not None:
-            assert_invoice_transition(invoice.status, status)
-            invoice.status = status
-        if due_date is not None:
-            invoice.due_date = due_date
-        await db.commit()
-        await db.refresh(invoice)
-        items = await self.repository.list_items(
-            db, invoice_id=invoice.id, organization_id=organization_id
-        )
-        return invoice_to_dict(invoice, items)
+        try:
+            invoice = await self.repository.lock_scoped(
+                db, invoice_id=invoice_id, organization_id=organization_id
+            )
+            if not invoice:
+                raise NotFoundError(message="Invoice not found")
+            if status == "Cancelled":
+                if invoice.delivery_status in {"Processing", "Unknown"}:
+                    raise ConflictError(
+                        message="Resolve the active or uncertain delivery before cancellation"
+                    )
+                if decimal_value(invoice.paid_amount or 0) > 0:
+                    raise ConflictError(message="Invoices with payments cannot be cancelled")
+                assert_invoice_transition(invoice.status, status)
+                invoice.status = status
+                invoice.public_token_hash = None
+                invoice.public_token_expires_at = None
+                invoice.delivery_status = None
+                await self.repository.record_event(db, invoice, "invoice.cancelled")
+            elif invoice.status != "Draft":
+                raise ConflictError(message="Only Draft invoices can be edited")
+            if amount is not None and decimal_value(amount) != decimal_value(invoice.amount):
+                raise ConflictError(message="Invoice amount must match its line items")
+            if status is not None and status not in {"Draft", "Cancelled"}:
+                raise ConflictError(message="Use the finalize or public acceptance endpoint")
+            if due_date is not None:
+                if invoice.status != "Draft":
+                    raise ConflictError(message="Only Draft invoices can be edited")
+                invoice.due_date = due_date
+            if billing_snapshot is not None:
+                if invoice.status != "Draft":
+                    raise ConflictError(message="Only Draft invoices can be edited")
+                invoice.billing_snapshot = billing_snapshot
+            await db.commit()
+            await db.refresh(invoice)
+            items = await self.repository.list_items(
+                db, invoice_id=invoice.id, organization_id=organization_id
+            )
+            return invoice_to_dict(invoice, items)
+        except Exception:
+            await db.rollback()
+            raise
 
     async def delete_invoice(
         self, db: AsyncSession, *, invoice_id: str, organization_id: str
     ) -> Invoice:
-        invoice = await self.require_invoice(
+        invoice = await self.repository.lock_scoped(
             db, invoice_id=invoice_id, organization_id=organization_id
         )
-        if invoice.quote_id or invoice.status == INVOICE_STATUS_PAID:
+        if not invoice:
+            raise NotFoundError(message="Invoice not found")
+        if (
+            invoice.quote_id
+            or invoice.status != "Draft"
+            or decimal_value(invoice.paid_amount or 0) > 0
+        ):
             raise ConflictError(message="Generated or paid invoices cannot be deleted")
         await self.repository.delete(db, invoice)
         await db.commit()
@@ -568,50 +689,55 @@ class InvoiceService:
         self, db: AsyncSession, *, invoice_id: str, organization_id: str, recipient_email: str
     ) -> dict:
         """Queue real PDF generation and email delivery."""
-        invoice = await self.require_invoice(
-            db, invoice_id=invoice_id, organization_id=organization_id
-        )
-        if invoice.status == INVOICE_STATUS_PAID:
-            raise ConflictError(message="Paid invoices cannot be resent as payment requests")
-        expected_email = (invoice.billing_snapshot or {}).get("email")
-        if (
-            not expected_email
-            or recipient_email.strip().casefold() != str(expected_email).strip().casefold()
-        ):
-            raise APIException(message="Send the invoice only to its customer contact")
-        if invoice.delivery_status in {"Pending", "Processing", "Sent"}:
+        try:
+            invoice = await self.repository.lock_scoped(
+                db, invoice_id=invoice_id, organization_id=organization_id
+            )
+            if not invoice:
+                raise NotFoundError(message="Invoice not found")
+            if invoice.status not in {"Finalized", "Accepted"} or not invoice.finalized_at:
+                raise ConflictError(message="Finalize the invoice before sending")
+            expected_email = (invoice.billing_snapshot or {}).get("email")
+            if (
+                not expected_email
+                or recipient_email.strip().casefold() != str(expected_email).strip().casefold()
+            ):
+                raise APIException(message="Send the invoice only to its customer contact")
+            expiry = invoice.public_token_expires_at
+            expired = not expiry or (
+                expiry.replace(tzinfo=UTC) if expiry.tzinfo is None else expiry
+            ) <= datetime.now(UTC)
+            renew = invoice.delivery_status == "Sent" and expired
+            if invoice.delivery_status in {"Pending", "Processing", "Sent"} and not renew:
+                await db.commit()
+                return invoice_to_dict(invoice)
+            if invoice.delivery_status == "Unknown":
+                raise ConflictError(message="Delivery outcome requires provider reconciliation")
+            if invoice.delivery_attempts >= 3 and not renew:
+                raise ConflictError(message="Invoice delivery attempt limit reached")
+            if renew:
+                invoice.delivery_attempts = 0
+                invoice.delivery_claimed_at = None
+            await self.repository.queue_delivery(
+                db,
+                invoice,
+                delivery_id=str(uuid4()),
+                recipient_email=str(expected_email),
+            )
+            await db.commit()
+            await db.refresh(invoice)
             return invoice_to_dict(invoice)
-        if invoice.delivery_status == "Unknown":
-            raise ConflictError(message="Delivery outcome requires provider reconciliation")
-        if invoice.delivery_attempts >= 3:
-            raise ConflictError(message="Invoice delivery attempt limit reached")
-        await self.repository.queue_delivery(
-            db,
-            invoice,
-            delivery_id=str(uuid4()),
-            recipient_email=str(expected_email),
-        )
-        await db.commit()
-        await db.refresh(invoice)
-        return invoice_to_dict(invoice)
+        except Exception:
+            await db.rollback()
+            raise
 
     async def mark_paid(
         self, db: AsyncSession, *, invoice_id: str, organization_id: str, payment_method: str
     ) -> dict:
-        invoice = await self.require_invoice(
-            db, invoice_id=invoice_id, organization_id=organization_id
-        )
-        if invoice.quote_id:
-            raise ConflictError(
-                message="Generated invoices require a verified payment; manual mark-paid is disabled"
-            )
-        if invoice.status == INVOICE_STATUS_PAID:
-            raise ConflictError(
-                message="Invoice is already marked as Paid.", code="INVOICE_ALREADY_PAID"
-            )
+        await self.require_invoice(db, invoice_id=invoice_id, organization_id=organization_id)
         raise ConflictError(
-            message="Payment must be verified by the provider; manual mark-paid is disabled",
-            code="PAYMENT_VERIFICATION_REQUIRED",
+            message="Use POST /invoices/{invoice_id}/payments to record a manual payment",
+            code="MANUAL_PAYMENT_REQUIRED",
         )
 
 

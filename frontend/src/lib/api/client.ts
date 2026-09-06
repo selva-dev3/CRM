@@ -19,6 +19,7 @@ export const BASE_URL = resolveApiBaseUrl();
 
 const NON_REFRESHABLE_AUTH_ENDPOINTS = [
   '/public/quotes/',
+  '/public/invoices/',
   '/auth/login',
   '/auth/register',
   '/auth/forgot-password',
@@ -81,9 +82,9 @@ export class ApiError extends Error {
   }
 }
 
-async function throwResponseError(response: Response): Promise<never> {
+async function throwResponseError(response: Response, redirectUnauthorized = true): Promise<never> {
   const errorData = await response.json().catch(() => ({}));
-  if (response.status === 401) handleUnauthorized(errorData.code);
+  if (response.status === 401 && redirectUnauthorized) handleUnauthorized(errorData.code);
   throw new ApiError(
     errorData.detail || errorData.message || 'An unexpected error occurred',
     'http',
@@ -198,7 +199,7 @@ async function request<T>(
   }
 
   if (!response.ok) {
-    return throwResponseError(response);
+    return throwResponseError(response, !endpoint.startsWith('/public/'));
   }
 
   return {

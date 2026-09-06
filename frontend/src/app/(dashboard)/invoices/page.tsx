@@ -7,11 +7,11 @@ import { DatePicker } from '@/components/common/date-picker';
 
 import { ActionMenu } from '@/components/common/action-menu';
 import { getErrorMessage } from '@/lib/utils';
+import { formatInvoiceMoney } from '@/lib/formatters/invoice';
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   FileText,
-  DollarSign,
   Trash2,
   Edit,
   Send,
@@ -34,7 +34,6 @@ import {
   useBulkDeleteInvoicesMutation,
   useBulkRemindInvoicesMutation,
   useSendInvoiceEmailMutation,
-  useCreateStripeCheckoutMutation,
   InvoiceItem,
   InvoiceCreatePayload
 } from '@/lib/api/invoices';
@@ -64,7 +63,6 @@ export default function InvoicesPage() {
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [amount, setAmount] = useState('14500');
   const [dueDate, setDueDate] = useState('');
-  const [status, setStatus] = useState('Pending');
 
   // Toast / Alert notifications
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -80,7 +78,7 @@ export default function InvoicesPage() {
   }, [searchTerm]);
 
   // Queries
-  const { data: invoices = [], isLoading: isInvoicesLoading } = useInvoicesQuery({
+  const { data: invoices = [], isLoading: isInvoicesLoading, error: invoicesError, refetch: refetchInvoices } = useInvoicesQuery({
     page,
     limit,
     status: statusFilter || undefined,
@@ -97,14 +95,12 @@ export default function InvoicesPage() {
   const bulkDeleteMutation = useBulkDeleteInvoicesMutation();
   const bulkRemindMutation = useBulkRemindInvoicesMutation();
   const sendEmailMutation = useSendInvoiceEmailMutation();
-  const stripeCheckoutMutation = useCreateStripeCheckoutMutation();
 
   const resetInvoiceForm = () => {
     setFormDealId('');
     setInvoiceNumber('');
     setAmount('14500');
     setDueDate('');
-    setStatus('Pending');
     setEditingInvoice(null);
   };
 
@@ -113,7 +109,6 @@ export default function InvoicesPage() {
     setInvoiceNumber(inv.invoice_number);
     setAmount(String(inv.amount || 0));
     setDueDate(inv.due_date ? inv.due_date.substring(0, 10) : '');
-    setStatus(inv.status || 'Pending');
     setIsInvoiceModalOpen(true);
   };
 
@@ -127,7 +122,7 @@ export default function InvoicesPage() {
           invoice_number: invoiceNumber.trim(),
           amount: parseFloat(amount || '0'),
           due_date: dueDate,
-          status: status,
+          status: 'Draft',
         };
         await updateInvoiceMutation.mutateAsync({ id: editingInvoice.id, payload });
         setSuccessMessage(`Invoice "${editingInvoice.invoice_number}" updated.`);
@@ -159,7 +154,7 @@ export default function InvoicesPage() {
         id: sendModalInvoice.id,
         recipient_email: recipientEmailInput.trim(),
       });
-      setSuccessMessage(`Invoice PDF & payment link sent to ${recipientEmailInput.trim()}.`);
+      setSuccessMessage(`Invoice PDF & acceptance link queued for ${recipientEmailInput.trim()}.`);
       setIsSendModalOpen(false);
       setSendModalInvoice(null);
     } catch (err: unknown) {
@@ -167,15 +162,6 @@ export default function InvoicesPage() {
     }
   };
 
-  const handleStripeCheckout = async (inv: InvoiceItem) => {
-    try {
-      const res = await stripeCheckoutMutation.mutateAsync(inv.id);
-      setSuccessMessage(`Stripe Checkout session URL generated.`);
-      window.open(res.checkout_url, '_blank');
-    } catch (err: unknown) {
-      setErrorMessage(getErrorMessage(err, 'Failed to generate Stripe Checkout session.'));
-    }
-  };
 
   const handleBulkRemind = async () => {
     if (selectedIds.size === 0) return;
@@ -236,11 +222,10 @@ export default function InvoicesPage() {
     },
     {
       id: 'amount',
-      header: 'AMOUNT (USD)',
+      header: 'AMOUNT',
       cell: (item) => (
         <div className="flex items-center gap-1 text-slate-900 font-bold text-xs">
-          <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
-          <span>{item.amount ? item.amount.toLocaleString(undefined, { minimumFractionDigits: 2 }) : '0.00'}</span>
+          <span>{formatInvoiceMoney(item.amount, item.currency)}</span>
         </div>
       ),
     },
@@ -248,11 +233,11 @@ export default function InvoicesPage() {
       id: 'status',
       header: 'STATUS',
       cell: (item) => {
-        const s = item.status || 'Pending';
+        const s = item.status || 'Draft';
         const badgeStyle =
-          s === 'Paid'
+          s === 'Accepted'
             ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-            : s === 'Overdue'
+            : s === 'Cancelled'
             ? 'bg-rose-50 text-rose-700 border-rose-200'
             : s === 'Draft'
             ? 'bg-slate-100 text-slate-700 border-slate-200'
@@ -265,6 +250,11 @@ export default function InvoicesPage() {
       },
     },
     {
+      id: 'payment_status',
+      header: 'PAYMENT STATUS',
+      cell: (item) => <span>{item.payment_status ?? 'Pending'} · Paid: {item.paid_amount ?? '—'} · Outstanding: {item.outstanding_amount ?? '—'}</span>,
+    },
+    {
       id: 'actions',
       header: 'ACTIONS',
       cell: (item) => (
@@ -273,9 +263,9 @@ export default function InvoicesPage() {
           label="Open invoice actions"
           onTriggerClick={(event) => event.stopPropagation()}
           actions={[
-            { label: 'Stripe checkout', permission: PERMISSIONS.INVOICES.PAYMENT, icon: <CreditCard className="w-4 h-4 text-purple-600" />, onSelect: () => handleStripeCheckout(item) },
-            { label: 'Send invoice email', permission: PERMISSIONS.INVOICES.SEND, icon: <Send className="w-4 h-4 text-blue-600" />, onSelect: () => { setSendModalInvoice(item); setRecipientEmailInput(item.recipient_email || ''); setIsSendModalOpen(true); } },
-            { label: 'Edit invoice', permission: PERMISSIONS.INVOICES.UPDATE, icon: <Edit className="w-4 h-4 text-indigo-600" />, onSelect: () => handleOpenEditModal(item) },
+            { label: 'View invoice / Add Payment', permission: PERMISSIONS.INVOICES.READ, icon: <CreditCard className="w-4 h-4" />, onSelect: () => router.push(`/invoices/${item.id}`) },
+            ...(['Finalized', 'Accepted'].includes(item.status) ? [{ label: 'Send Invoice', permission: PERMISSIONS.INVOICES.SEND, icon: <Send className="w-4 h-4 text-blue-600" />, onSelect: () => { setSendModalInvoice(item); setRecipientEmailInput(item.recipient_email || (typeof item.billing_snapshot?.email === 'string' ? item.billing_snapshot.email : '')); setIsSendModalOpen(true); } }] : []),
+            { label: 'Edit invoice', disabled: item.status !== 'Draft', permission: PERMISSIONS.INVOICES.UPDATE, icon: <Edit className="w-4 h-4 text-indigo-600" />, onSelect: () => handleOpenEditModal(item) },
             { label: 'Delete invoice', permission: PERMISSIONS.INVOICES.DELETE, icon: <Trash2 className="w-4 h-4" />, variant: 'destructive', onSelect: () => setInvoiceToDelete(item) },
           ]}
         />
@@ -285,6 +275,7 @@ export default function InvoicesPage() {
 
   return (
     <div className="space-y-6 w-full pb-12">
+      {invoicesError && <div role="alert" className="text-sm text-destructive">{getErrorMessage(invoicesError, 'Unable to load invoices.')} <button type="button" className="underline" onClick={() => void refetchInvoices()}>Retry</button></div>}
       {/* Toast Feedback */}
       {successMessage && (
         <div className="flex items-center justify-between p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl shadow-sm">
@@ -317,7 +308,7 @@ export default function InvoicesPage() {
             <Receipt className="w-7 h-7 text-indigo-600" />
             Invoices & Billing Gateway
           </h1>
-          <p className="text-slate-500 text-sm mt-0.5">Accepted quotes create invoices automatically; Stripe webhooks verify payment.</p>
+          <p className="text-slate-500 text-sm mt-0.5">Finalize invoices, collect customer acceptance, and record manual payments.</p>
         </div>
 
       </div>
@@ -342,11 +333,11 @@ export default function InvoicesPage() {
               onValueChange={setStatusFilter}
               className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-700 outline-none shadow-xs"
             >
-              <option value="">All Payment Statuses</option>
+              <option value="">All Invoice Statuses</option>
               <option value="Draft">Draft</option>
-              <option value="Pending">Pending</option>
-              <option value="Paid">Paid</option>
-              <option value="Overdue">Overdue</option>
+              <option value="Finalized">Finalized</option>
+              <option value="Accepted">Accepted</option>
+              <option value="Cancelled">Cancelled</option>
             </ResponsiveSelect>
 
             {selectedIds.size > 0 && (
@@ -434,7 +425,7 @@ export default function InvoicesPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                      Invoice Amount (USD) *
+                      Invoice Amount ({editingInvoice.currency || 'currency unavailable'}) *
                     </label>
                     <Input
                       type="number"
@@ -448,18 +439,9 @@ export default function InvoicesPage() {
 
                   <div>
                     <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                      Payment Status
+                      Invoice Status
                     </label>
-                    <ResponsiveSelect
-                      value={status}
-                      onValueChange={setStatus}
-                      className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
-                    >
-                      <option value="Draft">Draft</option>
-                      <option value="Pending">Pending</option>
-                      <option value="Paid">Paid</option>
-                      <option value="Overdue">Overdue</option>
-                    </ResponsiveSelect>
+                    <p className="text-sm">Draft — finalize from the invoice details when ready.</p>
                   </div>
                 </div>
               </>
@@ -505,7 +487,7 @@ export default function InvoicesPage() {
           title={
             <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
               <Send className="w-5 h-5 text-blue-600" />
-              Email Invoice & Payment Link
+              Email Invoice
             </h3>
           }
         >

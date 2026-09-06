@@ -1,0 +1,174 @@
+"""Lazy, organization-subscription-only Stripe adapter."""
+
+import asyncio
+import importlib
+from typing import Any
+
+from app.core.config import settings
+from app.core.errors import APIException
+
+SCOPE = "crm_organization_subscription"
+
+
+class SubscriptionStripeProvider:
+    def _sdk(self) -> Any:
+        if not getattr(settings, "STRIPE_SECRET_KEY", None):
+            raise APIException(message="Subscription billing is not configured", status_code=503)
+        try:
+            return importlib.import_module("stripe")
+        except ImportError as exc:
+            raise APIException(
+                message="Subscription billing is unavailable", status_code=503
+            ) from exc
+
+    async def _call(self, resource: str, method: str, *args: Any, **kwargs: Any) -> dict:
+        sdk = self._sdk()
+        target = sdk
+        for component in resource.split("."):
+            target = getattr(target, component)
+        try:
+            result = await asyncio.to_thread(
+                getattr(target, method), *args, api_key=settings.STRIPE_SECRET_KEY, **kwargs
+            )
+            return result.to_dict() if hasattr(result, "to_dict") else dict(result)
+        except sdk.StripeError as exc:
+            raise APIException(
+                message="Subscription billing provider could not complete the request; retry the same operation",
+                code="SUBSCRIPTION_PROVIDER_ERROR",
+                status_code=502,
+            ) from exc
+
+    async def ensure_price(self, *, plan_slug: str, name: str, amount_minor: int) -> dict:
+        key = f"{SCOPE}:{plan_slug}:inr:month:{amount_minor}"
+        result = await self._call("Price", "list", lookup_keys=[key], active=True, limit=2)
+        prices = result.get("data", [])
+        if len(prices) == 1:
+            return dict(prices[0])
+        if prices:
+            raise APIException(
+                message="Subscription price configuration is ambiguous", status_code=409
+            )
+        product = await self._call(
+            "Product",
+            "create",
+            name=f"CRM {name}",
+            metadata={"scope": SCOPE, "plan_slug": plan_slug},
+            idempotency_key=f"{SCOPE}:product:{plan_slug}",
+        )
+        return await self._call(
+            "Price",
+            "create",
+            product=product["id"],
+            currency="inr",
+            unit_amount=amount_minor,
+            recurring={"interval": "month"},
+            metadata={"scope": SCOPE, "plan_slug": plan_slug},
+            lookup_key=key,
+            idempotency_key=key,
+        )
+
+    async def create_customer(self, *, organization_id: str, operation_id: str) -> dict:
+        return await self._call(
+            "Customer",
+            "create",
+            metadata={"scope": SCOPE, "organization_id": organization_id},
+            idempotency_key=f"{SCOPE}:{organization_id}:{operation_id}:customer",
+        )
+
+    async def create_checkout(
+        self,
+        *,
+        customer_id: str,
+        price_id: str,
+        organization_id: str,
+        plan_slug: str,
+        operation_id: str,
+        expires_at: int,
+        success_url: str,
+        cancel_url: str,
+    ) -> dict:
+        metadata = {
+            "scope": SCOPE,
+            "organization_id": organization_id,
+            "plan_slug": plan_slug,
+            "operation_id": operation_id,
+        }
+        return await self._call(
+            "checkout.Session",
+            "create",
+            mode="subscription",
+            customer=customer_id,
+            client_reference_id=organization_id,
+            metadata=metadata,
+            subscription_data={"metadata": metadata},
+            line_items=[{"price": price_id, "quantity": 1}],
+            success_url=success_url,
+            cancel_url=cancel_url,
+            expires_at=expires_at,
+            idempotency_key=f"{SCOPE}:{organization_id}:{operation_id}:checkout",
+        )
+
+    async def retrieve_checkout(self, session_id: str) -> dict:
+        return await self._call("checkout.Session", "retrieve", session_id)
+
+    async def retrieve_subscription(self, subscription_id: str) -> dict:
+        return await self._call(
+            "Subscription",
+            "retrieve",
+            subscription_id,
+            expand=["items.data.price", "latest_invoice"],
+        )
+
+    async def retrieve_invoice(self, invoice_id: str) -> dict:
+        return await self._call("Invoice", "retrieve", invoice_id)
+
+    async def create_portal(
+        self,
+        *,
+        customer_id: str,
+        subscription_id: str,
+        item_id: str,
+        price_id: str,
+        return_url: str,
+        operation_id: str,
+        organization_id: str,
+    ) -> dict:
+        configuration = getattr(settings, "STRIPE_SUBSCRIPTION_PORTAL_CONFIGURATION_ID", None)
+        options = {"configuration": configuration} if configuration else {}
+        return await self._call(
+            "billing_portal.Session",
+            "create",
+            customer=customer_id,
+            return_url=return_url,
+            flow_data={
+                "type": "subscription_update_confirm",
+                "subscription_update_confirm": {
+                    "subscription": subscription_id,
+                    "items": [{"id": item_id, "price": price_id, "quantity": 1}],
+                },
+                "after_completion": {"type": "redirect", "redirect": {"return_url": return_url}},
+            },
+            idempotency_key=f"{SCOPE}:{organization_id}:{operation_id}:portal",
+            **options,
+        )
+
+    async def set_auto_renew(self, subscription_id: str, *, auto_renew: bool) -> dict:
+        return await self._call(
+            "Subscription", "modify", subscription_id, cancel_at_period_end=not auto_renew
+        )
+
+    async def construct_event(self, payload_bytes: bytes, sig_header: str) -> dict:
+        secret = getattr(settings, "STRIPE_WEBHOOK_SECRET", None)
+        if not secret:
+            raise APIException(message="Subscription webhook is not configured", status_code=503)
+        if not sig_header:
+            raise APIException(message="Webhook signature is required", status_code=400)
+        sdk = self._sdk()
+        try:
+            # Signature verification is local HMAC/JSON work, with no provider I/O.
+            event = sdk.Webhook.construct_event(payload_bytes, sig_header, secret)
+            return event.to_dict() if hasattr(event, "to_dict") else dict(event)
+        except (ValueError, sdk.SignatureVerificationError) as exc:
+            raise APIException(
+                message="Invalid webhook signature or payload", status_code=400
+            ) from exc

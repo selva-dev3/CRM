@@ -2,6 +2,11 @@
 
 import { Input } from "@/components/ui/input";
 
+import { InvoiceItemsTable } from '@/components/features/invoices/InvoiceItemsTable';
+import { formatInvoiceMoney } from '@/lib/formatters/invoice';
+import { formatDate } from '@/lib/formatters/date';
+import { useHasPermission } from '@/hooks/use-has-permission';
+import { PERMISSIONS } from '@/lib/permissions';
 import { getErrorMessage } from '@/lib/utils';
 import React, { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
@@ -10,7 +15,6 @@ import {
   ArrowLeft,
   Receipt,
   Calendar,
-  DollarSign,
   Send,
   CheckCircle2,
   AlertCircle,
@@ -20,7 +24,6 @@ import {
   Download,
   CreditCard,
   BellRing,
-  ShieldCheck,
 } from 'lucide-react';
 import { ActionMenu } from '@/components/common/action-menu';
 import { ConfirmModal } from '@/components/common/confirm-modal';
@@ -31,19 +34,23 @@ import {
   useInvoiceQuery,
   useInvoicePdfQuery,
   useSendInvoiceEmailMutation,
-  useCreateStripeCheckoutMutation,
   useSendPaymentReminderMutation,
   useDeleteInvoiceMutation
 } from '@/lib/api/invoices';
+import { InvoiceWorkflowActions } from '@/components/features/invoices/InvoiceWorkflowActions';
+import { InvoiceSummary } from '@/components/features/invoices/InvoiceSummary';
 import { usePaymentsQuery } from '@/lib/api/payments';
 
 export default function InvoiceDetailPage() {
+  const { hasPermission } = useHasPermission();
   const params = useParams();
   const router = useRouter();
   const invoiceId = (params?.id as string) || '';
 
   // Queries
-  const { data: invoice, isLoading, isError } = useInvoiceQuery(invoiceId);
+  const { data: invoice, isLoading, isError, isFetching, refetch } = useInvoiceQuery(invoiceId, {
+    refetchInterval: (query) => query.state.data?.delivery_status === 'Pending' ? 5000 : false,
+  });
   const paymentsQuery = usePaymentsQuery({ invoice_id: invoiceId }, { enabled: Boolean(invoiceId) });
   const { data: pdfData } = useInvoicePdfQuery(invoiceId, {
     enabled: Boolean(invoice?.pdf_available),
@@ -51,7 +58,6 @@ export default function InvoiceDetailPage() {
 
   // Mutations
   const sendEmailMutation = useSendInvoiceEmailMutation();
-  const stripeCheckoutMutation = useCreateStripeCheckoutMutation();
   const reminderMutation = useSendPaymentReminderMutation();
   const deleteMutation = useDeleteInvoiceMutation();
 
@@ -69,27 +75,18 @@ export default function InvoiceDetailPage() {
     if (!recipientEmailInput.trim()) return;
     try {
       await sendEmailMutation.mutateAsync({ id: invoiceId, recipient_email: recipientEmailInput.trim() });
-      setSuccessMessage(`Invoice email sent to ${recipientEmailInput.trim()}.`);
+      setSuccessMessage(`Invoice email queued for ${recipientEmailInput.trim()}.`);
       setIsSendEmailModalOpen(false);
     } catch (err: unknown) {
       setErrorMessage(getErrorMessage(err, 'Failed to send invoice email.'));
     }
   };
 
-  const handleStripeCheckout = async () => {
-    try {
-      const res = await stripeCheckoutMutation.mutateAsync(invoiceId);
-      setSuccessMessage('Stripe Checkout session generated.');
-      window.open(res.checkout_url, '_blank');
-    } catch (err: unknown) {
-      setErrorMessage(getErrorMessage(err, 'Failed to launch Stripe Checkout.'));
-    }
-  };
 
   const handleSendReminder = async () => {
     try {
       await reminderMutation.mutateAsync(invoiceId);
-      setSuccessMessage('Payment reminder email sent to client.');
+      setSuccessMessage('Payment reminder queued for the client.');
     } catch (err: unknown) {
       setErrorMessage(getErrorMessage(err, 'Failed to send payment reminder.'));
     }
@@ -115,7 +112,7 @@ export default function InvoiceDetailPage() {
     );
   }
 
-  if (isError || !invoice) {
+  if (!invoice) {
     return (
       <div className="p-6 max-w-2xl mx-auto space-y-4">
         <Link href="/invoices" className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900 font-medium">
@@ -125,19 +122,20 @@ export default function InvoiceDetailPage() {
         <div className="p-6 bg-rose-50 border border-rose-200 rounded-2xl text-rose-800 space-y-2">
           <div className="flex items-center gap-2 font-bold text-base">
             <AlertCircle className="w-5 h-5 text-rose-600" />
-            Invoice Not Found
+            Unable to load invoice
           </div>
-          <p className="text-sm">The invoice you requested could not be found or may have been deleted.</p>
+          <p className="text-sm">The invoice could not be loaded. Please retry.</p>
+          <Button onClick={() => void refetch()}>Retry</Button>
         </div>
       </div>
     );
   }
 
-  const s = invoice.status || 'Pending';
+  const s = invoice.status || 'Draft';
   const badgeStyle =
-    s === 'Paid'
+    s === 'Accepted'
       ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-      : s === 'Overdue'
+      : s === 'Cancelled'
       ? 'bg-rose-50 text-rose-700 border-rose-200'
       : s === 'Draft'
       ? 'bg-slate-100 text-slate-700 border-slate-200'
@@ -164,25 +162,18 @@ export default function InvoiceDetailPage() {
         </div>
 
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-          <Button
-            onClick={handleStripeCheckout}
-            disabled={stripeCheckoutMutation.isPending || !['Pending', 'Overdue'].includes(s)}
-            className="w-full gap-2 bg-purple-600 text-xs font-semibold hover:bg-purple-700 sm:w-auto"
-          >
-            {stripeCheckoutMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
-            Stripe Checkout
-          </Button>
+          <InvoiceWorkflowActions invoice={invoice} />
 
-          <Button
+          {['Finalized', 'Accepted'].includes(s) && hasPermission(PERMISSIONS.INVOICES.SEND) && <Button
             onClick={() => {
-              setRecipientEmailInput(invoice.recipient_email || '');
+              setRecipientEmailInput(invoice.recipient_email || (typeof invoice.billing_snapshot?.email === 'string' ? invoice.billing_snapshot.email : ''));
               setIsSendEmailModalOpen(true);
             }}
             className="w-full gap-2 text-xs font-semibold sm:w-auto"
           >
             <Send className="w-4 h-4" />
-            Send Email
-          </Button>
+            Send Invoice
+          </Button>}
 
           {pdfData?.pdf_url && (
             <Button asChild variant="outline" className="w-full gap-2 text-xs font-semibold sm:w-auto">
@@ -196,7 +187,7 @@ export default function InvoiceDetailPage() {
           <ActionMenu
             label="More"
             className="w-full text-xs font-semibold sm:w-auto"
-            actions={s !== 'Paid' ? [
+            actions={invoice.payment_status !== 'Paid' && ['Finalized', 'Accepted'].includes(s) ? [
               {
                 label: 'Send reminder',
                 icon: <BellRing className="w-4 h-4 text-amber-500" />,
@@ -245,6 +236,8 @@ export default function InvoiceDetailPage() {
         </div>
       )}
 
+      {s === 'Finalized' && !invoice.accepted_at && <p role="status">Waiting for customer acceptance.</p>}
+
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column: Line Items & Totals */}
@@ -259,106 +252,47 @@ export default function InvoiceDetailPage() {
                 <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Due Date</span>
                 <div className="flex items-center gap-2 font-semibold text-sm text-slate-900">
                   <Calendar className="w-4 h-4 text-slate-400" />
-                  <span>{invoice.due_date ? invoice.due_date.substring(0, 10) : 'Not set'}</span>
+                  <span>{formatDate(invoice.due_date, { fallback: 'Not set' })}</span>
                 </div>
               </div>
 
               <div className="space-y-1">
                 <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Invoice Amount</span>
                 <div className="flex items-center gap-1 text-emerald-600 font-bold text-base">
-                  <DollarSign className="w-4 h-4 text-emerald-500" />
-                  <span>{invoice.amount ? invoice.amount.toLocaleString(undefined, { minimumFractionDigits: 2 }) : '0.00'}</span>
+                  <span>{formatInvoiceMoney(invoice.amount, invoice.currency)}</span>
                 </div>
               </div>
 
               <div className="space-y-1">
                 <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Payment Status</span>
                 <div className="text-slate-900 font-semibold text-sm">
-                  {invoice.status || 'Pending'}
+                  {invoice.payment_status || 'Pending'}
                 </div>
               </div>
 
               <div className="space-y-1">
                 <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Delivery</span>
                 <div className="text-slate-900 font-semibold text-sm">
-                  {invoice.delivery_status || 'Not queued'}
+                  {sendEmailMutation.isPending ? 'Queueing…' : isFetching ? 'Loading delivery status…' : isError ? 'Unknown — refresh failed' : invoice.delivery_status || 'Unknown'}
+                  {isError && <Button variant="outline" onClick={() => void refetch()}>Retry delivery status</Button>}
                 </div>
               </div>
             </div>
 
-            {/* Line Items (present on invoices generated from a Closed Won deal) */}
-            {invoice.items && invoice.items.length > 0 && (
-              <div className="space-y-2 pb-2">
-                <span className="text-xs font-bold text-slate-800 uppercase tracking-wider block">Line Items</span>
-                <div className="overflow-x-auto -mx-1">
-                  <Table className="w-full text-xs min-w-[420px]">
-                    <TableHeader>
-                      <TableRow className="text-left text-slate-400 uppercase tracking-wider">
-                        <TableHead className="h-auto py-2 px-1 font-semibold">Description</TableHead>
-                        <TableHead className="h-auto py-2 px-1 font-semibold text-right">Qty</TableHead>
-                        <TableHead className="h-auto py-2 px-1 font-semibold text-right">Unit Price</TableHead>
-                        <TableHead className="h-auto py-2 px-1 font-semibold text-right">Total</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody className="divide-y divide-slate-100">
-                      {invoice.items.map((item) => (
-                        <TableRow key={item.id} className="text-slate-700">
-                          <TableCell className="py-2 px-1 font-medium">{item.description || item.product_id}</TableCell>
-                          <TableCell className="py-2 px-1 text-right">{item.quantity}</TableCell>
-                          <TableCell className="py-2 px-1 text-right">${(item.unit_price || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
-                          <TableCell className="py-2 px-1 text-right font-bold text-slate-900">
-                            ${((item.quantity || 0) * (item.unit_price || 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </div>
-            )}
+            <InvoiceItemsTable items={invoice.items} currency={invoice.currency} />
 
-            <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-              <span className="text-xs font-bold text-slate-800 uppercase tracking-wider block">Stripe Online Payment URL</span>
-              {invoice.stripe_checkout_url ? (
-                <a
-                  href={invoice.stripe_checkout_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs font-mono text-indigo-600 hover:underline break-all block"
-                >
-                  {invoice.stripe_checkout_url}
-                </a>
-              ) : (
-                <p className="text-xs text-slate-500">Payment link has not been created yet.</p>
-              )}
-            </div>
+            <InvoiceSummary invoice={invoice} />
           </div>
         </div>
 
-        {/* Right Column: Stripe Gateway Status */}
-        <div className="space-y-6">
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
-            <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider border-b border-slate-100 pb-3 flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-purple-600" />
-              Stripe Gateway Protection
-            </h3>
-
-            <div className="p-4 bg-purple-50/50 border border-purple-100 rounded-xl space-y-2">
-              <span className="text-xs font-bold text-purple-900 block">PCI-DSS Compliant</span>
-              <p className="text-xs text-purple-800 leading-relaxed font-medium">
-                Clients can securely settle invoices via Credit Card, Apple Pay, Google Pay, or ACH Direct Debit.
-              </p>
-            </div>
-          </div>
-        </div>
       </div>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="mb-4 flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
-          <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-900"><CreditCard className="h-4 w-4 text-indigo-600" /> Verified payments</h2>
-          <span className="text-xs text-slate-500">Read-only provider records</span>
+          <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-900"><CreditCard className="h-4 w-4 text-indigo-600" /> Recorded payments</h2>
+          <span className="text-xs text-slate-500">Manual payment receipts</span>
         </div>
-        {paymentsQuery.isLoading ? <p className="text-sm text-slate-500">Loading payment records…</p> : paymentsQuery.isError ? <div className="flex items-center justify-between gap-3 text-sm text-rose-700"><span>Payment records could not be loaded.</span><button type="button" className="font-semibold underline" onClick={() => void paymentsQuery.refetch()}>Retry</button></div> : paymentsQuery.data?.length ? <div className="overflow-x-auto"><Table className="min-w-[680px] text-xs"><TableHeader><TableRow><TableHead>Payment ID</TableHead><TableHead>Amount</TableHead><TableHead>Method</TableHead><TableHead>Status</TableHead><TableHead>Transaction</TableHead><TableHead>Paid date</TableHead></TableRow></TableHeader><TableBody>{paymentsQuery.data.map((payment) => <TableRow key={payment.id}><TableCell className="font-mono">{payment.id}</TableCell><TableCell className="font-semibold">{payment.currency} {payment.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell><TableCell>{payment.payment_method || 'Unavailable'}</TableCell><TableCell>{payment.status}</TableCell><TableCell className="max-w-[180px] truncate font-mono" title={payment.provider_payment_id}>{payment.provider_payment_id}</TableCell><TableCell>{new Date(payment.paid_at).toLocaleString()}</TableCell></TableRow>)}</TableBody></Table></div> : <p className="text-sm text-slate-500">No verified payments have been recorded for this invoice.</p>}
+        {paymentsQuery.isLoading ? <p className="text-sm text-slate-500">Loading payment records…</p> : paymentsQuery.isError ? <div className="flex items-center justify-between gap-3 text-sm text-rose-700"><span>Payment records could not be loaded.</span><button type="button" className="font-semibold underline" onClick={() => void paymentsQuery.refetch()}>Retry</button></div> : paymentsQuery.data?.length ? <div className="overflow-x-auto"><Table className="min-w-[680px] text-xs"><TableHeader><TableRow><TableHead>Payment ID</TableHead><TableHead>Amount</TableHead><TableHead>Method</TableHead><TableHead>Status</TableHead><TableHead>Notes</TableHead><TableHead>Paid date</TableHead></TableRow></TableHeader><TableBody>{paymentsQuery.data.map((payment) => <TableRow key={payment.id}><TableCell className="font-mono">{payment.payment_number}</TableCell><TableCell className="font-semibold">{payment.currency} {Number(payment.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell><TableCell>{payment.payment_type || 'Unavailable'}</TableCell><TableCell>{payment.status}</TableCell><TableCell className="max-w-[180px] truncate font-mono" title={payment.notes || undefined}>{payment.notes}</TableCell><TableCell>{payment.payment_date || payment.paid_at || payment.created_at || '—'}</TableCell></TableRow>)}</TableBody></Table></div> : <p className="text-sm text-slate-500">No payments have been recorded for this invoice.</p>}
       </section>
 
       {/* Send Email Modal */}
@@ -369,7 +303,7 @@ export default function InvoiceDetailPage() {
           title={
             <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
               <Send className="w-5 h-5 text-blue-600" />
-              Email Invoice & Payment Link
+              Email Invoice
             </h3>
           }
         >

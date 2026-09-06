@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Header, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
@@ -12,11 +12,14 @@ from app.schemas.crm_schemas import (
     BulkDeleteRequest,
     InvoiceBase,
     InvoiceResponse,
+    InvoiceUpdate,
+    ManualPaymentCreate,
     MessageResponse,
+    PaymentResponse,
 )
 from app.services.invoice_delivery_service import invoice_delivery_service
-from app.services.invoice_payment_service import invoice_payment_service
 from app.services.invoice_service import invoice_service
+from app.services.payment_service import payment_service
 
 router = APIRouter()
 
@@ -37,11 +40,12 @@ def _parse_due_date(raw: str | None) -> datetime | None:
 @router.get(
     "",
     summary="List invoices with pagination & status filters",
+    response_model=list[InvoiceResponse],
     dependencies=[Depends(require_permission("invoices:read"))],
 )
 async def list_invoices(
-    page: int = 1,
-    limit: int = 20,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     status_filter: str | None = Query(None, alias="status"),
     search: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
@@ -216,7 +220,7 @@ async def get_invoice(
 )
 async def update_invoice(
     invoice_id: str,
-    payload: InvoiceBase,
+    payload: InvoiceUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -227,7 +231,8 @@ async def update_invoice(
         organization_id=organization_id,
         amount=payload.amount,
         status=payload.status,
-        due_date=_parse_due_date(payload.due_date),
+        due_date=payload.due_date,
+        billing_snapshot=payload.billing_snapshot,
     )
 
 
@@ -250,7 +255,7 @@ async def delete_invoice(
 @router.post(
     "/{invoice_id}/send",
     response_model=MessageResponse,
-    summary="Email invoice PDF and payment link to client",
+    summary="Queue finalized invoice PDF and secure review link for the customer",
     dependencies=[Depends(require_permission("invoices:send"))],
 )
 async def send_invoice_email(
@@ -270,33 +275,58 @@ async def send_invoice_email(
 
 
 @router.post(
-    "/{invoice_id}/stripe-checkout",
-    summary="Generate fresh Stripe Checkout session URL",
+    "/{invoice_id}/payments",
+    response_model=PaymentResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Record a manual invoice payment",
     dependencies=[Depends(require_permission("invoices:payment"))],
 )
-async def create_stripe_checkout(
+async def record_invoice_payment(
+    invoice_id: str,
+    payload: ManualPaymentCreate,
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=1, max_length=128),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await invoice_service.resolve_organization_id(db, current_user)
+    return await payment_service.record_payment(
+        db,
+        invoice_id=invoice_id,
+        organization_id=organization_id,
+        user_id=current_user.id,
+        payload=payload,
+        idempotency_key=idempotency_key,
+    )
+
+
+@router.post(
+    "/{invoice_id}/finalize",
+    response_model=InvoiceResponse,
+    dependencies=[Depends(require_permission("invoices:update"))],
+)
+async def finalize_invoice(
     invoice_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await invoice_service.resolve_organization_id(db, current_user)
-    return await invoice_payment_service.checkout(
-        db, invoice_id=invoice_id, organization_id=organization_id
+    return await invoice_service.finalize_invoice(
+        db, invoice_id=invoice_id, organization_id=organization_id, user_id=current_user.id
     )
 
 
 @router.post(
     "/{invoice_id}/mark-paid",
     response_model=MessageResponse,
-    summary="Manual mark-paid is disabled; use verified payment processing",
+    summary="Use the manual payments endpoint to record payment",
     dependencies=[Depends(require_permission("invoices:payment"))],
 )
 async def mark_invoice_paid(
     invoice_id: str,
 ):
     raise APIException(
-        message="Payment must be recorded through a verified provider or a dedicated offline-payment workflow",
-        code="PAYMENT_VERIFICATION_REQUIRED",
+        message="Record payment using POST /invoices/{invoice_id}/payments with an Idempotency-Key",
+        code="MANUAL_PAYMENT_REQUIRED",
         status_code=501,
     )
 

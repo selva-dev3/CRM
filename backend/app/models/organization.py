@@ -1,7 +1,18 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -103,18 +114,23 @@ class OrganizationSubscription(Base):
 
     auto_renew: Mapped[bool] = mapped_column(Boolean, default=True)
 
-    # Payment
-    payment_provider: Mapped[str | None] = mapped_column(String(50), default="Stripe")
+    # Preserve the provider archive alongside current subscription billing state.
+    legacy_provider_data: Mapped[dict | None] = mapped_column(JSON)
+    payment_provider: Mapped[str | None] = mapped_column(String(50))
 
     payment_method: Mapped[str | None] = mapped_column(String(100))
 
     customer_id: Mapped[str | None] = mapped_column(String(255))
 
-    subscription_id: Mapped[str | None] = mapped_column(String(255))
+    subscription_id: Mapped[str | None] = mapped_column(String(255), index=True)
 
     invoice_id: Mapped[str | None] = mapped_column(String(100))
 
-    checkout_session_id: Mapped[str | None] = mapped_column(String(255), index=True, nullable=True)
+    checkout_session_id: Mapped[str | None] = mapped_column(String(255), index=True)
+    checkout_operation_id: Mapped[str | None] = mapped_column(String(64))
+    checkout_request_hash: Mapped[str | None] = mapped_column(String(64))
+    checkout_plan_slug: Mapped[str | None] = mapped_column(String(100))
+    checkout_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # Usage
     max_users: Mapped[int] = mapped_column(Integer, default=100)

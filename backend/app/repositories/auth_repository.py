@@ -227,7 +227,6 @@ class AuthRepository:
             billing_cycle="Monthly",
             amount=0,
             currency=currency,
-            payment_provider="Stripe",
             max_users=3,
             current_users=1,
             storage_limit_gb=5,

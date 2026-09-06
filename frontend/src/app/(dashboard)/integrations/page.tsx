@@ -59,14 +59,6 @@ const APPS: AppIntegration[] = [
     status: 'available'
   },
   {
-    id: 'stripe',
-    name: 'Stripe Billing',
-    category: 'Finance',
-    description: 'Sync quotes and invoices with real-time payment capture & subscription data.',
-    icon: '💳',
-    status: 'available'
-  },
-  {
     id: 'google-calendar',
     name: 'Google Calendar',
     category: 'Productivity',

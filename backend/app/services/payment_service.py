@@ -1,6 +1,15 @@
 from __future__ import annotations
 
+import hashlib
+import json
+from datetime import UTC, datetime, time
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.errors import APIException, ConflictError, NotFoundError
 from app.repositories.payment_repository import PaymentRepository
+from app.schemas.crm_schemas import ManualPaymentCreate
+from app.services.sales_totals import decimal_value
 
 
 def payment_to_dict(row: tuple) -> dict[str, object]:
@@ -17,9 +26,9 @@ def payment_to_dict(row: tuple) -> dict[str, object]:
         "currency": payment.currency,
         "payment_method": payment.payment_method,
         "status": payment.status,
-        "provider": payment.provider,
-        "provider_payment_id": payment.provider_payment_id,
-        "checkout_session_id": payment.checkout_session_id,
+        "payment_type": payment.payment_type,
+        "payment_date": payment.payment_date.isoformat(),
+        "notes": payment.notes,
         "paid_at": payment.paid_at.isoformat(),
         "created_at": payment.created_at.isoformat() if payment.created_at else None,
     }
@@ -29,9 +38,113 @@ class PaymentService:
     def __init__(self, repository: PaymentRepository | None = None) -> None:
         self.repository = repository or PaymentRepository()
 
-    async def list_payments(self, db, *, organization_id: str, page: int, limit: int,
-                            status: str | None = None, search: str | None = None,
-                            invoice_id: str | None = None) -> list[dict[str, object]]:
+    async def record_payment(
+        self,
+        db: AsyncSession,
+        *,
+        invoice_id: str,
+        organization_id: str,
+        user_id: str,
+        payload: ManualPaymentCreate,
+        idempotency_key: str,
+    ) -> dict:
+        if not idempotency_key.strip() or len(idempotency_key) > 128:
+            raise APIException(
+                message="A non-empty Idempotency-Key of at most 128 characters is required"
+            )
+        canonical = payload.model_dump(mode="json")
+        canonical["amount"] = format(payload.amount, ".2f")
+        digest = hashlib.sha256(
+            json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        try:
+            invoice = await self.repository.lock_invoice(
+                db, invoice_id=invoice_id, organization_id=organization_id
+            )
+            if not invoice:
+                raise NotFoundError(message="Invoice not found")
+            existing = await self.repository.get_by_idempotency(
+                db, invoice_id=invoice_id, organization_id=organization_id, key=idempotency_key
+            )
+            if existing:
+                if existing.request_hash != digest:
+                    raise ConflictError(
+                        message="Idempotency-Key was already used with a different payment",
+                        code="PAYMENT_IDEMPOTENCY_CONFLICT",
+                    )
+                result = await self.get_payment(
+                    db, payment_id=existing.id, organization_id=organization_id
+                )
+                if result is None:
+                    raise NotFoundError(message="Recorded payment not found")
+                await db.commit()
+                return result
+            if invoice.status != "Accepted" or not invoice.finalized_at or not invoice.accepted_at:
+                raise ConflictError(
+                    message="Payments require a finalized invoice accepted by the customer",
+                    code="INVOICE_ACCEPTANCE_REQUIRED",
+                )
+            paid = await self.repository.sum_succeeded(
+                db, invoice_id=invoice_id, organization_id=organization_id
+            )
+            outstanding = decimal_value(invoice.amount) - paid
+            if payload.amount > outstanding:
+                raise ConflictError(
+                    message="Payment exceeds the outstanding invoice amount",
+                    code="PAYMENT_EXCEEDS_BALANCE",
+                )
+            if payload.payment_date > datetime.now(UTC).date():
+                raise APIException(message="Payment date cannot be in the future")
+            prefix, sequence = await self.repository.advance_numbering(db, organization_id)
+            now = datetime.now(UTC)
+            payment = await self.repository.create_manual(
+                db,
+                data={
+                    "organization_id": organization_id,
+                    "invoice_id": invoice_id,
+                    "payment_number": f"{prefix}-{now.year}-{sequence:06d}",
+                    "amount": payload.amount,
+                    "currency": invoice.currency,
+                    "payment_type": payload.payment_type,
+                    "payment_method": payload.payment_type,
+                    "payment_date": payload.payment_date,
+                    "notes": payload.notes,
+                    "status": "Succeeded",
+                    "paid_at": datetime.combine(payload.payment_date, time.min, tzinfo=UTC),
+                    "recorded_by": user_id,
+                    "idempotency_key": idempotency_key,
+                    "request_hash": digest,
+                    "receipt_delivery_status": "Pending",
+                },
+            )
+            invoice.paid_amount = paid + payload.amount
+            invoice.payment_status = (
+                "Paid" if invoice.paid_amount == invoice.amount else "Partially Paid"
+            )
+            await self.repository.record_manual_audit(db, invoice, payment)
+            await db.flush()
+            result = await self.get_payment(
+                db, payment_id=payment.id, organization_id=organization_id
+            )
+            if result is None:
+                raise NotFoundError(message="Recorded payment not found")
+            await db.commit()
+            return result
+        except Exception:
+            await db.rollback()
+            raise
+
+    async def list_payments(
+        self,
+        db,
+        *,
+        organization_id: str,
+        page: int,
+        limit: int,
+        status: str | None = None,
+        search: str | None = None,
+        invoice_id: str | None = None,
+    ) -> list[dict[str, object]]:
         rows = await self.repository.list_scoped(
             db,
             organization_id=organization_id,
@@ -43,7 +156,9 @@ class PaymentService:
         )
         return [payment_to_dict(row) for row in rows]
 
-    async def get_payment(self, db, *, payment_id: str, organization_id: str) -> dict[str, object] | None:
+    async def get_payment(
+        self, db, *, payment_id: str, organization_id: str
+    ) -> dict[str, object] | None:
         row = await self.repository.get_scoped(
             db, payment_id=payment_id, organization_id=organization_id
         )

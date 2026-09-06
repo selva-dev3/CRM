@@ -1,292 +1,57 @@
-import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import SubscriptionPlansPage from './page';
+import { render, screen, fireEvent } from '@testing-library/react';
+import { vi, it, expect, beforeEach } from 'vitest';
+import Page from './page';
+import type { SubscriptionCheckoutOperation } from '@/lib/api/subscription-checkout';
 
-const mockPush = vi.fn();
-const mockBack = vi.fn();
+const mocks = vi.hoisted(() => ({ start: vi.fn(), pending: false, permission: true, error: null as string | null, empty: false, currentPlan: 'Basic', operation: null as SubscriptionCheckoutOperation | null }));
 
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({
-    push: mockPush,
-    back: mockBack,
-  }),
-  useSearchParams: () => ({
-    get: vi.fn().mockImplementation((param: string) => {
-      if (param === 'org_id') return 'org-123';
-      return null;
-    }),
-  }),
-}));
-
-const mockPlansData = [
-  {
-    id: 'plan-free',
-    name: 'Free',
-    slug: 'free',
-    price_monthly: 0,
-    price_yearly: 0,
-    max_users: 3,
-    max_storage_gb: 5,
-    ai_credits: 50,
-    features: ['Dashboard', 'Leads', 'Contacts'],
-    is_active: true,
-  },
-  {
-    id: 'plan-starter',
-    name: 'Starter',
-    slug: 'starter',
-    price_monthly: 999,
-    price_yearly: 9990,
-    max_users: 10,
-    max_storage_gb: 20,
-    ai_credits: 500,
-    features: ['Everything in Free', 'Deals', 'Tasks'],
-    is_active: true,
-  },
-  {
-    id: 'plan-professional',
-    name: 'Professional',
-    slug: 'professional',
-    price_monthly: 2999,
-    price_yearly: 29990,
-    max_users: 50,
-    max_storage_gb: 100,
-    ai_credits: 5000,
-    features: ['Everything in Starter', 'AI', 'Reports'],
-    is_active: true,
-  },
-  {
-    id: 'plan-business',
-    name: 'Business',
-    slug: 'business',
-    price_monthly: 6999,
-    price_yearly: 69990,
-    max_users: 200,
-    max_storage_gb: 500,
-    ai_credits: 20000,
-    features: ['Everything in Professional'],
-    is_active: true,
-  },
-  {
-    id: 'plan-enterprise',
-    name: 'Enterprise',
-    slug: 'enterprise',
-    price_monthly: 29990,
-    price_yearly: 299900,
-    max_users: 100,
-    max_storage_gb: 500,
-    ai_credits: 100000,
-    features: ['Unlimited Everything', 'Priority Support'],
-    is_active: true,
-  },
-];
-
-const mockUseSubscriptionPlansQuery = vi.fn();
-const mockUseOrganizationSubscriptionQuery = vi.fn();
-const mockMutateAsync = vi.fn();
-const mockUseCreateSubscriptionCheckoutMutation = vi.fn();
-
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }), useSearchParams: () => new URLSearchParams() }));
 vi.mock('@/lib/api/organizations', () => ({
-  useSubscriptionPlansQuery: () => mockUseSubscriptionPlansQuery(),
-  useOrganizationSubscriptionQuery: () => mockUseOrganizationSubscriptionQuery(),
-  useCreateSubscriptionCheckoutMutation: () => mockUseCreateSubscriptionCheckoutMutation(),
-  createSubscriptionCheckoutApi: vi.fn(),
-  upgradeOrganizationSubscriptionApi: vi.fn(),
-  getSubscriptionPlansApi: vi.fn(),
-  getOrganizationSubscriptionApi: vi.fn(),
+  useOrganizationSubscriptionQuery: () => ({ data: { plan: mocks.currentPlan } }),
+  useSubscriptionPlansQuery: () => ({ data: mocks.empty ? [] : [{ slug: 'pro', name: 'Pro', price_monthly: 100, price_yearly: 1000, max_users: 10, max_storage_gb: 10, ai_credits: 100, features: [] }] }),
 }));
-
-describe('SubscriptionPlansPage - Stripe Checkout Flow', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockMutateAsync.mockResolvedValue({
-      checkout_url: 'https://checkout.stripe.com/pay/cs_test_mock_session',
-      session_id: 'cs_test_mock_session',
-      status: 'success',
-    });
-    mockUseCreateSubscriptionCheckoutMutation.mockReturnValue({
-      mutateAsync: mockMutateAsync,
-      isPending: false,
-    });
-    mockUseOrganizationSubscriptionQuery.mockReturnValue({
-      data: { plan: 'Free', billing_cycle: 'Monthly', amount: 0 },
-    });
-    mockUseSubscriptionPlansQuery.mockReturnValue({
-      data: mockPlansData,
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    });
-  });
-
-  it('renders loading state when fetching plans', () => {
-    mockUseSubscriptionPlansQuery.mockReturnValue({
-      data: undefined,
-      isLoading: true,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    });
-
-    render(<SubscriptionPlansPage />);
-    expect(screen.getByText(/Loading available subscription plans/i)).toBeInTheDocument();
-  });
-
-  it('renders error state when plans query fails with retry button', () => {
-    const mockRefetch = vi.fn();
-    mockUseSubscriptionPlansQuery.mockReturnValue({
-      data: undefined,
-      isLoading: false,
-      isError: true,
-      error: new Error('Network error'),
-      refetch: mockRefetch,
-    });
-
-    render(<SubscriptionPlansPage />);
-    expect(screen.getByText('Failed to Load Plans')).toBeInTheDocument();
-    expect(screen.getByText('Network error')).toBeInTheDocument();
-
-    const retryBtn = screen.getByRole('button', { name: /Retry Loading Plans/i });
-    fireEvent.click(retryBtn);
-    expect(mockRefetch).toHaveBeenCalledTimes(1);
-  });
-
-  it('renders all active plans with server-side prices and quotas', () => {
-    render(<SubscriptionPlansPage />);
-
-    expect(screen.getByText('Free')).toBeInTheDocument();
-    expect(screen.getByText('Starter')).toBeInTheDocument();
-    expect(screen.getByText('Professional')).toBeInTheDocument();
-    expect(screen.getByText('Business')).toBeInTheDocument();
-    expect(screen.getByText('Enterprise')).toBeInTheDocument();
-
-    expect(screen.getByText('₹0')).toBeInTheDocument();
-    expect(screen.getByText('₹999')).toBeInTheDocument();
-    expect(screen.getByText('₹2,999')).toBeInTheDocument();
-    expect(screen.getByText('₹6,999')).toBeInTheDocument();
-    expect(screen.getByText('₹29,990')).toBeInTheDocument();
-
-    expect(screen.getByText('Current Plan')).toBeInTheDocument();
-  });
-
-  it('calls checkout mutation with plan_slug and org_id when user clicks upgrade', async () => {
-    render(<SubscriptionPlansPage />);
-
-    // Upgrade button should be disabled initially until a plan is selected
-    const upgradeButton = screen.getByRole('button', { name: /Select a Plan/i });
-    expect(upgradeButton).toBeDisabled();
-
-    // Click Starter plan card
-    const starterButton = screen.getByRole('button', { name: /Choose Starter/i });
-    fireEvent.click(starterButton);
-
-    // Upgrade button should now be enabled with "Upgrade to Starter"
-    const activeUpgradeButton = screen.getByRole('button', { name: /Upgrade to Starter/i });
-    expect(activeUpgradeButton).toBeEnabled();
-
-    // Click Upgrade to trigger checkout
-    fireEvent.click(activeUpgradeButton);
-
-    await waitFor(() => {
-      expect(mockMutateAsync).toHaveBeenCalledWith({
-        plan_slug: 'starter',
-        org_id: 'org-123',
-      });
-    });
-  });
-
-  it('handles checkout creation failure without navigating away', async () => {
-    mockMutateAsync.mockRejectedValueOnce({
-      response: { data: { message: 'Stripe gateway unavailable' } },
-    });
-
-    render(<SubscriptionPlansPage />);
-
-    const starterButton = screen.getByRole('button', { name: /Choose Starter/i });
-    fireEvent.click(starterButton);
-
-    const upgradeButton = screen.getByRole('button', { name: /Upgrade to Starter/i });
-    fireEvent.click(upgradeButton);
-
-    expect(await screen.findByText('Stripe gateway unavailable')).toBeInTheDocument();
-    expect(upgradeButton).toBeEnabled();
-    expect(mockPush).not.toHaveBeenCalled();
-  });
-
-  it('navigates back to organization details on cancel / back click', () => {
-    render(<SubscriptionPlansPage />);
-
-    const backButton = screen.getByText(/Back to Organization & Billing/i);
-    fireEvent.click(backButton);
-
-    expect(mockPush).toHaveBeenCalledWith('/organization/org-123');
-  });
-
-  it('disables the active plan button and marks it as Active Plan when user is on Professional plan', () => {
-    mockUseOrganizationSubscriptionQuery.mockReturnValue({
-      data: { plan: 'Professional', plan_slug: 'professional', billing_cycle: 'Monthly', amount: 2999 },
-    });
-
-    render(<SubscriptionPlansPage />);
-
-    // Professional should have Current Plan badge and Active Plan button
-    expect(screen.getByText('Current Plan')).toBeInTheDocument();
-    const activePlanButton = screen.getByRole('button', { name: /Active Plan/i });
-    expect(activePlanButton).toBeInTheDocument();
-    expect(activePlanButton).toBeDisabled();
-
-    // Other plans should remain selectable
-    const chooseStarterButton = screen.getByRole('button', { name: /Choose Starter/i });
-    expect(chooseStarterButton).toBeEnabled();
-    const chooseBusinessButton = screen.getByRole('button', { name: /Choose Business/i });
-    expect(chooseBusinessButton).toBeEnabled();
-  });
-
-  it('prevents selecting or upgrading the current active plan', () => {
-    mockUseOrganizationSubscriptionQuery.mockReturnValue({
-      data: { plan: 'Professional', plan_slug: 'professional', billing_cycle: 'Monthly', amount: 2999 },
-    });
-
-    render(<SubscriptionPlansPage />);
-
-    // Attempt to click the active plan button
-    const activePlanButton = screen.getByRole('button', { name: /Active Plan/i });
-    fireEvent.click(activePlanButton);
-
-    // Upgrade button must remain disabled with default text
-    const upgradeButton = screen.getByRole('button', { name: /Select a Plan/i });
-    expect(upgradeButton).toBeDisabled();
-
-    // Clicking upgrade button does not trigger checkout mutation
-    fireEvent.click(upgradeButton);
-    expect(mockMutateAsync).not.toHaveBeenCalled();
-  });
-
-  it('allows upgrading to a higher tier like Business when on Professional plan', async () => {
-    mockUseOrganizationSubscriptionQuery.mockReturnValue({
-      data: { plan: 'Professional', plan_slug: 'professional', billing_cycle: 'Monthly', amount: 2999 },
-    });
-
-    render(<SubscriptionPlansPage />);
-
-    // Select Business
-    const chooseBusinessButton = screen.getByRole('button', { name: /Choose Business/i });
-    fireEvent.click(chooseBusinessButton);
-
-    // Upgrade button should now show "Upgrade to Business" and be enabled
-    const upgradeButton = screen.getByRole('button', { name: /Upgrade to Business/i });
-    expect(upgradeButton).toBeEnabled();
-
-    // Click Upgrade
-    fireEvent.click(upgradeButton);
-
-    await waitFor(() => {
-      expect(mockMutateAsync).toHaveBeenCalledWith({
-        plan_slug: 'business',
-        org_id: 'org-123',
-      });
-    });
-  });
+vi.mock('@/lib/api/subscription-checkout', () => ({ useSubscriptionCheckout: () => ({ start: mocks.start, ready: true, isPending: mocks.pending, error: mocks.error, operation: mocks.operation, isCurrentOrganization: true }) }));
+vi.mock('@/hooks/use-has-permission', () => ({ useHasPermission: () => ({ hasPermission: () => mocks.permission }) }));
+beforeEach(() => { vi.clearAllMocks(); mocks.pending = false; mocks.permission = true; mocks.error = null; mocks.empty = false; mocks.currentPlan = 'Basic'; mocks.operation = null; });
+it('starts Stripe subscription checkout for the selected plan', () => {
+  render(<Page />);
+  expect(screen.getByRole('button', { name: 'Continue with Stripe' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Choose Pro' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Continue with Stripe' }));
+  expect(mocks.start).toHaveBeenCalledWith('pro');
+  expect(screen.getByText(/Plans are billed monthly in INR/)).toBeInTheDocument();
+  expect(screen.queryByText(/billed yearly/i)).not.toBeInTheDocument();
+});
+it('disables submission while opening Stripe', () => {
+  mocks.pending = true;
+  render(<Page />);
+  expect(screen.getByRole('button', { name: 'Opening Stripe…' })).toBeDisabled();
+});
+it('requires billing permission', () => {
+  mocks.permission = false;
+  render(<Page />);
+  fireEvent.click(screen.getByRole('button', { name: 'Choose Pro' }));
+  expect(screen.getByRole('button', { name: 'Continue with Stripe' })).toBeDisabled();
+});
+it('shows errors and empty plans', () => {
+  mocks.error = 'Billing unavailable'; mocks.empty = true;
+  render(<Page />);
+  expect(screen.getByRole('alert')).toHaveTextContent('Billing unavailable');
+  expect(screen.getByText('No subscription plans are available.')).toBeInTheDocument();
+});
+it.each([null, 'Idempotency fingerprint conflict'])('offers verification for a pending current-plan request with error %s', (error) => {
+  mocks.currentPlan = 'Pro';
+  mocks.operation = { payload: { plan_slug: 'pro' }, idempotencyKey: 'c666f2cf-59ad-47a9-80ef-1327d1229b91' };
+  mocks.error = error;
+  render(<Page />);
+  expect(screen.getByRole('link', { name: 'Check subscription status' })).toHaveAttribute('href', '/organization/subscription/payment/success?plan_slug=pro');
+  expect(screen.getByRole('button', { name: 'Retry subscription request' })).not.toBeDisabled();
+  expect(screen.getByText(/Activation requires server verification/)).toBeInTheDocument();
+  expect(mocks.start).not.toHaveBeenCalled();
+});
+it('keeps verification accessible while a request is pending and the plan list is empty', () => {
+  mocks.pending = true; mocks.empty = true;
+  mocks.operation = { payload: { plan_slug: 'pro&other=value' }, idempotencyKey: 'c666f2cf-59ad-47a9-80ef-1327d1229b91' };
+  render(<Page />);
+  expect(screen.getByRole('link', { name: 'Check subscription status' })).toHaveAttribute('href', '/organization/subscription/payment/success?plan_slug=pro%26other%3Dvalue');
 });

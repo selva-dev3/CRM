@@ -1,27 +1,28 @@
 'use client';
 
 import React, { useState, Suspense } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowLeft,
   Check,
-  Zap,
   Users,
   HardDrive,
   Bot,
   Crown,
   AlertCircle,
-  CheckCircle2,
   Loader2,
   RefreshCw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { useSubscriptionCheckout } from '@/lib/api/subscription-checkout';
+import { useHasPermission } from '@/hooks/use-has-permission';
+import { PERMISSIONS } from '@/lib/permissions';
 import {
   useSubscriptionPlansQuery,
   useOrganizationSubscriptionQuery,
-  useCreateSubscriptionCheckoutMutation,
   type SubscriptionPlanItem,
 } from '@/lib/api/organizations';
 
@@ -29,11 +30,11 @@ function SubscriptionPlansContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const orgIdParam = searchParams.get('org_id');
+  const checkout = useSubscriptionCheckout(orgIdParam);
+  const { hasPermission } = useHasPermission();
+  const canManageBilling = hasPermission(PERMISSIONS.ORGANIZATION.BILLING);
 
   const [selectedPlanSlug, setSelectedPlanSlug] = useState<string | null>(null);
-  const [isRedirecting, setIsRedirecting] = useState(false);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const {
     data: plans,
@@ -43,17 +44,17 @@ function SubscriptionPlansContent() {
     refetch: refetchPlans,
   } = useSubscriptionPlansQuery();
 
-  const { data: currentSubscription } = useOrganizationSubscriptionQuery();
-  const checkoutMutation = useCreateSubscriptionCheckoutMutation();
+  const { data: currentSubscription, isLoading: isSubscriptionLoading, isError: isSubscriptionError } = useOrganizationSubscriptionQuery();
 
   const activePlans = React.useMemo(() => {
     if (!plans || !Array.isArray(plans)) return [];
     return plans.filter((p) => p.is_active !== false);
   }, [plans]);
 
-  const currentPlanName = (currentSubscription?.plan_slug || currentSubscription?.plan || '').toLowerCase();
+  const currentPlanName = checkout.isCurrentOrganization ? (currentSubscription?.plan_slug || currentSubscription?.plan || '').toLowerCase() : '';
 
   const handleSelectPlan = (plan: SubscriptionPlanItem) => {
+    if (checkout.isPending || checkout.operation) return;
     if (
       currentPlanName &&
       (plan.slug.toLowerCase() === currentPlanName ||
@@ -62,7 +63,6 @@ function SubscriptionPlansContent() {
       return;
     }
     setSelectedPlanSlug(plan.slug);
-    setErrorMessage(null);
   };
 
   const handleBack = () => {
@@ -73,40 +73,8 @@ function SubscriptionPlansContent() {
     }
   };
 
-  const handleUpgrade = async () => {
-    if (
-      !selectedPlanSlug ||
-      (currentPlanName && selectedPlanSlug.toLowerCase() === currentPlanName) ||
-      checkoutMutation.isPending ||
-      isRedirecting
-    ) {
-      return;
-    }
-    try {
-      setErrorMessage(null);
-      setSuccessMessage(null);
-      const res = await checkoutMutation.mutateAsync({
-        plan_slug: selectedPlanSlug,
-        org_id: orgIdParam || undefined,
-      });
 
-      if (res.checkout_url) {
-        setIsRedirecting(true);
-        setSuccessMessage('Redirecting to Stripe Checkout...');
-        window.location.href = res.checkout_url;
-      } else {
-        throw new Error('No Stripe checkout URL returned.');
-      }
-    } catch (err: unknown) {
-      setIsRedirecting(false);
-      const errorObj = err as { response?: { data?: { message?: string } }; message?: string };
-      const backendMessage =
-        errorObj.response?.data?.message || errorObj.message || 'Failed to initialize Stripe checkout.';
-      setErrorMessage(backendMessage);
-    }
-  };
-
-  const selectedPlan = activePlans.find((p) => p.slug === selectedPlanSlug);
+  const selectedPlan = activePlans.find((p) => p.slug === (checkout.operation?.payload.plan_slug || selectedPlanSlug));
 
   return (
     <div className="min-h-screen bg-[#F9FAFB] p-4 sm:p-6 lg:p-8 w-full">
@@ -131,23 +99,16 @@ function SubscriptionPlansContent() {
           </div>
         </div>
 
-        {/* NOTIFICATIONS / FEEDBACK */}
-        {successMessage && (
-          <div className="p-4 bg-[#16A34A]/10 border border-[#16A34A]/20 rounded-btn flex items-center justify-between gap-3 text-[#16A34A] animate-fadeIn">
-            <div className="flex items-center gap-2 font-medium">
-              <CheckCircle2 className="w-5 h-5 shrink-0" />
-              <span>{successMessage}</span>
-            </div>
-            <Badge className="bg-[#16A34A] text-white border-transparent">Redirecting...</Badge>
-          </div>
-        )}
-
-        {errorMessage && (
-          <div className="p-4 bg-[#DC2626]/10 border border-[#DC2626]/20 rounded-btn flex items-center gap-2 text-[#DC2626] animate-fadeIn">
-            <AlertCircle className="w-5 h-5 shrink-0" />
-            <span className="font-medium">{errorMessage}</span>
-          </div>
-        )}
+        <p className="text-sm text-muted-foreground">Plans are billed monthly in INR. Continue securely with Stripe to start a subscription or confirm an update to your existing subscription.</p>
+        {!canManageBilling && <p role="status">Contact your administrator for permission to manage subscription billing.</p>}
+        {isSubscriptionError && <p role="alert">Unable to load the current subscription. Reload before starting a change.</p>}
+        {checkout.error && <p role="alert" className="text-sm text-destructive">{checkout.error}</p>}
+        {checkout.operation && <div className="space-y-3">
+          <p role="status">A request for {checkout.operation.payload.plan_slug} is pending. Check subscription status if you already completed Stripe or lost the return redirect. Activation requires server verification.</p>
+          <Button asChild variant="outline">
+            <Link href={`/organization/subscription/payment/success?plan_slug=${encodeURIComponent(checkout.operation.payload.plan_slug)}`}>Check subscription status</Link>
+          </Button>
+        </div>}
 
         {/* LOADING STATE */}
         {isPlansLoading && (
@@ -179,11 +140,12 @@ function SubscriptionPlansContent() {
         )}
 
         {/* PLANS GRID */}
+        {!isPlansLoading && !isPlansError && activePlans.length === 0 && <p>No subscription plans are available.</p>}
         {!isPlansLoading && !isPlansError && activePlans.length > 0 && (
           <div className="space-y-6 lg:space-y-8 w-full">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 lg:gap-5 xl:gap-6">
               {activePlans.map((plan) => {
-                const isSelected = selectedPlanSlug === plan.slug;
+                const isSelected = selectedPlan?.slug === plan.slug;
                 const isCurrent =
                   Boolean(currentPlanName) &&
                   (currentPlanName === plan.slug.toLowerCase() ||
@@ -233,13 +195,8 @@ function SubscriptionPlansContent() {
                         <span className="text-2xl lg:text-3xl font-extrabold text-[#111827]">
                           ₹{plan.price_monthly.toLocaleString()}
                         </span>
-                        <span className="text-caption font-semibold text-[#4B5563]">/mo</span>
+                        <span className="text-caption font-semibold text-[#4B5563]">INR / month</span>
                       </div>
-                      {plan.price_yearly > 0 && (
-                        <div className="text-[11px] text-[#4B5563]">
-                          ₹{plan.price_yearly.toLocaleString()} billed yearly
-                        </div>
-                      )}
                     </div>
 
                     {/* QUOTAS & LIMITS */}
@@ -287,7 +244,7 @@ function SubscriptionPlansContent() {
                     <Button
                       type="button"
                       variant={isSelected ? 'primary' : 'outline'}
-                      disabled={isCurrent}
+                      disabled={isCurrent || checkout.isPending || Boolean(checkout.operation)}
                       className={`w-full font-semibold text-xs h-9 ${
                         isCurrent
                           ? 'border-[#E5E7EB] bg-[#F3F4F6] text-[#9CA3AF] cursor-not-allowed opacity-75'
@@ -315,7 +272,7 @@ function SubscriptionPlansContent() {
                 <div className="text-subheading font-bold text-[#111827]">
                   {selectedPlan ? (
                     <span>
-                      Selected Tier: <span className="text-[#2563EB]">{selectedPlan.name}</span> (₹{selectedPlan.price_monthly.toLocaleString()}/mo)
+                      Selected Tier: <span className="text-[#2563EB]">{selectedPlan.name}</span> (₹{selectedPlan.price_monthly.toLocaleString()} INR / month)
                     </span>
                   ) : (
                     <span>Please select a plan above to proceed</span>
@@ -323,7 +280,7 @@ function SubscriptionPlansContent() {
                 </div>
                 <p className="text-caption text-[#4B5563]">
                   {selectedPlan
-                    ? 'You will be securely redirected to Stripe Checkout to complete payment. Your plan activates automatically upon verification.'
+                    ? 'Stripe will handle checkout or confirmation of your existing subscription update. Activation is confirmed after billing synchronization.'
                     : 'Click on any plan card above to review and select your preferred tier.'}
                 </p>
               </div>
@@ -333,34 +290,16 @@ function SubscriptionPlansContent() {
                   type="button"
                   variant="outline"
                   onClick={handleBack}
-                  disabled={checkoutMutation.isPending || isRedirecting}
                   className="w-full sm:w-auto border-[#E5E7EB] text-[#374151] cursor-pointer"
                 >
                   Cancel
                 </Button>
                 <Button
-                  type="button"
-                  variant="primary"
-                  onClick={handleUpgrade}
-                  disabled={
-                    !selectedPlanSlug ||
-                    (Boolean(currentPlanName) && selectedPlanSlug.toLowerCase() === currentPlanName) ||
-                    checkoutMutation.isPending ||
-                    isRedirecting
-                  }
-                  className="w-full sm:w-auto cursor-pointer shadow-saas-sm gap-2 min-w-[180px]"
+                  disabled={!canManageBilling || !checkout.ready || checkout.isPending || isSubscriptionLoading || isSubscriptionError || (!checkout.operation && (!selectedPlan || selectedPlan.slug.toLowerCase() === currentPlanName))}
+                  onClick={() => void checkout.start(checkout.operation?.payload.plan_slug || selectedPlan?.slug || '')}
+                  className="w-full sm:w-auto"
                 >
-                  {checkoutMutation.isPending || isRedirecting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>{isRedirecting ? 'Redirecting to Stripe...' : 'Initializing Checkout...'}</span>
-                    </>
-                  ) : (
-                    <>
-                      <Zap className="w-4 h-4" />
-                      <span>{selectedPlan ? `Upgrade to ${selectedPlan.name}` : 'Select a Plan'}</span>
-                    </>
-                  )}
+                  {checkout.isPending ? 'Opening Stripe…' : checkout.operation ? 'Retry subscription request' : 'Continue with Stripe'}
                 </Button>
               </div>
             </Card>

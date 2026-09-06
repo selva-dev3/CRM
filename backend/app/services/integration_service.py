@@ -35,12 +35,6 @@ DEFAULT_CONNECTORS = [
         "description": "Connect with 5,000+ web applications via Zapier webhooks.",
     },
     {
-        "name": "Stripe Billing",
-        "category": "Finance",
-        "is_connected": True,
-        "description": "Sync quotes and invoices with real-time payment capture.",
-    },
-    {
         "name": "Google Calendar",
         "category": "Productivity",
         "is_connected": True,
@@ -688,12 +682,7 @@ class IntegrationService:
                 status_code=500, message=f"Failed to send Slack notification: {str(e)}"
             ) from e
 
-    # --- Stripe / OAuth / misc ---
-    async def handle_stripe_webhook(
-        self, event_type: str | None, payload_event_type: str | None
-    ) -> dict:
-        ev = payload_event_type or event_type or "payment_intent.succeeded"
-        return {"message": f"Stripe billing webhook event '{ev}' processed", "status": "success"}
+    # --- OAuth / misc ---
 
     async def google_oauth_callback(self) -> dict:
         return {

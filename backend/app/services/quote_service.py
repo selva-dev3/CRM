@@ -170,31 +170,6 @@ class QuoteService:
             await db.rollback()
             raise
 
-    async def public_checkout(self, db: AsyncSession, *, token: str) -> dict:
-        from app.services.invoice_payment_service import InvoicePaymentService
-
-        try:
-            quote = await self.repository.lock_public(
-                db, hashlib.sha256(token.encode()).hexdigest()
-            )
-            if not quote or quote.status != "Accepted":
-                raise NotFoundError(message="Accepted quote not found")
-            if not quote.expires_at or quote.expires_at <= datetime.now(UTC):
-                raise APIException(message="Quote link has expired", status_code=410)
-            invoice = await invoice_repository.get_by_quote(
-                db, quote_id=quote.id, organization_id=quote.organization_id
-            )
-            if not invoice:
-                raise NotFoundError(message="Invoice not found")
-            invoice_id, organization_id = invoice.id, quote.organization_id
-            await db.commit()
-            return await InvoicePaymentService().checkout(
-                db, invoice_id=invoice_id, organization_id=organization_id, public_customer=True
-            )
-        except Exception:
-            await db.rollback()
-            raise
-
     async def create_from_won_deal(self, db: AsyncSession, *, deal: Deal, actor_id: str) -> Quote:
         """Caller holds the scoped deal lock and owns the transaction; never commits here."""
         if deal.stage != "Closed Won":

@@ -17,8 +17,6 @@ from app.repositories.quote_repository import QuoteRepository
 from app.services.integration_service import integration_service
 from app.services.invoice_service import (
     INVOICE_STATUS_DRAFT,
-    INVOICE_STATUS_PAID,
-    INVOICE_STATUS_PENDING,
     DealNotClosedWonError,
     InvoiceService,
 )
@@ -281,7 +279,7 @@ async def test_creation_leaves_payment_state_unpaid(patched_org):
 
     result = await service.create_invoice_from_deal(db, "deal-1", _make_user())
 
-    assert result["status"] != INVOICE_STATUS_PAID
+    assert result["status"] == "Draft"
     assert result["paid_amount"] == 0.0
 
 
@@ -481,10 +479,11 @@ async def test_line_items_use_flushed_invoice_id(patched_org):
 
 @pytest.mark.asyncio
 async def test_send_queues_real_delivery(patched_org):
-    invoice = _make_invoice(status=INVOICE_STATUS_DRAFT)
+    invoice = _make_invoice(status="Finalized", finalized_at=datetime.now(UTC))
     repo: Any = InvoiceRepository()
     repo.get_scoped = AsyncMock(return_value=invoice)
     repo.queue_delivery = AsyncMock()
+    repo.lock_scoped = AsyncMock(return_value=invoice)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
@@ -492,7 +491,7 @@ async def test_send_queues_real_delivery(patched_org):
         db, invoice_id="inv-1", organization_id="org-1", recipient_email="a@b.com"
     )
 
-    assert invoice.status == INVOICE_STATUS_DRAFT
+    assert invoice.status == "Finalized"
     assert invoice.sent_at is None
     repo.queue_delivery.assert_awaited_once()
     db.commit.assert_awaited_once()
@@ -500,10 +499,11 @@ async def test_send_queues_real_delivery(patched_org):
 
 @pytest.mark.asyncio
 async def test_send_queues_overdue_invoice_without_faking_sent_state(patched_org):
-    invoice = _make_invoice(status="Overdue")
+    invoice = _make_invoice(status="Accepted", finalized_at=datetime.now(UTC))
     repo: Any = InvoiceRepository()
     repo.get_scoped = AsyncMock(return_value=invoice)
     repo.queue_delivery = AsyncMock()
+    repo.lock_scoped = AsyncMock(return_value=invoice)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
@@ -511,42 +511,76 @@ async def test_send_queues_overdue_invoice_without_faking_sent_state(patched_org
         db, invoice_id="inv-1", organization_id="org-1", recipient_email="a@b.com"
     )
 
-    assert invoice.status == "Overdue"
+    assert invoice.status == "Accepted"
     assert invoice.sent_at is None
     repo.queue_delivery.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_manual_mark_paid_does_not_bypass_provider_verification(patched_org):
-    invoice = _make_invoice(status=INVOICE_STATUS_PENDING)
+async def test_draft_invoice_cannot_be_sent(patched_org):
+    invoice = _make_invoice(status="Draft")
     repo: Any = InvoiceRepository()
     repo.get_scoped = AsyncMock(return_value=invoice)
+    repo.lock_scoped = AsyncMock(return_value=invoice)
+    repo.queue_delivery = AsyncMock()
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
-    with pytest.raises(ConflictError, match="verified by the provider"):
-        await service.mark_paid(
-            db, invoice_id="inv-1", organization_id="org-1", payment_method="Stripe"
+    with pytest.raises(ConflictError, match="Finalize"):
+        await service.mark_sent(
+            db, invoice_id="inv-1", organization_id="org-1", recipient_email="a@b.com"
         )
-    assert invoice.status == INVOICE_STATUS_PENDING
+    assert invoice.status == "Draft"
+    repo.queue_delivery.assert_not_awaited()
     db.commit.assert_not_awaited()
     notify = cast(Any, integration_service).notify_slack_event
     notify.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_double_payment_rejected(patched_org):
-    invoice = _make_invoice(status=INVOICE_STATUS_PAID, paid_amount=1000.0)
+async def test_paid_invoice_cannot_be_deleted(patched_org):
+    invoice = _make_invoice(status="Accepted", payment_status="Paid", paid_amount=1000.0)
     repo: Any = InvoiceRepository()
-    repo.get_scoped = AsyncMock(return_value=invoice)
+    repo.lock_scoped = AsyncMock(return_value=invoice)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
-    with pytest.raises(ConflictError) as exc_info:
-        await service.mark_paid(
-            db, invoice_id="inv-1", organization_id="org-1", payment_method="Stripe"
+    with pytest.raises(ConflictError):
+        await service.delete_invoice(db, invoice_id="inv-1", organization_id="org-1")
+    db.commit.assert_not_awaited()
+    repo.lock_scoped.assert_awaited_once_with(db, invoice_id="inv-1", organization_id="org-1")
+
+
+@pytest.mark.asyncio
+async def test_delete_locks_scoped_draft_before_deleting():
+    invoice = _make_invoice()
+    repo = MagicMock(spec=InvoiceRepository)
+    repo.lock_scoped = AsyncMock(return_value=invoice)
+    repo.delete = AsyncMock()
+    db = AsyncMock(spec=AsyncSession)
+    result = await InvoiceService(repository=repo).delete_invoice(
+        db, invoice_id="inv-1", organization_id="org-1"
+    )
+    assert result is invoice
+    repo.lock_scoped.assert_awaited_once_with(db, invoice_id="inv-1", organization_id="org-1")
+    repo.get_scoped.assert_not_called()
+    repo.delete.assert_awaited_once_with(db, invoice)
+    db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_delete_foreign_invoice_never_deletes():
+    repo = MagicMock(spec=InvoiceRepository)
+    repo.lock_scoped = AsyncMock(return_value=None)
+    repo.delete = AsyncMock()
+    db = AsyncMock(spec=AsyncSession)
+    with pytest.raises(NotFoundError):
+        await InvoiceService(repository=repo).delete_invoice(
+            db, invoice_id="inv-1", organization_id="foreign"
         )
-    assert exc_info.value.code == "INVOICE_ALREADY_PAID"
+    repo.lock_scoped.assert_awaited_once_with(db, invoice_id="inv-1", organization_id="foreign")
+    repo.delete.assert_not_awaited()
+    db.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio

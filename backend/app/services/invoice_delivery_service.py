@@ -1,4 +1,4 @@
-"""Durable invoice, reminder, and verified-payment receipt delivery."""
+"""Durable invoice review, reminder, and recorded-payment receipt delivery."""
 
 import asyncio
 from datetime import UTC, datetime, timedelta
@@ -13,8 +13,8 @@ from app.repositories.invoice_repository import invoice_repository
 from app.repositories.payment_repository import PaymentRepository
 from app.repositories.quote_repository import quote_repository
 from app.services.email_service import EmailDeliveryUnknownError, send_tracked_email
-from app.services.invoice_payment_service import invoice_payment_service
 from app.services.invoice_pdf_service import render_invoice_pdf, render_receipt_pdf
+from app.services.public_invoice_token import acceptance_token
 from app.services.s3_service import s3_service
 
 logger = get_logger(__name__)
@@ -40,23 +40,32 @@ class InvoiceDeliveryService:
         )
         if not invoice:
             raise NotFoundError(message="Invoice not found")
-        if invoice.status not in {"Pending", "Overdue"} or invoice.paid_amount:
+        if (
+            invoice.status not in {"Finalized", "Accepted"}
+            or not invoice.finalized_at
+            or invoice.paid_amount >= invoice.amount
+        ):
             raise ConflictError(message="Only unpaid invoices can receive payment reminders")
         now = datetime.now(UTC)
         if invoice.reminder_count >= 3:
             raise ConflictError(message="The automatic reminder limit has been reached")
         if invoice.last_reminded_at and invoice.last_reminded_at > now - timedelta(hours=24):
             raise ConflictError(message="A reminder was already sent in the last 24 hours")
-        if not invoice.recipient_email or not invoice.stripe_checkout_url:
-            raise ConflictError(message="Deliver the invoice and create its payment link first")
+        if not invoice.recipient_email or not invoice.delivery_id or not invoice.sent_at:
+            raise ConflictError(message="Deliver the finalized invoice first")
+        if not invoice.public_token_expires_at or invoice.public_token_expires_at <= now:
+            raise ConflictError(
+                message="Invoice review link has expired; send a new invoice review link"
+            )
         if not settings.BREVO_API_KEY:
             raise APIException(message="Email provider is not configured", status_code=503)
         recipient = invoice.recipient_email
         subject = f"Payment reminder: invoice {invoice.invoice_number}"
         body = (
             f"<p>Payment for invoice {escape(invoice.invoice_number)} is still pending.</p>"
-            f"<p>Amount due: {escape(invoice.currency)} {invoice.amount:.2f}.</p>"
-            f'<p><a href="{escape(invoice.stripe_checkout_url, quote=True)}">Pay securely with Stripe</a></p>'
+            f"<p>Amount due: {escape(invoice.currency)} {invoice.amount - invoice.paid_amount:.2f}.</p>"
+            f'<p><a href="{escape(self.review_url(invoice.id, invoice.delivery_id), quote=True)}">Review invoice</a></p>'
+            "<p>Please contact our team to arrange payment. Payments are recorded internally.</p>"
         )
         idempotency_key = f"invoice-reminder-{invoice.id}-{now.date().isoformat()}"
         try:
@@ -75,14 +84,17 @@ class InvoiceDeliveryService:
                 status_code=502,
             ) from exc
         await invoice_repository.record_reminder(db, invoice, now)
-        if invoice.due_date < now:
-            invoice.status = "Overdue"
         await db.commit()
         return {
             "message": "Payment reminder sent",
             "status": "success",
             "provider_message_id": message_id,
         }
+
+    @staticmethod
+    def review_url(invoice_id: str, delivery_id: str) -> str:
+        token = acceptance_token(invoice_id, delivery_id)
+        return f"{settings.frontend_base_url.rstrip('/')}/public/invoice#{token}"
 
     async def deliver_one(self, session_factory) -> bool:
         async with session_factory() as db:
@@ -113,7 +125,10 @@ class InvoiceDeliveryService:
                     not organization
                     or not items
                     or not invoice.recipient_email
-                    or invoice.status not in {"Pending", "Overdue"}
+                    or invoice.status not in {"Finalized", "Accepted"}
+                    or not invoice.finalized_at
+                    or not invoice.public_token_expires_at
+                    or invoice.public_token_expires_at <= now
                 ):
                     raise ValueError("Invoice is not eligible for delivery")
                 document = {
@@ -157,10 +172,6 @@ class InvoiceDeliveryService:
         state = "Failed"
         email_started = False
         try:
-            async with session_factory() as db:
-                checkout = await invoice_payment_service.checkout(
-                    db, invoice_id=invoice_id, organization_id=org_id
-                )
             pdf = await asyncio.to_thread(
                 render_invoice_pdf,
                 **{key: document[key] for key in ("organization", "customer", "invoice", "items")},
@@ -177,7 +188,7 @@ class InvoiceDeliveryService:
                 f"<p>Invoice {escape(document['invoice']['invoice_number'])}: "
                 f"{escape(document['invoice']['currency'])} {document['invoice']['amount']:.2f}. "
                 f"Due {escape(document['invoice']['due_date'])}.</p>"
-                f'<p><a href="{escape(checkout["checkout_url"], quote=True)}">Pay securely with Stripe</a></p>'
+                f'<p><a href="{escape(self.review_url(invoice_id, delivery_id), quote=True)}">Review and accept invoice</a></p>'
                 f'<p><a href="{escape(pdf_url, quote=True)}">Download invoice PDF (link valid for 7 days)</a></p>'
             )
             email_started = True
@@ -235,7 +246,7 @@ class InvoiceDeliveryService:
                 db, invoice_id=payment.invoice_id, organization_id=org_id
             )
             organization = await quote_repository.get_organization(db, org_id)
-            if not invoice or not organization or invoice.status != "Paid":
+            if not invoice or not organization or payment.status != "Succeeded":
                 await self.payment_repository.receipt_result(db, payment, state="Failed")
                 await db.commit()
                 return True
@@ -253,10 +264,9 @@ class InvoiceDeliveryService:
                 "customer": customer,
                 "invoice": {"invoice_number": invoice.invoice_number},
                 "payment": {
-                    "payment_id": payment.id,
-                    "provider_reference": payment.provider_payment_id,
+                    "payment_id": payment.payment_number,
                     "paid_at": payment.paid_at.isoformat(),
-                    "payment_method": payment.payment_method,
+                    "payment_type": payment.payment_type,
                     "currency": payment.currency,
                     "amount": payment.amount,
                 },
