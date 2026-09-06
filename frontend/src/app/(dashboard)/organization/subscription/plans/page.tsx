@@ -57,6 +57,8 @@ function SubscriptionPlansContent() {
     if (checkout.isPending || checkout.operation) return;
     if (
       currentPlanName &&
+      currentSubscription?.reconciliation_required !== true &&
+      ['active', 'past_due'].includes(currentSubscription?.status || '') &&
       (plan.slug.toLowerCase() === currentPlanName ||
         plan.name.toLowerCase() === currentPlanName)
     ) {
@@ -148,6 +150,8 @@ function SubscriptionPlansContent() {
                 const isSelected = selectedPlan?.slug === plan.slug;
                 const isCurrent =
                   Boolean(currentPlanName) &&
+                  currentSubscription?.reconciliation_required !== true &&
+                  ['active', 'past_due'].includes(currentSubscription?.status || '') &&
                   (currentPlanName === plan.slug.toLowerCase() ||
                     currentPlanName === plan.name.toLowerCase());
 
@@ -295,11 +299,11 @@ function SubscriptionPlansContent() {
                   Cancel
                 </Button>
                 <Button
-                  disabled={!canManageBilling || !checkout.ready || checkout.isPending || isSubscriptionLoading || isSubscriptionError || (!checkout.operation && (!selectedPlan || selectedPlan.slug.toLowerCase() === currentPlanName))}
+                  disabled={!canManageBilling || !checkout.ready || checkout.isPending || checkout.requiresAdministratorReview || isSubscriptionLoading || isSubscriptionError || (!checkout.operation && (!selectedPlan || selectedPlan.slug.toLowerCase() === currentPlanName))}
                   onClick={() => void checkout.start(checkout.operation?.payload.plan_slug || selectedPlan?.slug || '')}
                   className="w-full sm:w-auto"
                 >
-                  {checkout.isPending ? 'Opening Stripe…' : checkout.requiresAdministratorReview ? 'Retry after billing is corrected' : checkout.operation ? 'Retry subscription request' : 'Continue with Stripe'}
+                  {checkout.isPending ? 'Opening Stripe…' : checkout.requiresAdministratorReview ? 'Administrator review required' : checkout.operation ? 'Change plan with Stripe' : 'Start subscription with Stripe'}
                 </Button>
               </div>
             </Card>

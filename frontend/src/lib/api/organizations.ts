@@ -104,6 +104,8 @@ export interface OrganizationSubscription {
   auto_renew?: boolean;
   provider_linked?: boolean;
   current_period_end?: string | null;
+  reconciliation_required?: boolean;
+  last_provider_error_code?: string | null;
 }
 
 export interface CreateSubscriptionCheckoutPayload {

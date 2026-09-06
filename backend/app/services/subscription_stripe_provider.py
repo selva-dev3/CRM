@@ -14,9 +14,28 @@ logger = get_logger(__name__)
 
 
 class SubscriptionStripeProvider:
+    def _validate_mode(self) -> None:
+        key = getattr(settings, "STRIPE_SECRET_KEY", None)
+        configured = getattr(settings, "STRIPE_MODE", None)
+        if not key or not configured:
+            return
+        expected = (
+            "test" if key.startswith("sk_test_")
+            else "live" if key.startswith("sk_live_")
+            else None
+        )
+        if expected and expected != configured:
+            raise APIException(
+                message="Subscription billing mode is misconfigured; administrator review is required.",
+                code="SUBSCRIPTION_PROVIDER_CONFIGURATION_ERROR",
+                status_code=503,
+                fields={"retryable": False, "operation": "configuration"},
+            )
+
     def _sdk(self) -> Any:
         if not getattr(settings, "STRIPE_SECRET_KEY", None):
             raise APIException(message="Subscription billing is not configured", status_code=503)
+        self._validate_mode()
         try:
             return importlib.import_module("stripe")
         except ImportError as exc:
@@ -168,6 +187,9 @@ class SubscriptionStripeProvider:
             subscription_id,
             expand=["items.data.price", "latest_invoice"],
         )
+
+    async def retrieve_customer(self, customer_id: str) -> dict:
+        return await self._call("Customer", "retrieve", customer_id)
 
     async def retrieve_invoice(self, invoice_id: str) -> dict:
         return await self._call("Invoice", "retrieve", invoice_id)

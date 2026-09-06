@@ -29,6 +29,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { PageTabs } from '@/components/common/page-tabs';
+import { ConfirmModal } from '@/components/common/confirm-modal';
 import { getErrorMessage } from '@/lib/utils';
 import {
   useCurrentOrganizationQuery,
@@ -58,6 +59,7 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
 
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [renewalAction, setRenewalAction] = useState<'cancel' | 'resume' | null>(null);
 
   // Queries
   const {
@@ -92,6 +94,7 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
   const isOwnBilling = Boolean(org?.id && org.id === currentOrg?.id);
   const canChangeRenewal = isOwnBilling && !isSubscriptionError && !isSubscriptionLoading
     && subscription?.provider_linked === true
+    && !subscription.reconciliation_required
     && ['active', 'past_due'].includes(subscription.status || '')
     && typeof subscription.auto_renew === 'boolean';
   const billingStatus = !isOwnBilling ? 'Billing is available for your current organization only'
@@ -223,14 +226,15 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
     }
   };
 
-  const handleCancelSub = async () => {
-    if (!canChangeRenewal || cancelSubMutation.isPending || resumeSubMutation.isPending) return;
+  const handleConfirmRenewal = async () => {
+    if (!canChangeRenewal || !renewalAction || cancelSubMutation.isPending || resumeSubMutation.isPending) return;
     try {
       setErrorMessage(null);
       setSuccessMessage(null);
-      const res = subscription?.auto_renew === false
+      const res = renewalAction === 'resume'
         ? await resumeSubMutation.mutateAsync()
         : await cancelSubMutation.mutateAsync();
+      setRenewalAction(null);
       setSuccessMessage(res.message || 'Subscription renewal updated.');
       setTimeout(() => setSuccessMessage(null), 4000);
     } catch (error) {
@@ -612,6 +616,11 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
               {billingStatus}
             </Badge>
           </div>
+          {subscription?.reconciliation_required && (
+            <div role="alert" className="rounded-btn border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              This subscription needs billing reconciliation. Contact an administrator before changing renewal settings.
+            </div>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
             <div className="p-3.5 sm:p-4 bg-[#F9FAFB] rounded-btn border border-[#E5E7EB]">
@@ -644,13 +653,25 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
             </Button>
             {canChangeRenewal && <Button
               variant="outline"
-              onClick={handleCancelSub}
+              onClick={() => setRenewalAction(subscription?.auto_renew === false ? 'resume' : 'cancel')}
               disabled={cancelSubMutation.isPending || resumeSubMutation.isPending}
               className="border-[#DC2626]/30 text-[#DC2626] hover:bg-[#DC2626]/10 cursor-pointer font-semibold w-full sm:w-auto"
             >
               {cancelSubMutation.isPending || resumeSubMutation.isPending ? 'Updating renewal…' : subscription?.auto_renew === false ? 'Resume Renewal' : 'Cancel Subscription'}
             </Button>}
           </div>
+          <ConfirmModal
+            isOpen={renewalAction !== null}
+            onClose={() => setRenewalAction(null)}
+            onConfirm={() => void handleConfirmRenewal()}
+            title={renewalAction === 'cancel' ? 'Cancel Subscription?' : 'Resume Subscription?'}
+            description={renewalAction === 'cancel'
+              ? 'Your subscription will remain active until the current billing period ends.'
+              : 'Your subscription will continue renewing at the end of the current billing period.'}
+            confirmText={renewalAction === 'cancel' ? 'Cancel Subscription' : 'Resume Renewal'}
+            variant={renewalAction === 'cancel' ? 'danger' : 'default'}
+            isLoading={cancelSubMutation.isPending || resumeSubMutation.isPending}
+          />
         </Card>
       )}
 

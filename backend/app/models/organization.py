@@ -132,6 +132,11 @@ class OrganizationSubscription(Base):
     checkout_plan_slug: Mapped[str | None] = mapped_column(String(100))
     checkout_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    reconciliation_required: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    last_provider_check_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_provider_error_code: Mapped[str | None] = mapped_column(String(80))
+    last_provider_request_id: Mapped[str | None] = mapped_column(String(120))
+
     # Usage
     max_users: Mapped[int] = mapped_column(Integer, default=100)
 

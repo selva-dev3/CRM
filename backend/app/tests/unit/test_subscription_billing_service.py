@@ -96,7 +96,12 @@ async def test_missing_stored_subscription_requires_reconciliation():
         await service._retrieve_subscription("sub_private")
 
     assert exc.value.code == "SUBSCRIPTION_RECONCILIATION_REQUIRED"
-    assert exc.value.fields == {"provider_request_id": "req_safe123"}
+    assert exc.value.fields == {
+        "provider_request_id": "req_safe123",
+        "provider_code": "resource_missing",
+        "resource_type": "subscription",
+        "retryable": False,
+    }
 
 
 @pytest.mark.asyncio
