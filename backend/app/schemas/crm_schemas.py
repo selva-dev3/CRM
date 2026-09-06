@@ -143,6 +143,7 @@ class ApiKeyResponse(BaseModel):
     key: str | None = None
     created_at: str
     last_used: str | None = None
+    is_active: bool = True
 
 
 # 2. User Schemas
@@ -1030,8 +1031,8 @@ class SlackNotifyPayload(BaseModel):
 
 
 class ZapierConnectPayload(BaseModel):
-    webhook_url: str | None = "https://hooks.zapier.com/hooks/catch/crm_default"
-    events: list[str] | None = ["lead.created", "deal.won"]
+    webhook_url: str
+    events: list[str] | None = None
 
 
 # 22. AI Suite Schemas

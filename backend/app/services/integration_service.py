@@ -1,12 +1,16 @@
+import base64
+import hashlib
 import json
 from datetime import datetime
 from typing import Any
 
 import httpx
+from cryptography.fernet import Fernet, InvalidToken
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.errors import APIException
 from app.core.logging import get_logger
 from app.models import Integration, User
@@ -107,9 +111,10 @@ class IntegrationService:
             ) from e
 
     # --- List integrations ---
-    async def list_integrations(self, db: AsyncSession) -> list[dict]:
+    async def list_integrations(self, db: AsyncSession, current_user: User) -> list[dict]:
         try:
-            integrations = await self.repository.list_all(db)
+            org_id = await self.repository.resolve_org_id(db, current_user)
+            integrations = await self.repository.list_all(db, org_id)
             if integrations:
                 return [
                     {
@@ -146,9 +151,6 @@ class IntegrationService:
                     "last_synced": None,
                 }
             cred_dict = self._parse_credentials(integration.credentials)
-            webhook_url = getattr(integration, "webhook_url", None) or (
-                cred_dict.get("webhook_url") if isinstance(cred_dict, dict) else None
-            )
             events = (
                 cred_dict.get("events")
                 if isinstance(cred_dict, dict) and "events" in cred_dict
@@ -157,7 +159,7 @@ class IntegrationService:
             return {
                 "name": integration.name,
                 "is_connected": integration.is_connected,
-                "webhook_url": webhook_url,
+                "webhook_url": None,
                 "events": events,
                 "last_synced": integration.last_synced.isoformat()
                 if integration.last_synced
@@ -168,8 +170,28 @@ class IntegrationService:
         except Exception as e:
             raise APIException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                message=f"Unable to load Zapier configuration. {str(e)}",
+                message="Unable to load Zapier configuration.",
             ) from e
+
+    @staticmethod
+    def _secret_cipher() -> Fernet:
+        key = base64.urlsafe_b64encode(hashlib.sha256(settings.SECRET_KEY.encode()).digest())
+        return Fernet(key)
+
+    @classmethod
+    def _encrypt_secret(cls, value: str) -> str:
+        return "enc:v1:" + cls._secret_cipher().encrypt(value.encode()).decode()
+
+    @classmethod
+    def _decrypt_secret(cls, value: str | None) -> str | None:
+        if not value:
+            return None
+        if not value.startswith("enc:v1:"):
+            return value
+        try:
+            return cls._secret_cipher().decrypt(value[7:].encode()).decode()
+        except InvalidToken:
+            return None
 
     def _parse_credentials(self, credentials: Any) -> dict:
         if not credentials:
@@ -202,14 +224,14 @@ class IntegrationService:
                         "provider": "zapier",
                         "is_connected": True,
                         "status": "connected",
-                        "webhook_url": webhook_url,
+                        "webhook_url": self._encrypt_secret(webhook_url),
                         "credentials": creds,
                     },
                 )
             else:
                 integration.is_connected = True
                 integration.status = "connected"
-                integration.webhook_url = webhook_url
+                integration.webhook_url = self._encrypt_secret(webhook_url)
                 integration.credentials = creds
             await self.repository.commit(db)
             await db.refresh(integration)
@@ -232,14 +254,15 @@ class IntegrationService:
             raise
         except Exception as e:
             await db.rollback()
-            raise APIException(status_code=500, message=str(e)) from e
+            raise APIException(status_code=500, message="Failed to connect Zapier") from e
 
     async def test_zapier_connection(self, db: AsyncSession, current_user: User | None) -> dict:
         org_id = await self.repository.resolve_org_id(db, current_user)
         integration = await self.repository.get_connected_by_provider(db, org_id, "zapier")
         if integration is None:
             raise APIException(status_code=404, message="Zapier integration is not connected.")
-        if not integration.webhook_url:
+        webhook_url = self._decrypt_secret(integration.webhook_url)
+        if not webhook_url:
             raise APIException(status_code=400, message="Zapier webhook URL is missing.")
         zapier_payload = {
             "event": "test.connection",
@@ -250,7 +273,7 @@ class IntegrationService:
         try:
             async with httpx.AsyncClient(timeout=30) as client:
                 response = await client.post(
-                    integration.webhook_url,
+                    webhook_url,
                     json=zapier_payload,
                     headers={"Content-Type": "application/json"},
                 )
@@ -260,10 +283,10 @@ class IntegrationService:
             await self.repository.commit(db)
             return {"message": "Zapier test payload sent successfully.", "status": "success"}
         except Exception as e:
-            integration.last_error = str(e)
+            integration.last_error = f"Zapier delivery failed: {type(e).__name__}"
             await self.repository.commit(db)
             raise APIException(
-                status_code=500, message=f"Failed to send Zapier test payload: {str(e)}"
+                status_code=500, message="Failed to send Zapier test payload"
             ) from e
 
     async def trigger_zapier_event(
@@ -273,7 +296,8 @@ class IntegrationService:
         integration = await self.repository.get_connected_by_provider(db, org_id, "zapier")
         if integration is None:
             raise APIException(status_code=404, message="Zapier integration is not connected.")
-        if not integration.webhook_url:
+        webhook_url = self._decrypt_secret(integration.webhook_url)
+        if not webhook_url:
             raise APIException(status_code=400, message="Zapier webhook URL is missing.")
         webhook_payload = {
             "event": payload.event_name,
@@ -284,7 +308,7 @@ class IntegrationService:
         try:
             async with httpx.AsyncClient(timeout=30) as client:
                 response = await client.post(
-                    integration.webhook_url,
+                    webhook_url,
                     json=webhook_payload,
                     headers={"Content-Type": "application/json"},
                 )
@@ -294,13 +318,21 @@ class IntegrationService:
             await self.repository.commit(db)
             return {"message": "Zapier event sent successfully.", "status": "success"}
         except Exception as e:
-            integration.last_error = str(e)
+            integration.last_error = f"Zapier delivery failed: {type(e).__name__}"
             await self.repository.commit(db)
-            raise APIException(status_code=500, message=f"Failed to send webhook: {str(e)}") from e
+            raise APIException(status_code=500, message="Failed to send Zapier webhook") from e
 
-    async def delete_zapier_integration(self, db: AsyncSession) -> dict:
+    async def delete_zapier_integration(
+        self, db: AsyncSession, current_user: User | None
+    ) -> dict:
+        org_id = await self.repository.resolve_org_id(db, current_user)
         try:
-            res = await db.execute(select(Integration).where(Integration.provider == "zapier"))
+            res = await db.execute(
+                select(Integration).where(
+                    Integration.provider == "zapier",
+                    Integration.organization_id == org_id,
+                )
+            )
             integration = res.scalars().first()
             if not integration:
                 raise APIException(status_code=404, message="Zapier integration not found.")
@@ -355,7 +387,7 @@ class IntegrationService:
         return {
             "name": integration.name,
             "is_connected": integration.is_connected,
-            "webhook_url": integration.webhook_url,
+                "webhook_url": None,
             "events": events,
             "last_synced": integration.last_synced.isoformat() if integration.last_synced else None,
         }
@@ -378,7 +410,7 @@ class IntegrationService:
                         "name": "Slack Connector",
                         "provider": "slack",
                         "is_connected": True,
-                        "webhook_url": str(payload.webhook_url),
+                        "webhook_url": self._encrypt_secret(str(payload.webhook_url)),
                         "status": "connected",
                         "enabled_events": json.dumps(SLACK_ENABLED_EVENTS),
                         "credentials": json.dumps({"channel": "incoming-webhook", "type": "slack"}),
@@ -390,7 +422,7 @@ class IntegrationService:
             else:
                 integration.is_connected = True
                 integration.status = "connected"
-                integration.webhook_url = str(payload.webhook_url)
+                integration.webhook_url = self._encrypt_secret(str(payload.webhook_url))
                 integration.enabled_events = json.dumps(SLACK_ENABLED_EVENTS)
                 integration.credentials = json.dumps(
                     {"channel": "incoming-webhook", "type": "slack"}
@@ -419,7 +451,7 @@ class IntegrationService:
             return {"message": "Slack connected successfully.", "status": "success"}
         except Exception as e:
             await db.rollback()
-            raise APIException(status_code=500, message=f"Failed to connect Slack: {str(e)}") from e
+            raise APIException(status_code=500, message="Failed to connect Slack") from e
 
     async def update_slack_events(
         self, db: AsyncSession, payload: SlackEventsUpdateRequest, current_user: User | None
@@ -444,7 +476,8 @@ class IntegrationService:
         integration = await self.repository.get_connected_by_provider(db, org_id, "slack")
         if integration is None:
             raise APIException(status_code=404, message="Slack integration is not connected.")
-        if not integration.webhook_url:
+        webhook_url = self._decrypt_secret(integration.webhook_url)
+        if not webhook_url:
             raise APIException(status_code=400, message="Slack webhook URL is missing.")
         slack_payload = {
             "text": " *Slack Integration Test*\n\nYour CRM has successfully connected to Slack.\n\n"
@@ -453,7 +486,7 @@ class IntegrationService:
         try:
             async with httpx.AsyncClient(timeout=30) as client:
                 response = await client.post(
-                    integration.webhook_url,
+                    webhook_url,
                     json=slack_payload,
                     headers={"Content-Type": "application/json"},
                 )
@@ -463,17 +496,17 @@ class IntegrationService:
             await self.repository.commit(db)
             return {"message": "Slack test message sent successfully.", "status": "success"}
         except httpx.HTTPStatusError as e:
-            integration.last_error = f"Slack returned {e.response.status_code}: {e.response.text}"
+            integration.last_error = f"Slack returned HTTP {e.response.status_code}"
             await self.repository.commit(db)
             raise APIException(
                 status_code=e.response.status_code,
-                message=f"Slack webhook error : {e.response.text}",
+                message=f"Slack webhook returned HTTP {e.response.status_code}",
             ) from e
         except Exception as e:
-            integration.last_error = str(e)
+            integration.last_error = f"Slack delivery failed: {type(e).__name__}"
             await self.repository.commit(db)
             raise APIException(
-                status_code=500, message=f"Failed to send Slack test message : {str(e)}"
+                status_code=500, message="Failed to send Slack test message"
             ) from e
 
     @staticmethod
@@ -496,13 +529,14 @@ class IntegrationService:
 
     async def _post_to_slack(self, db: AsyncSession, integration: Integration, text: str) -> None:
         """Single Slack webhook send path. Sets last_synced/last_error and commits; raises on failure."""
-        if not integration.webhook_url:
+        webhook_url = self._decrypt_secret(integration.webhook_url)
+        if not webhook_url:
             raise APIException(status_code=400, message="Slack webhook URL is not configured.")
         slack_payload = {"text": text}
         try:
             async with httpx.AsyncClient(timeout=30) as client:
                 response = await client.post(
-                    integration.webhook_url,
+                    webhook_url,
                     json=slack_payload,
                     headers={"Content-Type": "application/json"},
                 )
@@ -511,17 +545,17 @@ class IntegrationService:
             integration.last_error = None
             await self.repository.commit(db)
         except httpx.HTTPStatusError as e:
-            integration.last_error = f"Slack returned {e.response.status_code}: {e.response.text}"
+            integration.last_error = f"Slack returned HTTP {e.response.status_code}"
             await self._commit_last_error(db)
             raise APIException(
                 status_code=e.response.status_code,
-                message=f"Slack webhook error : {e.response.text}",
+                message=f"Slack webhook returned HTTP {e.response.status_code}",
             ) from e
         except Exception as e:
-            integration.last_error = str(e)
+            integration.last_error = f"Slack delivery failed: {type(e).__name__}"
             await self._commit_last_error(db)
             raise APIException(
-                status_code=500, message=f"Failed to send Slack event : {str(e)}"
+                status_code=500, message="Failed to send Slack event"
             ) from e
 
     async def _commit_last_error(self, db: AsyncSession) -> None:
@@ -537,7 +571,8 @@ class IntegrationService:
         integration = await self.repository.get_connected_by_provider(db, org_id, "slack")
         if integration is None:
             raise APIException(status_code=404, message="Slack integration is not connected.")
-        if not integration.webhook_url:
+        webhook_url = self._decrypt_secret(integration.webhook_url)
+        if not webhook_url:
             raise APIException(status_code=400, message="Slack webhook URL is missing.")
 
         enabled_events = self._enabled_events(integration)
@@ -638,7 +673,7 @@ class IntegrationService:
         except Exception as e:
             await db.rollback()
             raise APIException(
-                status_code=500, message=f"Failed to disconnect Slack: {str(e)}"
+                status_code=500, message="Failed to disconnect Slack"
             ) from e
 
     async def send_slack_notification(
@@ -648,7 +683,8 @@ class IntegrationService:
         integration = await self.repository.get_connected_by_provider(db, org_id, "slack")
         if integration is None:
             raise APIException(status_code=404, message="Slack integration is not connected.")
-        if not integration.webhook_url:
+        webhook_url = self._decrypt_secret(integration.webhook_url)
+        if not webhook_url:
             raise APIException(status_code=400, message="Slack webhook URL is missing.")
         channel = payload.channel or "general"
         message = payload.message or "Notification from Enterprise CRM"
@@ -656,7 +692,7 @@ class IntegrationService:
         try:
             async with httpx.AsyncClient(timeout=30) as client:
                 response = await client.post(
-                    integration.webhook_url,
+                    webhook_url,
                     json=slack_payload,
                     headers={"Content-Type": "application/json"},
                 )
@@ -669,17 +705,17 @@ class IntegrationService:
                 "status": "success",
             }
         except httpx.HTTPStatusError as e:
-            integration.last_error = f"Slack returned {e.response.status_code}: {e.response.text}"
+            integration.last_error = f"Slack returned HTTP {e.response.status_code}"
             await self.repository.commit(db)
             raise APIException(
                 status_code=e.response.status_code,
-                message=f"Slack webhook error: {e.response.text}",
+                message=f"Slack webhook returned HTTP {e.response.status_code}",
             ) from e
         except Exception as e:
-            integration.last_error = str(e)
+            integration.last_error = f"Slack delivery failed: {type(e).__name__}"
             await self.repository.commit(db)
             raise APIException(
-                status_code=500, message=f"Failed to send Slack notification: {str(e)}"
+                status_code=500, message="Failed to send Slack notification"
             ) from e
 
     # --- OAuth / misc ---
@@ -735,9 +771,12 @@ class IntegrationService:
         }
 
     # --- Generic by-name operations ---
-    async def get_integration_status(self, db: AsyncSession, name: str) -> dict:
+    async def get_integration_status(
+        self, db: AsyncSession, name: str, current_user: User
+    ) -> dict:
+        org_id = await self.repository.resolve_org_id(db, current_user)
         try:
-            i = await self.repository.get_by_name_like(db, name)
+            i = await self.repository.get_by_name_like(db, org_id, name)
             if i:
                 return {
                     "name": i.name,
@@ -751,44 +790,24 @@ class IntegrationService:
     async def connect_integration(
         self, db: AsyncSession, name: str, current_user: User | None
     ) -> dict:
-        try:
-            i = await self.repository.get_by_name_like(db, name)
-            org_id = await self.repository.resolve_org_id(db, current_user)
-            if not i:
-                await self.repository.create(
-                    db,
-                    data={
-                        "organization_id": org_id,
-                        "name": name.capitalize(),
-                        "is_connected": True,
-                    },
-                )
-            else:
-                i.is_connected = True
-            await self.repository.commit(db)
-        except Exception:
-            await db.rollback()
-        return {
-            "auth_url": f"https://auth.{name.lower()}.com/oauth2/authorize?client_id=crm_app",
-            "message": f"{name} connected successfully",
-            "status": "success",
-        }
+        raise APIException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            message=f"Provider-specific connection is not implemented for '{name}'.",
+        )
 
-    async def disconnect_integration(self, db: AsyncSession, name: str) -> dict:
-        try:
-            i = await self.repository.get_by_name_like(db, name)
-            if i:
-                i.is_connected = False
-                await self.repository.commit(db)
-        except Exception:
-            await db.rollback()
-        return {"message": f"Integration '{name}' disconnected successfully", "status": "success"}
+    async def disconnect_integration(
+        self, db: AsyncSession, name: str, current_user: User
+    ) -> dict:
+        raise APIException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            message=f"Provider-specific disconnection is not implemented for '{name}'.",
+        )
 
     async def sync_integration(self, name: str) -> dict:
-        return {
-            "message": f"Manual full synchronization initiated for '{name}'",
-            "status": "success",
-        }
+        raise APIException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            message=f"Synchronization is not implemented for '{name}'.",
+        )
 
 
 integration_service = IntegrationService()

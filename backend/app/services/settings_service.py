@@ -284,8 +284,6 @@ class SettingsService:
         try:
             org_id = await self._resolve_org_id(db, current_user)
             webhooks = await self.repository.list_webhooks(db, organization_id=org_id)
-            if not webhooks:
-                webhooks = await self.repository.list_all_webhooks(db)
             return [
                 {
                     "id": w.id,
@@ -318,8 +316,11 @@ class SettingsService:
         await self._commit(db, "Failed to create webhook")
         return {"message": f"Webhook registered for {target_url}", "status": "success"}
 
-    async def delete_webhook(self, db: AsyncSession, webhook_id: str) -> dict:
-        webhook = await self.repository.get_webhook(db, webhook_id)
+    async def delete_webhook(
+        self, db: AsyncSession, webhook_id: str, current_user: User
+    ) -> dict:
+        org_id = await self._resolve_org_id(db, current_user)
+        webhook = await self.repository.get_webhook(db, webhook_id, organization_id=org_id)
         if not webhook:
             return {"message": f"Webhook {webhook_id} deleted", "status": "success"}
         try:
@@ -330,8 +331,11 @@ class SettingsService:
             raise APIException(status_code=status.HTTP_400_BAD_REQUEST, message=str(e)) from e
         return {"message": f"Webhook {webhook_id} deleted", "status": "success"}
 
-    async def test_webhook(self, webhook_id: str) -> dict:
-        return {"message": f"Test ping payload sent to webhook {webhook_id}", "status": "success"}
+    async def test_webhook(self, webhook_id: str, current_user: User) -> dict:
+        raise APIException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            message="Webhook delivery testing is not implemented.",
+        )
 
     async def list_sla_policies(
         self, db: AsyncSession, current_user: User | None = None

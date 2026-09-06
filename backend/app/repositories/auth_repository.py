@@ -406,3 +406,16 @@ class AuthRepository:
         key = ApiKey(**data)
         db.add(key)
         return key
+
+    async def get_api_key_by_hash(self, db: AsyncSession, key_hash: str) -> ApiKey | None:
+        return await db.scalar(select(ApiKey).where(ApiKey.key_hash == key_hash))
+
+    async def get_api_key(
+        self, db: AsyncSession, *, key_id: str, organization_id: str
+    ) -> ApiKey | None:
+        return await db.scalar(
+            select(ApiKey).where(
+                ApiKey.id == key_id,
+                ApiKey.organization_id == organization_id,
+            )
+        )

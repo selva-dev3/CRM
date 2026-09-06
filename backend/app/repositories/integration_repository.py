@@ -16,8 +16,14 @@ class IntegrationRepository:
         org = res.scalars().first()
         return org.id if org else "org-1"
 
-    async def list_all(self, db: AsyncSession, limit: int = 20) -> Sequence[Integration]:
-        res = await db.execute(select(Integration).limit(limit))
+    async def list_all(
+        self, db: AsyncSession, organization_id: str, limit: int = 20
+    ) -> Sequence[Integration]:
+        res = await db.execute(
+            select(Integration)
+            .where(Integration.organization_id == organization_id)
+            .limit(limit)
+        )
         return res.scalars().all()
 
     async def get_by_provider(
@@ -41,8 +47,15 @@ class IntegrationRepository:
             )
         )
 
-    async def get_by_name_like(self, db: AsyncSession, name: str) -> Integration | None:
-        res = await db.execute(select(Integration).where(Integration.name.ilike(f"%{name}%")))
+    async def get_by_name_like(
+        self, db: AsyncSession, organization_id: str, name: str
+    ) -> Integration | None:
+        res = await db.execute(
+            select(Integration).where(
+                Integration.organization_id == organization_id,
+                Integration.name.ilike(f"%{name}%"),
+            )
+        )
         return res.scalars().first()
 
     async def create(self, db: AsyncSession, *, data: dict) -> Integration:

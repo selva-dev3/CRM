@@ -878,6 +878,7 @@ class AuthService:
                 "key": "********",
                 "created_at": str(k.created_at),
                 "last_used": str(k.last_used),
+                "is_active": k.is_active,
             }
             for k in keys
         ]
@@ -909,6 +910,17 @@ class AuthService:
         except Exception as e:
             await db.rollback()
             raise APIException(status_code=status.HTTP_400_BAD_REQUEST, message=str(e)) from e
+
+    async def revoke_api_key(self, db: AsyncSession, key_id: str, current_user: User) -> dict:
+        organization_id = self._require_organization_id(current_user)
+        key = await self.repository.get_api_key(
+            db, key_id=key_id, organization_id=organization_id
+        )
+        if key is None:
+            raise NotFoundError(message="API key not found")
+        key.is_active = False
+        await self._commit(db, "Failed to revoke API key")
+        return {"message": "API key revoked", "status": "success"}
 
 
 auth_service = AuthService()

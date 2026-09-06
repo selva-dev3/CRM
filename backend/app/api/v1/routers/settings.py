@@ -182,8 +182,12 @@ async def create_webhook(
     summary="Delete webhook subscription",
     dependencies=[Depends(require_permission("settings:update"))],
 )
-async def delete_webhook(webhook_id: str, db: AsyncSession = Depends(get_db)):
-    return await settings_service.delete_webhook(db, webhook_id)
+async def delete_webhook(
+    webhook_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await settings_service.delete_webhook(db, webhook_id, current_user)
 
 
 @router.post(
@@ -192,8 +196,12 @@ async def delete_webhook(webhook_id: str, db: AsyncSession = Depends(get_db)):
     summary="Send test payload event ping to webhook URL",
     dependencies=[Depends(require_permission("settings:update"))],
 )
-async def test_webhook(webhook_id: str, db: AsyncSession = Depends(get_db)):
-    return await settings_service.test_webhook(webhook_id)
+async def test_webhook(
+    webhook_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await settings_service.test_webhook(webhook_id, current_user)
 
 
 @router.get(

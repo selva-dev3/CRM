@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from hashlib import sha256
 
 from fastapi import Depends, HTTPException, Request, status
@@ -11,7 +12,7 @@ from app.core.errors import APIException, ForbiddenError
 from app.core.permissions import UserRole, check_permission
 from app.core.security import ALGORITHM
 from app.db.session import get_db
-from app.models import Organization, User, UserSession
+from app.models import ApiKey, Organization, User, UserSession
 from app.services.auth_service import auth_service
 
 # HTTP Bearer scheme auto-configured for FastAPI Swagger UI authentication
@@ -39,6 +40,34 @@ async def get_current_user(
             detail="Session token missing: Authorization Bearer header is required to access this endpoint",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Developer API keys are hashed at the boundary and resolve to the key's
+    # creating user, preserving the existing organization/RBAC checks below.
+    if raw_token.startswith("crm_live_"):
+        api_key = await db.scalar(
+            select(ApiKey).where(ApiKey.key_hash == sha256(raw_token.encode()).hexdigest())
+        )
+        if (
+            api_key is None
+            or not api_key.is_active
+            or (api_key.expires_at is not None and api_key.expires_at <= datetime.now(UTC))
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="API key invalid, revoked, or expired",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        user = await db.get(User, api_key.created_by) if api_key.created_by else None
+        if user is None or not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="API key owner is unavailable",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        api_key.last_used = datetime.now(UTC)
+        api_key.usage_count += 1
+        await db.commit()
+        return user
 
     token = raw_token
     user_id = None

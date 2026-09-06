@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock
 
@@ -47,7 +48,7 @@ async def test_list_integrations_falls_back_to_disconnected_defaults():
     service = IntegrationService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.list_integrations(db)
+    result = await service.list_integrations(db, SimpleNamespace(organization_id="org-1"))
 
     assert len(result) == len(DEFAULT_CONNECTORS)
     assert result[0]["name"] == "Slack Sync"
@@ -61,7 +62,7 @@ async def test_list_integrations_returns_empty_on_exception():
     service = IntegrationService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.list_integrations(db)
+    result = await service.list_integrations(db, SimpleNamespace(organization_id="org-1"))
 
     assert result == []
 
@@ -87,7 +88,7 @@ async def test_connect_zapier_creates_integration(monkeypatch):
 
     data = repo.create.await_args_list[-1].kwargs["data"]
     assert data["provider"] == "zapier"
-    assert data["webhook_url"] == "https://hooks.zapier.com/abc"
+    assert data["webhook_url"].startswith("enc:v1:")
     assert result["status"] == "success"
 
 
@@ -234,7 +235,9 @@ async def test_get_integration_status_fallback():
     service = IntegrationService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.get_integration_status(db, "stripe")
+    result = await service.get_integration_status(
+        db, "stripe", SimpleNamespace(organization_id="org-1")
+    )
 
     assert result["name"] == "Stripe"
     assert result["is_connected"] is False
@@ -249,19 +252,17 @@ async def test_connect_integration_creates_missing(monkeypatch):
     service = IntegrationService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.connect_integration(db, "stripe", None)
-
-    data = repo.create.await_args_list[-1].kwargs["data"]
-    assert data["name"] == "Stripe"
-    assert result["status"] == "success"
-    assert "oauth2" in result["auth_url"]
+    with pytest.raises(APIException) as exc_info:
+        await service.connect_integration(db, "stripe", None)
+    assert exc_info.value.status_code == 501
 
 
 @pytest.mark.asyncio
 async def test_sync_integration():
     service = IntegrationService()
-    result = await service.sync_integration("stripe")
-    assert "stripe" in result["message"]
+    with pytest.raises(APIException) as exc_info:
+        await service.sync_integration("stripe")
+    assert exc_info.value.status_code == 501
 
 
 @pytest.mark.asyncio
@@ -375,7 +376,7 @@ async def test_connect_slack_reconnects_updates_existing_integration():
     )
 
     assert result["status"] == "success"
-    assert integration.webhook_url == "https://hooks.slack.com/services/T/B/new"
+    assert integration.webhook_url.startswith("enc:v1:")
     assert integration.is_connected is True
     repo.create.assert_not_awaited()
 
@@ -510,7 +511,7 @@ async def test_post_to_slack_generic_error_sets_last_error_and_raises(monkeypatc
         await service._post_to_slack(db, integration, "hello")
 
     assert integration.last_error is not None
-    assert "timed out" in integration.last_error
+    assert "TimeoutError" in integration.last_error
 
 
 @pytest.mark.asyncio

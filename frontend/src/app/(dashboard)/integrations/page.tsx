@@ -28,7 +28,9 @@ import {
   fetchSlackConfigApi,
   updateSlackEventsApi,
   syncIntegrationApi,
-  saveCustomApiKeyApi
+  fetchApiKeysApi,
+  createApiKeyApi,
+  revokeApiKeyApi
 } from '@/lib/api/integrations';
 
 interface AppIntegration {
@@ -86,12 +88,15 @@ const APPS: AppIntegration[] = [
 
 export default function IntegrationsPage() {
   const [apps, setApps] = useState<AppIntegration[]>(APPS);
-  const [apiKey, setApiKey] = useState('crm_live_98a7b6c5d4e3f210a9b8c7d6e5f4');
+  const [apiKey, setApiKey] = useState('');
+  const [apiKeyId, setApiKeyId] = useState<string | null>(null);
+  const [apiKeyLoading, setApiKeyLoading] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [loadingAppId, setLoadingAppId] = useState<string | null>(null);
   const [slackWebhookUrl, setSlackWebhookUrl] = useState('');
+  const [zapierWebhookUrl, setZapierWebhookUrl] = useState('');
   const [slackEvents, setSlackEvents] = useState<string[]>([]);
   const [slackConnected, setSlackConnected] = useState(false);
   const [slackTesting, setSlackTesting] = useState(false);
@@ -118,8 +123,8 @@ export default function IntegrationsPage() {
         } else {
           setApps((prev) => prev.map((app) => ({ ...app, status: 'available' })));
         }
-      } catch {
-        setApps((prev) => prev.map((app) => ({ ...app, status: 'available' })));
+      } catch (err) {
+        setErrorMessage(err instanceof Error ? err.message : 'Failed to load integrations.');
       }
     }
     async function loadSlackConfig() {
@@ -132,12 +137,22 @@ export default function IntegrationsPage() {
             prev.map((app) => (app.id === 'slack' ? { ...app, status: 'available' } : app))
           );
         }
-      } catch {
-        setSlackConnected(false);
+      } catch (err) {
+        setErrorMessage(err instanceof Error ? err.message : 'Failed to load Slack status.');
+      }
+    }
+    async function loadApiKey() {
+      try {
+        const keys = await fetchApiKeysApi();
+        const activeKey = keys.find((key) => key.is_active);
+        if (activeKey) setApiKeyId(activeKey.id);
+      } catch (err) {
+        setErrorMessage(err instanceof Error ? err.message : 'Failed to load API key status.');
       }
     }
     loadIntegrations();
     loadSlackConfig();
+    loadApiKey();
   }, []);
 
   const toggleConnection = async (app: AppIntegration) => {
@@ -175,7 +190,11 @@ export default function IntegrationsPage() {
       } else {
         let res: { message: string };
         if (app.id === 'zapier') {
-          res = await connectZapierApi();
+          if (!zapierWebhookUrl.trim()) {
+            setErrorMessage('Please enter your Zapier catch-hook URL to connect.');
+            return;
+          }
+          res = await connectZapierApi(zapierWebhookUrl.trim());
         } else {
           res = await connectIntegrationApi(app.id);
         }
@@ -248,22 +267,28 @@ export default function IntegrationsPage() {
     try {
       const res = await syncIntegrationApi(app.id);
       setSuccessMessage(res.message || `Manual sync triggered for ${app.name}.`);
-    } catch {
-      setSuccessMessage(`Sync initiated for ${app.name}.`);
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : `Failed to sync ${app.name}.`);
     } finally {
       setLoadingAppId(null);
     }
   };
 
   const handleGenerateNewKey = async () => {
-    const newKey = `crm_live_${Math.random().toString(36).substring(2)}${Math.random().toString(36).substring(2)}`;
-    setApiKey(newKey);
+    setApiKeyLoading(true);
+    setErrorMessage(null);
     try {
-      await saveCustomApiKeyApi('Developer API', newKey);
-    } catch {
-      // safe fallback
+      if (apiKeyId) await revokeApiKeyApi(apiKeyId);
+      const created = await createApiKeyApi('Developer API');
+      setApiKeyId(created.id);
+      setApiKey(created.api_key || '');
+      setShowKey(true);
+      setSuccessMessage('New API key generated. Copy it now; it cannot be shown again.');
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to generate API key.');
+    } finally {
+      setApiKeyLoading(false);
     }
-    setSuccessMessage('New secret API Access Key generated and configured in backend.');
   };
 
   return (
@@ -321,7 +346,7 @@ export default function IntegrationsPage() {
             <Input
               type={showKey ? 'text' : 'password'}
               readOnly
-              value={apiKey}
+              value={apiKey || '********'}
               className="font-mono text-xs h-9 max-w-md bg-slate-50"
             />
             <Button
@@ -338,6 +363,7 @@ export default function IntegrationsPage() {
               variant="outline"
               size="sm"
               onClick={handleGenerateNewKey}
+              disabled={apiKeyLoading}
               className="h-9 text-xs border-slate-300 gap-1.5 cursor-pointer text-blue-600 hover:text-blue-700"
             >
               <RefreshCw className="w-3.5 h-3.5" />
@@ -379,6 +405,16 @@ export default function IntegrationsPage() {
                 <div>
                   <h4 className="font-bold text-slate-900 text-sm">{app.name}</h4>
                   <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">{app.description}</p>
+                  {app.id === 'zapier' && (
+                    <Input
+                      type="password"
+                      placeholder="Paste your Zapier catch-hook URL"
+                      value={zapierWebhookUrl}
+                      onChange={(e) => setZapierWebhookUrl(e.target.value)}
+                      disabled={app.status === 'connected'}
+                      className="mt-3 h-8 font-mono text-[11px]"
+                    />
+                  )}
                 </div>
               </div>
 
