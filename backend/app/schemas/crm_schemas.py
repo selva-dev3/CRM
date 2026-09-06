@@ -787,6 +787,7 @@ class PaymentResponse(BaseModel):
     id: str
     invoice_id: str
     invoice_number: str
+    payment_number: str
     company_name: str | None = None
     contact_name: str | None = None
     contact_email: str | None = None

@@ -1,9 +1,18 @@
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AuditLog, Company, Contact, Deal, DealActivity, Invoice, Payment
+from app.models import (
+    AuditLog,
+    Company,
+    Contact,
+    Deal,
+    DealActivity,
+    Invoice,
+    Organization,
+    Payment,
+)
 from app.repositories.notification_repository import NotificationRepository
 from app.services.invoice_state import assert_invoice_transition
 
@@ -40,6 +49,7 @@ class PaymentRepository:
             stmt = stmt.where(
                 or_(
                     Payment.id.ilike(term),
+                    Payment.payment_number.ilike(term),
                     Payment.provider_payment_id.ilike(term),
                     Invoice.invoice_number.ilike(term),
                     Company.name.ilike(term),
@@ -50,6 +60,19 @@ class PaymentRepository:
         stmt = stmt.order_by(Payment.paid_at.desc()).offset((page - 1) * limit).limit(limit)
         result = await db.execute(stmt)
         return list(result.all())
+
+    async def advance_numbering(self, db: AsyncSession, organization_id: str) -> tuple[str, int]:
+        result = await db.execute(
+            select(Organization)
+            .where(Organization.id == organization_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        organization = result.scalar_one_or_none()
+        if not organization:
+            raise ValueError("Organization not found while generating payment number")
+        organization.payment_sequence += 1
+        return organization.payment_prefix, organization.payment_sequence
 
     async def get_scoped(
         self, db: AsyncSession, *, payment_id: str, organization_id: str
@@ -127,9 +150,11 @@ class PaymentRepository:
         payment_method: str | None,
         paid_at: datetime,
     ) -> Payment:
+        payment_prefix, payment_sequence = await self.advance_numbering(db, invoice.organization_id)
         payment = Payment(
             organization_id=invoice.organization_id,
             invoice_id=invoice.id,
+            payment_number=f"{payment_prefix}-{datetime.now(UTC).year}-{payment_sequence:06d}",
             provider="stripe",
             provider_payment_id=intent_id,
             checkout_session_id=session_id,

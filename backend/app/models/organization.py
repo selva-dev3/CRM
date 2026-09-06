@@ -28,6 +28,8 @@ class Organization(Base):
     currency: Mapped[str | None] = mapped_column(String(10), default="INR")
     invoice_prefix: Mapped[str] = mapped_column(String(20), default="INV", server_default="INV")
     invoice_sequence: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
+    payment_prefix: Mapped[str] = mapped_column(String(20), default="PAY", server_default="PAY")
+    payment_sequence: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
     quote_prefix: Mapped[str] = mapped_column(String(20), default="QUO", server_default="QUO")
     quote_sequence: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
     language: Mapped[str | None] = mapped_column(String(10), default="en")
