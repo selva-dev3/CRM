@@ -185,8 +185,10 @@ class OrganizationRepository:
         )
         return result.scalars().first()
 
-    async def list_active_plans(self, db: AsyncSession) -> list[SubscriptionPlan]:
-        result = await db.execute(select(SubscriptionPlan).where(SubscriptionPlan.is_active))
+    async def list_plans(self, db: AsyncSession) -> list[SubscriptionPlan]:
+        result = await db.execute(
+            select(SubscriptionPlan).order_by(SubscriptionPlan.sort_order, SubscriptionPlan.name)
+        )
         return list(result.scalars().all())
 
     async def create_audit_log(

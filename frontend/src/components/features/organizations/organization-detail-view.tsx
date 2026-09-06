@@ -124,8 +124,8 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
   const [taxNumber, setTaxNumber] = useState('');
   const [currency, setCurrency] = useState('INR');
   const [timezone, setTimezone] = useState('Asia/Kolkata');
-  const [plan, setPlan] = useState('Enterprise');
-  const [maxUsers, setMaxUsers] = useState(100);
+  const [plan, setPlan] = useState('');
+  const [maxUsers, setMaxUsers] = useState(0);
   const [status, setStatus] = useState('active');
 
   // Branding States
@@ -155,8 +155,8 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
       setTaxNumber(org.tax_number || '');
       setCurrency(org.currency || 'INR');
       setTimezone(org.timezone || 'Asia/Kolkata');
-      setPlan(org.plan || 'Enterprise');
-      setMaxUsers(org.max_users || 100);
+      setPlan(org.plan || '');
+      setMaxUsers(org.max_users ?? 0);
       setStatus(org.status || 'active');
     }
   }, [org]);
@@ -290,6 +290,12 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
   }
 
   const activeOrg = org;
+  const usersUsed = usage?.users_used ?? 0;
+  const usersLimit = usage?.users_limit ?? activeOrg.max_users ?? 0;
+  const usersPercent = usersLimit > 0 ? Math.min((usersUsed / usersLimit) * 100, 100) : 0;
+  const storageUsed = usage?.storage_gb_used ?? 0;
+  const storageLimit = usage?.storage_gb_limit ?? 0;
+  const storagePercent = storageLimit > 0 ? Math.min((storageUsed / storageLimit) * 100, 100) : 0;
 
   return (
     <div className="space-y-6 text-[#374151]">
@@ -318,7 +324,7 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
               <h1 className="text-page-title flex flex-wrap items-center gap-2 break-words">
                 <span className="break-words">{activeOrg.name}</span>
                 <Badge className="bg-purple-50 text-purple-700 border-purple-200 text-badge font-mono shrink-0">
-                  {activeOrg.plan || 'Enterprise'} Plan
+                  {activeOrg.plan ? `${activeOrg.plan} Plan` : 'Plan unavailable'}
                 </Badge>
               </h1>
               <p className="text-caption text-[#6B7280] mt-0.5 font-mono truncate break-all">
@@ -373,7 +379,9 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
           </div>
           <div>
             <div className="text-caption font-bold text-[#9CA3AF] uppercase">Subscription</div>
-            <div className="text-body font-bold text-[#111827]">{activeOrg.plan || 'Enterprise'} Plan</div>
+            <div className="text-body font-bold text-[#111827]">
+              {activeOrg.plan ? `${activeOrg.plan} Plan` : 'Plan unavailable'}
+            </div>
           </div>
         </Card>
 
@@ -384,7 +392,7 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
           <div>
             <div className="text-caption font-bold text-[#9CA3AF] uppercase">User Quota</div>
             <div className="text-body font-bold text-[#111827]">
-              {usage?.users_used ?? 1} / {activeOrg.max_users || 100} Seats
+              {usage?.users_used ?? 0} / {usage?.users_limit ?? activeOrg.max_users ?? 0} Seats
             </div>
           </div>
         </Card>
@@ -626,7 +634,7 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
             <div className="p-3.5 sm:p-4 bg-[#F9FAFB] rounded-btn border border-[#E5E7EB]">
               <div className="text-caption text-[#9CA3AF] font-bold uppercase text-xs">Plan Tier</div>
               <div className="text-body sm:text-subheading font-bold text-[#111827] mt-0.5 break-words">
-                {subscription?.plan || activeOrg.plan || 'Enterprise'}
+                {isOwnBilling && !isSubscriptionError ? subscription?.plan || 'Unavailable' : 'Unavailable'}
               </div>
             </div>
             <div className="p-3.5 sm:p-4 bg-[#F9FAFB] rounded-btn border border-[#E5E7EB]">
@@ -638,7 +646,13 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
             <div className="p-3.5 sm:p-4 bg-[#F9FAFB] rounded-btn border border-[#E5E7EB]">
               <div className="text-caption text-[#9CA3AF] font-bold uppercase text-xs">Price</div>
               <div className="text-body sm:text-subheading font-bold text-[#111827] mt-0.5 break-words">
-                {isOwnBilling && !isSubscriptionError && subscription ? `₹${subscription.amount}/mo` : 'Unavailable'}
+                {isOwnBilling && !isSubscriptionError && subscription?.currency
+                  ? new Intl.NumberFormat(undefined, {
+                      style: 'currency',
+                      currency: subscription.currency,
+                      maximumFractionDigits: 0,
+                    }).format(subscription.amount)
+                  : 'Unavailable'}
               </div>
             </div>
           </div>
@@ -689,20 +703,20 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
             <div className="space-y-2">
               <div className="flex justify-between font-semibold text-[#374151]">
                 <span>Active User Seats</span>
-                <span>{usage?.users_used ?? 1} / {activeOrg.max_users || 100}</span>
+                <span>{usersUsed} / {usersLimit}</span>
               </div>
               <div className="w-full h-3 rounded-full bg-[#E5E7EB] overflow-hidden">
-                <div className="h-full bg-[#2563EB] rounded-full" style={{ width: `${((usage?.users_used ?? 1) / (activeOrg.max_users || 100)) * 100}%` }} />
+                <div className="h-full bg-[#2563EB] rounded-full" style={{ width: `${usersPercent}%` }} />
               </div>
             </div>
 
             <div className="space-y-2">
               <div className="flex justify-between font-semibold text-[#374151]">
                 <span>MinIO S3 Storage</span>
-                <span>{usage?.storage_gb_used ?? 0.5} GB / {usage?.storage_gb_limit ?? 500} GB</span>
+                <span>{storageUsed} GB / {storageLimit} GB</span>
               </div>
               <div className="w-full h-3 rounded-full bg-[#E5E7EB] overflow-hidden">
-                <div className="h-full bg-purple-600 rounded-full" style={{ width: `${((usage?.storage_gb_used ?? 0.5) / (usage?.storage_gb_limit ?? 500)) * 100}%` }} />
+                <div className="h-full bg-purple-600 rounded-full" style={{ width: `${storagePercent}%` }} />
               </div>
             </div>
           </div>

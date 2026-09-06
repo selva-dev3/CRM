@@ -102,12 +102,25 @@ async def test_existing_subscription_and_usage_preserve_entitlements():
 @pytest.mark.asyncio
 async def test_new_subscriptions_have_no_provider():
     db = AsyncMock(spec=AsyncSession)
+    plan = SubscriptionPlan(
+        id="free-plan",
+        slug="free",
+        name="Free",
+        price_monthly=0,
+        currency="INR",
+        billing_cycle="month",
+        max_users=3,
+        max_storage_gb=5,
+        ai_credits=50,
+    )
     sub = await AuthRepository().create_organization_subscription(
-        db, organization_id="org-1", currency="INR"
+        db, organization_id="org-1", plan=plan
     )
     assert sub.payment_provider is None
     assert sub.max_users == 3
     assert sub.ai_credits == 50
+    assert sub.plan_id == "free-plan"
+    assert sub.auto_renew is False
     column = OrganizationSubscription.__table__.c.payment_provider
     assert column.default is None
     assert column.server_default is None
@@ -126,6 +139,12 @@ async def test_lazy_subscription_creation_has_no_provider_or_plan_upgrade():
         slug="free",
         name="Free",
         price_monthly=0,
+        currency="INR",
+        billing_cycle="month",
+        max_users=3,
+        max_storage_gb=5,
+        ai_credits=50,
+        is_active=True,
     )
     repo.create_subscription.side_effect = OrganizationRepository().create_subscription
     db = AsyncMock(spec=AsyncSession)

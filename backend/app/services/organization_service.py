@@ -1,74 +1,15 @@
 import asyncio
 import uuid
-from typing import TypedDict
 
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import APIException, ForbiddenError, NotFoundError
+from app.core.errors import APIException, ConflictError, ForbiddenError, NotFoundError
 from app.models import Organization, OrganizationSubscription, SubscriptionPlan, User
 from app.repositories.organization_repository import OrganizationRepository
 from app.schemas.crm_schemas import OrganizationUpdate
 from app.services.s3_service import s3_service
-
-
-class PlanInfo(TypedDict):
-    name: str
-    slug: str
-    price_monthly: int
-    max_users: int
-    max_storage_gb: int
-    ai_credits: int
-    features: str
-
-
-DEFAULT_PLANS: dict[str, PlanInfo] = {
-    "free": {
-        "name": "Free",
-        "slug": "free",
-        "price_monthly": 0,
-        "max_users": 3,
-        "max_storage_gb": 5,
-        "ai_credits": 50,
-        "features": "Dashboard, Leads, Contacts",
-    },
-    "starter": {
-        "name": "Starter",
-        "slug": "starter",
-        "price_monthly": 999,
-        "max_users": 10,
-        "max_storage_gb": 20,
-        "ai_credits": 500,
-        "features": "Everything in Free, Deals, Tasks",
-    },
-    "professional": {
-        "name": "Professional",
-        "slug": "professional",
-        "price_monthly": 2999,
-        "max_users": 50,
-        "max_storage_gb": 100,
-        "ai_credits": 5000,
-        "features": "Everything in Starter, AI, Reports",
-    },
-    "business": {
-        "name": "Business",
-        "slug": "business",
-        "price_monthly": 6999,
-        "max_users": 200,
-        "max_storage_gb": 500,
-        "ai_credits": 20000,
-        "features": "Everything in Professional",
-    },
-    "enterprise": {
-        "name": "Enterprise",
-        "slug": "enterprise",
-        "price_monthly": 29990,
-        "max_users": 100,
-        "max_storage_gb": 500,
-        "ai_credits": 100000,
-        "features": "Unlimited Everything, Priority Support",
-    },
-}
+from app.services.subscription_plan_service import FREE_PLAN_SLUG, free_subscription_data
 
 
 def org_to_dict(org: Organization, members_count: int = 1) -> dict:
@@ -95,8 +36,8 @@ def org_to_dict(org: Organization, members_count: int = 1) -> dict:
         "status": getattr(org, "status", "active") or "active",
         "role": getattr(org, "role", "Admin") or "Admin",
         "domain": getattr(org, "domain", "") or "",
-        "plan": getattr(org, "plan", "Enterprise") or "Enterprise",
-        "max_users": getattr(org, "max_users", 100) or 100,
+        "plan": org.plan or "",
+        "max_users": org.max_users,
         "created_at": str(org.created_at) if getattr(org, "created_at", None) else "",
         "members_count": members_count,
     }
@@ -155,40 +96,39 @@ class OrganizationDomainService:
                 raise NotFoundError(message="Organization not found")
             sub = await self.repository.get_subscription(db, org.id)
         if not sub:
-            plan_slug = (org.plan or "enterprise").lower()
-            db_plan = await self.repository.get_plan_by_slug(db, plan_slug)
+            plan_slug = (org.plan or FREE_PLAN_SLUG).lower()
+            if plan_slug != FREE_PLAN_SLUG:
+                raise ConflictError(
+                    message="The organization subscription requires administrator reconciliation",
+                    code="SUBSCRIPTION_DATA_INTEGRITY_ERROR",
+                )
+            db_plan = await self.repository.get_plan_by_slug(db, FREE_PLAN_SLUG)
+            if not db_plan or not db_plan.is_active or db_plan.price_monthly != 0:
+                raise APIException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    code="FREE_SUBSCRIPTION_PLAN_UNAVAILABLE",
+                    message="The default subscription plan is not configured",
+                )
             sub = await self.repository.create_subscription(
                 db,
-                data={
-                    "id": str(uuid.uuid4()),
-                    "organization_id": org.id,
-                    "plan_id": db_plan.id if db_plan else None,
-                    "status": "active",
-                    "billing_cycle": "Monthly",
-                    "amount": db_plan.price_monthly if db_plan else 29990.0,
-                    "currency": "INR",
-                    "auto_renew": True,
-                },
+                data=free_subscription_data(organization_id=org.id, plan=db_plan, current_users=1),
             )
+            org.plan = db_plan.name
+            org.max_users = db_plan.max_users
             await self._commit(db, "Failed to create subscription")
             await db.refresh(sub)
         return sub
 
-    def _plan_to_info(
-        self, db_plan: SubscriptionPlan | None, org: Organization | None = None
-    ) -> dict:
-        if db_plan:
-            return {
-                "name": db_plan.name,
-                "slug": db_plan.slug,
-                "price_monthly": db_plan.price_monthly,
-                "max_users": db_plan.max_users,
-                "max_storage_gb": db_plan.max_storage_gb,
-                "ai_credits": db_plan.ai_credits,
-                "features": db_plan.features or "",
-            }
-        plan_slug = org.plan.lower() if org and getattr(org, "plan", None) else "enterprise"
-        return dict(DEFAULT_PLANS.get(plan_slug) or DEFAULT_PLANS["enterprise"])
+    def _plan_to_info(self, db_plan: SubscriptionPlan) -> dict:
+        return {
+            "name": db_plan.name,
+            "slug": db_plan.slug,
+            "price_monthly": db_plan.price_monthly,
+            "max_users": db_plan.max_users,
+            "max_storage_gb": db_plan.max_storage_gb,
+            "ai_credits": db_plan.ai_credits,
+            "features": db_plan.features or "",
+        }
 
     async def _resolve_plan_info(self, db: AsyncSession, org: Organization) -> dict:
         subscription = await self.get_or_create_subscription(db, org)
@@ -196,9 +136,14 @@ class OrganizationDomainService:
         if subscription.plan_id:
             db_plan = await self.repository.get_plan_by_id(db, subscription.plan_id)
         if not db_plan:
-            plan_slug = (org.plan or "enterprise").lower()
+            plan_slug = (org.plan or FREE_PLAN_SLUG).lower()
             db_plan = await self.repository.get_plan_by_slug(db, plan_slug)
-        return self._plan_to_info(db_plan, org)
+        if not db_plan:
+            raise ConflictError(
+                message="The subscription plan record requires administrator reconciliation",
+                code="SUBSCRIPTION_DATA_INTEGRITY_ERROR",
+            )
+        return self._plan_to_info(db_plan)
 
     async def get_organization(self, db: AsyncSession, current_user: User) -> dict:
         org = await self._require_current_org(db, current_user)
@@ -267,9 +212,9 @@ class OrganizationDomainService:
             "plan_slug": plan_info["slug"],
             "provider_linked": bool(subscription.subscription_id and subscription.customer_id),
             "status": subscription.status or "active",
-            "billing_cycle": subscription.billing_cycle or "Monthly",
-            "amount": subscription.amount or plan_info["price_monthly"],
-            "currency": subscription.currency or "INR",
+            "billing_cycle": subscription.billing_cycle,
+            "amount": subscription.amount,
+            "currency": subscription.currency,
             "trial": subscription.trial or False,
             "auto_renew": (
                 subscription.auto_renew if subscription.auto_renew is not None else True
@@ -294,38 +239,26 @@ class OrganizationDomainService:
         }
 
     async def list_subscription_plans(self, db: AsyncSession) -> list[dict]:
-        db_plans = await self.repository.list_active_plans(db)
-        if db_plans:
-            return [
-                {
-                    "id": p.id,
-                    "name": p.name,
-                    "slug": p.slug,
-                    "price_monthly": p.price_monthly,
-                    "price_yearly": p.price_yearly,
-                    "max_users": p.max_users,
-                    "max_storage_gb": p.max_storage_gb,
-                    "ai_credits": p.ai_credits,
-                    "features": [f.strip() for f in p.features.split(",")] if p.features else [],
-                    "is_active": p.is_active,
-                }
-                for p in db_plans
-            ]
-
+        db_plans = await self.repository.list_plans(db)
         return [
             {
-                "id": f"plan-{info['slug']}",
-                "name": info["name"],
-                "slug": info["slug"],
-                "price_monthly": info["price_monthly"],
-                "price_yearly": info["price_monthly"] * 10,
-                "max_users": info["max_users"],
-                "max_storage_gb": info["max_storage_gb"],
-                "ai_credits": info["ai_credits"],
-                "features": [f.strip() for f in info["features"].split(",")],
-                "is_active": True,
+                "id": plan.id,
+                "name": plan.name,
+                "slug": plan.slug,
+                "description": plan.description,
+                "price_monthly": plan.price_monthly,
+                "price_yearly": plan.price_yearly,
+                "currency": plan.currency,
+                "billing_cycle": plan.billing_cycle,
+                "max_users": plan.max_users,
+                "max_storage_gb": plan.max_storage_gb,
+                "ai_credits": plan.ai_credits,
+                "features": [f.strip() for f in plan.features.split(",")] if plan.features else [],
+                "is_popular": plan.is_popular,
+                "is_active": plan.is_active,
+                "sort_order": plan.sort_order,
             }
-            for info in DEFAULT_PLANS.values()
+            for plan in db_plans
         ]
 
     async def upgrade_plan(self, db: AsyncSession, plan_slug: str) -> dict:

@@ -43,6 +43,24 @@ class SubscriptionCheckoutVerifyResponse(BaseModel):
     message: str
 
 
+class SubscriptionPlanResponse(BaseModel):
+    id: str
+    name: str
+    slug: str
+    description: str
+    price_monthly: float
+    price_yearly: float
+    currency: str
+    billing_cycle: str
+    max_users: int
+    max_storage_gb: int
+    ai_credits: int
+    features: list[str]
+    is_popular: bool
+    is_active: bool
+    sort_order: int
+
+
 class BulkDeleteRequest(BaseModel):
     ids: list[str]
 
@@ -282,8 +300,8 @@ class OrganizationBase(BaseModel):
     status: str | None = "active"
     role: str | None = "Admin"
     domain: str | None = None
-    plan: str | None = "Enterprise"
-    max_users: int | None = 100
+    plan: str | None = None
+    max_users: int | None = None
 
 
 class OrganizationCreate(OrganizationBase):

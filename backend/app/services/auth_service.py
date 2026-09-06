@@ -40,6 +40,7 @@ from app.schemas.crm_schemas import (
     TwoFactorVerifyRequest,
 )
 from app.services.email_service import send_magic_link_email, send_reset_password_email
+from app.services.subscription_plan_service import FREE_PLAN_SLUG
 
 logger = logging.getLogger(__name__)
 
@@ -249,7 +250,19 @@ class AuthService:
                     message="User with this email already exists",
                 )
 
-            org = await self.repository.create_org(db, name=payload.organization_name)
+            free_plan = await self.repository.get_active_subscription_plan_by_slug(
+                db, FREE_PLAN_SLUG
+            )
+            if not free_plan:
+                raise APIException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    code="FREE_SUBSCRIPTION_PLAN_UNAVAILABLE",
+                    message="The default subscription plan is not configured",
+                )
+
+            org = await self.repository.create_org(
+                db, name=payload.organization_name, plan=free_plan
+            )
             await db.flush()
 
             try:
@@ -282,7 +295,7 @@ class AuthService:
             await self.repository.create_organization_subscription(
                 db,
                 organization_id=org.id,
-                currency=org.currency or "INR",
+                plan=free_plan,
             )
             admin_role = await self.repository.get_role_for_organization(db, "Admin", org.id)
             if not admin_role:

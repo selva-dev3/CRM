@@ -13,6 +13,7 @@ from app.schemas.crm_schemas import (
     SubscriptionCheckoutRequest,
     SubscriptionCheckoutResponse,
     SubscriptionCheckoutVerifyResponse,
+    SubscriptionPlanResponse,
 )
 from app.services.organization_service import organization_domain_service
 from app.services.subscription_billing_service import SubscriptionBillingService
@@ -87,6 +88,7 @@ async def get_subscription(
 
 @router.get(
     "/subscription/plans",
+    response_model=list[SubscriptionPlanResponse],
     summary="List all available subscription plans",
     dependencies=[Depends(require_permission("organization:billing"))],
 )

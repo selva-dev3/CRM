@@ -15,6 +15,7 @@ from app.models import (
     RefreshToken,
     Role,
     RolePermission,
+    SubscriptionPlan,
     User,
     UserInvitation,
     UserRole,
@@ -202,8 +203,22 @@ class AuthRepository:
         result = await db.execute(select(Organization).limit(1))
         return result.scalars().first()
 
-    async def create_org(self, db: AsyncSession, *, name: str) -> Organization:
-        org = Organization(name=name)
+    async def get_active_subscription_plan_by_slug(
+        self, db: AsyncSession, slug: str
+    ) -> SubscriptionPlan | None:
+        result = await db.execute(
+            select(SubscriptionPlan).where(
+                func.lower(SubscriptionPlan.slug) == slug.lower(),
+                SubscriptionPlan.is_active.is_(True),
+                SubscriptionPlan.price_monthly == 0,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def create_org(
+        self, db: AsyncSession, *, name: str, plan: SubscriptionPlan
+    ) -> Organization:
+        org = Organization(name=name, plan=plan.name, max_users=plan.max_users)
         db.add(org)
         return org
 
@@ -219,19 +234,12 @@ class AuthRepository:
         return setting
 
     async def create_organization_subscription(
-        self, db: AsyncSession, *, organization_id: str, currency: str
+        self, db: AsyncSession, *, organization_id: str, plan: SubscriptionPlan
     ) -> OrganizationSubscription:
-        subscription = OrganizationSubscription(
-            organization_id=organization_id,
-            status="active",
-            billing_cycle="Monthly",
-            amount=0,
-            currency=currency,
-            max_users=3,
-            current_users=1,
-            storage_limit_gb=5,
-            storage_used_gb=0,
-            ai_credits=50,
+        from app.services.subscription_plan_service import build_free_subscription
+
+        subscription = build_free_subscription(
+            organization_id=organization_id, plan=plan, current_users=1
         )
         db.add(subscription)
         return subscription

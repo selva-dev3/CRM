@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -90,15 +90,16 @@ describe('Organization detail route and current organization mode', () => {
     fireEvent.mouseDown(screen.getByRole('tab', { name: 'Subscription & Billing' }), { button: 0, ctrlKey: false });
   }
 
-  const activeSubscription = { plan: 'Enterprise', status: 'active', provider_linked: true, auto_renew: true, amount: 0, billing_cycle: 'Monthly' };
+  const activeSubscription = { plan: 'Enterprise', status: 'active', provider_linked: true, auto_renew: true, amount: 0, currency: 'INR', billing_cycle: 'Monthly' };
 
   it('shows safe cancellation errors from the backend', async () => {
     mocks.cancel.mockRejectedValue(new Error('Subscription billing credentials require administrator review.'));
     openBilling(activeSubscription);
     fireEvent.click(screen.getByRole('button', { name: 'Cancel Subscription' }));
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel Subscription' }));
     expect(await screen.findByText('Subscription billing credentials require administrator review.')).toBeInTheDocument();
     expect(mocks.cancel).toHaveBeenCalledOnce();
-    expect(screen.getByText('₹0/mo')).toBeInTheDocument();
+    expect(screen.getByText('₹0')).toBeInTheDocument();
   });
 
   it('shows scheduled cancellation and resumes renewal through the API', async () => {
@@ -107,6 +108,7 @@ describe('Organization detail route and current organization mode', () => {
     expect(screen.getByText('Cancels at period end')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Cancel Subscription' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Resume Renewal' }));
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Resume Renewal' }));
     expect(await screen.findByText('Subscription renewal enabled')).toBeInTheDocument();
     expect(mocks.resume).toHaveBeenCalledOnce();
     expect(mocks.cancel).not.toHaveBeenCalled();
