@@ -4,10 +4,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import APIException, NotFoundError
 from app.models import User
 from app.models.contact import Contact
-from app.repositories.contact_repository import ContactRepository
 from app.repositories.call_repository import CallRepository
+from app.repositories.contact_repository import ContactRepository
 from app.repositories.deal_repository import DealRepository
-from app.schemas.crm_schemas import ContactCreate, ContactUpdate, CustomFieldDefinition
+from app.schemas.crm_schemas import (
+    ContactAddressResponse,
+    ContactAddressUpdate,
+    ContactCreate,
+    ContactUpdate,
+    CustomFieldDefinition,
+)
 from app.services.custom_field_service import CustomFieldService, custom_field_service
 from app.services.notification_service import notification_service
 from app.services.org_service import organization_service
@@ -106,6 +112,39 @@ class ContactService:
     async def get_contact(self, db: AsyncSession, contact_id: str, *, organization_id: str) -> dict:
         contact = await self.require_contact(db, contact_id, organization_id=organization_id)
         return contact_to_dict(contact)
+
+    async def get_billing_address(
+        self, db: AsyncSession, contact_id: str, *, organization_id: str
+    ) -> ContactAddressResponse:
+        await self.require_contact(db, contact_id, organization_id=organization_id)
+        address = await self.repository.get_address(
+            db, contact_id=contact_id, organization_id=organization_id
+        )
+        if not address:
+            return ContactAddressResponse()
+        return ContactAddressResponse.model_validate(address, from_attributes=True)
+
+    async def update_billing_address(
+        self,
+        db: AsyncSession,
+        contact_id: str,
+        payload: ContactAddressUpdate,
+        *,
+        organization_id: str,
+    ) -> ContactAddressResponse:
+        await self.require_contact(db, contact_id, organization_id=organization_id)
+        address = await self.repository.get_address(
+            db, contact_id=contact_id, organization_id=organization_id
+        )
+        data = payload.model_dump()
+        if address:
+            for field, value in data.items():
+                setattr(address, field, value)
+        else:
+            address = await self.repository.create_address(db, contact_id=contact_id, data=data)
+        await self._commit(db, "Failed to save contact billing address")
+        await db.refresh(address)
+        return ContactAddressResponse.model_validate(address, from_attributes=True)
 
     async def _build_name_parts(
         self,

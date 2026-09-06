@@ -30,6 +30,8 @@ import { PageTabs } from '@/components/common/page-tabs';
 import {
   useContactQuery,
   useUpdateContactMutation,
+  useContactBillingAddressQuery,
+  useUpdateContactBillingAddressMutation,
   useDeleteContactMutation,
   useStarContactMutation,
   useUnstarContactMutation,
@@ -75,12 +77,18 @@ export default function ContactDetailsPage() {
   const [formCustomFields, setFormCustomFields] = useState<
     Record<string, CustomFieldValue>
   >({});
+  const [formBillingStreet, setFormBillingStreet] = useState('');
+  const [formBillingCity, setFormBillingCity] = useState('');
+  const [formBillingState, setFormBillingState] = useState('');
+  const [formBillingCountry, setFormBillingCountry] = useState('');
+  const [formBillingPostalCode, setFormBillingPostalCode] = useState('');
 
   // Add Note Form State
   const [newNoteContent, setNewNoteContent] = useState('');
 
   // Queries
   const { data: contact, isLoading, refetch: refetchContact } = useContactQuery(contactId);
+  const { data: billingAddress } = useContactBillingAddressQuery(contactId);
   const { data: companiesList = [] } = useCompaniesQuery(1, 100);
   const {
     data: customFields = [],
@@ -121,6 +129,7 @@ export default function ContactDetailsPage() {
 
   // Mutations
   const updateContactMutation = useUpdateContactMutation();
+  const updateBillingAddressMutation = useUpdateContactBillingAddressMutation();
   const deleteContactMutation = useDeleteContactMutation();
   const starContactMutation = useStarContactMutation();
   const unstarContactMutation = useUnstarContactMutation();
@@ -150,6 +159,11 @@ export default function ContactDetailsPage() {
       setFormPosition(contact.position || '');
       setFormJobTitle(contact.position || '');
       setFormCustomFields(contact.custom_fields ?? {});
+      setFormBillingStreet(billingAddress?.street || '');
+      setFormBillingCity(billingAddress?.city || '');
+      setFormBillingState(billingAddress?.state || '');
+      setFormBillingCountry(billingAddress?.country || '');
+      setFormBillingPostalCode(billingAddress?.postal_code || '');
       setIsEditModalOpen(true);
     }
   };
@@ -158,6 +172,10 @@ export default function ContactDetailsPage() {
     e.preventDefault();
     try {
       setErrorMessage(null);
+      if (!formBillingStreet.trim() || !formBillingCountry.trim()) {
+        setErrorMessage('Billing street and country are required for automatic invoices.');
+        return;
+      }
       const displayName = formName || `${formFirstName} ${formLastName}`.trim() || 'Contact';
       await updateContactMutation.mutateAsync({
         id: contactId,
@@ -171,6 +189,16 @@ export default function ContactDetailsPage() {
           position: formPosition || undefined,
           job_title: formJobTitle || formPosition || undefined,
           custom_fields: formCustomFields,
+        },
+      });
+      await updateBillingAddressMutation.mutateAsync({
+        id: contactId,
+        data: {
+          street: formBillingStreet.trim(),
+          city: formBillingCity.trim() || undefined,
+          state: formBillingState.trim() || undefined,
+          country: formBillingCountry.trim(),
+          postal_code: formBillingPostalCode.trim() || undefined,
         },
       });
       setSuccessMessage('Contact updated successfully.');
@@ -586,6 +614,43 @@ export default function ContactDetailsPage() {
               </div>
             </div>
 
+            <div className="space-y-2 rounded-lg border border-slate-200 p-3">
+              <div>
+                <h4 className="font-semibold text-slate-800">Billing Address</h4>
+                <p className="text-[11px] text-slate-500">Street and country are required before an invoice can be created.</p>
+              </div>
+              <div className="space-y-1">
+                <Label className="font-semibold text-slate-700">Street *</Label>
+                <Input
+                  type="text"
+                  value={formBillingStreet}
+                  onChange={(e) => setFormBillingStreet(e.target.value)}
+                  className="h-9 text-xs"
+                  required
+                />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="font-semibold text-slate-700">City</Label>
+                  <Input type="text" value={formBillingCity} onChange={(e) => setFormBillingCity(e.target.value)} className="h-9 text-xs" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="font-semibold text-slate-700">State</Label>
+                  <Input type="text" value={formBillingState} onChange={(e) => setFormBillingState(e.target.value)} className="h-9 text-xs" />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="font-semibold text-slate-700">Country *</Label>
+                  <Input type="text" value={formBillingCountry} onChange={(e) => setFormBillingCountry(e.target.value)} className="h-9 text-xs" required />
+                </div>
+                <div className="space-y-1">
+                  <Label className="font-semibold text-slate-700">Postal Code</Label>
+                  <Input type="text" value={formBillingPostalCode} onChange={(e) => setFormBillingPostalCode(e.target.value)} className="h-9 text-xs" />
+                </div>
+              </div>
+            </div>
+
             <CustomFields
               fields={customFields}
               values={formCustomFields}
@@ -601,8 +666,8 @@ export default function ContactDetailsPage() {
               <Button type="button" variant="outline" size="sm" onClick={() => setIsEditModalOpen(false)} className="cursor-pointer">
                 Cancel
               </Button>
-              <Button type="submit" size="sm" disabled={updateContactMutation.isPending} className="bg-blue-600 text-white font-semibold cursor-pointer">
-                {updateContactMutation.isPending ? 'Saving...' : 'Save Changes'}
+              <Button type="submit" size="sm" disabled={updateContactMutation.isPending || updateBillingAddressMutation.isPending} className="bg-blue-600 text-white font-semibold cursor-pointer">
+                {updateContactMutation.isPending || updateBillingAddressMutation.isPending ? 'Saving...' : 'Save Changes'}
               </Button>
             </div>
           </form>

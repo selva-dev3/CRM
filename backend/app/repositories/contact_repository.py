@@ -2,7 +2,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.company import Company
-from app.models.contact import Contact
+from app.models.contact import Contact, ContactAddress
 
 
 class ContactRepository:
@@ -113,3 +113,25 @@ class ContactRepository:
             )
         )
         return result.scalar_one_or_none() is not None
+
+    async def get_address(
+        self, db: AsyncSession, *, contact_id: str, organization_id: str
+    ) -> ContactAddress | None:
+        result = await db.execute(
+            select(ContactAddress)
+            .join(Contact, Contact.id == ContactAddress.contact_id)
+            .where(
+                ContactAddress.contact_id == contact_id,
+                Contact.organization_id == organization_id,
+            )
+            .order_by(ContactAddress.id)
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def create_address(
+        self, db: AsyncSession, *, contact_id: str, data: dict
+    ) -> ContactAddress:
+        address = ContactAddress(contact_id=contact_id, **data)
+        db.add(address)
+        return address

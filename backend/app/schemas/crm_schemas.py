@@ -421,6 +421,30 @@ class ContactUpdate(ContactBase):
     custom_fields: dict[str, CustomFieldValue] | None = None
 
 
+class ContactAddressResponse(BaseModel):
+    street: str | None = None
+    city: str | None = None
+    state: str | None = None
+    country: str | None = None
+    postal_code: str | None = None
+
+
+class ContactAddressUpdate(BaseModel):
+    street: str = Field(min_length=1, max_length=255)
+    city: str | None = Field(default=None, max_length=100)
+    state: str | None = Field(default=None, max_length=100)
+    country: str = Field(min_length=1, max_length=100)
+    postal_code: str | None = Field(default=None, max_length=20)
+
+    @field_validator("street", "country")
+    @classmethod
+    def required_address_value(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("must not be blank")
+        return value
+
+
 class ContactResponse(BaseModel):
     id: str
     name: str | None = ""

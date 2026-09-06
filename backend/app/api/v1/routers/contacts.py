@@ -9,6 +9,8 @@ from app.schemas.crm_schemas import (
     BulkActionResponse,
     BulkDeleteRequest,
     CallLogResponse,
+    ContactAddressResponse,
+    ContactAddressUpdate,
     ContactCreate,
     ContactResponse,
     ContactUpdate,
@@ -154,6 +156,41 @@ async def get_contact(
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     return await contact_service.get_contact(db, contact_id, organization_id=organization_id)
+
+
+@router.get(
+    "/{contact_id}/billing-address",
+    response_model=ContactAddressResponse,
+    summary="Get contact billing address",
+    dependencies=[Depends(require_permission("contacts:read"))],
+)
+async def get_contact_billing_address(
+    contact_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await contact_service.get_billing_address(
+        db, contact_id, organization_id=organization_id
+    )
+
+
+@router.put(
+    "/{contact_id}/billing-address",
+    response_model=ContactAddressResponse,
+    summary="Create or update contact billing address",
+    dependencies=[Depends(require_permission("contacts:update"))],
+)
+async def update_contact_billing_address(
+    contact_id: str,
+    payload: ContactAddressUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await contact_service.update_billing_address(
+        db, contact_id, payload, organization_id=organization_id
+    )
 
 
 @router.put(

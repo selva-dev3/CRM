@@ -16,6 +16,14 @@ export interface ContactItem {
   custom_fields?: Record<string, CustomFieldValue>;
 }
 
+export interface ContactAddress {
+  street?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  postal_code?: string;
+}
+
 export interface ContactCreatePayload {
   first_name?: string;
   last_name?: string;
@@ -116,6 +124,14 @@ export async function getContactByIdApi(id: string): Promise<ContactItem> {
   return apiClient.get<ContactItem>(`/contacts/${id}`);
 }
 
+export async function getContactBillingAddressApi(id: string): Promise<ContactAddress> {
+  return apiClient.get<ContactAddress>(`/contacts/${id}/billing-address`);
+}
+
+export async function updateContactBillingAddressApi(payload: { id: string; data: ContactAddress }): Promise<ContactAddress> {
+  return apiClient.put<ContactAddress>(`/contacts/${payload.id}/billing-address`, payload.data);
+}
+
 export async function updateContactApi(payload: { id: string; data: ContactUpdatePayload }): Promise<ContactItem> {
   return apiClient.put<ContactItem>(`/contacts/${payload.id}`, payload.data);
 }
@@ -211,6 +227,20 @@ export function useContactQuery(id: string) {
     queryKey: ['contact', id],
     queryFn: () => getContactByIdApi(id),
     enabled: !!id,
+  });
+}
+
+export function useContactBillingAddressQuery(id: string) {
+  return useQuery({
+    queryKey: ['contact-billing-address', id],
+    queryFn: () => getContactBillingAddressApi(id),
+    enabled: !!id,
+  });
+}
+
+export function useUpdateContactBillingAddressMutation() {
+  return useMutation({
+    mutationFn: updateContactBillingAddressApi,
   });
 }
 
