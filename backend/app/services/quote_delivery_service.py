@@ -15,6 +15,7 @@ from pydantic import EmailStr, TypeAdapter, ValidationError
 from app.core.config import settings
 from app.core.errors import APIException, NotFoundError
 from app.core.logging import get_logger
+from app.models import Email
 from app.models.quote_delivery import QuoteDeliveryAttempt
 from app.repositories.deal_repository import DealRepository
 from app.repositories.quote_repository import quote_repository
@@ -201,7 +202,6 @@ class QuoteDeliveryService:
                         for item in items
                     ],
                 }
-                recipient = quote.recipient_email
             except ValueError as exc:
                 await quote_repository.delivery_result(
                     db, quote, state="Failed", failure_reason=str(exc)
@@ -220,6 +220,9 @@ class QuoteDeliveryService:
 
         pdf_key = None
         message_id = None
+        recipient = quote.recipient_email
+        email_subject = f"Quote {document['quote']['quote_number']}"
+        email_body: str | None = None
         state = "Failed"
         failure_reason = None
         email_started = False
@@ -276,6 +279,7 @@ class QuoteDeliveryService:
                 f'<p><a href="{escape(link, quote=True)}">Review, accept or reject your quote</a></p>'
                 f'<p><a href="{escape(pdf_url, quote=True)}">Download quote PDF (link valid for 7 days)</a></p>'
             )
+            email_body = body
             email_started = True
             logger.info(
                 "Quote Brevo submission started organization_id=%s quote_id=%s delivery_id=%s",
@@ -286,7 +290,7 @@ class QuoteDeliveryService:
             message_id = await asyncio.to_thread(
                 send_tracked_email,
                 to_email=recipient,
-                subject=f"Quote {document['quote']['quote_number']}",
+                subject=email_subject,
                 html_content=body,
                 idempotency_key=delivery_id,
             )
@@ -328,6 +332,17 @@ class QuoteDeliveryService:
                     at=datetime.now(UTC),
                     failure_reason=failure_reason,
                 )
+                if state == "Sent":
+                    db.add(
+                        Email(
+                            organization_id=org_id,
+                            from_email=settings.EMAILS_FROM_EMAIL,
+                            to_email=recipient,
+                            subject=email_subject,
+                            body_text=email_body,
+                            status="sent",
+                        )
+                    )
                 await db.commit()
                 logger.info(
                     "Quote delivery finalized organization_id=%s quote_id=%s delivery_id=%s state=%s",

@@ -29,6 +29,7 @@ from app.models import (
     Contact,
     ContactAddress,
     Deal,
+    Email,
     Invoice,
     InvoiceItem,
     Lead,
@@ -314,6 +315,14 @@ async def test_durable_quote_delivery_and_customer_acceptance(sales_database, mo
         if outcome == "Sent":
             sender.assert_called_once()
             assert quote.sent_at and quote.provider_message_id == "test-provider-receipt"
+            email = await db.scalar(
+                select(Email).where(
+                    Email.organization_id == org.id,
+                    Email.to_email == contact.email,
+                    Email.subject == f"Quote {quote.quote_number}",
+                )
+            )
+            assert email and email.status == "sent"
             token = acceptance_token(quote.id, quote.delivery_id)
             response = await QuoteService().public_quote(db, token=token)
             assert response["status"] == "Sent"
