@@ -19,7 +19,24 @@ export interface PaymentItem {
   status: string;
   paid_at?: string | null;
   created_at?: string | null;
+  invoice_total?: number | string;
+  invoice_paid_amount?: number | string;
+  invoice_outstanding_amount?: number | string;
+  invoice_payment_status?: string;
+  customer?: { id: string | null; name: string | null } | null;
 }
+
+export type EligiblePaymentInvoice = {
+  id: string;
+  invoice_number: string;
+  customer_name?: string | null;
+  contact_name?: string | null;
+  amount: number | string;
+  paid_amount: number | string;
+  outstanding_amount: number | string;
+  currency: string;
+  payment_status: string;
+};
 
 export interface PaymentQueryParams {
   page?: number;
@@ -29,7 +46,7 @@ export interface PaymentQueryParams {
   invoice_id?: string;
 }
 
-export const paymentKeys = { all: ['payments'] as const, list: (params?: PaymentQueryParams) => ['payments', params] as const };
+export const paymentKeys = { all: ['payments'] as const, list: (params?: PaymentQueryParams) => ['payments', params] as const, detail: (id: string) => ['payments', id] as const, eligibleInvoices: () => ['payments', 'eligible-invoices'] as const };
 
 export function recordInvoicePaymentApi({ invoiceId, payment, idempotencyKey }: { invoiceId: string; payment: ManualPaymentDto; idempotencyKey: string }): Promise<PaymentItem> {
   return apiClient.post(`/invoices/${invoiceId}/payments`, payment, { headers: { 'Idempotency-Key': idempotencyKey } });
@@ -47,6 +64,7 @@ export function useRecordInvoicePaymentMutation() {
     onSuccess: async () => {
       await Promise.all([
         client.invalidateQueries({ queryKey: paymentKeys.all }),
+        client.invalidateQueries({ queryKey: paymentKeys.eligibleInvoices() }),
         client.invalidateQueries({ queryKey: ['invoices'] }),
         client.invalidateQueries({ queryKey: ['reports'] }),
       ]);
@@ -65,6 +83,14 @@ export async function fetchPaymentsApi(params?: PaymentQueryParams): Promise<Pay
   return apiClient.get<PaymentItem[]>(`/payments${suffix}`);
 }
 
+export async function fetchPaymentApi(paymentId: string): Promise<PaymentItem> {
+  return apiClient.get<PaymentItem>(`/payments/${paymentId}`);
+}
+
+export async function fetchEligiblePaymentInvoicesApi(): Promise<EligiblePaymentInvoice[]> {
+  return apiClient.get<EligiblePaymentInvoice[]>('/payments/eligible-invoices');
+}
+
 export function usePaymentsQuery(
   params?: PaymentQueryParams,
   options?: Omit<UseQueryOptions<PaymentItem[], Error>, 'queryKey' | 'queryFn'>,
@@ -75,4 +101,12 @@ export function usePaymentsQuery(
     staleTime: 1000 * 60 * 2,
     ...options,
   });
+}
+
+export function usePaymentQuery(paymentId: string, options?: Omit<UseQueryOptions<PaymentItem, Error>, 'queryKey' | 'queryFn'>) {
+  return useQuery<PaymentItem, Error>({ queryKey: paymentKeys.detail(paymentId), queryFn: () => fetchPaymentApi(paymentId), enabled: Boolean(paymentId), ...options });
+}
+
+export function useEligiblePaymentInvoicesQuery(options?: Omit<UseQueryOptions<EligiblePaymentInvoice[], Error>, 'queryKey' | 'queryFn'>) {
+  return useQuery<EligiblePaymentInvoice[], Error>({ queryKey: paymentKeys.eligibleInvoices(), queryFn: fetchEligiblePaymentInvoicesApi, staleTime: 30_000, ...options });
 }

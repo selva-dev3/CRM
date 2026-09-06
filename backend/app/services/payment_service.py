@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import UTC, datetime, time
+from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,6 +32,36 @@ def payment_to_dict(row: tuple) -> dict[str, object]:
         "notes": payment.notes,
         "paid_at": payment.paid_at.isoformat(),
         "created_at": payment.created_at.isoformat() if payment.created_at else None,
+    }
+
+
+def payment_detail_to_dict(row: tuple) -> dict[str, object]:
+    payment, invoice_number, invoice_total, paid_amount, payment_status, customer_id, company_name, contact_name, contact_email = row
+    result = payment_to_dict((payment, invoice_number, company_name, contact_name, contact_email))
+    result.update(
+        {
+            "invoice_total": invoice_total or Decimal(0),
+            "invoice_paid_amount": paid_amount or Decimal(0),
+            "invoice_outstanding_amount": max(Decimal(0), Decimal(str(invoice_total or 0)) - Decimal(str(paid_amount or 0))),
+            "invoice_payment_status": payment_status or "Pending",
+            "customer": {"id": customer_id, "name": company_name},
+        }
+    )
+    return result
+
+
+def eligible_invoice_to_dict(row: tuple) -> dict[str, object]:
+    invoice, company_name, contact_name, _contact_email = row
+    return {
+        "id": invoice.id,
+        "invoice_number": invoice.invoice_number,
+        "customer_name": company_name,
+        "contact_name": contact_name,
+        "amount": invoice.amount or Decimal(0),
+        "paid_amount": invoice.paid_amount or Decimal(0),
+        "outstanding_amount": max(Decimal(0), Decimal(str(invoice.amount or 0)) - Decimal(str(invoice.paid_amount or 0))),
+        "currency": invoice.currency,
+        "payment_status": invoice.payment_status or "Pending",
     }
 
 
@@ -156,13 +187,21 @@ class PaymentService:
         )
         return [payment_to_dict(row) for row in rows]
 
+    async def list_eligible_invoices(
+        self, db: AsyncSession, *, organization_id: str, page: int = 1, limit: int = 100
+    ) -> list[dict[str, object]]:
+        rows = await self.repository.list_eligible_invoices(
+            db, organization_id=organization_id, page=page, limit=limit
+        )
+        return [eligible_invoice_to_dict(row) for row in rows]
+
     async def get_payment(
         self, db, *, payment_id: str, organization_id: str
     ) -> dict[str, object] | None:
-        row = await self.repository.get_scoped(
+        row = await self.repository.get_scoped_detail(
             db, payment_id=payment_id, organization_id=organization_id
         )
-        return payment_to_dict(row) if row else None
+        return payment_detail_to_dict(row) if row else None
 
 
 payment_service = PaymentService()
