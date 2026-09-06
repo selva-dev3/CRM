@@ -43,7 +43,7 @@ export function AddPaymentDialog() {
       form.reset({ payment_type: 'Cash', amount: '', payment_date: today(), notes: '' });
     } catch (err) {
       const message = getErrorMessage(err, 'Unable to record payment.'); setError(message); form.setError('root', { message });
-      if (err instanceof ApiError && err.status >= 400 && err.status < 500) setIdempotencyKey('');
+      if (err instanceof ApiError && err.status !== null && err.status >= 400 && err.status < 500) setIdempotencyKey('');
     } finally { submitting.current = false; }
   }
 
