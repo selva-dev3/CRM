@@ -6,10 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import NotFoundError
 from app.models import User
-from app.models.contact import Contact
+from app.models.contact import Contact, ContactAddress
 from app.models.deal import Deal
 from app.repositories.contact_repository import ContactRepository
-from app.schemas.crm_schemas import ContactCreate, ContactUpdate
+from app.schemas.crm_schemas import ContactAddressUpdate, ContactCreate, ContactUpdate
 from app.services.contact_service import ContactService
 from app.services.integration_service import integration_service
 
@@ -75,6 +75,61 @@ async def test_get_contact_raises_not_found_when_missing():
 
     with pytest.raises(NotFoundError):
         await service.get_contact(db, "missing-contact", organization_id="org-1")
+
+
+@pytest.mark.asyncio
+async def test_get_billing_address_is_scoped_to_contact_and_organization():
+    repo: Any = ContactRepository()
+    repo.get_by_id_scoped = AsyncMock(return_value=_make_contact())
+    repo.get_address = AsyncMock(
+        return_value=ContactAddress(
+            contact_id="cnt-1", street="123 Main Street", country="IN"
+        )
+    )
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.get_billing_address(db, "cnt-1", organization_id="org-1")
+
+    assert result.street == "123 Main Street"
+    assert result.country == "IN"
+    repo.get_address.assert_awaited_once_with(
+        db, contact_id="cnt-1", organization_id="org-1"
+    )
+
+
+@pytest.mark.asyncio
+async def test_update_billing_address_creates_missing_address():
+    repo: Any = ContactRepository()
+    repo.get_by_id_scoped = AsyncMock(return_value=_make_contact())
+    repo.get_address = AsyncMock(return_value=None)
+    address = ContactAddress(
+        contact_id="cnt-1", street="123 Main Street", country="IN"
+    )
+    repo.create_address = AsyncMock(return_value=address)
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.update_billing_address(
+        db,
+        "cnt-1",
+        ContactAddressUpdate(street="123 Main Street", country="IN"),
+        organization_id="org-1",
+    )
+
+    assert result.street == "123 Main Street"
+    assert result.country == "IN"
+    repo.create_address.assert_awaited_once_with(
+        db,
+        contact_id="cnt-1",
+        data={
+            "street": "123 Main Street",
+            "city": None,
+            "state": None,
+            "country": "IN",
+            "postal_code": None,
+        },
+    )
 
 
 @pytest.mark.asyncio
