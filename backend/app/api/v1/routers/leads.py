@@ -16,7 +16,10 @@ from app.schemas.crm_schemas import (
     EmailSendRequest,
     LeadConvertRequest,
     LeadCreate,
+    LeadDisqualificationRequest,
+    LeadQualificationRequest,
     LeadResponse,
+    LeadTimelineEvent,
     LeadUpdate,
     MessageResponse,
     NoteResponse,
@@ -95,7 +98,9 @@ async def bulk_archive_leads(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await lead_service.bulk_archive(db, payload.ids, organization_id=organization_id)
+    return await lead_service.bulk_archive(
+        db, payload.ids, organization_id=organization_id, actor_id=current_user.id
+    )
 
 
 @router.post(
@@ -221,7 +226,11 @@ async def bulk_update_lead_status(
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     return await lead_service.bulk_update_status(
-        db, payload.ids, status_value, organization_id=organization_id
+        db,
+        payload.ids,
+        status_value,
+        organization_id=organization_id,
+        actor_id=current_user.id,
     )
 
 
@@ -271,6 +280,50 @@ async def delete_lead(
 
 
 @router.post(
+    "/{lead_id}/qualify",
+    response_model=LeadResponse,
+    summary="Qualify an active lead",
+    dependencies=[Depends(require_permission("leads:update"))],
+)
+async def qualify_lead(
+    lead_id: str,
+    payload: LeadQualificationRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await lead_service.qualify_lead(db, lead_id, payload, current_user)
+
+
+@router.post(
+    "/{lead_id}/disqualify",
+    response_model=LeadResponse,
+    summary="Disqualify an active lead",
+    dependencies=[Depends(require_permission("leads:update"))],
+)
+async def disqualify_lead(
+    lead_id: str,
+    payload: LeadDisqualificationRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await lead_service.disqualify_lead(db, lead_id, payload, current_user)
+
+
+@router.post(
+    "/{lead_id}/reopen",
+    response_model=LeadResponse,
+    summary="Reopen a disqualified lead",
+    dependencies=[Depends(require_permission("leads:update"))],
+)
+async def reopen_lead(
+    lead_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await lead_service.reopen_lead(db, lead_id, current_user)
+
+
+@router.post(
     "/{lead_id}/convert",
     summary="Convert lead to Deal, Contact, and Company",
     dependencies=[Depends(require_permission("leads:convert"))],
@@ -292,12 +345,18 @@ async def convert_lead(
 )
 async def assign_lead(
     lead_id: str,
-    user_id: str,
+    user_id: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await lead_service.assign_lead(db, lead_id, user_id, organization_id=organization_id)
+    return await lead_service.assign_lead(
+        db,
+        lead_id,
+        user_id,
+        organization_id=organization_id,
+        actor_id=current_user.id,
+    )
 
 
 @router.post(
@@ -318,6 +377,7 @@ async def recalculate_lead_score(
 
 @router.get(
     "/{lead_id}/timeline",
+    response_model=list[LeadTimelineEvent],
     summary="Get activity timeline for lead",
     dependencies=[Depends(require_permission("leads:read"))],
 )
@@ -529,7 +589,9 @@ async def archive_lead(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await lead_service.archive_lead(db, lead_id, organization_id=organization_id)
+    return await lead_service.archive_lead(
+        db, lead_id, organization_id=organization_id, actor_id=current_user.id
+    )
 
 
 @router.post(
@@ -544,4 +606,6 @@ async def unarchive_lead(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await lead_service.unarchive_lead(db, lead_id, organization_id=organization_id)
+    return await lead_service.unarchive_lead(
+        db, lead_id, organization_id=organization_id, actor_id=current_user.id
+    )

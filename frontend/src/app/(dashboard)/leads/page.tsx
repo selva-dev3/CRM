@@ -34,7 +34,6 @@ import {
   Input, 
   Alert, 
   AlertDescription,
-  Checkbox,
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
@@ -134,12 +133,10 @@ export default function LeadsPage() {
   const [city, setCity] = useState('');
   const [address, setAddress] = useState('');
   const [postalCode, setPostalCode] = useState('');
-  const [status, setStatus] = useState('New');
   const [source, setSource] = useState('Website');
   const [organizationId, setOrganizationId] = useState('');
   const [score, setScore] = useState<number>(75);
   const [assignedTo, setAssignedTo] = useState<string>('');
-  const [isArchived, setIsArchived] = useState<boolean>(false);
   const [formCustomFields, setFormCustomFields] = useState<Record<string, CustomFieldValue>>({});
 
   // Feedback Banner State
@@ -274,12 +271,10 @@ export default function LeadsPage() {
     setCity('');
     setAddress('');
     setPostalCode('');
-    setStatus('New');
     setSource('Website');
     setOrganizationId(organizations.length > 0 ? organizations[0].id : 'org-1');
     setScore(75);
     setAssignedTo('');
-    setIsArchived(false);
     setFormCustomFields({});
     setErrorMessage(null);
   };
@@ -298,12 +293,10 @@ export default function LeadsPage() {
     setCity("San Francisco");
     setAddress("100 Technology Way, Suite 400");
     setPostalCode("94107");
-    setStatus("Qualified");
     setSource("LinkedIn");
     if (organizations.length > 0) setOrganizationId(organizations[0].id);
     setScore(88);
     if (users.length > 0) setAssignedTo(users[0].id);
-    setIsArchived(false);
     setErrorMessage(null);
   };
 
@@ -332,12 +325,10 @@ export default function LeadsPage() {
     setCity(lead.city || '');
     setAddress(lead.address || '');
     setPostalCode(lead.postal_code || '');
-    setStatus(lead.status || 'New');
     setSource(lead.source || 'Website');
     setOrganizationId(lead.organization_id || (organizations[0]?.id ?? 'org-1'));
     setScore(lead.score ?? 75);
     setAssignedTo(lead.assigned_to || '');
-    setIsArchived(lead.is_archived ?? false);
     setFormCustomFields(lead.custom_fields ?? {});
     setErrorMessage(null);
     setIsModalOpen(true);
@@ -369,6 +360,7 @@ export default function LeadsPage() {
     }
 
     try {
+      const numericScore = Number(score);
       const payload = {
         contact_name: contactName.trim(),
         company: finalCompany,
@@ -383,11 +375,11 @@ export default function LeadsPage() {
         city: city.trim() || undefined,
         address: address.trim() || undefined,
         postal_code: postalCode.trim() || undefined,
-        status,
+        status: editingLead ? undefined : 'New',
         source,
-        score: Number(score) || 75,
-        assigned_to: assignedTo.trim() || undefined,
-        is_archived: isArchived,
+        score: Number.isFinite(numericScore) ? numericScore : 50,
+        assigned_to: editingLead ? undefined : assignedTo.trim() || undefined,
+        is_archived: editingLead ? undefined : false,
         organization_id: organizationId || (organizations[0]?.id ?? 'org-1'),
         custom_fields: formCustomFields,
       };
@@ -1060,17 +1052,10 @@ export default function LeadsPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="space-y-1.5">
                     <Label className="text-xs font-black text-black">Lead Status</Label>
-                    <ResponsiveSelect
-                      value={status}
-                      onValueChange={setStatus}
-                      className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    >
-                      <option value="New">New</option>
-                      <option value="Contacted">Contacted</option>
-                      <option value="Qualified">Qualified</option>
-                      <option value="Unqualified">Unqualified</option>
-                      <option value="Converted">Converted</option>
-                    </ResponsiveSelect>
+                    <div className="rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700">
+                      {editingLead?.status || 'New'}
+                    </div>
+                    <p className="text-[11px] text-slate-500">Use Lead Details lifecycle actions to change status.</p>
                   </div>
 
                   <div className="space-y-1.5">
@@ -1123,7 +1108,7 @@ export default function LeadsPage() {
                     />
                   </div>
 
-                  <div className="space-y-1.5">
+                  {!editingLead && <div className="space-y-1.5">
                     <Label className="text-xs font-black text-black">Assigned To User</Label>
                     <ResponsiveSelect
                       value={assignedTo}
@@ -1141,18 +1126,11 @@ export default function LeadsPage() {
                         ))
                       )}
                     </ResponsiveSelect>
-                  </div>
+                  </div>}
 
-                  <div className="flex items-center gap-2 pb-2">
-                    <Checkbox
-                      id="isArchivedCheck"
-                      checked={isArchived}
-                      onCheckedChange={(checked) => setIsArchived(checked === true)}
-                    />
-                    <label htmlFor="isArchivedCheck" className="text-xs font-black text-slate-800 cursor-pointer select-none">
-                      Archive this lead
-                    </label>
-                  </div>
+                  <p className="pb-2 text-xs font-semibold text-slate-500">
+                    Assignment and archival changes are managed from Lead Details.
+                  </p>
                 </div>
               </div>
             )}

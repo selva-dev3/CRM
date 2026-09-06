@@ -24,6 +24,19 @@ export interface Lead {
   is_archived?: boolean;
   organization_id?: string;
   created_at?: string;
+  updated_at?: string;
+  qualification_reason?: string | null;
+  qualified_at?: string | null;
+  qualified_by?: string | null;
+  disqualified_at?: string | null;
+  disqualified_by?: string | null;
+  converted_at?: string | null;
+  converted_by?: string | null;
+  converted_company_id?: string | null;
+  converted_contact_id?: string | null;
+  converted_deal_id?: string | null;
+  next_follow_up_at?: string | null;
+  archived_at?: string | null;
   custom_fields?: Record<string, CustomFieldValue>;
 }
 
@@ -48,6 +61,7 @@ export interface CreateLeadPayload {
   is_archived?: boolean;
   organization_id?: string;
   custom_fields?: Record<string, CustomFieldValue>;
+  next_follow_up_at?: string | null;
 }
 
 export interface UpdateLeadPayload {
@@ -71,6 +85,7 @@ export interface UpdateLeadPayload {
   is_archived?: boolean;
   organization_id?: string;
   custom_fields?: Record<string, CustomFieldValue>;
+  next_follow_up_at?: string | null;
 }
 
 export interface FetchLeadsParams {
@@ -131,6 +146,14 @@ export interface LeadDocumentItem {
   uploaded_at: string;
 }
 
+export interface LeadTimelineEvent {
+  id: string;
+  event_type: string;
+  title: string;
+  description: string;
+  timestamp: string;
+}
+
 // ---------------------------------------------------------------------------
 // Raw API Functions
 // ---------------------------------------------------------------------------
@@ -159,6 +182,10 @@ export async function fetchLeadsApi(params: FetchLeadsParams = {}): Promise<Lead
 
 export async function getLeadByIdApi(id: string): Promise<Lead> {
   return apiClient.get<Lead>(`/leads/${id}`);
+}
+
+export async function fetchLeadTimelineApi(leadId: string): Promise<LeadTimelineEvent[]> {
+  return apiClient.get<LeadTimelineEvent[]>(`/leads/${leadId}/timeline`);
 }
 
 export async function createLeadApi(payload: CreateLeadPayload): Promise<Lead> {
@@ -236,8 +263,21 @@ export async function convertLeadApi(leadId: string, payload: { create_deal?: bo
   return apiClient.post(`/leads/${leadId}/convert`, payload);
 }
 
-export async function assignLeadApi(leadId: string, userId: string): Promise<{ message: string; status: string }> {
-  return apiClient.post(`/leads/${leadId}/assign?user_id=${encodeURIComponent(userId)}`);
+export async function qualifyLeadApi(leadId: string, reason?: string): Promise<Lead> {
+  return apiClient.post<Lead>(`/leads/${leadId}/qualify`, { reason: reason || null });
+}
+
+export async function disqualifyLeadApi(leadId: string, reason: string): Promise<Lead> {
+  return apiClient.post<Lead>(`/leads/${leadId}/disqualify`, { reason });
+}
+
+export async function reopenLeadApi(leadId: string): Promise<Lead> {
+  return apiClient.post<Lead>(`/leads/${leadId}/reopen`);
+}
+
+export async function assignLeadApi(leadId: string, userId: string | null): Promise<{ message: string; status: string }> {
+  const suffix = userId ? `?user_id=${encodeURIComponent(userId)}` : '';
+  return apiClient.post(`/leads/${leadId}/assign${suffix}`);
 }
 
 export async function archiveLeadApi(leadId: string): Promise<{ message: string; status: string }> {
@@ -273,6 +313,14 @@ export function useLeadQuery(id: string) {
     queryKey: ['lead', id],
     queryFn: () => getLeadByIdApi(id),
     enabled: !!id,
+  });
+}
+
+export function useLeadTimelineQuery(leadId: string) {
+  return useQuery({
+    queryKey: ['lead-timeline', leadId],
+    queryFn: () => fetchLeadTimelineApi(leadId),
+    enabled: !!leadId,
   });
 }
 

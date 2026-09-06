@@ -19,9 +19,12 @@ from app.schemas.crm_schemas import (
     EmailSendRequest,
     LeadConvertRequest,
     LeadCreate,
+    LeadDisqualificationRequest,
+    LeadQualificationRequest,
     LeadUpdate,
     TaskCreate,
 )
+from app.services.auth_service import auth_service
 from app.services.custom_field_service import CustomFieldService, custom_field_service
 from app.services.document_service import (
     _normalize_mime_type,
@@ -36,6 +39,7 @@ from app.services.s3_service import s3_service
 
 LEAD_SOURCES = ["Website", "LinkedIn", "Referral", "Cold Call", "Event", "Partner"]
 LEAD_STATUSES = ["New", "Contacted", "Qualified", "Unqualified", "Converted"]
+DIRECTLY_EDITABLE_LEAD_STATUSES = {"New", "Contacted"}
 
 
 def _read_s3_object(key: str) -> bytes:
@@ -66,7 +70,24 @@ def lead_to_dict(lead: Lead) -> dict:
         "is_archived": getattr(lead, "is_archived", False),
         "custom_fields": getattr(lead, "custom_fields", None) or {},
         "organization_id": lead.organization_id,
+        "qualification_reason": getattr(lead, "qualification_reason", None),
+        "qualified_at": str(lead.qualified_at) if getattr(lead, "qualified_at", None) else None,
+        "qualified_by": getattr(lead, "qualified_by", None),
+        "disqualified_at": (
+            str(lead.disqualified_at) if getattr(lead, "disqualified_at", None) else None
+        ),
+        "disqualified_by": getattr(lead, "disqualified_by", None),
+        "converted_at": str(lead.converted_at) if getattr(lead, "converted_at", None) else None,
+        "converted_by": getattr(lead, "converted_by", None),
+        "converted_company_id": getattr(lead, "converted_company_id", None),
+        "converted_contact_id": getattr(lead, "converted_contact_id", None),
+        "converted_deal_id": getattr(lead, "converted_deal_id", None),
+        "next_follow_up_at": (
+            str(lead.next_follow_up_at) if getattr(lead, "next_follow_up_at", None) else None
+        ),
+        "archived_at": str(lead.archived_at) if getattr(lead, "archived_at", None) else None,
         "created_at": str(lead.created_at) if lead.created_at else "",
+        "updated_at": str(lead.updated_at) if lead.updated_at else "",
     }
 
 
@@ -87,6 +108,30 @@ class LeadService:
             raise APIException(
                 status_code=status.HTTP_400_BAD_REQUEST, message=error_message
             ) from e
+
+    @staticmethod
+    def _now() -> datetime:
+        return datetime.now(UTC)
+
+    async def _require_permission(self, db: AsyncSession, user: User, permission: str) -> None:
+        permissions = set(await auth_service.get_user_permissions(db, user))
+        if permission not in permissions and "all" not in permissions:
+            raise ForbiddenError(message=f"Missing required permission: {permission}")
+
+    @staticmethod
+    def _require_active_lead(lead: Lead) -> None:
+        if lead.is_archived:
+            raise APIException(status_code=409, message="Archived leads cannot change lifecycle state")
+        if lead.status == "Converted" or lead.converted_at is not None:
+            raise APIException(status_code=409, message="Converted leads are read-only")
+
+    @staticmethod
+    def _validate_qualification_details(lead: Lead) -> None:
+        if not lead.company.strip() or not lead.contact_name.strip() or not lead.email.strip():
+            raise APIException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                message="Company, contact name and email are required to qualify a lead",
+            )
 
     async def list_leads(
         self,
@@ -174,6 +219,18 @@ class LeadService:
         org_id = await self._resolve_organization_id(db, payload.organization_id, current_user)
         if not org_id:
             raise ForbiddenError(message="Organization context is required.")
+        if payload.status != "New":
+            raise APIException(
+                status_code=status.HTTP_409_CONFLICT,
+                message="New leads must start in the New status.",
+            )
+        if payload.is_archived:
+            raise APIException(
+                status_code=status.HTTP_409_CONFLICT,
+                message="New leads cannot be created as archived.",
+            )
+        if payload.assigned_to and current_user and payload.assigned_to != current_user.id:
+            await self._require_permission(db, current_user, "leads:assign")
         assigned_to = await self._resolve_assigned_to(db, payload.assigned_to, org_id)
         custom_fields = await self.custom_field_service.validate_values(
             db,
@@ -200,10 +257,20 @@ class LeadService:
             "source": payload.source,
             "score": payload.score if payload.score is not None else 50.0,
             "assigned_to": assigned_to,
-            "is_archived": payload.is_archived if payload.is_archived is not None else False,
+            "is_archived": False,
             "custom_fields": custom_fields,
+            "next_follow_up_at": payload.next_follow_up_at,
         }
         lead = await self.repository.create(db, data=data)
+        await db.flush()
+        await self.repository.record_activity(
+            db,
+            lead,
+            action="Lead created",
+            actor_id=current_user.id if current_user else None,
+            details=f"Created from {lead.source}",
+            audit_action="lead.created",
+        )
         await self._commit(db, "Failed to create lead")
         await db.refresh(lead)
         await notification_service.notify(
@@ -239,10 +306,18 @@ class LeadService:
             raise NotFoundError(message=f"Lead '{lead_id}' not found")
 
         updates = payload.model_dump(exclude_unset=True)
+        self._require_active_lead(lead)
         requested_org = updates.pop("organization_id", organization_id)
         if requested_org != organization_id:
             raise ForbiddenError(message="A lead cannot be moved to another organization.")
+        if "is_archived" in updates:
+            raise APIException(
+                status_code=status.HTTP_409_CONFLICT,
+                message="Use the archive or unarchive action to change archival state.",
+            )
         if "assigned_to" in updates:
+            if updates["assigned_to"] != lead.assigned_to:
+                await self._require_permission(db, current_user, "leads:assign")
             updates["assigned_to"] = await self._resolve_assigned_to(
                 db, updates["assigned_to"], organization_id
             )
@@ -254,19 +329,54 @@ class LeadService:
                 values=updates["custom_fields"] or {},
             )
 
-        becoming_qualified = updates.get("status") == "Qualified" and lead.status != "Qualified"
-        if becoming_qualified and (
-            not lead.company.strip() or not lead.contact_name.strip() or not lead.email.strip()
+        requested_status = updates.get("status")
+        if (
+            requested_status
+            and requested_status != lead.status
+            and (lead.status != "New" or requested_status != "Contacted")
         ):
             raise APIException(
-                status_code=422,
-                message="Company, contact name and email are required to qualify a lead",
+                status_code=status.HTTP_409_CONFLICT,
+                message="Use the qualification, disqualification, reopen, or conversion action for this transition.",
             )
 
+        previous_assignee = lead.assigned_to
+        previous_status = lead.status
+        previous_follow_up = lead.next_follow_up_at
         for field, value in updates.items():
             setattr(lead, field, value)
-        if becoming_qualified:
-            await self.repository.record_qualification(db, lead, actor_id=current_user.id)
+
+        if previous_status != lead.status:
+            await self.repository.record_activity(
+                db,
+                lead,
+                action="Lead contacted",
+                actor_id=current_user.id,
+                details=f"Status changed from {previous_status} to {lead.status}",
+                audit_action="lead.status_changed",
+            )
+        if previous_assignee != lead.assigned_to:
+            await self.repository.record_activity(
+                db,
+                lead,
+                action="Lead assignment changed",
+                actor_id=current_user.id,
+                details=f"Assignee changed from {previous_assignee or 'unassigned'} to {lead.assigned_to or 'unassigned'}",
+                audit_action="lead.assigned",
+            )
+        if previous_follow_up != lead.next_follow_up_at:
+            await self.repository.record_activity(
+                db,
+                lead,
+                action="Lead follow-up updated",
+                actor_id=current_user.id,
+                details=(
+                    f"Next follow-up set to {lead.next_follow_up_at.isoformat()}"
+                    if lead.next_follow_up_at
+                    else "Next follow-up cleared"
+                ),
+                audit_action="lead.follow_up_updated",
+            )
         await self._commit(db, "Failed to update lead")
         await notification_service.notify(
             db,
@@ -302,12 +412,28 @@ class LeadService:
             "message": f"Successfully deleted {len(leads)} lead(s)",
         }
 
-    async def bulk_archive(self, db: AsyncSession, ids: list[str], *, organization_id: str) -> dict:
+    async def bulk_archive(
+        self,
+        db: AsyncSession,
+        ids: list[str],
+        *,
+        organization_id: str,
+        actor_id: str,
+    ) -> dict:
         if not ids:
             return {"affected_count": 0, "message": "No lead IDs provided"}
         leads = await self.repository.list_by_ids(db, ids, organization_id=organization_id)
         for lead in leads:
             lead.is_archived = True
+            lead.archived_at = self._now()
+            await self.repository.record_activity(
+                db,
+                lead,
+                action="Lead archived",
+                actor_id=actor_id,
+                details="Archived by bulk action",
+                audit_action="lead.archived",
+            )
         await self._commit(db, "Bulk archive failed")
         return {
             "affected_count": len(leads),
@@ -321,6 +447,7 @@ class LeadService:
         status_value: str,
         *,
         organization_id: str,
+        actor_id: str,
     ) -> dict:
         if not ids:
             return {"affected_count": 0, "message": "No lead IDs provided"}
@@ -332,10 +459,29 @@ class LeadService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 message=f"Unsupported lead status '{status_value}'.",
             )
+        if canonical_status != "Contacted":
+            raise APIException(
+                status_code=status.HTTP_409_CONFLICT,
+                message="Bulk updates can only mark New leads as Contacted; use lifecycle actions for other statuses.",
+            )
 
         leads = await self.repository.list_by_ids(db, ids, organization_id=organization_id)
+        invalid = [lead.id for lead in leads if lead.is_archived or lead.status != "New"]
+        if invalid:
+            raise APIException(
+                status_code=status.HTTP_409_CONFLICT,
+                message="Only active New leads can be marked Contacted in bulk.",
+            )
         for lead in leads:
             lead.status = canonical_status
+            await self.repository.record_activity(
+                db,
+                lead,
+                action="Lead contacted",
+                actor_id=actor_id,
+                details="Status changed from New to Contacted by bulk action",
+                audit_action="lead.status_changed",
+            )
         await self._commit(db, "Bulk status update failed")
         return {
             "affected_count": len(leads),
@@ -348,6 +494,97 @@ class LeadService:
             "is_duplicate": bool(duplicate),
             "matched_lead_id": duplicate.id if duplicate else None,
         }
+
+    async def qualify_lead(
+        self,
+        db: AsyncSession,
+        lead_id: str,
+        payload: LeadQualificationRequest,
+        current_user: User,
+    ) -> dict:
+        organization_id = current_user.organization_id
+        if not organization_id:
+            raise ForbiddenError(message="Organization membership is required")
+        lead = await self.require_lead(db, lead_id, organization_id=organization_id)
+        self._require_active_lead(lead)
+        if lead.status == "Qualified":
+            return lead_to_dict(lead)
+        if lead.status not in {"New", "Contacted"}:
+            raise APIException(status_code=409, message="Lead cannot be qualified from its current status")
+        self._validate_qualification_details(lead)
+        now = self._now()
+        lead.status = "Qualified"
+        lead.qualification_reason = payload.reason.strip() if payload.reason else None
+        lead.qualified_at = now
+        lead.qualified_by = current_user.id
+        lead.disqualified_at = None
+        lead.disqualified_by = None
+        await self.repository.record_activity(
+            db,
+            lead,
+            action="Lead qualified",
+            actor_id=current_user.id,
+            details=lead.qualification_reason,
+            audit_action="lead.qualified",
+        )
+        await self._commit(db, "Failed to qualify lead")
+        return lead_to_dict(lead)
+
+    async def disqualify_lead(
+        self,
+        db: AsyncSession,
+        lead_id: str,
+        payload: LeadDisqualificationRequest,
+        current_user: User,
+    ) -> dict:
+        organization_id = current_user.organization_id
+        if not organization_id:
+            raise ForbiddenError(message="Organization membership is required")
+        lead = await self.require_lead(db, lead_id, organization_id=organization_id)
+        self._require_active_lead(lead)
+        if lead.status == "Unqualified":
+            return lead_to_dict(lead)
+        if lead.status not in {"New", "Contacted", "Qualified"}:
+            raise APIException(
+                status_code=409, message="Lead cannot be disqualified from its current status"
+            )
+        reason = payload.reason.strip()
+        lead.status = "Unqualified"
+        lead.qualification_reason = reason
+        lead.disqualified_at = self._now()
+        lead.disqualified_by = current_user.id
+        await self.repository.record_activity(
+            db,
+            lead,
+            action="Lead disqualified",
+            actor_id=current_user.id,
+            details=reason,
+            audit_action="lead.disqualified",
+        )
+        await self._commit(db, "Failed to disqualify lead")
+        return lead_to_dict(lead)
+
+    async def reopen_lead(self, db: AsyncSession, lead_id: str, current_user: User) -> dict:
+        organization_id = current_user.organization_id
+        if not organization_id:
+            raise ForbiddenError(message="Organization membership is required")
+        lead = await self.require_lead(db, lead_id, organization_id=organization_id)
+        if lead.is_archived:
+            raise APIException(status_code=409, message="Unarchive the lead before reopening it")
+        if lead.status != "Unqualified":
+            raise APIException(status_code=409, message="Only disqualified leads can be reopened")
+        lead.status = "Contacted"
+        lead.qualification_reason = None
+        await self.repository.record_activity(
+            db,
+            lead,
+            action="Lead reopened",
+            actor_id=current_user.id,
+            details="Status changed from Unqualified to Contacted",
+            audit_action="lead.reopened",
+        )
+        await self._commit(db, "Failed to reopen lead")
+        return lead_to_dict(lead)
 
     async def convert_lead(
         self, db: AsyncSession, lead_id: str, payload: LeadConvertRequest, current_user: User
@@ -365,7 +602,7 @@ class LeadService:
                         status_code=409, message="Converted lead has missing customer links"
                     )
                 result = self._conversion_result(lead)
-                await db.commit()
+                await self._commit(db, "Failed to release the lead conversion lock")
                 return result
             if lead.status != "Qualified" or lead.is_archived:
                 raise APIException(
@@ -382,10 +619,12 @@ class LeadService:
                 raise APIException(
                     status_code=409, message="Resolve duplicate customers before conversion"
                 )
+            company_repository = CompanyRepository()
+            contact_repository = ContactRepository()
             company = (
                 companies[0]
                 if companies
-                else await CompanyRepository().create(
+                else await company_repository.create(
                     db,
                     data={
                         "id": str(uuid.uuid4()),
@@ -400,7 +639,7 @@ class LeadService:
             contact = (
                 contacts[0]
                 if contacts
-                else await ContactRepository().create(
+                else await contact_repository.create(
                     db,
                     data={
                         "id": str(uuid.uuid4()),
@@ -408,6 +647,7 @@ class LeadService:
                         "name": lead.contact_name.strip(),
                         "email": lead.email.strip(),
                         "phone": lead.phone,
+                        "position": lead.title,
                         "company_id": company.id,
                     },
                 )
@@ -418,6 +658,21 @@ class LeadService:
                 )
             await self.repository.link_conversion_contact(db, contact, company.id)
             await db.flush()
+            address_values = {
+                "street": lead.address,
+                "city": lead.city,
+                "state": lead.state,
+                "country": lead.country,
+                "postal_code": lead.postal_code,
+            }
+            if any(address_values.values()):
+                existing_address = await contact_repository.get_address(
+                    db, contact_id=contact.id, organization_id=organization_id
+                )
+                if existing_address is None:
+                    await contact_repository.create_address(
+                        db, contact_id=contact.id, data=address_values
+                    )
             deal = None
             if payload.create_deal:
                 deal = await DealRepository().create(
@@ -428,7 +683,7 @@ class LeadService:
                         "title": payload.deal_title or lead.title,
                         "amount": payload.deal_amount or 0,
                         "stage": "Prospecting",
-                        "assigned_to": current_user.id,
+                        "assigned_to": lead.assigned_to or current_user.id,
                         "company_id": company.id,
                         "contact_id": contact.id,
                     },
@@ -444,7 +699,7 @@ class LeadService:
                 converted_at=datetime.now(UTC),
             )
             result = self._conversion_result(lead)
-            await db.commit()
+            await self._commit(db, "Failed to convert lead")
             return result
         except Exception:
             await db.rollback()
@@ -460,10 +715,28 @@ class LeadService:
         }
 
     async def assign_lead(
-        self, db: AsyncSession, lead_id: str, user_id: str, *, organization_id: str
+        self,
+        db: AsyncSession,
+        lead_id: str,
+        user_id: str | None,
+        *,
+        organization_id: str,
+        actor_id: str,
     ) -> dict:
         lead = await self.require_lead(db, lead_id, organization_id=organization_id)
+        self._require_active_lead(lead)
+        previous_assignee = lead.assigned_to
         lead.assigned_to = await self._resolve_assigned_to(db, user_id, organization_id)
+        if previous_assignee == lead.assigned_to:
+            return {"message": "Lead assignment is unchanged", "status": "success"}
+        await self.repository.record_activity(
+            db,
+            lead,
+            action="Lead assignment changed",
+            actor_id=actor_id,
+            details=f"Assignee changed from {previous_assignee or 'unassigned'} to {lead.assigned_to or 'unassigned'}",
+            audit_action="lead.assigned",
+        )
         await self._commit(db, "Failed to assign lead")
         await notification_service.notify(
             db,
@@ -474,22 +747,41 @@ class LeadService:
             assigned_to=lead.assigned_to,
             data={"id": lead.id, "title": lead.title, "assigned_to": lead.assigned_to},
         )
-        return {"message": f"Lead {lead_id} assigned to user {user_id}", "status": "success"}
+        return {
+            "message": (
+                f"Lead {lead_id} assigned to user {user_id}"
+                if user_id
+                else f"Lead {lead_id} unassigned"
+            ),
+            "status": "success",
+        }
 
     async def get_timeline(
         self, db: AsyncSession, lead_id: str, *, organization_id: str
     ) -> list[dict]:
         lead = await self.require_lead(db, lead_id, organization_id=organization_id)
 
+        activities = await self.repository.list_activities(db, lead_id)
         timeline = [
             {
-                "id": f"created-{lead.id}",
-                "event_type": "lead_created",
-                "title": "Lead Registered",
-                "description": f"Lead '{lead.contact_name}' created from {lead.source}",
-                "timestamp": str(lead.created_at),
+                "id": f"activity-{activity.id}",
+                "event_type": activity.action.lower().replace(" ", "_"),
+                "title": activity.action,
+                "description": activity.details or activity.action,
+                "timestamp": str(activity.timestamp),
             }
+            for activity in activities
         ]
+        if not any(activity.action == "Lead created" for activity in activities):
+            timeline.append(
+                {
+                    "id": f"created-{lead.id}",
+                    "event_type": "lead_created",
+                    "title": "Lead Registered",
+                    "description": f"Lead '{lead.contact_name}' created from {lead.source}",
+                    "timestamp": str(lead.created_at),
+                }
+            )
 
         for note in await self.repository.list_notes(db, lead_id):
             timeline.append(
@@ -549,22 +841,21 @@ class LeadService:
                 }
             )
 
-        contact_id = await self.repository.get_contact_id_by_email(
-            db, lead.email, organization_id=organization_id
-        )
-        if contact_id:
-            for call in await self.repository.list_calls(
-                db, organization_id=lead.organization_id, lead_tag=lead_tag
-            ):
-                timeline.append(
-                    {
-                        "id": f"call-{call.id}",
-                        "event_type": "call_logged",
-                        "title": f"{call.call_type} Call Logged",
-                        "description": call.notes or f"Duration: {call.duration_seconds} sec",
-                        "timestamp": str(call.timestamp),
-                    }
-                )
+        for call in await self.repository.list_calls(
+            db, organization_id=lead.organization_id, lead_tag=lead_tag
+        ):
+            clean_notes = (
+                (call.notes or "").replace(f"\n{lead_tag}", "").replace(lead_tag, "").strip()
+            )
+            timeline.append(
+                {
+                    "id": f"call-{call.id}",
+                    "event_type": "call_logged",
+                    "title": f"{call.call_type} Call Logged",
+                    "description": clean_notes or f"Duration: {call.duration_seconds} sec",
+                    "timestamp": str(call.timestamp),
+                }
+            )
 
         timeline.sort(key=lambda item: item.get("timestamp", ""), reverse=True)
         return timeline
@@ -657,14 +948,20 @@ class LeadService:
         if not assigned_user_id:
             raise ForbiddenError(message="A valid same-organization task assignee is required.")
 
-        due_dt = None
-        if payload.due_date:
-            try:
-                due_dt = datetime.fromisoformat(payload.due_date)
-            except Exception:
-                due_dt = datetime.utcnow()
-        else:
-            due_dt = datetime.now(UTC)
+        if not payload.due_date:
+            raise APIException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                message="A due date is required for a lead follow-up task.",
+            )
+        try:
+            due_dt = datetime.fromisoformat(payload.due_date.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise APIException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                message="Task due date must be a valid ISO-8601 date and time.",
+            ) from exc
+        if due_dt.tzinfo is None:
+            due_dt = due_dt.replace(tzinfo=UTC)
 
         lead_tag = f"[Lead:{lead_id}]"
         raw_desc = payload.description or ""
@@ -680,6 +977,7 @@ class LeadService:
             due_date=due_dt,
             assigned_to=assigned_user_id,
         )
+        lead.next_follow_up_at = due_dt
         await self._commit(db, "Failed to create task")
         await db.refresh(task)
         await notification_service.notify(
@@ -797,7 +1095,7 @@ class LeadService:
         lead = await self.require_lead(db, lead_id, organization_id=organization_id)
         if not lead.email:
             raise APIException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 message="Lead email is required before logging a call",
             )
         contact_id = await self.repository.get_contact_id_by_email(
@@ -951,15 +1249,39 @@ class LeadService:
             ),
         }
 
-    async def archive_lead(self, db: AsyncSession, lead_id: str, *, organization_id: str) -> dict:
+    async def archive_lead(
+        self, db: AsyncSession, lead_id: str, *, organization_id: str, actor_id: str
+    ) -> dict:
         lead = await self.require_lead(db, lead_id, organization_id=organization_id)
+        if lead.is_archived:
+            return {"message": f"Lead {lead_id} is already archived", "status": "success"}
         lead.is_archived = True
+        lead.archived_at = self._now()
+        await self.repository.record_activity(
+            db,
+            lead,
+            action="Lead archived",
+            actor_id=actor_id,
+            audit_action="lead.archived",
+        )
         await self._commit(db, "Failed to archive lead")
         return {"message": f"Lead {lead_id} archived", "status": "success"}
 
-    async def unarchive_lead(self, db: AsyncSession, lead_id: str, *, organization_id: str) -> dict:
+    async def unarchive_lead(
+        self, db: AsyncSession, lead_id: str, *, organization_id: str, actor_id: str
+    ) -> dict:
         lead = await self.require_lead(db, lead_id, organization_id=organization_id)
+        if not lead.is_archived:
+            return {"message": f"Lead {lead_id} is already active", "status": "success"}
         lead.is_archived = False
+        lead.archived_at = None
+        await self.repository.record_activity(
+            db,
+            lead,
+            action="Lead restored",
+            actor_id=actor_id,
+            audit_action="lead.unarchived",
+        )
         await self._commit(db, "Failed to unarchive lead")
         return {"message": f"Lead {lead_id} restored", "status": "success"}
 

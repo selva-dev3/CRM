@@ -7,6 +7,8 @@ const useLeadQueryMock = vi.fn();
 const useUsersQueryMock = vi.fn();
 const updateLeadMutateAsync = vi.fn();
 const assignLeadApiMock = vi.fn();
+const qualifyLeadApiMock = vi.fn();
+const useLeadTimelineQueryMock = vi.fn();
 const refetchLeadMock = vi.fn();
 const refetchUsersMock = vi.fn();
 const customFieldsQueryMock = vi.fn();
@@ -59,6 +61,7 @@ vi.mock('@/lib/api/client', () => ({ BASE_URL: 'http://localhost:3000/api/v1' })
 
 vi.mock('@/lib/api/leads', () => ({
   useLeadQuery: (...args: unknown[]) => useLeadQueryMock(...args),
+  useLeadTimelineQuery: () => useLeadTimelineQueryMock(),
   useCreateLeadMutation: () => ({ mutateAsync: vi.fn() }),
   useUpdateLeadMutation: () => ({ mutateAsync: updateLeadMutateAsync }),
   useDeleteLeadMutation: () => ({ mutateAsync: vi.fn() }),
@@ -74,6 +77,9 @@ vi.mock('@/lib/api/leads', () => ({
   uploadLeadDocumentApi: vi.fn(),
   recalculateLeadScoreApi: vi.fn(),
   convertLeadApi: vi.fn(),
+  qualifyLeadApi: (...args: unknown[]) => qualifyLeadApiMock(...args),
+  disqualifyLeadApi: vi.fn(),
+  reopenLeadApi: vi.fn(),
   assignLeadApi: (...args: unknown[]) => assignLeadApiMock(...args),
   archiveLeadApi: vi.fn(),
   unarchiveLeadApi: vi.fn(),
@@ -128,10 +134,13 @@ async function openActionsTab() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  window.localStorage.setItem('user', JSON.stringify({ permissions: ['all'] }));
   refetchLeadMock.mockResolvedValue({ data: lead });
   refetchUsersMock.mockResolvedValue({ data: users });
   updateLeadMutateAsync.mockResolvedValue({ ...lead, assigned_to: null });
   assignLeadApiMock.mockResolvedValue({ message: 'Assigned', status: 'success' });
+  qualifyLeadApiMock.mockResolvedValue({ ...lead, status: 'Qualified' });
+  useLeadTimelineQueryMock.mockReturnValue(emptyQuery);
   useLeadQueryMock.mockReturnValue({
     data: lead,
     isLoading: false,
@@ -186,7 +195,7 @@ describe('LeadDetailPage assignment UX', () => {
     expect(screen.getByRole('button', { name: 'Assign Lead' })).toBeDisabled();
   });
 
-  it('unassigns the lead through the existing update API', async () => {
+  it('unassigns the lead through the permission-protected assignment API', async () => {
     const user = userEvent.setup();
     render(<LeadDetailPage />);
     await openActionsTab();
@@ -198,12 +207,9 @@ describe('LeadDetailPage assignment UX', () => {
     await user.click(screen.getByRole('button', { name: 'Unassign Lead' }));
 
     await waitFor(() => {
-      expect(updateLeadMutateAsync).toHaveBeenCalledWith({
-        id: 'lead-1',
-        payload: { assigned_to: null },
-      });
+      expect(assignLeadApiMock).toHaveBeenCalledWith('lead-1', null);
     });
-    expect(assignLeadApiMock).not.toHaveBeenCalled();
+    expect(updateLeadMutateAsync).not.toHaveBeenCalled();
   });
 
   it('assigns an unassigned lead through the assignment API', async () => {
@@ -286,5 +292,44 @@ describe('LeadDetailPage assignment UX', () => {
 
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     expect(screen.getByText('No sales representatives are available for assignment.')).toBeVisible();
+  });
+});
+
+describe('LeadDetailPage lifecycle', () => {
+  it('qualifies a lead through the dedicated lifecycle API', async () => {
+    const user = userEvent.setup();
+    render(<LeadDetailPage />);
+    await openActionsTab();
+
+    await user.click(screen.getByRole('button', { name: 'Qualify Lead' }));
+    await user.type(screen.getByLabelText(/Reason/), 'Budget and authority confirmed');
+    const qualifyButtons = screen.getAllByRole('button', { name: 'Qualify Lead' });
+    await user.click(qualifyButtons[qualifyButtons.length - 1]);
+
+    await waitFor(() => {
+      expect(qualifyLeadApiMock).toHaveBeenCalledWith(
+        'lead-1',
+        'Budget and authority confirmed',
+      );
+    });
+  });
+
+  it('renders the unified activity timeline', async () => {
+    useLeadTimelineQueryMock.mockReturnValue({
+      data: [{
+        id: 'activity-1',
+        event_type: 'lead_qualified',
+        title: 'Lead qualified',
+        description: 'Budget confirmed',
+        timestamp: '2026-09-06T10:00:00Z',
+      }],
+      isLoading: false,
+      refetch: vi.fn(),
+    });
+    const user = userEvent.setup();
+    render(<LeadDetailPage />);
+
+    await user.click(screen.getByRole('tab', { name: /Timeline/ }));
+    expect(screen.getByText('Budget confirmed')).toBeVisible();
   });
 });

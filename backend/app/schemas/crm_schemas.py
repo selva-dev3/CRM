@@ -357,11 +357,12 @@ class LeadBase(BaseModel):
     postal_code: str | None = None
     status: str = "New"
     source: str = "Website"
-    score: float | None = 50.0
+    score: float | None = Field(default=50.0, ge=0, le=100, allow_inf_nan=False)
     assigned_to: str | None = None
     is_archived: bool | None = False
     organization_id: str | None = None
     custom_fields: dict[str, CustomFieldValue] = Field(default_factory=dict)
+    next_follow_up_at: datetime | None = None
 
 
 class LeadCreate(LeadBase):
@@ -372,7 +373,7 @@ class LeadUpdate(BaseModel):
     title: str | None = None
     company: str | None = None
     contact_name: str | None = None
-    email: str | None = None
+    email: EmailStr | None = None
     phone: str | None = None
     website: str | None = None
     industry: str | None = None
@@ -382,13 +383,14 @@ class LeadUpdate(BaseModel):
     city: str | None = None
     address: str | None = None
     postal_code: str | None = None
-    status: str | None = None
+    status: Literal["New", "Contacted"] | None = None
     source: str | None = None
-    score: float | None = None
+    score: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
     assigned_to: str | None = None
     is_archived: bool | None = None
     organization_id: str | None = None
     custom_fields: dict[str, CustomFieldValue] | None = None
+    next_follow_up_at: datetime | None = None
 
 
 class LeadResponse(LeadBase):
@@ -396,6 +398,34 @@ class LeadResponse(LeadBase):
     score: float = 75.0
     organization_id: str
     created_at: str
+    updated_at: str
+    qualification_reason: str | None = None
+    qualified_at: str | None = None
+    qualified_by: str | None = None
+    disqualified_at: str | None = None
+    disqualified_by: str | None = None
+    converted_at: str | None = None
+    converted_by: str | None = None
+    archived_at: str | None = None
+    converted_company_id: str | None = None
+    converted_contact_id: str | None = None
+    converted_deal_id: str | None = None
+
+
+class LeadQualificationRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=2000)
+
+
+class LeadDisqualificationRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=2000)
+
+
+class LeadTimelineEvent(BaseModel):
+    id: str
+    event_type: str
+    title: str
+    description: str
+    timestamp: str
 
 
 class LeadConvertRequest(BaseModel):

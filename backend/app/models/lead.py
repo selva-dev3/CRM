@@ -43,7 +43,23 @@ class Lead(Base):
     converted_deal_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("deals.id", ondelete="RESTRICT")
     )
+    qualification_reason: Mapped[str | None] = mapped_column(Text)
+    qualified_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
+    qualified_by: Mapped[str | None] = mapped_column(
+        String, ForeignKey("users.id", ondelete="SET NULL")
+    )
+    disqualified_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
+    disqualified_by: Mapped[str | None] = mapped_column(
+        String, ForeignKey("users.id", ondelete="SET NULL")
+    )
     converted_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
+    converted_by: Mapped[str | None] = mapped_column(
+        String, ForeignKey("users.id", ondelete="SET NULL")
+    )
+    next_follow_up_at: Mapped[DateTime | None] = mapped_column(
+        DateTime(timezone=True), index=True
+    )
+    archived_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), onupdate=func.now(), server_default=func.now()
@@ -103,6 +119,7 @@ class LeadActivity(Base):
         String, ForeignKey("leads.id", ondelete="CASCADE"), index=True
     )
     action: Mapped[str] = mapped_column(String(255), nullable=False)
+    details: Mapped[str | None] = mapped_column(Text)
     performed_by: Mapped[str | None] = mapped_column(
         String, ForeignKey("users.id", ondelete="SET NULL")
     )
