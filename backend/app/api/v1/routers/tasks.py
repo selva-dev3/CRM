@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
@@ -25,22 +25,34 @@ router = APIRouter()
     dependencies=[Depends(require_permission("tasks:read"))],
 )
 async def list_tasks(
-    page: int = 1,
-    limit: int = 20,
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     status: str | None = None,
     priority: str | None = None,
+    search: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await task_service.list_tasks(
+    tasks = await task_service.list_tasks(
         db,
         page=page,
         limit=limit,
         organization_id=organization_id,
         status=status,
         priority=priority,
+        search=search,
     )
+    total = await task_service.count_tasks(
+        db,
+        organization_id=organization_id,
+        status=status,
+        priority=priority,
+        search=search,
+    )
+    response.headers["X-Total-Count"] = str(total)
+    return tasks
 
 
 @router.post(

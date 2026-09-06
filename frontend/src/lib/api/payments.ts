@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient, type UseQueryOptions } from '@ta
 import type { ManualPaymentDto } from '@/lib/types/manual-payment';
 
 import { ApiError, apiClient } from '@/lib/api/client';
+import { fetchPaginated, type PaginatedResult } from '@/lib/api/pagination';
 
 export interface PaymentItem {
   id: string;
@@ -73,6 +74,12 @@ export function useRecordInvoicePaymentMutation() {
 }
 
 export async function fetchPaymentsApi(params?: PaymentQueryParams): Promise<PaymentItem[]> {
+  return (await fetchPaymentsPageApi(params)).items;
+}
+
+export async function fetchPaymentsPageApi(
+  params?: PaymentQueryParams,
+): Promise<PaginatedResult<PaymentItem>> {
   const query = new URLSearchParams();
   if (params?.page) query.set('page', String(params.page));
   if (params?.limit) query.set('limit', String(params.limit));
@@ -80,7 +87,7 @@ export async function fetchPaymentsApi(params?: PaymentQueryParams): Promise<Pay
   if (params?.search) query.set('search', params.search);
   if (params?.invoice_id) query.set('invoice_id', params.invoice_id);
   const suffix = query.toString() ? `?${query.toString()}` : '';
-  return apiClient.get<PaymentItem[]>(`/payments${suffix}`);
+  return fetchPaginated<PaymentItem>(`/payments${suffix}`);
 }
 
 export async function fetchPaymentApi(paymentId: string): Promise<PaymentItem> {
@@ -99,6 +106,19 @@ export function usePaymentsQuery(
     queryKey: paymentKeys.list(params),
     queryFn: () => fetchPaymentsApi(params),
     staleTime: 1000 * 60 * 2,
+    ...options,
+  });
+}
+
+export function usePaymentsPageQuery(
+  params?: PaymentQueryParams,
+  options?: Omit<UseQueryOptions<PaginatedResult<PaymentItem>, Error>, 'queryKey' | 'queryFn'>,
+) {
+  return useQuery<PaginatedResult<PaymentItem>, Error>({
+    queryKey: [...paymentKeys.list(params), 'paginated'],
+    queryFn: () => fetchPaymentsPageApi(params),
+    staleTime: 1000 * 60 * 2,
+    placeholderData: (previousData) => previousData,
     ...options,
   });
 }

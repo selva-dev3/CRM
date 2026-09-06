@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
@@ -19,6 +19,7 @@ router = APIRouter()
     dependencies=[Depends(require_permission("invoices:read"))],
 )
 async def list_payments(
+    response: Response,
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     status_filter: str | None = Query(None, alias="status"),
@@ -28,7 +29,7 @@ async def list_payments(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await invoice_service.resolve_organization_id(db, current_user)
-    return await payment_service.list_payments(
+    payments = await payment_service.list_payments(
         db,
         organization_id=organization_id,
         page=page,
@@ -37,6 +38,15 @@ async def list_payments(
         search=search,
         invoice_id=invoice_id,
     )
+    total = await payment_service.count_payments(
+        db,
+        organization_id=organization_id,
+        status=status_filter,
+        search=search,
+        invoice_id=invoice_id,
+    )
+    response.headers["X-Total-Count"] = str(total)
+    return payments
 
 
 @router.get(

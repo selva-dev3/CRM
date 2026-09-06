@@ -161,6 +161,10 @@ class UserService:
             for u in users
         ]
 
+    async def count_users(self, db: AsyncSession, *, search: str | None, current_user: User) -> int:
+        org_id = await self._resolve_current_org(db, current_user)
+        return await self.repository.count(db, search=search, organization_id=org_id)
+
     async def create_user(
         self, db: AsyncSession, payload: UserCreate, *, current_user: User
     ) -> dict:

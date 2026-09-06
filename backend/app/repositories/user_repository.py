@@ -59,9 +59,30 @@ class UserRepository:
             stmt = stmt.where(User.name.ilike(pattern) | User.email.ilike(pattern))
         actual_page = page if isinstance(page, int) else 1
         actual_limit = limit if isinstance(limit, int) else 20
-        stmt = stmt.offset((actual_page - 1) * actual_limit).limit(actual_limit)
+        stmt = (
+            stmt.order_by(User.created_at.desc(), User.id.desc())
+            .offset((actual_page - 1) * actual_limit)
+            .limit(actual_limit)
+        )
         result = await db.execute(stmt)
         return list(result.scalars().all())
+
+    async def count(
+        self,
+        db: AsyncSession,
+        *,
+        search: str | None = None,
+        organization_id: str | None = None,
+    ) -> int:
+        stmt = select(func.count()).select_from(User)
+        if organization_id:
+            stmt = stmt.where(User.organization_id == organization_id)
+        cleaned_search = search.strip() if search and search.strip() else None
+        if cleaned_search:
+            pattern = f"%{cleaned_search}%"
+            stmt = stmt.where(User.name.ilike(pattern) | User.email.ilike(pattern))
+        result = await db.execute(stmt)
+        return int(result.scalar_one())
 
     async def get_by_id(self, db: AsyncSession, user_id: str) -> User | None:
         result = await db.execute(select(User).where(User.id == user_id))

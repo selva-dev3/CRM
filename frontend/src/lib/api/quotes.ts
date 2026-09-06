@@ -1,5 +1,6 @@
 ﻿import { useQuery, useMutation, useQueryClient, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import { fetchPaginated, type PaginatedResult } from '@/lib/api/pagination';
 
 export interface QuoteLineItem {
   name?: string;
@@ -84,13 +85,22 @@ export interface MessageResponse {
 // ---------------------------------------------------------------------------
 
 export async function fetchQuotesApi(params?: { page?: number; limit?: number; status?: string; search?: string }): Promise<QuoteItem[]> {
+  return (await fetchQuotesPageApi(params)).items;
+}
+
+export async function fetchQuotesPageApi(params?: {
+  page?: number;
+  limit?: number;
+  status?: string;
+  search?: string;
+}): Promise<PaginatedResult<QuoteItem>> {
   const query = new URLSearchParams();
   if (params?.page) query.append('page', String(params.page));
   if (params?.limit) query.append('limit', String(params.limit));
   if (params?.status) query.append('status', params.status);
   if (params?.search) query.append('search', params.search);
   const endpoint = `/quotes${query.toString() ? `?${query.toString()}` : ''}`;
-  return apiClient.get<QuoteItem[]>(endpoint);
+  return fetchPaginated<QuoteItem>(endpoint);
 }
 
 export async function createQuoteApi(payload: QuoteCreatePayload): Promise<QuoteItem> {
@@ -151,6 +161,19 @@ export function useQuotesQuery(params?: { page?: number; limit?: number; status?
     queryKey: ['quotes', params],
     queryFn: () => fetchQuotesApi(params),
     staleTime: 1000 * 60 * 2,
+    ...options,
+  });
+}
+
+export function useQuotesPageQuery(
+  params?: { page?: number; limit?: number; status?: string; search?: string },
+  options?: Omit<UseQueryOptions<PaginatedResult<QuoteItem>>, 'queryKey' | 'queryFn'>,
+) {
+  return useQuery<PaginatedResult<QuoteItem>>({
+    queryKey: ['quotes', 'paginated', params],
+    queryFn: () => fetchQuotesPageApi(params),
+    staleTime: 1000 * 60 * 2,
+    placeholderData: (previousData) => previousData,
     ...options,
   });
 }

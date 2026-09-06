@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 
-const useUsersQueryMock = vi.fn();
+const useUsersPageQueryMock = vi.fn();
 const useUserInvitationsQueryMock = vi.fn();
 const useCreateUserMutationMock = vi.fn();
 const useInviteUsersMutationMock = vi.fn();
@@ -26,7 +26,7 @@ vi.mock('@tanstack/react-query', () => ({
 }));
 
 vi.mock('@/lib/api/users', () => ({
-  useUsersQuery: (...args: unknown[]) => useUsersQueryMock(...args),
+  useUsersPageQuery: (...args: unknown[]) => useUsersPageQueryMock(...args),
   useUserInvitationsQuery: (...args: unknown[]) => useUserInvitationsQueryMock(...args),
   useCreateUserMutation: (...args: unknown[]) => useCreateUserMutationMock(...args),
   useInviteUsersMutation: (...args: unknown[]) => useInviteUsersMutationMock(...args),
@@ -67,7 +67,12 @@ import UsersPage from './page';
 
 beforeEach(() => {
   vi.clearAllMocks();
-  useUsersQueryMock.mockReturnValue({ data: [], isLoading: false, isError: false, refetch: vi.fn() });
+  useUsersPageQueryMock.mockReturnValue({
+    data: { items: [], total: 0 },
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+  });
   useUserInvitationsQueryMock.mockReturnValue({ data: [], isLoading: false, isError: false, refetch: vi.fn() });
   useCurrentOrganizationQueryMock.mockReturnValue({ data: undefined, isLoading: false, isError: false });
   useCreateUserMutationMock.mockReturnValue({ mutateAsync: createMutateAsyncMock });

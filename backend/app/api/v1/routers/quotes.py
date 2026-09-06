@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
@@ -41,15 +41,16 @@ async def approve_quote(
     dependencies=[Depends(require_permission("quotes:read"))],
 )
 async def list_quotes(
-    page: int = 1,
-    limit: int = 20,
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     status_filter: str | None = Query(None, alias="status"),
     search: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await quote_service.resolve_organization_id(db, current_user)
-    return await quote_service.list_quotes(
+    quotes = await quote_service.list_quotes(
         db,
         organization_id=organization_id,
         page=page,
@@ -57,6 +58,14 @@ async def list_quotes(
         status=status_filter,
         search=search,
     )
+    total = await quote_service.count_quotes(
+        db,
+        organization_id=organization_id,
+        status=status_filter,
+        search=search,
+    )
+    response.headers["X-Total-Count"] = str(total)
+    return quotes
 
 
 @router.post(

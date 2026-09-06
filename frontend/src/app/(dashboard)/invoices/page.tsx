@@ -27,7 +27,7 @@ import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
 import { PERMISSIONS } from '@/lib/permissions';
 import {
-  useInvoicesQuery,
+  useInvoicesPageQuery,
   useCreateInvoiceMutation,
   useUpdateInvoiceMutation,
   useDeleteInvoiceMutation,
@@ -78,12 +78,14 @@ export default function InvoicesPage() {
   }, [searchTerm]);
 
   // Queries
-  const { data: invoices = [], isLoading: isInvoicesLoading, error: invoicesError, refetch: refetchInvoices } = useInvoicesQuery({
+  const { data: invoicesPage, isLoading: isInvoicesLoading, error: invoicesError, refetch: refetchInvoices } = useInvoicesPageQuery({
     page,
     limit,
     status: statusFilter || undefined,
     search: debouncedSearchTerm || undefined,
   });
+  const invoices = invoicesPage?.items ?? [];
+  const totalInvoices = invoicesPage?.total ?? 0;
 
   // Only Closed Won deals are invoiceable (backend enforces the same rule).
   const { data: closedWonDeals = [] } = useDealsQuery(1, 100, 'Closed Won');
@@ -362,9 +364,9 @@ export default function InvoicesPage() {
         isLoading={isInvoicesLoading}
         pagination={{
           pageIndex: page - 1,
-          pageCount: invoices.length >= limit ? page + 1 : page,
+          pageCount: Math.max(1, Math.ceil(totalInvoices / limit)),
           onPageChange: (p) => setPage(p + 1),
-          totalRecords: (page - 1) * limit + invoices.length,
+          totalRecords: totalInvoices,
         }}
       />
 

@@ -4,7 +4,7 @@ import builtins
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Company, Contact, User
@@ -30,9 +30,29 @@ class DealRepository:
             stmt = stmt.where(Deal.title.ilike(f"%{search.strip()}%"))
         if stage:
             stmt = stmt.where(Deal.stage == stage)
-        stmt = stmt.order_by(Deal.created_at.desc()).offset((page - 1) * limit).limit(limit)
+        stmt = (
+            stmt.order_by(Deal.created_at.desc(), Deal.id.desc())
+            .offset((page - 1) * limit)
+            .limit(limit)
+        )
         result = await db.execute(stmt)
         return list(result.scalars().all())
+
+    async def count(
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        search: str | None = None,
+        stage: str | None = None,
+    ) -> int:
+        stmt = select(func.count()).select_from(Deal).where(Deal.organization_id == organization_id)
+        if search and search.strip():
+            stmt = stmt.where(Deal.title.ilike(f"%{search.strip()}%"))
+        if stage:
+            stmt = stmt.where(Deal.stage == stage)
+        result = await db.execute(stmt)
+        return int(result.scalar_one())
 
     async def list_all(self, db: AsyncSession, *, organization_id: str) -> builtins.list[Deal]:
         result = await db.execute(

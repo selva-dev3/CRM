@@ -272,6 +272,18 @@ class InvoiceService:
         )
         return [invoice_to_dict(inv) for inv in invoices]
 
+    async def count_invoices(
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        status: str | None = None,
+        search: str | None = None,
+    ) -> int:
+        return await self.repository.count_scoped(
+            db, organization_id=organization_id, status=status, search=search
+        )
+
     async def get_invoice(self, db: AsyncSession, *, invoice_id: str, organization_id: str) -> dict:
         invoice = await self.require_invoice(
             db, invoice_id=invoice_id, organization_id=organization_id

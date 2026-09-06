@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Invoice, InvoiceItem
@@ -126,9 +126,39 @@ class InvoiceRepository:
             stmt = stmt.where(Invoice.status == status.strip())
         if search and search.strip():
             stmt = stmt.where(Invoice.invoice_number.ilike(f"%{search.strip()}%"))
-        stmt = stmt.order_by(Invoice.created_at.desc()).offset((page - 1) * limit).limit(limit)
+        stmt = (
+            stmt.order_by(Invoice.created_at.desc(), Invoice.id.desc())
+            .offset((page - 1) * limit)
+            .limit(limit)
+        )
         result = await db.execute(stmt)
         return list(result.scalars().all())
+
+    async def count_scoped(
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        status: str | None = None,
+        search: str | None = None,
+    ) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(Invoice)
+            .where(Invoice.organization_id == organization_id)
+        )
+        if status == "Overdue":
+            stmt = stmt.where(
+                Invoice.status.in_(("Finalized", "Accepted")),
+                Invoice.paid_amount < Invoice.amount,
+                Invoice.due_date < datetime.now(UTC),
+            )
+        elif status and status.strip():
+            stmt = stmt.where(Invoice.status == status.strip())
+        if search and search.strip():
+            stmt = stmt.where(Invoice.invoice_number.ilike(f"%{search.strip()}%"))
+        result = await db.execute(stmt)
+        return int(result.scalar_one())
 
     async def list_by_company(
         self, db: AsyncSession, *, company_id: str, organization_id: str

@@ -1,5 +1,6 @@
 ﻿import { useQuery, useMutation, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import { fetchPaginated, type PaginatedResult } from '@/lib/api/pagination';
 
 export interface UserItem {
   id: string;
@@ -103,9 +104,17 @@ export interface UserTeamItem {
 
 // API Functions
 export async function fetchUsersApi(page = 1, limit = 15, search?: string): Promise<UserItem[]> {
+  return (await fetchUsersPageApi(page, limit, search)).items;
+}
+
+export async function fetchUsersPageApi(
+  page = 1,
+  limit = 15,
+  search?: string,
+): Promise<PaginatedResult<UserItem>> {
   const query = new URLSearchParams({ page: String(page), limit: String(limit) });
   if (search) query.append('search', search);
-  return apiClient<UserItem[]>(`/users?${query.toString()}`);
+  return fetchPaginated<UserItem>(`/users?${query.toString()}`);
 }
 
 export async function getUserByIdApi(id: string): Promise<UserItem> {
@@ -198,6 +207,20 @@ export function useUsersQuery(page = 1, limit = 15, search?: string, options?: O
   return useQuery<UserItem[], Error>({
     queryKey: ['users', page, limit, search],
     queryFn: () => fetchUsersApi(page, limit, search),
+    placeholderData: (previousData) => previousData,
+    ...options,
+  });
+}
+
+export function useUsersPageQuery(
+  page = 1,
+  limit = 15,
+  search?: string,
+  options?: Omit<UseQueryOptions<PaginatedResult<UserItem>, Error>, 'queryKey' | 'queryFn'>,
+) {
+  return useQuery<PaginatedResult<UserItem>, Error>({
+    queryKey: ['users', 'paginated', page, limit, search],
+    queryFn: () => fetchUsersPageApi(page, limit, search),
     placeholderData: (previousData) => previousData,
     ...options,
   });
