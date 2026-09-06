@@ -29,6 +29,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { PageTabs } from '@/components/common/page-tabs';
+import { getErrorMessage } from '@/lib/utils';
 import {
   useCurrentOrganizationQuery,
   useOrganizationByIdQuery,
@@ -37,6 +38,7 @@ import {
   useRemoveOrganizationMemberMutation,
   useOrganizationSubscriptionQuery,
   useCancelSubscriptionMutation,
+  useResumeSubscriptionMutation,
   useOrganizationUsageQuery,
   useUpdateBrandingMutation,
   useVerifyDomainMutation,
@@ -77,7 +79,7 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
   const isOrgError = isCurrentOrgView ? isCurrentError : isOrgByIdError;
   const refetchOrg = isCurrentOrgView ? refetchCurrent : refetchById;
   const { data: members = [], refetch: refetchMembers } = useOrganizationMembersQuery();
-  const { data: subscription, refetch: refetchSubscription } = useOrganizationSubscriptionQuery();
+  const { data: subscription, isLoading: isSubscriptionLoading, isError: isSubscriptionError } = useOrganizationSubscriptionQuery();
   const { data: usage } = useOrganizationUsageQuery();
   const { refetch: refetchDomains } = useOrganizationDomainsQuery();
   const { data: auditLogs = [] } = useOrganizationAuditLogsQuery();
@@ -86,6 +88,21 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
   const updateOrgMutation = useUpdateOrganizationMutation();
   const removeMemberMutation = useRemoveOrganizationMemberMutation();
   const cancelSubMutation = useCancelSubscriptionMutation();
+  const resumeSubMutation = useResumeSubscriptionMutation();
+  const isOwnBilling = Boolean(org?.id && org.id === currentOrg?.id);
+  const canChangeRenewal = isOwnBilling && !isSubscriptionError && !isSubscriptionLoading
+    && subscription?.provider_linked === true
+    && ['active', 'past_due'].includes(subscription.status || '')
+    && typeof subscription.auto_renew === 'boolean';
+  const billingStatus = !isOwnBilling ? 'Billing is available for your current organization only'
+    : isSubscriptionLoading ? 'Loading billing status…'
+    : isSubscriptionError ? 'Billing status unavailable'
+    : !subscription ? 'No subscription information'
+    : subscription.provider_linked === false ? 'No Stripe subscription linked'
+    : subscription.provider_linked !== true ? 'Billing linkage unavailable'
+    : ['active', 'past_due'].includes(subscription.status || '') && subscription.auto_renew === false
+      ? 'Cancels at period end'
+      : ({ active: 'Active', past_due: 'Payment overdue', canceled: 'Cancelled', cancelled: 'Cancelled', trialing: 'Trial', pending: 'Pending', unpaid: 'Unpaid', incomplete: 'Incomplete', incomplete_expired: 'Expired', paused: 'Paused' }[subscription.status || ''] || 'Billing status unknown');
   const updateBrandingMutation = useUpdateBrandingMutation();
   const verifyDomainMutation = useVerifyDomainMutation();
   const transferOwnershipMutation = useTransferOwnershipMutation();
@@ -207,14 +224,17 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
   };
 
   const handleCancelSub = async () => {
+    if (!canChangeRenewal || cancelSubMutation.isPending || resumeSubMutation.isPending) return;
     try {
       setErrorMessage(null);
-      const res = await cancelSubMutation.mutateAsync();
-      setSuccessMessage(res.message || 'Subscription cancelled.');
-      refetchSubscription();
+      setSuccessMessage(null);
+      const res = subscription?.auto_renew === false
+        ? await resumeSubMutation.mutateAsync()
+        : await cancelSubMutation.mutateAsync();
+      setSuccessMessage(res.message || 'Subscription renewal updated.');
       setTimeout(() => setSuccessMessage(null), 4000);
-    } catch {
-      setErrorMessage('Failed to cancel subscription.');
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, 'Failed to update subscription renewal.'));
     }
   };
 
@@ -588,8 +608,8 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
               <CreditCard className="w-5 h-5 text-[#2563EB] shrink-0" />
               <span>Subscription & Billing Details</span>
             </h3>
-            <Badge className="bg-[#16A34A]/10 text-[#16A34A] border-[#16A34A]/20 self-start sm:self-auto shrink-0">
-              Active Billing
+            <Badge variant="outline" className="self-start sm:self-auto shrink-0">
+              {billingStatus}
             </Badge>
           </div>
 
@@ -603,13 +623,13 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
             <div className="p-3.5 sm:p-4 bg-[#F9FAFB] rounded-btn border border-[#E5E7EB]">
               <div className="text-caption text-[#9CA3AF] font-bold uppercase text-xs">Billing Cycle</div>
               <div className="text-body sm:text-subheading font-bold text-[#111827] mt-0.5 break-words">
-                {subscription?.billing_cycle || 'Monthly'}
+                {isOwnBilling && !isSubscriptionError ? subscription?.billing_cycle || 'Unavailable' : 'Unavailable'}
               </div>
             </div>
             <div className="p-3.5 sm:p-4 bg-[#F9FAFB] rounded-btn border border-[#E5E7EB]">
               <div className="text-caption text-[#9CA3AF] font-bold uppercase text-xs">Price</div>
               <div className="text-body sm:text-subheading font-bold text-[#111827] mt-0.5 break-words">
-                ₹{subscription?.amount || 29990}/mo
+                {isOwnBilling && !isSubscriptionError && subscription ? `₹${subscription.amount}/mo` : 'Unavailable'}
               </div>
             </div>
           </div>
@@ -622,14 +642,14 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
             >
               Upgrade Plan Tier
             </Button>
-            <Button
+            {canChangeRenewal && <Button
               variant="outline"
               onClick={handleCancelSub}
-              disabled={cancelSubMutation.isPending}
+              disabled={cancelSubMutation.isPending || resumeSubMutation.isPending}
               className="border-[#DC2626]/30 text-[#DC2626] hover:bg-[#DC2626]/10 cursor-pointer font-semibold w-full sm:w-auto"
             >
-              Cancel Subscription
-            </Button>
+              {cancelSubMutation.isPending || resumeSubMutation.isPending ? 'Updating renewal…' : subscription?.auto_renew === false ? 'Resume Renewal' : 'Cancel Subscription'}
+            </Button>}
           </div>
         </Card>
       )}

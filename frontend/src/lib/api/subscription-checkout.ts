@@ -28,6 +28,7 @@ export function useSubscriptionCheckout(orgId?: string | null) {
   const [operation, setOperation] = useState<SubscriptionCheckoutOperation | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [redirecting, setRedirecting] = useState(false);
+  const [requiresAdministratorReview, setRequiresAdministratorReview] = useState(false);
   const busy = useRef(false);
   const mutation = useCreateSubscriptionCheckoutMutation();
 
@@ -39,6 +40,7 @@ export function useSubscriptionCheckout(orgId?: string | null) {
         setOperation(key ? readSubscriptionOperation(key) : null);
         setLoaded(key);
         setError(null);
+        setRequiresAdministratorReview(false);
       } catch {
         setLoaded(null);
         setError('Unable to restore the pending subscription request. Check billing status before trying again.');
@@ -51,6 +53,7 @@ export function useSubscriptionCheckout(orgId?: string | null) {
     if (busy.current || redirecting || !key || loaded !== key) return;
     busy.current = true;
     setError(null);
+    setRequiresAdministratorReview(false);
     try {
       const payload: CreateSubscriptionCheckoutPayload = { plan_slug: planSlug, ...(orgId ? { org_id: orgId } : {}) };
       const pending = readSubscriptionOperation(key);
@@ -63,6 +66,8 @@ export function useSubscriptionCheckout(orgId?: string | null) {
       redirectToSubscriptionCheckout(result.checkout_url);
       setRedirecting(true);
     } catch (failure) {
+      setRequiresAdministratorReview(failure instanceof ApiError
+        && failure.code === 'SUBSCRIPTION_PROVIDER_ERROR' && failure.fields?.retryable === false);
       if (failure instanceof ApiError && failure.status === 409 && failure.code === 'SUBSCRIPTION_CHECKOUT_EXPIRED') {
         // This code confirms provider expiration and removal of the server's pending operation.
         try {
@@ -80,7 +85,7 @@ export function useSubscriptionCheckout(orgId?: string | null) {
     }
   }
 
-  return { start, operation, error, isPending: mutation.isPending || redirecting, ready: Boolean(key && loaded === key), isCurrentOrganization: !orgId || orgId === auth?.user?.organization_id };
+  return { start, operation, error, requiresAdministratorReview, isPending: mutation.isPending || redirecting, ready: Boolean(key && loaded === key), isCurrentOrganization: !orgId || orgId === auth?.user?.organization_id };
 }
 
 export const SUBSCRIPTION_POLL_WINDOW_MS = 120_000;

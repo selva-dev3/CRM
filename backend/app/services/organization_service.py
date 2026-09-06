@@ -260,6 +260,7 @@ class OrganizationDomainService:
         return {
             "plan": plan_info["name"],
             "plan_slug": plan_info["slug"],
+            "provider_linked": bool(subscription.subscription_id and subscription.customer_id),
             "status": subscription.status or "active",
             "billing_cycle": subscription.billing_cycle or "Monthly",
             "amount": subscription.amount or plan_info["price_monthly"],

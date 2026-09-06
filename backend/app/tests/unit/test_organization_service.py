@@ -174,6 +174,11 @@ async def test_get_subscription_does_not_fabricate_next_billing_date():
     result = await service.get_subscription(db, _actor())
 
     assert result["next_billing"] is None
+    assert result["provider_linked"] is False
+    subscription.subscription_id = "sub_test"
+    subscription.customer_id = "cus_test"
+    result = await service.get_subscription(db, _actor())
+    assert result["provider_linked"] is True
 
 
 @pytest.mark.asyncio
