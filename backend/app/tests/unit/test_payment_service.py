@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import APIException, ConflictError, NotFoundError
 from app.repositories.payment_repository import PaymentRepository
 from app.schemas.crm_schemas import ManualPaymentCreate
-from app.services.payment_service import PaymentService
+from app.services.payment_service import PaymentService, eligible_invoice_to_dict, payment_detail_to_dict
 
 
 def payment_payload(amount="40.00", **kwargs):
@@ -182,3 +182,41 @@ async def test_payment_failure_rolls_back_transaction(payment_context):
         await record(payment_context)
     db.commit.assert_not_awaited()
     db.rollback.assert_awaited_once()
+
+
+def test_payment_detail_includes_invoice_balance_and_customer():
+    payment = SimpleNamespace(
+        id="payment",
+        invoice_id="invoice",
+        payment_number="PAY-2026-000001",
+        amount=Decimal("40.00"),
+        currency="INR",
+        payment_method="Cash",
+        status="Succeeded",
+        payment_type="Cash",
+        payment_date=datetime(2026, 9, 6).date(),
+        notes="Received at office",
+        paid_at=datetime(2026, 9, 6, tzinfo=UTC),
+        created_at=datetime(2026, 9, 6, tzinfo=UTC),
+    )
+    result = payment_detail_to_dict(
+        (payment, "INV-1", Decimal("100.00"), Decimal("40.00"), "Partially Paid", "company", "Acme", "Ada", "ada@example.com")
+    )
+    assert result["invoice_total"] == Decimal("100.00")
+    assert result["invoice_paid_amount"] == Decimal("40.00")
+    assert result["invoice_outstanding_amount"] == Decimal("60.00")
+    assert result["customer"] == {"id": "company", "name": "Acme"}
+
+
+def test_eligible_invoice_mapping_exposes_server_balance():
+    invoice = SimpleNamespace(
+        id="invoice",
+        invoice_number="INV-1",
+        amount=Decimal("100.00"),
+        paid_amount=Decimal("40.00"),
+        currency="INR",
+        payment_status="Partially Paid",
+    )
+    result = eligible_invoice_to_dict((invoice, "Acme", "Ada", "ada@example.com"))
+    assert result["invoice_number"] == "INV-1"
+    assert result["outstanding_amount"] == Decimal("60.00")

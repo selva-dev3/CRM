@@ -18,6 +18,27 @@ from app.repositories.notification_repository import NotificationRepository
 
 
 class PaymentRepository:
+    async def list_eligible_invoices(
+        self, db: AsyncSession, *, organization_id: str, page: int = 1, limit: int = 100
+    ) -> list[tuple[Invoice, str | None, str | None, str | None]]:
+        result = await db.execute(
+            select(Invoice, Company.name, Contact.name, Contact.email)
+            .outerjoin(Company, Company.id == Invoice.company_id)
+            .outerjoin(Contact, Contact.id == Invoice.contact_id)
+            .where(
+                Invoice.organization_id == organization_id,
+                Invoice.status == "Accepted",
+                Invoice.finalized_at.is_not(None),
+                Invoice.accepted_at.is_not(None),
+                Invoice.amount > Invoice.paid_amount,
+                Invoice.payment_status != "Paid",
+            )
+            .order_by(Invoice.created_at.desc())
+            .offset((page - 1) * limit)
+            .limit(limit)
+        )
+        return [tuple(row) for row in result.all()]
+
     async def sum_succeeded(
         self, db: AsyncSession, *, invoice_id: str, organization_id: str
     ) -> Decimal:
@@ -93,6 +114,33 @@ class PaymentRepository:
     ) -> tuple[Payment, str, str | None, str | None, str | None] | None:
         result = await db.execute(
             select(Payment, Invoice.invoice_number, Company.name, Contact.name, Contact.email)
+            .join(Invoice, Invoice.id == Payment.invoice_id)
+            .outerjoin(Company, Company.id == Invoice.company_id)
+            .outerjoin(Contact, Contact.id == Invoice.contact_id)
+            .where(
+                Payment.id == payment_id,
+                Payment.organization_id == organization_id,
+                Invoice.organization_id == organization_id,
+            )
+        )
+        row = result.first()
+        return tuple(row) if row is not None else None
+
+    async def get_scoped_detail(
+        self, db: AsyncSession, *, payment_id: str, organization_id: str
+    ) -> tuple | None:
+        result = await db.execute(
+            select(
+                Payment,
+                Invoice.invoice_number,
+                Invoice.amount,
+                Invoice.paid_amount,
+                Invoice.payment_status,
+                Company.id,
+                Company.name,
+                Contact.name,
+                Contact.email,
+            )
             .join(Invoice, Invoice.id == Payment.invoice_id)
             .outerjoin(Company, Company.id == Invoice.company_id)
             .outerjoin(Contact, Contact.id == Invoice.contact_id)

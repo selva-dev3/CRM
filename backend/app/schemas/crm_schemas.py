@@ -809,6 +809,23 @@ class PaymentResponse(BaseModel):
     notes: str | None = None
     paid_at: str
     created_at: str | None = None
+    invoice_total: float = 0.0
+    invoice_paid_amount: float = 0.0
+    invoice_outstanding_amount: float = 0.0
+    invoice_payment_status: str = "Pending"
+    customer: dict[str, str | None] | None = None
+
+
+class EligiblePaymentInvoiceResponse(BaseModel):
+    id: str
+    invoice_number: str
+    customer_name: str | None = None
+    contact_name: str | None = None
+    amount: float = 0.0
+    paid_amount: float = 0.0
+    outstanding_amount: float = 0.0
+    currency: str
+    payment_status: str
 
 
 class ManualPaymentCreate(BaseModel):

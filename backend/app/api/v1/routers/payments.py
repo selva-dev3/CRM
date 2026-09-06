@@ -5,7 +5,7 @@ from app.api.v1.deps import get_current_user, require_permission
 from app.core.errors import NotFoundError
 from app.db.session import get_db
 from app.models import User
-from app.schemas.crm_schemas import PaymentResponse
+from app.schemas.crm_schemas import EligiblePaymentInvoiceResponse, PaymentResponse
 from app.services.invoice_service import invoice_service
 from app.services.payment_service import payment_service
 
@@ -36,6 +36,24 @@ async def list_payments(
         status=status_filter,
         search=search,
         invoice_id=invoice_id,
+    )
+
+
+@router.get(
+    "/eligible-invoices",
+    response_model=list[EligiblePaymentInvoiceResponse],
+    summary="List accepted invoices with an outstanding balance",
+    dependencies=[Depends(require_permission("invoices:payment"))],
+)
+async def list_eligible_payment_invoices(
+    page: int = Query(1, ge=1),
+    limit: int = Query(100, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await invoice_service.resolve_organization_id(db, current_user)
+    return await payment_service.list_eligible_invoices(
+        db, organization_id=organization_id, page=page, limit=limit
     )
 
 
