@@ -34,7 +34,7 @@ import { ModalShell } from '@/components/common/modal-shell';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
 import {
-  useTasksQuery,
+  useTasksPageQuery,
   useCreateTaskMutation,
   useUpdateTaskMutation,
   useDeleteTaskMutation,
@@ -104,13 +104,15 @@ export default function TasksPage() {
   }, [statusFilter, priorityFilter]);
 
   // Query Hooks - connected to API with search, status, and priority query params
-  const { data: tasks = [], isLoading: isTasksLoading, refetch: refetchTasks } = useTasksQuery({
+  const { data: tasksPage, isLoading: isTasksLoading, refetch: refetchTasks } = useTasksPageQuery({
     page,
     limit,
     search: debouncedSearchTerm || undefined,
     status: statusFilter || undefined,
     priority: priorityFilter || undefined,
   });
+  const tasks = tasksPage?.items ?? [];
+  const totalTasks = tasksPage?.total ?? 0;
 
   const { data: users = [] } = useUsersQuery(1, 100);
 
@@ -580,9 +582,9 @@ export default function TasksPage() {
         isLoading={isTasksLoading}
         pagination={{
           pageIndex: page - 1,
-          pageCount: tasks.length >= limit ? page + 1 : page,
+          pageCount: Math.max(1, Math.ceil(totalTasks / limit)),
           onPageChange: (p) => setPage(p + 1),
-          totalRecords: (page - 1) * limit + tasks.length,
+          totalRecords: totalTasks,
         }}
       />
 

@@ -37,7 +37,7 @@ import { ModalShell } from '@/components/common/modal-shell';
 import { PageTabs } from '@/components/common/page-tabs';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { 
-  useUsersQuery, 
+  useUsersPageQuery,
   useUserInvitationsQuery,
   useCreateUserMutation,
   useInviteUsersMutation, 
@@ -52,6 +52,8 @@ import {
 import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
 import { RoleSearchCombobox } from '@/components/features/users/role-search-combobox';
 import { useQueryClient } from '@tanstack/react-query';
+
+const EMPTY_USERS: UserItem[] = [];
 
 export default function UsersPage() {
   const router = useRouter();
@@ -79,7 +81,13 @@ export default function UsersPage() {
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
 
   // Queries
-  const { data: users = [], isLoading, refetch } = useUsersQuery(page, limit, debouncedSearchTerm);
+  const { data: usersPage, isLoading, refetch } = useUsersPageQuery(
+    page,
+    limit,
+    debouncedSearchTerm,
+  );
+  const users = usersPage?.items ?? EMPTY_USERS;
+  const totalUsers = usersPage?.total ?? 0;
 
   // Lazy Invitation Query - ONLY executes when activeTab === 'invites'
   const {
@@ -604,9 +612,9 @@ export default function UsersPage() {
           isLoading={isLoading}
           pagination={{
             pageIndex: page - 1,
-            pageCount: users.length >= limit ? page + 1 : page,
+            pageCount: Math.max(1, Math.ceil(totalUsers / limit)),
             onPageChange: (p) => setPage(p + 1),
-            totalRecords: (page - 1) * limit + users.length,
+            totalRecords: totalUsers,
           }}
           toolbarActions={
             <div className="flex items-center gap-2">

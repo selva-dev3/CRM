@@ -100,6 +100,7 @@ class TaskService:
         organization_id: str,
         status: str | None = None,
         priority: str | None = None,
+        search: str | None = None,
     ) -> list[dict]:
         tasks = await self.repository.list(
             db,
@@ -108,8 +109,26 @@ class TaskService:
             organization_id=organization_id,
             status=status,
             priority=priority,
+            search=search,
         )
         return [task_to_dict(t) for t in tasks]
+
+    async def count_tasks(
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        status: str | None = None,
+        priority: str | None = None,
+        search: str | None = None,
+    ) -> int:
+        return await self.repository.count(
+            db,
+            organization_id=organization_id,
+            status=status,
+            priority=priority,
+            search=search,
+        )
 
     async def get_task(self, db: AsyncSession, task_id: str, organization_id: str) -> dict:
         task = await self.repository.get_by_id(db, task_id=task_id, organization_id=organization_id)

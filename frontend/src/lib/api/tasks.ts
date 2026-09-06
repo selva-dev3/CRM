@@ -1,5 +1,6 @@
 ﻿import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import { fetchPaginated, type PaginatedResult } from '@/lib/api/pagination';
 
 export interface TaskItem {
   id: string;
@@ -54,6 +55,12 @@ export interface SubtaskItem {
 // ---------------------------------------------------------------------------
 
 export async function fetchTasksApi(params: FetchTasksParams = {}): Promise<TaskItem[]> {
+  return (await fetchTasksPageApi(params)).items;
+}
+
+export async function fetchTasksPageApi(
+  params: FetchTasksParams = {},
+): Promise<PaginatedResult<TaskItem>> {
   const query = new URLSearchParams();
   const page = params.page ?? 1;
   const limit = params.limit ?? 20;
@@ -64,7 +71,7 @@ export async function fetchTasksApi(params: FetchTasksParams = {}): Promise<Task
   if (params.priority) query.append('priority', params.priority);
 
   const queryString = query.toString();
-  return apiClient.get<TaskItem[]>(`/tasks${queryString ? `?${queryString}` : ''}`);
+  return fetchPaginated<TaskItem>(`/tasks${queryString ? `?${queryString}` : ''}`);
 }
 
 export async function getTaskByIdApi(id: string): Promise<TaskItem> {
@@ -145,6 +152,14 @@ export function useTasksQuery(params: FetchTasksParams = {}) {
   return useQuery({
     queryKey: ['tasks', params],
     queryFn: () => fetchTasksApi(params),
+    placeholderData: (previousData) => previousData,
+  });
+}
+
+export function useTasksPageQuery(params: FetchTasksParams = {}) {
+  return useQuery({
+    queryKey: ['tasks', 'paginated', params],
+    queryFn: () => fetchTasksPageApi(params),
     placeholderData: (previousData) => previousData,
   });
 }

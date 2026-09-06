@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, Header, Query, status
+from fastapi import APIRouter, Depends, Header, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
@@ -44,6 +44,7 @@ def _parse_due_date(raw: str | None) -> datetime | None:
     dependencies=[Depends(require_permission("invoices:read"))],
 )
 async def list_invoices(
+    response: Response,
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     status_filter: str | None = Query(None, alias="status"),
@@ -52,7 +53,7 @@ async def list_invoices(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await invoice_service.resolve_organization_id(db, current_user)
-    return await invoice_service.list_invoices(
+    invoices = await invoice_service.list_invoices(
         db,
         organization_id=organization_id,
         page=page,
@@ -60,6 +61,14 @@ async def list_invoices(
         status=status_filter,
         search=search,
     )
+    total = await invoice_service.count_invoices(
+        db,
+        organization_id=organization_id,
+        status=status_filter,
+        search=search,
+    )
+    response.headers["X-Total-Count"] = str(total)
+    return invoices
 
 
 @router.post(

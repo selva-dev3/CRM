@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -291,9 +291,31 @@ class QuoteRepository:
             stmt = stmt.where(Quote.status == status.strip())
         if search and search.strip():
             stmt = stmt.where(Quote.quote_number.ilike(f"%{search.strip()}%"))
-        stmt = stmt.order_by(Quote.created_at.desc()).offset((page - 1) * limit).limit(limit)
+        stmt = (
+            stmt.order_by(Quote.created_at.desc(), Quote.id.desc())
+            .offset((page - 1) * limit)
+            .limit(limit)
+        )
         result = await db.execute(stmt)
         return list(result.scalars().all())
+
+    async def count_scoped(
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        status: str | None = None,
+        search: str | None = None,
+    ) -> int:
+        stmt = (
+            select(func.count()).select_from(Quote).where(Quote.organization_id == organization_id)
+        )
+        if status and status.strip():
+            stmt = stmt.where(Quote.status == status.strip())
+        if search and search.strip():
+            stmt = stmt.where(Quote.quote_number.ilike(f"%{search.strip()}%"))
+        result = await db.execute(stmt)
+        return int(result.scalar_one())
 
     async def get_scoped(
         self, db: AsyncSession, *, quote_id: str, organization_id: str

@@ -211,6 +211,18 @@ class DealService:
         )
         return [deal_to_dict(d) for d in deals]
 
+    async def count_deals(
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        search: str | None = None,
+        stage: str | None = None,
+    ) -> int:
+        return await self.repository.count(
+            db, organization_id=organization_id, search=search, stage=stage
+        )
+
     async def create_deal(self, db: AsyncSession, payload: DealCreate, current_user: User) -> dict:
         if payload.stage == DEAL_STAGE_CLOSED_WON:
             raise APIException(

@@ -16,7 +16,7 @@ vi.mock('@/lib/api/deals', () => ({
 }));
 
 vi.mock('@/lib/api/quotes', () => ({
-  useQuotesQuery: () => ({ data: [], isLoading: false }),
+  useQuotesPageQuery: () => ({ data: { items: [], total: 0 }, isLoading: false }),
   useCreateQuoteMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateQuoteMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useDeleteQuoteMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),

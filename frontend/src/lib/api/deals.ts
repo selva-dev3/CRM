@@ -1,5 +1,6 @@
 ﻿import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import { fetchPaginated, type PaginatedResult } from '@/lib/api/pagination';
 import { QueryClient, useQueryClient } from '@tanstack/react-query';
 import {
   fetchEntityCustomFieldsApi,
@@ -61,10 +62,19 @@ export interface DealUpdatePayload {
 
 // API Functions
 export async function fetchDealsApi(page = 1, limit = 20, stage?: string, search?: string): Promise<DealItem[]> {
+  return (await fetchDealsPageApi(page, limit, stage, search)).items;
+}
+
+export async function fetchDealsPageApi(
+  page = 1,
+  limit = 20,
+  stage?: string,
+  search?: string,
+): Promise<PaginatedResult<DealItem>> {
   const query = new URLSearchParams({ page: String(page), limit: String(limit) });
   if (stage) query.append('stage', stage);
   if (search) query.append('search', search);
-  return apiClient.get<DealItem[]>(`/deals?${query.toString()}`);
+  return fetchPaginated<DealItem>(`/deals?${query.toString()}`);
 }
 
 export async function createDealApi(payload: DealCreatePayload): Promise<DealItem> {
@@ -242,6 +252,14 @@ export function useDealsQuery(page = 1, limit = 20, stage?: string, search?: str
   return useQuery({
     queryKey: ['deals', page, limit, stage, search],
     queryFn: () => fetchDealsApi(page, limit, stage, search),
+    placeholderData: (previousData) => previousData,
+  });
+}
+
+export function useDealsPageQuery(page = 1, limit = 20, stage?: string, search?: string) {
+  return useQuery({
+    queryKey: ['deals', 'paginated', page, limit, stage, search],
+    queryFn: () => fetchDealsPageApi(page, limit, stage, search),
     placeholderData: (previousData) => previousData,
   });
 }

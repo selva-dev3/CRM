@@ -349,6 +349,18 @@ class QuoteService:
         )
         return [quote_to_dict(quote) for quote in quotes]
 
+    async def count_quotes(
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        status: str | None,
+        search: str | None,
+    ) -> int:
+        return await self.repository.count_scoped(
+            db, organization_id=organization_id, status=status, search=search
+        )
+
     async def list_quotes_for_deal(
         self, db: AsyncSession, *, deal_id: str, organization_id: str
     ) -> list[dict]:

@@ -32,7 +32,7 @@ import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
 import { DealCustomFields } from '@/components/features/deals/deal-custom-fields';
 import {
-  useDealsQuery,
+  useDealsPageQuery,
   useCreateDealMutation,
   useUpdateDealMutation,
   useDeleteDealMutation,
@@ -89,7 +89,14 @@ export default function DealsPage() {
   }, [searchTerm]);
 
   // Queries
-  const { data: deals = [], refetch: refetchDeals } = useDealsQuery(page, limit, undefined, debouncedSearchTerm);
+  const { data: dealsPage, refetch: refetchDeals } = useDealsPageQuery(
+    page,
+    limit,
+    undefined,
+    debouncedSearchTerm,
+  );
+  const deals = dealsPage?.items ?? [];
+  const totalDeals = dealsPage?.total ?? 0;
   const { data: users = [] } = useUsersQuery();
   const { data: companies = [] } = useCompaniesQuery(1, 100);
   const { data: contacts = [] } = useContactsQuery(1, 100);
@@ -487,9 +494,9 @@ export default function DealsPage() {
           }}
           pagination={{
             pageIndex: page - 1,
-            pageCount: Math.ceil((deals.length || 1) / limit) || 1,
+            pageCount: Math.max(1, Math.ceil(totalDeals / limit)),
             onPageChange: (pIndex) => setPage(pIndex + 1),
-            totalRecords: deals.length,
+            totalRecords: totalDeals,
           }}
         />
       

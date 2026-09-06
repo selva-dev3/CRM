@@ -187,6 +187,23 @@ class PaymentService:
         )
         return [payment_to_dict(row) for row in rows]
 
+    async def count_payments(
+        self,
+        db,
+        *,
+        organization_id: str,
+        status: str | None = None,
+        search: str | None = None,
+        invoice_id: str | None = None,
+    ) -> int:
+        return await self.repository.count_scoped(
+            db,
+            organization_id=organization_id,
+            status=status,
+            search=search,
+            invoice_id=invoice_id,
+        )
+
     async def list_eligible_invoices(
         self, db: AsyncSession, *, organization_id: str, page: int = 1, limit: int = 100
     ) -> list[dict[str, object]]:

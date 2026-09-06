@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
@@ -30,15 +30,19 @@ router = APIRouter()
     dependencies=[Depends(require_permission("users:read"))],
 )
 async def list_users(
+    response: Response,
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     search: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await user_service.list_users(
+    users = await user_service.list_users(
         db, page=page, limit=limit, search=search, current_user=current_user
     )
+    total = await user_service.count_users(db, search=search, current_user=current_user)
+    response.headers["X-Total-Count"] = str(total)
+    return users
 
 
 @router.post(

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import builtins
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.task import Task
@@ -21,19 +21,43 @@ class TaskRepository:
         organization_id: str,
         status: str | None = None,
         priority: str | None = None,
+        search: str | None = None,
     ) -> builtins.list[Task]:
-        stmt = (
-            select(Task)
-            .where(Task.organization_id == organization_id)
-            .offset((page - 1) * limit)
-            .limit(limit)
-        )
+        stmt = select(Task).where(Task.organization_id == organization_id)
         if status:
             stmt = stmt.where(Task.status == status)
         if priority:
             stmt = stmt.where(Task.priority == priority)
+        if search and search.strip():
+            pattern = f"%{search.strip()}%"
+            stmt = stmt.where(Task.title.ilike(pattern) | Task.description.ilike(pattern))
+        stmt = (
+            stmt.order_by(Task.created_at.desc(), Task.id.desc())
+            .offset((page - 1) * limit)
+            .limit(limit)
+        )
         result = await db.execute(stmt)
         return list(result.scalars().all())
+
+    async def count(
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        status: str | None = None,
+        priority: str | None = None,
+        search: str | None = None,
+    ) -> int:
+        stmt = select(func.count()).select_from(Task).where(Task.organization_id == organization_id)
+        if status:
+            stmt = stmt.where(Task.status == status)
+        if priority:
+            stmt = stmt.where(Task.priority == priority)
+        if search and search.strip():
+            pattern = f"%{search.strip()}%"
+            stmt = stmt.where(Task.title.ilike(pattern) | Task.description.ilike(pattern))
+        result = await db.execute(stmt)
+        return int(result.scalar_one())
 
     async def list_pending(self, db: AsyncSession, *, organization_id: str) -> builtins.list[Task]:
         result = await db.execute(

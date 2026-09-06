@@ -1,5 +1,6 @@
 ﻿import { useQuery, useMutation, useQueryClient, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import { fetchPaginated, type PaginatedResult } from '@/lib/api/pagination';
 
 export interface InvoiceLineItem {
   id: string;
@@ -77,13 +78,22 @@ export interface MessageResponse {
 // ---------------------------------------------------------------------------
 
 export async function fetchInvoicesApi(params?: { page?: number; limit?: number; status?: string; search?: string }): Promise<InvoiceItem[]> {
+  return (await fetchInvoicesPageApi(params)).items;
+}
+
+export async function fetchInvoicesPageApi(params?: {
+  page?: number;
+  limit?: number;
+  status?: string;
+  search?: string;
+}): Promise<PaginatedResult<InvoiceItem>> {
   const query = new URLSearchParams();
   if (params?.page) query.append('page', String(params.page));
   if (params?.limit) query.append('limit', String(params.limit));
   if (params?.status) query.append('status', params.status);
   if (params?.search) query.append('search', params.search);
   const endpoint = `/invoices${query.toString() ? `?${query.toString()}` : ''}`;
-  return apiClient.get<InvoiceItem[]>(endpoint);
+  return fetchPaginated<InvoiceItem>(endpoint);
 }
 
 export async function createInvoiceApi(payload: InvoiceCreatePayload): Promise<InvoiceItem> {
@@ -172,6 +182,19 @@ export function useInvoicesQuery(params?: { page?: number; limit?: number; statu
     queryKey: ['invoices', params],
     queryFn: () => fetchInvoicesApi(params),
     staleTime: 1000 * 60 * 2,
+    ...options,
+  });
+}
+
+export function useInvoicesPageQuery(
+  params?: { page?: number; limit?: number; status?: string; search?: string },
+  options?: Omit<UseQueryOptions<PaginatedResult<InvoiceItem>>, 'queryKey' | 'queryFn'>,
+) {
+  return useQuery<PaginatedResult<InvoiceItem>>({
+    queryKey: ['invoices', 'paginated', params],
+    queryFn: () => fetchInvoicesPageApi(params),
+    staleTime: 1000 * 60 * 2,
+    placeholderData: (previousData) => previousData,
     ...options,
   });
 }

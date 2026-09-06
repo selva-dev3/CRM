@@ -27,7 +27,7 @@ import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
 import { useDealsQuery } from '@/lib/api/deals';
 import {
-  useQuotesQuery,
+  useQuotesPageQuery,
   useCreateQuoteMutation,
   useUpdateQuoteMutation,
   useDeleteQuoteMutation,
@@ -78,12 +78,14 @@ export default function QuotesPage() {
   // Queries
   const { data: deals = [], isLoading: isDealsLoading, isError: isDealsError } = useDealsQuery(1, 100);
 
-  const { data: quotes = [], isLoading: isQuotesLoading } = useQuotesQuery({
+  const { data: quotesPage, isLoading: isQuotesLoading } = useQuotesPageQuery({
     page,
     limit,
     status: statusFilter || undefined,
     search: debouncedSearchTerm || undefined,
   });
+  const quotes = quotesPage?.items ?? [];
+  const totalQuotes = quotesPage?.total ?? 0;
 
   // Mutations
   const createQuoteMutation = useCreateQuoteMutation();
@@ -349,9 +351,9 @@ export default function QuotesPage() {
         isLoading={isQuotesLoading}
         pagination={{
           pageIndex: page - 1,
-          pageCount: quotes.length >= limit ? page + 1 : page,
+          pageCount: Math.max(1, Math.ceil(totalQuotes / limit)),
           onPageChange: (p) => setPage(p + 1),
-          totalRecords: (page - 1) * limit + quotes.length,
+          totalRecords: totalQuotes,
         }}
       />
 

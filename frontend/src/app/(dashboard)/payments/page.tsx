@@ -5,7 +5,7 @@ import { CreditCard, ExternalLink, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
-import { usePaymentsQuery, type PaymentItem } from '@/lib/api/payments';
+import { usePaymentsPageQuery, type PaymentItem } from '@/lib/api/payments';
 import { getErrorMessage } from '@/lib/utils';
 import { AddPaymentDialog } from '@/components/features/payments/AddPaymentDialog';
 import { useHasPermission } from '@/hooks/use-has-permission';
@@ -37,8 +37,9 @@ export default function PaymentsPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
-  const query = usePaymentsQuery({ page, limit: 20, search: search || undefined, status: status || undefined });
-  const payments = query.data ?? [];
+  const query = usePaymentsPageQuery({ page, limit: 20, search: search || undefined, status: status || undefined });
+  const payments = query.data?.items ?? [];
+  const totalPayments = query.data?.total ?? 0;
 
   const columns = useMemo<DataTableColumn<PaymentItem>[]>(() => [
     { id: 'payment_number', header: 'Payment', cell: (item) => <div className="min-w-0"><p className="truncate font-semibold text-slate-900" title={item.payment_number}>{item.payment_number}</p><p className="text-xs text-slate-500">{item.payment_type}</p></div> },
@@ -68,7 +69,7 @@ export default function PaymentsPage() {
         searchPlaceholder="Search payment, invoice, or customer..."
         toolbarActions={<select aria-label="Payment status" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700"><option value="">All statuses</option><option value="Succeeded">Recorded</option><option value="Failed">Failed</option></select>}
         isLoading={query.isLoading}
-        pagination={{ pageIndex: page - 1, pageCount: payments.length >= 20 ? page + 1 : page, onPageChange: (nextPage) => setPage(nextPage + 1), totalRecords: (page - 1) * 20 + payments.length }}
+        pagination={{ pageIndex: page - 1, pageCount: Math.max(1, Math.ceil(totalPayments / 20)), onPageChange: (nextPage) => setPage(nextPage + 1), totalRecords: totalPayments }}
       />
       {query.isFetching && !query.isLoading && <p className="flex items-center gap-2 text-xs text-slate-500"><Loader2 className="h-3.5 w-3.5 animate-spin" />Refreshing payment records…</p>}
       <p className="flex items-center gap-1 text-xs text-slate-500"><ExternalLink className="h-3.5 w-3.5" />Payment receipts reflect records saved by your organization.</p>
