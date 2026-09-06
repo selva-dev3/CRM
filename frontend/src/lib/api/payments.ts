@@ -6,6 +6,7 @@ export interface PaymentItem {
   id: string;
   invoice_id: string;
   invoice_number: string;
+  payment_number: string;
   company_name?: string | null;
   contact_name?: string | null;
   contact_email?: string | null;

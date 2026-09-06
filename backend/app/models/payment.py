@@ -21,6 +21,7 @@ class Payment(Base):
     invoice_id: Mapped[str] = mapped_column(
         String, ForeignKey("invoices.id", ondelete="RESTRICT"), unique=True
     )
+    payment_number: Mapped[str] = mapped_column(String(100), nullable=False)
     provider: Mapped[str] = mapped_column(String(30), nullable=False)
     provider_payment_id: Mapped[str] = mapped_column(String(255), nullable=False)
     checkout_session_id: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)

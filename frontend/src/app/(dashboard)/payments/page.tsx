@@ -33,7 +33,7 @@ export default function PaymentsPage() {
   const payments = query.data ?? [];
 
   const columns = useMemo<DataTableColumn<PaymentItem>[]>(() => [
-    { id: 'id', header: 'Payment', cell: (item) => <div className="min-w-0"><p className="truncate font-semibold text-slate-900" title={item.id}>{item.id}</p><p className="text-xs text-slate-500">{item.provider} · {item.payment_method || 'Method unavailable'}</p></div> },
+    { id: 'payment_number', header: 'Payment', cell: (item) => <div className="min-w-0"><p className="truncate font-semibold text-slate-900" title={item.payment_number}>{item.payment_number}</p><p className="text-xs text-slate-500">{item.provider} · {item.payment_method || 'Method unavailable'}</p></div> },
     { id: 'invoice', header: 'Invoice', cell: (item) => <button type="button" className="font-semibold text-indigo-600 hover:underline" onClick={(event) => { event.stopPropagation(); router.push(`/invoices/${item.invoice_id}`); }}>{item.invoice_number}</button> },
     { id: 'customer', header: 'Customer', cell: (item) => <div><p className="font-medium text-slate-900">{item.company_name || 'No company'}</p><p className="text-xs text-slate-500">{item.contact_name || item.contact_email || 'No contact'}</p></div> },
     { id: 'amount', header: 'Amount', className: 'text-right', cell: (item) => <span className="font-bold text-slate-900">{formatAmount(item)}</span> },

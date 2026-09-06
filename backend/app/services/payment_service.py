@@ -9,6 +9,7 @@ def payment_to_dict(row: tuple) -> dict[str, object]:
         "id": payment.id,
         "invoice_id": payment.invoice_id,
         "invoice_number": invoice_number,
+        "payment_number": payment.payment_number,
         "company_name": company_name,
         "contact_name": contact_name,
         "contact_email": contact_email,
