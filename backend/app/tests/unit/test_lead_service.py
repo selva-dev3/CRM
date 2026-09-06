@@ -6,13 +6,19 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import UploadFile
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import Headers
 
 from app.core.errors import APIException, ForbiddenError, NotFoundError
 from app.models import Lead, User
 from app.repositories.lead_repository import LeadRepository
-from app.schemas.crm_schemas import LeadCreate, TaskCreate
+from app.schemas.crm_schemas import (
+    LeadCreate,
+    LeadDisqualificationRequest,
+    LeadQualificationRequest,
+    TaskCreate,
+)
 from app.services.integration_service import integration_service
 from app.services.lead_service import LeadService
 
@@ -186,20 +192,20 @@ async def test_update_lead_only_applies_provided_fields(monkeypatch):
     lead = _make_lead()
     repo: Any = LeadRepository()
     repo.get_by_id_for_org = AsyncMock(return_value=lead)
-    repo.record_qualification = AsyncMock()
+    repo.record_activity = AsyncMock()
     service = _service_with(repo)
     monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())
     db = AsyncMock(spec=AsyncSession)
 
     from app.schemas.crm_schemas import LeadUpdate
 
-    result = await service.update_lead(db, "lead-1", LeadUpdate(status="Qualified"), _make_user())
+    result = await service.update_lead(db, "lead-1", LeadUpdate(status="Contacted"), _make_user())
 
-    assert result["status"] == "Qualified"
-    assert lead.status == "Qualified"
+    assert result["status"] == "Contacted"
+    assert lead.status == "Contacted"
     assert lead.title == "Acme Corp"
     repo.get_by_id_for_org.assert_awaited_once_with(db, "lead-1", "org-1")
-    repo.record_qualification.assert_awaited_once_with(db, lead, actor_id="usr-1")
+    repo.record_activity.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -207,16 +213,16 @@ async def test_update_lead_rejects_qualification_without_customer_details():
     lead = _make_lead(company="")
     repo: Any = LeadRepository()
     repo.get_by_id_for_org = AsyncMock(return_value=lead)
-    repo.record_qualification = AsyncMock()
+    repo.record_activity = AsyncMock()
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
-    from app.schemas.crm_schemas import LeadUpdate
-
     with pytest.raises(APIException, match="required to qualify"):
-        await service.update_lead(db, "lead-1", LeadUpdate(status="Qualified"), _make_user())
+        await service.qualify_lead(
+            db, "lead-1", LeadQualificationRequest(), _make_user()
+        )
 
-    repo.record_qualification.assert_not_awaited()
+    repo.record_activity.assert_not_awaited()
     db.commit.assert_not_awaited()
 
 
@@ -232,13 +238,13 @@ async def test_update_lead_fires_lead_updated_event(monkeypatch):
 
     from app.schemas.crm_schemas import LeadUpdate
 
-    await service.update_lead(db, "lead-1", LeadUpdate(status="Qualified"), _make_user())
+    await service.update_lead(db, "lead-1", LeadUpdate(status="Contacted"), _make_user())
 
     notify.assert_awaited_once()
     kwargs = notify.await_args_list[-1].kwargs
     assert kwargs["event_name"] == "lead.updated"
     assert kwargs["org_id"] == "org-1"
-    assert kwargs["data"]["status"] == "Qualified"
+    assert kwargs["data"]["status"] == "Contacted"
 
 
 @pytest.mark.asyncio
@@ -263,13 +269,17 @@ async def test_update_lead_rejects_organization_transfer():
 
 
 @pytest.mark.asyncio
-async def test_update_lead_rejects_assignee_from_another_organization():
+async def test_update_lead_rejects_assignee_from_another_organization(monkeypatch):
     lead = _make_lead()
     repo: Any = LeadRepository()
     repo.get_by_id_for_org = AsyncMock(return_value=lead)
     repo.get_user = AsyncMock(return_value=_make_user(id="usr-2", organization_id="org-2"))
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
+    monkeypatch.setattr(
+        "app.services.lead_service.auth_service.get_user_permissions",
+        AsyncMock(return_value=["leads:assign"]),
+    )
 
     from app.schemas.crm_schemas import LeadUpdate
 
@@ -279,6 +289,85 @@ async def test_update_lead_rejects_assignee_from_another_organization():
     db.commit.assert_not_awaited()
 
 
+def test_generic_update_rejects_controlled_lifecycle_statuses():
+    from app.schemas.crm_schemas import LeadUpdate
+
+    for controlled_status in ("Qualified", "Unqualified", "Converted"):
+        with pytest.raises(ValidationError):
+            LeadUpdate(status=controlled_status)
+
+
+@pytest.mark.asyncio
+async def test_update_lead_requires_assign_permission(monkeypatch):
+    lead = _make_lead()
+    repo: Any = LeadRepository()
+    repo.get_by_id_for_org = AsyncMock(return_value=lead)
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    monkeypatch.setattr(
+        "app.services.lead_service.auth_service.get_user_permissions",
+        AsyncMock(return_value=[]),
+    )
+
+    from app.schemas.crm_schemas import LeadUpdate
+
+    with pytest.raises(ForbiddenError, match="leads:assign"):
+        await service.update_lead(
+            db, "lead-1", LeadUpdate(assigned_to="usr-2"), _make_user()
+        )
+
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_qualification_disqualification_and_reopen_are_audited():
+    lead = _make_lead(status="Contacted")
+    repo: Any = LeadRepository()
+    repo.get_by_id_for_org = AsyncMock(return_value=lead)
+    repo.record_activity = AsyncMock()
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    user = _make_user()
+
+    qualified = await service.qualify_lead(
+        db, lead.id, LeadQualificationRequest(reason="Budget confirmed"), user
+    )
+    assert qualified["status"] == "Qualified"
+    assert lead.qualified_by == user.id
+
+    disqualified = await service.disqualify_lead(
+        db,
+        lead.id,
+        LeadDisqualificationRequest(reason="Project paused"),
+        user,
+    )
+    assert disqualified["status"] == "Unqualified"
+    assert lead.disqualified_by == user.id
+
+    reopened = await service.reopen_lead(db, lead.id, user)
+    assert reopened["status"] == "Contacted"
+    assert repo.record_activity.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_create_follow_up_rejects_invalid_due_date():
+    lead = _make_lead()
+    repo: Any = LeadRepository()
+    repo.get_by_id_for_org = AsyncMock(return_value=lead)
+    repo.get_user = AsyncMock(return_value=_make_user())
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(APIException, match="ISO-8601"):
+        await service.create_task(
+            db,
+            lead.id,
+            TaskCreate(title="Call back", due_date="not-a-date"),
+            organization_id="org-1",
+            actor_id="usr-1",
+        )
+
+
 @pytest.mark.asyncio
 async def test_bulk_update_status_returns_early_for_empty_ids():
     repo: Any = LeadRepository()
@@ -286,7 +375,9 @@ async def test_bulk_update_status_returns_early_for_empty_ids():
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.bulk_update_status(db, [], "Qualified", organization_id="org-1")
+    result = await service.bulk_update_status(
+        db, [], "Contacted", organization_id="org-1", actor_id="usr-1"
+    )
 
     assert result == {"affected_count": 0, "message": "No lead IDs provided"}
     repo.list_by_ids.assert_not_awaited()
@@ -301,7 +392,9 @@ async def test_bulk_update_status_rejects_unknown_status():
     db = AsyncMock(spec=AsyncSession)
 
     with pytest.raises(APIException, match="Unsupported lead status"):
-        await service.bulk_update_status(db, ["lead-1"], "anything", organization_id="org-1")
+        await service.bulk_update_status(
+            db, ["lead-1"], "anything", organization_id="org-1", actor_id="usr-1"
+        )
 
     repo.list_by_ids.assert_not_awaited()
     db.commit.assert_not_awaited()
@@ -316,11 +409,11 @@ async def test_bulk_update_status_stores_canonical_status():
     db = AsyncMock(spec=AsyncSession)
 
     result = await service.bulk_update_status(
-        db, ["lead-1"], " qualified ", organization_id="org-1"
+        db, ["lead-1"], " contacted ", organization_id="org-1", actor_id="usr-1"
     )
 
-    assert lead.status == "Qualified"
-    assert result["message"] == "Status updated to Qualified"
+    assert lead.status == "Contacted"
+    assert result["message"] == "Status updated to Contacted"
 
 
 @pytest.mark.asyncio
@@ -417,7 +510,9 @@ async def test_assign_lead_fires_lead_assigned_event(monkeypatch):
     monkeypatch.setattr(integration_service, "notify_slack_event", notify)
     db = AsyncMock(spec=AsyncSession)
 
-    await service.assign_lead(db, "lead-1", "usr-9", organization_id="org-1")
+    await service.assign_lead(
+        db, "lead-1", "usr-9", organization_id="org-1", actor_id="usr-1"
+    )
 
     notify.assert_awaited_once()
     kwargs = notify.await_args_list[-1].kwargs
@@ -451,7 +546,7 @@ async def test_lead_create_task_fires_task_created_event(monkeypatch):
     await service.create_task(
         db,
         "lead-1",
-        TaskCreate(title="Call back"),
+        TaskCreate(title="Call back", due_date="2026-09-07T10:00:00+00:00"),
         organization_id="org-1",
         actor_id="usr-1",
     )

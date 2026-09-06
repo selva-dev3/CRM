@@ -54,6 +54,7 @@ async def test_conversion_persists_real_links_and_is_repeatable(create_deal):
     assert bool(result["deal_id"]) == create_deal
     assert lead.status == "Converted"
     assert lead.converted_at is not None
+    assert lead.converted_by == user.id
     added = [call.args[0] for call in db.add.call_args_list]
     assert any(
         isinstance(record, AuditLog) and record.action == "lead.converted" for record in added
@@ -121,3 +122,41 @@ async def test_ambiguous_customer_is_rejected():
 def test_conversion_amount_is_finite_and_nonnegative(amount):
     with pytest.raises(ValidationError):
         LeadConvertRequest(deal_amount=amount)
+
+
+@pytest.mark.asyncio
+async def test_conversion_preserves_owner_and_creates_missing_contact_address(monkeypatch):
+    db, lead, repository, user = conversion_fixture()
+    lead.assigned_to = "lead-owner"
+    lead.address = "10 Market Street"
+    lead.city = "Chennai"
+    lead.state = "Tamil Nadu"
+    lead.country = "India"
+    lead.postal_code = "600001"
+    get_address = AsyncMock(return_value=None)
+    create_address = AsyncMock()
+    monkeypatch.setattr(
+        "app.services.lead_service.ContactRepository.get_address", get_address
+    )
+    monkeypatch.setattr(
+        "app.services.lead_service.ContactRepository.create_address", create_address
+    )
+
+    await LeadService(repository=repository).convert_lead(
+        db, lead.id, LeadConvertRequest(create_deal=True), user
+    )
+
+    created_deal = next(
+        record
+        for call in db.add.call_args_list
+        if (record := call.args[0]).__class__.__name__ == "Deal"
+    )
+    assert created_deal.assigned_to == "lead-owner"
+    create_address.assert_awaited_once()
+    assert create_address.await_args.kwargs["data"] == {
+        "street": "10 Market Street",
+        "city": "Chennai",
+        "state": "Tamil Nadu",
+        "country": "India",
+        "postal_code": "600001",
+    }

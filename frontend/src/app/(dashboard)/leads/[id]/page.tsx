@@ -42,8 +42,9 @@ import {
   Flame,
   Snowflake,
   AlertTriangle,
+  History,
 } from 'lucide-react';
-import { Button, Card, Label, Input, Alert, AlertDescription, Checkbox } from '@/components/ui';
+import { Button, Card, Label, Input, Alert, AlertDescription } from '@/components/ui';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ModalShell } from '@/components/common/modal-shell';
 import { PageTabs } from '@/components/common/page-tabs';
@@ -58,6 +59,7 @@ import {
 } from '@/components/ui/select';
 import {
   useLeadQuery,
+  useLeadTimelineQuery,
   useCreateLeadMutation,
   useUpdateLeadMutation,
   useDeleteLeadMutation,
@@ -73,6 +75,9 @@ import {
   uploadLeadDocumentApi,
   recalculateLeadScoreApi,
   convertLeadApi,
+  qualifyLeadApi,
+  disqualifyLeadApi,
+  reopenLeadApi,
   assignLeadApi,
   archiveLeadApi,
   unarchiveLeadApi,
@@ -100,10 +105,11 @@ export default function LeadDetailPage() {
   const leadId = (params?.id as string) || '';
 
   // Active Tab State
-  const [activeTab, setActiveTab] = useState<'overview' | 'notes' | 'tasks' | 'emails' | 'calls' | 'documents' | 'actions'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'timeline' | 'notes' | 'tasks' | 'emails' | 'calls' | 'documents' | 'actions'>('overview');
 
   // Queries
   const { data: lead, isLoading, isError, error, refetch } = useLeadQuery(leadId);
+  const { data: timeline = [], isLoading: isTimelineLoading, refetch: refetchTimeline } = useLeadTimelineQuery(leadId);
   const {
     data: customFields = [],
     isLoading: isCustomFieldsLoading,
@@ -156,6 +162,7 @@ export default function LeadDetailPage() {
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDesc, setTaskDesc] = useState('');
   const [taskPriority, setTaskPriority] = useState('Medium');
+  const [taskDueDate, setTaskDueDate] = useState('');
   const [isCreatingTask, setIsCreatingTask] = useState(false);
 
   const [emailTo, setEmailTo] = useState('');
@@ -177,6 +184,9 @@ export default function LeadDetailPage() {
   const [assignmentSelection, setAssignmentSelection] = useState({ leadId: '', value: UNASSIGNED_VALUE });
   const [isAssigning, setIsAssigning] = useState(false);
   const [isArchiving, setIsArchiving] = useState(false);
+  const [lifecycleAction, setLifecycleAction] = useState<'qualify' | 'disqualify' | null>(null);
+  const [lifecycleReason, setLifecycleReason] = useState('');
+  const [isUpdatingLifecycle, setIsUpdatingLifecycle] = useState(false);
 
   // Lead Create/Edit Form State
   const [contactName, setContactName] = useState('');
@@ -193,11 +203,9 @@ export default function LeadDetailPage() {
   const [city, setCity] = useState('');
   const [address, setAddress] = useState('');
   const [postalCode, setPostalCode] = useState('');
-  const [status, setStatus] = useState('New');
   const [source, setSource] = useState('Website');
   const [organizationId, setOrganizationId] = useState('');
   const [assignedTo, setAssignedTo] = useState<string>('');
-  const [isArchived, setIsArchived] = useState<boolean>(false);
   const [formCustomFields, setFormCustomFields] = useState<
     Record<string, CustomFieldValue>
   >({});
@@ -239,8 +247,7 @@ export default function LeadDetailPage() {
     );
     if (found) return found.name || found.email;
     if (lead.assigned_to.includes('-') && lead.assigned_to.length > 20) {
-      const firstUser = users.find((u) => u.name) || users[0];
-      return firstUser ? (firstUser.name || firstUser.email) : 'Selva Admin';
+      return 'Unavailable user';
     }
     return lead.assigned_to;
   }, [lead, users]);
@@ -270,11 +277,9 @@ export default function LeadDetailPage() {
     setCity(lead.city || '');
     setAddress(lead.address || '');
     setPostalCode(lead.postal_code || '');
-    setStatus(lead.status || 'New');
     setSource(lead.source || 'Website');
     setOrganizationId(lead.organization_id || (organizations[0]?.id ?? 'org-1'));
     setAssignedTo(lead.assigned_to || '');
-    setIsArchived(lead.is_archived ?? false);
     setFormCustomFields(lead.custom_fields ?? {});
     setErrorMessage(null);
     setIsModalOpen(true);
@@ -310,10 +315,10 @@ export default function LeadDetailPage() {
         city: city.trim() || undefined,
         address: address.trim() || undefined,
         postal_code: postalCode.trim() || undefined,
-        status,
+        status: isEditMode ? undefined : 'New',
         source,
-        assigned_to: assignedTo.trim() || undefined,
-        is_archived: isArchived,
+        assigned_to: isEditMode ? undefined : assignedTo.trim() || undefined,
+        is_archived: isEditMode ? undefined : false,
         organization_id: organizationId || (organizations[0]?.id ?? 'org-1'),
         custom_fields: formCustomFields,
       };
@@ -359,6 +364,7 @@ export default function LeadDetailPage() {
       setNewNote('');
       setIsNoteModalOpen(false);
       await refetchNotes();
+      await refetchTimeline();
       setSuccessMessage('Note added successfully!');
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err: unknown) {
@@ -370,14 +376,24 @@ export default function LeadDetailPage() {
 
   const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!taskTitle.trim()) return;
+    if (!taskTitle.trim() || !taskDueDate) {
+      setErrorMessage('Task title and due date are required.');
+      return;
+    }
     try {
       setIsCreatingTask(true);
-      await createLeadTaskApi(leadId, { title: taskTitle.trim(), description: taskDesc.trim(), priority: taskPriority });
+      await createLeadTaskApi(leadId, {
+        title: taskTitle.trim(),
+        description: taskDesc.trim(),
+        priority: taskPriority,
+        due_date: new Date(taskDueDate).toISOString(),
+      });
       setTaskTitle('');
       setTaskDesc('');
+      setTaskDueDate('');
       setIsTaskModalOpen(false);
       await refetchTasks();
+      await Promise.all([refetch(), refetchTimeline()]);
       setSuccessMessage('Task created successfully!');
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err: unknown) {
@@ -397,6 +413,7 @@ export default function LeadDetailPage() {
       setEmailBody('');
       setIsEmailModalOpen(false);
       await refetchEmails();
+      await refetchTimeline();
       setSuccessMessage('Email sent successfully!');
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err: unknown) {
@@ -414,6 +431,7 @@ export default function LeadDetailPage() {
       setCallNotes('');
       setIsCallModalOpen(false);
       await refetchCalls();
+      await refetchTimeline();
       setSuccessMessage('Call record logged successfully!');
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err: unknown) {
@@ -432,6 +450,7 @@ export default function LeadDetailPage() {
       setSelectedFile(null);
       setIsDocModalOpen(false);
       await refetchDocuments();
+      await refetchTimeline();
       setSuccessMessage('Document attached successfully to MinIO S3!');
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err: unknown) {
@@ -464,6 +483,7 @@ export default function LeadDetailPage() {
       const result = await convertLeadApi(leadId, { create_deal: true, deal_title: `${lead?.contact_name} Deal` });
       await Promise.all([
         refetch(),
+        refetchTimeline(),
         ...['leads', 'contacts', 'companies', 'deals'].map((key) =>
           queryClient.invalidateQueries({ queryKey: [key] })),
       ]);
@@ -478,17 +498,81 @@ export default function LeadDetailPage() {
     }
   };
 
+  const refreshLifecycle = async () => {
+    await Promise.all([
+      refetch(),
+      refetchTimeline(),
+      queryClient.invalidateQueries({ queryKey: ['leads'] }),
+    ]);
+  };
+
+  const handleLifecycleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!lifecycleAction) return;
+    if (lifecycleAction === 'disqualify' && !lifecycleReason.trim()) {
+      setErrorMessage('A disqualification reason is required.');
+      return;
+    }
+    try {
+      setIsUpdatingLifecycle(true);
+      setErrorMessage(null);
+      if (lifecycleAction === 'qualify') {
+        await qualifyLeadApi(leadId, lifecycleReason.trim() || undefined);
+      } else {
+        await disqualifyLeadApi(leadId, lifecycleReason.trim());
+      }
+      await refreshLifecycle();
+      setSuccessMessage(
+        lifecycleAction === 'qualify' ? 'Lead qualified successfully.' : 'Lead disqualified.',
+      );
+      setLifecycleAction(null);
+      setLifecycleReason('');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to update lead lifecycle.'));
+    } finally {
+      setIsUpdatingLifecycle(false);
+    }
+  };
+
+  const handleReopenLead = async () => {
+    try {
+      setIsUpdatingLifecycle(true);
+      setErrorMessage(null);
+      await reopenLeadApi(leadId);
+      await refreshLifecycle();
+      setSuccessMessage('Lead reopened as Contacted.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to reopen lead.'));
+    } finally {
+      setIsUpdatingLifecycle(false);
+    }
+  };
+
+  const handleMarkContacted = async () => {
+    try {
+      setIsUpdatingLifecycle(true);
+      setErrorMessage(null);
+      await updateLeadMutation.mutateAsync({ id: leadId, payload: { status: 'Contacted' } });
+      await refreshLifecycle();
+      setSuccessMessage('Lead marked as Contacted.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to mark lead as Contacted.'));
+    } finally {
+      setIsUpdatingLifecycle(false);
+    }
+  };
+
   const handleAssignLead = async () => {
     if (!lead || !isAssignmentChanged) return;
     const isUnassigning = selectedAssignUser === UNASSIGNED_VALUE;
     try {
       setIsAssigning(true);
       if (isUnassigning) {
-        await updateLeadMutation.mutateAsync({ id: leadId, payload: { assigned_to: null } });
+        await assignLeadApi(leadId, null);
       } else {
         await assignLeadApi(leadId, selectedAssignUser);
       }
-      await refetch();
+      await refreshLifecycle();
       setSuccessMessage(isUnassigning ? 'Lead unassigned successfully!' : 'Lead assigned successfully!');
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch {
@@ -623,6 +707,7 @@ export default function LeadDetailPage() {
         className="sticky top-0 z-20 -mx-1 border-b border-[#E5E7EB] bg-slate-50/95 px-1 pt-2 backdrop-blur-sm sm:-mx-2 sm:px-2"
         tabs={[
           { value: 'overview', icon: <Briefcase className="size-4" />, label: 'Overview & Details' },
+          { value: 'timeline', icon: <History className="size-4" />, label: `Timeline (${timeline.length})` },
           { value: 'notes', icon: <FileText className="size-4" />, label: `Notes (${notes.length})` },
           { value: 'tasks', icon: <CheckSquare className="size-4" />, label: `Tasks (${tasks.length})` },
           { value: 'emails', icon: <Send className="size-4" />, label: `Emails (${emails.length})` },
@@ -848,6 +933,17 @@ export default function LeadDetailPage() {
                   <span className="text-[#111827] font-medium">{formatDate(lead.created_at, { timeZone: leadTimeZone })}</span>
                 </div>
 
+                <div className="flex items-center justify-between">
+                  <span className="text-[#6B7280] font-medium flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-[#9CA3AF]" /> Next Follow-up
+                  </span>
+                  <span className="text-[#111827] font-medium">
+                    {lead.next_follow_up_at
+                      ? formatDateTime(lead.next_follow_up_at, { timeZone: leadTimeZone })
+                      : 'Not scheduled'}
+                  </span>
+                </div>
+
                 <div className="flex items-center justify-between border-t border-[#E5E7EB] pt-3">
                   <span className="text-[#6B7280] font-medium">Lead Record State</span>
                   <span className={lead.is_archived ? 'text-[#F59E0B] font-semibold' : 'text-[#16A34A] font-semibold'}>
@@ -858,6 +954,44 @@ export default function LeadDetailPage() {
             </Card>
           </div>
         </div>
+      )}
+
+      {activeTab === 'timeline' && (
+        <Card className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
+          <div className="border-b border-slate-100 pb-3">
+            <h3 className="flex items-center gap-2 text-sm font-black text-slate-950">
+              <History className="h-4 w-4 text-indigo-600" /> Lead Activity Timeline
+            </h3>
+            <p className="mt-1 text-xs font-semibold text-slate-500">
+              Lifecycle changes and linked CRM activity for this lead.
+            </p>
+          </div>
+          {isTimelineLoading ? (
+            <div className="flex items-center justify-center gap-2 py-10 text-xs font-semibold text-slate-500">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading timeline...
+            </div>
+          ) : timeline.length === 0 ? (
+            <p className="py-10 text-center text-xs font-semibold text-slate-500">
+              No activity has been recorded for this lead.
+            </p>
+          ) : (
+            <ol className="space-y-3">
+              {timeline.map((event) => (
+                <li key={event.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex flex-col justify-between gap-1 sm:flex-row sm:items-start">
+                    <div>
+                      <p className="text-sm font-bold text-slate-900">{event.title}</p>
+                      <p className="mt-1 text-xs text-slate-600">{event.description}</p>
+                    </div>
+                    <time className="shrink-0 text-xs font-medium text-slate-500">
+                      {formatDateTime(event.timestamp, { timeZone: leadTimeZone })}
+                    </time>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
+        </Card>
       )}
 
       {/* 2. NOTES TAB */}
@@ -1182,6 +1316,44 @@ export default function LeadDetailPage() {
       {/* 7. ACTIONS & CONVERT TAB */}
       {activeTab === 'actions' && (
         <div className="space-y-6">
+          <Card className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
+            <div className="border-b border-slate-100 pb-3">
+              <h3 className="flex items-center gap-2 text-sm font-black text-slate-950">
+                <CheckCircle2 className="h-4 w-4 text-emerald-600" /> Lead Lifecycle
+              </h3>
+              <p className="mt-1 text-xs font-bold text-slate-600">
+                Current status: {lead.status}. Lifecycle changes are validated and audited.
+              </p>
+            </div>
+            <PermissionGate permission={PERMISSIONS.LEADS.UPDATE}>
+              <div className="flex flex-wrap gap-3">
+                {lead.status === 'New' && (
+                  <Button type="button" onClick={handleMarkContacted} disabled={isUpdatingLifecycle}>
+                    Mark Contacted
+                  </Button>
+                )}
+                {(lead.status === 'New' || lead.status === 'Contacted') && (
+                  <Button type="button" onClick={() => setLifecycleAction('qualify')} disabled={isUpdatingLifecycle} className="bg-emerald-600 text-white hover:bg-emerald-700">
+                    Qualify Lead
+                  </Button>
+                )}
+                {['New', 'Contacted', 'Qualified'].includes(lead.status) && (
+                  <Button type="button" variant="outline" onClick={() => setLifecycleAction('disqualify')} disabled={isUpdatingLifecycle} className="border-rose-200 text-rose-700 hover:bg-rose-50">
+                    Disqualify Lead
+                  </Button>
+                )}
+                {lead.status === 'Unqualified' && (
+                  <Button type="button" onClick={handleReopenLead} disabled={isUpdatingLifecycle}>
+                    Reopen Lead
+                  </Button>
+                )}
+                {lead.status === 'Converted' && (
+                  <p className="text-xs font-semibold text-slate-600">This lead has completed conversion and is read-only.</p>
+                )}
+              </div>
+            </PermissionGate>
+          </Card>
+
           <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-100 pb-3">
               <div>
@@ -1230,13 +1402,16 @@ export default function LeadDetailPage() {
                 </h3>
                 <p className="text-xs font-bold text-slate-600">Converts qualified sales lead into deal pipeline</p>
               </div>
-              <Button type="button" onClick={handleConvertLead} disabled={isConverting} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 cursor-pointer">
-                {isConverting ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <ArrowRightLeft className="w-3.5 h-3.5 mr-1.5" />}
-                Convert Lead
-              </Button>
+              <PermissionGate permission={PERMISSIONS.LEADS.CONVERT}>
+                <Button type="button" onClick={handleConvertLead} disabled={isConverting || lead.status !== 'Qualified' || Boolean(lead.is_archived)} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 cursor-pointer">
+                  {isConverting ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <ArrowRightLeft className="w-3.5 h-3.5 mr-1.5" />}
+                  Convert Lead
+                </Button>
+              </PermissionGate>
             </div>
           </Card>
 
+          <PermissionGate permission={PERMISSIONS.LEADS.ASSIGN}>
           <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-4">
             <h3 className="text-sm font-black text-slate-950 flex items-center gap-2 border-b border-slate-100 pb-3">
               <UserCheck className="w-4 h-4 text-indigo-600" /> Assign Lead to Sales Representative
@@ -1290,6 +1465,7 @@ export default function LeadDetailPage() {
               <p className="text-xs font-semibold text-slate-500">No sales representatives are available for assignment.</p>
             ) : null}
           </Card>
+          </PermissionGate>
 
           <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-2xl space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-100 pb-3">
@@ -1384,6 +1560,16 @@ export default function LeadDetailPage() {
                 <option value="Medium">Medium</option>
                 <option value="Low">Low</option>
               </ResponsiveSelect>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-black text-black">Follow-up Due Date *</Label>
+              <Input
+                type="datetime-local"
+                required
+                value={taskDueDate}
+                onChange={(event) => setTaskDueDate(event.target.value)}
+                className="bg-slate-50 border-slate-300 text-xs font-bold text-black"
+              />
             </div>
             <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2 border-t border-slate-100">
               <Button type="button" variant="outline" onClick={() => setIsTaskModalOpen(false)} className="border-slate-300 text-black font-bold text-xs">
@@ -1737,17 +1923,10 @@ export default function LeadDetailPage() {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-1.5">
                   <Label className="text-xs font-black text-black">Lead Status</Label>
-                  <ResponsiveSelect
-                    value={status}
-                    onValueChange={setStatus}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="New">New</option>
-                    <option value="Contacted">Contacted</option>
-                    <option value="Qualified">Qualified</option>
-                    <option value="Unqualified">Unqualified</option>
-                    <option value="Converted">Converted</option>
-                  </ResponsiveSelect>
+                  <div className="rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700">
+                    {isEditMode ? lead.status : 'New'}
+                  </div>
+                  <p className="text-[11px] text-slate-500">Use Lifecycle actions to change status.</p>
                 </div>
 
                 <div className="space-y-1.5">
@@ -1807,16 +1986,9 @@ export default function LeadDetailPage() {
                   </ResponsiveSelect>
                 </div>
 
-                <div className="flex items-center gap-2 pb-2">
-                  <Checkbox
-                    id="isArchivedCheckForm"
-                    checked={isArchived}
-                    onCheckedChange={(checked) => setIsArchived(checked === true)}
-                  />
-                  <label htmlFor="isArchivedCheckForm" className="text-xs font-black text-slate-800 cursor-pointer select-none">
-                    Archive this lead
-                  </label>
-                </div>
+                <p className="pb-2 text-xs font-semibold text-slate-500">
+                  Assignment and archival changes are managed from the Actions tab.
+                </p>
               </div>
             </div>
 
@@ -1854,6 +2026,51 @@ export default function LeadDetailPage() {
                 ) : (
                   isEditMode ? 'Save Changes' : 'Create Lead'
                 )}
+              </Button>
+            </div>
+          </form>
+        </ModalShell>
+      )}
+
+      {lifecycleAction && (
+        <ModalShell
+          isOpen={Boolean(lifecycleAction)}
+          onClose={() => {
+            if (!isUpdatingLifecycle) {
+              setLifecycleAction(null);
+              setLifecycleReason('');
+            }
+          }}
+          size="md"
+          title={lifecycleAction === 'qualify' ? 'Qualify Lead' : 'Disqualify Lead'}
+        >
+          <form onSubmit={handleLifecycleSubmit} className="space-y-4">
+            <p className="text-sm text-slate-600">
+              {lifecycleAction === 'qualify'
+                ? 'Confirm that this lead meets your qualification criteria.'
+                : 'Record why this lead is not currently qualified.'}
+            </p>
+            <div className="space-y-1.5">
+              <Label htmlFor="lead-lifecycle-reason" className="text-xs font-bold text-slate-900">
+                Reason {lifecycleAction === 'disqualify' ? '*' : '(optional)'}
+              </Label>
+              <Textarea
+                id="lead-lifecycle-reason"
+                required={lifecycleAction === 'disqualify'}
+                maxLength={2000}
+                rows={4}
+                value={lifecycleReason}
+                onChange={(event) => setLifecycleReason(event.target.value)}
+                placeholder="Add qualification context for the audit trail"
+              />
+            </div>
+            <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+              <Button type="button" variant="outline" onClick={() => setLifecycleAction(null)} disabled={isUpdatingLifecycle}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isUpdatingLifecycle} className={lifecycleAction === 'disqualify' ? 'bg-rose-600 text-white hover:bg-rose-700' : 'bg-emerald-600 text-white hover:bg-emerald-700'}>
+                {isUpdatingLifecycle && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {lifecycleAction === 'qualify' ? 'Qualify Lead' : 'Disqualify Lead'}
               </Button>
             </div>
           </form>

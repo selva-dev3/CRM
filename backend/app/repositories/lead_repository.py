@@ -76,8 +76,15 @@ class LeadRepository:
         lead.converted_contact_id = contact_id
         lead.converted_deal_id = deal_id
         lead.converted_at = converted_at
+        lead.converted_by = actor_id
         lead.status = "Converted"
-        db.add(LeadActivity(lead_id=lead.id, action="Lead converted", performed_by=actor_id))
+        await self.record_activity(
+            db,
+            lead,
+            action="Lead converted",
+            actor_id=actor_id,
+            audit_action="lead.converted",
+        )
         if deal_id:
             db.add(
                 DealActivity(
@@ -86,31 +93,41 @@ class LeadRepository:
                     performed_by=actor_id,
                 )
             )
-        db.add(
-            AuditLog(
-                organization_id=lead.organization_id,
-                user_id=actor_id,
-                action="lead.converted",
-                details=lead.id,
-            )
-        )
-
-    async def record_qualification(self, db: AsyncSession, lead: Lead, *, actor_id: str) -> None:
+    async def record_activity(
+        self,
+        db: AsyncSession,
+        lead: Lead,
+        *,
+        action: str,
+        actor_id: str | None,
+        details: str | None = None,
+        audit_action: str | None = None,
+    ) -> None:
         db.add(
             LeadActivity(
                 lead_id=lead.id,
-                action="Lead qualified",
+                action=action,
+                details=details,
                 performed_by=actor_id,
             )
         )
-        db.add(
-            AuditLog(
-                organization_id=lead.organization_id,
-                user_id=actor_id,
-                action="lead.qualified",
-                details=lead.id,
+        if audit_action:
+            db.add(
+                AuditLog(
+                    organization_id=lead.organization_id,
+                    user_id=actor_id,
+                    action=audit_action,
+                    details=f"{lead.id}: {details}" if details else lead.id,
+                )
             )
+
+    async def list_activities(self, db: AsyncSession, lead_id: str) -> list[LeadActivity]:
+        result = await db.execute(
+            select(LeadActivity)
+            .where(LeadActivity.lead_id == lead_id)
+            .order_by(LeadActivity.timestamp.desc(), LeadActivity.id.desc())
         )
+        return list(result.scalars().all())
 
     async def link_conversion_contact(
         self, db: AsyncSession, contact: Contact, company_id: str
@@ -152,8 +169,10 @@ class LeadRepository:
             select(Lead)
             .where(
                 Lead.organization_id == organization_id,
+                Lead.is_archived.is_(False),
                 *self._list_filters(search=search, status=status),
             )
+            .order_by(Lead.created_at.desc(), Lead.id.desc())
             .offset((page - 1) * limit)
             .limit(limit)
         )
@@ -173,6 +192,7 @@ class LeadRepository:
             .select_from(Lead)
             .where(
                 Lead.organization_id == organization_id,
+                Lead.is_archived.is_(False),
                 *self._list_filters(search=search, status=status),
             )
         )
