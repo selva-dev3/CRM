@@ -44,10 +44,10 @@ export interface QuoteItem {
 }
 
 export function publicQuoteApi(action: 'view', token: string): Promise<QuoteItem>;
-export function publicQuoteApi(action: 'accept' | 'reject', token: string): Promise<{ status: string }>;
+export function publicQuoteApi(action: 'accept' | 'reject', token: string, reason?: string): Promise<{ status: string }>;
 export function publicQuoteApi(action: 'checkout', token: string): Promise<{ checkout_url: string }>;
-export function publicQuoteApi(action: string, token: string): Promise<unknown> {
-  return apiClient.post(`/public/quotes/${action}`, { token }, { credentials: 'omit' });
+export function publicQuoteApi(action: string, token: string, reason?: string): Promise<unknown> {
+  return apiClient.post(`/public/quotes/${action}`, { token, ...(action === 'reject' && reason?.trim() ? { reason: reason.trim() } : {}) }, { credentials: 'omit' });
 }
 
 export function approveQuoteApi(quoteId: string): Promise<QuoteItem> {
