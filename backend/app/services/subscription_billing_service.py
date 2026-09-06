@@ -9,6 +9,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 from urllib.parse import urlencode
 
+from sqlalchemy.exc import MultipleResultsFound
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -114,10 +115,32 @@ class SubscriptionBillingService:
         org = await self.repository.get_by_id_for_update(db, org_id)
         if not org or not org.is_active:
             raise NotFoundError(message="Organization not found")
-        sub = await self.repository.get_subscription(db, org_id)
+        try:
+            sub = await self.repository.get_subscription(db, org_id)
+        except MultipleResultsFound as exc:
+            raise ConflictError(
+                message="Subscription records require administrator reconciliation",
+                code="SUBSCRIPTION_DATA_INTEGRITY_ERROR",
+            ) from exc
         if sub:
             await db.refresh(sub, with_for_update=True)
         return org, sub
+
+    async def _retrieve_subscription(self, subscription_id: str) -> dict:
+        try:
+            return await self.provider.retrieve_subscription(subscription_id)
+        except APIException as exc:
+            fields = exc.fields or {}
+            if (
+                exc.code == "SUBSCRIPTION_PROVIDER_ERROR"
+                and fields.get("provider_code") == "resource_missing"
+            ):
+                raise ConflictError(
+                    message="The stored Stripe subscription was not found; administrator reconciliation is required",
+                    code="SUBSCRIPTION_RECONCILIATION_REQUIRED",
+                    fields={"provider_request_id": fields.get("provider_request_id")},
+                ) from exc
+            raise
 
     def _urls(self, plan_slug: str) -> tuple[str, str]:
         root = settings.frontend_base_url.rstrip("/")
@@ -253,7 +276,7 @@ class SubscriptionBillingService:
                     code="SUBSCRIPTION_CHECKOUT_CONFLICT",
                 )
             if sub.subscription_id:
-                remote = await self.provider.retrieve_subscription(sub.subscription_id)
+                remote = await self._retrieve_subscription(sub.subscription_id)
                 item = self._item(remote, sub.customer_id)
                 if remote.get("status") != "active":
                     raise ConflictError(
@@ -279,7 +302,7 @@ class SubscriptionBillingService:
                     or not sub.customer_id
                 ):
                     raise ConflictError(message="Another subscription operation is in progress")
-                remote = await self.provider.retrieve_subscription(sub.subscription_id)
+                remote = await self._retrieve_subscription(sub.subscription_id)
                 item = self._item(remote, sub.customer_id)
                 if (
                     await self._paid_plan(db, remote, sub.customer_id, local=sub, organization=org)
@@ -499,7 +522,7 @@ class SubscriptionBillingService:
         verified = False
         paid = None
         if remote_id:
-            remote = await self.provider.retrieve_subscription(remote_id)
+            remote = await self._retrieve_subscription(remote_id)
             paid = await self._paid_plan(db, remote, sub.customer_id, local=sub, organization=org)
             verified = paid is not None and (not requested or paid[0].slug == requested)
         synced = bool(
@@ -571,7 +594,7 @@ class SubscriptionBillingService:
                     return {"status": "success", "message": "Unrelated invoice ignored"}
                 sub = await self.repository.get_subscription_by_provider_id(db, remote_id)
                 if not sub:
-                    canonical = await self.provider.retrieve_subscription(remote_id)
+                    canonical = await self._retrieve_subscription(remote_id)
                     metadata = canonical.get("metadata") or {}
                     if metadata.get("scope") != SCOPE:
                         return {"status": "success", "message": "Unrelated subscription ignored"}
@@ -605,7 +628,7 @@ class SubscriptionBillingService:
                         message="Initial checkout is not complete for this subscription"
                     )
             # Fetch after the tenant lock: event snapshots cannot roll billing state backwards.
-            remote = await self.provider.retrieve_subscription(remote_id)
+            remote = await self._retrieve_subscription(remote_id)
             self._item(remote, sub.customer_id)
             paid = await self._paid_plan(db, remote, sub.customer_id, local=sub, organization=org)
             had_paid_access = bool(
@@ -672,7 +695,7 @@ class SubscriptionBillingService:
             _, sub = await self._locked(db, tenant)
             if not sub or not sub.subscription_id:
                 raise ConflictError(message="No provider subscription is linked")
-            remote = await self.provider.retrieve_subscription(sub.subscription_id)
+            remote = await self._retrieve_subscription(sub.subscription_id)
             self._item(remote, sub.customer_id)
             if remote.get("status") not in {"active", "past_due"}:
                 raise ConflictError(message="This subscription cannot change renewal settings")

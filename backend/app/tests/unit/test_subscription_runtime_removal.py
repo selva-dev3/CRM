@@ -119,6 +119,8 @@ async def test_lazy_subscription_creation_has_no_provider_or_plan_upgrade():
     org = Organization(id="org-1", plan="Free", max_users=3)
     repo = AsyncMock(spec=OrganizationRepository)
     repo.get_subscription.return_value = None
+    repo.get_by_id_for_update.return_value = org
+    repo.get_subscription.side_effect = [None, None]
     repo.get_plan_by_slug.return_value = SubscriptionPlan(
         id="free-plan",
         slug="free",
@@ -134,6 +136,23 @@ async def test_lazy_subscription_creation_has_no_provider_or_plan_upgrade():
     assert org.plan == "Free"
     assert org.max_users == 3
     db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_lazy_subscription_creation_rechecks_after_organization_lock():
+    org = Organization(id="org-1", plan="Free", max_users=3)
+    existing = OrganizationSubscription(id="sub-existing", organization_id=org.id)
+    repo = AsyncMock(spec=OrganizationRepository)
+    repo.get_subscription.side_effect = [None, existing]
+    repo.get_by_id_for_update.return_value = org
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await OrganizationDomainService(repo).get_or_create_subscription(db, org)
+
+    assert result is existing
+    repo.get_by_id_for_update.assert_awaited_once_with(db, org.id)
+    repo.create_subscription.assert_not_awaited()
+    db.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio

@@ -81,7 +81,11 @@ class SubscriptionStripeProvider:
                 message=message,
                 code="SUBSCRIPTION_PROVIDER_ERROR",
                 status_code=502,
-                fields={"retryable": retryable, "provider_request_id": request_id},
+                fields={
+                    "retryable": retryable,
+                    "provider_request_id": request_id,
+                    "provider_code": error_code,
+                },
             ) from exc
 
     async def ensure_price(self, *, plan_slug: str, name: str, amount_minor: int) -> dict:
