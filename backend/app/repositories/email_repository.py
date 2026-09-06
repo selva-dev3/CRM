@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Email, EmailTemplate
@@ -34,6 +34,19 @@ class EmailRepository:
         )
         res = await db.execute(stmt)
         return res.scalars().all()
+
+    async def list_by_recipient(
+        self, db: AsyncSession, *, organization_id: str, recipient_email: str
+    ) -> Sequence[Email]:
+        result = await db.execute(
+            select(Email)
+            .where(
+                Email.organization_id == organization_id,
+                func.lower(Email.to_email) == recipient_email.strip().lower(),
+            )
+            .order_by(Email.sent_at.desc())
+        )
+        return result.scalars().all()
 
     async def create_email(self, db: AsyncSession, *, data: dict) -> Email:
         email = Email(**data)

@@ -7,10 +7,14 @@ from app.models.contact import Contact
 from app.repositories.call_repository import CallRepository
 from app.repositories.contact_repository import ContactRepository
 from app.repositories.deal_repository import DealRepository
+from app.repositories.email_repository import EmailRepository
+from app.repositories.note_repository import NoteRepository
 from app.schemas.crm_schemas import (
+    ContactActivityResponse,
     ContactAddressResponse,
     ContactAddressUpdate,
     ContactCreate,
+    ContactEmailResponse,
     ContactUpdate,
     CustomFieldDefinition,
 )
@@ -49,6 +53,8 @@ class ContactService:
         self.repository = repository or ContactRepository()
         self.deal_repository = DealRepository()
         self.call_repository = CallRepository()
+        self.email_repository = EmailRepository()
+        self.note_repository = NoteRepository()
         self.custom_field_service = custom_field_service_instance or custom_field_service
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
@@ -145,6 +151,71 @@ class ContactService:
         await self._commit(db, "Failed to save contact billing address")
         await db.refresh(address)
         return ContactAddressResponse.model_validate(address, from_attributes=True)
+
+    async def list_contact_activities(
+        self, db: AsyncSession, contact_id: str, *, organization_id: str
+    ) -> list[ContactActivityResponse]:
+        contact = await self.require_contact(db, contact_id, organization_id=organization_id)
+        notes = await self.note_repository.list_by_entity(
+            db,
+            entity_type="contact",
+            entity_id=contact.id,
+            organization_id=organization_id,
+        )
+        calls = await self.call_repository.list_by_contact(
+            db, contact_id=contact.id, organization_id=organization_id
+        )
+        deal_activities = await self.deal_repository.list_activities_by_contact(
+            db, contact_id=contact.id, organization_id=organization_id
+        )
+        activities = [
+            ContactActivityResponse(
+                id=note.id,
+                type="Note",
+                description=note.content,
+                created_at=str(note.created_at),
+            )
+            for note in notes
+        ]
+        activities.extend(
+            ContactActivityResponse(
+                id=call.id,
+                type=call.call_type or "Call",
+                description=call.notes or "Call logged",
+                created_at=str(call.timestamp),
+            )
+            for call in calls
+        )
+        activities.extend(
+            ContactActivityResponse(
+                id=activity.id,
+                type="Deal Activity",
+                description=activity.action,
+                created_at=str(activity.timestamp),
+            )
+            for activity in deal_activities
+        )
+        activities.sort(key=lambda activity: activity.created_at, reverse=True)
+        return activities
+
+    async def list_contact_emails(
+        self, db: AsyncSession, contact_id: str, *, organization_id: str
+    ) -> list[ContactEmailResponse]:
+        contact = await self.require_contact(db, contact_id, organization_id=organization_id)
+        emails = await self.email_repository.list_by_recipient(
+            db, organization_id=organization_id, recipient_email=contact.email
+        )
+        return [
+            ContactEmailResponse(
+                id=email.id,
+                from_email=email.from_email,
+                to=[email.to_email],
+                subject=email.subject,
+                body=email.body_text,
+                sent_at=str(email.sent_at),
+            )
+            for email in emails
+        ]
 
     async def _build_name_parts(
         self,

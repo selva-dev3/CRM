@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -129,6 +130,57 @@ async def test_update_billing_address_creates_missing_address():
             "country": "IN",
             "postal_code": None,
         },
+    )
+
+
+@pytest.mark.asyncio
+async def test_list_contact_activities_combines_existing_related_records():
+    repo: Any = ContactRepository()
+    repo.get_by_id_scoped = AsyncMock(return_value=_make_contact())
+    service = _service_with(repo)
+    service.note_repository.list_by_entity = AsyncMock(
+        return_value=[SimpleNamespace(id="note-1", content="Followed up", created_at="2026-01-02")]
+    )
+    service.call_repository.list_by_contact = AsyncMock(return_value=[])
+    service.deal_repository.list_activities_by_contact = AsyncMock(
+        return_value=[SimpleNamespace(id="deal-activity-1", action="Deal won", timestamp="2026-01-01")]
+    )
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.list_contact_activities(db, "cnt-1", organization_id="org-1")
+
+    assert [item.type for item in result] == ["Note", "Deal Activity"]
+    assert result[0].description == "Followed up"
+    service.note_repository.list_by_entity.assert_awaited_once_with(
+        db, entity_type="contact", entity_id="cnt-1", organization_id="org-1"
+    )
+
+
+@pytest.mark.asyncio
+async def test_list_contact_emails_matches_contact_recipient():
+    repo: Any = ContactRepository()
+    repo.get_by_id_scoped = AsyncMock(return_value=_make_contact())
+    service = _service_with(repo)
+    service.email_repository.list_by_recipient = AsyncMock(
+        return_value=[
+            SimpleNamespace(
+                id="email-1",
+                from_email="rep@example.com",
+                to_email="jane@acme.com",
+                subject="Follow-up",
+                body_text="Checking in",
+                sent_at="2026-01-02",
+            )
+        ]
+    )
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.list_contact_emails(db, "cnt-1", organization_id="org-1")
+
+    assert result[0].subject == "Follow-up"
+    assert result[0].body == "Checking in"
+    service.email_repository.list_by_recipient.assert_awaited_once_with(
+        db, organization_id="org-1", recipient_email="jane@acme.com"
     )
 
 

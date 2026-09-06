@@ -55,6 +55,20 @@ class DealRepository:
         )
         return list(result.scalars().all())
 
+    async def list_activities_by_contact(
+        self, db: AsyncSession, *, contact_id: str, organization_id: str
+    ) -> builtins.list[DealActivity]:
+        result = await db.execute(
+            select(DealActivity)
+            .join(Deal, Deal.id == DealActivity.deal_id)
+            .where(
+                Deal.contact_id == contact_id,
+                Deal.organization_id == organization_id,
+            )
+            .order_by(DealActivity.timestamp.desc())
+        )
+        return list(result.scalars().all())
+
     async def list_by_company(
         self, db: AsyncSession, *, company_id: str, organization_id: str
     ) -> builtins.list[Deal]:
