@@ -595,6 +595,22 @@ class CallLogResponse(CallLogBase):
     timestamp: str
 
 
+class ContactActivityResponse(BaseModel):
+    id: str
+    type: str
+    description: str
+    created_at: str
+
+
+class ContactEmailResponse(BaseModel):
+    id: str
+    from_email: str
+    to: list[str]
+    subject: str
+    body: str | None = None
+    sent_at: str
+
+
 # 12. Email & Inbox Schemas
 class EmailSendRequest(BaseModel):
     to: list[EmailStr]

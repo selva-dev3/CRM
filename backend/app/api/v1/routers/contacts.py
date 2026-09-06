@@ -2,21 +2,21 @@ from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
-from app.core.errors import APIException
 from app.db.session import get_db
 from app.models import User
 from app.schemas.crm_schemas import (
     BulkActionResponse,
     BulkDeleteRequest,
     CallLogResponse,
+    ContactActivityResponse,
     ContactAddressResponse,
     ContactAddressUpdate,
     ContactCreate,
+    ContactEmailResponse,
     ContactResponse,
     ContactUpdate,
     CustomFieldDefinition,
     DealResponse,
-    EmailResponse,
     MessageResponse,
     NoteResponse,
 )
@@ -245,6 +245,7 @@ async def get_contact_deals(
 
 @router.get(
     "/{contact_id}/activities",
+    response_model=list[ContactActivityResponse],
     summary="Get activity timeline for contact",
     dependencies=[Depends(require_permission("contacts:read"))],
 )
@@ -254,11 +255,8 @@ async def get_contact_activities(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    await contact_service.get_contact(db, contact_id, organization_id=organization_id)
-    raise APIException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        code="CONTACT_ACTIVITY_RELATION_UNAVAILABLE",
-        message="Contact activities are not available",
+    return await contact_service.list_contact_activities(
+        db, contact_id, organization_id=organization_id
     )
 
 
@@ -349,7 +347,7 @@ async def add_contact_note(
 
 @router.get(
     "/{contact_id}/emails",
-    response_model=list[EmailResponse],
+    response_model=list[ContactEmailResponse],
     summary="List emails linked to contact",
     dependencies=[Depends(require_permission("contacts:read"))],
 )
@@ -359,11 +357,8 @@ async def get_contact_emails(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    await contact_service.get_contact(db, contact_id, organization_id=organization_id)
-    raise APIException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        code="CONTACT_EMAIL_RELATION_UNAVAILABLE",
-        message="Contact email history is not available because emails are not linked to CRM entities",
+    return await contact_service.list_contact_emails(
+        db, contact_id, organization_id=organization_id
     )
 
 

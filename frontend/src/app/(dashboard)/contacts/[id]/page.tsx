@@ -428,8 +428,8 @@ export default function ContactDetailsPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {activities.map((act, idx: number) => (
-                <div key={idx} className="p-3 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between">
+              {activities.map((act) => (
+                <div key={act.id} className="p-3 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between">
                   <div>
                     <div className="font-semibold text-slate-900">{act.type || 'Activity Event'}</div>
                     <div className="text-slate-500 mt-0.5">{act.description || act.content || 'Contact updated'}</div>
@@ -517,14 +517,15 @@ export default function ContactDetailsPage() {
           <h2 className="text-sm font-bold text-slate-900">Email History</h2>
           {emails.length === 0 ? (
             <div className="p-6 bg-white rounded-xl border border-slate-200 text-xs text-slate-500">
-              No email messages sent or received.
+              No email messages sent to this contact.
             </div>
           ) : (
             <div className="space-y-2">
-              {emails.map((email, idx: number) => (
-                <div key={idx} className="p-4 bg-white rounded-xl border border-slate-200 text-xs space-y-1">
+              {emails.map((email) => (
+                <div key={email.id} className="p-4 bg-white rounded-xl border border-slate-200 text-xs space-y-1">
                   <div className="font-bold text-slate-900">{email.subject || 'Sales Outreach'}</div>
                   <div className="text-slate-600">{email.body_text || email.body || 'No preview body.'}</div>
+                  <div className="text-[11px] text-slate-400">{email.sent_at || 'Sent'}</div>
                 </div>
               ))}
             </div>
