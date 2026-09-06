@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { apiClient, ApiError } from './client';
-import { createSubscriptionCheckoutApi, validateSubscriptionRedirect, verifySubscriptionCheckoutApi, isSubscriptionCheckoutComplete, useVerifySubscriptionCheckoutQuery, redirectToSubscriptionCheckout } from './organizations';
+import { createSubscriptionCheckoutApi, validateSubscriptionRedirect, verifySubscriptionCheckoutApi, isSubscriptionCheckoutComplete, useVerifySubscriptionCheckoutQuery, redirectToSubscriptionCheckout, useResumeSubscriptionMutation } from './organizations';
 import { SUBSCRIPTION_POLL_WINDOW_MS, subscriptionOperationKey, useSubscriptionCheckout, useSubscriptionVerification } from './subscription-checkout';
 
 vi.mock('./client', async (importOriginal) => ({ ...await importOriginal<typeof import('./client')>(), apiClient: { post: vi.fn(), get: vi.fn() } }));
@@ -57,6 +57,30 @@ describe('subscription contract', () => {
 });
 
 describe('subscription hooks', () => {
+  it('resumes renewal through the existing API and invalidates subscription state', async () => {
+    const { client, wrapper } = setup();
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    vi.mocked(apiClient.post).mockResolvedValue({ status: 'success', message: 'Renewal enabled' });
+    const { result } = renderHook(() => useResumeSubscriptionMutation(), { wrapper });
+    await act(async () => { await result.current.mutateAsync(); });
+    expect(apiClient.post).toHaveBeenCalledWith('/organizations/subscription/resume');
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['organization-subscription'] });
+  });
+
+  it('keeps the same operation after configuration errors and requires administrator review', async () => {
+    const { wrapper } = setup();
+    vi.mocked(apiClient.post).mockRejectedValue(new ApiError('Ask an administrator to review billing.', 'http', 502, 'SUBSCRIPTION_PROVIDER_ERROR', { retryable: false }));
+    const { result } = renderHook(() => useSubscriptionCheckout(), { wrapper });
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    await act(async () => { await result.current.start('pro'); });
+    expect(result.current.requiresAdministratorReview).toBe(true);
+    const operation = result.current.operation;
+    expect(operation).not.toBeNull();
+    expect(result.current.error).toBe('Ask an administrator to review billing.');
+    await act(async () => { await result.current.start('pro'); });
+    expect(result.current.operation).toEqual(operation);
+    expect(JSON.parse(sessionStorage.getItem(subscriptionOperationKey('user-1', 'org-1')) ?? 'null')).toEqual(operation);
+  });
   it('clears a server-confirmed expired operation and uses a fresh UUID for another plan', async () => {
     const key = subscriptionOperationKey('user-1', 'org-1');
     const originalKey = crypto.randomUUID();

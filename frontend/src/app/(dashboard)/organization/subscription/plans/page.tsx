@@ -299,7 +299,7 @@ function SubscriptionPlansContent() {
                   onClick={() => void checkout.start(checkout.operation?.payload.plan_slug || selectedPlan?.slug || '')}
                   className="w-full sm:w-auto"
                 >
-                  {checkout.isPending ? 'Opening Stripe…' : checkout.operation ? 'Retry subscription request' : 'Continue with Stripe'}
+                  {checkout.isPending ? 'Opening Stripe…' : checkout.requiresAdministratorReview ? 'Retry after billing is corrected' : checkout.operation ? 'Retry subscription request' : 'Continue with Stripe'}
                 </Button>
               </div>
             </Card>

@@ -2,12 +2,15 @@
 
 import asyncio
 import importlib
+import re
 from typing import Any
 
 from app.core.config import settings
 from app.core.errors import APIException
+from app.core.logging import get_logger
 
 SCOPE = "crm_organization_subscription"
+logger = get_logger(__name__)
 
 
 class SubscriptionStripeProvider:
@@ -32,10 +35,53 @@ class SubscriptionStripeProvider:
             )
             return result.to_dict() if hasattr(result, "to_dict") else dict(result)
         except sdk.StripeError as exc:
+            # Never log the exception text, headers, arguments, or provider body:
+            # they can contain credentials or customer data.
+            raw_code = getattr(exc, "code", None)
+            error_code = (
+                raw_code
+                if isinstance(raw_code, str) and re.fullmatch(r"[a-z_]{1,80}", raw_code)
+                else "unknown"
+            )
+            raw_request = getattr(exc, "request_id", None)
+            request_id = (
+                raw_request
+                if isinstance(raw_request, str)
+                and re.fullmatch(r"req_[A-Za-z0-9]{1,100}", raw_request)
+                else None
+            )
+            raw_status = getattr(exc, "http_status", None)
+            http_status = (
+                raw_status if type(raw_status) is int and 100 <= raw_status <= 599 else None
+            )
+            retryable = http_status is None or http_status == 429 or http_status >= 500
+            message = "Subscription billing requires administrator review before retrying."
+            if retryable:
+                message = (
+                    "Subscription billing is temporarily unavailable; retry the same operation."
+                )
+            elif http_status in {401, 403}:
+                message = (
+                    "Subscription billing credentials or permissions require administrator review."
+                )
+            elif error_code == "resource_missing":
+                message = "A subscription billing resource was not found. Ask an administrator to verify the Stripe account and test/live mode."
+            elif resource == "billing_portal.Session":
+                message = "Subscription portal configuration or the requested plan change requires administrator review."
+            logger.warning(
+                "Subscription provider failure operation=%s.%s code=%s http_status=%s stripe_request_id=%s retryable=%s",
+                resource,
+                method,
+                error_code,
+                http_status,
+                request_id,
+                retryable,
+            )
             raise APIException(
-                message="Subscription billing provider could not complete the request; retry the same operation",
+                message=message,
                 code="SUBSCRIPTION_PROVIDER_ERROR",
                 status_code=502,
+                fields={"retryable": retryable, "provider_request_id": request_id},
             ) from exc
 
     async def ensure_price(self, *, plan_slug: str, name: str, amount_minor: int) -> dict:

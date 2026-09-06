@@ -100,6 +100,10 @@ export interface OrganizationSubscription {
   billing_cycle: string;
   amount: number;
   next_billing: string | null;
+  status?: string;
+  auto_renew?: boolean;
+  provider_linked?: boolean;
+  current_period_end?: string | null;
 }
 
 export interface CreateSubscriptionCheckoutPayload {
@@ -351,6 +355,16 @@ export function useCancelSubscriptionMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: cancelOrganizationSubscriptionApi,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['organization-subscription'] });
+    },
+  });
+}
+
+export function useResumeSubscriptionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiClient.post<{ message: string; status: string }>('/organizations/subscription/resume'),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['organization-subscription'] });
     },

@@ -19,6 +19,75 @@ def provider(monkeypatch):
     return SubscriptionStripeProvider()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "http_status,code,resource,retryable,message",
+    [
+        (401, None, "Subscription", False, "credentials or permissions"),
+        (403, None, "Subscription", False, "credentials or permissions"),
+        (404, "resource_missing", "Subscription", False, "test/live mode"),
+        (400, None, "billing_portal.Session", False, "portal configuration"),
+        (400, "parameter_invalid_integer", "Subscription", False, "administrator review"),
+        (429, None, "Subscription", True, "retry the same operation"),
+        (503, None, "Subscription", True, "retry the same operation"),
+        (None, None, "Subscription", True, "retry the same operation"),
+    ],
+)
+async def test_provider_errors_are_actionable_without_sensitive_data(
+    provider, monkeypatch, caplog, http_status, code, resource, retryable, message
+):
+    class StripeError(Exception):
+        pass
+
+    failure = StripeError("credential-and-customer-data-must-not-appear")
+    failure.http_status = http_status
+    failure.code = code
+    failure.request_id = "req_TestRequest123"
+    endpoint = SimpleNamespace(retrieve=Mock(side_effect=failure))
+    sdk = SimpleNamespace(
+        StripeError=StripeError,
+        Subscription=endpoint,
+        billing_portal=SimpleNamespace(Session=endpoint),
+    )
+    monkeypatch.setattr(provider, "_sdk", lambda: sdk)
+    test_key = secrets.token_hex(16)
+    monkeypatch.setattr(module, "settings", SimpleNamespace(STRIPE_SECRET_KEY=test_key))
+    with pytest.raises(APIException) as exc:
+        await provider._call(resource, "retrieve", "private-customer-reference")
+    assert exc.value.code == "SUBSCRIPTION_PROVIDER_ERROR"
+    assert exc.value.status_code == 502
+    assert message in exc.value.message
+    assert exc.value.fields == {"retryable": retryable, "provider_request_id": "req_TestRequest123"}
+    assert f"operation={resource}.retrieve" in caplog.text
+    assert "req_TestRequest123" in caplog.text
+    for sensitive in [str(failure), "private-customer-reference", test_key]:
+        assert sensitive not in caplog.text
+        assert sensitive not in str(exc.value.fields)
+
+
+@pytest.mark.asyncio
+async def test_provider_diagnostics_reject_untrusted_metadata(provider, monkeypatch, caplog):
+    class StripeError(Exception):
+        http_status = "unsafe-status"
+        code = "unsafe-code\nsecret"
+        request_id = "unsafe-request\nsecret"
+
+    sdk = SimpleNamespace(
+        StripeError=StripeError,
+        Subscription=SimpleNamespace(retrieve=Mock(side_effect=StripeError("private-body"))),
+    )
+    monkeypatch.setattr(provider, "_sdk", lambda: sdk)
+    monkeypatch.setattr(
+        module, "settings", SimpleNamespace(STRIPE_SECRET_KEY=secrets.token_hex(16))
+    )
+    with pytest.raises(APIException) as exc:
+        await provider.retrieve_subscription("private-reference")
+    assert exc.value.fields["provider_request_id"] is None
+    assert "code=unknown" in caplog.text
+    assert "unsafe" not in caplog.text
+    assert "secret" not in caplog.text
+
+
 def test_missing_configuration_fails_before_sdk_import(provider, monkeypatch):
     importer = Mock()
     monkeypatch.setattr(module.importlib, "import_module", importer)
