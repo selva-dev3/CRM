@@ -1,7 +1,12 @@
-﻿import { useQuery, useMutation } from '@tanstack/react-query';
+﻿import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
-import type { CompanyHierarchy, RelatedRecord } from '@/lib/types';
+import type { CompanyHierarchy } from '@/lib/types';
 import type { CustomFieldValue } from '@/lib/api/custom-fields';
+import type { DealItem } from '@/lib/api/deals';
+import type { DocumentItem } from '@/lib/api/documents';
+import type { InvoiceItem } from '@/lib/api/invoices';
+import type { NoteItem } from '@/lib/api/notes';
+import type { QuoteItem } from '@/lib/api/quotes';
 
 export interface CompanyItem {
   id: string;
@@ -39,6 +44,33 @@ export interface CompaniesPage {
   items: CompanyItem[];
   total: number;
 }
+
+export interface CompanyContactItem {
+  id: string;
+  name?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  email: string;
+  phone?: string | null;
+  position?: string | null;
+  company_id?: string | null;
+  created_at?: string | null;
+}
+
+export const companyKeys = {
+  list: (page: number, limit: number, search?: string) =>
+    ['companies', page, limit, search] as const,
+  page: (page: number, limit: number, search?: string) =>
+    ['companies-page', page, limit, search] as const,
+  detail: (id: string) => ['company', id] as const,
+  contacts: (id: string) => ['company-contacts', id] as const,
+  deals: (id: string) => ['company-deals', id] as const,
+  notes: (id: string) => ['company-notes', id] as const,
+  quotes: (id: string) => ['company-quotes', id] as const,
+  invoices: (id: string) => ['company-invoices', id] as const,
+  documents: (id: string) => ['company-documents', id] as const,
+  hierarchy: (id: string) => ['company-hierarchy', id] as const,
+};
 
 // API Functions
 export async function fetchCompaniesPageApi(
@@ -112,34 +144,34 @@ export async function getCompanyApi(id: string): Promise<CompanyItem> {
   return apiClient.get<CompanyItem>(`/companies/${id}`);
 }
 
-export async function getCompanyContactsApi(id: string): Promise<RelatedRecord[]> {
-  return apiClient.get<RelatedRecord[]>(`/companies/${id}/contacts`);
+export async function getCompanyContactsApi(id: string): Promise<CompanyContactItem[]> {
+  return apiClient.get<CompanyContactItem[]>(`/companies/${id}/contacts`);
 }
 
-export async function getCompanyDealsApi(id: string): Promise<RelatedRecord[]> {
-  return apiClient.get<RelatedRecord[]>(`/companies/${id}/deals`);
+export async function getCompanyDealsApi(id: string): Promise<DealItem[]> {
+  return apiClient.get<DealItem[]>(`/companies/${id}/deals`);
 }
 
-export async function getCompanyNotesApi(id: string): Promise<RelatedRecord[]> {
-  return apiClient.get<RelatedRecord[]>(`/companies/${id}/notes`);
+export async function getCompanyNotesApi(id: string): Promise<NoteItem[]> {
+  return apiClient.get<NoteItem[]>(`/companies/${id}/notes`);
 }
 
-export async function addCompanyNoteApi(payload: { id: string; content: string }): Promise<RelatedRecord> {
-  return apiClient.post<RelatedRecord>(`/companies/${payload.id}/notes?content=${encodeURIComponent(payload.content)}`, {
+export async function addCompanyNoteApi(payload: { id: string; content: string }): Promise<NoteItem> {
+  return apiClient.post<NoteItem>(`/companies/${payload.id}/notes?content=${encodeURIComponent(payload.content)}`, {
     content: payload.content,
   });
 }
 
-export async function getCompanyQuotesApi(id: string): Promise<RelatedRecord[]> {
-  return apiClient.get<RelatedRecord[]>(`/companies/${id}/quotes`);
+export async function getCompanyQuotesApi(id: string): Promise<QuoteItem[]> {
+  return apiClient.get<QuoteItem[]>(`/companies/${id}/quotes`);
 }
 
-export async function getCompanyInvoicesApi(id: string): Promise<RelatedRecord[]> {
-  return apiClient.get<RelatedRecord[]>(`/companies/${id}/invoices`);
+export async function getCompanyInvoicesApi(id: string): Promise<InvoiceItem[]> {
+  return apiClient.get<InvoiceItem[]>(`/companies/${id}/invoices`);
 }
 
-export async function getCompanyDocumentsApi(id: string): Promise<RelatedRecord[]> {
-  return apiClient.get<RelatedRecord[]>(`/companies/${id}/documents`);
+export async function getCompanyDocumentsApi(id: string): Promise<DocumentItem[]> {
+  return apiClient.get<DocumentItem[]>(`/companies/${id}/documents`);
 }
 
 export async function getCompanyHierarchyApi(id: string): Promise<CompanyHierarchy | null> {
@@ -149,7 +181,7 @@ export async function getCompanyHierarchyApi(id: string): Promise<CompanyHierarc
 // TanStack Query & Mutation Hooks
 export function useCompaniesQuery(page = 1, limit = 15, search?: string) {
   return useQuery({
-    queryKey: ['companies', page, limit, search],
+    queryKey: companyKeys.list(page, limit, search),
     queryFn: () => fetchCompaniesApi(page, limit, search),
     placeholderData: (previousData) => previousData,
   });
@@ -157,7 +189,7 @@ export function useCompaniesQuery(page = 1, limit = 15, search?: string) {
 
 export function useCompaniesPageQuery(page = 1, limit = 15, search?: string) {
   return useQuery({
-    queryKey: ['companies-page', page, limit, search],
+    queryKey: companyKeys.page(page, limit, search),
     queryFn: () => fetchCompaniesPageApi(page, limit, search),
     placeholderData: (previousData) => previousData,
   });
@@ -165,9 +197,78 @@ export function useCompaniesPageQuery(page = 1, limit = 15, search?: string) {
 
 export function useCompanyQuery(id: string) {
   return useQuery({
-    queryKey: ['company', id],
+    queryKey: companyKeys.detail(id),
     queryFn: () => getCompanyApi(id),
     enabled: !!id,
+  });
+}
+
+export function useCompanyContactsQuery(id: string, enabled = true) {
+  return useQuery({
+    queryKey: companyKeys.contacts(id),
+    queryFn: () => getCompanyContactsApi(id),
+    enabled: Boolean(id) && enabled,
+  });
+}
+
+export function useCompanyDealsQuery(id: string, enabled = true) {
+  return useQuery({
+    queryKey: companyKeys.deals(id),
+    queryFn: () => getCompanyDealsApi(id),
+    enabled: Boolean(id) && enabled,
+  });
+}
+
+export function useCompanyNotesQuery(id: string, enabled = true) {
+  return useQuery({
+    queryKey: companyKeys.notes(id),
+    queryFn: () => getCompanyNotesApi(id),
+    enabled: Boolean(id) && enabled,
+  });
+}
+
+export function useCompanyQuotesQuery(id: string, enabled = true) {
+  return useQuery({
+    queryKey: companyKeys.quotes(id),
+    queryFn: () => getCompanyQuotesApi(id),
+    enabled: Boolean(id) && enabled,
+  });
+}
+
+export function useCompanyInvoicesQuery(id: string, enabled = true) {
+  return useQuery({
+    queryKey: companyKeys.invoices(id),
+    queryFn: () => getCompanyInvoicesApi(id),
+    enabled: Boolean(id) && enabled,
+  });
+}
+
+export function useCompanyDocumentsQuery(id: string, enabled = true) {
+  return useQuery({
+    queryKey: companyKeys.documents(id),
+    queryFn: () => getCompanyDocumentsApi(id),
+    enabled: Boolean(id) && enabled,
+  });
+}
+
+export function useCompanyHierarchyQuery(id: string, enabled = true) {
+  return useQuery({
+    queryKey: companyKeys.hierarchy(id),
+    queryFn: () => getCompanyHierarchyApi(id),
+    enabled: Boolean(id) && enabled,
+  });
+}
+
+export function useAddCompanyNoteMutation(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (content: string) => addCompanyNoteApi({ id, content }),
+    onSuccess: (note) => {
+      queryClient.setQueryData<NoteItem[]>(companyKeys.notes(id), (current = []) => [
+        note,
+        ...current,
+      ]);
+    },
   });
 }
 

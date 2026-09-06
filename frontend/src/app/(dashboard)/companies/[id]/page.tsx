@@ -20,8 +20,6 @@ import {
   Plus,
   CheckCircle2,
   AlertCircle,
-  Mail,
-  Phone,
   Calendar
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -31,19 +29,28 @@ import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
 import { PageTabs } from '@/components/common/page-tabs';
 import {
+  CompanyContactsTable,
+  CompanyDealsTable,
+  CompanyDocumentsTable,
+  CompanyInvoicesTable,
+  CompanyNotesTable,
+  CompanyQuotesTable,
+  CompanyRelationshipError,
+} from '@/components/features/companies/company-relationship-tables';
+import {
   useCompanyQuery,
   useUpdateCompanyMutation,
   useDeleteCompanyMutation,
-  getCompanyContactsApi,
-  getCompanyDealsApi,
-  getCompanyNotesApi,
-  addCompanyNoteApi,
-  getCompanyQuotesApi,
-  getCompanyInvoicesApi,
-  getCompanyDocumentsApi,
-  getCompanyHierarchyApi
+  useCompanyContactsQuery,
+  useCompanyDealsQuery,
+  useCompanyNotesQuery,
+  useCompanyQuotesQuery,
+  useCompanyInvoicesQuery,
+  useCompanyDocumentsQuery,
+  useCompanyHierarchyQuery,
+  useAddCompanyNoteMutation,
 } from '@/lib/api/companies';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { ApiError } from '@/lib/api/client';
 import { CustomFieldValues } from '@/components/common/custom-field-values';
 import { CustomFields } from '@/components/common/custom-fields';
 import {
@@ -54,7 +61,6 @@ import {
 export default function CompanyDetailsPage() {
   const params = useParams();
   const router = useRouter();
-  const queryClient = useQueryClient();
 
   const companyId = (params.id as string) || '';
 
@@ -89,73 +95,44 @@ export default function CompanyDetailsPage() {
     isError: isCustomFieldsError,
   } = useEntityCustomFieldsQuery('Company');
 
-  // Sub-resource queries
-  const { data: contacts = [], isError: isContactsError } = useQuery({
-    queryKey: ['company-contacts', companyId],
-    queryFn: () => getCompanyContactsApi(companyId),
-    enabled: !!companyId,
-  });
+  // Relationship data is loaded only when its tab is active. A failure in one
+  // relationship must not put every other tab into an error state.
+  const contactsQuery = useCompanyContactsQuery(companyId, activeTab === 'contacts');
+  const dealsQuery = useCompanyDealsQuery(companyId, activeTab === 'deals');
+  const notesQuery = useCompanyNotesQuery(companyId, activeTab === 'notes');
+  const quotesQuery = useCompanyQuotesQuery(companyId, activeTab === 'quotes');
+  const invoicesQuery = useCompanyInvoicesQuery(companyId, activeTab === 'invoices');
+  const documentsQuery = useCompanyDocumentsQuery(companyId, activeTab === 'documents');
+  const hierarchyQuery = useCompanyHierarchyQuery(companyId, activeTab === 'hierarchy');
 
-  const { data: deals = [], isError: isDealsError } = useQuery({
-    queryKey: ['company-deals', companyId],
-    queryFn: () => getCompanyDealsApi(companyId),
-    enabled: !!companyId,
-  });
-
-  const { data: notes = [], isError: isNotesError, refetch: refetchNotes } = useQuery({
-    queryKey: ['company-notes', companyId],
-    queryFn: () => getCompanyNotesApi(companyId),
-    enabled: !!companyId,
-  });
-
-  const { data: quotes = [], isError: isQuotesError } = useQuery({
-    queryKey: ['company-quotes', companyId],
-    queryFn: () => getCompanyQuotesApi(companyId),
-    enabled: !!companyId,
-  });
-
-  const { data: invoices = [], isError: isInvoicesError } = useQuery({
-    queryKey: ['company-invoices', companyId],
-    queryFn: () => getCompanyInvoicesApi(companyId),
-    enabled: !!companyId,
-  });
-
-  const { data: documents = [], isError: isDocumentsError } = useQuery({
-    queryKey: ['company-documents', companyId],
-    queryFn: () => getCompanyDocumentsApi(companyId),
-    enabled: !!companyId,
-  });
-
-  const { data: hierarchy, isError: isHierarchyError } = useQuery({
-    queryKey: ['company-hierarchy', companyId],
-    queryFn: () => getCompanyHierarchyApi(companyId),
-    enabled: !!companyId,
-  });
+  const contacts = contactsQuery.data ?? [];
+  const deals = dealsQuery.data ?? [];
+  const notes = notesQuery.data ?? [];
+  const quotes = quotesQuery.data ?? [];
+  const invoices = invoicesQuery.data ?? [];
+  const documents = documentsQuery.data ?? [];
+  const hierarchy = hierarchyQuery.data;
 
   // Mutations
   const updateCompanyMutation = useUpdateCompanyMutation();
   const deleteCompanyMutation = useDeleteCompanyMutation();
-  const hasRelationshipError =
-    isContactsError ||
-    isDealsError ||
-    isNotesError ||
-    isQuotesError ||
-    isInvoicesError ||
-    isDocumentsError ||
-    isHierarchyError;
+  const addNoteMutation = useAddCompanyNoteMutation(companyId);
+  const isDocumentsUnavailable =
+    documentsQuery.error instanceof ApiError &&
+    documentsQuery.error.code === 'COMPANY_DOCUMENT_RELATION_UNAVAILABLE';
 
-  const addNoteMutation = useMutation({
-    mutationFn: (content: string) => addCompanyNoteApi({ id: companyId, content }),
-    onSuccess: () => {
-      setSuccessMessage('Company note added successfully.');
-      setNewNoteContent('');
-      refetchNotes();
-      queryClient.invalidateQueries({ queryKey: ['company-notes', companyId] });
-    },
-    onError: () => {
-      setErrorMessage('Failed to add company note.');
-    },
-  });
+  const handleAddNote = () => {
+    setErrorMessage(null);
+    addNoteMutation.mutate(newNoteContent.trim(), {
+      onSuccess: () => {
+        setSuccessMessage('Company note added successfully.');
+        setNewNoteContent('');
+      },
+      onError: () => {
+        setErrorMessage('Failed to add company note.');
+      },
+    });
+  };
 
   const openEditModal = () => {
     if (!company) return;
@@ -337,61 +314,32 @@ export default function CompanyDetailsPage() {
         value={activeTab}
         onValueChange={setActiveTab}
         tabs={[
-          { value: 'contacts', icon: <User className="size-4" />, label: `Contacts (${contacts.length})` },
-          { value: 'deals', icon: <Briefcase className="size-4" />, label: `Deals (${deals.length})` },
-          { value: 'notes', icon: <FileText className="size-4" />, label: `Notes (${notes.length})` },
-          { value: 'quotes', icon: <DollarSign className="size-4" />, label: `Quotes (${quotes.length})` },
-          { value: 'invoices', icon: <FileSpreadsheet className="size-4" />, label: `Invoices (${invoices.length})` },
-          { value: 'documents', icon: <Folder className="size-4" />, label: `Documents (${documents.length})` },
+          { value: 'contacts', icon: <User className="size-4" />, label: contactsQuery.data ? `Contacts (${contacts.length})` : 'Contacts' },
+          { value: 'deals', icon: <Briefcase className="size-4" />, label: dealsQuery.data ? `Deals (${deals.length})` : 'Deals' },
+          { value: 'notes', icon: <FileText className="size-4" />, label: notesQuery.data ? `Notes (${notes.length})` : 'Notes' },
+          { value: 'quotes', icon: <DollarSign className="size-4" />, label: quotesQuery.data ? `Quotes (${quotes.length})` : 'Quotes' },
+          { value: 'invoices', icon: <FileSpreadsheet className="size-4" />, label: invoicesQuery.data ? `Invoices (${invoices.length})` : 'Invoices' },
+          { value: 'documents', icon: <Folder className="size-4" />, label: documentsQuery.data ? `Documents (${documents.length})` : 'Documents' },
           { value: 'hierarchy', icon: <Network className="size-4" />, label: 'Corporate Hierarchy' },
         ]}
         listClassName="border-b border-slate-200"
       />
 
-      {hasRelationshipError && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs font-medium text-amber-900">
-          Some related company records could not be loaded. Retry the page to try again.
-        </div>
-      )}
-
       {/* TAB CONTENT: Contacts */}
       {activeTab === 'contacts' && (
         <div className="space-y-4">
           <h2 className="text-sm font-bold text-slate-900">Associated Contact Profiles</h2>
-          {contacts.length === 0 ? (
-            <div className="p-6 bg-white rounded-xl border border-slate-200 text-xs text-slate-500">
-              No contacts associated with this company profile yet.
-            </div>
+          {contactsQuery.isError ? (
+            <CompanyRelationshipError
+              resourceName="Contacts"
+              onRetry={() => void contactsQuery.refetch()}
+            />
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {contacts.map((contact) => (
-                <div key={contact.id} className="p-4 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-blue-100 text-blue-700 font-bold flex items-center justify-center text-xs">
-                      {contact.name ? contact.name.charAt(0).toUpperCase() : 'C'}
-                    </div>
-                    <div>
-                      <Link href={`/contacts/${contact.id}`} className="font-bold text-slate-900 hover:text-blue-600 hover:underline">
-                        {contact.name || `${contact.first_name || ''} ${contact.last_name || ''}`}
-                      </Link>
-                      <div className="text-slate-500 text-[11px]">{contact.position || contact.job_title || 'Representative'}</div>
-                    </div>
-                  </div>
-                  <div className="text-right space-y-0.5">
-                    <div className="text-slate-600 flex items-center gap-1 justify-end">
-                      <Mail className="w-3 h-3 text-slate-400" />
-                      <span>{contact.email}</span>
-                    </div>
-                    {contact.phone && (
-                      <div className="text-slate-400 text-[11px] flex items-center gap-1 justify-end">
-                        <Phone className="w-3 h-3 text-slate-400" />
-                        <span>{contact.phone}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
+            <CompanyContactsTable
+              data={contacts}
+              isLoading={contactsQuery.isLoading}
+              onRowClick={(contact) => router.push(`/contacts/${contact.id}`)}
+            />
           )}
         </div>
       )}
@@ -400,24 +348,17 @@ export default function CompanyDetailsPage() {
       {activeTab === 'deals' && (
         <div className="space-y-4">
           <h2 className="text-sm font-bold text-slate-900">Linked Sales Pipeline Deals</h2>
-          {deals.length === 0 ? (
-            <div className="p-6 bg-white rounded-xl border border-slate-200 text-xs text-slate-500">
-              No deals linked to this company profile yet.
-            </div>
+          {dealsQuery.isError ? (
+            <CompanyRelationshipError
+              resourceName="Deals"
+              onRetry={() => void dealsQuery.refetch()}
+            />
           ) : (
-            <div className="space-y-2">
-              {deals.map((deal) => (
-                <div key={deal.id} className="p-4 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between">
-                  <div>
-                    <div className="font-bold text-slate-900">{deal.title}</div>
-                    <div className="text-slate-500 mt-0.5 font-medium">Stage: {deal.stage}</div>
-                  </div>
-                  <div className="text-right font-bold text-blue-700 text-sm">
-                    ${deal.amount ? deal.amount.toLocaleString() : '0'}
-                  </div>
-                </div>
-              ))}
-            </div>
+            <CompanyDealsTable
+              data={deals}
+              isLoading={dealsQuery.isLoading}
+              onRowClick={(deal) => router.push(`/deals/${deal.id}`)}
+            />
           )}
         </div>
       )}
@@ -437,7 +378,7 @@ export default function CompanyDetailsPage() {
             <div className="flex justify-end">
               <Button
                 size="sm"
-                onClick={() => addNoteMutation.mutate(newNoteContent)}
+                onClick={handleAddNote}
                 disabled={!newNoteContent.trim() || addNoteMutation.isPending}
                 className="bg-blue-600 text-white font-semibold text-xs gap-1 cursor-pointer"
               >
@@ -448,19 +389,13 @@ export default function CompanyDetailsPage() {
           </div>
 
           <h2 className="text-sm font-bold text-slate-900 pt-2">Company Notes Log</h2>
-          {notes.length === 0 ? (
-            <div className="p-6 bg-white rounded-xl border border-slate-200 text-xs text-slate-500">
-              No notes logged yet for this company. Add your first note above.
-            </div>
+          {notesQuery.isError ? (
+            <CompanyRelationshipError
+              resourceName="Notes"
+              onRetry={() => void notesQuery.refetch()}
+            />
           ) : (
-            <div className="space-y-2">
-              {notes.map((note, idx: number) => (
-                <div key={idx} className="p-4 bg-white rounded-xl border border-slate-200 text-xs space-y-1">
-                  <div className="font-medium text-slate-900">{note.content}</div>
-                  <div className="text-[10px] text-slate-400">{note.created_at || 'Saved'}</div>
-                </div>
-              ))}
-            </div>
+            <CompanyNotesTable data={notes} isLoading={notesQuery.isLoading} />
           )}
         </div>
       )}
@@ -469,24 +404,17 @@ export default function CompanyDetailsPage() {
       {activeTab === 'quotes' && (
         <div className="space-y-4">
           <h2 className="text-sm font-bold text-slate-900">Generated Price Quotes</h2>
-          {quotes.length === 0 ? (
-            <div className="p-6 bg-white rounded-xl border border-slate-200 text-xs text-slate-500">
-              No quotes generated for this company yet.
-            </div>
+          {quotesQuery.isError ? (
+            <CompanyRelationshipError
+              resourceName="Quotes"
+              onRetry={() => void quotesQuery.refetch()}
+            />
           ) : (
-            <div className="space-y-2">
-              {quotes.map((quote, idx: number) => (
-                <div key={idx} className="p-4 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between">
-                  <div>
-                    <div className="font-bold text-slate-900">{quote.title || `Quote #${quote.id}`}</div>
-                    <div className="text-slate-500 text-[11px] font-medium">Status: {quote.status || 'Draft'}</div>
-                  </div>
-                  <div className="text-right font-bold text-emerald-700 text-sm">
-                    ${quote.total_amount ? quote.total_amount.toLocaleString() : '0'}
-                  </div>
-                </div>
-              ))}
-            </div>
+            <CompanyQuotesTable
+              data={quotes}
+              isLoading={quotesQuery.isLoading}
+              onRowClick={(quote) => router.push(`/quotes/${quote.id}`)}
+            />
           )}
         </div>
       )}
@@ -495,24 +423,17 @@ export default function CompanyDetailsPage() {
       {activeTab === 'invoices' && (
         <div className="space-y-4">
           <h2 className="text-sm font-bold text-slate-900">Billed Invoices</h2>
-          {invoices.length === 0 ? (
-            <div className="p-6 bg-white rounded-xl border border-slate-200 text-xs text-slate-500">
-              No invoices generated or billed to this company.
-            </div>
+          {invoicesQuery.isError ? (
+            <CompanyRelationshipError
+              resourceName="Invoices"
+              onRetry={() => void invoicesQuery.refetch()}
+            />
           ) : (
-            <div className="space-y-2">
-              {invoices.map((inv, idx: number) => (
-                <div key={idx} className="p-4 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between">
-                  <div>
-                    <div className="font-bold text-slate-900">Invoice #{inv.number || inv.id}</div>
-                    <div className="text-slate-500 text-[11px] font-medium">Status: {inv.status || 'Unpaid'}</div>
-                  </div>
-                  <div className="text-right font-bold text-blue-700 text-sm">
-                    ${inv.amount_due ? inv.amount_due.toLocaleString() : '0'}
-                  </div>
-                </div>
-              ))}
-            </div>
+            <CompanyInvoicesTable
+              data={invoices}
+              isLoading={invoicesQuery.isLoading}
+              onRowClick={(invoice) => router.push(`/invoices/${invoice.id}`)}
+            />
           )}
         </div>
       )}
@@ -521,27 +442,14 @@ export default function CompanyDetailsPage() {
       {activeTab === 'documents' && (
         <div className="space-y-4">
           <h2 className="text-sm font-bold text-slate-900">Attached Documents & Files</h2>
-          {documents.length === 0 ? (
-            <div className="p-6 bg-white rounded-xl border border-slate-200 text-xs text-slate-500">
-              No files or contract documents uploaded for this company.
-            </div>
+          {documentsQuery.isError ? (
+            <CompanyRelationshipError
+              resourceName="Documents"
+              unavailable={isDocumentsUnavailable}
+              onRetry={() => void documentsQuery.refetch()}
+            />
           ) : (
-            <div className="space-y-2">
-              {documents.map((doc, idx: number) => (
-                <div key={idx} className="p-4 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <Folder className="w-4 h-4 text-blue-600" />
-                    <div>
-                      <div className="font-bold text-slate-900">{doc.name || 'Contract Document'}</div>
-                      <div className="text-slate-400 text-[10px]">{doc.file_type || 'PDF Document'}</div>
-                    </div>
-                  </div>
-                  <a href={doc.file_url || '#'} target="_blank" rel="noreferrer" className="text-blue-600 font-semibold hover:underline">
-                    Download
-                  </a>
-                </div>
-              ))}
-            </div>
+            <CompanyDocumentsTable data={documents} isLoading={documentsQuery.isLoading} />
           )}
         </div>
       )}
@@ -550,26 +458,37 @@ export default function CompanyDetailsPage() {
       {activeTab === 'hierarchy' && (
         <div className="space-y-4">
           <h2 className="text-sm font-bold text-slate-900">Corporate Structure & Subsidiaries</h2>
-          <div className="p-6 bg-white rounded-2xl border border-slate-200 space-y-4 text-xs">
-            <div className="flex items-center gap-2 font-semibold text-slate-800">
-              <Network className="w-4 h-4 text-blue-600" />
-              <span>Parent Organization: {hierarchy?.parent_company ? hierarchy.parent_company.name : 'Independent Account (No Parent)'}</span>
+          {hierarchyQuery.isError ? (
+            <CompanyRelationshipError
+              resourceName="Corporate hierarchy"
+              onRetry={() => void hierarchyQuery.refetch()}
+            />
+          ) : hierarchyQuery.isLoading ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 text-xs font-medium text-slate-500">
+              Loading corporate hierarchy...
             </div>
-            <div className="border-t border-slate-100 pt-3">
-              <h3 className="font-semibold text-slate-700 mb-2">Subsidiary Entities ({hierarchy?.subsidiaries?.length || 0})</h3>
-              {!hierarchy?.subsidiaries || hierarchy.subsidiaries.length === 0 ? (
-                <p className="text-slate-400">No child corporate entities registered under this account.</p>
-              ) : (
-                <div className="space-y-1.5">
-                  {hierarchy.subsidiaries.map((sub, idx: number) => (
-                    <div key={idx} className="p-3 bg-slate-50 rounded-lg border border-slate-200 font-semibold text-slate-900">
-                      {sub.name} ({sub.domain || 'Subsidiary Branch'})
-                    </div>
-                  ))}
-                </div>
-              )}
+          ) : (
+            <div className="p-6 bg-white rounded-2xl border border-slate-200 space-y-4 text-xs">
+              <div className="flex items-center gap-2 font-semibold text-slate-800">
+                <Network className="w-4 h-4 text-blue-600" />
+                <span>Parent Organization: {hierarchy?.parent_company ? hierarchy.parent_company.name : 'Independent Account (No Parent)'}</span>
+              </div>
+              <div className="border-t border-slate-100 pt-3">
+                <h3 className="font-semibold text-slate-700 mb-2">Subsidiary Entities ({hierarchy?.subsidiaries?.length || 0})</h3>
+                {!hierarchy?.subsidiaries || hierarchy.subsidiaries.length === 0 ? (
+                  <p className="text-slate-400">No child corporate entities registered under this account.</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {hierarchy.subsidiaries.map((sub) => (
+                      <div key={sub.id} className="p-3 bg-slate-50 rounded-lg border border-slate-200 font-semibold text-slate-900">
+                        {sub.name} ({sub.domain || 'Subsidiary Branch'})
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       )}
 
