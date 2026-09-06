@@ -2,7 +2,6 @@ import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
-from typing import TypedDict
 
 from fastapi import HTTPException, status
 from sqlalchemy import asc, desc, func, or_, select
@@ -37,59 +36,27 @@ from app.services.email_service import (
     send_organization_onboarding_invite_email,
     send_user_invite_email,
 )
+from app.services.subscription_plan_service import (
+    FREE_PLAN_SLUG,
+    apply_plan_to_organization,
+    build_free_subscription,
+)
 
 
-class InvitationPlanInfo(TypedDict):
-    name: str
-    slug: str
-    price_monthly: int
-    max_users: int
-    max_storage_gb: int
-    ai_credits: int
-
-
-DEFAULT_PLANS_FALLBACK: dict[str, InvitationPlanInfo] = {
-    "free": {
-        "name": "Free",
-        "slug": "free",
-        "price_monthly": 0,
-        "max_users": 3,
-        "max_storage_gb": 5,
-        "ai_credits": 50,
-    },
-    "starter": {
-        "name": "Starter",
-        "slug": "starter",
-        "price_monthly": 999,
-        "max_users": 10,
-        "max_storage_gb": 20,
-        "ai_credits": 200,
-    },
-    "professional": {
-        "name": "Professional",
-        "slug": "professional",
-        "price_monthly": 2999,
-        "max_users": 25,
-        "max_storage_gb": 50,
-        "ai_credits": 500,
-    },
-    "business": {
-        "name": "Business",
-        "slug": "business",
-        "price_monthly": 7999,
-        "max_users": 50,
-        "max_storage_gb": 100,
-        "ai_credits": 1000,
-    },
-    "enterprise": {
-        "name": "Enterprise",
-        "slug": "enterprise",
-        "price_monthly": 19999,
-        "max_users": 100,
-        "max_storage_gb": 500,
-        "ai_credits": -1,
-    },
-}
+async def _require_free_plan(db: AsyncSession) -> SubscriptionPlan:
+    plan = await db.scalar(
+        select(SubscriptionPlan).where(
+            func.lower(SubscriptionPlan.slug) == FREE_PLAN_SLUG,
+            SubscriptionPlan.is_active.is_(True),
+            SubscriptionPlan.price_monthly == 0,
+        )
+    )
+    if not plan:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The default subscription plan is not configured",
+        )
+    return plan
 
 
 def _require_current_organization_id(current_user: User) -> str:
@@ -160,10 +127,7 @@ async def _resolve_invitation_role(
     if not role and role_str.lower() in {"admin", "administrator"}:
         role = await db.scalar(
             select(Role).where(
-                (
-                    (func.lower(Role.name) == "admin")
-                    | (func.lower(Role.name) == "administrator")
-                ),
+                ((func.lower(Role.name) == "admin") | (func.lower(Role.name) == "administrator")),
                 ownership,
             )
         )
@@ -213,6 +177,8 @@ async def create_new_organization_invitation(
     )
     role_name = role.name
 
+    free_plan = await _require_free_plan(db)
+
     # 3. Create the NEW organization with a backend-generated ID
     slug_base = full_name.lower().replace(" ", "-")
     slug = f"{slug_base}-{uuid.uuid4().hex[:4]}"
@@ -225,8 +191,8 @@ async def create_new_organization_invitation(
         domain=f"{slug}.crm.com",
         email=email_clean,
         role="Admin",
-        plan="Free",
-        max_users=3,
+        plan=free_plan.name,
+        max_users=free_plan.max_users,
         status="active",
         is_active=True,
     )
@@ -242,21 +208,7 @@ async def create_new_organization_invitation(
     )
     db.add(settings_obj)
 
-    free_plan = await db.scalar(
-        select(SubscriptionPlan).where(func.lower(SubscriptionPlan.slug) == "free")
-    )
-    sub = OrganizationSubscription(
-        id=str(uuid.uuid4()),
-        organization_id=org.id,
-        plan_id=free_plan.id if free_plan else None,
-        status="active",
-        billing_cycle="Monthly",
-        amount=0.0,
-        currency="INR",
-        max_users=3,
-        storage_limit_gb=5,
-        ai_credits=50,
-    )
+    sub = build_free_subscription(organization_id=org.id, plan=free_plan, current_users=0)
     db.add(sub)
     await db.flush()
 
@@ -544,6 +496,7 @@ async def accept_organization_invitation(
             org.city = payload.city.strip()
     else:
         # Create brand new Organization with auto-generated ID
+        free_plan = await _require_free_plan(db)
         auto_org_id = f"org_{uuid.uuid4().hex[:12]}"
         org_name = requested_org_name if requested_org_name else f"{full_name}'s Organization"
         slug_base = org_name.lower().replace(" ", "-")
@@ -566,8 +519,8 @@ async def accept_organization_invitation(
             city=payload.city.strip() if payload.city else None,
             status="active",
             is_active=True,
-            plan="Free",
-            max_users=3,
+            plan=free_plan.name,
+            max_users=free_plan.max_users,
         )
         db.add(org)
         await db.flush()
@@ -581,21 +534,30 @@ async def accept_organization_invitation(
         )
         db.add(settings_obj)
 
-        sub = OrganizationSubscription(
-            id=str(uuid.uuid4()),
-            organization_id=org.id,
-            status="active",
-            billing_cycle="Monthly",
-            amount=0.0,
-            currency="INR",
-            max_users=3,
-            storage_limit_gb=5,
-        )
+        sub = build_free_subscription(organization_id=org.id, plan=free_plan, current_users=0)
         db.add(sub)
         await db.flush()
 
         inv.organization_id = org.id
         inv.subscription_id = sub.id
+
+    existing_subscription = await db.scalar(
+        select(OrganizationSubscription).where(OrganizationSubscription.organization_id == org.id)
+    )
+    if not existing_subscription:
+        if (org.plan or "").lower() != FREE_PLAN_SLUG:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="The organization subscription requires administrator reconciliation",
+            )
+        free_plan = await _require_free_plan(db)
+        apply_plan_to_organization(org, free_plan)
+        existing_subscription = build_free_subscription(
+            organization_id=org.id, plan=free_plan, current_users=0
+        )
+        db.add(existing_subscription)
+        await db.flush()
+        inv.subscription_id = existing_subscription.id
 
     # 3. Find or Create User
     user = await db.scalar(select(User).where(User.email.ilike(email_clean)))
@@ -621,6 +583,8 @@ async def accept_organization_invitation(
         )
         db.add(user)
         await db.flush()
+
+    existing_subscription.current_users = max(existing_subscription.current_users or 0, 1)
 
     # 4. Update Invitation Record
     inv.status = "Accepted"

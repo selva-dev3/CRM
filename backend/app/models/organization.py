@@ -166,6 +166,12 @@ class SubscriptionPlan(Base):
 
     slug: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
 
+    description: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+
+    currency: Mapped[str] = mapped_column(String(10), default="INR", nullable=False)
+
+    billing_cycle: Mapped[str] = mapped_column(String(20), default="month", nullable=False)
+
     price_monthly: Mapped[float] = mapped_column(Float, default=0)
 
     price_yearly: Mapped[float] = mapped_column(Float, default=0)
@@ -179,6 +185,10 @@ class SubscriptionPlan(Base):
     features: Mapped[str | None] = mapped_column(Text)
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    is_popular: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
 
 class OrganizationInvitation(Base):

@@ -44,6 +44,8 @@ class BillingPlan:
     slug: str
     name: str
     amount: Decimal
+    currency: str
+    billing_cycle: str
     plan_id: str | None
     max_users: int
     storage: int
@@ -70,27 +72,13 @@ class SubscriptionBillingService:
         return tenant
 
     async def _plan(self, db: AsyncSession, slug: str) -> BillingPlan:
-        from app.services.organization_service import DEFAULT_PLANS
-
         row = await self.repository.get_plan_by_slug(db, slug)
-        values: dict[str, Any]
-        if row:
-            if not row.is_active:
-                raise APIException(message="Subscription plan is unavailable")
-            values = {
-                "slug": row.slug,
-                "name": row.name,
-                "price_monthly": row.price_monthly,
-                "max_users": row.max_users,
-                "max_storage_gb": row.max_storage_gb,
-                "ai_credits": row.ai_credits,
-            }
-        elif slug in DEFAULT_PLANS:
-            values = dict(DEFAULT_PLANS[slug])
-        else:
+        if not row:
             raise APIException(message="Unknown subscription plan", code="UNKNOWN_PLAN")
+        if not row.is_active:
+            raise APIException(message="Subscription plan is unavailable")
         try:
-            amount = Decimal(str(values["price_monthly"]))
+            amount = Decimal(str(row.price_monthly))
         except InvalidOperation as exc:
             raise APIException(message="Subscription plan price is invalid") from exc
         if (
@@ -99,14 +87,20 @@ class SubscriptionBillingService:
             or amount * 100 != (amount * 100).to_integral_value()
         ):
             raise APIException(message="Checkout requires a valid paid monthly plan")
+        currency = row.currency.strip().lower()
+        billing_cycle = row.billing_cycle.strip().lower()
+        if len(currency) != 3 or not currency.isalpha() or billing_cycle != "month":
+            raise APIException(message="Subscription plan billing terms are invalid")
         return BillingPlan(
-            str(values["slug"]),
-            str(values["name"]),
+            row.slug,
+            row.name,
             amount,
-            row.id if row else None,
-            int(values["max_users"]),
-            int(values["max_storage_gb"]),
-            int(values["ai_credits"]),
+            currency,
+            billing_cycle,
+            row.id,
+            row.max_users,
+            row.max_storage_gb,
+            row.ai_credits,
         )
 
     async def _locked(
@@ -176,8 +170,8 @@ class SubscriptionBillingService:
                 {
                     "plan": plan.slug,
                     "amount_minor": plan.amount_minor,
-                    "currency": "inr",
-                    "interval": "month",
+                    "currency": plan.currency,
+                    "interval": plan.billing_cycle,
                     "urls": self._urls(plan.slug),
                     "subscription_id": subscription_id,
                     "configuration": getattr(
@@ -198,7 +192,12 @@ class SubscriptionBillingService:
         return rows[0]
 
     def _validate_remote_identity(
-        self, remote: Mapping, *, subscription_id: str, customer_id: str | None, organization_id: str
+        self,
+        remote: Mapping,
+        *,
+        subscription_id: str,
+        customer_id: str | None,
+        organization_id: str,
     ) -> None:
         metadata = remote.get("metadata") or {}
         if (
@@ -221,9 +220,9 @@ class SubscriptionBillingService:
                 not legacy
                 and (metadata.get("scope") != SCOPE or metadata.get("plan_slug") != plan.slug)
             )
-            or price.get("currency") != "inr"
+            or price.get("currency") != plan.currency
             or price.get("unit_amount") != plan.amount_minor
-            or recurring.get("interval") != "month"
+            or recurring.get("interval") != plan.billing_cycle
             or recurring.get("interval_count", 1) != 1
             or recurring.get("usage_type", "licensed") != "licensed"
             or price.get("billing_scheme", "per_unit") != "per_unit"
@@ -272,8 +271,8 @@ class SubscriptionBillingService:
                         "organization_id": tenant,
                         "status": "pending",
                         "amount": 0,
-                        "currency": "INR",
-                        "billing_cycle": "Monthly",
+                        "currency": plan.currency.upper(),
+                        "billing_cycle": plan.billing_cycle,
                         "auto_renew": False,
                     },
                 )
@@ -357,7 +356,11 @@ class SubscriptionBillingService:
                 ):
                     raise ConflictError(message="Subscription no longer has a settled payment")
                 price = await self.provider.ensure_price(
-                    plan_slug=plan.slug, name=plan.name, amount_minor=plan.amount_minor
+                    plan_slug=plan.slug,
+                    name=plan.name,
+                    amount_minor=plan.amount_minor,
+                    currency=plan.currency,
+                    billing_cycle=plan.billing_cycle,
                 )
                 self._validate_price(price, plan)
                 success, _ = self._urls(plan.slug)
@@ -438,7 +441,11 @@ class SubscriptionBillingService:
                     if not sub or sub.checkout_operation_id != operation or sub.subscription_id:
                         raise ConflictError(message="Subscription operation changed")
                 price = await self.provider.ensure_price(
-                    plan_slug=plan.slug, name=plan.name, amount_minor=plan.amount_minor
+                    plan_slug=plan.slug,
+                    name=plan.name,
+                    amount_minor=plan.amount_minor,
+                    currency=plan.currency,
+                    billing_cycle=plan.billing_cycle,
                 )
                 self._validate_price(price, plan)
                 success, cancel = self._urls(plan.slug)
@@ -505,8 +512,8 @@ class SubscriptionBillingService:
                 (archive.get("subscription_id") and archive["subscription_id"] != remote.get("id"))
                 or (archive.get("customer_id") and archive["customer_id"] != customer_id)
                 or Decimal(str(local.amount)) != plan.amount
-                or local.currency.upper() != "INR"
-                or local.billing_cycle.lower() != "monthly"
+                or local.currency.lower() != plan.currency
+                or local.billing_cycle.lower().removesuffix("ly") != plan.billing_cycle
             ):
                 raise ConflictError(
                     message="Legacy subscription terms require billing reconciliation"
@@ -522,7 +529,7 @@ class SubscriptionBillingService:
         if (
             _invoice_subscription(invoice) != remote.get("id")
             or _id(invoice.get("customer")) != customer_id
-            or invoice.get("currency") != "inr"
+            or invoice.get("currency") != plan.currency
         ):
             raise ConflictError(message="Paid invoice does not match the organization subscription")
         lines = invoice.get("lines") or {}
@@ -711,8 +718,8 @@ class SubscriptionBillingService:
                 if sub.invoice_id != invoice["id"]:
                     sub.ai_credits = plan.ai_credits
                 sub.currency, sub.billing_cycle, sub.status, sub.trial = (
-                    "INR",
-                    "Monthly",
+                    plan.currency.upper(),
+                    plan.billing_cycle,
                     "active",
                     False,
                 )

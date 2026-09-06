@@ -5,14 +5,35 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import User
+from app.models import SubscriptionPlan, User
 from app.models.rbac import Role
 from app.schemas.organization_invitation_schemas import OrganizationInviteRequest
 from app.services.invitation_service import (
+    _require_free_plan,
     _resolve_invitation_role,
     create_organization_user_invitation,
     list_organization_invitations,
 )
+
+
+@pytest.mark.asyncio
+async def test_require_free_plan_fails_when_database_catalog_is_missing():
+    db = AsyncMock(spec=AsyncSession)
+    db.scalar.return_value = None
+
+    with pytest.raises(HTTPException) as exc_info:
+        await _require_free_plan(db)
+
+    assert exc_info.value.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_require_free_plan_returns_active_database_record():
+    plan = SubscriptionPlan(id="plan-free", name="Free", slug="free", is_active=True)
+    db = AsyncMock(spec=AsyncSession)
+    db.scalar.return_value = plan
+
+    assert await _require_free_plan(db) is plan
 
 
 def _make_role(**overrides) -> Role:

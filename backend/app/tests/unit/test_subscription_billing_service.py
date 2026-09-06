@@ -6,7 +6,7 @@ from sqlalchemy.exc import MultipleResultsFound
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, ConflictError, ForbiddenError
-from app.models import Organization, User
+from app.models import Organization, SubscriptionPlan, User
 from app.repositories.organization_repository import OrganizationRepository
 from app.services.subscription_billing_service import SubscriptionBillingService
 from app.services.subscription_stripe_provider import SubscriptionStripeProvider
@@ -55,7 +55,18 @@ async def test_unknown_plan_is_not_coerced_to_enterprise():
 @pytest.mark.asyncio
 async def test_duplicate_subscription_rows_fail_before_provider_access():
     repository = AsyncMock(spec=OrganizationRepository)
-    repository.get_plan_by_slug.return_value = None
+    repository.get_plan_by_slug.return_value = SubscriptionPlan(
+        id="plan-professional",
+        name="Professional",
+        slug="professional",
+        price_monthly=2999,
+        currency="INR",
+        billing_cycle="month",
+        max_users=50,
+        max_storage_gb=100,
+        ai_credits=5000,
+        is_active=True,
+    )
     repository.get_by_id_for_update.return_value = Organization(id="org", is_active=True)
     repository.get_subscription.side_effect = MultipleResultsFound()
     provider = AsyncMock(spec=SubscriptionStripeProvider)

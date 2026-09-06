@@ -20,9 +20,7 @@ class SubscriptionStripeProvider:
         if not key or not configured:
             return
         expected = (
-            "test" if key.startswith("sk_test_")
-            else "live" if key.startswith("sk_live_")
-            else None
+            "test" if key.startswith("sk_test_") else "live" if key.startswith("sk_live_") else None
         )
         if expected and expected != configured:
             raise APIException(
@@ -107,8 +105,16 @@ class SubscriptionStripeProvider:
                 },
             ) from exc
 
-    async def ensure_price(self, *, plan_slug: str, name: str, amount_minor: int) -> dict:
-        key = f"{SCOPE}:{plan_slug}:inr:month:{amount_minor}"
+    async def ensure_price(
+        self,
+        *,
+        plan_slug: str,
+        name: str,
+        amount_minor: int,
+        currency: str = "inr",
+        billing_cycle: str = "month",
+    ) -> dict:
+        key = f"{SCOPE}:{plan_slug}:{currency}:{billing_cycle}:{amount_minor}"
         result = await self._call("Price", "list", lookup_keys=[key], active=True, limit=2)
         prices = result.get("data", [])
         if len(prices) == 1:
@@ -128,9 +134,9 @@ class SubscriptionStripeProvider:
             "Price",
             "create",
             product=product["id"],
-            currency="inr",
+            currency=currency,
             unit_amount=amount_minor,
-            recurring={"interval": "month"},
+            recurring={"interval": billing_cycle},
             metadata={"scope": SCOPE, "plan_slug": plan_slug},
             lookup_key=key,
             idempotency_key=key,

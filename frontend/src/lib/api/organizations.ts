@@ -85,13 +85,18 @@ export interface SubscriptionPlanItem {
   id: string;
   name: string;
   slug: string;
+  description: string;
   price_monthly: number;
   price_yearly: number;
+  currency: string;
+  billing_cycle: string;
   max_users: number;
   max_storage_gb: number;
   ai_credits: number;
   features: string[];
-  is_active?: boolean;
+  is_popular: boolean;
+  is_active: boolean;
+  sort_order: number;
 }
 
 export interface OrganizationSubscription {
@@ -99,6 +104,7 @@ export interface OrganizationSubscription {
   plan_slug?: string;
   billing_cycle: string;
   amount: number;
+  currency: string;
   next_billing: string | null;
   status?: string;
   auto_renew?: boolean;

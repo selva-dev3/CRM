@@ -50,12 +50,12 @@ class FakeSubscriptionProvider:
         self.set_auto_renew = AsyncMock(side_effect=self._renew)
         self.construct_event = AsyncMock(side_effect=self._event)
 
-    def _price(self, *, plan_slug, name, amount_minor):
+    def _price(self, *, plan_slug, name, amount_minor, currency="inr", billing_cycle="month"):
         price = {
             "id": f"price_{plan_slug}",
-            "currency": "inr",
+            "currency": currency,
             "unit_amount": amount_minor,
-            "recurring": {"interval": "month", "interval_count": 1},
+            "recurring": {"interval": billing_cycle, "interval_count": 1},
             "metadata": {"scope": SCOPE, "plan_slug": plan_slug},
         }
         self.prices[price["id"]] = price
@@ -135,6 +135,8 @@ async def billing_context(sales_database):
             slug=f"professional-{uuid4().hex}",
             name="Professional",
             price_monthly=2999,
+            currency="INR",
+            billing_cycle="month",
             max_users=50,
             max_storage_gb=100,
             ai_credits=5000,
@@ -145,6 +147,8 @@ async def billing_context(sales_database):
             slug=f"enterprise-{uuid4().hex}",
             name="Enterprise",
             price_monthly=5999,
+            currency="INR",
+            billing_cycle="month",
             max_users=100,
             max_storage_gb=500,
             ai_credits=10000,

@@ -48,13 +48,13 @@ function SubscriptionPlansContent() {
 
   const activePlans = React.useMemo(() => {
     if (!plans || !Array.isArray(plans)) return [];
-    return plans.filter((p) => p.is_active !== false);
+    return plans.filter((plan) => plan.is_active).sort((left, right) => left.sort_order - right.sort_order);
   }, [plans]);
 
   const currentPlanName = checkout.isCurrentOrganization ? (currentSubscription?.plan_slug || currentSubscription?.plan || '').toLowerCase() : '';
 
   const handleSelectPlan = (plan: SubscriptionPlanItem) => {
-    if (checkout.isPending || checkout.operation) return;
+    if (checkout.isPending) return;
     if (
       currentPlanName &&
       currentSubscription?.reconciliation_required !== true &&
@@ -76,7 +76,26 @@ function SubscriptionPlansContent() {
   };
 
 
-  const selectedPlan = activePlans.find((p) => p.slug === (checkout.operation?.payload.plan_slug || selectedPlanSlug));
+  const effectiveSelectedPlanSlug = selectedPlanSlug ?? checkout.operation?.payload.plan_slug;
+  const selectedPlan = activePlans.find((plan) => plan.slug === effectiveSelectedPlanSlug);
+  const pendingForDifferentPlan = Boolean(
+    checkout.operation && selectedPlan && checkout.operation.payload.plan_slug !== selectedPlan.slug
+  );
+  const actionLabel = checkout.isPending
+    ? 'Opening Stripe…'
+    : checkout.requiresAdministratorReview
+      ? 'Administrator review required'
+      : pendingForDifferentPlan
+        ? 'Resolve pending checkout first'
+        : currentSubscription?.provider_linked
+          ? 'Change plan with Stripe'
+          : 'Start subscription with Stripe';
+
+  const formatPlanPrice = (plan: SubscriptionPlanItem) => new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency: plan.currency,
+    maximumFractionDigits: 0,
+  }).format(plan.price_monthly);
 
   return (
     <div className="min-h-screen bg-[#F9FAFB] p-4 sm:p-6 lg:p-8 w-full">
@@ -101,7 +120,7 @@ function SubscriptionPlansContent() {
           </div>
         </div>
 
-        <p className="text-sm text-muted-foreground">Plans are billed monthly in INR. Continue securely with Stripe to start a subscription or confirm an update to your existing subscription.</p>
+        <p className="text-sm text-muted-foreground">Choose a plan below. Pricing and billing terms are loaded from the subscription catalog.</p>
         {!canManageBilling && <p role="status">Contact your administrator for permission to manage subscription billing.</p>}
         {isSubscriptionError && <p role="alert">Unable to load the current subscription. Reload before starting a change.</p>}
         {checkout.error && <p role="alert" className="text-sm text-destructive">{checkout.error}</p>}
@@ -185,7 +204,7 @@ function SubscriptionPlansContent() {
                         <span />
                       )}
 
-                      {plan.slug === 'professional' && !isCurrent && !isSelected && (
+                      {plan.is_popular && !isCurrent && !isSelected && (
                         <Badge className="bg-amber-500/10 text-amber-700 border-amber-500/20 text-[11px] font-semibold">
                           Popular
                         </Badge>
@@ -195,11 +214,12 @@ function SubscriptionPlansContent() {
                     {/* PLAN HEADER */}
                     <div className="space-y-2 mb-4">
                       <h3 className="text-subheading font-bold text-[#111827]">{plan.name}</h3>
+                      {plan.description && <p className="text-xs text-[#4B5563]">{plan.description}</p>}
                       <div className="flex items-baseline gap-1">
                         <span className="text-2xl lg:text-3xl font-extrabold text-[#111827]">
-                          ₹{plan.price_monthly.toLocaleString()}
+                          {formatPlanPrice(plan)}
                         </span>
-                        <span className="text-caption font-semibold text-[#4B5563]">INR / month</span>
+                        <span className="text-caption font-semibold text-[#4B5563]">/ {plan.billing_cycle}</span>
                       </div>
                     </div>
 
@@ -239,7 +259,7 @@ function SubscriptionPlansContent() {
                             </li>
                           ))
                         ) : (
-                          <li className="text-[#4B5563] italic">Standard CRM features</li>
+                          <li className="text-[#4B5563] italic">No included features listed</li>
                         )}
                       </ul>
                     </div>
@@ -248,7 +268,7 @@ function SubscriptionPlansContent() {
                     <Button
                       type="button"
                       variant={isSelected ? 'primary' : 'outline'}
-                      disabled={isCurrent || checkout.isPending || Boolean(checkout.operation)}
+                      disabled={isCurrent || checkout.isPending}
                       className={`w-full font-semibold text-xs h-9 ${
                         isCurrent
                           ? 'border-[#E5E7EB] bg-[#F3F4F6] text-[#9CA3AF] cursor-not-allowed opacity-75'
@@ -276,7 +296,7 @@ function SubscriptionPlansContent() {
                 <div className="text-subheading font-bold text-[#111827]">
                   {selectedPlan ? (
                     <span>
-                      Selected Tier: <span className="text-[#2563EB]">{selectedPlan.name}</span> (₹{selectedPlan.price_monthly.toLocaleString()} INR / month)
+                      Selected Tier: <span className="text-[#2563EB]">{selectedPlan.name}</span> ({formatPlanPrice(selectedPlan)} / {selectedPlan.billing_cycle})
                     </span>
                   ) : (
                     <span>Please select a plan above to proceed</span>
@@ -299,11 +319,11 @@ function SubscriptionPlansContent() {
                   Cancel
                 </Button>
                 <Button
-                  disabled={!canManageBilling || !checkout.ready || checkout.isPending || checkout.requiresAdministratorReview || isSubscriptionLoading || isSubscriptionError || (!checkout.operation && (!selectedPlan || selectedPlan.slug.toLowerCase() === currentPlanName))}
-                  onClick={() => void checkout.start(checkout.operation?.payload.plan_slug || selectedPlan?.slug || '')}
+                  disabled={!canManageBilling || !checkout.ready || checkout.isPending || checkout.requiresAdministratorReview || pendingForDifferentPlan || isSubscriptionLoading || isSubscriptionError || !selectedPlan || selectedPlan.slug.toLowerCase() === currentPlanName}
+                  onClick={() => void checkout.start(selectedPlan?.slug || '')}
                   className="w-full sm:w-auto"
                 >
-                  {checkout.isPending ? 'Opening Stripe…' : checkout.requiresAdministratorReview ? 'Administrator review required' : checkout.operation ? 'Change plan with Stripe' : 'Start subscription with Stripe'}
+                  {actionLabel}
                 </Button>
               </div>
             </Card>
