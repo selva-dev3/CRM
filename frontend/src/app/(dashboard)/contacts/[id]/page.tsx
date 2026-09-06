@@ -29,6 +29,7 @@ import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
 import { PageTabs } from '@/components/common/page-tabs';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
+import { EmailBodyPreview } from '@/components/common/email-body-preview';
 import {
   useContactQuery,
   useUpdateContactMutation,
@@ -79,6 +80,12 @@ const emailColumns: DataTableColumn<RelatedRecord>[] = [
   { id: 'from_email', header: 'Sender', cell: (email) => email.from_email || 'N/A' },
   { id: 'sent_at', header: 'Sent Date', cell: (email) => email.sent_at || 'N/A' },
 ];
+
+function getEmailBody(email: RelatedRecord): string | null {
+  if (typeof email.body_text === 'string') return email.body_text;
+  if (typeof email.body === 'string') return email.body;
+  return null;
+}
 
 const callColumns: DataTableColumn<RelatedRecord>[] = [
   { id: 'call_type', header: 'Type', cell: (call) => call.call_type || 'Call' },
@@ -526,11 +533,7 @@ export default function ContactDetailsPage() {
             getRowKey={(email) => email.id}
             emptyTitle="No email messages"
             emptyDescription="No email messages have been sent to this contact."
-            expandableRow={(email) => (
-              <div className="space-y-1 text-xs text-slate-600">
-                <p>{email.body_text || email.body || 'No preview body.'}</p>
-              </div>
-            )}
+            expandableRow={(email) => <EmailBodyPreview body={getEmailBody(email)} />}
           />
         </div>
       )}
