@@ -16,6 +16,7 @@ import {
   FileText,
   MessageSquare,
   PhoneCall,
+  MapPin,
   Plus,
   CheckCircle2,
   AlertCircle,
@@ -88,7 +89,11 @@ export default function ContactDetailsPage() {
 
   // Queries
   const { data: contact, isLoading, refetch: refetchContact } = useContactQuery(contactId);
-  const { data: billingAddress } = useContactBillingAddressQuery(contactId);
+  const {
+    data: billingAddress,
+    isLoading: isBillingAddressLoading,
+    isError: isBillingAddressError,
+  } = useContactBillingAddressQuery(contactId);
   const { data: companiesList = [] } = useCompaniesQuery(1, 100);
   const {
     data: customFields = [],
@@ -355,6 +360,41 @@ export default function ContactDetailsPage() {
             </div>
           </div>
         </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
+        <div className="flex items-center gap-2 mb-4">
+          <MapPin className="w-4 h-4 text-blue-600" />
+          <h2 className="text-sm font-bold text-slate-900">Billing Address</h2>
+        </div>
+        {isBillingAddressLoading ? (
+          <p className="text-xs text-slate-500">Loading billing address...</p>
+        ) : isBillingAddressError ? (
+          <p className="text-xs text-rose-700">Billing address could not be loaded. Retry the page to try again.</p>
+        ) : billingAddress?.street && billingAddress.country ? (
+          <div className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <p className="font-semibold text-slate-500">Street</p>
+              <p className="mt-1 text-slate-900">{billingAddress.street}</p>
+            </div>
+            <div>
+              <p className="font-semibold text-slate-500">City</p>
+              <p className="mt-1 text-slate-900">{billingAddress.city || 'N/A'}</p>
+            </div>
+            <div>
+              <p className="font-semibold text-slate-500">State</p>
+              <p className="mt-1 text-slate-900">{billingAddress.state || 'N/A'}</p>
+            </div>
+            <div>
+              <p className="font-semibold text-slate-500">Country / Postal Code</p>
+              <p className="mt-1 text-slate-900">
+                {billingAddress.country}{billingAddress.postal_code ? ` / ${billingAddress.postal_code}` : ''}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs text-slate-500">Billing address not added.</p>
+        )}
       </div>
 
       <CustomFieldValues fields={customFields} values={contact.custom_fields ?? {}} />
