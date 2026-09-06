@@ -4,7 +4,7 @@ from fastapi import APIRouter, Body, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import get_current_user_optional, require_permission
+from app.api.v1.deps import get_current_user, get_current_user_optional, require_permission
 from app.db.session import get_db
 from app.models import User
 from app.schemas.crm_schemas import (
@@ -46,8 +46,10 @@ class SyncRetryPayload(BaseModel):
     summary="List available third-party integration connectors",
     dependencies=[Depends(require_permission("integrations:read"))],
 )
-async def list_integrations(db: AsyncSession = Depends(get_db)):
-    return await integration_service.list_integrations(db)
+async def list_integrations(
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    return await integration_service.list_integrations(db, current_user)
 
 
 @router.get(
@@ -109,8 +111,10 @@ async def trigger_zapier_event(
     summary="Disconnect and revoke Zapier integration configuration",
     dependencies=[Depends(require_permission("integrations:manage"))],
 )
-async def delete_zapier_integration(db: AsyncSession = Depends(get_db)):
-    return await integration_service.delete_zapier_integration(db)
+async def delete_zapier_integration(
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    return await integration_service.delete_zapier_integration(db, current_user)
 
 
 @router.get(
@@ -303,8 +307,12 @@ async def save_custom_provider_key(
     summary="Get connection status for specific integration",
     dependencies=[Depends(require_permission("integrations:read"))],
 )
-async def get_integration_status(name: str, db: AsyncSession = Depends(get_db)):
-    return await integration_service.get_integration_status(db, name)
+async def get_integration_status(
+    name: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await integration_service.get_integration_status(db, name, current_user)
 
 
 @router.post(
@@ -326,8 +334,12 @@ async def connect_integration(
     summary="Revoke tokens and disconnect integration",
     dependencies=[Depends(require_permission("integrations:manage"))],
 )
-async def disconnect_integration(name: str, db: AsyncSession = Depends(get_db)):
-    return await integration_service.disconnect_integration(db, name)
+async def disconnect_integration(
+    name: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await integration_service.disconnect_integration(db, name, current_user)
 
 
 @router.post(

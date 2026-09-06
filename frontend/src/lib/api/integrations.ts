@@ -6,6 +6,16 @@ export interface IntegrationItem {
   last_synced?: string | null;
 }
 
+export interface ApiKeyItem {
+  id: string;
+  name: string;
+  api_key?: string | null;
+  key?: string | null;
+  created_at: string;
+  last_used?: string | null;
+  is_active: boolean;
+}
+
 export interface ZapierConfig {
   name: string;
   is_connected: boolean;
@@ -23,13 +33,19 @@ export interface SlackConfig {
 }
 
 export async function fetchIntegrationsApi(): Promise<IntegrationItem[]> {
-  try {
-    const data = await apiClient.get<IntegrationItem[]>('/integrations');
-    if (Array.isArray(data)) return data;
-  } catch {
-    // fallback
-  }
-  return [];
+  return apiClient.get<IntegrationItem[]>('/integrations');
+}
+
+export async function fetchApiKeysApi(): Promise<ApiKeyItem[]> {
+  return apiClient.get<ApiKeyItem[]>('/auth/api-keys');
+}
+
+export async function createApiKeyApi(name: string): Promise<ApiKeyItem> {
+  return apiClient.post<ApiKeyItem>('/auth/api-keys', { name });
+}
+
+export async function revokeApiKeyApi(keyId: string): Promise<{ message: string }> {
+  return apiClient.delete<{ message: string }>(`/auth/api-keys/${encodeURIComponent(keyId)}`);
 }
 
 export async function connectIntegrationApi(name: string): Promise<{ message: string; auth_url?: string }> {
@@ -49,11 +65,11 @@ export async function fetchZapierConfigApi(): Promise<ZapierConfig> {
   return apiClient.get<ZapierConfig>('/integrations/zapier');
 }
 
-export const DEFAULT_ZAPIER_WEBHOOK = process.env.NEXT_PUBLIC_ZAPIER_WEBHOOK_URL ;
-
 export async function connectZapierApi(webhookUrl?: string): Promise<{ message: string }> {
-  const url = webhookUrl || DEFAULT_ZAPIER_WEBHOOK;
-  return apiClient.post<{ message: string }>('/integrations/zapier/connect', { webhook_url: url });
+  if (!webhookUrl?.trim()) throw new Error('Zapier webhook URL is required.');
+  return apiClient.post<{ message: string }>('/integrations/zapier/connect', {
+    webhook_url: webhookUrl.trim(),
+  });
 }
 
 export async function testZapierPingApi(): Promise<{ message: string }> {
@@ -91,11 +107,4 @@ export async function deleteSlackApi(): Promise<{ message: string }> {
 
 export async function sendSlackNotifyApi(channel: string, message: string): Promise<{ message: string }> {
   return apiClient.post<{ message: string }>('/integrations/slack/notify', { channel, message });
-}
-
-export async function saveCustomApiKeyApi(providerName: string, apiKey: string): Promise<{ message: string }> {
-  return apiClient.post<{ message: string }>('/integrations/custom-api-key', {
-    provider_name: providerName,
-    api_key: apiKey,
-  });
 }

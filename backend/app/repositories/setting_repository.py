@@ -95,8 +95,15 @@ class SettingRepository:
         db.add(webhook)
         return webhook
 
-    async def get_webhook(self, db: AsyncSession, webhook_id: str) -> Webhook | None:
-        result = await db.execute(select(Webhook).where(Webhook.id == webhook_id))
+    async def get_webhook(
+        self, db: AsyncSession, webhook_id: str, *, organization_id: str
+    ) -> Webhook | None:
+        result = await db.execute(
+            select(Webhook).where(
+                Webhook.id == webhook_id,
+                Webhook.organization_id == organization_id,
+            )
+        )
         return result.scalars().first()
 
     async def delete_webhook(self, db: AsyncSession, webhook: Webhook) -> None:

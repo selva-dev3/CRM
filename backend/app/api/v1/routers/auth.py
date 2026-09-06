@@ -327,3 +327,17 @@ async def create_api_key(
     current_user: User = Depends(get_current_user),
 ):
     return await auth_service.create_api_key(db, payload, current_user)
+
+
+@router.delete(
+    "/api-keys/{key_id}",
+    response_model=MessageResponse,
+    summary="Revoke an organization API key",
+    dependencies=[Depends(require_permission("integrations:apikeys"))],
+)
+async def revoke_api_key(
+    key_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await auth_service.revoke_api_key(db, key_id, current_user)
