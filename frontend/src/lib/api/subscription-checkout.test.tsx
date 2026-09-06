@@ -81,6 +81,15 @@ describe('subscription hooks', () => {
     expect(result.current.operation).toEqual(operation);
     expect(JSON.parse(sessionStorage.getItem(subscriptionOperationKey('user-1', 'org-1')) ?? 'null')).toEqual(operation);
   });
+  it('requires administrator review for persisted subscription reconciliation errors', async () => {
+    const { wrapper } = setup();
+    vi.mocked(apiClient.post).mockRejectedValue(new ApiError('Reconciliation required.', 'http', 409, 'SUBSCRIPTION_RECONCILIATION_REQUIRED'));
+    const { result } = renderHook(() => useSubscriptionCheckout(), { wrapper });
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    await act(async () => { await result.current.start('business'); });
+    expect(result.current.requiresAdministratorReview).toBe(true);
+    expect(result.current.error).toBe('Reconciliation required.');
+  });
   it('clears a server-confirmed expired operation and uses a fresh UUID for another plan', async () => {
     const key = subscriptionOperationKey('user-1', 'org-1');
     const originalKey = crypto.randomUUID();

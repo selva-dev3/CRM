@@ -57,7 +57,11 @@ async def test_provider_errors_are_actionable_without_sensitive_data(
     assert exc.value.code == "SUBSCRIPTION_PROVIDER_ERROR"
     assert exc.value.status_code == 502
     assert message in exc.value.message
-    assert exc.value.fields == {"retryable": retryable, "provider_request_id": "req_TestRequest123"}
+    assert exc.value.fields == {
+        "retryable": retryable,
+        "provider_request_id": "req_TestRequest123",
+        "provider_code": code or "unknown",
+    }
     assert f"operation={resource}.retrieve" in caplog.text
     assert "req_TestRequest123" in caplog.text
     for sensitive in [str(failure), "private-customer-reference", test_key]:

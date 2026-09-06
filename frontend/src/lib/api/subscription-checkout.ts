@@ -67,7 +67,9 @@ export function useSubscriptionCheckout(orgId?: string | null) {
       setRedirecting(true);
     } catch (failure) {
       setRequiresAdministratorReview(failure instanceof ApiError
-        && failure.code === 'SUBSCRIPTION_PROVIDER_ERROR' && failure.fields?.retryable === false);
+        && ((failure.code === 'SUBSCRIPTION_PROVIDER_ERROR' && failure.fields?.retryable === false)
+          || failure.code === 'SUBSCRIPTION_RECONCILIATION_REQUIRED'
+          || failure.code === 'SUBSCRIPTION_DATA_INTEGRITY_ERROR'));
       if (failure instanceof ApiError && failure.status === 409 && failure.code === 'SUBSCRIPTION_CHECKOUT_EXPIRED') {
         // This code confirms provider expiration and removal of the server's pending operation.
         try {

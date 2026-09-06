@@ -150,6 +150,11 @@ class OrganizationDomainService:
     ) -> OrganizationSubscription:
         sub = await self.repository.get_subscription(db, org.id)
         if not sub:
+            locked_org = await self.repository.get_by_id_for_update(db, org.id)
+            if not locked_org:
+                raise NotFoundError(message="Organization not found")
+            sub = await self.repository.get_subscription(db, org.id)
+        if not sub:
             plan_slug = (org.plan or "enterprise").lower()
             db_plan = await self.repository.get_plan_by_slug(db, plan_slug)
             sub = await self.repository.create_subscription(

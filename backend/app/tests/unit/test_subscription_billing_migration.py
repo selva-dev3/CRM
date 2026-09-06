@@ -79,6 +79,44 @@ def test_request_hash_migration_upgrades_existing_checkout_state():
         migration.downgrade()
 
 
+def test_unique_subscription_migration_refuses_ambiguous_records(monkeypatch):
+    migration = _migration(
+        MIGRATION_PATH.with_name("h1c4d5e6f7a8_enforce_subscription_org_unique.py")
+    )
+    connection = MagicMock()
+    connection.execute.return_value.first.return_value = ("org-duplicate",)
+    monkeypatch.setattr(migration.op, "get_bind", lambda: connection)
+
+    with pytest.raises(RuntimeError, match="require administrator reconciliation"):
+        migration.upgrade()
+
+    assert migration.down_revision == "g0b3c4d5e6f7"
+
+
+def test_unique_subscription_migration_adds_database_constraint(monkeypatch):
+    migration = _migration(
+        MIGRATION_PATH.with_name("h1c4d5e6f7a8_enforce_subscription_org_unique.py")
+    )
+    connection = MagicMock()
+    connection.execute.return_value.first.return_value = None
+    inspector = MagicMock()
+    inspector.get_unique_constraints.return_value = []
+    create_unique_constraint = MagicMock()
+    monkeypatch.setattr(migration.op, "get_bind", lambda: connection)
+    monkeypatch.setattr(migration.sa, "inspect", lambda _: inspector)
+    monkeypatch.setattr(migration.op, "create_unique_constraint", create_unique_constraint)
+
+    migration.upgrade()
+
+    create_unique_constraint.assert_called_once_with(
+        migration.CONSTRAINT_NAME,
+        "organization_subscriptions",
+        ["organization_id"],
+    )
+    with pytest.raises(RuntimeError, match="forward-only"):
+        migration.downgrade()
+
+
 def test_forward_migration_restores_checkout_without_changing_history():
     migration = _migration()
     assert migration.down_revision == "e8f1a2b3c4d5"
@@ -197,6 +235,18 @@ async def test_org_lock_refreshes_identity_map_and_does_not_commit():
     assert compiled.params == {"id_1": "org-1"}
     assert statement.get_execution_options()["populate_existing"] is True
     db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_subscription_lookup_requires_at_most_one_row():
+    db = AsyncMock(spec=AsyncSession)
+    result = MagicMock()
+    subscription = MagicMock()
+    result.scalars.return_value.unique.return_value.one_or_none.return_value = subscription
+    db.execute.return_value = result
+
+    assert await OrganizationRepository().get_subscription(db, "org-1") is subscription
+    result.scalars.return_value.unique.return_value.one_or_none.assert_called_once_with()
 
 
 @pytest.mark.asyncio

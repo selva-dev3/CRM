@@ -2,10 +2,11 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
+from sqlalchemy.exc import MultipleResultsFound
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import APIException, ForbiddenError
-from app.models import User
+from app.core.errors import APIException, ConflictError, ForbiddenError
+from app.models import Organization, User
 from app.repositories.organization_repository import OrganizationRepository
 from app.services.subscription_billing_service import SubscriptionBillingService
 from app.services.subscription_stripe_provider import SubscriptionStripeProvider
@@ -49,6 +50,53 @@ async def test_unknown_plan_is_not_coerced_to_enterprise():
     repository.get_by_id_for_update.assert_not_awaited()
     assert not provider.mock_calls
     db.rollback.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_duplicate_subscription_rows_fail_before_provider_access():
+    repository = AsyncMock(spec=OrganizationRepository)
+    repository.get_plan_by_slug.return_value = None
+    repository.get_by_id_for_update.return_value = Organization(id="org", is_active=True)
+    repository.get_subscription.side_effect = MultipleResultsFound()
+    provider = AsyncMock(spec=SubscriptionStripeProvider)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(ConflictError) as exc:
+        await SubscriptionBillingService(repository=repository, provider=provider).create_checkout(
+            db,
+            plan_slug="professional",
+            org_id="org",
+            current_user=User(id="user", organization_id="org"),
+            idempotency_key="key",
+        )
+
+    assert exc.value.code == "SUBSCRIPTION_DATA_INTEGRITY_ERROR"
+    assert not provider.mock_calls
+    db.rollback.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_missing_stored_subscription_requires_reconciliation():
+    provider = AsyncMock(spec=SubscriptionStripeProvider)
+    provider.retrieve_subscription.side_effect = APIException(
+        message="Provider resource missing",
+        code="SUBSCRIPTION_PROVIDER_ERROR",
+        status_code=502,
+        fields={
+            "retryable": False,
+            "provider_request_id": "req_safe123",
+            "provider_code": "resource_missing",
+        },
+    )
+    service = SubscriptionBillingService(
+        repository=AsyncMock(spec=OrganizationRepository), provider=provider
+    )
+
+    with pytest.raises(ConflictError) as exc:
+        await service._retrieve_subscription("sub_private")
+
+    assert exc.value.code == "SUBSCRIPTION_RECONCILIATION_REQUIRED"
+    assert exc.value.fields == {"provider_request_id": "req_safe123"}
 
 
 @pytest.mark.asyncio

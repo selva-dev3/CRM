@@ -129,7 +129,7 @@ class OrganizationRepository:
                 OrganizationSubscription.organization_id == org_id
             )
         )
-        return result.scalars().first()
+        return result.scalars().unique().one_or_none()
 
     get_subscription_by_org_id = get_subscription
 
