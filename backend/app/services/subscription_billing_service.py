@@ -138,9 +138,28 @@ class SubscriptionBillingService:
                 raise ConflictError(
                     message="The stored Stripe subscription was not found; administrator reconciliation is required",
                     code="SUBSCRIPTION_RECONCILIATION_REQUIRED",
-                    fields={"provider_request_id": fields.get("provider_request_id")},
+                    fields={
+                        "provider_request_id": fields.get("provider_request_id"),
+                        "provider_code": fields.get("provider_code"),
+                        "resource_type": "subscription",
+                        "retryable": False,
+                    },
                 ) from exc
             raise
+
+    async def _mark_reconciliation(
+        self, db: AsyncSession, organization_id: str, exc: APIException
+    ) -> None:
+        sub = await self.repository.get_subscription(db, organization_id)
+        if not sub:
+            return
+        fields = exc.fields or {}
+        sub.reconciliation_required = True
+        sub.last_provider_check_at = datetime.now(UTC)
+        sub.last_provider_error_code = str(fields.get("provider_code") or exc.code)[:80]
+        request_id = fields.get("provider_request_id")
+        sub.last_provider_request_id = request_id if isinstance(request_id, str) else None
+        await db.commit()
 
     def _urls(self, plan_slug: str) -> tuple[str, str]:
         root = settings.frontend_base_url.rstrip("/")
@@ -177,6 +196,22 @@ class SubscriptionBillingService:
         if items.get("has_more") or len(rows) != 1 or rows[0].get("quantity") != 1:
             raise ConflictError(message="Only single-item organization subscriptions are supported")
         return rows[0]
+
+    def _validate_remote_identity(
+        self, remote: Mapping, *, subscription_id: str, customer_id: str | None, organization_id: str
+    ) -> None:
+        metadata = remote.get("metadata") or {}
+        if (
+            remote.get("id") != subscription_id
+            or not customer_id
+            or _id(remote.get("customer")) != customer_id
+            or metadata.get("scope") != SCOPE
+            or metadata.get("organization_id") != organization_id
+        ):
+            raise ConflictError(
+                message="The provider subscription does not belong to this organization",
+                code="SUBSCRIPTION_DATA_INTEGRITY_ERROR",
+            )
 
     def _validate_price(self, price: Mapping, plan: BillingPlan, *, legacy: bool = False) -> None:
         metadata = price.get("metadata") or {}
@@ -277,6 +312,12 @@ class SubscriptionBillingService:
                 )
             if sub.subscription_id:
                 remote = await self._retrieve_subscription(sub.subscription_id)
+                self._validate_remote_identity(
+                    remote,
+                    subscription_id=sub.subscription_id,
+                    customer_id=sub.customer_id,
+                    organization_id=tenant,
+                )
                 item = self._item(remote, sub.customer_id)
                 if remote.get("status") != "active":
                     raise ConflictError(
@@ -303,6 +344,12 @@ class SubscriptionBillingService:
                 ):
                     raise ConflictError(message="Another subscription operation is in progress")
                 remote = await self._retrieve_subscription(sub.subscription_id)
+                self._validate_remote_identity(
+                    remote,
+                    subscription_id=sub.subscription_id,
+                    customer_id=sub.customer_id,
+                    organization_id=tenant,
+                )
                 item = self._item(remote, sub.customer_id)
                 if (
                     await self._paid_plan(db, remote, sub.customer_id, local=sub, organization=org)
@@ -417,6 +464,11 @@ class SubscriptionBillingService:
                 "session_id": session["id"],
                 "status": "success",
             }
+        except APIException as exc:
+            await db.rollback()
+            if exc.code == "SUBSCRIPTION_RECONCILIATION_REQUIRED":
+                await self._mark_reconciliation(db, tenant, exc)
+            raise
         except Exception:
             await db.rollback()
             raise
@@ -523,6 +575,12 @@ class SubscriptionBillingService:
         paid = None
         if remote_id:
             remote = await self._retrieve_subscription(remote_id)
+            self._validate_remote_identity(
+                remote,
+                subscription_id=remote_id,
+                customer_id=sub.customer_id,
+                organization_id=tenant,
+            )
             paid = await self._paid_plan(db, remote, sub.customer_id, local=sub, organization=org)
             verified = paid is not None and (not requested or paid[0].slug == requested)
         synced = bool(
@@ -558,6 +616,7 @@ class SubscriptionBillingService:
             "invoice.paid",
             "invoice.payment_failed",
             "customer.subscription.updated",
+            "customer.subscription.created",
             "customer.subscription.deleted",
         }
         if event_type not in supported:
@@ -568,6 +627,7 @@ class SubscriptionBillingService:
         if not isinstance(event_id, str):
             raise APIException(message="Invalid subscription event", status_code=400)
         obj = (event.get("data") or {}).get("object") or {}
+        tenant: str | None = None
         try:
             if event_type.startswith("checkout.session."):
                 if (
@@ -629,6 +689,12 @@ class SubscriptionBillingService:
                     )
             # Fetch after the tenant lock: event snapshots cannot roll billing state backwards.
             remote = await self._retrieve_subscription(remote_id)
+            self._validate_remote_identity(
+                remote,
+                subscription_id=remote_id,
+                customer_id=sub.customer_id,
+                organization_id=tenant,
+            )
             self._item(remote, sub.customer_id)
             paid = await self._paid_plan(db, remote, sub.customer_id, local=sub, organization=org)
             had_paid_access = bool(
@@ -660,6 +726,10 @@ class SubscriptionBillingService:
                 sub.next_billing = sub.current_period_end if sub.auto_renew else None
                 sub.expires_at = sub.current_period_end
                 sub.started_at = sub.started_at or _time(remote.get("start_date"))
+                sub.reconciliation_required = False
+                sub.last_provider_check_at = datetime.now(UTC)
+                sub.last_provider_error_code = None
+                sub.last_provider_request_id = None
             else:
                 # Keep the last paid plan; never grant a pending or failed upgrade.
                 pending_paid_upgrade = (
@@ -683,6 +753,11 @@ class SubscriptionBillingService:
             )
             await db.commit()
             return {"status": "success", "message": "Subscription billing state synchronized"}
+        except APIException as exc:
+            await db.rollback()
+            if exc.code == "SUBSCRIPTION_RECONCILIATION_REQUIRED" and tenant:
+                await self._mark_reconciliation(db, tenant, exc)
+            raise
         except Exception:
             await db.rollback()
             raise
@@ -696,9 +771,27 @@ class SubscriptionBillingService:
             if not sub or not sub.subscription_id:
                 raise ConflictError(message="No provider subscription is linked")
             remote = await self._retrieve_subscription(sub.subscription_id)
+            self._validate_remote_identity(
+                remote,
+                subscription_id=sub.subscription_id,
+                customer_id=sub.customer_id,
+                organization_id=tenant,
+            )
             self._item(remote, sub.customer_id)
             if remote.get("status") not in {"active", "past_due"}:
-                raise ConflictError(message="This subscription cannot change renewal settings")
+                sub.reconciliation_required = True
+                sub.last_provider_check_at = datetime.now(UTC)
+                sub.last_provider_error_code = "provider_not_resumable"
+                await db.commit()
+                raise ConflictError(
+                    message="The provider subscription is no longer resumable; administrator reconciliation is required",
+                    code="SUBSCRIPTION_RECONCILIATION_REQUIRED",
+                    fields={
+                        "provider_code": "provider_not_resumable",
+                        "resource_type": "subscription",
+                        "retryable": False,
+                    },
+                )
             updated = await self.provider.set_auto_renew(sub.subscription_id, auto_renew=auto_renew)
             if (
                 updated.get("id") != sub.subscription_id
@@ -710,6 +803,10 @@ class SubscriptionBillingService:
             if bool(updated.get("cancel_at_period_end")) != (not auto_renew):
                 raise ConflictError(message="Provider has not confirmed the renewal change")
             sub.auto_renew = auto_renew
+            sub.reconciliation_required = False
+            sub.last_provider_check_at = datetime.now(UTC)
+            sub.last_provider_error_code = None
+            sub.last_provider_request_id = None
             sub.next_billing = sub.current_period_end if auto_renew else None
             await self.repository.create_audit_log(
                 db,
@@ -726,6 +823,11 @@ class SubscriptionBillingService:
                     else "Subscription will cancel at the end of the paid period"
                 ),
             }
+        except APIException as exc:
+            await db.rollback()
+            if exc.code == "SUBSCRIPTION_RECONCILIATION_REQUIRED":
+                await self._mark_reconciliation(db, tenant, exc)
+            raise
         except Exception:
             await db.rollback()
             raise

@@ -15,9 +15,9 @@ vi.mock('@/hooks/use-has-permission', () => ({ useHasPermission: () => ({ hasPer
 beforeEach(() => { vi.clearAllMocks(); mocks.pending = false; mocks.permission = true; mocks.error = null; mocks.empty = false; mocks.currentPlan = 'Basic'; mocks.operation = null; });
 it('starts Stripe subscription checkout for the selected plan', () => {
   render(<Page />);
-  expect(screen.getByRole('button', { name: 'Continue with Stripe' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Start subscription with Stripe' })).toBeDisabled();
   fireEvent.click(screen.getByRole('button', { name: 'Choose Pro' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Continue with Stripe' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Start subscription with Stripe' }));
   expect(mocks.start).toHaveBeenCalledWith('pro');
   expect(screen.getByText(/Plans are billed monthly in INR/)).toBeInTheDocument();
   expect(screen.queryByText(/billed yearly/i)).not.toBeInTheDocument();
@@ -31,7 +31,7 @@ it('requires billing permission', () => {
   mocks.permission = false;
   render(<Page />);
   fireEvent.click(screen.getByRole('button', { name: 'Choose Pro' }));
-  expect(screen.getByRole('button', { name: 'Continue with Stripe' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Start subscription with Stripe' })).toBeDisabled();
 });
 it('shows errors and empty plans', () => {
   mocks.error = 'Billing unavailable'; mocks.empty = true;
@@ -45,7 +45,7 @@ it.each([null, 'Idempotency fingerprint conflict'])('offers verification for a p
   mocks.error = error;
   render(<Page />);
   expect(screen.getByRole('link', { name: 'Check subscription status' })).toHaveAttribute('href', '/organization/subscription/payment/success?plan_slug=pro');
-  expect(screen.getByRole('button', { name: 'Retry subscription request' })).not.toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Change plan with Stripe' })).not.toBeDisabled();
   expect(screen.getByText(/Activation requires server verification/)).toBeInTheDocument();
   expect(mocks.start).not.toHaveBeenCalled();
 });

@@ -287,6 +287,10 @@ class OrganizationDomainService:
             "storage_limit_gb": plan_info["max_storage_gb"],
             "ai_credits": plan_info["ai_credits"],
             "features": plan_info["features"],
+            "reconciliation_required": bool(
+                getattr(subscription, "reconciliation_required", False)
+            ),
+            "last_provider_error_code": getattr(subscription, "last_provider_error_code", None),
         }
 
     async def list_subscription_plans(self, db: AsyncSession) -> list[dict]:
@@ -332,54 +336,18 @@ class OrganizationDomainService:
         )
 
     async def cancel_subscription(self, db: AsyncSession, current_user: User) -> dict:
-        org = await self._require_current_org(db, current_user)
-        subscription = await self.get_or_create_subscription(db, org)
+        from app.services.subscription_billing_service import SubscriptionBillingService
 
-        if subscription.subscription_id:
-            from app.services.subscription_billing_service import SubscriptionBillingService
-
-            return await SubscriptionBillingService(self.repository).set_auto_renew(
-                db, current_user=current_user, auto_renew=False
-            )
-
-        subscription.auto_renew = False
-        subscription.status = "cancelled"
-
-        await self.repository.create_audit_log(
-            db,
-            organization_id=org.id,
-            action="CANCEL_SUBSCRIPTION",
-            details="Subscription cancelled.",
+        return await SubscriptionBillingService(self.repository).set_auto_renew(
+            db, current_user=current_user, auto_renew=False
         )
-        db.add(subscription)
-        await self._commit(db, "Failed to cancel subscription")
-
-        return {"message": "Subscription cancelled successfully", "status": "success"}
 
     async def resume_subscription(self, db: AsyncSession, current_user: User) -> dict:
-        org = await self._require_current_org(db, current_user)
-        subscription = await self.get_or_create_subscription(db, org)
+        from app.services.subscription_billing_service import SubscriptionBillingService
 
-        if subscription.subscription_id:
-            from app.services.subscription_billing_service import SubscriptionBillingService
-
-            return await SubscriptionBillingService(self.repository).set_auto_renew(
-                db, current_user=current_user, auto_renew=True
-            )
-
-        subscription.auto_renew = True
-        subscription.status = "active"
-
-        await self.repository.create_audit_log(
-            db,
-            organization_id=org.id,
-            action="RESUME_SUBSCRIPTION",
-            details="Subscription resumed.",
+        return await SubscriptionBillingService(self.repository).set_auto_renew(
+            db, current_user=current_user, auto_renew=True
         )
-        db.add(subscription)
-        await self._commit(db, "Failed to resume subscription")
-
-        return {"message": "Subscription resumed successfully", "status": "success"}
 
     async def get_usage(self, db: AsyncSession, current_user: User) -> dict:
         org = await self._require_current_org(db, current_user)

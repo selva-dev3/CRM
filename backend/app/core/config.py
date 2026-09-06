@@ -84,6 +84,7 @@ class Settings(BaseSettings):
     STRIPE_SECRET_KEY: str | None = None
     STRIPE_WEBHOOK_SECRET: str | None = None
     STRIPE_SUBSCRIPTION_PORTAL_CONFIGURATION_ID: str | None = None
+    STRIPE_MODE: Literal["test", "live"] | None = None
 
     # AI API Keys
     OPENAI_API_KEY: str | None = None
