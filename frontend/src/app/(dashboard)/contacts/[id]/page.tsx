@@ -28,6 +28,7 @@ import { Label } from '@/components/ui/label';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
 import { PageTabs } from '@/components/common/page-tabs';
+import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import {
   useContactQuery,
   useUpdateContactMutation,
@@ -52,6 +53,39 @@ import {
   useEntityCustomFieldsQuery,
   type CustomFieldValue,
 } from '@/lib/api/custom-fields';
+import type { RelatedRecord } from '@/lib/types';
+
+const activityColumns: DataTableColumn<RelatedRecord>[] = [
+  { id: 'type', header: 'Type', cell: (activity) => activity.type || 'Activity' },
+  { id: 'description', header: 'Description', cell: (activity) => activity.description || activity.content || 'Contact updated' },
+  { id: 'created_at', header: 'Date', cell: (activity) => activity.created_at || 'N/A' },
+];
+
+const dealColumns: DataTableColumn<RelatedRecord>[] = [
+  { id: 'title', header: 'Deal', cell: (deal) => deal.title || 'Untitled deal' },
+  { id: 'stage', header: 'Stage', cell: (deal) => deal.stage || 'N/A' },
+  { id: 'amount', header: 'Amount', cell: (deal) => `$${Number(deal.amount || 0).toLocaleString()}` },
+];
+
+const noteColumns: DataTableColumn<RelatedRecord>[] = [
+  { id: 'content', header: 'Note', cell: (note) => note.content || 'Empty note' },
+  { id: 'created_by', header: 'Created By', cell: (note) => note.created_by || 'System User' },
+  { id: 'created_at', header: 'Created Date', cell: (note) => note.created_at || 'N/A' },
+];
+
+const emailColumns: DataTableColumn<RelatedRecord>[] = [
+  { id: 'subject', header: 'Subject', cell: (email) => email.subject || 'No subject' },
+  { id: 'to', header: 'Recipient', cell: (email) => Array.isArray(email.to) ? email.to.join(', ') : email.to_email || 'N/A' },
+  { id: 'from_email', header: 'Sender', cell: (email) => email.from_email || 'N/A' },
+  { id: 'sent_at', header: 'Sent Date', cell: (email) => email.sent_at || 'N/A' },
+];
+
+const callColumns: DataTableColumn<RelatedRecord>[] = [
+  { id: 'call_type', header: 'Type', cell: (call) => call.call_type || 'Call' },
+  { id: 'duration_seconds', header: 'Duration', cell: (call) => `${call.duration_seconds || 0} sec` },
+  { id: 'notes', header: 'Notes', cell: (call) => call.notes || 'No notes' },
+  { id: 'timestamp', header: 'Date', cell: (call) => call.timestamp || 'N/A' },
+];
 
 export default function ContactDetailsPage() {
   const params = useParams();
@@ -422,23 +456,13 @@ export default function ContactDetailsPage() {
       {activeTab === 'overview' && (
         <div className="space-y-4">
           <h2 className="text-sm font-bold text-slate-900">Activity Timeline</h2>
-          {activities.length === 0 ? (
-            <div className="p-6 bg-white rounded-xl border border-slate-200 text-xs text-slate-500">
-              No recent activity recorded for this contact.
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {activities.map((act) => (
-                <div key={act.id} className="p-3 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between">
-                  <div>
-                    <div className="font-semibold text-slate-900">{act.type || 'Activity Event'}</div>
-                    <div className="text-slate-500 mt-0.5">{act.description || act.content || 'Contact updated'}</div>
-                  </div>
-                  <span className="text-[11px] text-slate-400">{act.created_at || 'Just now'}</span>
-                </div>
-              ))}
-            </div>
-          )}
+          <DataTable
+            columns={activityColumns}
+            data={activities}
+            getRowKey={(activity) => activity.id}
+            emptyTitle="No recent activity"
+            emptyDescription="No recent activity recorded for this contact."
+          />
         </div>
       )}
 
@@ -446,25 +470,13 @@ export default function ContactDetailsPage() {
       {activeTab === 'deals' && (
         <div className="space-y-4">
           <h2 className="text-sm font-bold text-slate-900">Linked Sales Deals</h2>
-          {deals.length === 0 ? (
-            <div className="p-6 bg-white rounded-xl border border-slate-200 text-xs text-slate-500">
-              No active sales pipeline deals associated with this contact.
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {deals.map((deal) => (
-                <div key={deal.id} className="p-4 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between">
-                  <div>
-                    <div className="font-bold text-slate-900">{deal.title}</div>
-                    <div className="text-slate-500 mt-0.5 font-medium">Stage: {deal.stage}</div>
-                  </div>
-                  <div className="text-right font-bold text-blue-700 text-sm">
-                    ${deal.amount ? deal.amount.toLocaleString() : '0'}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          <DataTable
+            columns={dealColumns}
+            data={deals}
+            getRowKey={(deal) => deal.id}
+            emptyTitle="No linked deals"
+            emptyDescription="No active sales pipeline deals are associated with this contact."
+          />
         </div>
       )}
 
@@ -494,20 +506,13 @@ export default function ContactDetailsPage() {
           </div>
 
           <h2 className="text-sm font-bold text-slate-900 pt-2">Saved Notes</h2>
-          {notes.length === 0 ? (
-            <div className="p-6 bg-white rounded-xl border border-slate-200 text-xs text-slate-500">
-              No notes logged yet. Add your first note above.
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {notes.map((note, idx: number) => (
-                <div key={idx} className="p-4 bg-white rounded-xl border border-slate-200 text-xs space-y-1">
-                  <div className="font-medium text-slate-900">{note.content}</div>
-                  <div className="text-[10px] text-slate-400">{note.created_at || 'Saved'}</div>
-                </div>
-              ))}
-            </div>
-          )}
+          <DataTable
+            columns={noteColumns}
+            data={notes}
+            getRowKey={(note) => note.id}
+            emptyTitle="No saved notes"
+            emptyDescription="No notes logged yet. Add your first note above."
+          />
         </div>
       )}
 
@@ -515,21 +520,18 @@ export default function ContactDetailsPage() {
       {activeTab === 'emails' && (
         <div className="space-y-4">
           <h2 className="text-sm font-bold text-slate-900">Email History</h2>
-          {emails.length === 0 ? (
-            <div className="p-6 bg-white rounded-xl border border-slate-200 text-xs text-slate-500">
-              No email messages sent to this contact.
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {emails.map((email) => (
-                <div key={email.id} className="p-4 bg-white rounded-xl border border-slate-200 text-xs space-y-1">
-                  <div className="font-bold text-slate-900">{email.subject || 'Sales Outreach'}</div>
-                  <div className="text-slate-600">{email.body_text || email.body || 'No preview body.'}</div>
-                  <div className="text-[11px] text-slate-400">{email.sent_at || 'Sent'}</div>
-                </div>
-              ))}
-            </div>
-          )}
+          <DataTable
+            columns={emailColumns}
+            data={emails}
+            getRowKey={(email) => email.id}
+            emptyTitle="No email messages"
+            emptyDescription="No email messages have been sent to this contact."
+            expandableRow={(email) => (
+              <div className="space-y-1 text-xs text-slate-600">
+                <p>{email.body_text || email.body || 'No preview body.'}</p>
+              </div>
+            )}
+          />
         </div>
       )}
 
@@ -537,25 +539,13 @@ export default function ContactDetailsPage() {
       {activeTab === 'calls' && (
         <div className="space-y-4">
           <h2 className="text-sm font-bold text-slate-900">Telephony Call Logs</h2>
-          {calls.length === 0 ? (
-            <div className="p-6 bg-white rounded-xl border border-slate-200 text-xs text-slate-500">
-              No call logs recorded.
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {calls.map((call, idx: number) => (
-                <div key={idx} className="p-4 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between">
-                  <div>
-                    <div className="font-bold text-slate-900">{call.call_type || 'Outbound Call'}</div>
-                    <div className="text-slate-500 mt-0.5">{call.notes || 'Routine check-in call'}</div>
-                  </div>
-                  <div className="text-right text-xs font-semibold text-slate-700">
-                    {call.duration_seconds ? `${call.duration_seconds} sec` : '1 min'}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          <DataTable
+            columns={callColumns}
+            data={calls}
+            getRowKey={(call) => call.id}
+            emptyTitle="No call logs"
+            emptyDescription="No call logs have been recorded for this contact."
+          />
         </div>
       )}
 
