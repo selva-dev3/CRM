@@ -11,10 +11,33 @@ from app.models.contact import Contact, ContactAddress
 from app.models.deal import Deal, DealActivity, DealProduct
 from app.models.organization import Organization
 from app.models.product import Product
+from app.services.public_invoice_token import acceptance_token, token_hash
 
 
 class InvoiceRepository:
     """DB query layer for the Invoice domain. All queries are organization-scoped."""
+
+    async def lock_scoped(
+        self, db: AsyncSession, *, invoice_id: str, organization_id: str
+    ) -> Invoice | None:
+        result = await db.execute(
+            select(Invoice)
+            .where(Invoice.id == invoice_id, Invoice.organization_id == organization_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_public(
+        self, db: AsyncSession, digest: str, *, lock: bool = False
+    ) -> Invoice | None:
+        stmt = select(Invoice).where(Invoice.public_token_hash == digest)
+        if lock:
+            stmt = stmt.with_for_update().execution_options(populate_existing=True)
+        return (await db.execute(stmt)).scalar_one_or_none()
+
+    async def record_event(self, db: AsyncSession, invoice: Invoice, action: str) -> None:
+        db.add(AuditLog(organization_id=invoice.organization_id, action=action, details=invoice.id))
 
     async def get_by_quote(
         self, db: AsyncSession, *, quote_id: str, organization_id: str
@@ -93,7 +116,13 @@ class InvoiceRepository:
         search: str | None = None,
     ) -> list[Invoice]:
         stmt = select(Invoice).where(Invoice.organization_id == organization_id)
-        if status and status.strip():
+        if status == "Overdue":
+            stmt = stmt.where(
+                Invoice.status.in_(("Finalized", "Accepted")),
+                Invoice.paid_amount < Invoice.amount,
+                Invoice.due_date < datetime.now(UTC),
+            )
+        elif status and status.strip():
             stmt = stmt.where(Invoice.status == status.strip())
         if search and search.strip():
             stmt = stmt.where(Invoice.invoice_number.ilike(f"%{search.strip()}%"))
@@ -163,6 +192,8 @@ class InvoiceRepository:
         invoice.delivery_id = delivery_id
         invoice.recipient_email = recipient_email
         invoice.delivery_status = "Pending"
+        invoice.public_token_hash = token_hash(acceptance_token(invoice.id, delivery_id))
+        invoice.public_token_expires_at = datetime.now(UTC) + timedelta(days=7)
 
     async def claim_delivery(self, db: AsyncSession, now: datetime) -> Invoice | None:
         result = await db.execute(
@@ -239,9 +270,11 @@ class InvoiceRepository:
         result = await db.execute(
             select(Invoice.id, Invoice.organization_id)
             .where(
-                Invoice.status.in_(("Pending", "Overdue")),
-                Invoice.paid_amount == 0,
+                Invoice.status.in_(("Finalized", "Accepted")),
+                Invoice.paid_amount < Invoice.amount,
                 Invoice.delivery_status == "Sent",
+                Invoice.finalized_at.is_not(None),
+                Invoice.public_token_expires_at > now,
                 Invoice.due_date <= now + timedelta(days=3),
                 Invoice.reminder_count < 3,
                 or_(

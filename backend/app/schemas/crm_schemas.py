@@ -1,3 +1,5 @@
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any, Literal
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
@@ -17,6 +19,28 @@ class PaginationParams(BaseModel):
 class MessageResponse(BaseModel):
     message: str
     status: str = "success"
+
+
+class SubscriptionCheckoutRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    plan_slug: str = Field(min_length=1, max_length=100, pattern=r"^[a-z0-9][a-z0-9_-]*$")
+    org_id: str | None = Field(default=None, min_length=1, max_length=100)
+
+
+class SubscriptionCheckoutResponse(BaseModel):
+    checkout_url: str
+    session_id: str | None = None
+    status: Literal["success"] = "success"
+
+
+class SubscriptionCheckoutVerifyResponse(BaseModel):
+    verified: bool
+    db_synced: bool
+    plan: str | None = None
+    plan_slug: str | None = None
+    status: Literal["pending", "completed"]
+    message: str
 
 
 class BulkDeleteRequest(BaseModel):
@@ -304,26 +328,6 @@ class OrganizationResponse(OrganizationBase):
     id: str
     created_at: str
     members_count: int = 1
-
-
-class SubscriptionCheckoutRequest(BaseModel):
-    plan_slug: str
-    org_id: str | None = None
-
-
-class SubscriptionCheckoutResponse(BaseModel):
-    checkout_url: str
-    session_id: str
-    status: str = "success"
-
-
-class SubscriptionCheckoutVerifyResponse(BaseModel):
-    verified: bool
-    db_synced: bool
-    plan: str | None = None
-    plan_slug: str | None = None
-    status: str
-    message: str
 
 
 # 5. Lead Schemas
@@ -769,6 +773,12 @@ class InvoiceResponse(BaseModel):
     discount_total: float = 0.0
     tax_total: float = 0.0
     paid_amount: float = 0.0
+    outstanding_amount: float = 0.0
+    payment_status: str = "Pending"
+    finalized_at: str | None = None
+    finalized_by: str | None = None
+    accepted_at: str | None = None
+    billing_snapshot: dict[str, Any] | None = None
     status: str
     due_date: str | None = None
     notes: str | None = None
@@ -778,7 +788,6 @@ class InvoiceResponse(BaseModel):
     recipient_email: str | None = None
     reminder_count: int = 0
     last_reminded_at: str | None = None
-    stripe_checkout_url: str | None = None
     created_at: str | None = None
     items: list[InvoiceItemSchema] = Field(default_factory=list)
 
@@ -795,11 +804,64 @@ class PaymentResponse(BaseModel):
     currency: str
     payment_method: str | None = None
     status: str
-    provider: str
-    provider_payment_id: str
-    checkout_session_id: str
+    payment_type: str
+    payment_date: str
+    notes: str | None = None
     paid_at: str
     created_at: str | None = None
+
+
+class ManualPaymentCreate(BaseModel):
+    model_config = {"extra": "forbid"}
+    amount: Decimal = Field(gt=0, max_digits=14, decimal_places=2, allow_inf_nan=False)
+    payment_type: Literal["Cash", "Bank Transfer", "UPI", "Cheque", "Card", "Other"]
+    payment_date: date
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class InvoiceUpdate(BaseModel):
+    model_config = {"extra": "forbid"}
+    amount: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
+    status: Literal["Draft", "Cancelled"] | None = None
+    due_date: datetime | None = None
+    billing_snapshot: dict[str, Any] | None = None
+
+
+class PublicInvoiceRequest(BaseModel):
+    token: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+
+
+class PublicInvoiceItem(BaseModel):
+    product_name: str
+    description: str | None = None
+    quantity: int
+    unit_price: Decimal
+    discount_percent: Decimal
+    tax_percent: Decimal
+    subtotal: Decimal
+    discount_total: Decimal
+    tax_total: Decimal
+    total: Decimal
+
+
+class PublicInvoiceResponse(BaseModel):
+    created_at: str | None
+    pdf_url: str | None = None
+    invoice_number: str
+    status: str
+    payment_status: str
+    currency: str
+    amount: Decimal
+    paid_amount: Decimal
+    outstanding_amount: Decimal
+    subtotal: Decimal
+    discount_total: Decimal
+    tax_total: Decimal
+    due_date: str | None
+    finalized_at: str | None
+    accepted_at: str | None
+    billing_snapshot: dict[str, str | None]
+    items: list[PublicInvoiceItem]
 
 
 # 18. Notification Schemas

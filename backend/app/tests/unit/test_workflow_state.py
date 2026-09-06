@@ -7,8 +7,14 @@ from app.services.quote_state import assert_quote_transition
 
 @pytest.mark.parametrize(
     ("current", "target"),
-    [("Draft", "Pending Approval"), ("Pending Approval", "Sent"), ("Approved", "Sent"),
-     ("Sent", "Accepted"), ("Sent", "Rejected"), ("Accepted", "Accepted")],
+    [
+        ("Draft", "Pending Approval"),
+        ("Pending Approval", "Sent"),
+        ("Approved", "Sent"),
+        ("Sent", "Accepted"),
+        ("Sent", "Rejected"),
+        ("Accepted", "Accepted"),
+    ],
 )
 def test_quote_state_machine_allows_business_transitions(current, target):
     assert_quote_transition(current, target)
@@ -16,8 +22,7 @@ def test_quote_state_machine_allows_business_transitions(current, target):
 
 @pytest.mark.parametrize(
     ("current", "target"),
-    [("Accepted", "Draft"), ("Accepted", "Approved"), ("Rejected", "Sent"),
-     ("Sent", "Draft")],
+    [("Accepted", "Draft"), ("Accepted", "Approved"), ("Rejected", "Sent"), ("Sent", "Draft")],
 )
 def test_quote_state_machine_rejects_backward_transitions(current, target):
     with pytest.raises(APIException) as exc_info:
@@ -25,9 +30,37 @@ def test_quote_state_machine_rejects_backward_transitions(current, target):
     assert exc_info.value.code == "INVALID_QUOTE_TRANSITION"
 
 
-def test_invoice_paid_requires_verified_transition_path():
-    assert_invoice_transition("Pending", "Paid")
-    with pytest.raises(APIException):
-        assert_invoice_transition("Draft", "Paid")
-    with pytest.raises(APIException):
-        assert_invoice_transition("Paid", "Draft")
+@pytest.mark.parametrize(
+    "current,target",
+    [
+        ("Draft", "Finalized"),
+        ("Finalized", "Accepted"),
+        ("Draft", "Cancelled"),
+        ("Finalized", "Cancelled"),
+        ("Accepted", "Cancelled"),
+        ("Draft", "Draft"),
+        ("Finalized", "Finalized"),
+        ("Accepted", "Accepted"),
+    ],
+)
+def test_invoice_lifecycle_transitions(current, target):
+    assert_invoice_transition(current, target)
+
+
+@pytest.mark.parametrize(
+    "current,target",
+    [
+        ("Draft", "Accepted"),
+        ("Finalized", "Draft"),
+        ("Accepted", "Draft"),
+        ("Cancelled", "Finalized"),
+        ("Draft", "Paid"),
+        ("Finalized", "Paid"),
+        ("Accepted", "Pending"),
+    ],
+)
+def test_invoice_rejects_backward_and_payment_status_transitions(current, target):
+    with pytest.raises(APIException) as exc:
+        assert_invoice_transition(current, target)
+    assert exc.value.status_code == 409
+    assert exc.value.code == "INVALID_INVOICE_TRANSITION"

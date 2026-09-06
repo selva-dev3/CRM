@@ -30,7 +30,7 @@ class Integration(Base):
 
     name: Mapped[str] = mapped_column(String(100), nullable=False)
 
-    # zapier / slack / stripe / google / hubspot
+    # zapier / slack / google / hubspot
     provider: Mapped[str] = mapped_column(String(50), index=True, nullable=False)
 
     is_connected: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

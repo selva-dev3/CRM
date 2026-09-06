@@ -96,7 +96,9 @@ def render_invoice_pdf(
             p(f"Discount: {invoice['currency']} {invoice['discount_total']:.2f}"),
             p(f"Tax: {invoice['currency']} {invoice['tax_total']:.2f}"),
             p(f"Total due: {invoice['currency']} {invoice['amount']:.2f}", "Heading2"),
-            p("Payment is complete only after server-side verification by the payment provider."),
+            p(
+                "Please review and accept this invoice using the secure link in your email. Payments are recorded by our team."
+            ),
         ]
     )
     document.build(story)
@@ -129,15 +131,14 @@ def render_receipt_pdf(
         Spacer(1, 6 * mm),
         p(f"Invoice: {invoice['invoice_number']}"),
         p(f"Payment ID: {payment['payment_id']}"),
-        p(f"Provider reference: {payment['provider_reference']}"),
         p(f"Payment date: {payment['paid_at']}"),
-        p(f"Payment method: {payment.get('payment_method') or 'Stripe'}"),
+        p(f"Payment type: {payment.get('payment_type') or 'Not specified'}"),
         Spacer(1, 5 * mm),
         p(f"Received from: {customer.get('company') or customer.get('contact')}"),
         p(customer.get("email")),
         Spacer(1, 8 * mm),
         p(f"Amount paid: {payment['currency']} {payment['amount']:.2f}", "Heading2"),
-        p("Payment verified by Stripe."),
+        p("This receipt acknowledges a payment recorded by the CRM team."),
     ]
     document.build(story)
     return output.getvalue()

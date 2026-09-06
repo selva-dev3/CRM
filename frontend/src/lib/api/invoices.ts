@@ -7,13 +7,13 @@ export interface InvoiceLineItem {
   product_name?: string | null;
   description?: string | null;
   quantity: number;
-  unit_price: number;
-  discount_percent: number;
-  tax_percent: number;
-  subtotal?: number;
-  discount_total?: number;
-  tax_total?: number;
-  total?: number;
+  unit_price: number | string;
+  discount_percent: number | string;
+  tax_percent: number | string;
+  subtotal?: number | string;
+  discount_total?: number | string;
+  tax_total?: number | string;
+  total?: number | string;
 }
 
 export interface InvoiceItem {
@@ -23,11 +23,16 @@ export interface InvoiceItem {
   company_id?: string | null;
   contact_id?: string | null;
   currency?: string;
-  amount: number;
-  subtotal?: number;
-  discount_total?: number;
-  tax_total?: number;
-  paid_amount?: number;
+  amount: number | string;
+  subtotal?: number | string;
+  discount_total?: number | string;
+  tax_total?: number | string;
+  paid_amount?: number | string;
+  outstanding_amount?: number | string;
+  payment_status?: 'Pending' | 'Partially Paid' | 'Paid';
+  finalized_at?: string | null;
+  accepted_at?: string | null;
+  billing_snapshot?: Record<string, unknown> | null;
   status: string;
   due_date?: string | null;
   notes?: string | null;
@@ -37,7 +42,6 @@ export interface InvoiceItem {
   recipient_email?: string | null;
   reminder_count?: number;
   last_reminded_at?: string | null;
-  stripe_checkout_url?: string | null;
   created_at?: string | null;
   items?: InvoiceLineItem[];
 }
@@ -143,8 +147,8 @@ export async function sendInvoiceEmailApi(invoiceId: string, recipient_email: st
   return apiClient.post<MessageResponse>(`/invoices/${invoiceId}/send?recipient_email=${encodeURIComponent(recipient_email)}`);
 }
 
-export async function createStripeCheckoutApi(invoiceId: string): Promise<{ checkout_url: string }> {
-  return apiClient.post<{ checkout_url: string }>(`/invoices/${invoiceId}/stripe-checkout`);
+export async function finalizeInvoiceApi(invoiceId: string): Promise<unknown> {
+  return apiClient.post(`/invoices/${invoiceId}/finalize`);
 }
 
 export async function sendPaymentReminderApi(invoiceId: string): Promise<MessageResponse> {
@@ -287,16 +291,19 @@ export function useBulkRemindInvoicesMutation(options?: UseMutationOptions<BulkA
 }
 
 export function useSendInvoiceEmailMutation(options?: UseMutationOptions<MessageResponse, Error, { id: string; recipient_email: string }>) {
+  const queryClient = useQueryClient();
   return useMutation<MessageResponse, Error, { id: string; recipient_email: string }>({
     mutationFn: ({ id, recipient_email }) => sendInvoiceEmailApi(id, recipient_email),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['invoices'] }),
     ...options,
   });
 }
 
-export function useCreateStripeCheckoutMutation(options?: UseMutationOptions<{ checkout_url: string }, Error, string>) {
-  return useMutation<{ checkout_url: string }, Error, string>({
-    mutationFn: createStripeCheckoutApi,
-    ...options,
+export function useFinalizeInvoiceMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: finalizeInvoiceApi,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['invoices'] }),
   });
 }
 

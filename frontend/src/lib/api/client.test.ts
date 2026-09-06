@@ -2,6 +2,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { API_REQUEST_TIMEOUT_MS, apiClient, BASE_URL, clearSessionToken, resolveApiBaseUrl } from './client';
 
 describe('apiClient cookie authentication', () => {
+  it('does not refresh, clear the CRM session, or redirect on invalid public invoice tokens', async () => {
+    sessionStorage.setItem('user', 'existing-session');
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 401, json: async () => ({ message: 'Invalid invoice link' }) });
+    vi.stubGlobal('fetch', fetchMock);
+    const unauthorized = vi.fn();
+    window.addEventListener('auth:unauthorized', unauthorized);
+    await expect(apiClient.post('/public/invoices/view', { token: 'invalid' }, { credentials: 'omit' })).rejects.toThrow('Invalid invoice link');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(sessionStorage.getItem('user')).toBe('existing-session');
+    expect(unauthorized).not.toHaveBeenCalled();
+    window.removeEventListener('auth:unauthorized', unauthorized);
+  });
   afterEach(() => {
     vi.unstubAllGlobals();
     localStorage.clear();

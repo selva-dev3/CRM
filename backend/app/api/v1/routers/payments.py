@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
+from app.core.errors import NotFoundError
 from app.db.session import get_db
 from app.models import User
 from app.schemas.crm_schemas import PaymentResponse
@@ -14,7 +15,7 @@ router = APIRouter()
 @router.get(
     "",
     response_model=list[PaymentResponse],
-    summary="List verified payments for the current organization",
+    summary="List recorded payments for the current organization",
     dependencies=[Depends(require_permission("invoices:read"))],
 )
 async def list_payments(
@@ -41,7 +42,7 @@ async def list_payments(
 @router.get(
     "/{payment_id}",
     response_model=PaymentResponse,
-    summary="Get a verified payment for the current organization",
+    summary="Get a recorded payment for the current organization",
     dependencies=[Depends(require_permission("invoices:read"))],
 )
 async def get_payment(
@@ -54,5 +55,5 @@ async def get_payment(
         db, payment_id=payment_id, organization_id=organization_id
     )
     if not payment:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment not found")
+        raise NotFoundError(message="Payment not found")
     return payment

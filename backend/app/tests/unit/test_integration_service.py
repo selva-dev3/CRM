@@ -209,15 +209,13 @@ async def test_disconnect_slack_fires_integration_disconnected():
     assert result["status"] == "success"
 
 
-@pytest.mark.asyncio
-async def test_handle_stripe_webhook_default():
-    service = IntegrationService()
-    result = await service.handle_stripe_webhook(None, None)
-    assert "payment_intent.succeeded" in result["message"]
+def test_stripe_placeholder_removed():
+    assert not hasattr(IntegrationService, "handle_stripe_webhook")
+    assert all(connector["name"] != "Stripe Billing" for connector in DEFAULT_CONNECTORS)
 
 
 def test_default_connectors_and_events():
-    assert len(DEFAULT_CONNECTORS) == 6
+    assert len(DEFAULT_CONNECTORS) == 5
     assert "lead.created" in SLACK_ENABLED_EVENTS
     assert "integration.disconnected" in SLACK_ENABLED_EVENTS
 

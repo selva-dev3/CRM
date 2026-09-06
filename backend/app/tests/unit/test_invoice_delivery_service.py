@@ -19,9 +19,12 @@ def _invoice(**overrides):
         "currency": "INR",
         "amount": Decimal("1250.00"),
         "paid_amount": Decimal("0.00"),
-        "status": "Pending",
+        "status": "Accepted",
+        "finalized_at": datetime.now(UTC),
+        "sent_at": datetime.now(UTC),
+        "delivery_id": "delivery-1",
+        "public_token_expires_at": datetime.now(UTC) + timedelta(days=7),
         "recipient_email": "buyer@example.com",
-        "stripe_checkout_url": "https://checkout.stripe.com/session",
         "last_reminded_at": None,
         "reminder_count": 0,
         "due_date": datetime.now(UTC) + timedelta(days=7),
@@ -106,7 +109,7 @@ async def test_payment_reminder_rejects_duplicate_within_24_hours():
 
 
 @pytest.mark.asyncio
-async def test_payment_reminder_marks_past_due_invoice_overdue(monkeypatch):
+async def test_payment_reminder_preserves_past_due_invoice_lifecycle(monkeypatch):
     service = InvoiceDeliveryService()
     invoice = _invoice(due_date=datetime.now(UTC) - timedelta(days=1))
     db = AsyncMock()
@@ -125,7 +128,7 @@ async def test_payment_reminder_marks_past_due_invoice_overdue(monkeypatch):
 
     await service.send_reminder(db, invoice_id="invoice-1", organization_id="org-1")
 
-    assert invoice.status == "Overdue"
+    assert invoice.status == "Accepted"
 
 
 @pytest.mark.asyncio

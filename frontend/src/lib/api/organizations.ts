@@ -109,8 +109,8 @@ export interface CreateSubscriptionCheckoutPayload {
 
 export interface SubscriptionCheckoutResponse {
   checkout_url: string;
-  session_id: string;
-  status: string;
+  session_id: string | null;
+  status: 'success';
 }
 
 export interface SubscriptionCheckoutVerifyResponse {
@@ -118,8 +118,74 @@ export interface SubscriptionCheckoutVerifyResponse {
   db_synced: boolean;
   plan: string | null;
   plan_slug: string | null;
-  status: string;
+  status: 'pending' | 'completed';
   message: string;
+}
+
+export const subscriptionKeys = {
+  current: ['organization-subscription'] as const,
+  verification: (sessionId?: string | null, planSlug?: string | null) => ['subscription-checkout-verify', sessionId || null, planSlug || null] as const,
+};
+
+export function isSubscriptionCheckoutComplete(result?: SubscriptionCheckoutVerifyResponse, planSlug?: string | null): boolean {
+  return Boolean(result?.verified && result.db_synced && result.status === 'completed' && (!planSlug || result.plan_slug === planSlug));
+}
+
+export function validateSubscriptionRedirect(value: string): string {
+  const url = new URL(value);
+  if (url.protocol !== 'https:' || !['checkout.stripe.com', 'billing.stripe.com'].includes(url.hostname) || url.username || url.password || url.port) {
+    throw new Error('The subscription payment URL is not an approved Stripe destination.');
+  }
+  return url.href;
+}
+
+export function redirectToSubscriptionCheckout(url: string) {
+  window.location.assign(validateSubscriptionRedirect(url));
+}
+
+export async function createSubscriptionCheckoutApi(payload: CreateSubscriptionCheckoutPayload, idempotencyKey: string): Promise<SubscriptionCheckoutResponse> {
+  const result = await apiClient.post<SubscriptionCheckoutResponse>('/organizations/subscription/checkout', payload, { headers: { 'Idempotency-Key': idempotencyKey } });
+  if (result.status !== 'success' || (result.session_id !== null && typeof result.session_id !== 'string')) throw new Error('Invalid subscription checkout response.');
+  return { ...result, checkout_url: validateSubscriptionRedirect(result.checkout_url) };
+}
+
+export function verifySubscriptionCheckoutApi(sessionId?: string | null, planSlug?: string | null): Promise<SubscriptionCheckoutVerifyResponse> {
+  const params = new URLSearchParams();
+  if (sessionId) params.set('session_id', sessionId);
+  if (planSlug) params.set('plan_slug', planSlug);
+  return apiClient.get(`/organizations/subscription/checkout/verify${params.size ? `?${params}` : ''}`);
+}
+
+export function useCreateSubscriptionCheckoutMutation() {
+  return useMutation({
+    mutationFn: ({ payload, idempotencyKey }: { payload: CreateSubscriptionCheckoutPayload; idempotencyKey: string }) => createSubscriptionCheckoutApi(payload, idempotencyKey),
+    retry: false,
+  });
+}
+
+export function useVerifySubscriptionCheckoutQuery(sessionId?: string | null, planSlug?: string | null, polling = true) {
+  const client = useQueryClient();
+  return useQuery({
+    queryKey: subscriptionKeys.verification(sessionId, planSlug),
+    queryFn: async () => {
+      const result = await verifySubscriptionCheckoutApi(sessionId, planSlug);
+      if (isSubscriptionCheckoutComplete(result, planSlug)) {
+        await Promise.all([
+          client.invalidateQueries({ queryKey: subscriptionKeys.current }),
+          client.invalidateQueries({ queryKey: ['current-organization'] }),
+          client.invalidateQueries({ queryKey: ['organization-usage'] }),
+          client.invalidateQueries({ queryKey: ['organizations'] }),
+        ]);
+      }
+      return result;
+    },
+    enabled: Boolean(sessionId || planSlug) && polling,
+    refetchInterval: (query) => polling && !isSubscriptionCheckoutComplete(query.state.data, planSlug) ? 2000 : false,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    gcTime: 0,
+  });
 }
 
 export interface OrganizationUsage {
@@ -191,24 +257,6 @@ export async function getOrganizationSubscriptionApi(): Promise<OrganizationSubs
 // 6b. GET /api/v1/organizations/subscription/plans (List available plans)
 export async function getSubscriptionPlansApi(): Promise<SubscriptionPlanItem[]> {
   return apiClient.get<SubscriptionPlanItem[]>('/organizations/subscription/plans');
-}
-
-// 7. POST /api/v1/organizations/subscription/upgrade (Upgrade plan)
-export async function upgradeOrganizationSubscriptionApi(planSlug: string): Promise<{ message: string; status: string }> {
-  return apiClient.post<{ message: string; status: string }>(`/organizations/subscription/upgrade?plan_slug=${encodeURIComponent(planSlug)}`);
-}
-
-// 7b. POST /api/v1/organizations/subscription/checkout (Create Stripe checkout session)
-export async function createSubscriptionCheckoutApi(payload: CreateSubscriptionCheckoutPayload): Promise<SubscriptionCheckoutResponse> {
-  return apiClient.post<SubscriptionCheckoutResponse>('/organizations/subscription/checkout', payload);
-}
-
-// 7c. GET /api/v1/organizations/subscription/checkout/verify (Verify Stripe checkout session)
-export async function verifySubscriptionCheckoutApi(sessionId: string, orgId?: string): Promise<SubscriptionCheckoutVerifyResponse> {
-  const url = orgId
-    ? `/organizations/subscription/checkout/verify?session_id=${encodeURIComponent(sessionId)}&org_id=${encodeURIComponent(orgId)}`
-    : `/organizations/subscription/checkout/verify?session_id=${encodeURIComponent(sessionId)}`;
-  return apiClient.get<SubscriptionCheckoutVerifyResponse>(url);
 }
 
 // 8. POST /api/v1/organizations/subscription/cancel (Cancel subscription)
@@ -296,28 +344,6 @@ export function useOrganizationSubscriptionQuery() {
   return useQuery({
     queryKey: ['organization-subscription'],
     queryFn: getOrganizationSubscriptionApi,
-  });
-}
-
-export function useCreateSubscriptionCheckoutMutation() {
-  return useMutation({
-    mutationFn: createSubscriptionCheckoutApi,
-  });
-}
-
-export function useVerifySubscriptionCheckoutQuery(sessionId: string | null, orgId?: string | null) {
-  return useQuery({
-    queryKey: ['subscription-checkout-verify', sessionId, orgId],
-    queryFn: () => verifySubscriptionCheckoutApi(sessionId!, orgId || undefined),
-    enabled: Boolean(sessionId && sessionId.trim().length > 0),
-    refetchInterval: (query) => {
-      const data = query.state.data;
-      if (data && data.verified && !data.db_synced) {
-        return 2000;
-      }
-      return false;
-    },
-    retry: 2,
   });
 }
 

@@ -1,157 +1,42 @@
-import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import PaymentSuccessPage from './page';
-
-const mockPush = vi.fn();
-const mockInvalidateQueries = vi.fn();
-const mockRefetch = vi.fn();
-const mockRefetchVerify = vi.fn();
-
-let mockSearchParamsSessionId: string | null = 'cs_test_session_12345';
-let mockSearchParamsOrgId: string | null = 'org-123';
-
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({
-    push: mockPush,
-  }),
-  useSearchParams: () => ({
-    get: vi.fn().mockImplementation((param: string) => {
-      if (param === 'session_id') return mockSearchParamsSessionId;
-      if (param === 'org_id') return mockSearchParamsOrgId;
-      return null;
-    }),
-  }),
-}));
-
-vi.mock('@tanstack/react-query', () => ({
-  useQueryClient: () => ({
-    invalidateQueries: mockInvalidateQueries,
-  }),
-}));
-
-import type { SubscriptionCheckoutVerifyResponse } from '@/lib/api/organizations';
-
-const mockVerifyResult: {
-  data: SubscriptionCheckoutVerifyResponse | undefined;
-  isLoading: boolean;
-  isError: boolean;
-  refetch: typeof mockRefetchVerify;
-} = {
-  data: {
-    verified: true,
-    db_synced: true,
-    plan: 'Starter',
-    plan_slug: 'starter',
-    status: 'success',
-    message: 'Payment verified successfully.',
-  },
-  isLoading: false,
-  isError: false,
-  refetch: mockRefetchVerify,
-};
-
-vi.mock('@/lib/api/organizations', () => ({
-  useVerifySubscriptionCheckoutQuery: () => mockVerifyResult,
-  useOrganizationSubscriptionQuery: () => ({
-    data: { plan: 'Starter', billing_cycle: 'Monthly', amount: 999 },
-    isLoading: false,
-    refetch: mockRefetch,
-  }),
-  useCurrentOrganizationQuery: () => ({
-    data: { id: 'org-123', name: 'Acme Corp', plan: 'Starter' },
-  }),
-}));
-
-describe('PaymentSuccessPage - Backend Verification Flow', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockSearchParamsSessionId = 'cs_test_session_12345';
-    mockSearchParamsOrgId = 'org-123';
-    mockVerifyResult.isLoading = false;
-    mockVerifyResult.isError = false;
-    mockVerifyResult.data = {
-      verified: true,
-      db_synced: true,
-      plan: 'Starter',
-      plan_slug: 'starter',
-      status: 'success',
-      message: 'Payment verified successfully.',
-    };
-  });
-
-  it('renders verified payment status when verification succeeds and DB is synced', () => {
-    render(<PaymentSuccessPage />);
-
-    expect(screen.getByText('Subscription Upgraded!')).toBeInTheDocument();
-    expect(screen.getByText(/Stripe Payment Verified/i)).toBeInTheDocument();
-    expect(screen.getByText('Starter')).toBeInTheDocument();
-    expect(screen.getByText('Acme Corp')).toBeInTheDocument();
-    expect(screen.getByText('cs_test_session_12345')).toBeInTheDocument();
-  });
-
-  it('renders verification loading state while query is in-flight', () => {
-    mockVerifyResult.isLoading = true;
-
-    render(<PaymentSuccessPage />);
-
-    expect(screen.getByText('Verifying Payment Status')).toBeInTheDocument();
-    expect(screen.getByText(/Checking cryptographic payment verification/i)).toBeInTheDocument();
-  });
-
-  it('renders pending synchronization state when verified by Stripe but DB sync is in-flight', () => {
-    mockVerifyResult.data = {
-      verified: true,
-      db_synced: false,
-      plan: 'Starter',
-      plan_slug: 'starter',
-      status: 'success',
-      message: 'Payment verified successfully.',
-    };
-
-    render(<PaymentSuccessPage />);
-
-    expect(screen.getByText('Activating Your Subscription')).toBeInTheDocument();
-    expect(screen.getByText(/Payment Confirmed · Syncing/i)).toBeInTheDocument();
-    expect(screen.getByText('Synchronizing...')).toBeInTheDocument();
-  });
-
-  it('renders verification failure alert when session is fake or payment unverified', () => {
-    mockVerifyResult.data = {
-      verified: false,
-      db_synced: false,
-      plan: null,
-      plan_slug: null,
-      status: 'unpaid',
-      message: 'Payment is not confirmed (status: unpaid).',
-    };
-
-    render(<PaymentSuccessPage />);
-
-    expect(screen.getByText('Payment Not Verified')).toBeInTheDocument();
-    expect(screen.getByText('Payment is not confirmed (status: unpaid).')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Retry/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Back to Billing/i })).toBeInTheDocument();
-  });
-
-  it('invalidates React Query caches on verified and synced mount', () => {
-    render(<PaymentSuccessPage />);
-
-    expect(mockInvalidateQueries).toHaveBeenCalledWith({
-      queryKey: ['organization-subscription'],
-    });
-    expect(mockInvalidateQueries).toHaveBeenCalledWith({
-      queryKey: ['current-organization'],
-    });
-    expect(mockRefetch).toHaveBeenCalled();
-  });
-
-  it('navigates back to organization on button click', () => {
-    render(<PaymentSuccessPage />);
-
-    const returnBtn = screen.getByRole('button', { name: /Return to Subscription & Billing/i });
-    fireEvent.click(returnBtn);
-
-    expect(mockPush).toHaveBeenCalledWith('/organization/org-123');
-  });
+import { it, expect, vi, beforeEach } from 'vitest';
+import Page from './page';
+const mocks = vi.hoisted(() => ({ params: 'plan_slug=pro', complete: false, polling: true, isError: false, refetch: vi.fn(), hook: vi.fn() }));
+vi.mock('next/navigation', () => ({ useSearchParams: () => new URLSearchParams(mocks.params) }));
+vi.mock('@/lib/api/subscription-checkout', () => ({ useSubscriptionVerification: (sessionId: string | null, planSlug: string | null) => {
+  mocks.hook(sessionId, planSlug);
+  return { complete: mocks.complete, polling: mocks.polling, isError: mocks.isError, error: new Error('Status unavailable'), refetch: mocks.refetch, data: { plan: 'Pro', message: 'Awaiting webhook' } };
+} }));
+beforeEach(() => { vi.clearAllMocks(); mocks.params = 'plan_slug=pro'; mocks.complete = false; mocks.polling = true; mocks.isError = false; });
+it('verifies portal returns using the target plan without a session', () => {
+  render(<Page />);
+  expect(mocks.hook).toHaveBeenCalledWith(null, 'pro');
+  expect(screen.getByText('Waiting for billing synchronization…')).toBeInTheDocument();
+  expect(screen.queryByText('Subscription updated')).not.toBeInTheDocument();
+});
+it('passes the initial checkout session and plan to verification', () => {
+  mocks.params = 'plan_slug=pro&session_id=cs_123';
+  render(<Page />);
+  expect(mocks.hook).toHaveBeenCalledWith('cs_123', 'pro');
+});
+it('shows success only after server verification completes', () => {
+  mocks.complete = true;
+  render(<Page />);
+  expect(screen.getByRole('heading')).toHaveTextContent('Subscription updated');
+});
+it('offers a read-only check after polling expires', () => {
+  mocks.polling = false;
+  render(<Page />);
+  expect(screen.getByText('Subscription update is still pending.')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Check status' }));
+  expect(mocks.refetch).toHaveBeenCalledOnce();
+});
+it('handles missing references and verification errors', () => {
+  mocks.params = '';
+  const view = render(<Page />);
+  expect(screen.getByRole('alert')).toHaveTextContent('No subscription reference');
+  view.unmount();
+  mocks.params = 'plan_slug=pro'; mocks.isError = true;
+  render(<Page />);
+  expect(screen.getByRole('alert')).toHaveTextContent('Status unavailable');
 });

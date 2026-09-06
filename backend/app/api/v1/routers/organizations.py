@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, File, Form, Header, Request, UploadFile, status
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, File, Form, Header, Query, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
-from app.core.errors import APIException
 from app.db.session import get_db
 from app.models import User
 from app.schemas.crm_schemas import (
@@ -14,8 +15,10 @@ from app.schemas.crm_schemas import (
     SubscriptionCheckoutVerifyResponse,
 )
 from app.services.organization_service import organization_domain_service
+from app.services.subscription_billing_service import SubscriptionBillingService
 
 router = APIRouter()
+subscription_billing_service = SubscriptionBillingService()
 
 
 @router.get(
@@ -94,62 +97,75 @@ async def list_subscription_plans(db: AsyncSession = Depends(get_db)):
 @router.post(
     "/subscription/checkout",
     response_model=SubscriptionCheckoutResponse,
-    summary="Create a Stripe checkout session for subscription upgrade",
+    summary="Start organization subscription purchase or confirm an existing subscription upgrade",
     dependencies=[Depends(require_permission("organization:billing"))],
 )
 async def create_subscription_checkout(
     payload: SubscriptionCheckoutRequest,
+    idempotency_key: UUID = Header(alias="Idempotency-Key"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
-    return await organization_domain_service.create_subscription_checkout(
-        db, plan_slug=payload.plan_slug, org_id=payload.org_id, current_user=current_user
+) -> dict:
+    return await subscription_billing_service.create_checkout(
+        db,
+        plan_slug=payload.plan_slug,
+        org_id=payload.org_id,
+        current_user=current_user,
+        idempotency_key=str(idempotency_key),
     )
 
 
 @router.get(
     "/subscription/checkout/verify",
     response_model=SubscriptionCheckoutVerifyResponse,
-    summary="Verify a Stripe checkout session for subscription upgrade",
+    summary="Read provider verification and webhook synchronization state",
     dependencies=[Depends(require_permission("organization:billing"))],
 )
 async def verify_subscription_checkout(
-    session_id: str,
-    org_id: str | None = None,
+    session_id: str | None = Query(
+        default=None, min_length=1, max_length=255, pattern=r"^cs_[A-Za-z0-9_]+$"
+    ),
+    plan_slug: str | None = Query(
+        default=None, min_length=1, max_length=100, pattern=r"^[a-z0-9][a-z0-9_-]*$"
+    ),
+    org_id: str | None = Query(default=None, min_length=1, max_length=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
-    return await organization_domain_service.verify_subscription_checkout(
-        db, session_id=session_id, org_id=org_id, current_user=current_user
+) -> dict:
+    return await subscription_billing_service.verify_checkout(
+        db,
+        session_id=session_id,
+        plan_slug=plan_slug,
+        org_id=org_id,
+        current_user=current_user,
     )
 
 
 @router.post(
     "/subscription/webhook",
-    summary="Stripe incoming billing webhook handler",
+    response_model=MessageResponse,
+    summary="Receive signed Stripe organization subscription events only",
 )
 async def handle_stripe_subscription_webhook(
     request: Request,
-    stripe_signature: str | None = Header(None, alias="Stripe-Signature"),
+    stripe_signature: str = Header(default="", alias="Stripe-Signature"),
     db: AsyncSession = Depends(get_db),
-):
-    payload_bytes = await request.body()
-    return await organization_domain_service.handle_stripe_subscription_webhook(
-        db, payload_bytes=payload_bytes, sig_header=stripe_signature
+) -> dict:
+    return await subscription_billing_service.handle_webhook(
+        db,
+        payload_bytes=await request.body(),
+        sig_header=stripe_signature,
     )
 
 
 @router.post(
     "/subscription/upgrade",
     response_model=MessageResponse,
-    summary="Upgrade organization subscription (Deprecated - use Stripe checkout)",
+    summary="Direct entitlement changes are disabled; use subscription checkout",
     dependencies=[Depends(require_permission("organization:billing"))],
 )
 async def upgrade_plan(plan_slug: str, db: AsyncSession = Depends(get_db)):
-    raise APIException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        message="Direct plan upgrade is disabled. Please use the Stripe checkout flow.",
-    )
+    return await organization_domain_service.upgrade_plan(db, plan_slug)
 
 
 @router.post(

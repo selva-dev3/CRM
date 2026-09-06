@@ -33,16 +33,16 @@ def test_invoice_pdf_renders_real_document_from_snapshots():
     assert len(content) > 1000
 
 
-def test_receipt_pdf_renders_only_verified_payment_snapshot():
+def test_receipt_pdf_renders_manual_payment_snapshot():
     content = render_receipt_pdf(
         organization={"name": "Acme CRM", "address": "Chennai"},
         customer={"company": "Buyer Ltd", "email": "priya@buyer.test"},
         invoice={"invoice_number": "INV-2026-000001"},
         payment={
-            "payment_id": "payment-1",
-            "provider_reference": "pi-1",
+            "payment_id": "PAY-2026-000001",
+            "payment_type": "Bank Transfer",
             "paid_at": "2026-09-05T10:00:00+00:00",
-            "payment_method": "card",
+            "payment_method": "Bank transfer",
             "currency": "INR",
             "amount": Decimal("1062.00"),
         },

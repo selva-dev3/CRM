@@ -1,6 +1,7 @@
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
+from decimal import Decimal
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -14,10 +15,21 @@ from app.models import (
     Payment,
 )
 from app.repositories.notification_repository import NotificationRepository
-from app.services.invoice_state import assert_invoice_transition
 
 
 class PaymentRepository:
+    async def sum_succeeded(
+        self, db: AsyncSession, *, invoice_id: str, organization_id: str
+    ) -> Decimal:
+        result = await db.scalar(
+            select(func.coalesce(func.sum(Payment.amount), 0)).where(
+                Payment.invoice_id == invoice_id,
+                Payment.organization_id == organization_id,
+                Payment.status == "Succeeded",
+            )
+        )
+        return Decimal(str(result))
+
     async def get_by_id(self, db: AsyncSession, payment_id: str) -> Payment | None:
         result = await db.execute(select(Payment).where(Payment.id == payment_id))
         return result.scalar_one_or_none()
@@ -38,7 +50,10 @@ class PaymentRepository:
             .join(Invoice, Invoice.id == Payment.invoice_id)
             .outerjoin(Company, Company.id == Invoice.company_id)
             .outerjoin(Contact, Contact.id == Invoice.contact_id)
-            .where(Payment.organization_id == organization_id, Invoice.organization_id == organization_id)
+            .where(
+                Payment.organization_id == organization_id,
+                Invoice.organization_id == organization_id,
+            )
         )
         if status and status.strip():
             stmt = stmt.where(Payment.status == status.strip())
@@ -50,7 +65,6 @@ class PaymentRepository:
                 or_(
                     Payment.id.ilike(term),
                     Payment.payment_number.ilike(term),
-                    Payment.provider_payment_id.ilike(term),
                     Invoice.invoice_number.ilike(term),
                     Company.name.ilike(term),
                     Contact.name.ilike(term),
@@ -59,7 +73,7 @@ class PaymentRepository:
             )
         stmt = stmt.order_by(Payment.paid_at.desc()).offset((page - 1) * limit).limit(limit)
         result = await db.execute(stmt)
-        return list(result.all())
+        return [tuple(row) for row in result.all()]
 
     async def advance_numbering(self, db: AsyncSession, organization_id: str) -> tuple[str, int]:
         result = await db.execute(
@@ -88,7 +102,8 @@ class PaymentRepository:
                 Invoice.organization_id == organization_id,
             )
         )
-        return result.first()
+        row = result.first()
+        return tuple(row) if row is not None else None
 
     async def lock_invoice(
         self, db: AsyncSession, *, invoice_id: str, organization_id: str
@@ -101,98 +116,52 @@ class PaymentRepository:
         )
         return result.scalar_one_or_none()
 
-    async def lock_checkout(self, db: AsyncSession, session_id: str) -> Invoice | None:
+    async def get_by_idempotency(
+        self, db: AsyncSession, *, invoice_id: str, organization_id: str, key: str
+    ) -> Payment | None:
         result = await db.execute(
-            select(Invoice)
-            .where(Invoice.stripe_checkout_session_id == session_id)
-            .with_for_update()
-            .execution_options(populate_existing=True)
-        )
-        return result.scalar_one_or_none()
-
-    async def save_checkout(
-        self, db: AsyncSession, invoice: Invoice, *, session_id: str, url: str, generation: int
-    ) -> None:
-        invoice.stripe_checkout_session_id = session_id
-        invoice.stripe_checkout_url = url
-        invoice.stripe_checkout_generation = generation
-        if invoice.deal_id:
-            db.add(
-                DealActivity(
-                    deal_id=invoice.deal_id,
-                    action=f"Stripe checkout created for invoice {invoice.invoice_number}",
-                )
-            )
-        db.add(
-            AuditLog(
-                organization_id=invoice.organization_id,
-                action="checkout.created",
-                details=invoice.id,
+            select(Payment).where(
+                Payment.invoice_id == invoice_id,
+                Payment.organization_id == organization_id,
+                Payment.idempotency_key == key,
             )
         )
-
-    async def get_payment(self, db: AsyncSession, invoice_id: str) -> Payment | None:
-        result = await db.execute(select(Payment).where(Payment.invoice_id == invoice_id))
         return result.scalar_one_or_none()
 
-    async def get_by_event_id(self, db: AsyncSession, event_id: str) -> Payment | None:
-        result = await db.execute(select(Payment).where(Payment.provider_event_id == event_id))
-        return result.scalar_one_or_none()
-
-    async def record_payment(
-        self,
-        db: AsyncSession,
-        invoice: Invoice,
-        *,
-        intent_id: str,
-        session_id: str,
-        event_id: str,
-        payment_method: str | None,
-        paid_at: datetime,
-    ) -> Payment:
-        payment_prefix, payment_sequence = await self.advance_numbering(db, invoice.organization_id)
-        payment = Payment(
-            organization_id=invoice.organization_id,
-            invoice_id=invoice.id,
-            payment_number=f"{payment_prefix}-{datetime.now(UTC).year}-{payment_sequence:06d}",
-            provider="stripe",
-            provider_payment_id=intent_id,
-            checkout_session_id=session_id,
-            provider_event_id=event_id,
-            payment_method=payment_method,
-            amount=invoice.amount,
-            currency=invoice.currency,
-            status="Succeeded",
-            paid_at=paid_at,
-            receipt_delivery_status="Pending",
-        )
+    async def create_manual(self, db: AsyncSession, *, data: dict) -> Payment:
+        payment = Payment(**data)
         db.add(payment)
-        assert_invoice_transition(invoice.status, "Paid")
-        invoice.status = "Paid"
-        invoice.paid_amount = invoice.amount
-        if invoice.deal_id:
-            db.add(
-                DealActivity(
-                    deal_id=invoice.deal_id,
-                    action=f"Payment received; invoice {invoice.invoice_number} paid",
-                )
-            )
-        db.add(
-            AuditLog(
-                organization_id=invoice.organization_id, action="invoice.paid", details=invoice.id
-            )
-        )
+        await db.flush()
+        return payment
+
+    async def record_manual_audit(
+        self, db: AsyncSession, invoice: Invoice, payment: Payment
+    ) -> None:
         db.add(
             AuditLog(
                 organization_id=invoice.organization_id,
                 action="payment.received",
-                details=invoice.id,
+                details=payment.id,
             )
         )
+        if invoice.payment_status == "Paid":
+            db.add(
+                AuditLog(
+                    organization_id=invoice.organization_id,
+                    action="invoice.paid",
+                    details=invoice.id,
+                )
+            )
+        if invoice.deal_id:
+            db.add(
+                DealActivity(
+                    deal_id=invoice.deal_id,
+                    action=f"Payment {payment.payment_number} received for invoice {invoice.invoice_number}",
+                )
+            )
         recipient = await db.scalar(
             select(Deal.assigned_to).where(
-                Deal.id == invoice.deal_id,
-                Deal.organization_id == invoice.organization_id,
+                Deal.id == invoice.deal_id, Deal.organization_id == invoice.organization_id
             )
         )
         if recipient:
@@ -201,14 +170,15 @@ class PaymentRepository:
                 data={
                     "organization_id": invoice.organization_id,
                     "user_id": recipient,
-                    "event_name": "invoice.paid",
+                    "event_name": (
+                        "invoice.paid" if invoice.payment_status == "Paid" else "payment.received"
+                    ),
                     "entity_type": "invoice",
                     "entity_id": invoice.id,
                     "title": "Payment received",
-                    "message": f"Invoice {invoice.invoice_number} has been paid.",
+                    "message": f"Payment {payment.payment_number} received for invoice {invoice.invoice_number}.",
                 },
             )
-        return payment
 
     async def claim_receipt(self, db: AsyncSession, now: datetime) -> Payment | None:
         result = await db.execute(

@@ -139,32 +139,6 @@ async def test_get_current_organization_fails_when_assigned_org_is_missing():
 
 
 @pytest.mark.asyncio
-async def test_upgrade_plan_sets_subscription_metadata():
-    org = _make_org()
-    sub = type(
-        "S",
-        (),
-        {"id": "sub-1", "plan_id": None, "amount": 0.0, "status": "active", "auto_renew": True},
-    )()
-    repo: Any = OrganizationRepository()
-    repo.get_first = AsyncMock(return_value=org)
-    repo.get_by_id = AsyncMock(return_value=org)
-    repo.get_subscription = AsyncMock(return_value=None)
-    repo.get_plan_by_slug = AsyncMock(return_value=None)
-    repo.create_subscription = AsyncMock(return_value=sub)
-    repo.create_audit_log = AsyncMock()
-    service = _service_with(repo)
-    db = AsyncMock(spec=AsyncSession)
-
-    result = await service.upgrade_plan(db, "professional")
-
-    assert sub.amount == DEFAULT_PLANS["professional"]["price_monthly"]
-    assert org.plan == "Professional"
-    assert result["status"] == "success"
-    repo.create_audit_log.assert_awaited_once()
-
-
-@pytest.mark.asyncio
 async def test_list_subscription_plans_falls_back_to_defaults():
     repo: Any = OrganizationRepository()
     repo.list_active_plans = AsyncMock(return_value=[])

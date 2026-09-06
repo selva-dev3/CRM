@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from sqlalchemy import (
     JSON,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -24,6 +25,13 @@ class Invoice(Base):
     __tablename__ = "invoices"
     # Business rule: a standard one-time sale yields at most one invoice per deal.
     __table_args__ = (
+        CheckConstraint(
+            "status IN ('Draft','Finalized','Accepted','Cancelled')", name="ck_invoices_lifecycle"
+        ),
+        CheckConstraint(
+            "payment_status IN ('Pending','Partially Paid','Paid')",
+            name="ck_invoices_payment_status",
+        ),
         UniqueConstraint("organization_id", "quote_id", name="uq_invoices_org_quote"),
         UniqueConstraint("organization_id", "invoice_number", name="uq_invoices_org_number"),
         Index(
@@ -59,6 +67,17 @@ class Invoice(Base):
     tax_total: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
     paid_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
     billing_snapshot: Mapped[dict | None] = mapped_column(JSON)
+    payment_status: Mapped[str] = mapped_column(
+        String(30), default="Pending", server_default="Pending"
+    )
+    finalized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finalized_by: Mapped[str | None] = mapped_column(
+        String, ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    public_token_hash: Mapped[str | None] = mapped_column(String(64), unique=True)
+    public_token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    legacy_provider_data: Mapped[dict | None] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String(50), default="Draft", index=True)
     due_date: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     notes: Mapped[str | None] = mapped_column(Text)
@@ -72,9 +91,6 @@ class Invoice(Base):
     pdf_s3_key: Mapped[str | None] = mapped_column(String(500))
     reminder_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     last_reminded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    stripe_checkout_url: Mapped[str | None] = mapped_column(String(500))
-    stripe_checkout_session_id: Mapped[str | None] = mapped_column(String(255), unique=True)
-    stripe_checkout_generation: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

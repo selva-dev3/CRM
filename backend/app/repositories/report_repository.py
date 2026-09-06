@@ -415,12 +415,18 @@ class ReportRepository:
 
         outstanding = case(
             (
-                Invoice.status.in_(("Pending", "Overdue")),
+                Invoice.status.in_(("Finalized", "Accepted")),
                 Invoice.amount - Invoice.paid_amount,
             ),
             else_=0,
         )
-        overdue = case((Invoice.status == "Overdue", Invoice.amount - Invoice.paid_amount), else_=0)
+        overdue = case(
+            (
+                Invoice.status.in_(("Finalized", "Accepted")) & (Invoice.due_date < func.now()),
+                Invoice.amount - Invoice.paid_amount,
+            ),
+            else_=0,
+        )
         invoice_result = await db.execute(
             select(
                 func.count(Invoice.id).label("invoice_count"),
