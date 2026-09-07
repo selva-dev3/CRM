@@ -832,7 +832,10 @@ class LeadService:
             )
 
         for email in await self.repository.list_emails(
-            db, organization_id=lead.organization_id, lead_tag=lead_tag
+            db,
+            organization_id=lead.organization_id,
+            lead_id=lead.id,
+            lead_tag=lead_tag,
         ):
             timeline.append(
                 {
