@@ -110,4 +110,30 @@ describe('DataTable selection', () => {
     expect(onToggleRow).toHaveBeenCalledWith({ id: 'lead-1', name: 'Jane Doe' }, true);
     expect(onRowClick).not.toHaveBeenCalled();
   });
+
+  it('executes a row action without opening the row', async () => {
+    const user = userEvent.setup();
+    const onRowClick = vi.fn();
+    const onEdit = vi.fn();
+    const row = { id: 'lead-1', name: 'Jane Doe' };
+
+    render(
+      <DataTable
+        columns={columns}
+        data={[row]}
+        getRowKey={(item) => item.id}
+        emptyTitle="No rows"
+        emptyDescription="No rows found"
+        onRowClick={onRowClick}
+        actionVariant="menu"
+        actions={[{ label: 'Edit', onClick: onEdit }]}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Open row actions' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Edit' }));
+
+    expect(onEdit).toHaveBeenCalledWith(row);
+    expect(onRowClick).not.toHaveBeenCalled();
+  });
 });
