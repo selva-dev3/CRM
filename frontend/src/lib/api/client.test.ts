@@ -1,7 +1,19 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { API_REQUEST_TIMEOUT_MS, apiClient, BASE_URL, clearSessionToken, resolveApiBaseUrl } from './client';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  API_REQUEST_TIMEOUT_MS,
+  apiClient,
+  BASE_URL,
+  clearSessionToken,
+  invalidateAuthSession,
+  markAuthSessionActive,
+  resolveApiBaseUrl,
+} from './client';
 
 describe('apiClient cookie authentication', () => {
+  beforeEach(() => {
+    markAuthSessionActive();
+  });
+
   it('does not refresh, clear the CRM session, or redirect on invalid public invoice tokens', async () => {
     sessionStorage.setItem('user', 'existing-session');
     const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 401, json: async () => ({ message: 'Invalid invoice link' }) });
@@ -174,6 +186,41 @@ describe('apiClient cookie authentication', () => {
 
     await expect(Promise.all(requests)).resolves.toEqual([{ ok: true }, { ok: true }]);
     expect(refreshCalls).toBe(1);
+  });
+
+  it('does not retry a request when explicit logout begins during refresh', async () => {
+    let releaseRefresh: (() => void) | undefined;
+    const refreshResponse = new Promise<{ ok: boolean; status: number }>((resolve) => {
+      releaseRefresh = () => resolve({ ok: true, status: 200 });
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 401, json: vi.fn().mockResolvedValue({}) })
+      .mockReturnValueOnce(refreshResponse);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const request = apiClient.get('/users');
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    invalidateAuthSession();
+    releaseRefresh?.();
+
+    await expect(request).rejects.toMatchObject({ status: 401 });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('blocks new refresh attempts while explicit logout is in progress', async () => {
+    invalidateAuthSession();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: vi.fn().mockResolvedValue({}),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(apiClient.get('/users')).rejects.toMatchObject({ status: 401 });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0][0]).toBe(`${BASE_URL}/users`);
   });
 
   it('preserves FormData when retrying after refresh', async () => {

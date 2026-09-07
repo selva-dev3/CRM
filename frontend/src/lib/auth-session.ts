@@ -40,6 +40,17 @@ export function persistSessionUser(
 
 export function clearStoredSession(options: { broadcast?: boolean } = {}): void {
   if (typeof window === 'undefined') return;
+  const storedUser = readStoredUser();
+  if (storedUser?.id) {
+    const userPrefixes = [
+      `pending-invoice-payment:${storedUser.id}:`,
+      `subscription-checkout:${storedUser.id}:`,
+    ];
+    const pendingKeys = Array.from({ length: sessionStorage.length }, (_, index) => sessionStorage.key(index))
+      .filter((key): key is string => key !== null)
+      .filter((key) => userPrefixes.some((prefix) => key.startsWith(prefix)));
+    pendingKeys.forEach((key) => sessionStorage.removeItem(key));
+  }
   sessionStorage.removeItem('token');
   localStorage.removeItem('token');
   sessionStorage.removeItem('user');

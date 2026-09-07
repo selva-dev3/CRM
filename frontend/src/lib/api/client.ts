@@ -33,6 +33,28 @@ const NON_REFRESHABLE_AUTH_ENDPOINTS = [
 ];
 
 let refreshRequest: Promise<boolean> | null = null;
+let refreshController: AbortController | null = null;
+let authGeneration = 0;
+let explicitLogoutInProgress = false;
+
+/**
+ * Invalidate the current browser session before an explicit logout starts.
+ *
+ * The generation check protects against stale refresh completions, while the
+ * abort signal prevents an in-flight refresh from installing new cookies when
+ * the browser supports cancellation of the fetch response.
+ */
+export function invalidateAuthSession(): void {
+  authGeneration += 1;
+  explicitLogoutInProgress = true;
+  refreshController?.abort();
+}
+
+/** Re-enable refresh after a new login/session has been established. */
+export function markAuthSessionActive(): void {
+  authGeneration += 1;
+  explicitLogoutInProgress = false;
+}
 
 export function clearSessionToken(): void {
   if (typeof window === 'undefined') return;
@@ -131,22 +153,28 @@ async function fetchWithTimeout(
   }
 }
 
-async function refreshSession(): Promise<boolean> {
+async function refreshSession(generation: number, signal: AbortSignal): Promise<boolean> {
+  if (explicitLogoutInProgress || generation !== authGeneration) return false;
   try {
     const response = await fetchWithTimeout(`${BASE_URL}/auth/refresh-token`, {
       method: 'POST',
       credentials: 'include',
+      signal,
     }, REFRESH_REQUEST_TIMEOUT_MS);
-    return response.ok;
+    return response.ok && !explicitLogoutInProgress && generation === authGeneration;
   } catch {
     return false;
   }
 }
 
 function getRefreshRequest(): Promise<boolean> {
+  if (explicitLogoutInProgress) return Promise.resolve(false);
   if (!refreshRequest) {
-    refreshRequest = refreshSession().finally(() => {
+    const generation = authGeneration;
+    refreshController = new AbortController();
+    refreshRequest = refreshSession(generation, refreshController.signal).finally(() => {
       refreshRequest = null;
+      refreshController = null;
     });
   }
   return refreshRequest;
@@ -189,7 +217,7 @@ async function request<T>(
 
   if (response.status === 401 && allowRefresh && canRefresh(endpoint)) {
     const refreshed = await getRefreshRequest();
-    if (refreshed) {
+    if (refreshed && !explicitLogoutInProgress) {
       response = await fetchWithTimeout(`${BASE_URL}${endpoint}`, {
         ...options,
         headers,
