@@ -8,6 +8,30 @@ export interface DocumentItem {
   mime_type: string;
   download_url: string;
   uploaded_at: string;
+  lead_id?: string;
+  contact_id?: string;
+  company_id?: string;
+  deal_id?: string;
+  quote_id?: string;
+  invoice_id?: string;
+  payment_id?: string;
+}
+
+export interface DocumentRelations {
+  lead_id?: string;
+  contact_id?: string;
+  company_id?: string;
+  deal_id?: string;
+  quote_id?: string;
+  invoice_id?: string;
+  payment_id?: string;
+}
+
+export interface FetchDocumentsParams extends DocumentRelations {
+  page?: number;
+  limit?: number;
+  folder_id?: string;
+  search?: string;
 }
 
 export interface DocumentDownloadResponse {
@@ -30,20 +54,31 @@ export interface MessageResponse {
 // API Client Functions
 // ---------------------------------------------------------------------------
 
-export async function fetchDocumentsApi(params?: { page?: number; limit?: number; folder_id?: string; search?: string }): Promise<DocumentItem[]> {
+export async function fetchDocumentsApi(params?: FetchDocumentsParams): Promise<DocumentItem[]> {
   const query = new URLSearchParams();
   if (params?.page) query.append('page', String(params.page));
   if (params?.limit) query.append('limit', String(params.limit));
   if (params?.folder_id) query.append('folder_id', params.folder_id);
   if (params?.search) query.append('search', params.search);
+  for (const field of ['lead_id', 'contact_id', 'company_id', 'deal_id', 'quote_id', 'invoice_id', 'payment_id'] as const) {
+    if (params?.[field]) query.append(field, params[field]);
+  }
   const endpoint = `/documents${query.toString() ? `?${query.toString()}` : ''}`;
   return apiClient.get<DocumentItem[]>(endpoint);
 }
 
-export async function uploadDocumentApi(file: File): Promise<DocumentItem> {
+export async function uploadDocumentApi(file: File, relations: DocumentRelations = {}): Promise<DocumentItem> {
   const formData = new FormData();
   formData.append('file', file);
-  return apiClient.post<DocumentItem>('/documents/upload', formData);
+  const query = new URLSearchParams();
+  for (const [field, value] of Object.entries(relations)) {
+    if (value) query.append(field, value);
+  }
+  const queryString = query.toString();
+  return apiClient.post<DocumentItem>(
+    `/documents/upload${queryString ? `?${queryString}` : ''}`,
+    formData,
+  );
 }
 
 export async function fetchDocumentApi(documentId: string): Promise<DocumentItem> {
@@ -66,7 +101,7 @@ export async function bulkDeleteDocumentsApi(ids: string[]): Promise<BulkActionR
 // TanStack Query Hooks
 // ---------------------------------------------------------------------------
 
-export function useDocumentsQuery(params?: { page?: number; limit?: number; folder_id?: string; search?: string }, options?: Omit<UseQueryOptions<DocumentItem[]>, 'queryKey' | 'queryFn'>) {
+export function useDocumentsQuery(params?: FetchDocumentsParams, options?: Omit<UseQueryOptions<DocumentItem[]>, 'queryKey' | 'queryFn'>) {
   return useQuery<DocumentItem[]>({
     queryKey: ['documents', params],
     queryFn: () => fetchDocumentsApi(params),
@@ -96,7 +131,7 @@ export function useDownloadDocumentQuery(documentId: string, options?: Omit<UseQ
 export function useUploadDocumentMutation(options?: UseMutationOptions<DocumentItem, Error, File>) {
   const queryClient = useQueryClient();
   return useMutation<DocumentItem, Error, File>({
-    mutationFn: uploadDocumentApi,
+    mutationFn: (file) => uploadDocumentApi(file),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['documents'] });
     },

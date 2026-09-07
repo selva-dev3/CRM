@@ -36,6 +36,7 @@ CANONICAL_DEAL_STAGES = [
     DEAL_STAGE_CLOSED_WON,
     DEAL_STAGE_CLOSED_LOST,
 ]
+CANONICAL_OPEN_DEAL_STAGES = CANONICAL_DEAL_STAGES[:-2]
 
 
 def deal_to_dict(d: Deal) -> dict:
@@ -114,6 +115,46 @@ class DealService:
             raise APIException(
                 message=f"Invalid deal stage '{stage}'.",
                 code="INVALID_DEAL_STAGE",
+            )
+
+    async def _ordered_open_stages(
+        self, db: AsyncSession, organization_id: str
+    ) -> list[str]:
+        configured = await self.repository.list_stages(db, organization_id=organization_id)
+        custom = [
+            stage.name
+            for stage in configured
+            if stage.name not in CANONICAL_DEAL_STAGES
+        ]
+        return [*CANONICAL_OPEN_DEAL_STAGES, *dict.fromkeys(custom)]
+
+    async def _assert_stage_transition(
+        self, db: AsyncSession, deal: Deal, target: str
+    ) -> None:
+        current = deal.stage or CANONICAL_OPEN_DEAL_STAGES[0]
+        if target == current:
+            return
+        if current in {DEAL_STAGE_CLOSED_WON, DEAL_STAGE_CLOSED_LOST}:
+            raise ConflictError(
+                message=f"Closed deal cannot transition from '{current}' to '{target}'",
+                code="INVALID_DEAL_STAGE_TRANSITION",
+            )
+        if target == DEAL_STAGE_CLOSED_LOST:
+            return
+        ordered = await self._ordered_open_stages(db, deal.organization_id)
+        pipeline = [*ordered, DEAL_STAGE_CLOSED_WON]
+        try:
+            current_index = pipeline.index(current)
+            target_index = pipeline.index(target)
+        except ValueError as exc:
+            raise ConflictError(
+                message=f"Deal cannot transition from '{current}' to '{target}'",
+                code="INVALID_DEAL_STAGE_TRANSITION",
+            ) from exc
+        if target_index != current_index + 1:
+            raise ConflictError(
+                message=f"Deal cannot transition from '{current}' to '{target}'",
+                code="INVALID_DEAL_STAGE_TRANSITION",
             )
 
     async def list_custom_fields(
@@ -292,7 +333,41 @@ class DealService:
     async def get_deal_stages(self, db: AsyncSession, current_user: User) -> list[dict]:
         organization_id = await organization_service.resolve_valid_org_id(db, current_user)
         stages = await self.repository.list_stages(db, organization_id=organization_id)
-        return [{"id": s.id, "name": s.name, "probability": s.default_probability} for s in stages]
+        configured = {
+            stage.name: {
+                "id": stage.id,
+                "name": stage.name,
+                "probability": stage.default_probability,
+                "order_index": stage.order_index,
+            }
+            for stage in stages
+        }
+        defaults = {
+            "Prospecting": 10,
+            "Qualification": 30,
+            "Proposal": 60,
+            "Negotiation": 80,
+            DEAL_STAGE_CLOSED_WON: 100,
+            DEAL_STAGE_CLOSED_LOST: 0,
+        }
+        result = [
+            configured.get(
+                name,
+                {
+                    "id": f"canonical:{name.casefold().replace(' ', '-')}",
+                    "name": name,
+                    "probability": probability,
+                    "order_index": index * 100,
+                },
+            )
+            for index, (name, probability) in enumerate(defaults.items())
+        ]
+        result[4:4] = [
+            configured[name]
+            for name in [stage.name for stage in stages]
+            if name not in defaults
+        ]
+        return result
 
     async def create_deal_stage(
         self,
@@ -300,17 +375,33 @@ class DealService:
         *,
         name: str,
         probability: float,
+        order_index: int | None = None,
         current_user: User,
     ) -> dict:
         organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+        normalized_name = name.strip()
+        if not normalized_name:
+            raise APIException(message="Pipeline stage name is required", status_code=422)
+        if normalized_name in CANONICAL_DEAL_STAGES:
+            raise ConflictError(
+                message="Canonical pipeline stages cannot be recreated",
+                code="DEAL_STAGE_EXISTS",
+            )
+        existing = await self.repository.list_stages(db, organization_id=organization_id)
+        if normalized_name.casefold() in {stage.name.casefold() for stage in existing}:
+            raise ConflictError(message="Pipeline stage already exists", code="DEAL_STAGE_EXISTS")
+        resolved_order = order_index if order_index is not None else max(
+            (stage.order_index for stage in existing), default=399
+        ) + 1
         await self.repository.create_stage(
             db,
             organization_id=organization_id,
-            name=name,
+            name=normalized_name,
             probability=probability,
+            order_index=resolved_order,
         )
         await self._commit(db, "Failed to create pipeline stage")
-        return {"message": f"Pipeline stage {name} created", "status": "success"}
+        return {"message": f"Pipeline stage {normalized_name} created", "status": "success"}
 
     async def get_kanban_board(self, db: AsyncSession, *, organization_id: str) -> dict:
         deals = await self.repository.list_all(db, organization_id=organization_id)
@@ -376,6 +467,7 @@ class DealService:
                 if stage == DEAL_STAGE_CLOSED_WON:
                     await self._apply_won(db, deal, actor_id)
                 else:
+                    await self._assert_stage_transition(db, deal, stage)
                     await self._guard_closed_won_transition(db, deal, stage)
                     await self.repository.transition_stage(
                         db, deal=deal, stage=stage, actor_id=actor_id
@@ -427,6 +519,7 @@ class DealService:
 
         if payload.stage is not None:
             await self._validate_stage(db, payload.stage, d.organization_id)
+            await self._assert_stage_transition(db, d, payload.stage)
             await self._guard_closed_won_transition(db, d, payload.stage)
             await self.repository.transition_stage(
                 db, deal=d, stage=payload.stage, actor_id=actor_id
@@ -532,6 +625,7 @@ class DealService:
         if not d:
             raise NotFoundError(message="Deal not found")
         await self._validate_stage(db, stage, d.organization_id)
+        await self._assert_stage_transition(db, d, stage)
         await self._guard_closed_won_transition(db, d, stage)
         changed = await self.repository.transition_stage(db, deal=d, stage=stage, actor_id=actor_id)
         if not changed:
@@ -589,6 +683,7 @@ class DealService:
     async def _apply_won(self, db: AsyncSession, deal: Deal, actor_id: str):
         was_won = deal.stage == DEAL_STAGE_CLOSED_WON
         if not was_won:
+            await self._assert_stage_transition(db, deal, DEAL_STAGE_CLOSED_WON)
             await self.repository.transition_stage(
                 db, deal=deal, stage=DEAL_STAGE_CLOSED_WON, actor_id=actor_id
             )
@@ -614,6 +709,7 @@ class DealService:
         actor_id: str | None = None,
     ) -> dict:
         d = await self.require_deal(db, deal_id, organization_id=organization_id, lock=True)
+        await self._assert_stage_transition(db, d, DEAL_STAGE_CLOSED_LOST)
         await self._guard_closed_won_transition(db, d, DEAL_STAGE_CLOSED_LOST)
         await self.repository.transition_stage(
             db, deal=d, stage=DEAL_STAGE_CLOSED_LOST, actor_id=actor_id

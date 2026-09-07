@@ -45,6 +45,10 @@ def _make_user(**overrides) -> User:
 
 
 def _service_with(repo: ContactRepository) -> ContactService:
+    if "lock_organization" not in repo.__dict__:
+        repo.lock_organization = AsyncMock()
+    if "find_duplicate" not in repo.__dict__:
+        repo.find_duplicate = AsyncMock(return_value=None)
     return ContactService(repository=repo)
 
 
@@ -207,6 +211,8 @@ async def test_create_contact_resolves_org_and_serializes(monkeypatch):
     contact = _make_contact()
     repo: Any = ContactRepository()
     repo.create = AsyncMock(return_value=contact)
+    repo.lock_organization = AsyncMock()
+    repo.find_duplicate = AsyncMock(return_value=None)
     service = _service_with(repo)
     monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())
     db = AsyncMock(spec=AsyncSession)
@@ -232,6 +238,8 @@ async def test_create_contact_validates_and_persists_custom_fields(monkeypatch):
     contact = _make_contact(custom_fields={"preferred_channel": "Email"})
     repo: Any = ContactRepository()
     repo.create = AsyncMock(return_value=contact)
+    repo.lock_organization = AsyncMock()
+    repo.find_duplicate = AsyncMock(return_value=None)
     custom_fields = AsyncMock()
     custom_fields.validate_values.return_value = {"preferred_channel": "Email"}
     service = ContactService(repository=repo, custom_field_service_instance=custom_fields)

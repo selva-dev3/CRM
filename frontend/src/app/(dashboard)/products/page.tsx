@@ -14,11 +14,8 @@ import {
   DollarSign,
   Layers,
   Plus,
-  Download,
-  Upload,
   Trash2,
   Edit,
-  BookOpen,
   Boxes,
   CheckCircle2,
   AlertCircle,
@@ -33,17 +30,12 @@ import { PERMISSIONS } from '@/lib/permissions';
 import {
   useProductsQuery,
   useProductCategoriesQuery,
-  usePriceBooksQuery,
-  useTaxRatesQuery,
   useCreateProductMutation,
   useUpdateProductMutation,
   useDeleteProductMutation,
   useBulkDeleteProductsMutation,
   useCreateCategoryMutation,
-  useCreatePriceBookMutation,
-  useImportProductsCsvMutation,
   useUpdateProductInventoryMutation,
-  exportProductsCsvApi,
   ProductItem,
   ProductCreatePayload
 } from '@/lib/api/products';
@@ -61,7 +53,6 @@ export default function ProductsPage() {
   // Modal states
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
-  const [isPriceBookModalOpen, setIsPriceBookModalOpen] = useState(false);
   const [inventoryProduct, setInventoryProduct] = useState<ProductItem | null>(null);
   const [editingProduct, setEditingProduct] = useState<ProductItem | null>(null);
   const [productToDelete, setProductToDelete] = useState<ProductItem | null>(null);
@@ -74,10 +65,6 @@ export default function ProductsPage() {
 
   // Category form state
   const [newCatName, setNewCatName] = useState('');
-
-  // Price Book form state
-  const [pbName, setPbName] = useState('');
-  const [pbCurrency, setPbCurrency] = useState('USD');
 
   // Inventory form state
   const [quantityDelta, setQuantityDelta] = useState('25');
@@ -104,8 +91,6 @@ export default function ProductsPage() {
   });
 
   const { data: categories = [] } = useProductCategoriesQuery();
-  usePriceBooksQuery();
-  useTaxRatesQuery();
 
   // Mutations
   const createProductMutation = useCreateProductMutation();
@@ -113,8 +98,6 @@ export default function ProductsPage() {
   const deleteProductMutation = useDeleteProductMutation();
   const bulkDeleteMutation = useBulkDeleteProductsMutation();
   const createCategoryMutation = useCreateCategoryMutation();
-  const createPriceBookMutation = useCreatePriceBookMutation();
-  const importCsvMutation = useImportProductsCsvMutation();
   const updateInventoryMutation = useUpdateProductInventoryMutation();
 
   const resetProductForm = () => {
@@ -178,38 +161,6 @@ export default function ProductsPage() {
       setNewCatName('');
     } catch (err: unknown) {
       setErrorMessage(getErrorMessage(err, 'Failed to create category.'));
-    }
-  };
-
-  const handleCreatePriceBookSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!pbName.trim()) return;
-    try {
-      await createPriceBookMutation.mutateAsync({ name: pbName.trim(), currency: pbCurrency });
-      setSuccessMessage(`Price book "${pbName.trim()}" (${pbCurrency}) created.`);
-      setIsPriceBookModalOpen(false);
-      setPbName('');
-    } catch (err: unknown) {
-      setErrorMessage(getErrorMessage(err, 'Failed to create price book.'));
-    }
-  };
-
-  const handleExportCsv = async () => {
-    try {
-      const res = await exportProductsCsvApi();
-      setSuccessMessage(`Catalog exported. Download URL generated.`);
-      window.open(res.download_url, '_blank');
-    } catch (err: unknown) {
-      setErrorMessage(getErrorMessage(err, 'Failed to export CSV catalog.'));
-    }
-  };
-
-  const handleImportCsv = async () => {
-    try {
-      const res = await importCsvMutation.mutateAsync();
-      setSuccessMessage(res.message || 'CSV catalog import processing completed.');
-    } catch (err: unknown) {
-      setErrorMessage(getErrorMessage(err, 'Failed to import CSV catalog.'));
     }
   };
 
@@ -354,7 +305,7 @@ export default function ProductsPage() {
             <Package className="w-7 h-7 text-indigo-600" />
             Product Catalog & Pricing
           </h1>
-          <p className="text-slate-500 text-sm mt-0.5">Manage products, custom price books, category tiers, inventory stock & CSV imports</p>
+          <p className="text-slate-500 text-sm mt-0.5">Manage products, categories, pricing, and inventory stock</p>
         </div>
 
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
@@ -364,10 +315,10 @@ export default function ProductsPage() {
             </Button>
           </PermissionGate>
           <ActionMenu label="More" className="w-full text-xs font-semibold sm:w-auto" actions={[
-            { label: 'Export CSV', permission: PERMISSIONS.PRODUCTS.EXPORT, icon: <Download className="w-4 h-4 text-slate-600" />, onSelect: handleExportCsv },
-            { label: 'Import CSV', permission: PERMISSIONS.PRODUCTS.IMPORT, icon: importCsvMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4 text-indigo-600" />, disabled: importCsvMutation.isPending, onSelect: handleImportCsv },
+            { label: 'Export CSV (Not available)', permission: PERMISSIONS.PRODUCTS.EXPORT, disabled: true, onSelect: () => undefined },
+            { label: 'Import CSV (Not available)', permission: PERMISSIONS.PRODUCTS.IMPORT, disabled: true, onSelect: () => undefined },
             { label: 'Add category', permission: PERMISSIONS.PRODUCTS.CREATE, icon: <Layers className="w-4 h-4 text-purple-600" />, onSelect: () => setIsCategoryModalOpen(true) },
-            { label: 'Price book', icon: <BookOpen className="w-4 h-4 text-amber-500" />, onSelect: () => setIsPriceBookModalOpen(true) },
+            { label: 'Price book (Not available)', disabled: true, onSelect: () => undefined },
           ]} />
         </div>
       </div>
@@ -380,7 +331,7 @@ export default function ProductsPage() {
         data={products}
         getRowKey={(item) => item.id}
         emptyTitle="No products found"
-        emptyDescription="Add new products to catalog or import via CSV."
+        emptyDescription="Add a new product to the catalog."
         searchValue={searchTerm}
         onSearchChange={setSearchTerm}
         searchPlaceholder="Search product name or SKU..."
@@ -550,61 +501,6 @@ export default function ProductsPage() {
             >
               {createCategoryMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               Save Category
-            </button>
-          </div>
-        </form>
-      </ModalShell>
-
-      {/* Create Price Book Modal */}
-      <ModalShell
-        isOpen={isPriceBookModalOpen}
-        onClose={() => setIsPriceBookModalOpen(false)}
-        size="md"
-        title={
-          <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-            <BookOpen className="w-5 h-5 text-amber-500" />
-            Create Price Book
-          </h3>
-        }
-      >
-        <form onSubmit={handleCreatePriceBookSubmit} className="space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Price Book Name *</label>
-            <Input
-              type="text"
-              required
-              value={pbName}
-              onChange={(e) => setPbName(e.target.value)}
-              placeholder="e.g. EMEA Enterprise Book"
-              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-amber-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Currency Code</label>
-            <ResponsiveSelect
-              value={pbCurrency}
-              onValueChange={setPbCurrency}
-              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-amber-500"
-            >
-              <option value="USD">USD ($)</option>
-              <option value="EUR">EUR (â‚¬)</option>
-              <option value="GBP">GBP (Â£)</option>
-              <option value="INR">INR (â‚¹)</option>
-            </ResponsiveSelect>
-          </div>
-
-          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
-            <button type="button" onClick={() => setIsPriceBookModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600">
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={createPriceBookMutation.isPending}
-              className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
-            >
-              {createPriceBookMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              Create Price Book
             </button>
           </div>
         </form>

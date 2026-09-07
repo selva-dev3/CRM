@@ -49,17 +49,13 @@ class NoteRepository:
         )
         return list(result.scalars().all())
 
-    async def list_pinned(
-        self, db: AsyncSession, organization_id: str
-    ) -> builtins.list[Note]:
+    async def list_pinned(self, db: AsyncSession, organization_id: str) -> builtins.list[Note]:
         result = await db.execute(
             select(Note).where(Note.is_pinned, Note.organization_id == organization_id)
         )
         return list(result.scalars().all())
 
-    async def get_by_id(
-        self, db: AsyncSession, note_id: str, organization_id: str
-    ) -> Note | None:
+    async def get_by_id(self, db: AsyncSession, note_id: str, organization_id: str) -> Note | None:
         result = await db.execute(
             select(Note).where(Note.id == note_id, Note.organization_id == organization_id)
         )
@@ -82,6 +78,7 @@ class NoteRepository:
         entity_id: str,
         content: str,
         created_by: str,
+        relationships: dict[str, str | None] | None = None,
     ) -> Note:
         note = Note(
             organization_id=organization_id,
@@ -89,6 +86,7 @@ class NoteRepository:
             entity_id=entity_id,
             content=content,
             created_by=created_by,
+            **(relationships or {}),
         )
         db.add(note)
         return note

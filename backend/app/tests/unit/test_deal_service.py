@@ -44,6 +44,8 @@ def _service_with(repo: DealRepository) -> DealService:
 
     repo.transition_stage = AsyncMock(side_effect=transition_stage)
     repo.create_initial_stage_history = AsyncMock()
+    if "list_stages" not in repo.__dict__:
+        repo.list_stages = AsyncMock(return_value=[])
     return DealService(repository=repo)
 
 
@@ -321,6 +323,7 @@ async def test_create_deal_stage_uses_current_organization(monkeypatch):
         db,
         name="Discovery",
         probability=25,
+        order_index=400,
         current_user=_user(),
     )
 
@@ -329,6 +332,7 @@ async def test_create_deal_stage_uses_current_organization(monkeypatch):
         organization_id="org-2",
         name="Discovery",
         probability=25,
+        order_index=400,
     )
 
 
@@ -345,7 +349,10 @@ async def test_list_deal_stages_is_scoped_to_current_organization(monkeypatch):
         organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-2")
     )
 
-    assert await service.get_deal_stages(db, _user()) == []
+    stages = await service.get_deal_stages(db, _user())
+    assert [stage["name"] for stage in stages] == [
+        "Prospecting", "Qualification", "Proposal", "Negotiation", "Closed Won", "Closed Lost"
+    ]
     repo.list_stages.assert_awaited_once_with(db, organization_id="org-2")
 
 
@@ -377,7 +384,7 @@ async def test_create_deal_rejects_unknown_custom_field(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_create_deal_fires_deal_created_event(monkeypatch):
-    deal = _make_deal()
+    deal = _make_deal(stage="Negotiation")
     repo: Any = DealRepository()
     repo.create = AsyncMock(return_value=deal)
     repo.user_exists = AsyncMock(return_value=False)
@@ -449,7 +456,7 @@ async def test_update_deal_rejects_company_contact_mismatch():
 
 @pytest.mark.asyncio
 async def test_mark_deal_won_sets_stage_and_probability(monkeypatch):
-    deal = _make_deal()
+    deal = _make_deal(stage="Negotiation")
     repo: Any = DealRepository()
     repo.get_by_id_scoped = AsyncMock(return_value=deal)
     service = _service_with(repo)
@@ -487,7 +494,7 @@ async def test_mark_deal_won_sets_stage_and_probability(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_mark_deal_won_does_not_commit_if_quote_creation_fails(monkeypatch):
-    deal = _make_deal()
+    deal = _make_deal(stage="Negotiation")
     repo: Any = DealRepository()
     repo.get_by_id_scoped = AsyncMock(return_value=deal)
     service = _service_with(repo)

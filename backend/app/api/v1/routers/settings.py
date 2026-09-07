@@ -2,7 +2,7 @@ from fastapi import APIRouter, Body, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import get_current_user, get_current_user_optional, require_permission
+from app.api.v1.deps import get_current_user, require_permission
 from app.db.session import get_db
 from app.models import User
 from app.schemas.crm_schemas import CustomFieldResponse, MessageResponse, SystemSettings
@@ -48,7 +48,7 @@ async def reset_database(confirm: bool = False, db: AsyncSession = Depends(get_d
 )
 async def get_system_settings(
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     return await settings_service.get_system_settings(db, current_user)
 
@@ -62,7 +62,7 @@ async def get_system_settings(
 async def update_system_settings(
     payload: SystemSettings,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     return await settings_service.update_system_settings(db, payload, current_user)
 
@@ -72,8 +72,15 @@ async def update_system_settings(
     summary="List security audit trail logs",
     dependencies=[Depends(require_permission("settings:security"))],
 )
-async def get_audit_logs(page: int = 1, limit: int = 20, db: AsyncSession = Depends(get_db)):
-    return await settings_service.list_audit_logs(db, page=page, limit=limit)
+async def get_audit_logs(
+    page: int = 1,
+    limit: int = 20,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await settings_service.list_audit_logs(
+        db, page=page, limit=limit, current_user=current_user
+    )
 
 
 @router.get(
@@ -81,8 +88,11 @@ async def get_audit_logs(page: int = 1, limit: int = 20, db: AsyncSession = Depe
     summary="Export security audit logs as CSV",
     dependencies=[Depends(require_permission("settings:security"))],
 )
-async def export_audit_logs_csv(db: AsyncSession = Depends(get_db)):
-    return await settings_service.export_audit_logs_csv(db)
+async def export_audit_logs_csv(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await settings_service.export_audit_logs_csv(db, current_user)
 
 
 @router.get(
@@ -151,7 +161,7 @@ async def delete_custom_field(
 )
 async def list_webhooks(
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     return await settings_service.list_webhooks(db, current_user)
 
@@ -167,7 +177,7 @@ async def create_webhook(
     target_url: str | None = Query(None),
     events: list[str] | None = Query(None),
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     url = (payload and payload.target_url) or target_url
     ev_list = (payload and payload.events) or events or []
@@ -211,7 +221,7 @@ async def test_webhook(
 )
 async def get_sla_policies(
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     return await settings_service.list_sla_policies(db, current_user)
 
@@ -228,7 +238,7 @@ async def create_sla_policy(
     response_time_hours: int | None = Query(None),
     resolution_time_hours: int | None = Query(None),
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     s_name = (payload and payload.name) or name or "Standard SLA Policy"
     resp_time = (payload and payload.response_time_hours) or response_time_hours or 1

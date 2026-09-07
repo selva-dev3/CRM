@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import NotFoundError
-from app.models import CallLog, User
+from app.core.errors import APIException, NotFoundError
+from app.models import CallLog, Contact, User
 from app.repositories.call_repository import CallRepository
 from app.repositories.contact_repository import ContactRepository
 from app.schemas.crm_schemas import CallLogBase
@@ -68,9 +68,12 @@ async def test_log_call_resolves_org_and_serializes(monkeypatch):
     repo: Any = CallRepository()
     repo.create = AsyncMock(return_value=call)
     contact_repository: Any = ContactRepository()
-    contact_repository.get_by_id_scoped = AsyncMock(return_value=object())
+    contact_repository.get_by_id_scoped = AsyncMock(
+        return_value=Contact(id="c-101", organization_id="org-1", name="Contact")
+    )
     service = _service_with(repo, contact_repository=contact_repository)
     db = AsyncMock(spec=AsyncSession)
+    db.scalar.return_value = Contact(id="c-101", organization_id="org-1", name="Contact")
 
     from app.services.call_service import organization_service
 
@@ -92,10 +95,12 @@ async def test_log_call_resolves_org_and_serializes(monkeypatch):
 @pytest.mark.asyncio
 async def test_log_call_rejects_unknown_contact():
     repo: Any = CallRepository()
+    repo.create = AsyncMock()
     contact_repository: Any = ContactRepository()
     contact_repository.get_by_id_scoped = AsyncMock(return_value=None)
     service = _service_with(repo, contact_repository=contact_repository)
     db = AsyncMock(spec=AsyncSession)
+    db.scalar.return_value = None
 
     with pytest.raises(NotFoundError):
         await service.log_call(
@@ -108,13 +113,23 @@ async def test_log_call_rejects_unknown_contact():
 
 
 @pytest.mark.asyncio
-async def test_trigger_outbound_returns_initiating_status():
+async def test_trigger_outbound_rejects_when_provider_is_not_configured():
     service = _service_with(CallRepository())
-    result = await service.trigger_outbound("+1234567890", "c-101")
+    with pytest.raises(APIException) as exc_info:
+        await service.trigger_outbound("+1234567890", "c-101")
 
-    assert result["status"] == "initiating"
-    assert result["to"] == "+1234567890"
-    assert result["call_sid"].startswith("CA")
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.code == "CALL_PROVIDER_NOT_CONFIGURED"
+
+
+@pytest.mark.asyncio
+async def test_voicemail_rejects_when_provider_is_not_configured():
+    service = _service_with(CallRepository())
+    with pytest.raises(APIException) as exc_info:
+        await service.log_voicemail_drop("c-101", "template-1")
+
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.code == "VOICEMAIL_PROVIDER_NOT_CONFIGURED"
 
 
 @pytest.mark.asyncio

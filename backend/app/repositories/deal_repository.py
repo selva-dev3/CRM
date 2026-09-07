@@ -293,10 +293,19 @@ class DealRepository:
         return list(result.scalars().all())
 
     async def create_stage(
-        self, db: AsyncSession, *, organization_id: str, name: str, probability: float
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        name: str,
+        probability: float,
+        order_index: int,
     ) -> DealStage:
         stage = DealStage(
-            organization_id=organization_id, name=name, default_probability=probability
+            organization_id=organization_id,
+            name=name,
+            default_probability=probability,
+            order_index=order_index,
         )
         db.add(stage)
         return stage

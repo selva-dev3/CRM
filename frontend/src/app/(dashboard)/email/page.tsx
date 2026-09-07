@@ -13,7 +13,6 @@ import {
   Mail,
   Send,
   FileText,
-  RefreshCw,
   Eye,
   MousePointer,
   Loader2,
@@ -39,12 +38,13 @@ import {
   useSendBulkCampaignMutation,
   useSaveEmailSignatureMutation,
   useBulkDeleteEmailsMutation,
-  useSyncImapInboxMutation,
   fetchEmailTrackingStatusApi,
   EmailMessageItem,
   EmailSendPayload,
   EmailTrackingStatus
 } from '@/lib/api/emails';
+
+const EMAIL_ADVANCED_FEATURES_ENABLED = false;
 
 export default function EmailPage() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -107,7 +107,9 @@ export default function EmailPage() {
 
   const { data: drafts = [] } = useDraftsQuery();
   const { data: templates = [] } = useEmailTemplatesQuery();
-  const { data: signatures = [] } = useEmailSignaturesQuery();
+  const { data: signatures = [] } = useEmailSignaturesQuery({
+    enabled: EMAIL_ADVANCED_FEATURES_ENABLED,
+  });
 
   // Mutations
   const sendEmailMutation = useSendEmailMutation();
@@ -116,7 +118,6 @@ export default function EmailPage() {
   const sendCampaignMutation = useSendBulkCampaignMutation();
   const saveSignatureMutation = useSaveEmailSignatureMutation();
   const bulkDeleteMutation = useBulkDeleteEmailsMutation();
-  const syncImapMutation = useSyncImapInboxMutation();
 
   const resetComposeForm = () => {
     setRecipient('');
@@ -139,7 +140,7 @@ export default function EmailPage() {
 
     try {
       await sendEmailMutation.mutateAsync(payload);
-      setSuccessMessage(`Email sent to ${recipient.trim()}.`);
+      setSuccessMessage(`Email to ${recipient.trim()} was queued for delivery.`);
       setIsComposeModalOpen(false);
       resetComposeForm();
     } catch (err: unknown) {
@@ -221,15 +222,6 @@ export default function EmailPage() {
     }
   };
 
-  const handleSyncImap = async () => {
-    try {
-      const res = await syncImapMutation.mutateAsync();
-      setSuccessMessage(res.message || 'IMAP email sync initiated.');
-    } catch (err: unknown) {
-      setErrorMessage(getErrorMessage(err, 'Failed to sync IMAP emails.'));
-    }
-  };
-
   const handleOpenTrackingModal = async (email: EmailMessageItem) => {
     setTrackingModalEmail(email);
     setIsLoadingTracking(true);
@@ -296,8 +288,17 @@ export default function EmailPage() {
       header: 'DATE',
       cell: (item) => (
         <div className="text-xs text-slate-500 font-medium">
-          {item.sent_at ? item.sent_at.replace('T', ' ').substring(0, 16) : 'Just now'}
+          {item.sent_at
+            ? item.sent_at.replace('T', ' ').substring(0, 16)
+            : item.created_at?.replace('T', ' ').substring(0, 16) || '—'}
         </div>
+      ),
+    },
+    {
+      id: 'status',
+      header: 'DELIVERY',
+      cell: (item) => (
+        <span className="text-xs font-semibold text-slate-700">{item.status}</span>
       ),
     },
     {
@@ -305,6 +306,7 @@ export default function EmailPage() {
       header: 'TRACKING & ACTIONS',
       cell: (item) => (
         <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+          {EMAIL_ADVANCED_FEATURES_ENABLED && (
           <button
             onClick={() => handleOpenTrackingModal(item)}
             title="View Open & Click Tracking Analytics"
@@ -313,6 +315,7 @@ export default function EmailPage() {
             <Eye className="w-4 h-4" />
             Analytics
           </button>
+          )}
         </div>
       ),
     },
@@ -352,7 +355,7 @@ export default function EmailPage() {
             <Mail className="w-7 h-7 text-indigo-600" />
             Emails & Unified Inbox
           </h1>
-          <p className="text-slate-500 text-sm mt-0.5">Outbound email sending, IMAP/SMTP sync, templates, bulk campaign blasts & analytics</p>
+          <p className="text-slate-500 text-sm mt-0.5">Provider-backed outbound email, drafts, and templates</p>
         </div>
 
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
@@ -362,8 +365,6 @@ export default function EmailPage() {
             </Button>
           </PermissionGate>
           <ActionMenu label="More" className="w-full text-xs font-semibold sm:w-auto" actions={[
-            { label: 'IMAP sync', icon: syncImapMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4 text-indigo-600" />, disabled: syncImapMutation.isPending, onSelect: handleSyncImap },
-            { label: 'Bulk campaign', icon: <Users className="w-4 h-4 text-purple-600" />, onSelect: () => setIsCampaignModalOpen(true) },
             { label: 'New template', icon: <Layers className="w-4 h-4 text-amber-500" />, onSelect: () => setIsTemplateModalOpen(true) },
           ]} />
         </div>
@@ -373,14 +374,14 @@ export default function EmailPage() {
 
       {/* Folder Switcher Tabs */}
       <div className="flex items-center gap-2 border-b border-slate-200 pb-2 overflow-x-auto">
-        <button
+        {EMAIL_ADVANCED_FEATURES_ENABLED && <button
           onClick={() => setActiveFolder('inbox')}
           className={`shrink-0 whitespace-nowrap px-4 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
             activeFolder === 'inbox' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
           }`}
         >
           Inbox Messages ({inboxMessages.length})
-        </button>
+        </button>}
 
         <button
           onClick={() => setActiveFolder('drafts')}
@@ -417,7 +418,7 @@ export default function EmailPage() {
           data={inboxMessages}
           getRowKey={(item) => item.id}
           emptyTitle="No email messages found"
-          emptyDescription="Compose a new email or trigger IMAP sync to fetch emails."
+          emptyDescription="Compose an email to queue it for provider delivery."
           searchValue={searchTerm}
           onSearchChange={setSearchTerm}
           searchPlaceholder="Search email subject or recipient..."
@@ -510,7 +511,7 @@ export default function EmailPage() {
         </div>
       )}
 
-      {activeFolder === 'signatures' && (
+      {EMAIL_ADVANCED_FEATURES_ENABLED && activeFolder === 'signatures' && (
         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
           <div className="flex justify-between items-center border-b border-slate-100 pb-3">
             <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
@@ -685,7 +686,7 @@ export default function EmailPage() {
       </ModalShell>
 
       {/* Bulk Campaign Blast Modal */}
-      <ModalShell
+      {EMAIL_ADVANCED_FEATURES_ENABLED && <ModalShell
         isOpen={isCampaignModalOpen}
         onClose={() => setIsCampaignModalOpen(false)}
         size="md"
@@ -739,10 +740,10 @@ export default function EmailPage() {
             </button>
           </div>
         </form>
-      </ModalShell>
+      </ModalShell>}
 
       {/* Signature Modal */}
-      <ModalShell
+      {EMAIL_ADVANCED_FEATURES_ENABLED && <ModalShell
         isOpen={isSignatureModalOpen}
         onClose={() => setIsSignatureModalOpen(false)}
         size="md"
@@ -791,10 +792,10 @@ export default function EmailPage() {
             </button>
           </div>
         </form>
-      </ModalShell>
+      </ModalShell>}
 
       {/* Analytics Modal Drawer */}
-      {trackingModalEmail && (
+      {EMAIL_ADVANCED_FEATURES_ENABLED && trackingModalEmail && (
         <ModalShell
           isOpen={!!trackingModalEmail}
           onClose={() => setTrackingModalEmail(null)}

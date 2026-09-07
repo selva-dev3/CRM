@@ -22,6 +22,11 @@ export interface QuoteItem {
   items?: QuoteLineItem[];
   total_amount: number;
   status: string;
+  review_submitted_at?: string | null;
+  review_submitted_by?: string | null;
+  approved_at?: string | null;
+  approved_by?: string | null;
+  review_rejection_reason?: string | null;
   created_at: string;
   deal_id?: string | null;
   currency?: string | null;
@@ -52,6 +57,14 @@ export function publicQuoteApi(action: string, token: string, reason?: string): 
 
 export function approveQuoteApi(quoteId: string): Promise<QuoteItem> {
   return apiClient.post(`/quotes/${quoteId}/approve`);
+}
+
+export function submitQuoteForReviewApi(quoteId: string): Promise<QuoteItem> {
+  return apiClient.post(`/quotes/${quoteId}/submit-for-review`);
+}
+
+export function returnQuoteToDraftApi(quoteId: string, reason: string): Promise<QuoteItem> {
+  return apiClient.post(`/quotes/${quoteId}/return-to-draft`, { reason });
 }
 
 export interface QuoteCreatePayload {
@@ -264,6 +277,31 @@ export function useSendQuoteEmailMutation(options?: UseMutationOptions<MessageRe
     },
     ...options,
   });
+}
+
+function useQuoteWorkflowMutation(
+  mutationFn: (variables: { id: string; reason?: string }) => Promise<QuoteItem>,
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn,
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['quotes'] });
+      queryClient.invalidateQueries({ queryKey: ['quotes', variables.id] });
+    },
+  });
+}
+
+export function useSubmitQuoteForReviewMutation() {
+  return useQuoteWorkflowMutation(({ id }) => submitQuoteForReviewApi(id));
+}
+
+export function useApproveQuoteMutation() {
+  return useQuoteWorkflowMutation(({ id }) => approveQuoteApi(id));
+}
+
+export function useReturnQuoteToDraftMutation() {
+  return useQuoteWorkflowMutation(({ id, reason }) => returnQuoteToDraftApi(id, reason ?? ''));
 }
 
 export function useRejectQuoteMutation(options?: UseMutationOptions<MessageResponse, Error, { id: string; reason?: string }>) {

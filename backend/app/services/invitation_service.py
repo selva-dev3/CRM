@@ -688,7 +688,7 @@ async def resend_organization_invitation(
         email_to=inv.email,
         admin_name=inv.full_name or "Admin",
         organization_name=org.name if org else "CRM Organization",
-        plan_name="Enterprise",
+        plan_name=org.plan if org and org.plan else "Free",
         token=new_token,
         expires_at_str="24 Hours",
     )

@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, Header, Query, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
+from app.core.errors import APIException
 from app.db.session import get_db
 from app.models import User
 from app.schemas.crm_schemas import (
@@ -147,7 +148,11 @@ async def get_lead_sources():
     dependencies=[Depends(require_permission("leads:create"))],
 )
 async def create_lead_source(source_name: str):
-    return {"message": f"Lead source {source_name} created", "status": "success"}
+    raise APIException(
+        message="Custom lead sources are not supported",
+        code="CUSTOM_LEAD_SOURCES_UNAVAILABLE",
+        status_code=501,
+    )
 
 
 @router.get(
@@ -166,7 +171,11 @@ async def get_lead_statuses():
     dependencies=[Depends(require_permission("leads:create"))],
 )
 async def create_lead_status(status_name: str):
-    return {"message": f"Lead status {status_name} created", "status": "success"}
+    raise APIException(
+        message="Custom lead statuses are not supported",
+        code="CUSTOM_LEAD_STATUSES_UNAVAILABLE",
+        status_code=501,
+    )
 
 
 @router.post(
@@ -190,7 +199,11 @@ async def check_duplicate_lead(
     dependencies=[Depends(require_permission("leads:read"))],
 )
 async def lead_analytics_by_source():
-    return []
+    raise APIException(
+        message="Lead source analytics are not available from this endpoint",
+        code="LEAD_SOURCE_ANALYTICS_UNAVAILABLE",
+        status_code=501,
+    )
 
 
 @router.get(
@@ -199,7 +212,7 @@ async def lead_analytics_by_source():
     dependencies=[Depends(require_permission("leads:export"))],
 )
 async def export_leads_csv():
-    return {"download_url": "https://api.crm.com/exports/leads.csv"}
+    raise APIException(message="Lead CSV export is not implemented", status_code=501)
 
 
 @router.post(
@@ -209,7 +222,7 @@ async def export_leads_csv():
     dependencies=[Depends(require_permission("leads:import"))],
 )
 async def import_leads_csv():
-    return {"message": "Import completed successfully", "status": "success"}
+    raise APIException(message="Lead CSV import is not implemented", status_code=501)
 
 
 @router.post(
@@ -482,17 +495,25 @@ async def get_lead_emails(
 @router.post(
     "/{lead_id}/emails/send",
     response_model=EmailResponse,
+    status_code=status.HTTP_202_ACCEPTED,
     summary="Send email to lead",
     dependencies=[Depends(require_permission("emails:send"))],
 )
 async def send_lead_email(
     lead_id: str,
     payload: EmailSendRequest,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key", max_length=128),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await lead_service.send_email(db, lead_id, payload, organization_id=organization_id)
+    return await lead_service.send_email(
+        db,
+        lead_id,
+        payload,
+        organization_id=organization_id,
+        idempotency_key=idempotency_key,
+    )
 
 
 @router.get(

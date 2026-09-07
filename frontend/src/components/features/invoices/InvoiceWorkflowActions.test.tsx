@@ -4,9 +4,13 @@ import { InvoiceWorkflowActions } from './InvoiceWorkflowActions';
 import { ApiError } from '@/lib/api/client';
 import type { InvoiceItem } from '@/lib/api/invoices';
 
-const mocks = vi.hoisted(() => ({ record: vi.fn(), finalize: vi.fn(), permission: true }));
+const mocks = vi.hoisted(() => ({ record: vi.fn(), finalize: vi.fn(), submitReview: vi.fn(), returnDraft: vi.fn(), permission: true }));
 vi.mock('@/lib/api/payments', () => ({ useRecordInvoicePaymentMutation: () => ({ mutateAsync: mocks.record, isPending: false }) }));
-vi.mock('@/lib/api/invoices', () => ({ useFinalizeInvoiceMutation: () => ({ mutateAsync: mocks.finalize, isPending: false }) }));
+vi.mock('@/lib/api/invoices', () => ({
+  useFinalizeInvoiceMutation: () => ({ mutateAsync: mocks.finalize, isPending: false }),
+  useSubmitInvoiceForReviewMutation: () => ({ mutateAsync: mocks.submitReview, isPending: false }),
+  useReturnInvoiceToDraftMutation: () => ({ mutateAsync: mocks.returnDraft, isPending: false }),
+}));
 vi.mock('@/providers/auth-provider', () => ({ useOptionalAuth: () => ({ user: { id: 'user-1' } }) }));
 vi.mock('@/hooks/use-has-permission', () => ({ useHasPermission: () => ({ hasPermission: () => mocks.permission }) }));
 
@@ -95,11 +99,18 @@ describe('invoice workflow', () => {
     await waitFor(() => expect(mocks.record).toHaveBeenLastCalledWith(original));
     await waitFor(() => expect(mocks.record).toHaveBeenCalledTimes(2));
   });
-  it('finalizes a draft only after confirmation', async () => {
+  it('submits a draft for review only after confirmation', async () => {
     render(<InvoiceWorkflowActions invoice={{ ...invoice, status: 'Draft' }} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Finalize invoice' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Submit for review' }));
+    expect(mocks.submitReview).not.toHaveBeenCalled();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Submit for review' }).at(-1) as HTMLElement);
+    await waitFor(() => expect(mocks.submitReview).toHaveBeenCalledWith('invoice-1'));
+  });
+  it('finalizes only an invoice in review after confirmation', async () => {
+    render(<InvoiceWorkflowActions invoice={{ ...invoice, status: 'In Review' }} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Approve & finalize' }));
     expect(mocks.finalize).not.toHaveBeenCalled();
-    fireEvent.click(screen.getAllByRole('button', { name: 'Finalize invoice' }).at(-1) as HTMLElement);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Approve & finalize' }).at(-1) as HTMLElement);
     await waitFor(() => expect(mocks.finalize).toHaveBeenCalledWith('invoice-1'));
   });
 });

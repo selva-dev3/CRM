@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.company import Company
 from app.models.contact import Contact, ContactAddress
+from app.models.organization import Organization
 
 
 class ContactRepository:
@@ -135,3 +136,37 @@ class ContactRepository:
         address = ContactAddress(contact_id=contact_id, **data)
         db.add(address)
         return address
+
+    async def lock_organization(self, db: AsyncSession, organization_id: str) -> None:
+        await db.scalar(
+            select(Organization.id).where(Organization.id == organization_id).with_for_update()
+        )
+
+    async def find_duplicate(
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        email: str,
+        phone: str | None,
+        exclude_id: str | None = None,
+    ) -> Contact | None:
+        conditions = [func.lower(func.trim(Contact.email)) == email]
+        if phone:
+            conditions.append(func.regexp_replace(Contact.phone, r"\D", "", "g") == phone)
+        stmt = select(Contact).where(
+            Contact.organization_id == organization_id,
+            *conditions[:1],
+        )
+        if exclude_id:
+            stmt = stmt.where(Contact.id != exclude_id)
+        duplicate = (await db.execute(stmt.limit(1))).scalars().first()
+        if duplicate or not phone:
+            return duplicate
+        phone_stmt = select(Contact).where(
+            Contact.organization_id == organization_id,
+            conditions[1],
+        )
+        if exclude_id:
+            phone_stmt = phone_stmt.where(Contact.id != exclude_id)
+        return (await db.execute(phone_stmt.limit(1))).scalars().first()

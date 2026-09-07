@@ -12,8 +12,6 @@ import {
   FileCode,
   Calendar,
   DollarSign,
-  Trash2,
-  Edit,
   Send,
   CheckCircle2,
   AlertCircle,
@@ -100,15 +98,6 @@ export default function QuotesPage() {
     setStatus('Draft');
     setDealId('');
     setEditingQuote(null);
-  };
-
-  const handleOpenEditModal = (q: QuoteItem) => {
-    setEditingQuote(q);
-    setQuoteNumber(q.quote_number);
-    setTotalAmount(String(q.total_amount || 0));
-    setStatus(q.status || 'Draft');
-    setDealId(q.deal_id || '');
-    setIsQuoteModalOpen(true);
   };
 
   const handleSaveQuoteSubmit = async (e: React.FormEvent) => {
@@ -257,8 +246,6 @@ export default function QuotesPage() {
           onTriggerClick={(event) => event.stopPropagation()}
           actions={[
             ...(item.status === 'Approved' && item.delivery_status === 'Failed' ? [{ label: 'Retry quote delivery', permission: PERMISSIONS.QUOTES.SEND, icon: <Send className="w-4 h-4 text-blue-600" />, onSelect: () => { setSendModalQuote(item); setRecipientEmailInput(item.recipient_email || ''); setIsSendEmailModalOpen(true); } }] : []),
-            { label: 'Edit quote', permission: PERMISSIONS.QUOTES.UPDATE, icon: <Edit className="w-4 h-4 text-indigo-600" />, onSelect: () => handleOpenEditModal(item) },
-            { label: 'Delete quote', permission: PERMISSIONS.QUOTES.DELETE, icon: <Trash2 className="w-4 h-4" />, variant: 'destructive', onSelect: () => setQuoteToDelete(item) },
           ]}
         />
       ),
@@ -328,6 +315,8 @@ export default function QuotesPage() {
             >
               <option value="">All Statuses</option>
               <option value="Draft">Draft</option>
+              <option value="Pending Approval">Pending Approval</option>
+              <option value="Approved">Approved</option>
               <option value="Sent">Sent</option>
               <option value="Accepted">Accepted</option>
               <option value="Rejected">Rejected</option>
@@ -443,7 +432,6 @@ export default function QuotesPage() {
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
                 >
                   <option value="Draft">Draft</option>
-                  <option value="Pending Approval">Pending Approval</option>
                 </ResponsiveSelect>
               </div>
             </div>

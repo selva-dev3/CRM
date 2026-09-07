@@ -27,15 +27,30 @@ async def list_calls(
     limit: int = 20,
     search: str | None = Query(None),
     call_type: str | None = Query(None),
+    lead_id: str | None = Query(None),
+    contact_id: str | None = Query(None),
+    company_id: str | None = Query(None),
+    deal_id: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    relationship_filters = {
+        key: value
+        for key, value in {
+            "lead_id": lead_id,
+            "contact_id": contact_id,
+            "company_id": company_id,
+            "deal_id": deal_id,
+        }.items()
+        if isinstance(value, str) and value
+    }
     return await call_service.list_calls(
         db,
         page=page,
         limit=limit,
         search=search,
         call_type=call_type,
+        **relationship_filters,
         current_user=current_user,
     )
 

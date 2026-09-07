@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import NotFoundError
+from app.core.errors import APIException, NotFoundError
 from app.models import Meeting, User
 from app.repositories.meeting_repository import MeetingRepository
 from app.schemas.ai import MeetingSummaryResponse
@@ -40,8 +40,12 @@ def test_parse_datetime_handles_iso_date_and_empty():
     assert parse_datetime("2026-08-01") == datetime(2026, 8, 1)
     assert parse_datetime("2026-08-01T10:30:00") == datetime(2026, 8, 1, 10, 30)
     assert parse_datetime("2026-08-01T10:30:00Z").tzinfo is not None
-    assert parse_datetime("not-a-date") is not None
-    assert parse_datetime("") is not None
+    with pytest.raises(APIException) as exc_info:
+        parse_datetime("not-a-date")
+    assert exc_info.value.code == "INVALID_MEETING_DATETIME"
+    with pytest.raises(APIException) as empty_exc:
+        parse_datetime("")
+    assert empty_exc.value.code == "MEETING_DATETIME_REQUIRED"
 
 
 @pytest.mark.asyncio

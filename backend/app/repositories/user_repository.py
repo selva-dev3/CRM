@@ -193,6 +193,6 @@ class UserRepository:
         return result.scalars().first()
 
     async def create_org(self, db: AsyncSession, *, name: str) -> Organization:
-        org = Organization(name=name)
+        org = Organization(name=name, plan="Free", max_users=3)
         db.add(org)
         return org

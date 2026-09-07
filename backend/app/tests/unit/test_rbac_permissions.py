@@ -73,6 +73,33 @@ async def test_require_permission_passes_when_user_has_key():
 
 
 @pytest.mark.asyncio
+async def test_api_key_requires_scope_in_addition_to_owner_rbac():
+    user = _make_user()
+    user._api_key_scopes = {"leads:read"}
+
+    with pytest.raises(ForbiddenError, match="API key is missing required scope"):
+        await _run_permission_dependency("deals:read", user, ["deals:read"])
+
+
+@pytest.mark.asyncio
+async def test_api_key_broad_read_scope_does_not_authorize_writes():
+    user = _make_user()
+    user._api_key_scopes = {"api:read"}
+
+    assert await _run_permission_dependency("deals:read", user, ["deals:read"]) is user
+    with pytest.raises(ForbiddenError, match="API key is missing required scope"):
+        await _run_permission_dependency("deals:update", user, ["deals:update"])
+
+
+@pytest.mark.asyncio
+async def test_api_key_broad_write_scope_authorizes_rbac_allowed_mutation():
+    user = _make_user()
+    user._api_key_scopes = {"api:write"}
+
+    assert await _run_permission_dependency("deals:update", user, ["deals:update"]) is user
+
+
+@pytest.mark.asyncio
 async def test_require_permission_raises_forbidden_when_missing():
     user = _make_user()
     with pytest.raises(ForbiddenError) as excinfo:

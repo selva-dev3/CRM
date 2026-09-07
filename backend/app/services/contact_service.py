@@ -45,6 +45,12 @@ def contact_to_dict(contact: Contact) -> dict:
 class ContactService:
     """Business logic for the Contact domain."""
 
+    @staticmethod
+    def _identity(email: str | None, phone: str | None) -> tuple[str, str | None]:
+        normalized_email = (email or "").strip().casefold()
+        normalized_phone = "".join(char for char in (phone or "") if char.isdigit()) or None
+        return normalized_email, normalized_phone
+
     def __init__(
         self,
         repository: ContactRepository | None = None,
@@ -249,6 +255,22 @@ class ContactService:
             or "Representative"
         )
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        normalized_email, normalized_phone = self._identity(payload.email, payload.phone)
+        if not normalized_email:
+            raise APIException(message="Contact email is required", status_code=422)
+        await self.repository.lock_organization(db, org_id)
+        duplicate = await self.repository.find_duplicate(
+            db,
+            organization_id=org_id,
+            email=normalized_email,
+            phone=normalized_phone,
+        )
+        if duplicate:
+            raise APIException(
+                message="A matching contact already exists in this organization",
+                code="CONTACT_DUPLICATE",
+                status_code=409,
+            )
         if payload.company_id and not await self.repository.company_exists(
             db, company_id=payload.company_id, organization_id=org_id
         ):
@@ -262,7 +284,7 @@ class ContactService:
         data = {
             "organization_id": org_id,
             "name": full_name,
-            "email": payload.email,
+            "email": normalized_email,
             "phone": getattr(payload, "phone", None),
             "position": position,
             "company_id": getattr(payload, "company_id", None),
@@ -299,6 +321,24 @@ class ContactService:
     ) -> dict:
         contact = await self.require_contact(db, contact_id, organization_id=organization_id)
 
+        candidate_email = payload.email if payload.email is not None else contact.email
+        candidate_phone = payload.phone if payload.phone is not None else contact.phone
+        normalized_email, normalized_phone = self._identity(candidate_email, candidate_phone)
+        await self.repository.lock_organization(db, organization_id)
+        duplicate = await self.repository.find_duplicate(
+            db,
+            organization_id=organization_id,
+            email=normalized_email,
+            phone=normalized_phone,
+            exclude_id=contact.id,
+        )
+        if duplicate:
+            raise APIException(
+                message="A matching contact already exists in this organization",
+                code="CONTACT_DUPLICATE",
+                status_code=409,
+            )
+
         raw_name = getattr(payload, "name", None)
         first_name = getattr(payload, "first_name", None)
         last_name = getattr(payload, "last_name", None)
@@ -308,7 +348,7 @@ class ContactService:
             contact.name = f"{first_name or ''} {last_name or ''}".strip()
 
         if payload.email:
-            contact.email = payload.email
+            contact.email = normalized_email
         if payload.phone is not None:
             contact.phone = payload.phone
         if payload.company_id is not None:

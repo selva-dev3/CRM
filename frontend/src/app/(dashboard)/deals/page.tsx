@@ -39,7 +39,6 @@ import {
   useMarkDealWonMutation,
   useMarkDealLostMutation,
   useBulkDeleteDealsMutation,
-  useImportDealsCsvMutation,
   useDealCustomFieldsQuery,
   exportDealsCsvApi,
   importDealsCsvApi,
@@ -114,7 +113,6 @@ export default function DealsPage() {
   const markWonMutation = useMarkDealWonMutation();
   const markLostMutation = useMarkDealLostMutation();
   const bulkDeleteMutation = useBulkDeleteDealsMutation();
-  const importCsvMutation = useImportDealsCsvMutation();
 
   const refetchAll = () => {
     refetchDeals();
@@ -388,16 +386,17 @@ export default function DealsPage() {
             className="h-8 text-xs font-semibold"
             actions={[
               {
-                label: 'Export CSV',
+                label: 'Export CSV (Not available)',
                 permission: PERMISSIONS.DEALS.EXPORT,
                 icon: <FileSpreadsheet className="w-4 h-4 text-emerald-600" />,
+                disabled: true,
                 onSelect: handleExportCsv,
               },
               {
-                label: 'Import CSV',
+                label: 'Import CSV (Not available)',
                 permission: PERMISSIONS.DEALS.IMPORT,
                 icon: <Upload className="w-4 h-4 text-blue-600" />,
-                disabled: importCsvMutation.isPending,
+                disabled: true,
                 onSelect: handleImportCsv,
               },
             ]}

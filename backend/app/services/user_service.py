@@ -472,14 +472,21 @@ class UserService:
     async def get_user_effective_permissions(
         self, db: AsyncSession, user_id: str, *, current_user: User
     ) -> dict:
-        await self._require_same_org_user(db, user_id, current_user)
-        return {"user_id": user_id, "permissions": ["leads:all", "deals:all", "contacts:all"]}
+        user = await self._require_same_org_user(db, user_id, current_user)
+        from app.services.auth_service import auth_service
+
+        permissions = await auth_service.get_user_permissions(db, user)
+        return {"user_id": user_id, "permissions": permissions}
 
     async def admin_reset_user_password(
         self, db: AsyncSession, user_id: str, *, current_user: User
     ) -> dict:
         await self._require_same_org_user(db, user_id, current_user)
-        return {"message": f"Temporary password sent to user {user_id}", "status": "success"}
+        raise APIException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            code="ADMIN_PASSWORD_RESET_UNAVAILABLE",
+            message="Administrator password reset delivery is not configured",
+        )
 
     async def _require_same_org_user(
         self, db: AsyncSession, user_id: str, current_user: User

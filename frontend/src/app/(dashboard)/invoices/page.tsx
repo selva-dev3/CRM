@@ -268,7 +268,7 @@ export default function InvoicesPage() {
             { label: 'View invoice / Add Payment', permission: PERMISSIONS.INVOICES.READ, icon: <CreditCard className="w-4 h-4" />, onSelect: () => router.push(`/invoices/${item.id}`) },
             ...(['Finalized', 'Accepted'].includes(item.status) ? [{ label: 'Send Invoice', permission: PERMISSIONS.INVOICES.SEND, icon: <Send className="w-4 h-4 text-blue-600" />, onSelect: () => { setSendModalInvoice(item); setRecipientEmailInput(item.recipient_email || (typeof item.billing_snapshot?.email === 'string' ? item.billing_snapshot.email : '')); setIsSendModalOpen(true); } }] : []),
             { label: 'Edit invoice', disabled: item.status !== 'Draft', permission: PERMISSIONS.INVOICES.UPDATE, icon: <Edit className="w-4 h-4 text-indigo-600" />, onSelect: () => handleOpenEditModal(item) },
-            { label: 'Delete invoice', permission: PERMISSIONS.INVOICES.DELETE, icon: <Trash2 className="w-4 h-4" />, variant: 'destructive', onSelect: () => setInvoiceToDelete(item) },
+            ...(!item.quote_id && item.status === 'Draft' ? [{ label: 'Delete invoice', permission: PERMISSIONS.INVOICES.DELETE, icon: <Trash2 className="w-4 h-4" />, variant: 'destructive' as const, onSelect: () => setInvoiceToDelete(item) }] : []),
           ]}
         />
       ),
@@ -337,6 +337,7 @@ export default function InvoicesPage() {
             >
               <option value="">All Invoice Statuses</option>
               <option value="Draft">Draft</option>
+              <option value="In Review">In Review</option>
               <option value="Finalized">Finalized</option>
               <option value="Accepted">Accepted</option>
               <option value="Cancelled">Cancelled</option>

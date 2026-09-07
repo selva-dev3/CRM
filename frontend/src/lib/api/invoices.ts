@@ -19,6 +19,7 @@ export interface InvoiceLineItem {
 
 export interface InvoiceItem {
   id: string;
+  quote_id?: string | null;
   invoice_number: string;
   deal_id?: string | null;
   company_id?: string | null;
@@ -31,6 +32,9 @@ export interface InvoiceItem {
   paid_amount?: number | string;
   outstanding_amount?: number | string;
   payment_status?: 'Pending' | 'Partially Paid' | 'Paid';
+  review_submitted_at?: string | null;
+  review_submitted_by?: string | null;
+  review_rejection_reason?: string | null;
   finalized_at?: string | null;
   accepted_at?: string | null;
   billing_snapshot?: Record<string, unknown> | null;
@@ -159,6 +163,14 @@ export async function sendInvoiceEmailApi(invoiceId: string, recipient_email: st
 
 export async function finalizeInvoiceApi(invoiceId: string): Promise<unknown> {
   return apiClient.post(`/invoices/${invoiceId}/finalize`);
+}
+
+export async function submitInvoiceForReviewApi(invoiceId: string): Promise<InvoiceItem> {
+  return apiClient.post(`/invoices/${invoiceId}/submit-for-review`);
+}
+
+export async function returnInvoiceToDraftApi(invoiceId: string, reason: string): Promise<InvoiceItem> {
+  return apiClient.post(`/invoices/${invoiceId}/return-to-draft`, { reason });
 }
 
 export async function sendPaymentReminderApi(invoiceId: string): Promise<MessageResponse> {
@@ -326,6 +338,22 @@ export function useFinalizeInvoiceMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: finalizeInvoiceApi,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['invoices'] }),
+  });
+}
+
+export function useSubmitInvoiceForReviewMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: submitInvoiceForReviewApi,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['invoices'] }),
+  });
+}
+
+export function useReturnInvoiceToDraftMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => returnInvoiceToDraftApi(id, reason),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['invoices'] }),
   });
 }

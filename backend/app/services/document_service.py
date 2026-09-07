@@ -175,6 +175,10 @@ def document_to_dict(document: Document, download_url: str = "") -> dict:
         "mime_type": document.mime_type or "application/octet-stream",
         "download_url": download_url,
         "uploaded_at": str(document.uploaded_at),
+        **{
+            f"{entity}_id": getattr(document, f"{entity}_id", None)
+            for entity in ("lead", "contact", "company", "deal", "quote", "invoice", "payment")
+        },
     }
 
 
@@ -216,10 +220,35 @@ class DocumentService:
         limit: int,
         search: str | None = None,
         current_user: User | None = None,
+        lead_id: str | None = None,
+        contact_id: str | None = None,
+        company_id: str | None = None,
+        deal_id: str | None = None,
+        quote_id: str | None = None,
+        invoice_id: str | None = None,
+        payment_id: str | None = None,
     ) -> list[dict]:
         org_id, _ = self._resolve_auth(current_user)
+        relationship_filters = {
+            field: value
+            for field, value in {
+                "lead_id": lead_id,
+                "contact_id": contact_id,
+                "company_id": company_id,
+                "deal_id": deal_id,
+                "quote_id": quote_id,
+                "invoice_id": invoice_id,
+                "payment_id": payment_id,
+            }.items()
+            if value is not None
+        }
         documents = await self.repository.list_documents(
-            db, org_id=org_id, page=page, limit=limit, search=search
+            db,
+            org_id=org_id,
+            page=page,
+            limit=limit,
+            search=search,
+            **relationship_filters,
         )
         out: list[dict] = []
         for doc in documents:
@@ -229,9 +258,33 @@ class DocumentService:
         return out
 
     async def upload_document(
-        self, db: AsyncSession, file: UploadFile, current_user: User | None = None
+        self,
+        db: AsyncSession,
+        file: UploadFile,
+        current_user: User | None = None,
+        *,
+        lead_id: str | None = None,
+        contact_id: str | None = None,
+        company_id: str | None = None,
+        deal_id: str | None = None,
+        quote_id: str | None = None,
+        invoice_id: str | None = None,
+        payment_id: str | None = None,
     ) -> dict:
         org_id, user_id = self._resolve_auth(current_user)
+        from app.services.crm_relationship_service import validate_document_relationships
+
+        relationships = await validate_document_relationships(
+            db,
+            organization_id=org_id,
+            lead_id=lead_id,
+            contact_id=contact_id,
+            company_id=company_id,
+            deal_id=deal_id,
+            quote_id=quote_id,
+            invoice_id=invoice_id,
+            payment_id=payment_id,
+        )
 
         safe_filename = _sanitize_filename(file.filename)
         _, ext = _split_extension(safe_filename)
@@ -293,18 +346,12 @@ class DocumentService:
                 "file_size": file_size,
                 "mime_type": _normalize_mime_type(file.content_type) or "application/octet-stream",
                 "uploaded_by": user_id,
+                **relationships,
             },
         )
         await self._commit(db, "Failed to record uploaded document")
         await db.refresh(document)
-        return {
-            "id": document.id,
-            "filename": document.filename,
-            "file_size": document.file_size,
-            "mime_type": document.mime_type,
-            "download_url": download_url,
-            "uploaded_at": str(document.uploaded_at),
-        }
+        return document_to_dict(document, download_url)
 
     async def get_document(
         self, db: AsyncSession, document_id: str, current_user: User | None = None

@@ -139,15 +139,52 @@ class QuoteRepository:
             )
         )
 
+    async def submit_for_review(self, db: AsyncSession, quote: Quote, *, actor_id: str, at) -> None:
+        assert_quote_transition(quote.status, "Pending Approval")
+        quote.status = "Pending Approval"
+        quote.review_submitted_at = at
+        quote.review_submitted_by = actor_id
+        quote.review_rejection_reason = None
+        db.add(
+            AuditLog(
+                organization_id=quote.organization_id,
+                user_id=actor_id,
+                action="quote.review_submitted",
+                details=quote.id,
+            )
+        )
+
+    async def return_to_draft(
+        self, db: AsyncSession, quote: Quote, *, actor_id: str, reason: str
+    ) -> None:
+        assert_quote_transition(quote.status, "Draft")
+        quote.status = "Draft"
+        quote.review_rejection_reason = reason
+        quote.approved_at = None
+        quote.approved_by = None
+        if quote.deal_id:
+            db.add(
+                DealActivity(
+                    deal_id=quote.deal_id,
+                    action=f"Quote {quote.quote_number} returned to Draft after review",
+                    performed_by=actor_id,
+                )
+            )
+        db.add(
+            AuditLog(
+                organization_id=quote.organization_id,
+                user_id=actor_id,
+                action="quote.review_rejected",
+                details=f"{quote.id}:{reason}",
+            )
+        )
+
     async def accept_public(
         self, db: AsyncSession, quote: Quote, *, customer_email: str, at
     ) -> None:
         assert_quote_transition(quote.status, "Accepted")
         quote.status = "Accepted"
         quote.accepted_at = at
-        # approved_at represents the customer's business approval. Internal
-        # users do not populate it before the quote is sent.
-        quote.approved_at = at
         quote.accepted_by = customer_email
         if quote.deal_id:
             db.add(

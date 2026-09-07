@@ -233,7 +233,9 @@ def test_eligible_invoice_mapping_exposes_server_balance():
         currency="INR",
         payment_status="Partially Paid",
     )
-    result = eligible_invoice_to_dict((invoice, "Acme", "Ada", "ada@example.com"))
+    result = eligible_invoice_to_dict(
+        (invoice, "Acme", "Ada", "ada@example.com", Decimal("40.00"))
+    )
     assert result["invoice_number"] == "INV-1"
     assert result["outstanding_amount"] == Decimal("60.00")
 
@@ -283,3 +285,39 @@ def test_invoice_summary_represents_pending_without_a_fake_payment():
     assert result["latest_payment_id"] is None
     assert result["payment_number"] is None
     assert result["payment_date"] is None
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_repairs_persisted_invoice_aggregate(payment_context):
+    service, repo, invoice, db = payment_context
+    invoice.paid_amount = Decimal("5.00")
+    invoice.payment_status = "Pending"
+    repo.sum_succeeded.side_effect = None
+    repo.sum_succeeded.return_value = Decimal("40.00")
+    repo.record_reconciliation_audit = AsyncMock()
+
+    repaired = await service.reconcile_invoice(
+        db, invoice_id="invoice", organization_id="org"
+    )
+
+    assert repaired is True
+    assert invoice.paid_amount == Decimal("40.00")
+    assert invoice.payment_status == "Partially Paid"
+    repo.record_reconciliation_audit.assert_awaited_once()
+    db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_does_not_write_when_aggregate_matches(payment_context):
+    service, repo, invoice, db = payment_context
+    repo.sum_succeeded.return_value = Decimal("0.00")
+    repo.record_reconciliation_audit = AsyncMock()
+
+    repaired = await service.reconcile_invoice(
+        db, invoice_id="invoice", organization_id="org"
+    )
+
+    assert repaired is False
+    repo.record_reconciliation_audit.assert_not_awaited()
+    db.commit.assert_not_awaited()
+    db.rollback.assert_awaited_once()

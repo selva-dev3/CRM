@@ -20,12 +20,24 @@ class CallRepository:
         organization_id: str,
         search: str | None = None,
         call_type: str | None = None,
+        lead_id: str | None = None,
+        contact_id: str | None = None,
+        company_id: str | None = None,
+        deal_id: str | None = None,
     ) -> builtins.list[CallLog]:
         stmt = select(CallLog).where(CallLog.organization_id == organization_id)
         if search and search.strip():
             stmt = stmt.where(CallLog.notes.ilike(f"%{search.strip()}%"))
         if call_type and call_type.strip():
             stmt = stmt.where(CallLog.call_type == call_type.strip())
+        for column, value in (
+            (CallLog.lead_id, lead_id),
+            (CallLog.contact_id, contact_id),
+            (CallLog.company_id, company_id),
+            (CallLog.deal_id, deal_id),
+        ):
+            if value:
+                stmt = stmt.where(column == value)
         stmt = stmt.order_by(CallLog.timestamp.desc()).offset((page - 1) * limit).limit(limit)
         result = await db.execute(stmt)
         return list(result.scalars().all())

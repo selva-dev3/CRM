@@ -57,15 +57,14 @@ async def test_list_integrations_falls_back_to_disconnected_defaults():
 
 
 @pytest.mark.asyncio
-async def test_list_integrations_returns_empty_on_exception():
+async def test_list_integrations_does_not_hide_database_errors():
     repo: Any = IntegrationRepository()
     repo.list_all = AsyncMock(side_effect=RuntimeError("db down"))
     service = IntegrationService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.list_integrations(db, SimpleNamespace(organization_id="org-1"))
-
-    assert result == []
+    with pytest.raises(RuntimeError, match="db down"):
+        await service.list_integrations(db, SimpleNamespace(organization_id="org-1"))
 
 
 @pytest.mark.asyncio
@@ -162,7 +161,7 @@ async def test_connect_slack_creates_integration():
     repo.get_by_provider = AsyncMock(return_value=None)
     repo.create = AsyncMock(return_value=integration)
     service = IntegrationService(repository=repo)
-    cast(Any, service).notify_slack_event = AsyncMock()
+    cast(Any, service)._verify_slack_webhook = AsyncMock()
     db = AsyncMock(spec=AsyncSession)
 
     result = await service.connect_slack(
@@ -176,24 +175,44 @@ async def test_connect_slack_creates_integration():
 
 
 @pytest.mark.asyncio
-async def test_connect_slack_fires_integration_connected():
+async def test_connect_slack_verifies_provider_before_marking_connected():
     integration = _make_integration()
     repo: Any = IntegrationRepository()
     repo.resolve_org_id = AsyncMock(return_value="org-1")
     repo.get_by_provider = AsyncMock(return_value=None)
     repo.create = AsyncMock(return_value=integration)
     service = IntegrationService(repository=repo)
+    cast(Any, service)._verify_slack_webhook = AsyncMock()
     db = AsyncMock(spec=AsyncSession)
 
-    notify = AsyncMock()
-    cast(Any, service).notify_slack_event = notify
     await service.connect_slack(
         db, SlackConnectRequest(webhook_url="https://hooks.slack.com/yyy"), None
     )
 
-    notify.assert_awaited_once()
-    assert notify.await_args_list[-1].kwargs["event_name"] == "integration.connected"
-    assert notify.await_args_list[-1].kwargs["org_id"] == "org-1"
+    cast(Any, service)._verify_slack_webhook.assert_awaited_once_with(
+        "https://hooks.slack.com/yyy"
+    )
+    assert repo.create.await_args.kwargs["data"]["status"] == "synced"
+
+
+@pytest.mark.asyncio
+async def test_connect_slack_provider_failure_does_not_persist_connection():
+    repo: Any = IntegrationRepository()
+    repo.resolve_org_id = AsyncMock(return_value="org-1")
+    repo.create = AsyncMock()
+    service = IntegrationService(repository=repo)
+    cast(Any, service)._verify_slack_webhook = AsyncMock(
+        side_effect=httpx.ConnectError("unavailable")
+    )
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(APIException) as exc:
+        await service.connect_slack(
+            db, SlackConnectRequest(webhook_url="https://hooks.slack.com/yyy"), None
+        )
+
+    assert exc.value.status_code == 502
+    repo.create.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -215,7 +234,7 @@ async def test_disconnect_slack(monkeypatch):
     repo.resolve_org_id = AsyncMock(return_value="org-1")
     repo.get_by_provider = AsyncMock(return_value=integration)
     service = IntegrationService(repository=repo)
-    cast(Any, service).notify_slack_event = AsyncMock()
+    cast(Any, service)._verify_slack_webhook = AsyncMock()
     db = AsyncMock(spec=AsyncSession)
 
     result = await service.disconnect_slack(db, None)
@@ -260,8 +279,10 @@ def test_default_connectors_and_events():
 @pytest.mark.asyncio
 async def test_retry_failed_sync():
     service = IntegrationService()
-    result = await service.retry_failed_sync("job-x", None)
-    assert "job-x" in result["message"]
+    with pytest.raises(APIException) as exc:
+        await service.retry_failed_sync("job-x", None)
+    assert exc.value.status_code == 501
+    assert exc.value.code == "INTEGRATION_SYNC_NOT_IMPLEMENTED"
 
 
 @pytest.mark.asyncio
@@ -486,6 +507,7 @@ async def test_connect_slack_reconnects_updates_existing_integration():
     repo.get_by_provider = AsyncMock(return_value=integration)
     repo.create = AsyncMock()
     service = IntegrationService(repository=repo)
+    cast(Any, service)._verify_slack_webhook = AsyncMock()
     cast(Any, service).notify_slack_event = AsyncMock()
     db = AsyncMock(spec=AsyncSession)
 

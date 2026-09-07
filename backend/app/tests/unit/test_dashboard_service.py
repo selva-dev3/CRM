@@ -14,6 +14,21 @@ from app.repositories.setting_repository import SettingRepository
 from app.schemas.dashboard import CustomWidgetSaveRequest, DashboardAiInsightsResponse
 from app.services.dashboard_service import DashboardService
 
+FINANCIAL_KPIS = {
+    "quote_count": 3,
+    "quote_value": 9000.0,
+    "quote_conversion_percentage": 50.0,
+    "invoice_count": 2,
+    "invoice_total": 6000.0,
+    "paid_amount": 4000.0,
+    "outstanding_amount": 2000.0,
+    "pending_payment_count": 1,
+    "partially_paid_invoice_count": 0,
+    "paid_invoice_count": 1,
+    "revenue": 4000.0,
+    "collection_rate_percentage": 66.67,
+}
+
 
 def _service_with(
     repo: DashboardRepository,
@@ -37,6 +52,7 @@ async def test_get_kpis_computes_win_rate():
     repo.count_won_deals = AsyncMock(return_value=2)
     repo.avg_lead_score = AsyncMock(return_value=0.0)
     repo.count_scored_leads = AsyncMock(return_value=10)
+    repo.financial_kpis = AsyncMock(return_value=FINANCIAL_KPIS)
     repo.get_organization_currency_locale = AsyncMock(return_value=("INR", "en-IN"))
     repo.recent_leads = AsyncMock(return_value=[])
     service = _service_with(repo, SettingRepository())
@@ -52,6 +68,7 @@ async def test_get_kpis_computes_win_rate():
     assert result.closed_deals_count == 8
     assert result.ai_lead_score_avg == 0.0
     assert result.scored_leads_count == 10
+    assert result.outstanding_amount == 2000.0
     assert result.currency == "INR"
     assert result.locale == "en-IN"
     repo.count_leads.assert_awaited_once_with(db, "org-1")
@@ -67,6 +84,7 @@ async def test_get_kpis_uses_lead_contact_name_for_recent_activity():
     repo.count_won_deals = AsyncMock(return_value=0)
     repo.avg_lead_score = AsyncMock(return_value=0.0)
     repo.count_scored_leads = AsyncMock(return_value=0)
+    repo.financial_kpis = AsyncMock(return_value=FINANCIAL_KPIS)
     repo.get_organization_currency_locale = AsyncMock(return_value=("USD", "en-US"))
     repo.recent_leads = AsyncMock(
         return_value=[

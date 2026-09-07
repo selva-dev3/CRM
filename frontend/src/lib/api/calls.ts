@@ -4,6 +4,9 @@ import { apiClient } from '@/lib/api/client';
 export interface CallLogItem {
   id: string;
   contact_id?: string;
+  lead_id?: string;
+  company_id?: string;
+  deal_id?: string;
   call_type?: string;
   duration_seconds?: number;
   notes?: string;
@@ -12,6 +15,9 @@ export interface CallLogItem {
 
 export interface CallLogBasePayload {
   contact_id?: string;
+  lead_id?: string;
+  company_id?: string;
+  deal_id?: string;
   call_type?: string;
   duration_seconds?: number;
   notes?: string;
@@ -62,12 +68,27 @@ export interface MessageResponse {
 // API Client Functions
 // ---------------------------------------------------------------------------
 
-export async function fetchCallsApi(params?: { page?: number; limit?: number; search?: string; call_type?: string }): Promise<CallLogItem[]> {
+export interface FetchCallsParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+  call_type?: string;
+  lead_id?: string;
+  contact_id?: string;
+  company_id?: string;
+  deal_id?: string;
+}
+
+export async function fetchCallsApi(params?: FetchCallsParams): Promise<CallLogItem[]> {
   const query = new URLSearchParams();
   if (params?.page) query.append('page', String(params.page));
   if (params?.limit) query.append('limit', String(params.limit));
   if (params?.search) query.append('search', params.search);
   if (params?.call_type) query.append('call_type', params.call_type);
+  if (params?.lead_id) query.append('lead_id', params.lead_id);
+  if (params?.contact_id) query.append('contact_id', params.contact_id);
+  if (params?.company_id) query.append('company_id', params.company_id);
+  if (params?.deal_id) query.append('deal_id', params.deal_id);
   const endpoint = `/calls${query.toString() ? `?${query.toString()}` : ''}`;
   return apiClient.get<CallLogItem[]>(endpoint);
 }
@@ -120,7 +141,7 @@ export async function fetchCallSentimentApi(callId: string): Promise<SentimentRe
 // TanStack Query Hooks
 // ---------------------------------------------------------------------------
 
-export function useCallsQuery(params?: { page?: number; limit?: number; search?: string; call_type?: string }, options?: Omit<UseQueryOptions<CallLogItem[]>, 'queryKey' | 'queryFn'>) {
+export function useCallsQuery(params?: FetchCallsParams, options?: Omit<UseQueryOptions<CallLogItem[]>, 'queryKey' | 'queryFn'>) {
   return useQuery<CallLogItem[]>({
     queryKey: ['calls', params],
     queryFn: () => fetchCallsApi(params),

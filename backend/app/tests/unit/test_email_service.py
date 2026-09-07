@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import APIException
 from app.models import Email, EmailTemplate, User
 from app.repositories.email_repository import EmailRepository
 from app.schemas.crm_schemas import EmailSendRequest
@@ -23,7 +24,9 @@ def _make_email(**overrides) -> Email:
         "to_email": "client@example.com",
         "subject": "Hello",
         "body_text": "Hi there",
+        "status": "Sent",
         "sent_at": datetime(2026, 8, 5, 12, 0, tzinfo=UTC),
+        "created_at": datetime(2026, 8, 5, 11, 59, tzinfo=UTC),
     }
     defaults.update(overrides)
     return Email(**defaults)
@@ -103,7 +106,7 @@ async def test_send_email_creates_row(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_list_templates_falls_back_to_defaults():
+async def test_list_templates_returns_empty_without_fabricated_defaults():
     repo: Any = EmailRepository()
     repo.list_templates = AsyncMock(return_value=[])
     service = EmailDomainService(repository=repo)
@@ -111,21 +114,20 @@ async def test_list_templates_falls_back_to_defaults():
 
     templates = await service.list_templates(db, _user())
 
-    assert len(templates) == 2
-    assert templates[0]["name"] == "Cold Outreach Introduction"
+    assert templates == []
 
 
 @pytest.mark.asyncio
-async def test_get_template_missing_returns_default():
+async def test_get_template_missing_raises_not_found():
     repo: Any = EmailRepository()
     repo.get_template = AsyncMock(return_value=None)
     service = EmailDomainService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.get_template(db, "missing", _user())
+    with pytest.raises(APIException) as exc_info:
+        await service.get_template(db, "missing", _user())
 
-    assert result["name"] == "Default Template"
-    assert result["id"] == "missing"
+    assert exc_info.value.status_code == 404
 
 
 @pytest.mark.asyncio

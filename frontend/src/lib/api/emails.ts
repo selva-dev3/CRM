@@ -7,7 +7,11 @@ export interface EmailMessageItem {
   to: string[];
   subject: string;
   body?: string;
-  sent_at: string;
+  status: 'Draft' | 'Pending' | 'Processing' | 'Sent' | 'Failed' | 'Unknown';
+  sent_at: string | null;
+  provider_message_id?: string | null;
+  failure_reason?: string | null;
+  created_at?: string | null;
 }
 
 export interface EmailSendPayload {
@@ -76,15 +80,17 @@ export async function fetchInboxApi(params?: { page?: number; limit?: number; fo
 }
 
 export async function sendEmailApi(payload: EmailSendPayload): Promise<EmailMessageItem> {
-  return apiClient.post<EmailMessageItem>('/emails/send', payload);
+  return apiClient.post<EmailMessageItem>('/emails/send', payload, {
+    headers: { 'Idempotency-Key': crypto.randomUUID() },
+  });
 }
 
 export async function fetchDraftsApi(): Promise<EmailMessageItem[]> {
   return apiClient.get<EmailMessageItem[]>('/emails/drafts');
 }
 
-export async function saveDraftApi(payload: EmailSendPayload): Promise<MessageResponse> {
-  return apiClient.post<MessageResponse>('/emails/drafts', payload);
+export async function saveDraftApi(payload: EmailSendPayload): Promise<EmailMessageItem> {
+  return apiClient.post<EmailMessageItem>('/emails/drafts', payload);
 }
 
 export async function fetchDraftApi(draftId: string): Promise<EmailMessageItem> {
@@ -212,9 +218,9 @@ export function useSendEmailMutation(options?: UseMutationOptions<EmailMessageIt
   });
 }
 
-export function useSaveDraftMutation(options?: UseMutationOptions<MessageResponse, Error, EmailSendPayload>) {
+export function useSaveDraftMutation(options?: UseMutationOptions<EmailMessageItem, Error, EmailSendPayload>) {
   const queryClient = useQueryClient();
-  return useMutation<MessageResponse, Error, EmailSendPayload>({
+  return useMutation<EmailMessageItem, Error, EmailSendPayload>({
     mutationFn: saveDraftApi,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['emails', 'drafts'] });

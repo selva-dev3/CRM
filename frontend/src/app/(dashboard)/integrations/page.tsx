@@ -29,7 +29,6 @@ import {
   testSlackConnectionApi,
   fetchSlackConfigApi,
   updateSlackEventsApi,
-  syncIntegrationApi,
   fetchApiKeysApi,
   createApiKeyApi,
   revokeApiKeyApi
@@ -41,7 +40,7 @@ interface AppIntegration {
   category: string;
   description: string;
   icon: string;
-  status: 'connected' | 'available' | 'configured';
+  status: 'connected' | 'authenticated' | 'available';
   last_synced?: string | null;
 }
 
@@ -50,7 +49,7 @@ const APPS: AppIntegration[] = [
     id: 'slack-sync',
     name: 'Slack Sync',
     category: 'Communication',
-    description: 'Post lead updates & high-value deal notifications directly to Slack channels.',
+    description: 'Authenticate Slack OAuth. CRM notifications require the incoming webhook below.',
     icon: '💬',
     status: 'available'
   },
@@ -66,7 +65,7 @@ const APPS: AppIntegration[] = [
     id: 'google-calendar',
     name: 'Google Calendar',
     category: 'Productivity',
-    description: 'Sync meetings, sales calls, and demo appointments two-ways with Google Workspaces.',
+    description: 'Authenticate Google Calendar. Event synchronization is not yet available.',
     icon: '📅',
     status: 'available'
   },
@@ -74,7 +73,7 @@ const APPS: AppIntegration[] = [
     id: 'mailchimp',
     name: 'Mailchimp Campaigns',
     category: 'Marketing',
-    description: 'Sync contacts into drip email sequences and track engagement click rates.',
+    description: 'Validate and store a Mailchimp audience connection. Contact sync is not yet available.',
     icon: '🐵',
     status: 'available'
   },
@@ -82,7 +81,7 @@ const APPS: AppIntegration[] = [
     id: 'hubspot',
     name: 'HubSpot Migration',
     category: 'Data Import',
-    description: 'Export and bi-directionally sync contacts, companies, and deals from HubSpot.',
+    description: 'Authenticate HubSpot. Contact, company, and deal synchronization is not yet available.',
     icon: '🟧',
     status: 'available'
   }
@@ -93,6 +92,7 @@ export default function IntegrationsPage() {
   const [apiKey, setApiKey] = useState('');
   const [apiKeyId, setApiKeyId] = useState<string | null>(null);
   const [apiKeyLoading, setApiKeyLoading] = useState(false);
+  const [apiKeyScopes, setApiKeyScopes] = useState<string[]>(['api:read']);
   const [showKey, setShowKey] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -118,7 +118,11 @@ export default function IntegrationsPage() {
               if (matched) {
                 return {
                   ...app,
-                  status: matched.is_connected ? 'connected' : 'available',
+                  status: matched.connection_status === 'authenticated'
+                    ? 'authenticated'
+                    : matched.is_connected
+                      ? 'connected'
+                      : 'available',
                   last_synced: matched.last_synced
                 };
               }
@@ -150,7 +154,10 @@ export default function IntegrationsPage() {
       try {
         const keys = await fetchApiKeysApi();
         const activeKey = keys.find((key) => key.is_active);
-        if (activeKey) setApiKeyId(activeKey.id);
+        if (activeKey) {
+          setApiKeyId(activeKey.id);
+          if (activeKey.scopes.length > 0) setApiKeyScopes(activeKey.scopes);
+        }
       } catch (err) {
         setErrorMessage(err instanceof Error ? err.message : 'Failed to load API key status.');
       }
@@ -164,7 +171,7 @@ export default function IntegrationsPage() {
     setLoadingAppId(app.id);
     setErrorMessage(null);
     try {
-      if (app.status === 'connected') {
+      if (app.status !== 'available') {
         let res: { message: string };
         if (app.id === 'zapier') {
           res = await deleteZapierApi();
@@ -221,7 +228,11 @@ export default function IntegrationsPage() {
           return;
         }
         setApps((prev) =>
-          prev.map((a) => (a.id === app.id ? { ...a, status: 'connected' } : a))
+          prev.map((a) => (
+            a.id === app.id
+              ? { ...a, status: app.id === 'mailchimp' ? 'authenticated' : 'connected' }
+              : a
+          ))
         );
         setSuccessMessage(res.message || `${app.name} connected successfully.`);
       }
@@ -321,24 +332,16 @@ export default function IntegrationsPage() {
     { value: 'integration.disconnected', label: 'Integration Disconnected' }
   ];
 
-  const handleSyncApp = async (app: AppIntegration) => {
-    setLoadingAppId(app.id);
-    try {
-      const res = await syncIntegrationApi(app.id);
-      setSuccessMessage(res.message || `Manual sync triggered for ${app.name}.`);
-    } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : `Failed to sync ${app.name}.`);
-    } finally {
-      setLoadingAppId(null);
-    }
-  };
-
   const handleGenerateNewKey = async () => {
+    if (apiKeyScopes.length === 0) {
+      setErrorMessage('Select at least one API key scope.');
+      return;
+    }
     setApiKeyLoading(true);
     setErrorMessage(null);
     try {
       if (apiKeyId) await revokeApiKeyApi(apiKeyId);
-      const created = await createApiKeyApi('Developer API');
+      const created = await createApiKeyApi('Developer API', apiKeyScopes);
       setApiKeyId(created.id);
       setApiKey(created.api_key || '');
       setShowKey(true);
@@ -432,6 +435,24 @@ export default function IntegrationsPage() {
           <p className="text-[11px] text-slate-500">
             Use this bearer token in the <code className="font-mono bg-slate-100 px-1 rounded">Authorization: Bearer &lt;TOKEN&gt;</code> header for backend REST queries.
           </p>
+          <div className="flex flex-wrap gap-4 pt-1">
+            {[
+              { value: 'api:read', label: 'Read API data' },
+              { value: 'api:write', label: 'Create and update API data' },
+            ].map((scope) => (
+              <label key={scope.value} className="flex items-center gap-2 text-xs text-slate-700">
+                <Checkbox
+                  checked={apiKeyScopes.includes(scope.value)}
+                  onCheckedChange={(checked) => setApiKeyScopes((current) => (
+                    checked
+                      ? [...new Set([...current, scope.value])]
+                      : current.filter((value) => value !== scope.value)
+                  ))}
+                />
+                {scope.label}
+              </label>
+            ))}
+          </div>
         </div>
       </Card>
 
@@ -453,7 +474,7 @@ export default function IntegrationsPage() {
                     className={`text-[10px] uppercase font-bold ${
                       app.status === 'connected'
                         ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                        : app.status === 'configured'
+                        : app.status === 'authenticated'
                         ? 'bg-blue-50 text-blue-700 border-blue-200'
                         : 'bg-slate-100 text-slate-600 border-slate-200'
                     }`}
@@ -470,7 +491,7 @@ export default function IntegrationsPage() {
                       placeholder="Paste your Zapier catch-hook URL"
                       value={zapierWebhookUrl}
                       onChange={(e) => setZapierWebhookUrl(e.target.value)}
-                      disabled={app.status === 'connected'}
+                      disabled={app.status !== 'available'}
                       className="mt-3 h-8 font-mono text-[11px]"
                     />
                   )}
@@ -481,21 +502,21 @@ export default function IntegrationsPage() {
                         placeholder="Mailchimp API key"
                         value={mailchimpApiKey}
                         onChange={(e) => setMailchimpApiKey(e.target.value)}
-                        disabled={app.status === 'connected'}
+                        disabled={app.status !== 'available'}
                         className="h-8 font-mono text-[11px]"
                       />
                       <Input
                         placeholder="Server prefix (for example, us7)"
                         value={mailchimpServerPrefix}
                         onChange={(e) => setMailchimpServerPrefix(e.target.value)}
-                        disabled={app.status === 'connected'}
+                        disabled={app.status !== 'available'}
                         className="h-8 font-mono text-[11px]"
                       />
                       <Input
                         placeholder="Audience ID"
                         value={mailchimpAudienceId}
                         onChange={(e) => setMailchimpAudienceId(e.target.value)}
-                        disabled={app.status === 'connected'}
+                        disabled={app.status !== 'available'}
                         className="h-8 font-mono text-[11px]"
                       />
                     </div>
@@ -506,34 +527,22 @@ export default function IntegrationsPage() {
               <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
                 <span className="text-[10px] font-semibold text-slate-400">{app.category}</span>
                 <div className="flex items-center gap-1.5">
-                  {app.status === 'connected' && app.id === 'zapier' && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={loadingAppId === app.id}
-                      onClick={() => handleSyncApp(app)}
-                      className="h-8 text-xs px-2 text-slate-500 hover:text-slate-900 cursor-pointer"
-                      title="Sync Now"
-                    >
-                      <RefreshCw className={`w-3.5 h-3.5 ${loadingAppId === app.id ? 'animate-spin' : ''}`} />
-                    </Button>
-                  )}
                   <Button
                     size="sm"
-                    variant={app.status === 'connected' ? 'outline' : 'default'}
+                    variant={app.status !== 'available' ? 'outline' : 'default'}
                     disabled={loadingAppId === app.id}
                     onClick={() => toggleConnection(app)}
                     className={`h-8 text-xs font-semibold cursor-pointer ${
-                      app.status === 'connected'
+                      app.status !== 'available'
                         ? 'border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700'
                         : 'bg-blue-600 hover:bg-blue-700 text-white'
                     }`}
                   >
                     {loadingAppId === app.id
                       ? 'Processing...'
-                      : app.status === 'connected'
+                      : app.status !== 'available'
                       ? 'Disconnect'
-                      : 'Connect App'}
+                      : app.id === 'zapier' || app.id === 'mailchimp' ? 'Connect App' : 'Authenticate'}
                   </Button>
                 </div>
               </div>

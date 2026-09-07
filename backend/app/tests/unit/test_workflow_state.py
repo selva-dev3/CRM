@@ -9,7 +9,8 @@ from app.services.quote_state import assert_quote_transition
     ("current", "target"),
     [
         ("Draft", "Pending Approval"),
-        ("Pending Approval", "Sent"),
+        ("Pending Approval", "Approved"),
+        ("Pending Approval", "Draft"),
         ("Approved", "Sent"),
         ("Sent", "Accepted"),
         ("Sent", "Rejected"),
@@ -22,7 +23,13 @@ def test_quote_state_machine_allows_business_transitions(current, target):
 
 @pytest.mark.parametrize(
     ("current", "target"),
-    [("Accepted", "Draft"), ("Accepted", "Approved"), ("Rejected", "Sent"), ("Sent", "Draft")],
+    [
+        ("Pending Approval", "Sent"),
+        ("Accepted", "Draft"),
+        ("Accepted", "Approved"),
+        ("Rejected", "Sent"),
+        ("Sent", "Draft"),
+    ],
 )
 def test_quote_state_machine_rejects_backward_transitions(current, target):
     with pytest.raises(APIException) as exc_info:
@@ -33,7 +40,9 @@ def test_quote_state_machine_rejects_backward_transitions(current, target):
 @pytest.mark.parametrize(
     "current,target",
     [
-        ("Draft", "Finalized"),
+        ("Draft", "In Review"),
+        ("In Review", "Finalized"),
+        ("In Review", "Draft"),
         ("Finalized", "Accepted"),
         ("Draft", "Cancelled"),
         ("Finalized", "Cancelled"),
@@ -51,6 +60,8 @@ def test_invoice_lifecycle_transitions(current, target):
     "current,target",
     [
         ("Draft", "Accepted"),
+        ("Draft", "Finalized"),
+        ("In Review", "Accepted"),
         ("Finalized", "Draft"),
         ("Accepted", "Draft"),
         ("Cancelled", "Finalized"),

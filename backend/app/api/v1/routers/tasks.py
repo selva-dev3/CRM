@@ -31,10 +31,24 @@ async def list_tasks(
     status: str | None = None,
     priority: str | None = None,
     search: str | None = Query(None),
+    lead_id: str | None = Query(None),
+    contact_id: str | None = Query(None),
+    company_id: str | None = Query(None),
+    deal_id: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    relationship_filters = {
+        key: value
+        for key, value in {
+            "lead_id": lead_id,
+            "contact_id": contact_id,
+            "company_id": company_id,
+            "deal_id": deal_id,
+        }.items()
+        if isinstance(value, str) and value
+    }
     tasks = await task_service.list_tasks(
         db,
         page=page,
@@ -43,6 +57,7 @@ async def list_tasks(
         status=status,
         priority=priority,
         search=search,
+        **relationship_filters,
     )
     total = await task_service.count_tasks(
         db,
@@ -50,6 +65,7 @@ async def list_tasks(
         status=status,
         priority=priority,
         search=search,
+        **relationship_filters,
     )
     response.headers["X-Total-Count"] = str(total)
     return tasks

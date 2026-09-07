@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import hmac
+import json
 import logging
 import secrets
 import time
@@ -879,6 +880,7 @@ class AuthService:
                 "created_at": str(k.created_at),
                 "last_used": str(k.last_used),
                 "is_active": k.is_active,
+                "scopes": self._parse_api_key_scopes(k.scopes),
             }
             for k in keys
         ]
@@ -888,6 +890,7 @@ class AuthService:
     ) -> dict:
         try:
             organization_id = self._require_organization_id(current_user)
+            scopes = self._validate_api_key_scopes(payload.scopes)
             api_key_str = f"crm_live_{generate_random_code(24)}"
             key = await self.repository.create_api_key(
                 db,
@@ -896,6 +899,7 @@ class AuthService:
                     "name": payload.name,
                     "key_hash": sha256(api_key_str.encode("utf-8")).hexdigest(),
                     "created_by": current_user.id,
+                    "scopes": json.dumps(scopes),
                 },
             )
             await self._commit(db, "Failed to create API key")
@@ -904,12 +908,39 @@ class AuthService:
                 "name": key.name,
                 "api_key": api_key_str,
                 "created_at": str(key.created_at),
+                "scopes": scopes,
             }
         except APIException:
             raise
         except Exception as e:
             await db.rollback()
             raise APIException(status_code=status.HTTP_400_BAD_REQUEST, message=str(e)) from e
+
+    @staticmethod
+    def _parse_api_key_scopes(raw: str | None) -> list[str]:
+        if not raw:
+            return []
+        try:
+            value = json.loads(raw)
+        except ValueError:
+            value = [item.strip() for item in raw.split(",")]
+        return [item for item in value if isinstance(item, str) and item]
+
+    @staticmethod
+    def _validate_api_key_scopes(scopes: list[str]) -> list[str]:
+        normalized = list(dict.fromkeys(scope.strip().lower() for scope in scopes if scope.strip()))
+        if not normalized or any(
+            len(scope) > 100
+            or ":" not in scope
+            or not all(part.replace("-", "").replace("_", "").isalnum() for part in scope.split(":"))
+            for scope in normalized
+        ):
+            raise APIException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                code="INVALID_API_KEY_SCOPE",
+                message="API key scopes must be non-empty colon-delimited permission names",
+            )
+        return normalized
 
     async def revoke_api_key(self, db: AsyncSession, key_id: str, current_user: User) -> dict:
         organization_id = self._require_organization_id(current_user)

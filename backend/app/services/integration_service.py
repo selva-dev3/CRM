@@ -32,20 +32,20 @@ DEFAULT_CONNECTORS = [
     {
         "name": "Slack Sync",
         "category": "Communication",
-        "is_connected": True,
-        "description": "Post lead updates & deal notifications to Slack channels.",
+        "is_connected": False,
+        "description": "Connect Slack before delivering CRM notifications.",
     },
     {
         "name": "Zapier Connector",
         "category": "Automation",
-        "is_connected": True,
-        "description": "Connect with 5,000+ web applications via Zapier webhooks.",
+        "is_connected": False,
+        "description": "Deliver CRM events to a configured Zapier webhook.",
     },
     {
         "name": "Google Calendar",
         "category": "Productivity",
-        "is_connected": True,
-        "description": "Sync meetings and sales demos two-ways with Google Calendar.",
+        "is_connected": False,
+        "description": "OAuth authentication is available; calendar synchronization is not.",
     },
     {
         "name": "Mailchimp Campaigns",
@@ -115,25 +115,43 @@ class IntegrationService:
 
     # --- List integrations ---
     async def list_integrations(self, db: AsyncSession, current_user: User) -> list[dict]:
-        try:
-            org_id = await self.repository.resolve_org_id(db, current_user)
-            integrations = await self.repository.list_all(db, org_id)
-            if integrations:
-                return [
-                    {
-                        "name": i.name,
-                        "is_connected": i.is_connected,
-                        "last_synced": str(i.last_synced) if i.last_synced else None,
-                    }
-                    for i in integrations
-                ]
-            return [
-                {"name": c["name"], "is_connected": False, "last_synced": None}
-                for c in DEFAULT_CONNECTORS
-            ]
-        except Exception:
-            logger.warning("Unable to list integrations; returning empty list")
-            return []
+        org_id = await self.repository.resolve_org_id(db, current_user)
+        integrations = await self.repository.list_all(db, org_id)
+        if integrations:
+            return [self._status_dict(i) for i in integrations]
+        return [
+            {
+                "name": c["name"],
+                "is_connected": False,
+                "connection_status": "disconnected",
+                "sync_status": "not_synced",
+                "last_synced": None,
+                "last_error": None,
+            }
+            for c in DEFAULT_CONNECTORS
+        ]
+
+    @staticmethod
+    def _status_dict(integration: Integration) -> dict:
+        raw_status = (integration.status or "disconnected").lower()
+        sync_status = raw_status if raw_status in {"syncing", "synced", "sync_failed"} else "not_synced"
+        connection_status = (
+            "disconnected"
+            if not integration.is_connected
+            else "authenticated"
+            if raw_status == "authenticated"
+            else "connected"
+        )
+        return {
+            "name": integration.name,
+            "is_connected": integration.is_connected,
+            "connection_status": connection_status,
+            "sync_status": sync_status,
+            "last_synced": integration.last_synced.isoformat()
+            if integration.last_synced
+            else None,
+            "last_error": integration.last_error,
+        }
 
     # --- Zapier ---
     async def get_zapier_config(self, db: AsyncSession, current_user: User | None) -> dict:
@@ -333,7 +351,7 @@ class IntegrationService:
                 },
             )
         integration.is_connected = True
-        integration.status = "connected"
+        integration.status = "authenticated"
         integration.access_token = self._encrypt_secret(access_token)
         refresh_token = token_data.get("refresh_token")
         if isinstance(refresh_token, str) and refresh_token:
@@ -345,7 +363,7 @@ class IntegrationService:
             or ""
         ) or None
         integration.last_error = None
-        integration.last_synced = datetime.now(UTC)
+        integration.last_synced = None
         await self.repository.commit(db)
         return provider
 
@@ -357,29 +375,6 @@ class IntegrationService:
             raise APIException(status_code=400, message="Webhook URL is required.")
         webhook_url = payload.webhook_url
         try:
-            integration = await self.repository.get_by_provider(db, org_id, "zapier")
-            creds = json.dumps({"events": ["lead.created", "deal.won", "contact.updated"]})
-            if integration is None:
-                integration = await self.repository.create(
-                    db,
-                    data={
-                        "organization_id": org_id,
-                        "name": "Zapier Connector",
-                        "provider": "zapier",
-                        "is_connected": True,
-                        "status": "connected",
-                        "webhook_url": self._encrypt_secret(webhook_url),
-                        "credentials": creds,
-                    },
-                )
-            else:
-                integration.is_connected = True
-                integration.status = "connected"
-                integration.webhook_url = self._encrypt_secret(webhook_url)
-                integration.credentials = creds
-            await self.repository.commit(db)
-            await db.refresh(integration)
-
             async with httpx.AsyncClient(timeout=15) as client:
                 response = await client.post(
                     webhook_url,
@@ -391,8 +386,32 @@ class IntegrationService:
                 )
             if response.status_code not in [200, 201, 202]:
                 raise APIException(
-                    status_code=500, message=f"Zapier returned {response.status_code}"
+                    status_code=502, message=f"Zapier returned {response.status_code}"
                 )
+            integration = await self.repository.get_by_provider(db, org_id, "zapier")
+            creds = json.dumps({"events": ["lead.created", "deal.won", "contact.updated"]})
+            if integration is None:
+                integration = await self.repository.create(
+                    db,
+                    data={
+                        "organization_id": org_id,
+                        "name": "Zapier Connector",
+                        "provider": "zapier",
+                        "is_connected": True,
+                        "status": "synced",
+                        "webhook_url": self._encrypt_secret(webhook_url),
+                        "credentials": creds,
+                    },
+                )
+            else:
+                integration.is_connected = True
+                integration.status = "synced"
+                integration.webhook_url = self._encrypt_secret(webhook_url)
+                integration.credentials = creds
+            await self.repository.commit(db)
+            await db.refresh(integration)
+            integration.last_synced = datetime.now(UTC)
+            await self.repository.commit(db)
             return {"message": "Zapier connected successfully.", "status": "success"}
         except APIException:
             raise
@@ -530,9 +549,9 @@ class IntegrationService:
             )
         integration.credentials = encrypted_config
         integration.is_connected = True
-        integration.status = "connected"
+        integration.status = "authenticated"
         integration.sync_enabled = True
-        integration.last_synced = datetime.now(UTC)
+        integration.last_synced = None
         integration.last_error = None
         await self.repository.commit(db)
         return {"message": "Mailchimp connected successfully.", "status": "success"}
@@ -562,7 +581,11 @@ class IntegrationService:
         }
 
     async def update_hubspot_mapping(self) -> dict:
-        return {"message": "HubSpot schema field mapping rules updated", "status": "success"}
+        raise APIException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            code="HUBSPOT_SYNC_NOT_IMPLEMENTED",
+            message="HubSpot synchronization and custom mapping persistence are not implemented.",
+        )
 
     # --- Slack ---
     async def get_slack_config(self, db: AsyncSession, current_user: User | None) -> dict:
@@ -599,6 +622,8 @@ class IntegrationService:
         if not str(payload.webhook_url).startswith("https://hooks.slack.com/"):
             raise APIException(status_code=400, message="Invalid Slack webhook URL.")
         try:
+            await self._verify_slack_webhook(str(payload.webhook_url))
+            verified_at = datetime.now(UTC)
             integration = await self.repository.get_by_provider(db, org_id, "slack")
             if integration is None:
                 integration = await self.repository.create(
@@ -609,24 +634,24 @@ class IntegrationService:
                         "provider": "slack",
                         "is_connected": True,
                         "webhook_url": self._encrypt_secret(str(payload.webhook_url)),
-                        "status": "connected",
+                        "status": "synced",
                         "enabled_events": json.dumps(SLACK_ENABLED_EVENTS),
                         "credentials": json.dumps({"channel": "incoming-webhook", "type": "slack"}),
                         "sync_enabled": True,
-                        "last_synced": datetime.utcnow(),
+                        "last_synced": verified_at,
                         "last_error": None,
                     },
                 )
             else:
                 integration.is_connected = True
-                integration.status = "connected"
+                integration.status = "synced"
                 integration.webhook_url = self._encrypt_secret(str(payload.webhook_url))
                 integration.enabled_events = json.dumps(SLACK_ENABLED_EVENTS)
                 integration.credentials = json.dumps(
                     {"channel": "incoming-webhook", "type": "slack"}
                 )
                 integration.sync_enabled = True
-                integration.last_synced = datetime.utcnow()
+                integration.last_synced = verified_at
                 integration.last_error = None
             await self.repository.commit(db)
             await db.refresh(integration)
@@ -640,16 +665,25 @@ class IntegrationService:
                 entity_id=integration.id,
                 data={"provider": "slack", "organization_id": org_id},
             )
-            await self.notify_slack_event(
-                db,
-                event_name="integration.connected",
-                data={"provider": "slack", "organization_id": org_id},
-                org_id=org_id,
-            )
             return {"message": "Slack connected successfully.", "status": "success"}
+        except httpx.HTTPError as e:
+            await db.rollback()
+            raise APIException(
+                status_code=502,
+                message="Slack webhook verification failed",
+            ) from e
         except Exception as e:
             await db.rollback()
             raise APIException(status_code=500, message="Failed to connect Slack") from e
+
+    async def _verify_slack_webhook(self, webhook_url: str) -> None:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(
+                webhook_url,
+                json={"text": "CRM Slack connection verified."},
+                headers={"Content-Type": "application/json"},
+            )
+        response.raise_for_status()
 
     async def update_slack_events(
         self, db: AsyncSession, payload: SlackEventsUpdateRequest, current_user: User | None
@@ -919,71 +953,54 @@ class IntegrationService:
     # --- OAuth / misc ---
 
     async def google_oauth_callback(self) -> dict:
-        return {
-            "message": "Google OAuth authorization tokens exchanged and saved",
-            "status": "success",
-        }
+        raise APIException(status_code=501, message="Use the signed Google OAuth callback.")
 
     async def microsoft_oauth_callback(self) -> dict:
-        return {
-            "message": "Microsoft OAuth authorization tokens exchanged and saved",
-            "status": "success",
-        }
+        raise APIException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            code="MICROSOFT_OAUTH_NOT_IMPLEMENTED",
+            message="Microsoft OAuth is not implemented.",
+        )
 
     async def get_sync_logs(self) -> list[dict]:
-        return [
-            {
-                "id": "sync-1",
-                "integration_name": "Slack Sync",
-                "status": "SUCCESS",
-                "records_synced": 42,
-                "timestamp": "2026-08-07T10:15:00Z",
-            },
-            {
-                "id": "sync-2",
-                "integration_name": "Google Calendar",
-                "status": "SUCCESS",
-                "records_synced": 18,
-                "timestamp": "2026-08-07T09:30:00Z",
-            },
-            {
-                "id": "sync-3",
-                "integration_name": "HubSpot Migration",
-                "status": "COMPLETED",
-                "records_synced": 150,
-                "timestamp": "2026-08-07T08:45:00Z",
-            },
-        ]
+        raise APIException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            code="INTEGRATION_SYNC_NOT_IMPLEMENTED",
+            message="Synchronization logs are unavailable because provider sync is not implemented.",
+        )
 
     async def retry_failed_sync(self, job_id: str | None, payload_job_id: str | None) -> dict:
-        jid = payload_job_id or job_id or "job-1"
-        return {"message": f"Retry job queued for sync execution '{jid}'", "status": "success"}
+        raise APIException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            code="INTEGRATION_SYNC_NOT_IMPLEMENTED",
+            message="Synchronization retry is unavailable because provider sync is not implemented.",
+        )
 
     async def save_custom_provider_key(
         self, provider_name: str | None, payload_provider_name: str | None
     ) -> dict:
-        pname = payload_provider_name or provider_name or "Custom Integration"
-        return {
-            "message": f"Secret API credentials configured for provider '{pname}'",
-            "status": "success",
-        }
+        raise APIException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            code="CUSTOM_PROVIDER_NOT_IMPLEMENTED",
+            message="Custom provider credential storage is not implemented.",
+        )
 
     # --- Generic by-name operations ---
     async def get_integration_status(
         self, db: AsyncSession, name: str, current_user: User
     ) -> dict:
         org_id = await self.repository.resolve_org_id(db, current_user)
-        try:
-            i = await self.repository.get_by_name_like(db, org_id, name)
-            if i:
-                return {
-                    "name": i.name,
-                    "is_connected": i.is_connected,
-                    "last_synced": str(i.last_synced) if i.last_synced else None,
-                }
-        except Exception:
-            logger.warning("Unable to load integration status for '%s'", name)
-        return {"name": name.capitalize(), "is_connected": False, "last_synced": None}
+        i = await self.repository.get_by_name_like(db, org_id, name)
+        if i:
+            return self._status_dict(i)
+        return {
+            "name": name.capitalize(),
+            "is_connected": False,
+            "connection_status": "disconnected",
+            "sync_status": "not_synced",
+            "last_synced": None,
+            "last_error": None,
+        }
 
     async def connect_integration(
         self, db: AsyncSession, name: str, current_user: User | None

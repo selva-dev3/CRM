@@ -205,6 +205,46 @@ export default function DashboardPage() {
         ? 'text-amber-800 bg-amber-100'
         : 'text-slate-600 bg-slate-100',
     },
+    {
+      title: 'Invoice Collections',
+      value: formatCurrency(kpis.paid_amount),
+      context: `${kpis.collection_rate_percentage}% of ${formatCurrency(kpis.invoice_total)}`,
+      icon: CheckCircle2,
+      badge: `${kpis.paid_invoice_count} paid`,
+      iconColor: 'text-emerald-600',
+      iconBg: 'bg-emerald-100',
+      contextColor: 'text-slate-600 bg-slate-100',
+    },
+    {
+      title: 'Outstanding Invoices',
+      value: formatCurrency(kpis.outstanding_amount),
+      context: `${kpis.pending_payment_count} pending · ${kpis.partially_paid_invoice_count} partial`,
+      icon: AlertCircle,
+      badge: `${kpis.invoice_count} invoices`,
+      iconColor: 'text-rose-600',
+      iconBg: 'bg-rose-100',
+      contextColor: 'text-slate-600 bg-slate-100',
+    },
+    {
+      title: 'Quote Value',
+      value: formatCurrency(kpis.quote_value),
+      context: `${kpis.quote_conversion_percentage}% customer acceptance`,
+      icon: Briefcase,
+      badge: `${kpis.quote_count} quotes`,
+      iconColor: 'text-blue-600',
+      iconBg: 'bg-blue-100',
+      contextColor: 'text-slate-600 bg-slate-100',
+    },
+    {
+      title: 'Collected Revenue',
+      value: formatCurrency(kpis.revenue),
+      context: 'Successful customer payments',
+      icon: BarChart3,
+      badge: 'Database derived',
+      iconColor: 'text-violet-600',
+      iconBg: 'bg-violet-100',
+      contextColor: 'text-slate-600 bg-slate-100',
+    },
   ] : [];
 
   const isWidgetEnabled = (id: string) => (
@@ -291,7 +331,7 @@ export default function DashboardPage() {
       {/* Executive Metric Cards Grid */}
       {showKpis && (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
-        {kpisQuery.isLoading && Array.from({ length: 4 }).map((_, idx) => (
+        {kpisQuery.isLoading && Array.from({ length: 8 }).map((_, idx) => (
           <Card key={idx} className="h-[150px] animate-pulse bg-slate-100" aria-hidden="true" />
         ))}
         {kpisQuery.isError && (

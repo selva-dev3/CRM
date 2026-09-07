@@ -76,7 +76,7 @@ def make_service(
 
 
 @pytest.mark.asyncio
-async def test_internal_approval_is_rejected_without_mutating_quote():
+async def test_internal_approval_requires_pending_review():
     quote = make_quote(currency="INR", delivery_status=None)
     service, repository, deal_repository = make_service(quote=quote, deal=make_deal())
     repository.lock_scoped = AsyncMock(return_value=quote)
@@ -97,7 +97,7 @@ async def test_internal_approval_is_rejected_without_mutating_quote():
     )
     db = AsyncMock(spec=AsyncSession)
 
-    with pytest.raises(APIException, match="Internal approval"):
+    with pytest.raises(APIException, match="Draft.*Approved"):
         await service.approve_quote(
             db, quote_id=quote.id, organization_id="org-1", actor_id="user-1"
         )
@@ -107,7 +107,7 @@ async def test_internal_approval_is_rejected_without_mutating_quote():
 
 
 @pytest.mark.asyncio
-async def test_internal_approval_is_not_an_idempotent_delivery_operation():
+async def test_internal_approval_cannot_be_repeated():
     quote = make_quote(
         currency="INR",
         status="Approved",
@@ -134,7 +134,7 @@ async def test_internal_approval_is_not_an_idempotent_delivery_operation():
         )
     )
 
-    with pytest.raises(APIException, match="Internal approval"):
+    with pytest.raises(APIException, match="Approved.*Approved"):
         await service.approve_quote(
             AsyncMock(spec=AsyncSession),
             quote_id=quote.id,
@@ -147,8 +147,8 @@ async def test_internal_approval_is_not_an_idempotent_delivery_operation():
 
 
 @pytest.mark.asyncio
-async def test_internal_approval_does_not_validate_or_queue_customer_delivery():
-    quote = make_quote(currency="INR", delivery_status=None)
+async def test_internal_approval_records_decision_without_queueing_delivery():
+    quote = make_quote(currency="INR", status="Pending Approval", delivery_status=None)
     service, repository, deal_repository = make_service(quote=quote, deal=make_deal())
     repository.lock_scoped = AsyncMock(return_value=quote)
     repository.approve = AsyncMock()
@@ -164,15 +164,14 @@ async def test_internal_approval_does_not_validate_or_queue_customer_delivery():
         )
     )
 
-    with pytest.raises(APIException, match="Internal approval"):
-        await service.approve_quote(
-            AsyncMock(spec=AsyncSession),
-            quote_id=quote.id,
-            organization_id="org-1",
-            actor_id="user-1",
-        )
+    await service.approve_quote(
+        AsyncMock(spec=AsyncSession),
+        quote_id=quote.id,
+        organization_id="org-1",
+        actor_id="user-1",
+    )
 
-    repository.approve.assert_not_awaited()
+    repository.approve.assert_awaited_once()
     repository.queue_delivery.assert_not_awaited()
 
 
@@ -493,12 +492,13 @@ async def test_quote_actions_do_not_fabricate_documents(monkeypatch):
 
     with pytest.raises(APIException, match="secure acceptance"):
         await service.accept_quote(db, quote_id="quote-1", organization_id="org-1")
-    rejected = await service.reject_quote(
-        db,
-        quote_id="quote-1",
-        reason="Budget constraints",
-        organization_id="org-1",
-    )
+    with pytest.raises(APIException, match="Draft.*Rejected"):
+        await service.reject_quote(
+            db,
+            quote_id="quote-1",
+            reason="Budget constraints",
+            organization_id="org-1",
+        )
     with pytest.raises(NotFoundError):
         await service.get_quote_pdf(db, quote_id="quote-1", organization_id="org-1")
     monkeypatch.setattr(
@@ -511,7 +511,6 @@ async def test_quote_actions_do_not_fabricate_documents(monkeypatch):
     with pytest.raises(APIException) as revisions_error:
         await service.get_quote_revisions(db, quote_id="quote-1", organization_id="org-1")
 
-    assert rejected["message"].endswith("Budget constraints")
     assert revisions_error.value.status_code == 501
 
 

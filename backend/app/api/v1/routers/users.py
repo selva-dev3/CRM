@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, Up
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
+from app.core.errors import APIException
 from app.db.session import get_db
 from app.models import User
 from app.schemas.crm_schemas import (
@@ -324,7 +325,7 @@ async def bulk_delete_users(
     dependencies=[Depends(require_permission("users:export"))],
 )
 async def export_users_csv(db: AsyncSession = Depends(get_db)):
-    return {"download_url": "https://api.crm.com/exports/users.csv"}
+    raise APIException(message="User CSV export is not implemented", status_code=501)
 
 
 @router.post(
@@ -334,7 +335,7 @@ async def export_users_csv(db: AsyncSession = Depends(get_db)):
     dependencies=[Depends(require_permission("users:import"))],
 )
 async def import_users_csv(db: AsyncSession = Depends(get_db)):
-    return {"message": "Import processing completed", "status": "success"}
+    raise APIException(message="User CSV import is not implemented", status_code=501)
 
 
 @router.get(

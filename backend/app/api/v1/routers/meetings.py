@@ -8,9 +8,9 @@ from app.schemas.ai import MeetingSummaryRequest
 from app.schemas.crm_schemas import (
     BulkActionResponse,
     BulkDeleteRequest,
-    MeetingBase,
     MeetingCreate,
     MeetingResponse,
+    MeetingUpdate,
     MessageResponse,
 )
 from app.services.meeting_service import meeting_service
@@ -29,12 +29,31 @@ async def list_meetings(
     page: int = 1,
     limit: int = 20,
     search: str | None = Query(None),
+    lead_id: str | None = Query(None),
+    contact_id: str | None = Query(None),
+    company_id: str | None = Query(None),
+    deal_id: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    relationship_filters = {
+        key: value
+        for key, value in {
+            "lead_id": lead_id,
+            "contact_id": contact_id,
+            "company_id": company_id,
+            "deal_id": deal_id,
+        }.items()
+        if isinstance(value, str) and value
+    }
     return await meeting_service.list_meetings(
-        db, page=page, limit=limit, organization_id=organization_id, search=search
+        db,
+        page=page,
+        limit=limit,
+        organization_id=organization_id,
+        search=search,
+        **relationship_filters,
     )
 
 
@@ -131,7 +150,7 @@ async def get_meeting(
 )
 async def update_meeting(
     meeting_id: str,
-    payload: MeetingBase,
+    payload: MeetingUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -152,6 +171,20 @@ async def cancel_meeting(
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     return await meeting_service.cancel_meeting(db, meeting_id, organization_id)
+
+
+@router.post(
+    "/{meeting_id}/complete",
+    response_model=MessageResponse,
+    dependencies=[Depends(require_permission("meetings:update"))],
+)
+async def complete_meeting(
+    meeting_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await meeting_service.complete_meeting(db, meeting_id, organization_id)
 
 
 @router.post(

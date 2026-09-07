@@ -11,6 +11,10 @@ export interface TaskItem {
   status?: string; // 'Pending' | 'In Progress' | 'Completed'
   assigned_to?: string;
   project_id?: string;
+  lead_id?: string;
+  contact_id?: string;
+  company_id?: string;
+  deal_id?: string;
   created_at?: string;
 }
 
@@ -22,6 +26,10 @@ export interface TaskCreatePayload {
   status?: string;
   assigned_to?: string;
   project_id?: string;
+  lead_id?: string;
+  contact_id?: string;
+  company_id?: string;
+  deal_id?: string;
 }
 
 export interface TaskUpdatePayload {
@@ -32,6 +40,10 @@ export interface TaskUpdatePayload {
   status?: string;
   assigned_to?: string;
   project_id?: string;
+  lead_id?: string;
+  contact_id?: string;
+  company_id?: string;
+  deal_id?: string;
 }
 
 export interface FetchTasksParams {
@@ -40,6 +52,10 @@ export interface FetchTasksParams {
   search?: string;
   status?: string;
   priority?: string;
+  lead_id?: string;
+  contact_id?: string;
+  company_id?: string;
+  deal_id?: string;
 }
 
 export interface SubtaskItem {
@@ -69,6 +85,10 @@ export async function fetchTasksPageApi(
   if (params.search) query.append('search', params.search);
   if (params.status) query.append('status', params.status);
   if (params.priority) query.append('priority', params.priority);
+  if (params.lead_id) query.append('lead_id', params.lead_id);
+  if (params.contact_id) query.append('contact_id', params.contact_id);
+  if (params.company_id) query.append('company_id', params.company_id);
+  if (params.deal_id) query.append('deal_id', params.deal_id);
 
   const queryString = query.toString();
   return fetchPaginated<TaskItem>(`/tasks${queryString ? `?${queryString}` : ''}`);

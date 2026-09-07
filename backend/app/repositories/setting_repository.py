@@ -20,19 +20,25 @@ class SettingRepository:
         else:
             db.add(SystemSetting(key=key, value=value))
 
-    async def list_audit_logs(self, db: AsyncSession, *, page: int, limit: int) -> list[tuple]:
+    async def list_audit_logs(
+        self, db: AsyncSession, *, organization_id: str, page: int, limit: int
+    ) -> list[tuple]:
         result = await db.execute(
             select(AuditLog, User.name, User.email)
             .outerjoin(User, AuditLog.user_id == User.id)
+            .where(AuditLog.organization_id == organization_id)
             .offset((page - 1) * limit)
             .limit(limit)
         )
         return [row._tuple() for row in result.all()]
 
-    async def list_audit_logs_export(self, db: AsyncSession, limit: int = 500) -> list[tuple]:
+    async def list_audit_logs_export(
+        self, db: AsyncSession, *, organization_id: str, limit: int = 500
+    ) -> list[tuple]:
         result = await db.execute(
             select(AuditLog, User.name, User.email)
             .outerjoin(User, AuditLog.user_id == User.id)
+            .where(AuditLog.organization_id == organization_id)
             .limit(limit)
         )
         return [row._tuple() for row in result.all()]

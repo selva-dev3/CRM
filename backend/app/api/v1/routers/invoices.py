@@ -16,6 +16,7 @@ from app.schemas.crm_schemas import (
     ManualPaymentCreate,
     MessageResponse,
     PaymentResponse,
+    ReviewDecisionRequest,
 )
 from app.services.invoice_delivery_service import invoice_delivery_service
 from app.services.invoice_service import invoice_service
@@ -309,6 +310,22 @@ async def record_invoice_payment(
 
 
 @router.post(
+    "/{invoice_id}/submit-for-review",
+    response_model=InvoiceResponse,
+    dependencies=[Depends(require_permission("invoices:update"))],
+)
+async def submit_invoice_for_review(
+    invoice_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await invoice_service.resolve_organization_id(db, current_user)
+    return await invoice_service.submit_for_review(
+        db, invoice_id=invoice_id, organization_id=organization_id, user_id=current_user.id
+    )
+
+
+@router.post(
     "/{invoice_id}/finalize",
     response_model=InvoiceResponse,
     dependencies=[Depends(require_permission("invoices:update"))],
@@ -321,6 +338,27 @@ async def finalize_invoice(
     organization_id = await invoice_service.resolve_organization_id(db, current_user)
     return await invoice_service.finalize_invoice(
         db, invoice_id=invoice_id, organization_id=organization_id, user_id=current_user.id
+    )
+
+
+@router.post(
+    "/{invoice_id}/return-to-draft",
+    response_model=InvoiceResponse,
+    dependencies=[Depends(require_permission("invoices:update"))],
+)
+async def return_invoice_to_draft(
+    invoice_id: str,
+    payload: ReviewDecisionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await invoice_service.resolve_organization_id(db, current_user)
+    return await invoice_service.return_to_draft(
+        db,
+        invoice_id=invoice_id,
+        organization_id=organization_id,
+        user_id=current_user.id,
+        reason=payload.reason,
     )
 
 

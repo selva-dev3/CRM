@@ -62,6 +62,9 @@ def invoice_to_dict(
             Decimal(0), decimal_value(inv.amount or 0) - decimal_value(inv.paid_amount or 0)
         ),
         "payment_status": inv.payment_status or "Pending",
+        "review_submitted_at": str(inv.review_submitted_at) if inv.review_submitted_at else None,
+        "review_submitted_by": inv.review_submitted_by,
+        "review_rejection_reason": inv.review_rejection_reason,
         "finalized_at": str(inv.finalized_at) if inv.finalized_at else None,
         "finalized_by": inv.finalized_by,
         "accepted_at": str(inv.accepted_at) if inv.accepted_at else None,
@@ -537,8 +540,9 @@ class InvoiceService:
             )
             if not invoice:
                 raise NotFoundError(message="Invoice not found")
-            if invoice.status != "Draft":
-                raise ConflictError(message="Only Draft invoices can be finalized")
+            if invoice.status != "In Review":
+                raise ConflictError(message="Only invoices in review can be finalized")
+            assert_invoice_transition(invoice.status, "Finalized")
             company, contact = await DealRepository().get_sales_customer(
                 db,
                 organization_id=organization_id,
@@ -617,10 +621,77 @@ class InvoiceService:
             invoice.status = "Finalized"
             invoice.finalized_at = datetime.now(UTC)
             invoice.finalized_by = user_id
-            await self.repository.record_event(db, invoice, "invoice.finalized")
+            await self.repository.record_event(
+                db, invoice, "invoice.finalized", user_id=user_id
+            )
             result = invoice_to_dict(invoice, items)
             await db.commit()
             return result
+        except Exception:
+            await db.rollback()
+            raise
+
+    async def submit_for_review(
+        self, db: AsyncSession, *, invoice_id: str, organization_id: str, user_id: str
+    ) -> dict:
+        try:
+            invoice = await self.repository.lock_scoped(
+                db, invoice_id=invoice_id, organization_id=organization_id
+            )
+            if not invoice:
+                raise NotFoundError(message="Invoice not found")
+            assert_invoice_transition(invoice.status, "In Review")
+            invoice.status = "In Review"
+            invoice.review_submitted_at = datetime.now(UTC)
+            invoice.review_submitted_by = user_id
+            invoice.review_rejection_reason = None
+            await self.repository.record_event(
+                db, invoice, "invoice.review_submitted", user_id=user_id
+            )
+            await db.commit()
+            await db.refresh(invoice)
+            items = await self.repository.list_items(
+                db, invoice_id=invoice.id, organization_id=organization_id
+            )
+            return invoice_to_dict(invoice, items)
+        except Exception:
+            await db.rollback()
+            raise
+
+    async def return_to_draft(
+        self,
+        db: AsyncSession,
+        *,
+        invoice_id: str,
+        organization_id: str,
+        user_id: str,
+        reason: str | None,
+    ) -> dict:
+        normalized_reason = (reason or "").strip()
+        if not normalized_reason:
+            raise APIException(
+                message="A review rejection reason is required",
+                code="REVIEW_REASON_REQUIRED",
+                status_code=422,
+            )
+        try:
+            invoice = await self.repository.lock_scoped(
+                db, invoice_id=invoice_id, organization_id=organization_id
+            )
+            if not invoice:
+                raise NotFoundError(message="Invoice not found")
+            assert_invoice_transition(invoice.status, "Draft")
+            invoice.status = "Draft"
+            invoice.review_rejection_reason = normalized_reason
+            await self.repository.record_event(
+                db, invoice, "invoice.review_rejected", user_id=user_id
+            )
+            await db.commit()
+            await db.refresh(invoice)
+            items = await self.repository.list_items(
+                db, invoice_id=invoice.id, organization_id=organization_id
+            )
+            return invoice_to_dict(invoice, items)
         except Exception:
             await db.rollback()
             raise

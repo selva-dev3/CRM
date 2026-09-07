@@ -509,18 +509,22 @@ export default function TasksPage() {
         <div className="flex items-center gap-2.5 flex-wrap">
           <button
             onClick={() => setIsImportModalOpen(true)}
+            disabled
+            title="Task CSV import is not available"
             className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg font-medium text-sm transition-colors shadow-sm cursor-pointer"
           >
             <Upload className="w-4 h-4 text-slate-500" />
-            Import CSV
+            Import CSV (Not available)
           </button>
 
           <button
             onClick={handleExportCsv}
+            disabled
+            title="Task CSV export is not available"
             className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg font-medium text-sm transition-colors shadow-sm cursor-pointer"
           >
             <Download className="w-4 h-4 text-slate-500" />
-            Export CSV
+            Export CSV (Not available)
           </button>
 
           <PermissionGate permission={PERMISSIONS.TASKS.CREATE}>

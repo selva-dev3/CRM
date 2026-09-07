@@ -838,3 +838,99 @@ class SubscriptionBillingService:
         except Exception:
             await db.rollback()
             raise
+
+    async def reconcile_subscription(self, db: AsyncSession, *, organization_id: str) -> bool:
+        """Refresh one linked subscription from Stripe without creating provider resources."""
+        try:
+            org, sub = await self._locked(db, organization_id)
+            if not sub or not sub.subscription_id:
+                await db.commit()
+                return False
+            remote = await self._retrieve_subscription(sub.subscription_id)
+            self._validate_remote_identity(
+                remote,
+                subscription_id=sub.subscription_id,
+                customer_id=sub.customer_id,
+                organization_id=organization_id,
+            )
+            paid = await self._paid_plan(
+                db,
+                remote,
+                sub.customer_id,
+                local=sub,
+                organization=org,
+            )
+            previous = (
+                org.plan,
+                org.max_users,
+                sub.status,
+                sub.invoice_id,
+                sub.auto_renew,
+                sub.current_period_end,
+                sub.reconciliation_required,
+            )
+            had_paid_access = bool(
+                sub.subscription_id and sub.invoice_id and sub.status == "active"
+            )
+            sub.auto_renew = not bool(remote.get("cancel_at_period_end"))
+            if paid:
+                plan, invoice, item = paid
+                org.plan, org.max_users = plan.name, plan.max_users
+                sub.plan_id, sub.amount = plan.plan_id, float(plan.amount)
+                sub.max_users, sub.storage_limit_gb = plan.max_users, plan.storage
+                if sub.invoice_id != invoice["id"]:
+                    sub.ai_credits = plan.ai_credits
+                sub.currency, sub.billing_cycle = plan.currency.upper(), plan.billing_cycle
+                sub.status, sub.trial = "active", False
+                sub.invoice_id = invoice["id"]
+                sub.current_period_start = _time(
+                    item.get("current_period_start") or remote.get("current_period_start")
+                )
+                sub.current_period_end = _time(
+                    item.get("current_period_end") or remote.get("current_period_end")
+                )
+                sub.next_billing = sub.current_period_end if sub.auto_renew else None
+                sub.expires_at = sub.current_period_end
+                sub.started_at = sub.started_at or _time(remote.get("start_date"))
+            else:
+                pending_paid_upgrade = (
+                    remote.get("status") == "active"
+                    and remote.get("pending_update")
+                    and had_paid_access
+                )
+                if not pending_paid_upgrade:
+                    sub.status = (
+                        "cancelled" if remote.get("status") == "canceled" else "past_due"
+                    )
+                if sub.status == "cancelled":
+                    sub.auto_renew = False
+                    sub.next_billing = None
+            sub.reconciliation_required = False
+            sub.last_provider_check_at = datetime.now(UTC)
+            sub.last_provider_error_code = None
+            sub.last_provider_request_id = None
+            current = (
+                org.plan,
+                org.max_users,
+                sub.status,
+                sub.invoice_id,
+                sub.auto_renew,
+                sub.current_period_end,
+                sub.reconciliation_required,
+            )
+            changed = current != previous
+            await self.repository.create_audit_log(
+                db,
+                organization_id=organization_id,
+                action="subscription.reconciled",
+                details=f"changed={str(changed).lower()}",
+            )
+            await db.commit()
+            return changed
+        except APIException as exc:
+            await db.rollback()
+            await self._mark_reconciliation(db, organization_id, exc)
+            raise
+        except Exception:
+            await db.rollback()
+            raise

@@ -69,19 +69,12 @@ class SettingsService:
     async def _stage_setting_value(self, db: AsyncSession, key: str, val: str) -> None:
         await self.repository.upsert(db, key=key, value=val)
 
-    async def get_system_settings(self, db: AsyncSession, current_user: User | None = None) -> dict:
-        org_name = "Enterprise Organization"
-        org = None
-
-        if current_user and getattr(current_user, "organization_id", None):
-            org = await organization_service.repository.get_by_id(db, current_user.organization_id)
-            if org and org.name:
-                org_name = org.name
-
-        if org_name == "Enterprise Organization":
-            org = await organization_service.repository.get_first(db)
-            if org and org.name:
-                org_name = org.name
+    async def get_system_settings(self, db: AsyncSession, current_user: User) -> dict:
+        org_id = await self._resolve_org_id(db, current_user)
+        org = await organization_service.repository.get_by_id(db, org_id)
+        if not org:
+            raise APIException(status_code=404, message="Organization not found")
+        org_name = org.name
 
         # Organization currency is authoritative once an organization exists.
         # system_currency is retained only for the org-less bootstrap state.
@@ -103,16 +96,11 @@ class SettingsService:
         }
 
     async def update_system_settings(
-        self, db: AsyncSession, payload: SystemSettings, current_user: User | None = None
+        self, db: AsyncSession, payload: SystemSettings, current_user: User
     ) -> SystemSettings:
         try:
-            org = None
-            if current_user and getattr(current_user, "organization_id", None):
-                org = await organization_service.repository.get_by_id(
-                    db, current_user.organization_id
-                )
-            else:
-                org = await organization_service.repository.get_first(db)
+            org_id = await self._resolve_org_id(db, current_user)
+            org = await organization_service.repository.get_by_id(db, org_id)
 
             if org:
                 if payload.organization_name:
@@ -132,6 +120,9 @@ class SettingsService:
                 db, "ai_features_enabled", "true" if payload.ai_features_enabled else "false"
             )
             await db.commit()
+        except APIException:
+            await db.rollback()
+            raise
         except Exception as exc:
             try:
                 await db.rollback()
@@ -160,8 +151,13 @@ class SettingsService:
             or "Admin User"
         )
 
-    async def list_audit_logs(self, db: AsyncSession, *, page: int, limit: int) -> list[dict]:
-        rows = await self.repository.list_audit_logs(db, page=page, limit=limit)
+    async def list_audit_logs(
+        self, db: AsyncSession, *, page: int, limit: int, current_user: User
+    ) -> list[dict]:
+        org_id = await self._resolve_org_id(db, current_user)
+        rows = await self.repository.list_audit_logs(
+            db, organization_id=org_id, page=page, limit=limit
+        )
         result = []
         for log, u_name, u_email in rows:
             username = self._resolve_username(u_name, u_email, log.user_id)
@@ -177,9 +173,12 @@ class SettingsService:
             )
         return result
 
-    async def export_audit_logs_csv(self, db: AsyncSession) -> dict:
+    async def export_audit_logs_csv(self, db: AsyncSession, current_user: User) -> dict:
         try:
-            rows = await self.repository.list_audit_logs_export(db)
+            org_id = await self._resolve_org_id(db, current_user)
+            rows = await self.repository.list_audit_logs_export(
+                db, organization_id=org_id
+            )
             output = io.StringIO()
             writer = csv.writer(output)
             writer.writerow(["ID", "Username", "Action", "IP Address", "Timestamp"])
@@ -197,10 +196,12 @@ class SettingsService:
             csv_text = output.getvalue()
             encoded = urllib.parse.quote(csv_text)
             return {"download_url": f"data:text/csv;charset=utf-8,{encoded}"}
-        except Exception:
-            return {
-                "download_url": "data:text/csv;charset=utf-8,ID%2CUsername%2CAction%2CIP%20Address%2CTimestamp%0Alog-1%2CAdmin%20User%2CUser%20Login%2C127.0.0.1%2C2026-08-07"
-            }
+        except Exception as exc:
+            raise APIException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                code="AUDIT_EXPORT_FAILED",
+                message="Unable to export audit logs.",
+            ) from exc
 
     async def list_custom_fields(
         self, db: AsyncSession, entity_type: str | None, current_user: User
@@ -281,20 +282,17 @@ class SettingsService:
         return {"message": f"Custom field {field_id} deleted", "status": "success"}
 
     async def list_webhooks(self, db: AsyncSession, current_user: User | None = None) -> list[dict]:
-        try:
-            org_id = await self._resolve_org_id(db, current_user)
-            webhooks = await self.repository.list_webhooks(db, organization_id=org_id)
-            return [
-                {
-                    "id": w.id,
-                    "target_url": w.target_url,
-                    "events": w.events.split(",") if w.events else [],
-                    "is_active": w.is_active,
-                }
-                for w in webhooks
-            ]
-        except Exception:
-            return []
+        org_id = await self._resolve_org_id(db, current_user)
+        webhooks = await self.repository.list_webhooks(db, organization_id=org_id)
+        return [
+            {
+                "id": w.id,
+                "target_url": w.target_url,
+                "events": w.events.split(",") if w.events else [],
+                "is_active": w.is_active,
+            }
+            for w in webhooks
+        ]
 
     async def create_webhook(
         self,
@@ -340,24 +338,19 @@ class SettingsService:
     async def list_sla_policies(
         self, db: AsyncSession, current_user: User | None = None
     ) -> list[dict]:
-        try:
-            org_id = await self._resolve_org_id(db, current_user)
-            policies = await self.repository.list_sla(db, organization_id=org_id)
-            if not policies:
-                policies = await self.repository.list_all_sla(db)
-            return [
-                {
-                    "id": p.id,
-                    "name": p.name,
-                    "response_time_hours": p.response_time_hours,
-                    "resolution_time_hours": p.resolution_time_hours,
-                    "is_active": p.is_active,
-                    "created_at": str(p.created_at) if p.created_at else None,
-                }
-                for p in policies
-            ]
-        except Exception:
-            return []
+        org_id = await self._resolve_org_id(db, current_user)
+        policies = await self.repository.list_sla(db, organization_id=org_id)
+        return [
+            {
+                "id": p.id,
+                "name": p.name,
+                "response_time_hours": p.response_time_hours,
+                "resolution_time_hours": p.resolution_time_hours,
+                "is_active": p.is_active,
+                "created_at": str(p.created_at) if p.created_at else None,
+            }
+            for p in policies
+        ]
 
     async def create_sla_policy(
         self,
@@ -375,11 +368,8 @@ class SettingsService:
             "response_time_hours": response_time_hours,
             "resolution_time_hours": resolution_time_hours,
         }
-        try:
-            await self.repository.create_sla(db, data=data)
-            await db.commit()
-        except Exception:
-            await db.rollback()
+        await self.repository.create_sla(db, data=data)
+        await self._commit(db, "Failed to create SLA policy")
         return {"message": f"SLA Policy '{name}' created", "status": "success"}
 
     async def reset_database(self, db: AsyncSession, confirm: bool) -> dict:
@@ -450,7 +440,11 @@ class SettingsService:
         return []
 
     async def trigger_manual_backup(self) -> dict:
-        return {"message": "Database backup snapshot initiated in background", "status": "success"}
+        raise APIException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            code="BACKUP_PROVIDER_NOT_CONFIGURED",
+            message="Database backup provider is not configured.",
+        )
 
 
 settings_service = SettingsService()

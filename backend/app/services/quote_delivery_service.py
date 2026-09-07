@@ -57,8 +57,12 @@ class QuoteDeliveryService:
                     code="QUOTE_DELIVERY_UNKNOWN",
                     status_code=409,
                 )
-            if quote.status not in {"Draft", "Pending Approval", "Approved"}:
-                raise APIException(message="Quote is not ready to send", status_code=409)
+            if quote.status != "Approved" or not quote.approved_at or not quote.approved_by:
+                raise APIException(
+                    message="Quote must be internally approved before delivery",
+                    code="QUOTE_APPROVAL_REQUIRED",
+                    status_code=409,
+                )
             if quote.expires_at and quote.expires_at <= datetime.now(UTC):
                 raise APIException(message="Quote has expired", status_code=410)
             if quote.delivery_attempts >= 3:
@@ -144,7 +148,7 @@ class QuoteDeliveryService:
                 delivery_id,
             )
             try:
-                if quote.status not in {"Draft", "Pending Approval", "Approved"} or not quote.expires_at or quote.expires_at <= now:
+                if quote.status != "Approved" or not quote.approved_at or not quote.approved_by or not quote.expires_at or quote.expires_at <= now:
                     raise ValueError("Quote is no longer eligible for delivery")
                 organization = await quote_repository.get_organization(db, org_id)
                 company, contact = await DealRepository().get_sales_customer(
@@ -340,7 +344,9 @@ class QuoteDeliveryService:
                             to_email=recipient,
                             subject=email_subject,
                             body_text=email_body,
-                            status="sent",
+                            status="Sent",
+                            provider_message_id=message_id,
+                            sent_at=datetime.now(UTC),
                         )
                     )
                 await db.commit()

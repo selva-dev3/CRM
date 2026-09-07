@@ -11,6 +11,136 @@ from app.workers.celery_app import celery_app
 logger = get_logger(__name__)
 
 
+@celery_app.task(name="app.workers.tasks.reconcile_provider_subscriptions", ignore_result=True)
+def reconcile_provider_subscriptions():
+    return asyncio.run(_reconcile_provider_subscriptions())
+
+
+async def _reconcile_provider_subscriptions():
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.core.config import settings
+    from app.repositories.organization_repository import OrganizationRepository
+    from app.services.subscription_billing_service import SubscriptionBillingService
+
+    engine = create_async_engine(settings.DATABASE_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    repository = OrganizationRepository()
+    service = SubscriptionBillingService(repository=repository)
+    checked = 0
+    changed = 0
+    failed = 0
+    cursor = None
+    try:
+        while True:
+            async with factory() as db:
+                organization_ids = await repository.list_provider_subscription_org_ids(
+                    db, after_org_id=cursor, limit=200
+                )
+            if not organization_ids:
+                break
+            for organization_id in organization_ids:
+                try:
+                    async with factory() as db:
+                        changed += int(
+                            await service.reconcile_subscription(
+                                db, organization_id=organization_id
+                            )
+                        )
+                except Exception:
+                    failed += 1
+                    logger.exception(
+                        "Subscription reconciliation failed organization=%s",
+                        organization_id,
+                    )
+                checked += 1
+            cursor = organization_ids[-1]
+        logger.info(
+            "Subscription reconciliation completed checked=%s changed=%s failed=%s",
+            checked,
+            changed,
+            failed,
+        )
+        return {"checked": checked, "changed": changed, "failed": failed}
+    finally:
+        await engine.dispose()
+
+
+@celery_app.task(
+    name="app.workers.tasks.reconcile_invoice_payment_aggregates", ignore_result=True
+)
+def reconcile_invoice_payment_aggregates():
+    return asyncio.run(_reconcile_invoice_payment_aggregates())
+
+
+async def _reconcile_invoice_payment_aggregates():
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.core.config import settings
+    from app.repositories.payment_repository import PaymentRepository
+    from app.services.payment_service import PaymentService
+
+    engine = create_async_engine(settings.DATABASE_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    repository = PaymentRepository()
+    service = PaymentService(repository)
+    checked = 0
+    repaired = 0
+    cursor = None
+    try:
+        while True:
+            async with factory() as db:
+                rows = await repository.list_invoice_ids_for_reconciliation(
+                    db, after_id=cursor, limit=200
+                )
+            if not rows:
+                break
+            for invoice_id, organization_id in rows:
+                async with factory() as db:
+                    repaired += int(
+                        await service.reconcile_invoice(
+                            db,
+                            invoice_id=invoice_id,
+                            organization_id=organization_id,
+                        )
+                    )
+                checked += 1
+            cursor = rows[-1][0]
+        logger.info(
+            "Invoice payment reconciliation completed checked=%s repaired=%s",
+            checked,
+            repaired,
+        )
+        return {"checked": checked, "repaired": repaired}
+    finally:
+        await engine.dispose()
+
+
+@celery_app.task(name="app.workers.tasks.deliver_pending_emails", ignore_result=True)
+def deliver_pending_emails():
+    return asyncio.run(_deliver_pending_emails())
+
+
+async def _deliver_pending_emails():
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.core.config import settings
+    from app.services.email_domain_service import email_domain_service
+
+    engine = create_async_engine(settings.DATABASE_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    count = 0
+    try:
+        for _ in range(20):
+            if not await email_domain_service.deliver_one(factory):
+                break
+            count += 1
+        logger.info("Email outbox sweep completed processed=%s", count)
+        return count
+    finally:
+        await engine.dispose()
+
+
 @celery_app.task(name="app.workers.tasks.deliver_pending_quotes", ignore_result=True)
 def deliver_pending_quotes():
     return asyncio.run(_deliver_pending_quotes())

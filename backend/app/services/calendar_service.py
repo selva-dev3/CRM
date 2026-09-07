@@ -12,16 +12,24 @@ from app.services.org_service import organization_service
 
 def parse_datetime(val: str | None) -> datetime:
     if not val or not str(val).strip():
-        return datetime.now(UTC)
+        raise APIException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            code="CALENDAR_DATETIME_REQUIRED",
+            message="Calendar event date and time are required",
+        )
     val_str = str(val).strip()
     try:
         return datetime.fromisoformat(val_str.replace("Z", "+00:00"))
-    except Exception:
+    except ValueError:
         try:
             d = date.fromisoformat(val_str)
             return datetime(d.year, d.month, d.day, tzinfo=UTC)
-        except Exception:
-            return datetime.now(UTC)
+        except ValueError as exc:
+            raise APIException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                code="INVALID_CALENDAR_DATETIME",
+                message="Calendar event date and time must be valid ISO-8601 values",
+            ) from exc
 
 
 def event_to_dict(event: CalendarEventModel) -> dict:
@@ -66,13 +74,21 @@ class CalendarService:
     async def create_calendar_event(
         self, db: AsyncSession, payload: CalendarEventCreatePayload, current_user: User
     ) -> dict:
+        start_time = parse_datetime(payload.start)
+        end_time = parse_datetime(payload.end)
+        if end_time <= start_time:
+            raise APIException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                code="INVALID_CALENDAR_RANGE",
+                message="Calendar event end time must be after its start time",
+            )
         event = await self.repository.create_event(
             db,
             data={
                 "user_id": current_user.id,
                 "title": payload.title,
-                "start_time": parse_datetime(payload.start),
-                "end_time": parse_datetime(payload.end),
+                "start_time": start_time,
+                "end_time": end_time,
                 "event_type": payload.event_type or "Meeting",
                 "description": payload.description,
             },
@@ -108,6 +124,12 @@ class CalendarService:
                 event.start_time = parse_datetime(payload.start)
             if payload.end:
                 event.end_time = parse_datetime(payload.end)
+            if event.end_time <= event.start_time:
+                raise APIException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    code="INVALID_CALENDAR_RANGE",
+                    message="Calendar event end time must be after its start time",
+                )
             if payload.event_type:
                 event.event_type = payload.event_type
             if payload.description:
@@ -131,42 +153,39 @@ class CalendarService:
         return {"message": f"Event {event_id} deleted successfully", "status": "success"}
 
     async def get_availability(self, user_id: str | None, date_: str | None) -> dict:
-        return {
-            "user_id": user_id or "default-user",
-            "date": date_ or str(datetime.now().date()),
-            "available_slots": ["09:00-09:30", "11:30-12:00", "14:00-14:30", "16:00-17:00"],
-        }
+        raise APIException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            code="CALENDAR_AVAILABILITY_NOT_CONFIGURED",
+            message="Calendar availability rules are not configured",
+        )
 
     async def sync_google_calendar(self) -> dict:
-        return {"message": "Google Calendar 2-way sync completed successfully", "status": "success"}
+        raise APIException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            code="GOOGLE_CALENDAR_SYNC_NOT_CONFIGURED",
+            message="Google Calendar synchronization is not configured",
+        )
 
     async def sync_outlook_calendar(self) -> dict:
-        return {
-            "message": "Outlook Calendar 2-way sync completed successfully",
-            "status": "success",
-        }
+        raise APIException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            code="OUTLOOK_CALENDAR_NOT_SUPPORTED",
+            message="Outlook Calendar synchronization is not supported",
+        )
 
     async def list_recurring_events(self) -> list[dict]:
-        return [
-            {
-                "id": "rec-1",
-                "title": "Weekly Team Sync",
-                "rrule": "FREQ=WEEKLY;BYDAY=MO",
-                "event_type": "Internal",
-            },
-            {
-                "id": "rec-2",
-                "title": "Monthly Revenue Review",
-                "rrule": "FREQ=MONTHLY;BYMONTHDAY=1",
-                "event_type": "Executive",
-            },
-        ]
+        raise APIException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            code="RECURRING_CALENDAR_EVENTS_NOT_SUPPORTED",
+            message="Recurring calendar events are not supported",
+        )
 
     async def create_recurring_event(self, title: str, rrule: str) -> dict:
-        return {
-            "message": f"Recurring event rule '{title}' created with pattern {rrule}",
-            "status": "success",
-        }
+        raise APIException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            code="RECURRING_CALENDAR_EVENTS_NOT_SUPPORTED",
+            message="Recurring calendar events are not supported",
+        )
 
 
 calendar_service = CalendarService()

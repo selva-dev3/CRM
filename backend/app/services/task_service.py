@@ -37,6 +37,10 @@ def task_to_dict(task: Task) -> dict:
         "status": task.status,
         "assigned_to": task.assigned_to,
         "project_id": getattr(task, "project_id", None),
+        "lead_id": task.lead_id,
+        "contact_id": task.contact_id,
+        "company_id": task.company_id,
+        "deal_id": task.deal_id,
         "created_at": str(task.created_at) if task.created_at else None,
     }
 
@@ -101,6 +105,10 @@ class TaskService:
         status: str | None = None,
         priority: str | None = None,
         search: str | None = None,
+        lead_id: str | None = None,
+        contact_id: str | None = None,
+        company_id: str | None = None,
+        deal_id: str | None = None,
     ) -> list[dict]:
         tasks = await self.repository.list(
             db,
@@ -110,6 +118,10 @@ class TaskService:
             status=status,
             priority=priority,
             search=search,
+            lead_id=lead_id,
+            contact_id=contact_id,
+            company_id=company_id,
+            deal_id=deal_id,
         )
         return [task_to_dict(t) for t in tasks]
 
@@ -121,6 +133,10 @@ class TaskService:
         status: str | None = None,
         priority: str | None = None,
         search: str | None = None,
+        lead_id: str | None = None,
+        contact_id: str | None = None,
+        company_id: str | None = None,
+        deal_id: str | None = None,
     ) -> int:
         return await self.repository.count(
             db,
@@ -128,6 +144,10 @@ class TaskService:
             status=status,
             priority=priority,
             search=search,
+            lead_id=lead_id,
+            contact_id=contact_id,
+            company_id=company_id,
+            deal_id=deal_id,
         )
 
     async def get_task(self, db: AsyncSession, task_id: str, organization_id: str) -> dict:
@@ -152,6 +172,16 @@ class TaskService:
             default_user_id=current_user.id,
         )
         project_id = await self._validate_project(db, payload.project_id, org_id)
+        from app.services.crm_relationship_service import validate_crm_relationships
+
+        relationships = await validate_crm_relationships(
+            db,
+            organization_id=org_id,
+            lead_id=payload.lead_id,
+            contact_id=payload.contact_id,
+            company_id=payload.company_id,
+            deal_id=payload.deal_id,
+        )
         data = {
             "organization_id": org_id,
             "title": payload.title,
@@ -161,6 +191,7 @@ class TaskService:
             "due_date": due_dt,
             "assigned_to": assigned_user,
             "project_id": project_id,
+            **relationships,
         }
         task = await self.repository.create(db, data=data)
         await self._commit(db, "Failed to create task")
@@ -218,6 +249,19 @@ class TaskService:
 
         prev_priority = task.priority
         updates = payload.model_dump(exclude_unset=True)
+        if "title" in updates and updates["title"] is not None:
+            task.title = updates["title"]
+        if "description" in updates:
+            task.description = updates["description"]
+        if "due_date" in updates:
+            task.due_date = parse_datetime(updates["due_date"])
+        if "assigned_to" in updates:
+            task.assigned_to = await self._resolve_user_id(
+                db,
+                assigned_input=updates["assigned_to"],
+                organization_id=task.organization_id,
+                default_user_id=task.assigned_to,
+            )
         if "status" in updates:
             task.status = updates["status"]
         if "priority" in updates:
@@ -226,6 +270,16 @@ class TaskService:
             task.project_id = await self._validate_project(
                 db, updates["project_id"], task.organization_id
             )
+        relationship_fields = {"lead_id", "contact_id", "company_id", "deal_id"}
+        if relationship_fields & updates.keys():
+            from app.services.crm_relationship_service import validate_crm_relationships
+
+            merged = {
+                field: updates.get(field, getattr(task, field)) for field in relationship_fields
+            }
+            await validate_crm_relationships(db, organization_id=task.organization_id, **merged)
+            for field in relationship_fields & updates.keys():
+                setattr(task, field, updates[field])
 
         await self._commit(db, "Failed to update task")
         await db.refresh(task)

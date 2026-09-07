@@ -79,6 +79,9 @@ async def sent_invoice(sales_database, monkeypatch, *, unit_price=100):
         Mock(return_value="invoice-provider-receipt"),
     )
     async with sessions() as db:
+        await InvoiceService().submit_for_review(
+            db, invoice_id=invoice_id, organization_id=org.id, user_id=user.id
+        )
         await InvoiceService().finalize_invoice(
             db, invoice_id=invoice_id, organization_id=org.id, user_id=user.id
         )
@@ -137,6 +140,14 @@ async def test_draft_requires_finalize_and_acceptance_before_payment(sales_datab
     with pytest.raises(ConflictError):
         await pay(sales_database, invoice_id, "10")
     async with sessions() as db:
+        with pytest.raises(ConflictError):
+            await InvoiceService().finalize_invoice(
+                db, invoice_id=invoice_id, organization_id=org.id, user_id=user.id
+            )
+        submitted = await InvoiceService().submit_for_review(
+            db, invoice_id=invoice_id, organization_id=org.id, user_id=user.id
+        )
+        assert submitted["status"] == "In Review"
         finalized = await InvoiceService().finalize_invoice(
             db, invoice_id=invoice_id, organization_id=org.id, user_id=user.id
         )
@@ -542,6 +553,10 @@ async def test_finalize_rejects_invalid_snapshot_without_transition(sales_databa
     sessions, org, user, *_ = sales_database
     async with sessions() as db:
         invoice = await db.get(Invoice, invoice_id)
+        await InvoiceService().submit_for_review(
+            db, invoice_id=invoice_id, organization_id=org.id, user_id=user.id
+        )
+        invoice = await db.get(Invoice, invoice_id)
         setattr(
             invoice,
             invalid_field,
@@ -557,7 +572,7 @@ async def test_finalize_rejects_invalid_snapshot_without_transition(sales_databa
             )
     async with sessions() as db:
         invoice = await db.get(Invoice, invoice_id)
-        assert invoice.status == "Draft"
+        assert invoice.status == "In Review"
         assert invoice.finalized_at is None
         assert invoice.delivery_status is None
 
@@ -597,6 +612,10 @@ async def test_finalize_rejects_nontext_optional_address(sales_database, field):
     sessions, org, user, *_ = sales_database
     async with sessions() as db:
         invoice = await db.get(Invoice, invoice_id)
+        await InvoiceService().submit_for_review(
+            db, invoice_id=invoice_id, organization_id=org.id, user_id=user.id
+        )
+        invoice = await db.get(Invoice, invoice_id)
         invoice.billing_snapshot = invoice.billing_snapshot | {field: {"unexpected": "object"}}
         await db.commit()
     async with sessions() as db:
@@ -606,7 +625,7 @@ async def test_finalize_rejects_nontext_optional_address(sales_database, field):
             )
     async with sessions() as db:
         invoice = await db.get(Invoice, invoice_id)
-        assert invoice.status == "Draft"
+        assert invoice.status == "In Review"
         assert invoice.finalized_at is None
 
 
@@ -621,6 +640,9 @@ async def test_finalize_allows_text_or_null_optional_address(sales_database, val
             ("city", "state", "postal_code"), value
         )
         await db.commit()
+        await InvoiceService().submit_for_review(
+            db, invoice_id=invoice_id, organization_id=org.id, user_id=user.id
+        )
         result = await InvoiceService().finalize_invoice(
             db, invoice_id=invoice_id, organization_id=org.id, user_id=user.id
         )

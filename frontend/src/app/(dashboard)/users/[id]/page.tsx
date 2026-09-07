@@ -47,7 +47,6 @@ import {
   useActivateUserMutation,
   useDeactivateUserMutation,
   useDeleteUserMutation,
-  useResetUserPasswordAdminMutation,
   useAssignUserTeamMutation,
   useRemoveUserTeamMutation,
   useSetUserQuotaMutation,
@@ -116,7 +115,6 @@ export default function UserDetailPage() {
   const activateUserMutation = useActivateUserMutation();
   const deactivateUserMutation = useDeactivateUserMutation();
   const deleteUserMutation = useDeleteUserMutation();
-  const resetPasswordMutation = useResetUserPasswordAdminMutation();
   const assignTeamMutation = useAssignUserTeamMutation();
   const removeTeamMutation = useRemoveUserTeamMutation();
   const setQuotaMutation = useSetUserQuotaMutation();
@@ -145,17 +143,6 @@ export default function UserDetailPage() {
       refetch();
     } catch {
       setErrorMessage('Failed to update user status.');
-    }
-  };
-
-  const handleResetPassword = async () => {
-    if (!user) return;
-    try {
-      setErrorMessage(null);
-      const res = await resetPasswordMutation.mutateAsync(user.id);
-      setSuccessMessage(res.message || `Temporary password sent to ${user.email}`);
-    } catch {
-      setErrorMessage('Failed to reset password.');
     }
   };
 
@@ -316,12 +303,12 @@ export default function UserDetailPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={handleResetPassword}
-              disabled={resetPasswordMutation.isPending}
+              disabled
+              title="Administrator password reset delivery is not configured"
               className="border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold text-xs cursor-pointer"
             >
-              <RotateCcw className={`w-3.5 h-3.5 mr-1.5 text-blue-600 ${resetPasswordMutation.isPending ? 'animate-spin' : ''}`} />
-              Reset Password
+              <RotateCcw className="w-3.5 h-3.5 mr-1.5 text-blue-600" />
+              Reset Password (Not available)
             </Button>
 
             <Button

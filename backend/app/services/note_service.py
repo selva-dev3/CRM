@@ -68,6 +68,14 @@ class NoteService:
         current_user: User,
     ) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        from app.services.crm_relationship_service import validate_polymorphic_crm_entity
+
+        relationships = await validate_polymorphic_crm_entity(
+            db,
+            organization_id=org_id,
+            entity_type=entity_type,
+            entity_id=entity_id,
+        )
         note = await self.repository.create(
             db,
             organization_id=org_id,
@@ -75,6 +83,7 @@ class NoteService:
             entity_id=entity_id or "General",
             content=content,
             created_by=current_user.id,
+            relationships=relationships,
         )
         await self._commit(db, "Failed to create note")
         await db.refresh(note)
@@ -184,6 +193,14 @@ class NoteService:
         current_user: User,
     ) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        from app.services.crm_relationship_service import validate_polymorphic_crm_entity
+
+        relationships = await validate_polymorphic_crm_entity(
+            db,
+            organization_id=org_id,
+            entity_type=entity_type,
+            entity_id=entity_id,
+        )
         note = await self.repository.create(
             db,
             organization_id=org_id,
@@ -191,6 +208,7 @@ class NoteService:
             entity_id=entity_id,
             content=content,
             created_by=current_user.id,
+            relationships=relationships,
         )
         await self._commit(db, "Failed to add note")
         await db.refresh(note)

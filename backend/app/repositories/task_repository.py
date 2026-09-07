@@ -22,12 +22,24 @@ class TaskRepository:
         status: str | None = None,
         priority: str | None = None,
         search: str | None = None,
+        lead_id: str | None = None,
+        contact_id: str | None = None,
+        company_id: str | None = None,
+        deal_id: str | None = None,
     ) -> builtins.list[Task]:
         stmt = select(Task).where(Task.organization_id == organization_id)
         if status:
             stmt = stmt.where(Task.status == status)
         if priority:
             stmt = stmt.where(Task.priority == priority)
+        for column, value in (
+            (Task.lead_id, lead_id),
+            (Task.contact_id, contact_id),
+            (Task.company_id, company_id),
+            (Task.deal_id, deal_id),
+        ):
+            if value:
+                stmt = stmt.where(column == value)
         if search and search.strip():
             pattern = f"%{search.strip()}%"
             stmt = stmt.where(Task.title.ilike(pattern) | Task.description.ilike(pattern))
@@ -47,12 +59,24 @@ class TaskRepository:
         status: str | None = None,
         priority: str | None = None,
         search: str | None = None,
+        lead_id: str | None = None,
+        contact_id: str | None = None,
+        company_id: str | None = None,
+        deal_id: str | None = None,
     ) -> int:
         stmt = select(func.count()).select_from(Task).where(Task.organization_id == organization_id)
         if status:
             stmt = stmt.where(Task.status == status)
         if priority:
             stmt = stmt.where(Task.priority == priority)
+        for column, value in (
+            (Task.lead_id, lead_id),
+            (Task.contact_id, contact_id),
+            (Task.company_id, company_id),
+            (Task.deal_id, deal_id),
+        ):
+            if value:
+                stmt = stmt.where(column == value)
         if search and search.strip():
             pattern = f"%{search.strip()}%"
             stmt = stmt.where(Task.title.ilike(pattern) | Task.description.ilike(pattern))

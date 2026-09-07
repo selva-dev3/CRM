@@ -9,9 +9,12 @@ from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, ConflictError, NotFoundError
+from app.core.logging import get_logger
 from app.repositories.payment_repository import InvoicePaymentSummaryRow, PaymentRepository
 from app.schemas.crm_schemas import ManualPaymentCreate
 from app.services.sales_totals import decimal_value
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -84,8 +87,8 @@ def payment_detail_to_dict(row: tuple) -> dict[str, object]:
 
 
 def eligible_invoice_to_dict(row: tuple) -> dict[str, object]:
-    invoice, company_name, contact_name, _contact_email = row
-    balance = calculate_payment_balance(invoice.amount, invoice.paid_amount)
+    invoice, company_name, contact_name, _contact_email, paid_amount = row
+    balance = calculate_payment_balance(invoice.amount, paid_amount)
     return {
         "id": invoice.id,
         "invoice_number": invoice.invoice_number,
@@ -307,6 +310,54 @@ class PaymentService:
             db, payment_id=payment_id, organization_id=organization_id
         )
         return payment_detail_to_dict(row) if row else None
+
+    async def reconcile_invoice(
+        self,
+        db: AsyncSession,
+        *,
+        invoice_id: str,
+        organization_id: str,
+    ) -> bool:
+        """Repair a persisted invoice aggregate from successful payment rows."""
+        try:
+            invoice = await self.repository.lock_invoice(
+                db, invoice_id=invoice_id, organization_id=organization_id
+            )
+            if invoice is None:
+                await db.rollback()
+                return False
+            paid = await self.repository.sum_succeeded(
+                db, invoice_id=invoice.id, organization_id=organization_id
+            )
+            balance = calculate_payment_balance(invoice.amount, paid)
+            old_paid = decimal_value(invoice.paid_amount)
+            old_status = invoice.payment_status
+            if old_paid == balance.paid_amount and old_status == balance.payment_status:
+                await db.rollback()
+                return False
+            invoice.paid_amount = balance.paid_amount
+            invoice.payment_status = balance.payment_status
+            await self.repository.record_reconciliation_audit(
+                db,
+                invoice=invoice,
+                old_paid_amount=old_paid,
+                old_payment_status=old_status,
+            )
+            await db.commit()
+            logger.info(
+                "Invoice payment aggregate reconciled invoice_id=%s organization_id=%s",
+                invoice.id,
+                organization_id,
+            )
+            return True
+        except Exception:
+            await db.rollback()
+            logger.exception(
+                "Invoice payment reconciliation failed invoice_id=%s organization_id=%s",
+                invoice_id,
+                organization_id,
+            )
+            raise
 
 
 payment_service = PaymentService()

@@ -621,6 +621,9 @@ class LeadService:
                 )
             company_repository = CompanyRepository()
             contact_repository = ContactRepository()
+            # Serialize all organization-scoped company/contact creation paths so
+            # concurrent manual creation and lead conversion cannot race duplicates.
+            await company_repository.lock_organization(db, organization_id)
             company = (
                 companies[0]
                 if companies
@@ -645,7 +648,7 @@ class LeadService:
                         "id": str(uuid.uuid4()),
                         "organization_id": organization_id,
                         "name": lead.contact_name.strip(),
-                        "email": lead.email.strip(),
+                        "email": lead.email.strip().casefold(),
                         "phone": lead.phone,
                         "position": lead.title,
                         "company_id": company.id,
@@ -1013,7 +1016,10 @@ class LeadService:
         lead = await self.require_lead(db, lead_id, organization_id=organization_id)
         lead_tag = f"[Lead:{lead_id}]"
         emails = await self.repository.list_emails(
-            db, organization_id=lead.organization_id, lead_tag=lead_tag
+            db,
+            organization_id=lead.organization_id,
+            lead_id=lead.id,
+            lead_tag=lead_tag,
         )
         return [
             {
@@ -1021,7 +1027,12 @@ class LeadService:
                 "from_email": email.from_email,
                 "to": [email.to_email],
                 "subject": email.subject,
-                "sent_at": str(email.sent_at),
+                "body": email.body_text,
+                "status": email.status,
+                "sent_at": email.sent_at.isoformat() if email.sent_at else None,
+                "provider_message_id": email.provider_message_id,
+                "failure_reason": email.failure_reason,
+                "created_at": email.created_at.isoformat() if email.created_at else None,
             }
             for email in emails
         ]
@@ -1033,31 +1044,21 @@ class LeadService:
         payload: EmailSendRequest,
         *,
         organization_id: str,
+        idempotency_key: str | None = None,
     ) -> dict:
         lead = await self.require_lead(db, lead_id, organization_id=organization_id)
         to_addr = payload.to[0] if payload.to else lead.email
-        lead_tag = f"[Lead:{lead_id}]"
-        raw_body = payload.body or ""
-        tagged_body = f"{raw_body}\n{lead_tag}" if raw_body else lead_tag
+        from app.services.email_domain_service import email_domain_service
 
-        email = await self.repository.create_email(
+        return await email_domain_service.queue_email(
             db,
             organization_id=lead.organization_id,
-            from_email="sales@enterprise-crm.com",
             to_email=str(to_addr),
             subject=payload.subject,
-            body_text=tagged_body,
-            status="sent",
+            body=payload.body or "",
+            idempotency_key=idempotency_key,
+            lead_id=lead.id,
         )
-        await self._commit(db, "Failed to send email")
-        await db.refresh(email)
-        return {
-            "id": email.id,
-            "from_email": email.from_email,
-            "to": [email.to_email],
-            "subject": email.subject,
-            "sent_at": str(email.sent_at),
-        }
 
     async def get_calls(
         self, db: AsyncSession, lead_id: str, *, organization_id: str
@@ -1065,7 +1066,7 @@ class LeadService:
         lead = await self.require_lead(db, lead_id, organization_id=organization_id)
         lead_tag = f"[Lead:{lead_id}]"
         calls = await self.repository.list_calls(
-            db, organization_id=lead.organization_id, lead_tag=lead_tag
+            db, organization_id=lead.organization_id, lead_id=lead_id, lead_tag=lead_tag
         )
         output = []
         for call in calls:
@@ -1075,7 +1076,8 @@ class LeadService:
             output.append(
                 {
                     "id": call.id,
-                    "contact_id": lead_id,
+                    "contact_id": call.contact_id,
+                    "lead_id": lead_id,
                     "call_type": call.call_type,
                     "duration_seconds": call.duration_seconds,
                     "notes": clean_notes if clean_notes else None,
@@ -1093,41 +1095,21 @@ class LeadService:
         organization_id: str,
     ) -> dict:
         lead = await self.require_lead(db, lead_id, organization_id=organization_id)
-        if not lead.email:
-            raise APIException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                message="Lead email is required before logging a call",
-            )
-        contact_id = await self.repository.get_contact_id_by_email(
-            db, lead.email, organization_id=organization_id
-        )
-        if not contact_id:
-            contact = await self.repository.create_contact(
-                db,
-                name=lead.contact_name or "Unknown Lead",
-                email=lead.email,
-                organization_id=lead.organization_id,
-            )
-            await db.flush()
-            contact_id = contact.id
-
-        lead_tag = f"[Lead:{lead_id}]"
-        raw_notes = payload.notes or ""
-        tagged_notes = f"{raw_notes}\n{lead_tag}" if raw_notes else lead_tag
-
         call = await self.repository.create_call(
             db,
             organization_id=lead.organization_id,
-            contact_id=contact_id,
+            contact_id=payload.contact_id,
+            lead_id=lead.id,
             call_type=payload.call_type or "Outbound",
             duration_seconds=payload.duration_seconds or 0,
-            notes=tagged_notes,
+            notes=payload.notes,
         )
         await self._commit(db, "Failed to log call")
         await db.refresh(call)
         return {
             "id": call.id,
-            "contact_id": lead_id,
+            "contact_id": call.contact_id,
+            "lead_id": lead_id,
             "call_type": call.call_type,
             "duration_seconds": call.duration_seconds,
             "notes": payload.notes,
