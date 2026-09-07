@@ -1035,6 +1035,12 @@ class ZapierConnectPayload(BaseModel):
     events: list[str] | None = None
 
 
+class MailchimpConnectPayload(BaseModel):
+    api_key: str = Field(min_length=20, max_length=255)
+    server_prefix: str = Field(pattern=r"^[a-z]{2}[0-9]+$")
+    audience_id: str = Field(min_length=1, max_length=100)
+
+
 # 22. AI Suite Schemas
 class AIScoreResponse(BaseModel):
     score: float

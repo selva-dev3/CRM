@@ -1,14 +1,18 @@
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, Query
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, get_current_user_optional, require_permission
+from app.core.config import settings
+from app.core.errors import APIException
 from app.db.session import get_db
 from app.models import User
 from app.schemas.crm_schemas import (
     IntegrationStatus,
+    MailchimpConnectPayload,
     MessageResponse,
     SlackConfigResponse,
     SlackConnectRequest,
@@ -20,6 +24,7 @@ from app.schemas.crm_schemas import (
 from app.services.integration_service import integration_service
 
 router = APIRouter()
+oauth_router = APIRouter()
 
 
 class ZapierEventPayload(BaseModel):
@@ -38,6 +43,33 @@ class OAuthCallbackPayload(BaseModel):
 
 class SyncRetryPayload(BaseModel):
     job_id: str | None = "job-1"
+
+
+@router.get(
+    "/google/connect",
+    summary="Start Google Calendar OAuth authorization",
+    dependencies=[Depends(require_permission("integrations:manage"))],
+)
+async def connect_google(current_user: User = Depends(get_current_user)):
+    return await integration_service.start_oauth("google", current_user)
+
+
+@router.get(
+    "/hubspot/connect",
+    summary="Start HubSpot OAuth authorization",
+    dependencies=[Depends(require_permission("integrations:manage"))],
+)
+async def connect_hubspot(current_user: User = Depends(get_current_user)):
+    return await integration_service.start_oauth("hubspot", current_user)
+
+
+@router.get(
+    "/slack/oauth/connect",
+    summary="Start Slack OAuth authorization",
+    dependencies=[Depends(require_permission("integrations:manage"))],
+)
+async def connect_slack_oauth(current_user: User = Depends(get_current_user)):
+    return await integration_service.start_oauth("slack", current_user)
 
 
 @router.get(
@@ -62,6 +94,32 @@ async def get_zapier_config(
     current_user: User | None = Depends(get_current_user_optional),
 ):
     return await integration_service.get_zapier_config(db, current_user)
+
+
+@router.post(
+    "/mailchimp/connect",
+    response_model=MessageResponse,
+    summary="Connect Mailchimp audience",
+    dependencies=[Depends(require_permission("integrations:manage"))],
+)
+async def connect_mailchimp(
+    payload: MailchimpConnectPayload,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await integration_service.connect_mailchimp(db, payload, current_user)
+
+
+@router.delete(
+    "/mailchimp",
+    response_model=MessageResponse,
+    summary="Disconnect Mailchimp audience",
+    dependencies=[Depends(require_permission("integrations:manage"))],
+)
+async def delete_mailchimp(
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    return await integration_service.disconnect_mailchimp(db, current_user)
 
 
 @router.post(
@@ -233,18 +291,70 @@ async def send_slack_notification(
     return await integration_service.send_slack_notification(db, payload, current_user)
 
 
-@router.post(
+def _oauth_result_url(provider: str, status_value: str) -> str:
+    from urllib.parse import urlencode
+
+    return f"{settings.frontend_base_url}/integrations?{urlencode({'integration': provider, 'status': status_value})}"
+
+
+@oauth_router.get(
     "/google/callback",
-    response_model=MessageResponse,
-    summary="Google OAuth callback code authorization handler",
-    dependencies=[Depends(require_permission("integrations:manage"))],
+    include_in_schema=True,
+    summary="Complete Google Calendar OAuth authorization",
 )
 async def google_oauth_callback(
-    payload: OAuthCallbackPayload | None = Body(None),
     code: str | None = Query(None),
+    state: str | None = Query(None),
+    error: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
-    return await integration_service.google_oauth_callback()
+    if error or not code or not state:
+        return RedirectResponse(_oauth_result_url("google-calendar", "error"))
+    try:
+        await integration_service.complete_oauth(db, "google", code, state)
+    except APIException:
+        return RedirectResponse(_oauth_result_url("google-calendar", "error"))
+    return RedirectResponse(_oauth_result_url("google-calendar", "connected"))
+
+
+@oauth_router.get(
+    "/hubspot/callback",
+    include_in_schema=True,
+    summary="Complete HubSpot OAuth authorization",
+)
+async def hubspot_oauth_callback(
+    code: str | None = Query(None),
+    state: str | None = Query(None),
+    error: str | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    if error or not code or not state:
+        return RedirectResponse(_oauth_result_url("hubspot", "error"))
+    try:
+        await integration_service.complete_oauth(db, "hubspot", code, state)
+    except APIException:
+        return RedirectResponse(_oauth_result_url("hubspot", "error"))
+    return RedirectResponse(_oauth_result_url("hubspot", "connected"))
+
+
+@oauth_router.get(
+    "/slack/callback",
+    include_in_schema=True,
+    summary="Complete Slack OAuth authorization",
+)
+async def slack_oauth_callback(
+    code: str | None = Query(None),
+    state: str | None = Query(None),
+    error: str | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    if error or not code or not state:
+        return RedirectResponse(_oauth_result_url("slack-sync", "error"))
+    try:
+        await integration_service.complete_oauth(db, "slack", code, state)
+    except APIException:
+        return RedirectResponse(_oauth_result_url("slack-sync", "error"))
+    return RedirectResponse(_oauth_result_url("slack-sync", "connected"))
 
 
 @router.post(

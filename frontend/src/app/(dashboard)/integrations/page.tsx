@@ -22,6 +22,8 @@ import {
   disconnectIntegrationApi,
   connectZapierApi,
   deleteZapierApi,
+  connectMailchimpApi,
+  deleteMailchimpApi,
   connectSlackApi,
   deleteSlackApi,
   testSlackConnectionApi,
@@ -45,7 +47,7 @@ interface AppIntegration {
 
 const APPS: AppIntegration[] = [
   {
-    id: 'slack',
+    id: 'slack-sync',
     name: 'Slack Sync',
     category: 'Communication',
     description: 'Post lead updates & high-value deal notifications directly to Slack channels.',
@@ -97,6 +99,9 @@ export default function IntegrationsPage() {
   const [loadingAppId, setLoadingAppId] = useState<string | null>(null);
   const [slackWebhookUrl, setSlackWebhookUrl] = useState('');
   const [zapierWebhookUrl, setZapierWebhookUrl] = useState('');
+  const [mailchimpApiKey, setMailchimpApiKey] = useState('');
+  const [mailchimpServerPrefix, setMailchimpServerPrefix] = useState('');
+  const [mailchimpAudienceId, setMailchimpAudienceId] = useState('');
   const [slackEvents, setSlackEvents] = useState<string[]>([]);
   const [slackConnected, setSlackConnected] = useState(false);
   const [slackTesting, setSlackTesting] = useState(false);
@@ -163,6 +168,8 @@ export default function IntegrationsPage() {
         let res: { message: string };
         if (app.id === 'zapier') {
           res = await deleteZapierApi();
+        } else if (app.id === 'mailchimp') {
+          res = await deleteMailchimpApi();
         } else if (app.id === 'slack') {
           res = await deleteSlackApi();
           setSlackConnected(false);
@@ -195,8 +202,23 @@ export default function IntegrationsPage() {
             return;
           }
           res = await connectZapierApi(zapierWebhookUrl.trim());
+        } else if (app.id === 'mailchimp') {
+          if (!mailchimpApiKey.trim() || !mailchimpServerPrefix.trim() || !mailchimpAudienceId.trim()) {
+            setErrorMessage('Mailchimp API key, server prefix, and audience ID are required.');
+            return;
+          }
+          res = await connectMailchimpApi({
+            api_key: mailchimpApiKey.trim(),
+            server_prefix: mailchimpServerPrefix.trim(),
+            audience_id: mailchimpAudienceId.trim(),
+          });
+          setMailchimpApiKey('');
         } else {
           res = await connectIntegrationApi(app.id);
+        }
+        if (res.auth_url) {
+          window.location.assign(res.auth_url);
+          return;
         }
         setApps((prev) =>
           prev.map((a) => (a.id === app.id ? { ...a, status: 'connected' } : a))
@@ -205,6 +227,43 @@ export default function IntegrationsPage() {
       }
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : `Failed to update integration status for ${app.name}.`);
+    } finally {
+      setLoadingAppId(null);
+    }
+  };
+
+  const handleConnectSlackWebhook = async () => {
+    if (!slackWebhookUrl.trim()) {
+      setErrorMessage('Please enter your Slack incoming webhook URL to connect.');
+      return;
+    }
+    setLoadingAppId('slack-webhook');
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    try {
+      const res = await connectSlackApi(slackWebhookUrl.trim());
+      setSlackConnected(true);
+      setSuccessMessage(res.message || 'Slack webhook connected successfully.');
+      const config = await fetchSlackConfigApi();
+      setSlackEvents(config.events || []);
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to connect Slack webhook.');
+    } finally {
+      setLoadingAppId(null);
+    }
+  };
+
+  const handleDisconnectSlackWebhook = async () => {
+    setLoadingAppId('slack-webhook');
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    try {
+      const res = await deleteSlackApi();
+      setSlackConnected(false);
+      setSlackEvents([]);
+      setSuccessMessage(res.message || 'Slack webhook disconnected successfully.');
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to disconnect Slack webhook.');
     } finally {
       setLoadingAppId(null);
     }
@@ -415,13 +474,39 @@ export default function IntegrationsPage() {
                       className="mt-3 h-8 font-mono text-[11px]"
                     />
                   )}
+                  {app.id === 'mailchimp' && (
+                    <div className="mt-3 space-y-2">
+                      <Input
+                        type="password"
+                        placeholder="Mailchimp API key"
+                        value={mailchimpApiKey}
+                        onChange={(e) => setMailchimpApiKey(e.target.value)}
+                        disabled={app.status === 'connected'}
+                        className="h-8 font-mono text-[11px]"
+                      />
+                      <Input
+                        placeholder="Server prefix (for example, us7)"
+                        value={mailchimpServerPrefix}
+                        onChange={(e) => setMailchimpServerPrefix(e.target.value)}
+                        disabled={app.status === 'connected'}
+                        className="h-8 font-mono text-[11px]"
+                      />
+                      <Input
+                        placeholder="Audience ID"
+                        value={mailchimpAudienceId}
+                        onChange={(e) => setMailchimpAudienceId(e.target.value)}
+                        disabled={app.status === 'connected'}
+                        className="h-8 font-mono text-[11px]"
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
 
               <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
                 <span className="text-[10px] font-semibold text-slate-400">{app.category}</span>
                 <div className="flex items-center gap-1.5">
-                  {app.status === 'connected' && (
+                  {app.status === 'connected' && app.id === 'zapier' && (
                     <Button
                       size="sm"
                       variant="ghost"
@@ -489,6 +574,17 @@ export default function IntegrationsPage() {
           <p className="text-[11px] text-slate-500">
             Create an Incoming Webhook in your Slack workspace and paste the URL here. It is stored server-side and never exposed in logs.
           </p>
+          {!slackConnected && (
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleConnectSlackWebhook}
+              disabled={loadingAppId === 'slack-webhook'}
+              className="h-8 text-xs font-semibold cursor-pointer bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              {loadingAppId === 'slack-webhook' ? 'Connecting...' : 'Connect Webhook'}
+            </Button>
+          )}
         </div>
 
         {slackConnected && (
@@ -532,6 +628,16 @@ export default function IntegrationsPage() {
                 className="h-8 text-xs font-semibold cursor-pointer border-slate-300"
               >
                 {slackTesting ? 'Sending test...' : 'Send Test Message'}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={handleDisconnectSlackWebhook}
+                disabled={loadingAppId === 'slack-webhook'}
+                className="h-8 text-xs font-semibold cursor-pointer border-rose-200 text-rose-600 hover:bg-rose-50"
+              >
+                {loadingAppId === 'slack-webhook' ? 'Disconnecting...' : 'Disconnect Webhook'}
               </Button>
             </div>
           </>

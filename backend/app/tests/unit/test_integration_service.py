@@ -10,6 +10,7 @@ from app.core.errors import APIException
 from app.models import Integration
 from app.repositories.integration_repository import IntegrationRepository
 from app.schemas.crm_schemas import (
+    MailchimpConnectPayload,
     SlackConnectRequest,
     SlackEventPayload,
     SlackEventsUpdateRequest,
@@ -102,6 +103,41 @@ async def test_connect_zapier_requires_webhook():
 
     with pytest.raises(APIException):
         await service.connect_zapier(db, payload, None)
+
+
+@pytest.mark.asyncio
+async def test_connect_mailchimp_verifies_and_encrypts_credentials(monkeypatch):
+    integration = _make_integration(name="Mailchimp Campaigns", provider="mailchimp")
+    repo: Any = IntegrationRepository()
+    repo.resolve_org_id = AsyncMock(return_value="org-1")
+    repo.get_by_provider = AsyncMock(return_value=None)
+    repo.create = AsyncMock(return_value=integration)
+    service = IntegrationService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+    async def fake_get(self, url, auth=None):
+        assert url.endswith("/lists/audience-1")
+        assert auth == ("anystring", "mailchimp-key-123456789012345678")
+        return Response()
+
+    monkeypatch.setattr("app.services.integration_service.httpx.AsyncClient.get", fake_get)
+    result = await service.connect_mailchimp(
+        db,
+        MailchimpConnectPayload(
+            api_key="mailchimp-key-123456789012345678",
+            server_prefix="us7",
+            audience_id="audience-1",
+        ),
+        SimpleNamespace(organization_id="org-1"),
+    )
+
+    assert result["status"] == "success"
+    assert integration.credentials.startswith("enc:v1:")
+    assert "mailchimp-key" in service._decrypt_secret(integration.credentials)
 
 
 @pytest.mark.asyncio
@@ -255,6 +291,88 @@ async def test_connect_integration_creates_missing(monkeypatch):
     with pytest.raises(APIException) as exc_info:
         await service.connect_integration(db, "stripe", None)
     assert exc_info.value.status_code == 501
+
+
+@pytest.mark.asyncio
+async def test_start_google_oauth_returns_signed_authorization_url(monkeypatch):
+    monkeypatch.setattr("app.services.integration_service.settings.GOOGLE_OAUTH_CLIENT_ID", "google-id")
+    monkeypatch.setattr("app.services.integration_service.settings.GOOGLE_OAUTH_CLIENT_SECRET", "google-secret")
+    monkeypatch.setattr(
+        "app.services.integration_service.settings.GOOGLE_CALENDAR_REDIRECT_URI",
+        "https://crm.example.com/api/v1/integrations/google/callback",
+    )
+    service = IntegrationService()
+    result = await service.start_oauth(
+        "google", SimpleNamespace(id="user-1", organization_id="org-1")
+    )
+
+    assert result["status"] == "pending"
+    assert "client_id=google-id" in result["auth_url"]
+    assert "state=" in result["auth_url"]
+
+
+@pytest.mark.asyncio
+async def test_complete_oauth_encrypts_tokens_and_scopes_organization(monkeypatch):
+    monkeypatch.setattr("app.services.integration_service.settings.GOOGLE_OAUTH_CLIENT_ID", "google-id")
+    monkeypatch.setattr("app.services.integration_service.settings.GOOGLE_OAUTH_CLIENT_SECRET", "google-secret")
+    monkeypatch.setattr(
+        "app.services.integration_service.settings.GOOGLE_CALENDAR_REDIRECT_URI",
+        "https://crm.example.com/api/v1/integrations/google/callback",
+    )
+    user = SimpleNamespace(id="user-1", organization_id="org-1", is_active=True)
+    integration = _make_integration(
+        name="Google Calendar",
+        provider="google",
+        organization_id="org-1",
+        access_token=None,
+        refresh_token=None,
+        external_id=None,
+    )
+    repo: Any = IntegrationRepository()
+    repo.get_by_provider = AsyncMock(return_value=None)
+    repo.create = AsyncMock(return_value=integration)
+    service = IntegrationService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+    db.get = AsyncMock(return_value=user)
+    state = service._oauth_state("google", user)
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"access_token": "access", "refresh_token": "refresh"}
+
+    async def fake_post(self, url, data=None):
+        return Response()
+
+    monkeypatch.setattr("app.services.integration_service.httpx.AsyncClient.post", fake_post)
+    result = await service.complete_oauth(db, "google", "code", state)
+
+    assert result == "google"
+    assert integration.is_connected is True
+    assert integration.access_token.startswith("enc:v1:")
+    assert integration.refresh_token.startswith("enc:v1:")
+    assert service._decrypt_secret(integration.access_token) == "access"
+    assert service._decrypt_secret(integration.refresh_token) == "refresh"
+    assert integration.organization_id == "org-1"
+
+
+@pytest.mark.asyncio
+async def test_complete_oauth_rejects_state_from_another_organization():
+    service = IntegrationService()
+    state = service._oauth_state(
+        "hubspot", SimpleNamespace(id="user-1", organization_id="org-1")
+    )
+    db = AsyncMock(spec=AsyncSession)
+    db.get = AsyncMock(
+        return_value=SimpleNamespace(id="user-1", organization_id="org-2", is_active=True)
+    )
+
+    with pytest.raises(APIException) as exc_info:
+        await service.complete_oauth(db, "hubspot", "code", state)
+
+    assert exc_info.value.status_code == 403
 
 
 @pytest.mark.asyncio

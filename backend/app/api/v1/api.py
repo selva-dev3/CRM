@@ -186,6 +186,11 @@ api_router.include_router(
     dependencies=[Depends(get_current_user)],
 )
 api_router.include_router(
+    integrations.oauth_router,
+    prefix="/integrations",
+    tags=["23. Integrations Hub"],
+)
+api_router.include_router(
     ai.router, prefix="/ai", tags=["24. AI Sales Suite"], dependencies=[Depends(get_current_user)]
 )
 api_router.include_router(websockets.router, prefix="/ws", tags=["Real-time WebSockets"])
