@@ -14,6 +14,7 @@ const lead = {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe('fetchLeadsApi', () => {
@@ -74,6 +75,28 @@ describe('sendLeadEmailApi', () => {
         method: 'POST',
         headers: expect.objectContaining({ 'Idempotency-Key': 'email-key-1' }),
       }),
+    );
+  });
+
+  it('generates an idempotency key when a caller does not supply one', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 202,
+      headers: new Headers(),
+      json: vi.fn().mockResolvedValue({ id: 'email-1', status: 'Pending' }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue('11111111-1111-4111-8111-111111111111');
+
+    await sendLeadEmailApi('lead-1', {
+      to: ['jane@acme.test'],
+      subject: 'Hello',
+      body: 'Follow up',
+    });
+
+    const request = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(new Headers(request.headers).get('Idempotency-Key')).toBe(
+      '11111111-1111-4111-8111-111111111111',
     );
   });
 });

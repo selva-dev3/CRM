@@ -60,19 +60,10 @@ vi.mock('@/lib/api/users', () => {
       isLoading: false,
       isError: false,
     }),
-    useUserActivitiesQuery: () => ({ data: [], isLoading: false, isError: false }),
-    useUserTeamsQuery: () => ({
-      data: [],
-      isLoading: false,
-      isError: false,
-      refetch: vi.fn(),
-    }),
     useActivateUserMutation: mutation,
     useDeactivateUserMutation: mutation,
     useDeleteUserMutation: mutation,
     useResetUserPasswordAdminMutation: mutation,
-    useAssignUserTeamMutation: mutation,
-    useRemoveUserTeamMutation: mutation,
     useSetUserQuotaMutation: mutation,
   };
 });
@@ -87,7 +78,8 @@ describe('UserDetailPage', () => {
     expect(screen.getByText('Not configured')).toBeInTheDocument();
     expect(screen.getByText('0%')).toBeInTheDocument();
     expect(screen.getByText('$0')).toBeInTheDocument();
-    expect(screen.getByText('No assigned teams')).toBeInTheDocument();
+    expect(screen.queryByText('Assigned Teams & Squads')).not.toBeInTheDocument();
+    expect(screen.queryByText('Activity Timeline')).not.toBeInTheDocument();
 
     expect(container).not.toHaveTextContent(routeUserId);
     expect(container).not.toHaveTextContent(organizationId);

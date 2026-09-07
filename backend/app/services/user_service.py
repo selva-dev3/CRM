@@ -23,6 +23,7 @@ from app.services.s3_service import s3_service
 
 PROTECTED_SUPERADMIN_EMAIL = "superadmin@gmail.com"
 logger = get_logger(__name__)
+ADMIN_ROLE_NAMES = {"admin", "organization admin"}
 
 
 def user_to_dict(user: User) -> dict:
@@ -374,12 +375,19 @@ class UserService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 message=f"Protected user '{PROTECTED_SUPERADMIN_EMAIL}' cannot be deleted",
             )
+        if user.id == current_user.id:
+            raise APIException(
+                status_code=status.HTTP_409_CONFLICT,
+                code="SELF_DEACTIVATION_FORBIDDEN",
+                message="You cannot deactivate your own account",
+            )
+        await self._ensure_not_last_admin(db, user)
         user_name = user.name
         user_email = user.email
-        await self.repository.delete(db, user)
-        await self._commit(db, "Failed to delete user")
+        user.is_active = False
+        await self._commit(db, "Failed to deactivate user")
         return {
-            "message": f"User '{user_name}' ({user_email}) deleted successfully",
+            "message": f"User '{user_name}' ({user_email}) deactivated successfully",
             "user_id": user_id,
             "name": user_name,
             "email": user_email,
@@ -406,6 +414,13 @@ class UserService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 message=f"Protected user '{PROTECTED_SUPERADMIN_EMAIL}' cannot be deactivated",
             )
+        if user.id == current_user.id:
+            raise APIException(
+                status_code=status.HTTP_409_CONFLICT,
+                code="SELF_DEACTIVATION_FORBIDDEN",
+                message="You cannot deactivate your own account",
+            )
+        await self._ensure_not_last_admin(db, user)
         user.is_active = False
         await self._commit(db, "Failed to deactivate user")
         return {
@@ -421,11 +436,19 @@ class UserService:
         self, db: AsyncSession, user_id: str, *, current_user: User
     ) -> list:
         await self._require_same_org_user(db, user_id, current_user)
-        return []
+        raise APIException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            code="USER_ACTIVITY_UNAVAILABLE",
+            message="User-level activity attribution is not available",
+        )
 
     async def get_user_teams(self, db: AsyncSession, user_id: str, *, current_user: User) -> list:
         await self._require_same_org_user(db, user_id, current_user)
-        return []
+        raise APIException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            code="USER_TEAMS_UNAVAILABLE",
+            message="Team membership management is not available",
+        )
 
     async def assign_user_team(
         self,
@@ -437,14 +460,21 @@ class UserService:
         current_user: User,
     ) -> dict:
         await self._require_same_org_user(db, user_id, current_user)
-        name = team_name if team_name else team_id
-        return {"message": f"User assigned to team '{name}' successfully", "status": "success"}
+        raise APIException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            code="USER_TEAMS_UNAVAILABLE",
+            message="Team membership management is not available",
+        )
 
     async def remove_user_team(
         self, db: AsyncSession, *, user_id: str, team_id: str, current_user: User
     ) -> dict:
         await self._require_same_org_user(db, user_id, current_user)
-        return {"message": f"User {user_id} removed from team {team_id}", "status": "success"}
+        raise APIException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            code="USER_TEAMS_UNAVAILABLE",
+            message="Team membership management is not available",
+        )
 
     async def bulk_delete_users(
         self, db: AsyncSession, ids: list[str], *, current_user: User
@@ -457,16 +487,40 @@ class UserService:
             for item in await self.repository.list_by_ids(db, ids)
             if item.organization_id == current_user.organization_id
         ]
-        deleted_count = 0
-        for item in users:
-            if item.email.lower() == PROTECTED_SUPERADMIN_EMAIL:
-                continue
-            await self.repository.delete(db, item)
-            deleted_count += 1
-        await self._commit(db, "Failed to bulk delete users")
+        candidates = [
+            item
+            for item in users
+            if item.is_active
+            and item.email.lower() != PROTECTED_SUPERADMIN_EMAIL
+            and item.id != current_user.id
+        ]
+        active_users = await self.repository.lock_active_by_org(
+            db, current_user.organization_id
+        )
+        role_values = {item.role for item in active_users if item.role}
+        role_map = await self.repository.role_name_map(db, role_values)
+
+        def is_admin(item: User) -> bool:
+            role_name = role_map.get(item.role, item.role or "")
+            return role_name.strip().lower() in ADMIN_ROLE_NAMES
+
+        selected_ids = {item.id for item in candidates}
+        remaining_admins = [
+            item for item in active_users if is_admin(item) and item.id not in selected_ids
+        ]
+        if not remaining_admins:
+            admin_to_keep = next((item for item in candidates if is_admin(item)), None)
+            if admin_to_keep is not None:
+                candidates.remove(admin_to_keep)
+
+        deactivated_count = 0
+        for item in candidates:
+            item.is_active = False
+            deactivated_count += 1
+        await self._commit(db, "Failed to bulk deactivate users")
         return {
-            "affected_count": deleted_count,
-            "message": "Users deleted successfully (Protected users skipped)",
+            "affected_count": deactivated_count,
+            "message": "Users deactivated successfully (protected users skipped)",
         }
 
     async def get_user_effective_permissions(
@@ -534,7 +588,29 @@ class UserService:
         self, db: AsyncSession, user_id: str, *, current_user: User
     ) -> dict:
         await self._require_same_org_user(db, user_id, current_user)
-        return {"user_id": user_id, "win_rate": 0.0, "avg_deal_size": 0.0, "calls_made": 0}
+        raise APIException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            code="USER_SCORECARD_UNAVAILABLE",
+            message="User scorecards are unavailable until all activities are attributed to users",
+        )
+
+    async def _ensure_not_last_admin(self, db: AsyncSession, user: User) -> None:
+        if not user.is_active:
+            return
+        active_users = await self.repository.lock_active_by_org(db, user.organization_id)
+        role_values = {item.role for item in active_users if item.role}
+        role_map = await self.repository.role_name_map(db, role_values)
+
+        def is_admin(item: User) -> bool:
+            role_name = role_map.get(item.role, item.role or "")
+            return role_name.strip().lower() in ADMIN_ROLE_NAMES
+
+        if is_admin(user) and sum(1 for item in active_users if is_admin(item)) <= 1:
+            raise APIException(
+                status_code=status.HTTP_409_CONFLICT,
+                code="LAST_ADMIN_DEACTIVATION_FORBIDDEN",
+                message="The organization's last active administrator cannot be deactivated",
+            )
 
 
 user_service = UserService()

@@ -38,7 +38,30 @@ class DashboardRepository:
         )
         return result.scalar() or 0
 
-    async def financial_kpis(self, db: AsyncSession, organization_id: str) -> dict[str, float | int]:
+    async def financial_kpis(
+        self,
+        db: AsyncSession,
+        organization_id: str,
+        *,
+        currency: str,
+        start_at: datetime | None = None,
+        end_at: datetime | None = None,
+    ) -> dict[str, float | int]:
+        quote_filters = [
+            Quote.organization_id == organization_id,
+            func.upper(Quote.currency) == currency,
+        ]
+        invoice_filters = [
+            Invoice.organization_id == organization_id,
+            Invoice.status != "Cancelled",
+            func.upper(Invoice.currency) == currency,
+        ]
+        if start_at is not None:
+            quote_filters.append(Quote.created_at >= start_at)
+            invoice_filters.append(Invoice.created_at >= start_at)
+        if end_at is not None:
+            quote_filters.append(Quote.created_at < end_at)
+            invoice_filters.append(Invoice.created_at < end_at)
         quote_row = (
             await db.execute(
                 select(
@@ -54,7 +77,7 @@ class DashboardRepository:
                         ),
                         0,
                     ),
-                ).where(Quote.organization_id == organization_id)
+                ).where(*quote_filters)
             )
         ).one()
 
@@ -120,10 +143,7 @@ class DashboardRepository:
                     ),
                 )
                 .outerjoin(paid, paid.c.invoice_id == Invoice.id)
-                .where(
-                    Invoice.organization_id == organization_id,
-                    Invoice.status != "Cancelled",
-                )
+                .where(*invoice_filters)
             )
         ).one()
         delivered_quotes = int(quote_row[3] or 0)

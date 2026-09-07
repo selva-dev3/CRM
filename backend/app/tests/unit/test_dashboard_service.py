@@ -30,6 +30,46 @@ FINANCIAL_KPIS = {
 }
 
 
+class _AggregateResult:
+    def __init__(self, row):
+        self.row = row
+
+    def one(self):
+        return self.row
+
+
+@pytest.mark.asyncio
+async def test_financial_kpis_query_is_tenant_currency_and_date_scoped():
+    db = AsyncMock(spec=AsyncSession)
+    db.execute.side_effect = [
+        _AggregateResult((0, 0, 0, 0)),
+        _AggregateResult((0, 0, 0, 0, 0, 0, 0)),
+    ]
+    start_at = datetime(2026, 1, 1, tzinfo=UTC)
+    end_at = datetime(2026, 2, 1, tzinfo=UTC)
+
+    await DashboardRepository().financial_kpis(
+        db,
+        "org-1",
+        currency="INR",
+        start_at=start_at,
+        end_at=end_at,
+    )
+
+    quote_statement = db.execute.await_args_list[0].args[0]
+    invoice_statement = db.execute.await_args_list[1].args[0]
+    quote_sql = str(quote_statement)
+    invoice_sql = str(invoice_statement)
+    assert "upper(quotes.currency)" in quote_sql
+    assert "quotes.created_at >=" in quote_sql and "quotes.created_at <" in quote_sql
+    assert "upper(invoices.currency)" in invoice_sql
+    assert "invoices.created_at >=" in invoice_sql and "invoices.created_at <" in invoice_sql
+    assert "org-1" in quote_statement.compile().params.values()
+    assert "INR" in quote_statement.compile().params.values()
+    assert "org-1" in invoice_statement.compile().params.values()
+    assert "INR" in invoice_statement.compile().params.values()
+
+
 def _service_with(
     repo: DashboardRepository,
     setting_repo: SettingRepository,
@@ -72,6 +112,47 @@ async def test_get_kpis_computes_win_rate():
     assert result.currency == "INR"
     assert result.locale == "en-IN"
     repo.count_leads.assert_awaited_once_with(db, "org-1")
+    repo.financial_kpis.assert_awaited_once_with(
+        db,
+        "org-1",
+        currency="INR",
+        start_at=None,
+        end_at=None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_kpis_scopes_financial_values_to_currency_and_date_range():
+    repo: Any = DashboardRepository()
+    repo.count_leads = AsyncMock(return_value=0)
+    repo.sum_pipeline_deals = AsyncMock(return_value=0.0)
+    repo.sum_won_deals = AsyncMock(return_value=0.0)
+    repo.count_closed_deals = AsyncMock(return_value=0)
+    repo.count_won_deals = AsyncMock(return_value=0)
+    repo.avg_lead_score = AsyncMock(return_value=0.0)
+    repo.count_scored_leads = AsyncMock(return_value=0)
+    repo.financial_kpis = AsyncMock(return_value=FINANCIAL_KPIS)
+    repo.get_organization_currency_locale = AsyncMock(return_value=("EUR", "de-DE"))
+    repo.recent_leads = AsyncMock(return_value=[])
+    service = _service_with(repo, SettingRepository())
+    start_at = datetime(2026, 1, 1, tzinfo=UTC)
+    end_at = datetime(2026, 2, 1, tzinfo=UTC)
+    db = AsyncMock(spec=AsyncSession)
+
+    await service.get_kpis(
+        db,
+        "org-1",
+        start_at=start_at,
+        end_at=end_at,
+    )
+
+    repo.financial_kpis.assert_awaited_once_with(
+        db,
+        "org-1",
+        currency="EUR",
+        start_at=start_at,
+        end_at=end_at,
+    )
 
 
 @pytest.mark.asyncio

@@ -1,11 +1,12 @@
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import ForbiddenError, NotFoundError
+from app.core.errors import APIException, ForbiddenError, NotFoundError
 from app.models import Organization, OrganizationSubscription, SubscriptionPlan, User
 from app.repositories.organization_repository import OrganizationRepository
 from app.services.organization_service import OrganizationDomainService, org_to_dict
@@ -275,3 +276,64 @@ def test_org_to_dict_applies_defaults():
     assert org_to_dict(org)["timezone"] == "Asia/Kolkata"
     assert org_to_dict(org)["currency"] == "INR"
     assert org_to_dict(org)["members_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_domain_listing_never_fabricates_dns_verification():
+    org = _make_org(domain="crm.acme.example")
+    repo: Any = OrganizationRepository()
+    repo.get_by_id = AsyncMock(return_value=org)
+    service = _service_with(repo)
+
+    result = await service.list_organization_domains(
+        AsyncMock(spec=AsyncSession), _actor()
+    )
+
+    assert result == [
+        {
+            "id": "domain:org-1",
+            "domain": "crm.acme.example",
+            "status": "pending",
+            "verified_at": None,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_domain_verification_is_explicitly_unavailable():
+    service = _service_with(OrganizationRepository())
+
+    with pytest.raises(APIException) as exc_info:
+        await service.verify_domain(
+            AsyncMock(spec=AsyncSession),
+            domain="crm.acme.example",
+            current_user=_actor(),
+        )
+
+    assert exc_info.value.code == "DOMAIN_VERIFICATION_UNAVAILABLE"
+
+
+@pytest.mark.asyncio
+async def test_audit_log_does_not_fabricate_actor_or_ip_address():
+    org = _make_org()
+    repo: Any = OrganizationRepository()
+    repo.get_by_id = AsyncMock(return_value=org)
+    repo.list_audit_logs = AsyncMock(
+        return_value=[
+            SimpleNamespace(
+                id="audit-1",
+                action="organization.created",
+                user_id=None,
+                ip_address=None,
+                created_at=datetime(2026, 8, 1, tzinfo=UTC),
+            )
+        ]
+    )
+    service = _service_with(repo)
+
+    result = await service.get_organization_audit_logs(
+        AsyncMock(spec=AsyncSession), _actor()
+    )
+
+    assert result[0]["actor"] == "Unknown"
+    assert result[0]["ip"] is None

@@ -3,6 +3,7 @@ from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, NotFoundError
@@ -11,8 +12,28 @@ from app.repositories.user_repository import UserRepository
 from app.schemas.crm_schemas import UserCreate, UserUpdate
 from app.services.user_service import UserService, user_to_dict
 
-VALID_INPUT = "secret"
-EXPECTED_HASHED_VALUE = "hashed-secret"
+VALID_INPUT = "StrongSecret1!"
+EXPECTED_HASHED_VALUE = "hashed-StrongSecret1!"
+
+
+@pytest.mark.parametrize(
+    "password",
+    [
+        "Short1!",
+        "ALLUPPERCASE1!",
+        "alllowercase1!",
+        "NoNumbersHere!",
+        "NoSpecialChar1",
+    ],
+)
+def test_user_create_rejects_weak_passwords(password: str) -> None:
+    with pytest.raises(ValidationError):
+        UserCreate(
+            name="Alex Smith",
+            email="alex@crm.com",
+            role="role-1",
+            password=password,
+        )
 
 
 def _make_user(**overrides) -> User:
@@ -337,6 +358,63 @@ async def test_delete_user_protects_superadmin():
 
 
 @pytest.mark.asyncio
+async def test_delete_user_deactivates_and_preserves_record():
+    target = _make_user(id="user-1", email="member@crm.com")
+    active_admin = _make_user(id="admin", email="admin@crm.com", role="Admin")
+    repo: Any = UserRepository()
+    repo.get_by_id = AsyncMock(return_value=target)
+    repo.lock_active_by_org = AsyncMock(return_value=[target, active_admin])
+    repo.role_name_map = AsyncMock(return_value={})
+    repo.delete = AsyncMock()
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.delete_user(db, target.id, current_user=active_admin)
+
+    assert target.is_active is False
+    assert result["status"] == "success"
+    repo.delete.assert_not_awaited()
+    db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_deactivate_user_rejects_last_active_admin():
+    target = _make_user(id="admin-1", email="admin@crm.com", role="Admin")
+    repo: Any = UserRepository()
+    repo.get_by_id = AsyncMock(return_value=target)
+    repo.lock_active_by_org = AsyncMock(return_value=[target])
+    repo.role_name_map = AsyncMock(return_value={})
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(APIException) as exc_info:
+        await service.deactivate_user(
+            db,
+            target.id,
+            current_user=_make_user(id="manager", role="Sales Manager"),
+        )
+
+    assert exc_info.value.code == "LAST_ADMIN_DEACTIVATION_FORBIDDEN"
+    assert target.is_active is True
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_deactivate_user_rejects_current_user():
+    target = _make_user(id="admin-1", email="admin@crm.com", role="Admin")
+    repo: Any = UserRepository()
+    repo.get_by_id = AsyncMock(return_value=target)
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(APIException) as exc_info:
+        await service.deactivate_user(db, target.id, current_user=target)
+
+    assert exc_info.value.code == "SELF_DEACTIVATION_FORBIDDEN"
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_deactivate_user_protects_superadmin():
     user = _make_user(email="superadmin@gmail.com")
     repo: Any = UserRepository()
@@ -353,13 +431,12 @@ async def test_deactivate_user_protects_superadmin():
 
 @pytest.mark.asyncio
 async def test_bulk_delete_skips_superadmin():
+    regular_user = _make_user(id="u1", email="a@crm.com")
+    protected_user = _make_user(id="u2", email="superadmin@gmail.com")
     repo: Any = UserRepository()
-    repo.list_by_ids = AsyncMock(
-        return_value=[
-            _make_user(id="u1", email="a@crm.com"),
-            _make_user(id="u2", email="superadmin@gmail.com"),
-        ]
-    )
+    repo.list_by_ids = AsyncMock(return_value=[regular_user, protected_user])
+    repo.lock_active_by_org = AsyncMock(return_value=[regular_user, protected_user])
+    repo.role_name_map = AsyncMock(return_value={})
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
@@ -368,6 +445,29 @@ async def test_bulk_delete_skips_superadmin():
     )
 
     assert result["affected_count"] == 1
+    assert regular_user.is_active is False
+    assert protected_user.is_active is True
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_keeps_one_active_admin():
+    first_admin = _make_user(id="admin-1", email="one@crm.com", role="Admin")
+    second_admin = _make_user(id="admin-2", email="two@crm.com", role="Admin")
+    repo: Any = UserRepository()
+    repo.list_by_ids = AsyncMock(return_value=[first_admin, second_admin])
+    repo.lock_active_by_org = AsyncMock(return_value=[first_admin, second_admin])
+    repo.role_name_map = AsyncMock(return_value={})
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.bulk_delete_users(
+        db,
+        [first_admin.id, second_admin.id],
+        current_user=_make_user(id="manager", role="Sales Manager"),
+    )
+
+    assert result["affected_count"] == 1
+    assert sum(user.is_active for user in (first_admin, second_admin)) == 1
 
 
 @pytest.mark.asyncio

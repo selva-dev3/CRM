@@ -3,12 +3,14 @@ import hashlib
 import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import uuid4
 
 import httpx
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import HTTPException, status
 from jose import JWTError, jwt
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -401,6 +403,8 @@ class IntegrationService:
                         "status": "synced",
                         "webhook_url": self._encrypt_secret(webhook_url),
                         "credentials": creds,
+                        "sync_enabled": True,
+                        "last_synced": datetime.now(UTC),
                     },
                 )
             else:
@@ -408,10 +412,10 @@ class IntegrationService:
                 integration.status = "synced"
                 integration.webhook_url = self._encrypt_secret(webhook_url)
                 integration.credentials = creds
+                integration.sync_enabled = True
+                integration.last_synced = datetime.now(UTC)
             await self.repository.commit(db)
             await db.refresh(integration)
-            integration.last_synced = datetime.now(UTC)
-            await self.repository.commit(db)
             return {"message": "Zapier connected successfully.", "status": "success"}
         except APIException:
             raise
@@ -453,37 +457,103 @@ class IntegrationService:
             ) from e
 
     async def trigger_zapier_event(
-        self, db: AsyncSession, payload: Any, current_user: User | None
+        self,
+        db: AsyncSession,
+        payload: Any,
+        current_user: User | None,
+        *,
+        idempotency_key: str | None = None,
     ) -> dict:
         org_id = await self.repository.resolve_org_id(db, current_user)
         integration = await self.repository.get_connected_by_provider(db, org_id, "zapier")
         if integration is None:
             raise APIException(status_code=404, message="Zapier integration is not connected.")
-        webhook_url = self._decrypt_secret(integration.webhook_url)
-        if not webhook_url:
+        if not self._decrypt_secret(integration.webhook_url):
             raise APIException(status_code=400, message="Zapier webhook URL is missing.")
+        configured_events = self._parse_credentials(integration.credentials).get("events", [])
+        if configured_events and payload.event_name not in configured_events:
+            raise APIException(
+                status_code=400,
+                message=f"Zapier event '{payload.event_name}' is disabled.",
+            )
+        event_name = payload.event_name or "crm.event"
+        event_data = payload.payload
         webhook_payload = {
-            "event": payload.event_name,
+            "event": event_name,
             "organization_id": org_id,
-            "timestamp": datetime.utcnow().isoformat(),
-            "data": payload.payload,
+            "timestamp": datetime.now(UTC).isoformat(),
+            "data": event_data,
         }
+
+        def matches_request(delivery: Any) -> bool:
+            stored_payload = delivery.payload if isinstance(delivery.payload, dict) else {}
+            return (
+                delivery.event_name == event_name
+                and stored_payload.get("event") == event_name
+                and stored_payload.get("data") == event_data
+            )
+
+        delivery_key = idempotency_key or str(uuid4())
+        if idempotency_key:
+            existing = await self.repository.get_delivery_by_idempotency_key(
+                db,
+                organization_id=org_id,
+                integration_id=integration.id,
+                idempotency_key=delivery_key,
+            )
+            if existing is not None:
+                if not matches_request(existing):
+                    raise APIException(
+                        status_code=409,
+                        code="INTEGRATION_IDEMPOTENCY_CONFLICT",
+                        message="This idempotency key was already used for another event",
+                    )
+                return {"message": "Zapier event is already queued.", "status": "queued"}
+        await self.repository.queue_delivery(
+            db,
+            data={
+                "organization_id": org_id,
+                "integration_id": integration.id,
+                "provider": "zapier",
+                "event_name": event_name,
+                "payload": webhook_payload,
+                "idempotency_key": delivery_key,
+                "status": "Pending",
+                "next_attempt_at": datetime.now(UTC),
+            },
+        )
+        integration.status = "syncing"
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                response = await client.post(
-                    webhook_url,
-                    json=webhook_payload,
-                    headers={"Content-Type": "application/json"},
-                )
-            response.raise_for_status()
-            integration.last_synced = datetime.utcnow()
-            integration.last_error = None
             await self.repository.commit(db)
-            return {"message": "Zapier event sent successfully.", "status": "success"}
-        except Exception as e:
-            integration.last_error = f"Zapier delivery failed: {type(e).__name__}"
-            await self.repository.commit(db)
-            raise APIException(status_code=500, message="Failed to send Zapier webhook") from e
+        except IntegrityError as exc:
+            await db.rollback()
+            existing = await self.repository.get_delivery_by_idempotency_key(
+                db,
+                organization_id=org_id,
+                integration_id=integration.id,
+                idempotency_key=delivery_key,
+            )
+            if existing is not None:
+                if not matches_request(existing):
+                    raise APIException(
+                        status_code=409,
+                        code="INTEGRATION_IDEMPOTENCY_CONFLICT",
+                        message="This idempotency key was already used for another event",
+                    ) from exc
+                return {"message": "Zapier event is already queued.", "status": "queued"}
+            raise APIException(
+                status_code=503,
+                code="INTEGRATION_DELIVERY_QUEUE_FAILED",
+                message="Zapier event could not be queued",
+            ) from exc
+        except Exception as exc:
+            await db.rollback()
+            raise APIException(
+                status_code=503,
+                code="INTEGRATION_DELIVERY_QUEUE_FAILED",
+                message="Zapier event could not be queued",
+            ) from exc
+        return {"message": "Zapier event queued for delivery.", "status": "queued"}
 
     async def delete_zapier_integration(
         self, db: AsyncSession, current_user: User | None
@@ -550,7 +620,7 @@ class IntegrationService:
         integration.credentials = encrypted_config
         integration.is_connected = True
         integration.status = "authenticated"
-        integration.sync_enabled = True
+        integration.sync_enabled = False
         integration.last_synced = None
         integration.last_error = None
         await self.repository.commit(db)
@@ -829,13 +899,7 @@ class IntegrationService:
         data: dict | None,
         org_id: str,
     ) -> None:
-        """Best-effort automatic Slack notification.
-
-        Fired after a CRM operation commits successfully. Never raises: a Slack
-        failure must not roll back a successfully completed CRM operation.
-        Respects the stored enabled_events and silently skips when Slack is not
-        connected, the webhook is missing, or the event is disabled.
-        """
+        """Durably queue an automatic Slack notification without provider I/O."""
         try:
             integration = await self.repository.get_connected_by_provider(db, org_id, "slack")
             if integration is None:
@@ -860,10 +924,35 @@ class IntegrationService:
                     org_id,
                 )
                 return
-            await self._post_to_slack(db, integration, self._build_slack_text(event_name, data))
+            await self.repository.queue_delivery(
+                db,
+                data={
+                    "organization_id": org_id,
+                    "integration_id": integration.id,
+                    "provider": "slack",
+                    "event_name": event_name,
+                    "payload": {"text": self._build_slack_text(event_name, data)},
+                    "idempotency_key": str(uuid4()),
+                    "status": "Pending",
+                    "next_attempt_at": datetime.now(UTC),
+                },
+            )
+            integration.status = "syncing"
+            try:
+                await self.repository.commit(db)
+            except Exception:
+                await db.rollback()
+                logger.warning(
+                    "Slack event could not be queued event=%s org=%s",
+                    event_name,
+                    org_id,
+                )
         except Exception as e:
             logger.warning(
-                "Slack auto-notification for event '%s' (org %s) failed: %s", event_name, org_id, e
+                "Slack auto-notification queue failed event='%s' org=%s error_type=%s",
+                event_name,
+                org_id,
+                type(e).__name__,
             )
 
     async def disconnect_slack(self, db: AsyncSession, current_user: User | None) -> dict:
@@ -882,12 +971,6 @@ class IntegrationService:
                 entity_id=integration.id,
                 data={"provider": "slack", "organization_id": org_id},
             )
-            await self.notify_slack_event(
-                db,
-                event_name="integration.disconnected",
-                data={"provider": "slack", "organization_id": org_id},
-                org_id=org_id,
-            )
             integration.is_connected = False
             integration.status = "disconnected"
             integration.webhook_url = None
@@ -898,7 +981,7 @@ class IntegrationService:
             integration.external_id = None
             integration.sync_enabled = False
             integration.last_error = None
-            integration.last_synced = datetime.utcnow()
+            integration.last_synced = datetime.now(UTC)
             await self.repository.commit(db)
             await db.refresh(integration)
             return {"message": "Slack integration disconnected successfully.", "status": "success"}

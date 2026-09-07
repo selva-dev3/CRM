@@ -77,8 +77,7 @@ async def test_get_inbox_maps_emails():
 
 
 @pytest.mark.asyncio
-async def test_send_email_creates_row(monkeypatch):
-    monkeypatch.setattr("app.services.email_domain_service.settings.BREVO_API_KEY", "test-key")
+async def test_send_email_queues_pending_row_when_provider_is_configured(monkeypatch):
     org_id = {"value": "org-1"}
 
     async def fake_resolve_valid_org_id(db, current_user):
@@ -88,7 +87,10 @@ async def test_send_email_creates_row(monkeypatch):
         "app.services.email_domain_service.organization_service.resolve_valid_org_id",
         fake_resolve_valid_org_id,
     )
-    email = _make_email()
+    monkeypatch.setattr(
+        "app.services.email_domain_service.settings.BREVO_API_KEY", "test-provider-key"
+    )
+    email = _make_email(status="Pending", sent_at=None)
     repo: Any = EmailRepository()
     repo.create_email = AsyncMock(return_value=email)
     service = EmailDomainService(repository=repo)
@@ -103,7 +105,10 @@ async def test_send_email_creates_row(monkeypatch):
     created = repo.create_email.await_args_list[-1].kwargs["data"]
     assert created["organization_id"] == "org-1"
     assert created["to_email"] == "client@example.com"
+    assert created["status"] == "Pending"
     assert result["id"] == "email-1"
+    assert result["status"] == "Pending"
+    db.commit.assert_awaited_once()
     db.refresh.assert_awaited_once()
 
 
@@ -114,6 +119,29 @@ def test_email_send_request_rejects_blank_content(field):
 
     with pytest.raises(ValidationError):
         EmailSendRequest(**payload)
+
+
+@pytest.mark.asyncio
+async def test_send_email_rejects_unconfigured_provider_without_creating_row(
+    monkeypatch,
+):
+    monkeypatch.setattr("app.services.email_domain_service.settings.BREVO_API_KEY", None)
+    repo: Any = EmailRepository()
+    repo.create_email = AsyncMock()
+    service = EmailDomainService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(APIException) as exc_info:
+        await service.send_email(
+            db,
+            EmailSendRequest(to=["client@example.com"], subject="Hello", body="Hi"),
+            _user(),
+        )
+
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.code == "EMAIL_PROVIDER_NOT_CONFIGURED"
+    repo.create_email.assert_not_awaited()
+    db.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio

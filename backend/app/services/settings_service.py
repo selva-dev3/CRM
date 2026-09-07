@@ -289,7 +289,7 @@ class SettingsService:
                 "id": w.id,
                 "target_url": w.target_url,
                 "events": w.events.split(",") if w.events else [],
-                "is_active": w.is_active,
+                "is_active": False,
             }
             for w in webhooks
         ]
@@ -302,17 +302,12 @@ class SettingsService:
         events: list[str],
         current_user: User | None = None,
     ) -> dict:
-        if not target_url:
-            raise APIException(
-                status_code=status.HTTP_400_BAD_REQUEST, message="Field 'target_url' is required"
-            )
-        events_str = ",".join(events) if isinstance(events, list) else str(events)
-        org_id = await self._resolve_org_id(db, current_user)
-        await self.repository.create_webhook(
-            db, organization_id=org_id, name=target_url, target_url=target_url, events=events_str
+        await self._resolve_org_id(db, current_user)
+        raise APIException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            code="WEBHOOK_DELIVERY_UNAVAILABLE",
+            message="Outgoing webhook delivery is not implemented",
         )
-        await self._commit(db, "Failed to create webhook")
-        return {"message": f"Webhook registered for {target_url}", "status": "success"}
 
     async def delete_webhook(
         self, db: AsyncSession, webhook_id: str, current_user: User

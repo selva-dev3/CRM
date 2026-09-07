@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import NotFoundError
+from app.core.errors import APIException, NotFoundError
 from app.models import User
 from app.repositories.user_repository import UserRepository
 from app.services.user_service import UserService
@@ -106,6 +106,8 @@ async def test_bulk_delete_skips_foreign_org_ids():
 
     repo: Any = UserRepository()
     repo.list_by_ids = AsyncMock(return_value=[same_org, foreign, protected])
+    repo.lock_active_by_org = AsyncMock(return_value=[same_org, protected, _admin()])
+    repo.role_name_map = AsyncMock(return_value={})
     repo.delete = AsyncMock()
     service = UserService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -115,18 +117,21 @@ async def test_bulk_delete_skips_foreign_org_ids():
     )
 
     # Foreign-org id silently ignored; protected superadmin filtered as before.
-    deleted_ids = [call.args[1].id for call in repo.delete.await_args_list]
-    assert deleted_ids == ["u-same"]
+    repo.delete.assert_not_awaited()
+    assert same_org.is_active is False
+    assert foreign.is_active is True
+    assert protected.is_active is True
     assert result["affected_count"] == 1
 
 
 @pytest.mark.asyncio
 async def test_scorecard_allows_same_org():
     service, _ = _service_with_target(_make_user())
-    result = await service.get_user_scorecard(
-        AsyncMock(spec=AsyncSession), "user-1", current_user=_admin()
-    )
-    assert result["user_id"] == "user-1"
+    with pytest.raises(APIException) as exc_info:
+        await service.get_user_scorecard(
+            AsyncMock(spec=AsyncSession), "user-1", current_user=_admin()
+        )
+    assert exc_info.value.code == "USER_SCORECARD_UNAVAILABLE"
 
 
 def _active_org(org_id: str):
@@ -255,6 +260,7 @@ async def test_same_org_mutations_still_work_after_guard():
     """Constraint 5: existing same-organization behavior is preserved."""
     target = _make_user()
     service, repo = _service_with_target(target)
+    repo.lock_active_by_org = AsyncMock(return_value=[target, _admin()])
     repo.delete = AsyncMock()
     db = AsyncMock(spec=AsyncSession)
 

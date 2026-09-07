@@ -439,7 +439,9 @@ async def test_update_quote_cross_tenant_deal_does_not_mutate():
 
 @pytest.mark.asyncio
 async def test_delete_quote_uses_scoped_delete():
-    service, repository, _ = make_service()
+    quote = make_quote(deal_id=None, automatic_deal_id=None)
+    service, repository, _ = make_service(quote=quote)
+    repository.lock_scoped = AsyncMock(return_value=quote)
     repository.delete_scoped = AsyncMock(return_value=True)
     db = AsyncMock(spec=AsyncSession)
 
@@ -454,12 +456,52 @@ async def test_delete_quote_uses_scoped_delete():
 @pytest.mark.asyncio
 async def test_delete_quote_cross_tenant_is_not_found_and_not_committed():
     service, repository, _ = make_service()
-    repository.delete_scoped = AsyncMock(return_value=False)
+    repository.lock_scoped = AsyncMock(return_value=None)
+    repository.delete_scoped = AsyncMock()
     db = AsyncMock(spec=AsyncSession)
 
     with pytest.raises(NotFoundError):
         await service.delete_quote(db, quote_id="foreign-quote", organization_id="org-1")
+    repository.delete_scoped.assert_not_awaited()
     db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "quote",
+    [
+        make_quote(status="Sent", automatic_deal_id=None),
+        make_quote(status="Draft", automatic_deal_id="deal-1"),
+    ],
+)
+async def test_delete_quote_rejects_generated_or_non_draft_quote(quote):
+    service, repository, _ = make_service(quote=quote)
+    repository.lock_scoped = AsyncMock(return_value=quote)
+    repository.delete_scoped = AsyncMock()
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(APIException) as exc_info:
+        await service.delete_quote(db, quote_id=quote.id, organization_id="org-1")
+
+    assert exc_info.value.code == "QUOTE_DELETE_FORBIDDEN"
+    repository.delete_scoped.assert_not_awaited()
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_delete_quote_rejects_invoice_linked_quote():
+    quote = make_quote(deal_id=None, automatic_deal_id=None)
+    service, repository, _ = make_service(quote=quote)
+    repository.lock_scoped = AsyncMock(return_value=quote)
+    repository.get_invoice_reference = AsyncMock(return_value=SimpleNamespace(id="invoice-1"))
+    repository.delete_scoped = AsyncMock()
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(APIException) as exc_info:
+        await service.delete_quote(db, quote_id=quote.id, organization_id="org-1")
+
+    assert exc_info.value.code == "QUOTE_DELETE_FORBIDDEN"
+    repository.delete_scoped.assert_not_awaited()
 
 
 @pytest.mark.asyncio

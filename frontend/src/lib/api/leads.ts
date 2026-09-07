@@ -229,7 +229,7 @@ export async function sendLeadEmailApi(
   idempotencyKey?: string,
 ): Promise<LeadEmailItem> {
   return apiClient.post<LeadEmailItem>(`/leads/${leadId}/emails/send`, payload, {
-    headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+    headers: { 'Idempotency-Key': idempotencyKey ?? crypto.randomUUID() },
   });
 }
 

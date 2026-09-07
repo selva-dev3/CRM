@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   fetchUserActivitiesApi,
+  bulkDeactivateUsersApi,
   fetchUserPerformanceApi,
   fetchUserPermissionsApi,
   fetchUserQuotaApi,
@@ -62,5 +63,21 @@ describe('user detail API requests', () => {
     await expect(fetchUserPermissionsApi('user-1')).resolves.toMatchObject({ permissions: [] });
     await expect(fetchUserActivitiesApi('user-1')).resolves.toEqual([]);
     await expect(fetchUserTeamsApi('user-1')).resolves.toEqual([]);
+  });
+
+  it('uses one backend operation for bulk deactivation', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: vi.fn().mockResolvedValue({ affected_count: 2, message: 'Users deactivated' }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await bulkDeactivateUsersApi(['user-1', 'user-2']);
+
+    const request = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(request.method).toBe('POST');
+    expect(JSON.parse(String(request.body))).toEqual({ ids: ['user-1', 'user-2'] });
   });
 });

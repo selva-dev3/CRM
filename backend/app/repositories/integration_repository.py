@@ -3,7 +3,7 @@ from collections.abc import Sequence
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Integration, User
+from app.models import Integration, IntegrationDelivery, User
 
 
 class IntegrationRepository:
@@ -60,6 +60,29 @@ class IntegrationRepository:
         integration = Integration(**data)
         db.add(integration)
         return integration
+
+    async def queue_delivery(
+        self, db: AsyncSession, *, data: dict
+    ) -> IntegrationDelivery:
+        delivery = IntegrationDelivery(**data)
+        db.add(delivery)
+        return delivery
+
+    async def get_delivery_by_idempotency_key(
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        integration_id: str,
+        idempotency_key: str,
+    ) -> IntegrationDelivery | None:
+        return await db.scalar(
+            select(IntegrationDelivery).where(
+                IntegrationDelivery.organization_id == organization_id,
+                IntegrationDelivery.integration_id == integration_id,
+                IntegrationDelivery.idempotency_key == idempotency_key,
+            )
+        )
 
     async def commit(self, db: AsyncSession) -> None:
         await db.commit()

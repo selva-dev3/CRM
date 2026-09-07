@@ -228,7 +228,7 @@ export interface OrganizationAuditLog {
   action: string;
   actor: string;
   timestamp: string;
-  ip?: string;
+  ip?: string | null;
 }
 
 // 1. GET /api/v1/organizations/current (Get current organization)

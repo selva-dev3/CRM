@@ -9,9 +9,7 @@ const useCreateUserMutationMock = vi.fn();
 const useInviteUsersMutationMock = vi.fn();
 const useActivateUserMutationMock = vi.fn();
 const useDeactivateUserMutationMock = vi.fn();
-const useDeleteUserMutationMock = vi.fn();
-const deactivateUserApiMock = vi.fn();
-const deleteUserApiMock = vi.fn();
+const useBulkDeactivateUsersMutationMock = vi.fn();
 const useCurrentOrganizationQueryMock = vi.fn();
 const createMutateAsyncMock = vi.fn();
 const inviteMutateAsyncMock = vi.fn();
@@ -32,9 +30,7 @@ vi.mock('@/lib/api/users', () => ({
   useInviteUsersMutation: (...args: unknown[]) => useInviteUsersMutationMock(...args),
   useActivateUserMutation: (...args: unknown[]) => useActivateUserMutationMock(...args),
   useDeactivateUserMutation: (...args: unknown[]) => useDeactivateUserMutationMock(...args),
-  useDeleteUserMutation: (...args: unknown[]) => useDeleteUserMutationMock(...args),
-  deactivateUserApi: (...args: unknown[]) => deactivateUserApiMock(...args),
-  deleteUserApi: (...args: unknown[]) => deleteUserApiMock(...args),
+  useBulkDeactivateUsersMutation: (...args: unknown[]) => useBulkDeactivateUsersMutationMock(...args),
 }));
 
 vi.mock('@/lib/api/organizations', () => ({
@@ -75,11 +71,11 @@ beforeEach(() => {
   });
   useUserInvitationsQueryMock.mockReturnValue({ data: [], isLoading: false, isError: false, refetch: vi.fn() });
   useCurrentOrganizationQueryMock.mockReturnValue({ data: undefined, isLoading: false, isError: false });
-  useCreateUserMutationMock.mockReturnValue({ mutateAsync: createMutateAsyncMock });
+  useCreateUserMutationMock.mockReturnValue({ mutateAsync: createMutateAsyncMock, isPending: false });
   useInviteUsersMutationMock.mockReturnValue({ mutateAsync: inviteMutateAsyncMock });
   useActivateUserMutationMock.mockReturnValue({ mutateAsync: vi.fn() });
   useDeactivateUserMutationMock.mockReturnValue({ mutateAsync: vi.fn() });
-  useDeleteUserMutationMock.mockReturnValue({ mutateAsync: vi.fn() });
+  useBulkDeactivateUsersMutationMock.mockReturnValue({ mutateAsync: vi.fn(), isPending: false });
   createMutateAsyncMock.mockReset().mockResolvedValue({
     id: 'u1',
     name: 'Jordan Lee',
@@ -163,7 +159,7 @@ describe('UsersPage invite modal', () => {
 });
 
 describe('UsersPage create user form', () => {
-  it('submits name, email, default password and the selected role id', async () => {
+  it('requires and submits a strong password with the selected role id', async () => {
     const user = userEvent.setup();
     render(<UsersPage />);
 
@@ -173,6 +169,7 @@ describe('UsersPage create user form', () => {
 
     await user.type(screen.getByLabelText(/Full Name/), 'Jordan Lee');
     await user.type(screen.getByLabelText(/Email Address/), 'jordan@crm.com');
+    await user.type(screen.getByLabelText(/^Password/), 'StrongSecret1!');
     await user.selectOptions(screen.getByLabelText(/User Role/), 'role-2');
 
     await user.click(screen.getByRole('button', { name: /Create User Account/ }));
@@ -183,7 +180,7 @@ describe('UsersPage create user form', () => {
     expect(createMutateAsyncMock).toHaveBeenCalledWith({
       name: 'Jordan Lee',
       email: 'jordan@crm.com',
-      password: 'Password123!',
+      password: 'StrongSecret1!',
       role: 'role-2',
     });
     expect(createMutateAsyncMock.mock.calls[0][0]).not.toHaveProperty('organization_id');
@@ -198,10 +195,26 @@ describe('UsersPage create user form', () => {
     await user.click(screen.getByRole('button', { name: /Create User/ }));
     await user.type(screen.getByLabelText(/Full Name/), 'Jordan Lee');
     await user.type(screen.getByLabelText(/Email Address/), 'jordan@crm.com');
+    await user.type(screen.getByLabelText(/^Password/), 'StrongSecret1!');
 
     await user.click(screen.getByRole('button', { name: /Create User Account/ }));
 
     expect(await screen.findByText('Please select a role.')).toBeInTheDocument();
+    expect(createMutateAsyncMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects a password that does not satisfy backend strength rules', async () => {
+    const user = userEvent.setup();
+    render(<UsersPage />);
+
+    await user.click(screen.getByRole('button', { name: /Create User/ }));
+    await user.type(screen.getByLabelText(/Full Name/), 'Jordan Lee');
+    await user.type(screen.getByLabelText(/Email Address/), 'jordan@crm.com');
+    await user.type(screen.getByLabelText(/^Password/), 'alllowercase12');
+    await user.selectOptions(screen.getByLabelText(/User Role/), 'role-2');
+    await user.click(screen.getByRole('button', { name: /Create User Account/ }));
+
+    expect(await screen.findByText(/include uppercase, lowercase, number, and special/)).toBeInTheDocument();
     expect(createMutateAsyncMock).not.toHaveBeenCalled();
   });
 });

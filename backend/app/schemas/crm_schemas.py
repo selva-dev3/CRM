@@ -161,7 +161,20 @@ class UserCreate(BaseModel):
     name: str
     email: EmailStr
     role: str
-    password: str
+    password: str = Field(min_length=12, max_length=72)
+
+    @field_validator("password")
+    @classmethod
+    def validate_password_strength(cls, value: str) -> str:
+        if not any(char.islower() for char in value):
+            raise ValueError("Password must contain a lowercase letter")
+        if not any(char.isupper() for char in value):
+            raise ValueError("Password must contain an uppercase letter")
+        if not any(char.isdigit() for char in value):
+            raise ValueError("Password must contain a number")
+        if not any(not char.isalnum() for char in value):
+            raise ValueError("Password must contain a special character")
+        return value
 
 
 class UserUpdate(BaseModel):

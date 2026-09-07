@@ -129,6 +129,15 @@ class UserRepository:
         )
         return list(result.scalars().all())
 
+    async def lock_active_by_org(self, db: AsyncSession, org_id: str) -> list[User]:
+        result = await db.execute(
+            select(User).where(
+                User.organization_id == org_id,
+                User.is_active.is_(True),
+            ).with_for_update()
+        )
+        return list(result.scalars().all())
+
     async def role_name_map(self, db: AsyncSession, role_ids: set) -> dict:
         role_map: dict = {}
         if role_ids:

@@ -8,7 +8,6 @@ import {
   ShieldCheck, 
   Sliders, 
   ChevronDown, 
-  Trash2, 
   RefreshCw, 
   Sparkles, 
   AlertCircle, 
@@ -32,7 +31,6 @@ import {
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import { DataTable, type DataTableColumn, type TableActionOption } from '@/components/common/data-table';
-import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
 import { PageTabs } from '@/components/common/page-tabs';
 import { PermissionGate } from '@/components/common/permission-gate';
@@ -43,11 +41,9 @@ import {
   useInviteUsersMutation, 
   useActivateUserMutation, 
   useDeactivateUserMutation, 
-  useDeleteUserMutation, 
+  useBulkDeactivateUsersMutation,
   UserItem,
-  UserInvitationItem,
-  deactivateUserApi,
-  deleteUserApi
+  UserInvitationItem
 } from '@/lib/api/users';
 import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
 import { RoleSearchCombobox } from '@/components/features/users/role-search-combobox';
@@ -105,12 +101,11 @@ export default function UsersPage() {
   const inviteUsersMutation = useInviteUsersMutation();
   const activateUserMutation = useActivateUserMutation();
   const deactivateUserMutation = useDeactivateUserMutation();
-  const deleteUserMutation = useDeleteUserMutation();
+  const bulkDeactivateUsersMutation = useBulkDeactivateUsersMutation();
 
   // Modal & Notification States
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [userToDelete, setUserToDelete] = useState<UserItem | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -167,14 +162,6 @@ export default function UsersPage() {
     resetCreateForm();
   };
 
-  const handleAutofillCreate = () => {
-    const randomSuffix = Math.floor(100 + Math.random() * 900);
-    setCreateName(`User ${randomSuffix}`);
-    setCreateEmail(`user${randomSuffix}@crmcompany.com`);
-    setCreatePassword('Password123!');
-    setCreateRole('');
-  };
-
   const handleCreateUserSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!createEmail.trim() || !createName.trim()) {
@@ -185,12 +172,24 @@ export default function UsersPage() {
       setErrorMessage('Please select a role.');
       return;
     }
+    if (
+      createPassword.length < 12
+      || !/[a-z]/.test(createPassword)
+      || !/[A-Z]/.test(createPassword)
+      || !/\d/.test(createPassword)
+      || !/[^A-Za-z0-9]/.test(createPassword)
+    ) {
+      setErrorMessage(
+        'Password must be at least 12 characters and include uppercase, lowercase, number, and special characters.',
+      );
+      return;
+    }
 
     try {
       const newUser = await createUserMutation.mutateAsync({
         name: createName.trim(),
         email: createEmail.trim(),
-        password: createPassword || 'Password123!',
+        password: createPassword,
         role: createRole,
       });
 
@@ -263,20 +262,6 @@ export default function UsersPage() {
     }
   };
 
-  const handleConfirmDelete = async () => {
-    if (!userToDelete) return;
-    try {
-      await deleteUserMutation.mutateAsync(userToDelete.id);
-      await queryClient.invalidateQueries({ queryKey: ['users'] });
-      await refetch();
-      setSuccessMessage(`User "${userToDelete.name || userToDelete.email}" deleted successfully.`);
-      setUserToDelete(null);
-      setTimeout(() => setSuccessMessage(null), 4000);
-    } catch (err: unknown) {
-      setErrorMessage(getErrorMessage(err, 'Failed to delete user.'));
-    }
-  };
-
   // Bulk Selection Handlers
   const handleToggleRow = useCallback((user: UserItem, checked: boolean) => {
     setSelectedIds((prev) => {
@@ -304,32 +289,14 @@ export default function UsersPage() {
   const handleBulkDeactivate = async () => {
     if (selectedIds.size === 0) return;
     try {
-      for (const id of Array.from(selectedIds)) {
-        await deactivateUserApi(id).catch(() => null);
-      }
+      const result = await bulkDeactivateUsersMutation.mutateAsync(Array.from(selectedIds));
       await queryClient.invalidateQueries({ queryKey: ['users'] });
       await refetch();
-      setSuccessMessage(`Deactivated ${selectedIds.size} selected user(s).`);
+      setSuccessMessage(`Deactivated ${result.affected_count} selected user(s).`);
       setSelectedIds(new Set());
       setTimeout(() => setSuccessMessage(null), 4000);
-    } catch {
-      setErrorMessage('Failed to complete bulk deactivate.');
-    }
-  };
-
-  const handleBulkDelete = async () => {
-    if (selectedIds.size === 0) return;
-    try {
-      for (const id of Array.from(selectedIds)) {
-        await deleteUserApi(id).catch(() => null);
-      }
-      await queryClient.invalidateQueries({ queryKey: ['users'] });
-      await refetch();
-      setSuccessMessage(`Deleted ${selectedIds.size} selected user(s).`);
-      setSelectedIds(new Set());
-      setTimeout(() => setSuccessMessage(null), 4000);
-    } catch {
-      setErrorMessage('Failed to complete bulk delete.');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, 'Failed to complete bulk deactivate.'));
     }
   };
 
@@ -512,13 +479,6 @@ export default function UsersPage() {
       onClick: (item) => handleToggleActivate(item),
       permission: 'users:update',
     },
-    {
-      label: 'Delete User',
-      variant: 'destructive',
-      icon: <Trash2 className="w-4 h-4 mr-2 text-[#DC2626]" />,
-      onClick: (item) => setUserToDelete(item),
-      permission: 'users:delete',
-    },
   ];
 
   return (
@@ -639,24 +599,12 @@ export default function UsersPage() {
                   <DropdownMenuSeparator />
                   <PermissionGate permission="users:update">
                     <DropdownMenuItem
-                      disabled={selectedIds.size === 0}
+                      disabled={selectedIds.size === 0 || bulkDeactivateUsersMutation.isPending}
                       onClick={handleBulkDeactivate}
                       className={`cursor-pointer text-button font-medium ${selectedIds.size === 0 ? 'opacity-50 cursor-not-allowed' : 'text-[#374151] hover:bg-[#F3F4F6]'}`}
                     >
                       <Ban className="w-4 h-4 mr-2 text-[#F59E0B]" />
                       <span>Bulk Deactivate ({selectedIds.size})</span>
-                    </DropdownMenuItem>
-                  </PermissionGate>
-                  <DropdownMenuSeparator />
-                  <PermissionGate permission="users:delete">
-                    <DropdownMenuItem
-                      variant="destructive"
-                      disabled={selectedIds.size === 0}
-                      onClick={handleBulkDelete}
-                      className={`cursor-pointer text-button font-medium ${selectedIds.size === 0 ? 'opacity-50 cursor-not-allowed' : 'text-[#DC2626] hover:bg-[#DC2626]/10'}`}
-                    >
-                      <Trash2 className="w-4 h-4 mr-2 text-[#DC2626]" />
-                      <span>Bulk Delete ({selectedIds.size})</span>
                     </DropdownMenuItem>
                   </PermissionGate>
                 </DropdownMenuContent>
@@ -810,16 +758,6 @@ export default function UsersPage() {
                 </p>
               </div>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleAutofillCreate}
-              className="text-caption font-medium gap-1.5 cursor-pointer px-3"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-[#2563EB] animate-pulse" />
-              <span>Auto-fill Demo</span>
-            </Button>
           </div>
         }
       >
@@ -849,11 +787,14 @@ export default function UsersPage() {
           </div>
 
           <div>
-            <Label htmlFor="create-password">Password</Label>
+            <Label htmlFor="create-password">Password <span className="text-[#DC2626]">*</span></Label>
             <Input
               id="create-password"
               type="password"
-              placeholder="Defaults to Password123!"
+              required
+              minLength={12}
+              autoComplete="new-password"
+              placeholder="At least 12 characters"
               value={createPassword}
               onChange={(e) => setCreatePassword(e.target.value)}
             />
@@ -882,32 +823,15 @@ export default function UsersPage() {
             <Button
               type="submit"
               variant="primary"
+              disabled={createUserMutation.isPending}
               className="shadow-saas-sm text-button font-medium cursor-pointer"
             >
-              Create User Account
+              {createUserMutation.isPending ? 'Creating User...' : 'Create User Account'}
             </Button>
           </div>
         </form>
       </ModalShell>
 
-      {/* DELETE USER CONFIRMATION MODAL */}
-      <ConfirmModal
-        isOpen={!!userToDelete}
-        onClose={() => setUserToDelete(null)}
-        onConfirm={handleConfirmDelete}
-        title="Delete User Account"
-        description="This action cannot be undone."
-        confirmText="Delete User"
-        variant="danger"
-        isLoading={deleteUserMutation.isPending}
-        message={
-          userToDelete && (
-            <p>
-              Are you sure you want to delete user account <strong className="text-slate-900">{userToDelete.name || userToDelete.email}</strong>?
-            </p>
-          )
-        }
-      />
     </div>
   );
 }

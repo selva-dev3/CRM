@@ -55,6 +55,11 @@ export interface UserDeleteResponse {
   status: string;
 }
 
+export interface UserBulkDeactivateResponse {
+  affected_count: number;
+  message: string;
+}
+
 export interface UserInvitationItem {
   id: string;
   email: string;
@@ -67,7 +72,7 @@ export interface UserInvitationItem {
 export interface UserCreatePayload {
   name: string;
   email: string;
-  password?: string;
+  password: string;
   role?: string;
 }
 
@@ -133,7 +138,7 @@ export async function createUserApi(payload: UserCreatePayload): Promise<UserIte
     body: JSON.stringify({
       name: payload.name,
       email: payload.email,
-      password: payload.password || 'Password123!',
+      password: payload.password,
       role: payload.role,
     }),
   });
@@ -161,6 +166,15 @@ export async function deactivateUserApi(userId: string): Promise<UserActionRespo
 export async function deleteUserApi(userId: string): Promise<UserDeleteResponse> {
   return apiClient<UserDeleteResponse>(`/users/${userId}`, {
     method: 'DELETE',
+  });
+}
+
+export async function bulkDeactivateUsersApi(
+  userIds: string[],
+): Promise<UserBulkDeactivateResponse> {
+  return apiClient<UserBulkDeactivateResponse>('/users/bulk-delete', {
+    method: 'POST',
+    body: JSON.stringify({ ids: userIds }),
   });
 }
 
@@ -198,7 +212,7 @@ export async function removeUserTeamApi(payload: { userId: string; teamId: strin
   return apiClient.delete<{ message: string; status: string }>(`/users/${payload.userId}/teams/${payload.teamId}`);
 }
 
-export async function setUserQuotaApi(payload: { userId: string; targetAmount: number; achievedAmount?: number }): Promise<{ message: string; status: string }> {
+export async function setUserQuotaApi(payload: { userId: string; targetAmount: number }): Promise<{ message: string; status: string }> {
   return apiClient.post<{ message: string; status: string }>(`/users/${payload.userId}/quota?target_amount=${payload.targetAmount}`);
 }
 
@@ -311,6 +325,15 @@ export function useDeactivateUserMutation(options?: UseMutationOptions<UserActio
   });
 }
 
+export function useBulkDeactivateUsersMutation(
+  options?: UseMutationOptions<UserBulkDeactivateResponse, Error, string[]>,
+) {
+  return useMutation<UserBulkDeactivateResponse, Error, string[]>({
+    mutationFn: bulkDeactivateUsersApi,
+    ...options,
+  });
+}
+
 export function useDeleteUserMutation(options?: UseMutationOptions<UserDeleteResponse, Error, string>) {
   return useMutation<UserDeleteResponse, Error, string>({
     mutationFn: deleteUserApi,
@@ -339,7 +362,7 @@ export function useRemoveUserTeamMutation(options?: UseMutationOptions<{ message
   });
 }
 
-export function useSetUserQuotaMutation(options?: UseMutationOptions<{ message: string; status: string }, Error, { userId: string; targetAmount: number; achievedAmount?: number }>) {
+export function useSetUserQuotaMutation(options?: UseMutationOptions<{ message: string; status: string }, Error, { userId: string; targetAmount: number }>) {
   return useMutation({
     mutationFn: setUserQuotaApi,
     ...options,

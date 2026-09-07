@@ -535,6 +535,26 @@ class QuoteService:
         return quote_to_dict(quote)
 
     async def delete_quote(self, db: AsyncSession, *, quote_id: str, organization_id: str) -> None:
+        quote = await self.repository.lock_scoped(
+            db, quote_id=quote_id, organization_id=organization_id
+        )
+        if not quote:
+            raise NotFoundError(message=f"Quote '{quote_id}' not found")
+        if quote.automatic_deal_id or quote.status != "Draft":
+            raise APIException(
+                message="Only ungenerated Draft quotes can be deleted",
+                code="QUOTE_DELETE_FORBIDDEN",
+                status_code=status.HTTP_409_CONFLICT,
+            )
+        invoice = await self.repository.get_invoice_reference(
+            db, quote_id=quote_id, organization_id=organization_id
+        )
+        if invoice:
+            raise APIException(
+                message="A quote linked to an invoice cannot be deleted",
+                code="QUOTE_DELETE_FORBIDDEN",
+                status_code=status.HTTP_409_CONFLICT,
+            )
         deleted = await self.repository.delete_scoped(
             db, quote_id=quote_id, organization_id=organization_id
         )

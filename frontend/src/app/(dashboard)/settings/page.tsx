@@ -583,10 +583,12 @@ export default function SettingsPage() {
               <Button
                 size="sm"
                 onClick={() => setIsWebhookModalOpen(true)}
-                className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs gap-1 cursor-pointer w-full sm:w-auto"
+                disabled
+                title="Webhook delivery is not configured"
+                className="font-semibold text-xs gap-1 w-full sm:w-auto"
               >
                 <Plus className="w-4 h-4 shrink-0" />
-                <span>Register Webhook</span>
+                <span>Delivery unavailable</span>
               </Button>
             </PermissionGate>
           </div>
@@ -605,8 +607,9 @@ export default function SettingsPage() {
                           size="sm"
                           variant="outline"
                           onClick={() => handleTestWebhook(w.id)}
-                          disabled={testWebhookMutation.isPending}
-                          className="h-7 text-[11px] font-semibold border-slate-300 cursor-pointer w-full sm:w-auto"
+                          disabled
+                          title="Webhook delivery is not configured"
+                          className="h-7 text-[11px] font-semibold border-slate-300 w-full sm:w-auto"
                         >
                           <Send className="w-3 h-3 mr-1 text-blue-600 shrink-0" />
                           <span>Test Ping</span>
