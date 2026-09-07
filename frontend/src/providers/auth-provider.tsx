@@ -1,8 +1,9 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { getCurrentUserApi, logoutApi, type CurrentUserResponse } from '@/lib/api/auth';
+import { invalidateAuthSession, markAuthSessionActive } from '@/lib/api/client';
 import {
   AUTH_SESSION_BROADCAST_KEY,
   AUTH_SESSION_CHANGED_EVENT,
@@ -20,6 +21,7 @@ interface AuthContextValue {
   setSession: (user: CurrentUserResponse, remember?: boolean) => void;
   verifySession: () => Promise<CurrentUserResponse>;
   logout: () => Promise<void>;
+  isLoggingOut: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -28,6 +30,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const [user, setUser] = useState<CurrentUserResponse | null>(readStoredUser);
   const [status, setStatus] = useState<AuthStatus>('unknown');
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const isLoggingOutRef = useRef(false);
+  const authGenerationRef = useRef(0);
+  const logoutPromiseRef = useRef<Promise<void> | null>(null);
 
   const resetLocalSession = useCallback(
     (broadcast = true) => {
@@ -41,14 +47,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const setSession = useCallback((nextUser: CurrentUserResponse, remember?: boolean) => {
+    markAuthSessionActive();
+    authGenerationRef.current += 1;
     persistSessionUser(nextUser, { remember });
     setUser(nextUser);
     setStatus('authenticated');
   }, []);
 
   const verifySession = useCallback(async () => {
+    const requestGeneration = authGenerationRef.current;
     try {
       const currentUser = await getCurrentUserApi();
+      if (requestGeneration !== authGenerationRef.current || isLoggingOutRef.current) {
+        throw new Error('Session verification was superseded by logout');
+      }
+      markAuthSessionActive();
       persistSessionUser(currentUser, { broadcast: false });
       setUser(currentUser);
       setStatus('authenticated');
@@ -60,17 +73,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
-    await logoutApi();
+    if (logoutPromiseRef.current) return logoutPromiseRef.current;
+
+    invalidateAuthSession();
+    authGenerationRef.current += 1;
+    isLoggingOutRef.current = true;
+    setIsLoggingOut(true);
     resetLocalSession(true);
+
+    const logoutPromise = (async () => {
+      try {
+        await logoutApi();
+      } catch (error) {
+        // Local logout is authoritative even when the server cannot be reached.
+        console.error('Backend logout failed after local logout completed', error);
+      } finally {
+        isLoggingOutRef.current = false;
+        setIsLoggingOut(false);
+      }
+    })();
+    logoutPromiseRef.current = logoutPromise.finally(() => {
+      logoutPromiseRef.current = null;
+    });
+    return logoutPromiseRef.current;
   }, [resetLocalSession]);
 
   useEffect(() => {
     const handleSessionEvent = (event: Event) => {
       const action = (event as CustomEvent<{ action?: string }>).detail?.action;
-      if (action === 'logout') resetLocalSession(false);
+      if (action === 'logout') {
+        invalidateAuthSession();
+        authGenerationRef.current += 1;
+        resetLocalSession(false);
+      }
       if (action === 'login') {
         const storedUser = readStoredUser();
         if (storedUser) {
+          markAuthSessionActive();
+          authGenerationRef.current += 1;
           setUser(storedUser);
           setStatus('authenticated');
         }
@@ -80,12 +120,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (event.key !== AUTH_SESSION_BROADCAST_KEY) return;
       const action = parseAuthBroadcast(event.newValue);
       if (action === 'logout') {
+        invalidateAuthSession();
+        authGenerationRef.current += 1;
         resetLocalSession(false);
       } else if (action === 'login') {
         void verifySession().catch(() => resetLocalSession(false));
       }
     };
-    const handleUnauthorized = () => resetLocalSession(false);
+    const handleUnauthorized = () => {
+      invalidateAuthSession();
+      authGenerationRef.current += 1;
+      resetLocalSession(false);
+    };
 
     window.addEventListener(AUTH_SESSION_CHANGED_EVENT, handleSessionEvent);
     window.addEventListener('storage', handleStorage);
@@ -98,8 +144,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [resetLocalSession, verifySession]);
 
   const value = useMemo(
-    () => ({ status, user, setSession, verifySession, logout }),
-    [logout, setSession, status, user, verifySession],
+    () => ({ status, user, setSession, verifySession, logout, isLoggingOut }),
+    [isLoggingOut, logout, setSession, status, user, verifySession],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
