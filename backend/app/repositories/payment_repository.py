@@ -1,8 +1,10 @@
-from datetime import datetime, timedelta
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.selectable import Subquery
 
 from app.models import (
     AuditLog,
@@ -17,7 +19,163 @@ from app.models import (
 from app.repositories.notification_repository import NotificationRepository
 
 
+@dataclass(frozen=True)
+class InvoicePaymentSummaryRow:
+    invoice: Invoice
+    company_name: str | None
+    contact_name: str | None
+    contact_email: str | None
+    paid_amount: Decimal
+    latest_payment_id: str | None
+    payment_number: str | None
+    payment_type: str | None
+    latest_payment_amount: Decimal | None
+    payment_date: date | None
+    notes: str | None
+
+
 class PaymentRepository:
+    @staticmethod
+    def _summary_subqueries() -> tuple[Subquery, Subquery]:
+        paid = (
+            select(
+                Payment.organization_id.label("organization_id"),
+                Payment.invoice_id.label("invoice_id"),
+                func.sum(Payment.amount).label("paid_amount"),
+            )
+            .where(Payment.status == "Succeeded")
+            .group_by(Payment.organization_id, Payment.invoice_id)
+            .subquery()
+        )
+        latest = (
+            select(
+                Payment.organization_id.label("organization_id"),
+                Payment.invoice_id.label("invoice_id"),
+                Payment.id.label("payment_id"),
+                Payment.payment_number.label("payment_number"),
+                Payment.payment_type.label("payment_type"),
+                Payment.amount.label("payment_amount"),
+                Payment.payment_date.label("payment_date"),
+                Payment.notes.label("notes"),
+                func.row_number()
+                .over(
+                    partition_by=(Payment.organization_id, Payment.invoice_id),
+                    order_by=(Payment.created_at.desc(), Payment.id.desc()),
+                )
+                .label("row_number"),
+            )
+            .where(Payment.status == "Succeeded")
+            .subquery()
+        )
+        return paid, latest
+
+    async def list_invoice_summaries(
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        page: int,
+        limit: int,
+        status: str | None = None,
+        search: str | None = None,
+    ) -> list[InvoicePaymentSummaryRow]:
+        paid, latest = self._summary_subqueries()
+        stmt = (
+            select(
+                Invoice,
+                Company.name,
+                Contact.name,
+                Contact.email,
+                func.coalesce(paid.c.paid_amount, 0),
+                latest.c.payment_id,
+                latest.c.payment_number,
+                latest.c.payment_type,
+                latest.c.payment_amount,
+                latest.c.payment_date,
+                latest.c.notes,
+            )
+            .outerjoin(Company, Company.id == Invoice.company_id)
+            .outerjoin(Contact, Contact.id == Invoice.contact_id)
+            .outerjoin(
+                paid,
+                (paid.c.invoice_id == Invoice.id)
+                & (paid.c.organization_id == Invoice.organization_id),
+            )
+            .outerjoin(
+                latest,
+                (latest.c.invoice_id == Invoice.id)
+                & (latest.c.organization_id == Invoice.organization_id)
+                & (latest.c.row_number == 1),
+            )
+            .where(
+                Invoice.organization_id == organization_id,
+                Invoice.status == "Accepted",
+                Invoice.finalized_at.is_not(None),
+                Invoice.accepted_at.is_not(None),
+            )
+        )
+        if status and status.strip():
+            stmt = stmt.where(Invoice.payment_status == status.strip())
+        if search and search.strip():
+            term = f"%{search.strip()}%"
+            stmt = stmt.where(
+                or_(
+                    Invoice.invoice_number.ilike(term),
+                    Company.name.ilike(term),
+                    Contact.name.ilike(term),
+                    Contact.email.ilike(term),
+                    latest.c.payment_number.ilike(term),
+                )
+            )
+        result = await db.execute(
+            stmt.order_by(Invoice.created_at.desc(), Invoice.id.desc())
+            .offset((page - 1) * limit)
+            .limit(limit)
+        )
+        return [InvoicePaymentSummaryRow(*tuple(row)) for row in result.all()]
+
+    async def count_invoice_summaries(
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        status: str | None = None,
+        search: str | None = None,
+    ) -> int:
+        _paid, latest = self._summary_subqueries()
+        stmt = (
+            select(func.count())
+            .select_from(Invoice)
+            .outerjoin(Company, Company.id == Invoice.company_id)
+            .outerjoin(Contact, Contact.id == Invoice.contact_id)
+            .outerjoin(
+                latest,
+                (latest.c.invoice_id == Invoice.id)
+                & (latest.c.organization_id == Invoice.organization_id)
+                & (latest.c.row_number == 1),
+            )
+            .where(
+                Invoice.organization_id == organization_id,
+                Invoice.status == "Accepted",
+                Invoice.finalized_at.is_not(None),
+                Invoice.accepted_at.is_not(None),
+            )
+        )
+        if status and status.strip():
+            stmt = stmt.where(Invoice.payment_status == status.strip())
+        if search and search.strip():
+            term = f"%{search.strip()}%"
+            stmt = stmt.where(
+                or_(
+                    Invoice.invoice_number.ilike(term),
+                    Company.name.ilike(term),
+                    Contact.name.ilike(term),
+                    Contact.email.ilike(term),
+                    latest.c.payment_number.ilike(term),
+                )
+            )
+        return int((await db.execute(stmt)).scalar_one())
+
     async def list_eligible_invoices(
         self, db: AsyncSession, *, organization_id: str, page: int = 1, limit: int = 100
     ) -> list[tuple[Invoice, str | None, str | None, str | None]]:

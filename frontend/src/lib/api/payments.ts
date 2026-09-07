@@ -39,6 +39,26 @@ export type EligiblePaymentInvoice = {
   payment_status: string;
 };
 
+export interface InvoicePaymentSummary {
+  id: string;
+  invoice_id: string;
+  invoice_number: string;
+  company_name?: string | null;
+  contact_name?: string | null;
+  contact_email?: string | null;
+  amount: number | string;
+  paid_amount: number | string;
+  outstanding_amount: number | string;
+  currency: string;
+  payment_status: 'Pending' | 'Partially Paid' | 'Paid';
+  latest_payment_id?: string | null;
+  payment_number?: string | null;
+  payment_type?: string | null;
+  latest_payment_amount?: number | string | null;
+  payment_date?: string | null;
+  notes?: string | null;
+}
+
 export interface PaymentQueryParams {
   page?: number;
   limit?: number;
@@ -47,7 +67,7 @@ export interface PaymentQueryParams {
   invoice_id?: string;
 }
 
-export const paymentKeys = { all: ['payments'] as const, list: (params?: PaymentQueryParams) => ['payments', params] as const, detail: (id: string) => ['payments', id] as const, eligibleInvoices: () => ['payments', 'eligible-invoices'] as const };
+export const paymentKeys = { all: ['payments'] as const, list: (params?: PaymentQueryParams) => ['payments', params] as const, summaryList: (params?: PaymentQueryParams) => ['payments', 'invoice-summaries', params] as const, detail: (id: string) => ['payments', id] as const, eligibleInvoices: () => ['payments', 'eligible-invoices'] as const };
 
 export function recordInvoicePaymentApi({ invoiceId, payment, idempotencyKey }: { invoiceId: string; payment: ManualPaymentDto; idempotencyKey: string }): Promise<PaymentItem> {
   return apiClient.post(`/invoices/${invoiceId}/payments`, payment, { headers: { 'Idempotency-Key': idempotencyKey } });
@@ -94,6 +114,18 @@ export async function fetchPaymentApi(paymentId: string): Promise<PaymentItem> {
   return apiClient.get<PaymentItem>(`/payments/${paymentId}`);
 }
 
+export async function fetchInvoicePaymentSummariesPageApi(
+  params?: PaymentQueryParams,
+): Promise<PaginatedResult<InvoicePaymentSummary>> {
+  const query = new URLSearchParams();
+  if (params?.page) query.set('page', String(params.page));
+  if (params?.limit) query.set('limit', String(params.limit));
+  if (params?.status) query.set('status', params.status);
+  if (params?.search) query.set('search', params.search);
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  return fetchPaginated<InvoicePaymentSummary>(`/payments/invoice-summaries${suffix}`);
+}
+
 export async function fetchEligiblePaymentInvoicesApi(): Promise<EligiblePaymentInvoice[]> {
   return apiClient.get<EligiblePaymentInvoice[]>('/payments/eligible-invoices');
 }
@@ -117,6 +149,19 @@ export function usePaymentsPageQuery(
   return useQuery<PaginatedResult<PaymentItem>, Error>({
     queryKey: [...paymentKeys.list(params), 'paginated'],
     queryFn: () => fetchPaymentsPageApi(params),
+    staleTime: 1000 * 60 * 2,
+    placeholderData: (previousData) => previousData,
+    ...options,
+  });
+}
+
+export function useInvoicePaymentSummariesPageQuery(
+  params?: PaymentQueryParams,
+  options?: Omit<UseQueryOptions<PaginatedResult<InvoicePaymentSummary>, Error>, 'queryKey' | 'queryFn'>,
+) {
+  return useQuery<PaginatedResult<InvoicePaymentSummary>, Error>({
+    queryKey: paymentKeys.summaryList(params),
+    queryFn: () => fetchInvoicePaymentSummariesPageApi(params),
     staleTime: 1000 * 60 * 2,
     placeholderData: (previousData) => previousData,
     ...options,

@@ -2,15 +2,37 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import dataclass
 from datetime import UTC, datetime, time
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, ConflictError, NotFoundError
-from app.repositories.payment_repository import PaymentRepository
+from app.repositories.payment_repository import InvoicePaymentSummaryRow, PaymentRepository
 from app.schemas.crm_schemas import ManualPaymentCreate
 from app.services.sales_totals import decimal_value
+
+
+@dataclass(frozen=True)
+class PaymentBalance:
+    paid_amount: Decimal
+    outstanding_amount: Decimal
+    payment_status: str
+
+
+def calculate_payment_balance(invoice_total: object, paid_amount: object) -> PaymentBalance:
+    """Return the canonical invoice payment aggregate from persisted payment totals."""
+    total = decimal_value(invoice_total)
+    paid = decimal_value(paid_amount)
+    outstanding = max(Decimal(0), total - paid)
+    if paid <= 0:
+        status = "Pending"
+    elif paid < total:
+        status = "Partially Paid"
+    else:
+        status = "Paid"
+    return PaymentBalance(paid, outstanding, status)
 
 
 def payment_to_dict(row: tuple) -> dict[str, object]:
@@ -36,14 +58,25 @@ def payment_to_dict(row: tuple) -> dict[str, object]:
 
 
 def payment_detail_to_dict(row: tuple) -> dict[str, object]:
-    payment, invoice_number, invoice_total, paid_amount, payment_status, customer_id, company_name, contact_name, contact_email = row
+    (
+        payment,
+        invoice_number,
+        invoice_total,
+        paid_amount,
+        _payment_status,
+        customer_id,
+        company_name,
+        contact_name,
+        contact_email,
+    ) = row
+    balance = calculate_payment_balance(invoice_total, paid_amount)
     result = payment_to_dict((payment, invoice_number, company_name, contact_name, contact_email))
     result.update(
         {
             "invoice_total": invoice_total or Decimal(0),
-            "invoice_paid_amount": paid_amount or Decimal(0),
-            "invoice_outstanding_amount": max(Decimal(0), Decimal(str(invoice_total or 0)) - Decimal(str(paid_amount or 0))),
-            "invoice_payment_status": payment_status or "Pending",
+            "invoice_paid_amount": balance.paid_amount,
+            "invoice_outstanding_amount": balance.outstanding_amount,
+            "invoice_payment_status": balance.payment_status,
             "customer": {"id": customer_id, "name": company_name},
         }
     )
@@ -52,16 +85,40 @@ def payment_detail_to_dict(row: tuple) -> dict[str, object]:
 
 def eligible_invoice_to_dict(row: tuple) -> dict[str, object]:
     invoice, company_name, contact_name, _contact_email = row
+    balance = calculate_payment_balance(invoice.amount, invoice.paid_amount)
     return {
         "id": invoice.id,
         "invoice_number": invoice.invoice_number,
         "customer_name": company_name,
         "contact_name": contact_name,
         "amount": invoice.amount or Decimal(0),
-        "paid_amount": invoice.paid_amount or Decimal(0),
-        "outstanding_amount": max(Decimal(0), Decimal(str(invoice.amount or 0)) - Decimal(str(invoice.paid_amount or 0))),
+        "paid_amount": balance.paid_amount,
+        "outstanding_amount": balance.outstanding_amount,
         "currency": invoice.currency,
-        "payment_status": invoice.payment_status or "Pending",
+        "payment_status": balance.payment_status,
+    }
+
+
+def invoice_payment_summary_to_dict(row: InvoicePaymentSummaryRow) -> dict[str, object]:
+    balance = calculate_payment_balance(row.invoice.amount, row.paid_amount)
+    return {
+        "id": row.invoice.id,
+        "invoice_id": row.invoice.id,
+        "invoice_number": row.invoice.invoice_number,
+        "company_name": row.company_name,
+        "contact_name": row.contact_name,
+        "contact_email": row.contact_email,
+        "amount": row.invoice.amount,
+        "paid_amount": balance.paid_amount,
+        "outstanding_amount": balance.outstanding_amount,
+        "currency": row.invoice.currency,
+        "payment_status": balance.payment_status,
+        "latest_payment_id": row.latest_payment_id,
+        "payment_number": row.payment_number,
+        "payment_type": row.payment_type,
+        "latest_payment_amount": row.latest_payment_amount,
+        "payment_date": row.payment_date.isoformat() if row.payment_date else None,
+        "notes": row.notes,
     }
 
 
@@ -118,8 +175,8 @@ class PaymentService:
             paid = await self.repository.sum_succeeded(
                 db, invoice_id=invoice_id, organization_id=organization_id
             )
-            outstanding = decimal_value(invoice.amount) - paid
-            if payload.amount > outstanding:
+            current_balance = calculate_payment_balance(invoice.amount, paid)
+            if payload.amount > current_balance.outstanding_amount:
                 raise ConflictError(
                     message="Payment exceeds the outstanding invoice amount",
                     code="PAYMENT_EXCEEDS_BALANCE",
@@ -148,10 +205,9 @@ class PaymentService:
                     "receipt_delivery_status": "Pending",
                 },
             )
-            invoice.paid_amount = paid + payload.amount
-            invoice.payment_status = (
-                "Paid" if invoice.paid_amount == invoice.amount else "Partially Paid"
-            )
+            new_balance = calculate_payment_balance(invoice.amount, paid + payload.amount)
+            invoice.paid_amount = new_balance.paid_amount
+            invoice.payment_status = new_balance.payment_status
             await self.repository.record_manual_audit(db, invoice, payment)
             await db.flush()
             result = await self.get_payment(
@@ -202,6 +258,38 @@ class PaymentService:
             status=status,
             search=search,
             invoice_id=invoice_id,
+        )
+
+    async def list_invoice_summaries(
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        page: int,
+        limit: int,
+        status: str | None = None,
+        search: str | None = None,
+    ) -> list[dict[str, object]]:
+        rows = await self.repository.list_invoice_summaries(
+            db,
+            organization_id=organization_id,
+            page=page,
+            limit=limit,
+            status=status,
+            search=search,
+        )
+        return [invoice_payment_summary_to_dict(row) for row in rows]
+
+    async def count_invoice_summaries(
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        status: str | None = None,
+        search: str | None = None,
+    ) -> int:
+        return await self.repository.count_invoice_summaries(
+            db, organization_id=organization_id, status=status, search=search
         )
 
     async def list_eligible_invoices(

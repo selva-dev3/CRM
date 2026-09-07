@@ -4,10 +4,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { ApiError, apiClient } from './client';
 import { finalizeInvoiceApi, sendInvoiceEmailApi, useFinalizeInvoiceMutation } from './invoices';
-import { recordInvoicePaymentApi, useRecordInvoicePaymentMutation } from './payments';
+import { fetchInvoicePaymentSummariesPageApi, recordInvoicePaymentApi, useRecordInvoicePaymentMutation } from './payments';
 import { acceptPublicInvoiceApi, publicInvoiceKeys, useAcceptPublicInvoiceMutation, usePublicInvoiceQuery, viewPublicInvoiceApi } from './public-invoices';
 import { manualPaymentSchema } from '@/lib/types/manual-payment';
-vi.mock('./client', async (importOriginal) => ({ ...await importOriginal<typeof import('./client')>(), apiClient: { post: vi.fn() } }));
+vi.mock('./client', async (importOriginal) => ({ ...await importOriginal<typeof import('./client')>(), apiClient: { post: vi.fn(), getWithMetadata: vi.fn() } }));
 
 const payment = { amount: '12.50', payment_type: 'UPI' as const, payment_date: '2026-09-06', notes: 'Receipt' };
 describe('manual invoice API contract', () => {
@@ -24,6 +24,13 @@ describe('manual invoice API contract', () => {
     await viewPublicInvoiceApi(token); await acceptPublicInvoiceApi(token);
     expect(apiClient.post).toHaveBeenCalledWith('/public/invoices/view', { token }, { credentials: 'omit' });
     expect(apiClient.post).toHaveBeenLastCalledWith('/public/invoices/accept', { token }, { credentials: 'omit' });
+  });
+  it('loads paginated invoice payment summaries with backend status filters', async () => {
+    vi.mocked(apiClient.getWithMetadata).mockResolvedValue({
+      data: [], headers: new Headers({ 'X-Total-Count': '0' }), status: 200,
+    });
+    await fetchInvoicePaymentSummariesPageApi({ page: 2, limit: 20, status: 'Partially Paid', search: 'INV-7' });
+    expect(apiClient.getWithMetadata).toHaveBeenCalledWith('/payments/invoice-summaries?page=2&limit=20&status=Partially+Paid&search=INV-7');
   });
   it('validates controlled types, real dates, and positive decimal syntax', () => {
     expect(manualPaymentSchema.safeParse(payment).success).toBe(true);

@@ -7,9 +7,15 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, ConflictError, NotFoundError
-from app.repositories.payment_repository import PaymentRepository
+from app.repositories.payment_repository import InvoicePaymentSummaryRow, PaymentRepository
 from app.schemas.crm_schemas import ManualPaymentCreate
-from app.services.payment_service import PaymentService, eligible_invoice_to_dict, payment_detail_to_dict
+from app.services.payment_service import (
+    PaymentService,
+    calculate_payment_balance,
+    eligible_invoice_to_dict,
+    invoice_payment_summary_to_dict,
+    payment_detail_to_dict,
+)
 
 
 def payment_payload(amount="40.00", **kwargs):
@@ -200,7 +206,17 @@ def test_payment_detail_includes_invoice_balance_and_customer():
         created_at=datetime(2026, 9, 6, tzinfo=UTC),
     )
     result = payment_detail_to_dict(
-        (payment, "INV-1", Decimal("100.00"), Decimal("40.00"), "Partially Paid", "company", "Acme", "Ada", "ada@example.com")
+        (
+            payment,
+            "INV-1",
+            Decimal("100.00"),
+            Decimal("40.00"),
+            "Partially Paid",
+            "company",
+            "Acme",
+            "Ada",
+            "ada@example.com",
+        )
     )
     assert result["invoice_total"] == Decimal("100.00")
     assert result["invoice_paid_amount"] == Decimal("40.00")
@@ -220,3 +236,50 @@ def test_eligible_invoice_mapping_exposes_server_balance():
     result = eligible_invoice_to_dict((invoice, "Acme", "Ada", "ada@example.com"))
     assert result["invoice_number"] == "INV-1"
     assert result["outstanding_amount"] == Decimal("60.00")
+
+
+@pytest.mark.parametrize(
+    "paid,expected_outstanding,expected_status",
+    [
+        ("0.00", "100.00", "Pending"),
+        ("40.00", "60.00", "Partially Paid"),
+        ("100.00", "0.00", "Paid"),
+    ],
+)
+def test_calculate_payment_balance_is_the_canonical_status_source(
+    paid, expected_outstanding, expected_status
+):
+    balance = calculate_payment_balance(Decimal("100.00"), Decimal(paid))
+    assert balance.paid_amount == Decimal(paid)
+    assert balance.outstanding_amount == Decimal(expected_outstanding)
+    assert balance.payment_status == expected_status
+
+
+def test_invoice_summary_represents_pending_without_a_fake_payment():
+    invoice = SimpleNamespace(
+        id="invoice",
+        invoice_number="INV-1",
+        amount=Decimal("100.00"),
+        currency="INR",
+    )
+    result = invoice_payment_summary_to_dict(
+        InvoicePaymentSummaryRow(
+            invoice=invoice,
+            company_name="Acme",
+            contact_name="Ada",
+            contact_email="ada@example.com",
+            paid_amount=Decimal("0.00"),
+            latest_payment_id=None,
+            payment_number=None,
+            payment_type=None,
+            latest_payment_amount=None,
+            payment_date=None,
+            notes=None,
+        )
+    )
+    assert result["payment_status"] == "Pending"
+    assert result["paid_amount"] == Decimal("0.00")
+    assert result["outstanding_amount"] == Decimal("100.00")
+    assert result["latest_payment_id"] is None
+    assert result["payment_number"] is None
+    assert result["payment_date"] is None

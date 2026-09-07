@@ -5,11 +5,46 @@ from app.api.v1.deps import get_current_user, require_permission
 from app.core.errors import NotFoundError
 from app.db.session import get_db
 from app.models import User
-from app.schemas.crm_schemas import EligiblePaymentInvoiceResponse, PaymentResponse
+from app.schemas.crm_schemas import (
+    EligiblePaymentInvoiceResponse,
+    InvoicePaymentSummaryResponse,
+    PaymentResponse,
+)
 from app.services.invoice_service import invoice_service
 from app.services.payment_service import payment_service
 
 router = APIRouter()
+
+
+@router.get(
+    "/invoice-summaries",
+    response_model=list[InvoicePaymentSummaryResponse],
+    summary="List customer-accepted invoices with aggregate payment status",
+    dependencies=[Depends(require_permission("invoices:read"))],
+)
+async def list_invoice_payment_summaries(
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    status_filter: str | None = Query(None, alias="status"),
+    search: str | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await invoice_service.resolve_organization_id(db, current_user)
+    summaries = await payment_service.list_invoice_summaries(
+        db,
+        organization_id=organization_id,
+        page=page,
+        limit=limit,
+        status=status_filter,
+        search=search,
+    )
+    total = await payment_service.count_invoice_summaries(
+        db, organization_id=organization_id, status=status_filter, search=search
+    )
+    response.headers["X-Total-Count"] = str(total)
+    return summaries
 
 
 @router.get(
