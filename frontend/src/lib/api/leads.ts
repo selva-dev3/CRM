@@ -125,6 +125,7 @@ export interface LeadEmailItem {
   from_email: string;
   to: string[];
   subject: string;
+  body?: string | null;
   status: 'Draft' | 'Pending' | 'Processing' | 'Sent' | 'Failed' | 'Unknown';
   sent_at: string | null;
   failure_reason?: string | null;

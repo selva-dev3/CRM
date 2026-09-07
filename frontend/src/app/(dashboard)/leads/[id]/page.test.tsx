@@ -198,6 +198,34 @@ describe('LeadDetailPage custom fields', () => {
 });
 
 describe('LeadDetailPage email workflow', () => {
+  it('renders expandable email history with the message body', async () => {
+    const user = userEvent.setup();
+    useLeadEmailsQueryMock.mockReturnValue({
+      data: [{
+        id: 'email-1',
+        from_email: 'rep@crm.test',
+        to: [lead.email],
+        subject: 'Proposal follow-up',
+        body: '<p>Hello Jane,</p><p>Please review the proposal.</p>',
+        status: 'Sent',
+        sent_at: '2026-09-07T17:00:00Z',
+      }],
+      isLoading: false,
+      refetch: vi.fn(),
+    });
+    render(<LeadDetailPage />);
+
+    await user.click(screen.getByRole('tab', { name: /Emails/ }));
+
+    expect(screen.getByText('Proposal follow-up')).toBeVisible();
+    expect(screen.queryByText(/Please review the proposal/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Expand row' }));
+
+    expect(screen.getByText(/Hello Jane,/)).toBeVisible();
+    expect(screen.getByText(/Please review the proposal/)).toBeVisible();
+  });
+
   it('shows the Lead recipient and reports queued delivery', async () => {
     const user = userEvent.setup();
     render(<LeadDetailPage />);

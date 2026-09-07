@@ -47,6 +47,8 @@ import {
 import { Button, Card, Label, Input, Alert, AlertDescription } from '@/components/ui';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ModalShell } from '@/components/common/modal-shell';
+import { DataTable, type DataTableColumn } from '@/components/common/data-table';
+import { EmailBodyPreview } from '@/components/common/email-body-preview';
 import { PageTabs } from '@/components/common/page-tabs';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
@@ -81,6 +83,7 @@ import {
   assignLeadApi,
   archiveLeadApi,
   unarchiveLeadApi,
+  type LeadEmailItem,
   type LeadIntelligenceResult,
 } from '@/lib/api/leads';
 import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
@@ -236,6 +239,30 @@ export default function LeadDetailPage() {
   const leadTimeZone = organizations.find(
     (organization) => organization.id === lead?.organization_id,
   )?.timezone || 'UTC';
+  const emailColumns = useMemo<readonly DataTableColumn<LeadEmailItem>[]>(() => [
+    {
+      id: 'subject',
+      header: 'Subject',
+      cell: (email) => email.subject || 'No subject',
+    },
+    {
+      id: 'recipient',
+      header: 'Recipient',
+      cell: (email) => email.to.length > 0 ? email.to.join(', ') : 'N/A',
+    },
+    {
+      id: 'sender',
+      header: 'Sender',
+      cell: (email) => email.from_email || 'N/A',
+    },
+    {
+      id: 'sent_at',
+      header: 'Sent Date',
+      cell: (email) => email.sent_at
+        ? formatDateTime(email.sent_at, { timeZone: leadTimeZone })
+        : 'N/A',
+    },
+  ], [leadTimeZone]);
   const savedAssignedUser = lead?.assigned_to
     ? users.find(
         (user) => user.id === lead.assigned_to || user.email === lead.assigned_to || user.name === lead.assigned_to,
@@ -1195,59 +1222,24 @@ export default function LeadDetailPage() {
             </Button>
           </div>
 
-          {isEmailsLoading ? (
-            <div className="p-8 text-center text-slate-500 text-xs font-bold flex items-center justify-center gap-2">
-              <Loader2 className="w-4 h-4 animate-spin text-indigo-600" /> Loading emails...
-            </div>
-          ) : emails.length === 0 ? (
-            <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl space-y-2">
-              <Send className="w-8 h-8 text-slate-300 mx-auto" />
-              <p className="text-xs font-bold text-slate-600">No email communications logged yet.</p>
-              <p className="text-[11px] text-slate-400">Use Send Email above to send an email.</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto rounded-xl border border-slate-200">
-              <Table className="w-full min-w-[560px] text-left border-collapse text-xs">
-                <TableHeader>
-                  <TableRow className="bg-slate-50 border-b border-slate-200 text-[11px] font-black uppercase text-slate-700 tracking-wider">
-                    <TableHead className="py-3 px-4">Subject Line</TableHead>
-                    <TableHead className="py-3 px-4">Recipient (To)</TableHead>
-                    <TableHead className="py-3 px-4">Sender (From)</TableHead>
-                    <TableHead className="py-3 px-4">Status</TableHead>
-                    <TableHead className="py-3 px-4">Sent Date</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody className="divide-y divide-slate-100">
-                  {emails.map((e) => (
-                    <TableRow key={e.id} className="hover:bg-slate-50 transition">
-                      <TableCell className="py-3.5 px-4 font-black text-slate-900">{e.subject}</TableCell>
-                      <TableCell className="py-3.5 px-4 font-bold text-indigo-600">{e.to.join(', ')}</TableCell>
-                      <TableCell className="py-3.5 px-4 font-bold text-slate-600">{e.from_email}</TableCell>
-                      <TableCell className="py-3.5 px-4">
-                        <div className="space-y-1">
-                          <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-black ${
-                            e.status === 'Sent'
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : e.status === 'Failed'
-                                ? 'bg-rose-100 text-rose-700'
-                                : e.status === 'Unknown'
-                                  ? 'bg-amber-100 text-amber-700'
-                                  : 'bg-slate-100 text-slate-700'
-                          }`}>
-                            {e.status}
-                          </span>
-                          {e.status === 'Failed' && e.failure_reason && (
-                            <p className="max-w-xs text-[10px] font-medium text-rose-600">{e.failure_reason}</p>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="py-3.5 px-4 font-bold text-slate-600">{formatDateTime(e.sent_at, { timeZone: leadTimeZone })}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+          <DataTable
+            columns={emailColumns}
+            data={emails}
+            getRowKey={(email) => email.id}
+            emptyTitle="No email communications logged yet"
+            emptyDescription="Use Send Email above to send an email."
+            isLoading={isEmailsLoading}
+            expandableRow={(email) => (
+              <div className="space-y-2">
+                <EmailBodyPreview body={email.body} />
+                {email.status === 'Failed' && email.failure_reason && (
+                  <p className="text-xs font-medium text-rose-600">
+                    Delivery failed: {email.failure_reason}
+                  </p>
+                )}
+              </div>
+            )}
+          />
         </Card>
       )}
 
