@@ -4,10 +4,11 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException
-from app.models import Integration
+from app.models import Integration, IntegrationDelivery
 from app.repositories.integration_repository import IntegrationRepository
 from app.schemas.crm_schemas import (
     MailchimpConnectPayload,
@@ -89,7 +90,153 @@ async def test_connect_zapier_creates_integration(monkeypatch):
     data = repo.create.await_args_list[-1].kwargs["data"]
     assert data["provider"] == "zapier"
     assert data["webhook_url"].startswith("enc:v1:")
+    assert data["sync_enabled"] is True
+    assert data["last_synced"] is not None
     assert result["status"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_trigger_zapier_event_queues_with_client_idempotency_key():
+    integration = _make_integration(provider="zapier")
+    repo: Any = IntegrationRepository()
+    repo.resolve_org_id = AsyncMock(return_value="org-1")
+    repo.get_connected_by_provider = AsyncMock(return_value=integration)
+    repo.get_delivery_by_idempotency_key = AsyncMock(return_value=None)
+    repo.queue_delivery = AsyncMock(return_value=SimpleNamespace(id="delivery-1"))
+    repo.commit = AsyncMock()
+    service = IntegrationService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.trigger_zapier_event(
+        db,
+        SimpleNamespace(event_name="lead.created", payload={"lead_id": "lead-1"}),
+        None,
+        idempotency_key="request-1",
+    )
+
+    assert result["status"] == "queued"
+    queued = repo.queue_delivery.await_args.kwargs["data"]
+    assert queued["organization_id"] == "org-1"
+    assert queued["idempotency_key"] == "request-1"
+    assert queued["payload"]["data"] == {"lead_id": "lead-1"}
+    repo.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_trigger_zapier_event_reuses_existing_idempotent_delivery():
+    integration = _make_integration(provider="zapier")
+    repo: Any = IntegrationRepository()
+    repo.resolve_org_id = AsyncMock(return_value="org-1")
+    repo.get_connected_by_provider = AsyncMock(return_value=integration)
+    repo.get_delivery_by_idempotency_key = AsyncMock(
+        return_value=SimpleNamespace(
+            id="delivery-1",
+            event_name="lead.created",
+            payload={"event": "lead.created", "data": {}},
+        )
+    )
+    repo.queue_delivery = AsyncMock()
+    repo.commit = AsyncMock()
+    service = IntegrationService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.trigger_zapier_event(
+        db,
+        SimpleNamespace(event_name="lead.created", payload={}),
+        None,
+        idempotency_key="request-1",
+    )
+
+    assert result == {"message": "Zapier event is already queued.", "status": "queued"}
+    repo.queue_delivery.assert_not_awaited()
+    repo.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_trigger_zapier_event_recovers_concurrent_idempotency_conflict():
+    integration = _make_integration(provider="zapier")
+    repo: Any = IntegrationRepository()
+    repo.resolve_org_id = AsyncMock(return_value="org-1")
+    repo.get_connected_by_provider = AsyncMock(return_value=integration)
+    repo.get_delivery_by_idempotency_key = AsyncMock(
+        side_effect=[
+            None,
+            SimpleNamespace(
+                id="delivery-1",
+                event_name="lead.created",
+                payload={"event": "lead.created", "data": {}},
+            ),
+        ]
+    )
+    repo.queue_delivery = AsyncMock(return_value=SimpleNamespace(id="delivery-1"))
+    repo.commit = AsyncMock(
+        side_effect=IntegrityError("insert integration delivery", {}, Exception("duplicate"))
+    )
+    service = IntegrationService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.trigger_zapier_event(
+        db,
+        SimpleNamespace(event_name="lead.created", payload={}),
+        None,
+        idempotency_key="request-1",
+    )
+
+    assert result["status"] == "queued"
+    db.rollback.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_trigger_zapier_event_rejects_idempotency_key_payload_mismatch():
+    integration = _make_integration(provider="zapier")
+    repo: Any = IntegrationRepository()
+    repo.resolve_org_id = AsyncMock(return_value="org-1")
+    repo.get_connected_by_provider = AsyncMock(return_value=integration)
+    repo.get_delivery_by_idempotency_key = AsyncMock(
+        return_value=SimpleNamespace(
+            id="delivery-1",
+            event_name="lead.created",
+            payload={"event": "lead.created", "data": {"lead_id": "lead-1"}},
+        )
+    )
+    repo.queue_delivery = AsyncMock()
+    service = IntegrationService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(APIException) as exc_info:
+        await service.trigger_zapier_event(
+            db,
+            SimpleNamespace(event_name="lead.created", payload={"lead_id": "lead-2"}),
+            None,
+            idempotency_key="request-1",
+        )
+
+    assert exc_info.value.code == "INTEGRATION_IDEMPOTENCY_CONFLICT"
+    repo.queue_delivery.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_trigger_zapier_event_queue_failure_is_not_success():
+    integration = _make_integration(provider="zapier")
+    repo: Any = IntegrationRepository()
+    repo.resolve_org_id = AsyncMock(return_value="org-1")
+    repo.get_connected_by_provider = AsyncMock(return_value=integration)
+    repo.get_delivery_by_idempotency_key = AsyncMock(return_value=None)
+    repo.queue_delivery = AsyncMock(return_value=SimpleNamespace(id="delivery-1"))
+    repo.commit = AsyncMock(side_effect=RuntimeError("database unavailable"))
+    service = IntegrationService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(APIException) as exc_info:
+        await service.trigger_zapier_event(
+            db,
+            SimpleNamespace(event_name="lead.created", payload={}),
+            None,
+            idempotency_key="request-1",
+        )
+
+    assert exc_info.value.code == "INTEGRATION_DELIVERY_QUEUE_FAILED"
+    db.rollback.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -247,7 +394,7 @@ async def test_disconnect_slack(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_disconnect_slack_fires_integration_disconnected():
+async def test_disconnect_slack_does_not_queue_delivery_after_credentials_are_removed():
     integration = _make_integration()
     repo: Any = IntegrationRepository()
     repo.resolve_org_id = AsyncMock(return_value="org-1")
@@ -259,8 +406,7 @@ async def test_disconnect_slack_fires_integration_disconnected():
     cast(Any, service).notify_slack_event = notify
     result = await service.disconnect_slack(db, None)
 
-    notify.assert_awaited_once()
-    assert notify.await_args_list[-1].kwargs["event_name"] == "integration.disconnected"
+    notify.assert_not_awaited()
     assert integration.webhook_url is None
     assert result["status"] == "success"
 
@@ -433,37 +579,39 @@ async def test_notify_slack_event_skips_disabled_event():
 
 
 @pytest.mark.asyncio
-async def test_notify_slack_event_posts_enabled_event():
+async def test_notify_slack_event_queues_enabled_event():
     integration = _make_integration(enabled_events='["lead.created"]')
     repo: Any = IntegrationRepository()
     repo.get_connected_by_provider = AsyncMock(return_value=integration)
     service = IntegrationService(repository=repo)
-    cast(Any, service)._post_to_slack = AsyncMock()
     db = AsyncMock(spec=AsyncSession)
 
     await service.notify_slack_event(
         db, event_name="lead.created", data={"title": "Acme Corp"}, org_id="org-1"
     )
 
-    cast(Any, service)._post_to_slack.assert_awaited_once()
-    text = cast(Any, service)._post_to_slack.await_args_list[-1].args[2]
-    assert "New lead created" in text
-    assert "Acme Corp" in text
+    delivery = db.add.call_args.args[0]
+    assert isinstance(delivery, IntegrationDelivery)
+    assert delivery.organization_id == "org-1"
+    assert delivery.event_name == "lead.created"
+    assert "New lead created" in delivery.payload["text"]
+    assert "Acme Corp" in delivery.payload["text"]
+    assert integration.status == "syncing"
+    db.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_notify_slack_event_swallows_post_failure():
+async def test_notify_slack_event_rolls_back_queue_failure():
     integration = _make_integration(enabled_events='["lead.created"]')
     repo: Any = IntegrationRepository()
     repo.get_connected_by_provider = AsyncMock(return_value=integration)
     service = IntegrationService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
-    async def boom(*args, **kwargs):
-        raise RuntimeError("webhook down")
-
-    cast(Any, service)._post_to_slack = boom
+    db.commit.side_effect = RuntimeError("database unavailable")
     await service.notify_slack_event(db, event_name="lead.created", data={}, org_id="org-1")
+
+    db.rollback.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -590,7 +738,8 @@ async def test_notify_slack_event_allows_event_when_enabled_events_empty():
 
     await service.notify_slack_event(db, event_name="lead.created", data={}, org_id="org-1")
 
-    cast(Any, service)._post_to_slack.assert_awaited_once()
+    assert isinstance(db.add.call_args.args[0], IntegrationDelivery)
+    db.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -604,7 +753,8 @@ async def test_notify_slack_event_allows_event_when_enabled_events_malformed():
 
     await service.notify_slack_event(db, event_name="lead.created", data={}, org_id="org-1")
 
-    cast(Any, service)._post_to_slack.assert_awaited_once()
+    assert isinstance(db.add.call_args.args[0], IntegrationDelivery)
+    db.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio

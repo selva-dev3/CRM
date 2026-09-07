@@ -2,12 +2,14 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     DateTime,
     ForeignKey,
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -54,7 +56,7 @@ class Integration(Base):
     # JSON string
     enabled_events: Mapped[str | None] = mapped_column(Text)
 
-    sync_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    sync_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     last_synced: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -155,6 +157,39 @@ class Webhook(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class IntegrationDelivery(Base):
+    __tablename__ = "integration_deliveries"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "integration_id", "idempotency_key",
+            name="uq_integration_delivery_idempotency",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    organization_id: Mapped[str] = mapped_column(
+        String, ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    integration_id: Mapped[str] = mapped_column(
+        String, ForeignKey("integrations.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    provider: Mapped[str] = mapped_column(String(50), index=True, nullable=False)
+    event_name: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), default="Pending", index=True, nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    claimed_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    provider_status_code: Mapped[int | None] = mapped_column(Integer)
+    last_error: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

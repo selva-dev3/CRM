@@ -1,6 +1,6 @@
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, Query
+from fastapi import APIRouter, Body, Depends, Header, Query
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -152,15 +152,22 @@ async def test_zapier_connection(
 @router.post(
     "/zapier/event",
     response_model=MessageResponse,
+    status_code=202,
     summary="Trigger outbound webhook event to Zapier subscription",
     dependencies=[Depends(require_permission("integrations:manage"))],
 )
 async def trigger_zapier_event(
     payload: ZapierEventPayload,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=128),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await integration_service.trigger_zapier_event(db, payload, current_user)
+    return await integration_service.trigger_zapier_event(
+        db,
+        payload,
+        current_user,
+        idempotency_key=idempotency_key,
+    )
 
 
 @router.delete(

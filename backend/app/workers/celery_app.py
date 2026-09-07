@@ -38,6 +38,10 @@ celery_app.conf.beat_schedule = {
         "task": "app.workers.tasks.deliver_pending_payment_receipts",
         "schedule": 60.0,
     },
+    "deliver-pending-integration-events": {
+        "task": "app.workers.tasks.deliver_pending_integration_events",
+        "schedule": 30.0,
+    },
     "send-due-invoice-reminders": {
         "task": "app.workers.tasks.send_due_invoice_reminders",
         "schedule": crontab(minute=15),

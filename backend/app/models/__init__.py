@@ -27,7 +27,7 @@ from app.models.contact import Contact, ContactAddress, ContactTag
 from app.models.deal import Deal, DealActivity, DealProduct, DealStage, DealStageHistory
 from app.models.document import Document, DocumentVersion
 from app.models.email import Email, EmailLog, EmailTemplate
-from app.models.integration import ApiKey, Integration, Webhook
+from app.models.integration import ApiKey, Integration, IntegrationDelivery, Webhook
 from app.models.invoice import Invoice, InvoiceItem
 from app.models.lead import (
     Lead,
@@ -141,6 +141,7 @@ __all__ = [
     "AuditLog",
     "ActivityLog",
     "Integration",
+    "IntegrationDelivery",
     "ApiKey",
     "Webhook",
     "AIConversation",

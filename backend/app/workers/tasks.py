@@ -3,12 +3,194 @@ import html
 import io
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select, update
+from sqlalchemy import and_, or_, select, update
 
 from app.core.logging import get_logger
 from app.workers.celery_app import celery_app
 
 logger = get_logger(__name__)
+
+_INTEGRATION_CLAIM_TTL = timedelta(minutes=2)
+_INTEGRATION_MAX_ATTEMPTS = 5
+
+
+@celery_app.task(name="app.workers.tasks.deliver_pending_integration_events", ignore_result=True)
+def deliver_pending_integration_events():
+    return asyncio.run(_deliver_pending_integration_events())
+
+
+async def _deliver_pending_integration_events() -> dict[str, int]:
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.core.config import settings
+    from app.models import IntegrationDelivery
+
+    engine = create_async_engine(settings.DATABASE_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    delivered = 0
+    failed = 0
+    lost_claim = 0
+    try:
+        now = datetime.now(UTC)
+        async with factory() as db:
+            result = await db.execute(
+                select(IntegrationDelivery.id)
+                .where(
+                    or_(
+                        and_(
+                            IntegrationDelivery.status.in_(("Pending", "Retry")),
+                            (IntegrationDelivery.next_attempt_at.is_(None))
+                            | (IntegrationDelivery.next_attempt_at <= now),
+                            (IntegrationDelivery.claimed_until.is_(None))
+                            | (IntegrationDelivery.claimed_until < now),
+                        ),
+                        and_(
+                            IntegrationDelivery.status == "Processing",
+                            IntegrationDelivery.claimed_until < now,
+                        ),
+                    )
+                )
+                .order_by(IntegrationDelivery.created_at.asc())
+                .limit(100)
+            )
+            delivery_ids = list(result.scalars().all())
+        for delivery_id in delivery_ids:
+            outcome = await _deliver_one_integration_event(factory, delivery_id)
+            delivered += int(outcome == "delivered")
+            failed += int(outcome == "failed")
+            lost_claim += int(outcome == "lost_claim")
+        return {"delivered": delivered, "failed": failed, "lost_claim": lost_claim}
+    finally:
+        await engine.dispose()
+
+
+async def _deliver_one_integration_event(factory, delivery_id: str) -> str:
+    import httpx
+
+    from app.models import Integration, IntegrationDelivery
+    from app.services.integration_service import IntegrationService
+
+    now = datetime.now(UTC)
+    claim_until = now + _INTEGRATION_CLAIM_TTL
+    async with factory() as db:
+        result = await db.execute(
+            update(IntegrationDelivery)
+            .where(
+                IntegrationDelivery.id == delivery_id,
+                or_(
+                    and_(
+                        IntegrationDelivery.status.in_(("Pending", "Retry")),
+                        (IntegrationDelivery.next_attempt_at.is_(None))
+                        | (IntegrationDelivery.next_attempt_at <= now),
+                        (IntegrationDelivery.claimed_until.is_(None))
+                        | (IntegrationDelivery.claimed_until < now),
+                    ),
+                    and_(
+                        IntegrationDelivery.status == "Processing",
+                        IntegrationDelivery.claimed_until < now,
+                    ),
+                ),
+            )
+            .values(status="Processing", claimed_until=claim_until)
+            .returning(
+                IntegrationDelivery.organization_id,
+                IntegrationDelivery.integration_id,
+                IntegrationDelivery.provider,
+                IntegrationDelivery.payload,
+                IntegrationDelivery.attempts,
+            )
+        )
+        claimed = result.first()
+        await db.commit()
+    if claimed is None:
+        return "skipped"
+
+    organization_id, integration_id, provider, payload, previous_attempts = tuple(claimed)
+    attempts = int(previous_attempts or 0) + 1
+    error_message: str | None = None
+    status_code: int | None = None
+    try:
+        async with factory() as db:
+            integration = await db.get(Integration, integration_id)
+        if (
+            integration is None
+            or integration.organization_id != organization_id
+            or not integration.is_connected
+        ):
+            raise RuntimeError("integration disconnected")
+        webhook_url = IntegrationService._decrypt_secret(integration.webhook_url)
+        if not webhook_url:
+            raise RuntimeError("integration webhook unavailable")
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.post(
+                webhook_url,
+                json=payload,
+                headers={"Idempotency-Key": delivery_id},
+            )
+            status_code = response.status_code
+            response.raise_for_status()
+        async with factory() as db:
+            finalized = await db.execute(
+                update(IntegrationDelivery)
+                .where(
+                    IntegrationDelivery.id == delivery_id,
+                    IntegrationDelivery.claimed_until == claim_until,
+                )
+                .values(
+                    status="Delivered",
+                    attempts=attempts,
+                    delivered_at=datetime.now(UTC),
+                    provider_status_code=status_code,
+                    claimed_until=None,
+                    last_error=None,
+                )
+            )
+            integration = await db.get(Integration, integration_id)
+            if finalized.rowcount > 0 and integration is not None:
+                integration.status = "synced"
+                integration.last_synced = datetime.now(UTC)
+                integration.last_error = None
+            await db.commit()
+        if finalized.rowcount == 0:
+            logger.warning(
+                "Integration provider accepted delivery after its claim was lost delivery_id=%s",
+                delivery_id,
+            )
+            return "lost_claim"
+        return "delivered"
+    except Exception as exc:
+        error_message = f"{provider} delivery failed: {type(exc).__name__}"
+        terminal = attempts >= _INTEGRATION_MAX_ATTEMPTS
+        next_attempt = None if terminal else now + timedelta(minutes=min(2**attempts, 60))
+        async with factory() as db:
+            released = await db.execute(
+                update(IntegrationDelivery)
+                .where(
+                    IntegrationDelivery.id == delivery_id,
+                    IntegrationDelivery.claimed_until == claim_until,
+                )
+                .values(
+                    status="Failed" if terminal else "Retry",
+                    attempts=attempts,
+                    next_attempt_at=next_attempt,
+                    provider_status_code=status_code,
+                    claimed_until=None,
+                    last_error=error_message,
+                )
+            )
+            integration = await db.get(Integration, integration_id)
+            if released.rowcount > 0 and integration is not None:
+                integration.status = "sync_failed" if terminal else "syncing"
+                integration.last_error = error_message
+            await db.commit()
+        logger.warning(
+            "Integration delivery failed delivery_id=%s provider=%s attempt=%s terminal=%s",
+            delivery_id,
+            provider,
+            attempts,
+            terminal,
+        )
+        return "failed"
 
 
 @celery_app.task(name="app.workers.tasks.reconcile_provider_subscriptions", ignore_result=True)
