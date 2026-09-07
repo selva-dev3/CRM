@@ -4,7 +4,7 @@ import { ResponsiveSelect } from '@/components/common/responsive-select';
 import { Textarea } from '@/components/ui/textarea';
 
 import { getErrorMessage } from '@/lib/utils';
-import React, { useState, useMemo } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -97,6 +97,18 @@ import {
 } from '@/lib/api/custom-fields';
 
 const UNASSIGNED_VALUE = '__unassigned__';
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function isValidEmail(value: string | null | undefined): value is string {
+  return typeof value === 'string' && EMAIL_PATTERN.test(value.trim());
+}
+
+function createIdempotencyKey(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `lead-email-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 
 export default function LeadDetailPage() {
   const params = useParams();
@@ -169,6 +181,7 @@ export default function LeadDetailPage() {
   const [emailSubject, setEmailSubject] = useState('');
   const [emailBody, setEmailBody] = useState('');
   const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const emailIdempotencyKeyRef = useRef<string | null>(null);
 
   const [callType, setCallType] = useState('Outbound');
   const [callDuration, setCallDuration] = useState('180');
@@ -405,16 +418,46 @@ export default function LeadDetailPage() {
 
   const handleSendEmail = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!emailSubject.trim()) return;
+    const recipient = lead?.email?.trim() ?? '';
+    const subject = emailSubject.trim();
+    const body = emailBody.trim();
+
+    if (!isValidEmail(recipient)) {
+      setErrorMessage('This lead does not have a valid email address.');
+      return;
+    }
+    if (!subject) {
+      setErrorMessage('Subject is required.');
+      return;
+    }
+    if (!body) {
+      setErrorMessage('Email body is required.');
+      return;
+    }
+
     try {
       setIsSendingEmail(true);
-      await sendLeadEmailApi(leadId, { to: [emailTo || lead?.email || 'lead@example.com'], subject: emailSubject.trim(), body: emailBody.trim() });
+      const idempotencyKey = emailIdempotencyKeyRef.current ?? createIdempotencyKey();
+      emailIdempotencyKeyRef.current = idempotencyKey;
+      const queuedEmail = await sendLeadEmailApi(
+        leadId,
+        { to: [recipient], subject, body },
+        idempotencyKey,
+      );
+      emailIdempotencyKeyRef.current = null;
       setEmailSubject('');
       setEmailBody('');
       setIsEmailModalOpen(false);
-      await refetchEmails();
-      await refetchTimeline();
-      setSuccessMessage('Email sent successfully!');
+      setSuccessMessage(
+        queuedEmail.status === 'Sent'
+          ? 'Email sent successfully.'
+          : 'Email queued for delivery.',
+      );
+      try {
+        await Promise.all([refetchEmails(), refetchTimeline()]);
+      } catch {
+        setErrorMessage('Email queued for delivery, but the activity history could not refresh.');
+      }
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err: unknown) {
       setErrorMessage(getErrorMessage(err, 'Failed to send email.'));
@@ -651,6 +694,13 @@ export default function LeadDetailPage() {
           <AlertDescription className="text-[#16A34A] font-medium">
             {successMessage}
           </AlertDescription>
+        </Alert>
+      )}
+
+      {errorMessage && !isModalOpen && !isEmailModalOpen && !isNoteModalOpen && !isTaskModalOpen && !isCallModalOpen && !isDocModalOpen && (
+        <Alert variant="destructive" className="bg-rose-50 border-rose-300 text-rose-950 font-bold">
+          <AlertCircle className="h-4 w-4 text-rose-600 mr-2" />
+          <AlertDescription className="text-rose-900 font-bold text-xs">{errorMessage}</AlertDescription>
         </Alert>
       )}
 
@@ -1130,7 +1180,13 @@ export default function LeadDetailPage() {
             <Button
               type="button"
               onClick={() => {
-                setEmailTo(lead.email);
+                if (!isValidEmail(lead.email)) {
+                  setErrorMessage('This lead does not have a valid email address.');
+                  return;
+                }
+                setErrorMessage(null);
+                setEmailTo(lead.email.trim());
+                emailIdempotencyKeyRef.current = null;
                 setIsEmailModalOpen(true);
               }}
               className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 h-9 shadow-xs cursor-pointer"
@@ -1157,6 +1213,7 @@ export default function LeadDetailPage() {
                     <TableHead className="py-3 px-4">Subject Line</TableHead>
                     <TableHead className="py-3 px-4">Recipient (To)</TableHead>
                     <TableHead className="py-3 px-4">Sender (From)</TableHead>
+                    <TableHead className="py-3 px-4">Status</TableHead>
                     <TableHead className="py-3 px-4">Sent Date</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1166,6 +1223,24 @@ export default function LeadDetailPage() {
                       <TableCell className="py-3.5 px-4 font-black text-slate-900">{e.subject}</TableCell>
                       <TableCell className="py-3.5 px-4 font-bold text-indigo-600">{e.to.join(', ')}</TableCell>
                       <TableCell className="py-3.5 px-4 font-bold text-slate-600">{e.from_email}</TableCell>
+                      <TableCell className="py-3.5 px-4">
+                        <div className="space-y-1">
+                          <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-black ${
+                            e.status === 'Sent'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : e.status === 'Failed'
+                                ? 'bg-rose-100 text-rose-700'
+                                : e.status === 'Unknown'
+                                  ? 'bg-amber-100 text-amber-700'
+                                  : 'bg-slate-100 text-slate-700'
+                          }`}>
+                            {e.status}
+                          </span>
+                          {e.status === 'Failed' && e.failure_reason && (
+                            <p className="max-w-xs text-[10px] font-medium text-rose-600">{e.failure_reason}</p>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell className="py-3.5 px-4 font-bold text-slate-600">{formatDateTime(e.sent_at, { timeZone: leadTimeZone })}</TableCell>
                     </TableRow>
                   ))}
@@ -1601,18 +1676,30 @@ export default function LeadDetailPage() {
             </div>
           }
         >
+          {errorMessage && (
+            <div className="pb-4">
+              <Alert variant="destructive" className="bg-rose-50 border-rose-300 text-rose-950 font-bold">
+                <AlertCircle className="h-4 w-4 text-rose-600 mr-2" />
+                <AlertDescription className="text-rose-900 font-bold text-xs">{errorMessage}</AlertDescription>
+              </Alert>
+            </div>
+          )}
           <form onSubmit={handleSendEmail} className="space-y-4">
             <div className="space-y-1.5">
-              <Label className="text-xs font-black text-black">Recipient Email</Label>
-              <Input type="email" value={emailTo} onChange={(e) => setEmailTo(e.target.value)} className="bg-slate-50 border-slate-300 text-xs font-bold text-black" />
+              <Label className="text-xs font-black text-black">To</Label>
+              <div className="rounded-xl border border-slate-300 bg-slate-50 px-3 py-2">
+                <p className="text-xs font-black text-black">{lead.contact_name}</p>
+                <p className="text-xs font-bold text-slate-600">{emailTo}</p>
+              </div>
+              <p className="text-[11px] font-medium text-slate-500">The Lead&apos;s primary email is used as the recipient.</p>
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-black text-black">Subject Line *</Label>
-              <Input required placeholder="Enterprise CRM Proposal & Next Steps" value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} className="bg-slate-50 border-slate-300 text-xs font-bold text-black" />
+              <Input required maxLength={500} placeholder="Enterprise CRM Proposal & Next Steps" value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} className="bg-slate-50 border-slate-300 text-xs font-bold text-black" />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-black text-black">Email Body</Label>
-              <Textarea rows={4} placeholder="Hi, following up on our recent demo..." value={emailBody} onChange={(e) => setEmailBody(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              <Textarea required maxLength={100000} rows={4} placeholder="Hi, following up on our recent demo..." value={emailBody} onChange={(e) => setEmailBody(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500" />
             </div>
             <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2 border-t border-slate-100">
               <Button type="button" variant="outline" onClick={() => setIsEmailModalOpen(false)} className="border-slate-300 text-black font-bold text-xs">

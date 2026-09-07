@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { fetchLeadsApi } from './leads';
+import { fetchLeadsApi, sendLeadEmailApi } from './leads';
 
 const lead = {
   id: 'lead-1',
@@ -42,5 +42,38 @@ describe('fetchLeadsApi', () => {
     }));
 
     await expect(fetchLeadsApi()).rejects.toThrow('missing valid pagination metadata');
+  });
+});
+
+describe('sendLeadEmailApi', () => {
+  it('sends the idempotency key with the Lead email request', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 202,
+      headers: new Headers(),
+      json: vi.fn().mockResolvedValue({
+        id: 'email-1',
+        from_email: 'rep@crm.test',
+        to: ['jane@acme.test'],
+        subject: 'Hello',
+        status: 'Pending',
+        sent_at: null,
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await sendLeadEmailApi(
+      'lead-1',
+      { to: ['jane@acme.test'], subject: 'Hello', body: 'Hi Jane' },
+      'email-key-1',
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/leads/lead-1/emails/send'),
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ 'Idempotency-Key': 'email-key-1' }),
+      }),
+    );
   });
 });
