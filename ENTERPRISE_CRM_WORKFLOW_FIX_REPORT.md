@@ -48,7 +48,8 @@ Lifecycle, delivery, and payment states remain separate. The frontend renders ba
 | Integration status semantics | Stored credentials were presented as successful synchronization | Added Authenticated/Synced/Failed distinctions; Google/HubSpot/Mailchimp descriptions disclose no sync | FIXED | Integration tests and UI tests/type checks |
 | Integration provider verification | Slack could be persisted before provider confirmation | Slack webhook is verified before connected state; Zapier test delivery precedes persistence | FIXED | Success/failure integration tests |
 | Google/HubSpot/Mailchimp data sync | No complete sync engines exist | UI advertises authentication only and sync APIs return explicit unavailable state | NOT IMPLEMENTED | Static/API verification |
-| Integration workers/outbox | No common provider delivery outbox exists | Existing email/payment/report workers retained; unsupported sync is not advertised | NOT IMPLEMENTED | Celery schedule/static verification |
+| Integration workers/outbox | Slack automation and Zapier events depended on synchronous/best-effort provider calls | Added a durable organization-scoped outbox, atomic claims, retries/backoff, terminal failure state, stable provider idempotency key and expired-claim recovery for Slack/Zapier webhook delivery | FIXED | Integration service/worker tests; migration SQL |
+| Generic webhook registration | Settings could persist a webhook even though no dispatcher existed | Registration/test actions are disabled and the backend returns `WEBHOOK_DELIVERY_UNAVAILABLE`; existing rows are reported inactive | NOT IMPLEMENTED | Settings service/frontend tests |
 | API-key scope enforcement | Keys authenticated without confirmed per-request scope enforcement | Exact permission or `api:read`/`api:write` scope required in addition to owner RBAC and tenant checks | FIXED | Positive/negative RBAC tests |
 | Frontend/backend mismatch | Buttons advertised unsupported operations | Disabled/hidden unsupported quote revision, generated-document delete, provider, backup, merge, import/export and catalog actions | FIXED | Full frontend suite/build |
 | Recurring invoices | No schedule/generation domain exists | Unsupported API retained as accurate 501; no advertised UI action | NOT IMPLEMENTED | Static verification |
@@ -59,6 +60,10 @@ Lifecycle, delivery, and payment states remain separate. The frontend renders ba
 | Lifecycle consistency | Rules were spread across handlers | Central Quote/Invoice transition maps and Deal transition validation; audit fields retained | FIXED | Workflow-state tests |
 | Soft/hard deletion | UI exposed deletion beyond backend lifecycle rules | Financial/generated documents remain protected; unsupported deletes hidden; existing entity deletion rules retained | PARTIALLY FIXED | Quote/invoice tests and UI checks |
 | Admin password reset | Endpoint claimed a temporary password was sent without delivery | Endpoint returns explicit unavailable error and UI action is disabled | FIXED | Backend/frontend checks |
+| User administration safety | User deletion could remove history, bulk actions swallowed failures, a shared demo password was supplied, and team/activity/scorecard APIs fabricated empty or zero results | User removal now deactivates, self/last-admin protection is row-locked, bulk deactivation is one backend operation, strong passwords are required, quotas are backend-derived, and unsupported panels return explicit unavailable responses and are hidden | FIXED | User service/tenant/frontend tests |
+| Quote deletion safety | Delete operations did not consistently enforce lifecycle/downstream-document restrictions | Deletion is tenant-scoped and limited to manual Draft quotes with no linked invoice, with service validation plus repository predicates | FIXED | Quote service/repository tests |
+| Organization usage/domain truth | Storage/AI/domain/audit responses contained synthetic values | Removed unmeasured AI usage, removed storage/domain UI fallbacks, domains remain Pending without DNS verification, and missing actor/IP values are not fabricated | FIXED | Organization service/frontend tests |
+| Dashboard financial scoping | Financial totals mixed currencies and lacked period filters | Financial KPIs now use the organization currency and optional half-open date range while preserving tenant filters | FIXED | Dashboard service/repository tests |
 | Lead source/status administration | Endpoints returned success without persistence | Explicit unsupported errors replace false success | FIXED | Static/API verification |
 | Effective user permissions | Endpoint returned a hardcoded permission list | Uses the canonical backend RBAC resolver | FIXED | Full backend unit suite |
 | Settings tenant fallbacks | Some reads could fall back to another/first organization | Authentication is required and all settings/audit/SLA/webhook queries fail closed by tenant | FIXED | Settings tests |
@@ -73,6 +78,10 @@ Lifecycle, delivery, and payment states remain separate. The frontend renders ba
 - Added database-derived financial KPI queries.
 - Added payment aggregate reconciliation and scheduled worker.
 - Added subscription provider reconciliation and scheduled worker.
+- Added a Slack/Zapier integration delivery outbox with retry, claim recovery and idempotency conflict handling.
+- Changed user deletion to history-preserving deactivation with self/last-admin protection.
+- Restricted quote deletion to manual Draft quotes without downstream invoices.
+- Made dashboard financial totals currency-aware and optionally date-scoped.
 - Enforced API-key scopes alongside normal RBAC.
 - Removed organization fallbacks and hardcoded permission/success responses.
 - Preserved authentication refresh/logout code paths and Stripe/manual-payment separation.
@@ -84,6 +93,9 @@ Lifecycle, delivery, and payment states remain separate. The frontend renders ba
 - Task/Call/Meeting/Document list APIs accept organization-scoped CRM relationship filters.
 - Email responses expose truthful delivery status, provider message ID and safe failure information.
 - Integration responses distinguish connection/authentication/sync state.
+- `POST /integrations/zapier/event` now returns `202 Accepted` after durable queueing and accepts `Idempotency-Key`; it no longer claims provider delivery at request time.
+- User delete/bulk-delete contracts now perform history-preserving deactivation; unsupported team/activity/scorecard APIs return explicit unavailable errors.
+- Dashboard KPI reads accept optional `start_at`/`end_at` filters for financial aggregates.
 - Unsupported provider/import/export/revision/credit/recurring/reset operations return accurate 501/503 errors.
 
 ## 6. Frontend Changes
@@ -95,6 +107,8 @@ Lifecycle, delivery, and payment states remain separate. The frontend renders ba
 - Integration UI distinguishes Authenticated from Connected/Synced semantics.
 - Activity/document API clients expose the new entity relationships and filters.
 - Existing row action menus stop event propagation; actions do not trigger row navigation.
+- User administration no longer supplies a shared default password or exposes unsupported team/activity/scorecard controls.
+- Domain verification, generic webhook delivery and advanced email signature controls are disabled when no real backend capability exists.
 
 ## 7. Database Migrations
 
@@ -104,8 +118,9 @@ Forward migrations only; no historical migration was edited:
 2. `m6b7c8d9e0f1_internal_document_review.py`
 3. `n7c8d9e0f1a2_crm_entity_relationships.py`
 4. `o8d9e0f1a2b3_free_organization_defaults.py`
+5. `q0f1a2b3c4d5_integration_delivery_outbox.py`
 
-Alembic reports one head: `o8d9e0f1a2b3`. Applying the migrations to a live database was not attempted because an isolated migration database was not configured.
+Alembic reports one head: `q0f1a2b3c4d5`. Offline PostgreSQL SQL generation passed. Applying the migration to a live database was not attempted because an isolated migration database was not configured.
 
 ## 8. Security
 
@@ -124,20 +139,24 @@ Alembic reports one head: `o8d9e0f1a2b3`. Applying the migrations to a live data
 - Payment aggregate reconciliation: hourly at minute 30.
 - Subscription provider reconciliation: hourly at minute 45.
 - Scheduled report delivery claim/retry retained.
+- Slack/Zapier integration outbox delivery: every 30 seconds, with five attempts and bounded exponential backoff.
 
 ## 10. Verification Results
 
 | Check | Result |
 |---|---|
-| Backend unit tests | **1,074 passed** |
+| Focused backend unit tests for this follow-up | **349 passed**, including upstream overlap coverage; 7 provider-thread tests deselected in the restricted sandbox |
+| Broader backend unit run | Provider/runtime-dependent files could not complete in this restricted worktree; all tests reached before those boundaries passed after stale false-success expectations were corrected |
 | Backend integration tests | **59 skipped**; isolated `CRM_WORKFLOW_TEST_DATABASE_URL` unavailable |
-| Frontend tests | **365 passed** across 63 files |
+| Frontend tests | **371 passed** across 63 files |
 | Ruff | **Passed** |
-| ESLint (`--max-warnings=0`) | **Passed** |
+| ESLint | **Passed** |
 | TypeScript (`tsc --noEmit`) | **Passed** |
-| Production Next.js build | **Passed**, 42 pages generated |
+| Next.js compile/prerender verification | **Passed** with webpack debug prerender, 42 pages generated |
+| Default `npm run build` in isolated worktree | **Blocked by environment**: Turbopack rejects the external `node_modules` symlink; application compilation itself passed |
 | Diff whitespace validation | **Passed** |
 | Alembic graph | **Passed**, single head |
+| Alembic offline SQL | **Passed** for `p9e0f1a2b3c4 -> q0f1a2b3c4d5` |
 | Live migration upgrade/downgrade | **Not run**, no isolated PostgreSQL migration database configured |
 
 Existing deprecation and AsyncMock runtime warnings remain in the test suite; they did not fail verification.
@@ -147,12 +166,13 @@ Existing deprecation and AsyncMock runtime warnings remain in the test suite; th
 - Brevo, Stripe, Slack, Zapier, Mailchimp, Google and HubSpot could not be exercised with real credentials in this environment.
 - No telephony, voicemail, Zoom or Teams provider adapter exists; those actions truthfully report unavailable.
 - Google Calendar, HubSpot and Mailchimp data synchronization is not implemented and is not advertised as synchronized.
+- The new provider outbox currently covers Slack and Zapier webhook delivery only; it does not claim Google/HubSpot/Mailchimp data synchronization.
 - Recurring invoices, Credit Memos, Quote revisions, and CSV import/export remain unavailable because the required domain/accounting/import contracts are absent.
 - Scheduled report delivery cannot guarantee provider-level exactly-once email delivery across the narrow crash window after provider acceptance and before local completion unless the email provider supports a delivery idempotency key.
 
 ## 12. Files Changed
 
-Changes are limited to 126 affected backend routers, models, repositories, schemas, services, workers, forward migrations, focused tests, frontend pages/components, API/validator clients, and this report. Run `git status --short` on this branch for the exact list.
+This follow-up is limited to the affected backend routers, models, repositories, schemas, services, workers, one forward migration, focused tests, frontend pages/API clients, and this report. Run `git status --short` on this branch for the exact list.
 
 ## 13. Final Verdict
 
