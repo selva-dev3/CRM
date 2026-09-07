@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -18,6 +18,11 @@ class Role(Base):
     is_system_role: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+    __table_args__ = (
+        Index("uq_roles_scope_normalized_name", organization_id, func.lower(func.btrim(name)),
+              unique=True, postgresql_nulls_not_distinct=True),
+    )
+
 
 class Permission(Base):
     __tablename__ = "permissions"
@@ -32,9 +37,14 @@ class Permission(Base):
 
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    __table_args__ = (
+        Index("uq_permissions_normalized_key", func.lower(func.btrim(key)), unique=True),
+    )
+
 
 class RolePermission(Base):
     __tablename__ = "role_permissions"
+    __table_args__ = (Index("uq_role_permissions_pair", "role_id", "permission_id", unique=True),)
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     role_id: Mapped[str] = mapped_column(
@@ -47,6 +57,7 @@ class RolePermission(Base):
 
 class UserRole(Base):
     __tablename__ = "user_roles"
+    __table_args__ = (Index("uq_user_roles_pair", "user_id", "role_id", unique=True),)
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id: Mapped[str] = mapped_column(

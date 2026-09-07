@@ -14,6 +14,7 @@ from app.core.permissions import (
     is_super_admin_role_name,
     is_super_admin_user,
 )
+from app.core.rbac_matrix import ADMIN_PERMISSIONS
 from app.models import Role, User, UserRole
 from app.repositories.role_repository import RoleRepository
 from app.schemas.crm_schemas import PermissionCreate, RoleCreate, RoleUpdate
@@ -828,6 +829,15 @@ ALL_STANDARD_PERMISSIONS = [
 ]
 
 
+# Preserve registered display metadata and supply every approved key on new databases.
+_registered_keys = {item["key"] for item in ALL_STANDARD_PERMISSIONS}
+ALL_STANDARD_PERMISSIONS.extend(
+    {"key": key, "name": key.replace(":", " ").replace("_", " ").title(),
+     "category": key.split(":")[0].title(), "description": "Standard CRM permission"}
+    for key in sorted(ADMIN_PERMISSIONS - _registered_keys)
+)
+
+
 def role_to_dict(role: Role, permissions: list, created_at: str = "2026-08-05") -> dict:
     return {
         "id": role.id,
@@ -1008,10 +1018,6 @@ class RoleService:
 
     # --- Get permission matrix ---
     async def get_permission_matrix(self, db: AsyncSession) -> list[dict]:
-        try:
-            await self.repository.seed_permissions(db, ALL_STANDARD_PERMISSIONS)
-        except Exception:
-            await db.rollback()
         perms = await self.repository.get_permission_matrix(db)
         return [
             {
@@ -1039,15 +1045,9 @@ class RoleService:
         try:
             await db.commit()
             await db.refresh(p)
-        except Exception:
+        except Exception as exc:
             await db.rollback()
-            return {
-                "id": f"perm-{int(datetime.now().timestamp())}",
-                "key": payload.key,
-                "name": payload.name,
-                "category": payload.category or "General",
-                "description": payload.description or "",
-            }
+            raise APIException(status_code=409, message="Permission could not be saved; its key may already exist") from exc
         return {
             "id": p.id,
             "key": p.key,
@@ -1393,7 +1393,8 @@ class RoleService:
         self._ensure_mutable_role_ownership(r, current_user)
         try:
             if payload.name:
-                r.name = payload.name
+                self.repository.validate_custom_role_name(payload.name)
+                r.name = payload.name.strip()
             if payload.description:
                 r.description = payload.description
             await db.commit()
