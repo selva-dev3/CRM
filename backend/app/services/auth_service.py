@@ -86,6 +86,8 @@ class AuthService:
 
     async def get_user_role_name(self, db: AsyncSession, user: User) -> str:
         """Resolve human-readable role name (e.g. 'Admin', 'Super Admin') for a user."""
+        if getattr(user, "is_platform_admin", False) is True:
+            return "Super Admin"
         try:
             raw_role = (user.role or "").strip()
 
@@ -128,6 +130,8 @@ class AuthService:
         """
         permission_keys = set()
         try:
+            if getattr(user, "is_platform_admin", False) is True:
+                return sorted(await self.repository.all_permission_keys(db))
             organization_id = self._require_organization_id(user)
             role_ids = set(await self.repository.role_ids_for_user(db, user.id))
             raw_role = (user.role or "").strip()
@@ -216,7 +220,8 @@ class AuthService:
                 "name": user.name,
                 "email": user.email,
                 "role": user_role_name,
-                "organization_id": user.organization_id,
+                "organization_id": user.organization_id or "",
+                "is_platform_admin": getattr(user, "is_platform_admin", False) is True,
                 "permissions": user_permissions,
             },
         }
@@ -238,7 +243,8 @@ class AuthService:
             "name": user.name,
             "email": user.email,
             "role": user_role_name,
-            "organization_id": user.organization_id,
+            "organization_id": user.organization_id or "",
+            "is_platform_admin": getattr(user, "is_platform_admin", False) is True,
             "permissions": user_permissions,
         }
 
@@ -487,6 +493,8 @@ class AuthService:
                 code="AUTH_ACCOUNT_INACTIVE",
                 message="This account is inactive",
             )
+        if getattr(user, "is_platform_admin", False) is True:
+            return
         organization = await db.get(Organization, user.organization_id)
         if not organization or not organization.is_active or organization.status != "active":
             raise ForbiddenError(message="User organization is inactive or unavailable")
@@ -668,6 +676,9 @@ class AuthService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 message="Invitation role is invalid for this organization",
             )
+        from app.core.permissions import ensure_can_assign_role, is_super_admin_role
+
+        ensure_can_assign_role(actor_is_super_admin=False, target_is_super_admin=is_super_admin_role(role))
         return role
 
     async def accept_auth_user_invitation(

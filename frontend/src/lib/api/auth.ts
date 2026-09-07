@@ -18,6 +18,7 @@ export interface LoginResponse {
     name: string;
     email: string;
     role: string;
+    is_platform_admin?: boolean;
     organization_id?: string;
     permissions?: string[];
     is_verified?: boolean;

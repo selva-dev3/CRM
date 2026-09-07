@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, File, Form, Header, Query, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import get_current_user, require_permission
+from app.api.v1.deps import get_current_user, require_permission, require_platform_admin
 from app.db.session import get_db
 from app.models import User
 from app.schemas.crm_schemas import (
@@ -20,6 +20,17 @@ from app.services.subscription_billing_service import SubscriptionBillingService
 
 router = APIRouter()
 subscription_billing_service = SubscriptionBillingService()
+
+
+@router.get("/all", response_model=list[OrganizationResponse], summary="List platform organizations",
+            dependencies=[Depends(require_permission("organization:read"))])
+async def list_platform_organizations(
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_platform_admin),
+):
+    return await organization_domain_service.list_platform_organizations(db, current_user, limit=limit, offset=offset)
 
 
 @router.get(

@@ -76,6 +76,7 @@ class BulkActionResponse(BaseModel):
 
 # 1. Authentication Schemas
 class UserTokenInfo(BaseModel):
+    is_platform_admin: bool = False
     id: str
     name: str
     email: str

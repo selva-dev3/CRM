@@ -1,3 +1,5 @@
+import { getOrganizationContext } from '@/lib/organization-context';
+
 // Central API Client for CRM Backend Integration (FastAPI)
 const DEFAULT_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
 export const API_REQUEST_TIMEOUT_MS = 15_000;
@@ -202,6 +204,11 @@ async function request<T>(
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string>),
   };
+  const organizationId = getOrganizationContext();
+  if (organizationId && !endpoint.startsWith('/auth/') && !endpoint.startsWith('/organizations/all')) {
+    headers['X-Organization-ID'] = organizationId;
+  }
+  if (organizationId && endpoint === '/auth/me') headers['X-Organization-ID'] = organizationId;
 
   if (isFormData) {
     delete headers['Content-Type'];
@@ -242,9 +249,13 @@ export async function openApiStream(
   data: unknown,
   signal?: AbortSignal,
 ): Promise<Response> {
+  const organizationId = getOrganizationContext();
   const options: RequestInit = {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    headers: {
+      'Content-Type': 'application/json', Accept: 'text/event-stream',
+      ...(organizationId ? { 'X-Organization-ID': organizationId } : {}),
+    },
     body: JSON.stringify(data),
     credentials: 'include',
     signal,

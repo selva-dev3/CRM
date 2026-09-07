@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useQueryClient } from '@tanstack/react-query';
 import { getCurrentUserApi, logoutApi, type CurrentUserResponse } from '@/lib/api/auth';
 import { invalidateAuthSession, markAuthSessionActive } from '@/lib/api/client';
+import { setOrganizationContext } from '@/lib/organization-context';
 import {
   AUTH_SESSION_BROADCAST_KEY,
   AUTH_SESSION_CHANGED_EVENT,
@@ -38,6 +39,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const resetLocalSession = useCallback(
     (broadcast = true) => {
       clearStoredSession({ broadcast });
+      setOrganizationContext(null);
       setUser(null);
       setStatus('unauthenticated');
       void queryClient.cancelQueries();
@@ -47,6 +49,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const setSession = useCallback((nextUser: CurrentUserResponse, remember?: boolean) => {
+    setOrganizationContext(null);
     markAuthSessionActive();
     authGenerationRef.current += 1;
     persistSessionUser(nextUser, { remember });
@@ -124,6 +127,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         authGenerationRef.current += 1;
         resetLocalSession(false);
       } else if (action === 'login') {
+        setOrganizationContext(null);
+        queryClient.clear();
         void verifySession().catch(() => resetLocalSession(false));
       }
     };
@@ -141,7 +146,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener('storage', handleStorage);
       window.removeEventListener('auth:unauthorized', handleUnauthorized);
     };
-  }, [resetLocalSession, verifySession]);
+  }, [queryClient, resetLocalSession, verifySession]);
 
   const value = useMemo(
     () => ({ status, user, setSession, verifySession, logout, isLoggingOut }),

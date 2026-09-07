@@ -129,7 +129,7 @@ class UserRepository:
         )
         return list(result.scalars().all())
 
-    async def lock_active_by_org(self, db: AsyncSession, org_id: str) -> list[User]:
+    async def lock_active_by_org(self, db: AsyncSession, org_id: str) -> builtins.list[User]:
         result = await db.execute(
             select(User).where(
                 User.organization_id == org_id,

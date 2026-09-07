@@ -1,6 +1,16 @@
 import uuid
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, func
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    func,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -19,6 +29,17 @@ class Role(Base):
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
+        CheckConstraint(
+            "lower(replace(btrim(name), '_', ' ')) <> 'super admin' OR "
+            "(organization_id IS NULL AND is_system_role)",
+            name="ck_roles_super_admin_global",
+        ),
+        Index(
+            "uq_roles_platform_super_admin",
+            func.lower(func.replace(func.btrim(name), "_", " ")),
+            unique=True,
+            postgresql_where=text("lower(replace(btrim(name), '_', ' ')) = 'super admin'"),
+        ),
         Index("uq_roles_scope_normalized_name", organization_id, func.lower(func.btrim(name)),
               unique=True, postgresql_nulls_not_distinct=True),
     )

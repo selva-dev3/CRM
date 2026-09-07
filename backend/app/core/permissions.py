@@ -41,6 +41,8 @@ async def is_super_admin_user(db, user) -> bool:
     name or a role UUID) before applying the name-based check, so the platform
     super_admin is recognized regardless of how the role was assigned.
     """
+    if getattr(user, "is_platform_admin", False) is True:
+        return True
     from app.repositories.role_repository import RoleRepository
 
     role_value = (getattr(user, "role", "") or "").strip()
@@ -56,9 +58,17 @@ async def is_super_admin_user(db, user) -> bool:
 
 
 def ensure_can_assign_role(*, actor_is_super_admin: bool, target_is_super_admin: bool) -> None:
-    """Centralized guard: only a super_admin actor may assign the super_admin role."""
-    if target_is_super_admin and not actor_is_super_admin:
-        raise ForbiddenError(message="Only super_admin users can assign the super_admin role.")
+    """Platform identity is provisioned once, never assigned through tenant APIs."""
+    if target_is_super_admin:
+        raise ForbiddenError(message="The platform Super Admin cannot be assigned through user management.")
+
+
+def ensure_tenant_managed_user(user) -> None:
+    """Protect the platform principal independently of email or selected organization."""
+    if getattr(user, "is_platform_admin", False) is True or is_super_admin_role_name(
+        getattr(user, "role", "")
+    ):
+        raise ForbiddenError(message="The platform Super Admin cannot be managed as an organization user.")
 
 
 def check_permission(user_role: str, required_roles: list[UserRole]) -> bool:

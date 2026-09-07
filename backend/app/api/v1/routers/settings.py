@@ -2,7 +2,7 @@ from fastapi import APIRouter, Body, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import get_current_user, require_permission
+from app.api.v1.deps import get_current_user, require_permission, require_platform_admin
 from app.db.session import get_db
 from app.models import User
 from app.schemas.crm_schemas import CustomFieldResponse, MessageResponse, SystemSettings
@@ -33,8 +33,8 @@ class CreateSlaPayload(BaseModel):
 @router.post(
     "/reset-database",
     response_model=MessageResponse,
-    summary="Reset database - Delete all data except superadmin@gmail.com",
-    dependencies=[Depends(require_permission("settings:update"))],
+    summary="Database reset requires an offline recovery procedure",
+    dependencies=[Depends(require_permission("settings:update")), Depends(require_platform_admin)],
 )
 async def reset_database(confirm: bool = False, db: AsyncSession = Depends(get_db)):
     return await settings_service.reset_database(db, confirm)
@@ -57,7 +57,7 @@ async def get_system_settings(
     "",
     response_model=SystemSettings,
     summary="Update general system settings",
-    dependencies=[Depends(require_permission("settings:update"))],
+    dependencies=[Depends(require_permission("settings:update")), Depends(require_platform_admin)],
 )
 async def update_system_settings(
     payload: SystemSettings,

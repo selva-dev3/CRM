@@ -40,6 +40,18 @@ class OrganizationRepository:
         result = await db.execute(select(Organization))
         return list(result.scalars().all())
 
+    async def list_with_member_counts(
+        self, db: AsyncSession, *, limit: int, offset: int
+    ) -> list[tuple[Organization, int]]:
+        result = await db.execute(
+            select(Organization, func.count(User.id))
+            .outerjoin(User, User.organization_id == Organization.id)
+            .group_by(Organization.id)
+            .order_by(Organization.name, Organization.id)
+            .limit(limit).offset(offset)
+        )
+        return [(organization, count) for organization, count in result.all()]
+
     async def create(self, db: AsyncSession, *, data: dict) -> Organization:
         org = Organization(**data)
         db.add(org)

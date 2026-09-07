@@ -5,6 +5,7 @@ from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, ConflictError, ForbiddenError, NotFoundError
+from app.core.permissions import ensure_tenant_managed_user
 from app.models import Organization, OrganizationSubscription, SubscriptionPlan, User
 from app.repositories.organization_repository import OrganizationRepository
 from app.schemas.crm_schemas import OrganizationUpdate
@@ -69,14 +70,26 @@ class OrganizationDomainService:
     async def _require_requested_org(
         self, db: AsyncSession, *, org_id: str, current_user: User
     ) -> Organization:
+        if getattr(current_user, "is_platform_admin", False) is True:
+            org = await self.repository.get_by_id(db, org_id)
+            if not org:
+                raise NotFoundError(message="Organization not found")
+            return org
         if current_user.organization_id != org_id:
             raise NotFoundError(message="Organization not found")
         return await self._require_current_org(db, current_user)
 
+    async def list_platform_organizations(
+        self, db: AsyncSession, current_user: User, *, limit: int = 50, offset: int = 0
+    ) -> list[dict]:
+        if getattr(current_user, "is_platform_admin", False) is not True:
+            raise ForbiddenError(message="Platform Super Admin access is required")
+        return [org_to_dict(org, count) for org, count in await self.repository.list_with_member_counts(db, limit=limit, offset=offset)]
+
     async def get_or_create_default_org(
         self, db: AsyncSession, current_user: User | None = None
     ) -> Organization:
-        if current_user and getattr(current_user, "organization_id", None):
+        if current_user and current_user.organization_id:
             user_org = await self.repository.get_by_id(db, current_user.organization_id)
             if user_org:
                 return user_org
@@ -194,6 +207,7 @@ class OrganizationDomainService:
             organization_id=current_user.organization_id,
         )
         if user:
+            ensure_tenant_managed_user(user)
             await self.repository.delete_user(db, user)
             await self._commit(db, "Failed to remove member")
             return {
@@ -396,6 +410,7 @@ class OrganizationDomainService:
         )
         if not user:
             raise NotFoundError(message="New owner was not found in the organization")
+        ensure_tenant_managed_user(user)
         user.role = "Admin"
         db.add(user)
         await self.repository.create_audit_log(
