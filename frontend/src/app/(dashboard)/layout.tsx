@@ -176,9 +176,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const handleLogout = async () => {
     try {
-      const logoutRequest = logout();
+      await logout();
       router.replace('/login');
-      await logoutRequest;
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : 'Unable to sign out. Please try again.');
     }

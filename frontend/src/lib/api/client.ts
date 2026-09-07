@@ -4,6 +4,9 @@ import { getOrganizationContext } from '@/lib/organization-context';
 const DEFAULT_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
 export const API_REQUEST_TIMEOUT_MS = 15_000;
 const REFRESH_REQUEST_TIMEOUT_MS = 10_000;
+const REFRESH_LOCK_KEY = 'crm:auth-refresh-lock';
+const REFRESH_RESULT_KEY = 'crm:auth-refresh-result';
+const REFRESH_LOCK_TTL_MS = 12_000;
 
 export function resolveApiBaseUrl(
   configuredUrl = process.env.NEXT_PUBLIC_API_URL,
@@ -38,6 +41,13 @@ let refreshRequest: Promise<boolean> | null = null;
 let refreshController: AbortController | null = null;
 let authGeneration = 0;
 let explicitLogoutInProgress = false;
+let refreshChannel: BroadcastChannel | null = null;
+
+function getRefreshChannel(): BroadcastChannel | null {
+  if (typeof window === 'undefined' || typeof BroadcastChannel === 'undefined') return null;
+  refreshChannel ??= new BroadcastChannel('crm-auth-session');
+  return refreshChannel;
+}
 
 /**
  * Invalidate the current browser session before an explicit logout starts.
@@ -169,12 +179,92 @@ async function refreshSession(generation: number, signal: AbortSignal): Promise<
   }
 }
 
+async function waitForOtherTabRefresh(): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+  const started = Date.now();
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value: boolean) => {
+      if (settled) return;
+      settled = true;
+      window.removeEventListener('storage', onStorage);
+      getRefreshChannel()?.removeEventListener('message', onMessage);
+      clearInterval(timer);
+      clearTimeout(timeout);
+      resolve(value);
+    };
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === REFRESH_RESULT_KEY && event.newValue) {
+        try {
+          const result = JSON.parse(event.newValue) as { at?: number; ok?: boolean };
+          if (result.at && result.at >= started) finish(result.ok === true);
+        } catch { /* ignore malformed coordination state */ }
+      }
+    };
+    const onMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'refresh-result' && event.data.at >= started) {
+        finish(event.data.ok === true);
+      }
+    };
+    const timer = window.setInterval(() => {
+      const raw = localStorage.getItem(REFRESH_LOCK_KEY);
+      if (!raw) {
+        try {
+          const result = JSON.parse(localStorage.getItem(REFRESH_RESULT_KEY) || '{}') as {
+            at?: number;
+            ok?: boolean;
+          };
+          finish(result.at && result.at >= started ? result.ok === true : false);
+        } catch { finish(false); }
+      }
+      else {
+        try {
+          if (Date.now() - Number(JSON.parse(raw).at) > REFRESH_LOCK_TTL_MS) finish(false);
+        } catch { finish(false); }
+      }
+    }, 100);
+    const timeout = window.setTimeout(() => finish(false), REFRESH_LOCK_TTL_MS + 1000);
+    window.addEventListener('storage', onStorage);
+    getRefreshChannel()?.addEventListener('message', onMessage);
+  });
+}
+
+async function coordinatedRefresh(generation: number, signal: AbortSignal): Promise<boolean> {
+  if (typeof window === 'undefined') return refreshSession(generation, signal);
+  const now = Date.now();
+  const existing = localStorage.getItem(REFRESH_LOCK_KEY);
+  if (existing) {
+    try {
+      if (now - Number(JSON.parse(existing).at) <= REFRESH_LOCK_TTL_MS) {
+        return waitForOtherTabRefresh();
+      }
+    } catch { /* stale lock */ }
+  }
+  const lockId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${now}-${Math.random()}`;
+  const lock = JSON.stringify({ at: now, id: lockId });
+  localStorage.setItem(REFRESH_LOCK_KEY, lock);
+  // Re-read after writing to avoid two tabs both assuming ownership.
+  if (localStorage.getItem(REFRESH_LOCK_KEY) !== lock) return waitForOtherTabRefresh();
+  let ok = false;
+  try {
+    ok = await refreshSession(generation, signal);
+    return ok;
+  } finally {
+    const result = JSON.stringify({ at: Date.now(), ok });
+    localStorage.setItem(REFRESH_RESULT_KEY, result);
+    getRefreshChannel()?.postMessage({ type: 'refresh-result', ...JSON.parse(result) });
+    if (localStorage.getItem(REFRESH_LOCK_KEY) === lock) localStorage.removeItem(REFRESH_LOCK_KEY);
+  }
+}
+
 function getRefreshRequest(): Promise<boolean> {
   if (explicitLogoutInProgress) return Promise.resolve(false);
   if (!refreshRequest) {
     const generation = authGeneration;
     refreshController = new AbortController();
-    refreshRequest = refreshSession(generation, refreshController.signal).finally(() => {
+    refreshRequest = coordinatedRefresh(generation, refreshController.signal).finally(() => {
       refreshRequest = null;
       refreshController = null;
     });

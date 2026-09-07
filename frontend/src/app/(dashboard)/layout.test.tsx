@@ -115,8 +115,9 @@ describe('DashboardLayout', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Logout' }));
 
+    expect(routerReplace).not.toHaveBeenCalledWith('/login');
+    releaseLogout?.();
     await waitFor(() => expect(routerReplace).toHaveBeenCalledWith('/login'));
     expect(routerPush).not.toHaveBeenCalledWith('/login');
-    releaseLogout?.();
   });
 });

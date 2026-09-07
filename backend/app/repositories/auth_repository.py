@@ -1,4 +1,5 @@
-from datetime import datetime
+import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,6 +43,9 @@ class AuthRepository:
     async def get_user_by_email(self, db: AsyncSession, email: str) -> User | None:
         result = await db.execute(select(User).where(User.email.ilike(email)))
         return result.scalars().first()
+
+    async def get_refresh_token(self, db: AsyncSession, token_digest: str) -> RefreshToken | None:
+        return await db.scalar(select(RefreshToken).where(RefreshToken.token == token_digest))
 
     async def get_first_user(self, db: AsyncSession) -> User | None:
         result = await db.execute(select(User).limit(1))
@@ -107,12 +111,18 @@ class AuthRepository:
         token_digest: str,
         expires_at: datetime,
         is_persistent: bool = True,
+        family_id: str | None = None,
+        generation: int = 0,
+        absolute_expires_at: datetime | None = None,
     ) -> RefreshToken:
         refresh_token = RefreshToken(
             user_id=user_id,
             token=token_digest,
             expires_at=expires_at,
             is_persistent=is_persistent,
+            family_id=family_id or uuid.uuid4().hex,
+            generation=generation,
+            absolute_expires_at=absolute_expires_at,
         )
         db.add(refresh_token)
         return refresh_token
@@ -137,6 +147,20 @@ class AuthRepository:
 
     async def revoke_refresh_token(self, refresh_token: RefreshToken) -> None:
         refresh_token.is_revoked = True
+        refresh_token.revoked_at = datetime.now(UTC)
+
+    async def revoke_refresh_family(self, db: AsyncSession, family_id: str) -> None:
+        now = datetime.now(UTC)
+        await db.execute(
+            update(RefreshToken)
+            .where(RefreshToken.family_id == family_id, RefreshToken.is_revoked.is_(False))
+            .values(is_revoked=True, revoked_at=now)
+        )
+        await db.execute(
+            update(UserSession)
+            .where(UserSession.family_id == family_id, UserSession.is_current.is_(True))
+            .values(is_current=False, revoked_at=now)
+        )
 
     async def get_session_by_access_token(
         self, db: AsyncSession, token_digest: str
@@ -144,25 +168,37 @@ class AuthRepository:
         return await db.get(UserSession, token_digest)
 
     async def create_access_session(
-        self, db: AsyncSession, *, token_digest: str, user_id: str
+        self, db: AsyncSession, *, token_digest: str, user_id: str,
+        family_id: str | None = None, expires_at: datetime | None = None
     ) -> UserSession:
-        session = UserSession(id=token_digest, user_id=user_id, is_current=True)
+        session = UserSession(
+            id=token_digest,
+            user_id=user_id,
+            is_current=True,
+            family_id=family_id,
+            expires_at=expires_at,
+        )
         db.add(session)
         return session
 
     async def revoke_access_session(self, session: UserSession) -> None:
         session.is_current = False
+        session.revoked_at = datetime.now(UTC)
+
+    async def mark_access_session_used(self, session: UserSession, now: datetime) -> None:
+        session.last_used_at = now
 
     async def revoke_all_user_sessions(self, db: AsyncSession, user_id: str) -> None:
+        now = datetime.now(UTC)
         await db.execute(
             update(UserSession)
             .where(UserSession.user_id == user_id, UserSession.is_current.is_(True))
-            .values(is_current=False)
+            .values(is_current=False, revoked_at=now)
         )
         await db.execute(
             update(RefreshToken)
             .where(RefreshToken.user_id == user_id, RefreshToken.is_revoked.is_(False))
-            .values(is_revoked=True)
+            .values(is_revoked=True, revoked_at=now)
         )
 
     async def invalidate_password_resets(self, db: AsyncSession, user_id: str) -> None:

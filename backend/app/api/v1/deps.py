@@ -25,10 +25,7 @@ async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(security_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    """Validate a JWT supplied by Bearer header or HttpOnly cookie.
-
-    Legacy mock-token formats remain available only in development and test.
-    """
+    """Validate a production JWT supplied by Bearer header or HttpOnly cookie."""
     raw_token = None
     if credentials and credentials.credentials:
         raw_token = credentials.credentials.strip()
@@ -38,7 +35,7 @@ async def get_current_user(
     if not raw_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Session token missing: Authorization Bearer header is required to access this endpoint",
+            detail="Authentication session is required to access this endpoint",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -90,23 +87,24 @@ async def get_current_user(
 
     # 1. Try decoding standard JWT token
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[ALGORITHM],
+            issuer=settings.JWT_ISSUER,
+            audience=settings.JWT_AUDIENCE,
+            options={
+                "require_sub": True,
+                "require_exp": True,
+                "require_iat": True,
+                "require_jti": True,
+            },
+        )
+        if payload.get("token_type") != "access":
+            raise JWTError("wrong token type")
         user_id = payload.get("sub")
     except JWTError:
-        pass
-
-    # 2. Fallback helper for mock/dev token formats (e.g. "jwt_token_<id>", email, or raw ID)
-    allow_mock_tokens = settings.ENVIRONMENT.lower() in {"development", "test"}
-    if not user_id and allow_mock_tokens:
-        if token.startswith("jwt_token_"):
-            user_id = token.replace("jwt_token_", "")
-        elif "@" in token:
-            res_email = await db.execute(select(User).where(User.email.ilike(token)))
-            u_email = res_email.scalars().first()
-            if u_email:
-                return u_email
-        elif len(token) > 5:
-            user_id = token
+        user_id = None
 
     if not user_id:
         raise HTTPException(
@@ -126,10 +124,14 @@ async def get_current_user(
             message="User session is inactive or account has been removed",
         )
 
+    now = datetime.now(UTC)
+    await apply_organization_context(db, user, request.headers.get("X-Organization-ID"))
     access_session = await db.get(UserSession, sha256(token.encode("utf-8")).hexdigest())
     if (
         access_session is None
         or not access_session.is_current
+        or access_session.revoked_at is not None
+        or (access_session.expires_at is not None and access_session.expires_at <= now)
         or access_session.user_id != user.id
     ):
         raise HTTPException(
@@ -137,7 +139,7 @@ async def get_current_user(
             detail="Session has been revoked. Please log in again.",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    await apply_organization_context(db, user, request.headers.get("X-Organization-ID"))
+    access_session.last_used_at = now
     return user
 
 

@@ -18,6 +18,10 @@ celery_app.conf.update(
 
 # Hourly sweep of scheduled report deliveries (see workers/tasks.py).
 celery_app.conf.beat_schedule = {
+    "cleanup-expired-auth-records": {
+        "task": "app.workers.tasks.cleanup_expired_auth_records",
+        "schedule": crontab(minute=10),
+    },
     "deliver-pending-emails": {
         "task": "app.workers.tasks.deliver_pending_emails",
         "schedule": 30.0,

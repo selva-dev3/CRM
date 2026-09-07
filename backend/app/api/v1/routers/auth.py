@@ -296,9 +296,10 @@ async def verify_magic_link(
     request: Request,
     token: str,
     response: Response,
+    two_factor_code: str | None = None,
     db: AsyncSession = Depends(get_db),
 ):
-    result = await auth_service.verify_magic_link(db, token)
+    result = await auth_service.verify_magic_link(db, token, two_factor_code)
     return _set_token_cookies(response, result)
 
 

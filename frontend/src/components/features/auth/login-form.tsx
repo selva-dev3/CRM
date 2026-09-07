@@ -25,7 +25,7 @@ import { notifyAuthUserChanged } from '@/hooks/use-has-permission';
 import { getCurrentUserApi, useLoginMutation } from '@/lib/api';
 import { loginSchema } from '@/lib/validators';
 import { getAuthErrorMessage } from './auth-form-utils';
-import { ApiError } from '@/lib/api/client';
+import { ApiError, markAuthSessionActive } from '@/lib/api/client';
 import { persistSessionUser } from '@/lib/auth-session';
 
 type LoginFormValues = z.infer<typeof loginSchema>;
@@ -68,6 +68,7 @@ export function LoginForm() {
         ...(requiresTwoFactor ? { twoFactorCode } : {}),
       });
       if (data.user) {
+        markAuthSessionActive();
         persistSessionUser(data.user, { remember: values.rememberMe });
         notifyAuthUserChanged();
       }
