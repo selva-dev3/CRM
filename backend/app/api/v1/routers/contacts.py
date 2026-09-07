@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
+from app.core.errors import APIException
 from app.db.session import get_db
 from app.models import User
 from app.schemas.crm_schemas import (
@@ -115,7 +116,7 @@ async def merge_contacts(
     dependencies=[Depends(require_permission("contacts:export"))],
 )
 async def export_contacts_csv():
-    return {"download_url": "https://api.crm.com/exports/contacts.csv"}
+    raise APIException(message="Contact CSV export is not implemented", status_code=501)
 
 
 @router.post(
@@ -125,7 +126,7 @@ async def export_contacts_csv():
     dependencies=[Depends(require_permission("contacts:import"))],
 )
 async def import_contacts_csv():
-    return {"message": "Import completed successfully", "status": "success"}
+    raise APIException(message="Contact CSV import is not implemented", status_code=501)
 
 
 @router.post(

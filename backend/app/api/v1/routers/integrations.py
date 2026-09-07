@@ -5,7 +5,7 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import get_current_user, get_current_user_optional, require_permission
+from app.api.v1.deps import get_current_user, require_permission
 from app.core.config import settings
 from app.core.errors import APIException
 from app.db.session import get_db
@@ -91,7 +91,7 @@ async def list_integrations(
 )
 async def get_zapier_config(
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     return await integration_service.get_zapier_config(db, current_user)
 
@@ -131,7 +131,7 @@ async def delete_mailchimp(
 async def connect_zapier(
     payload: ZapierConnectPayload,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     return await integration_service.connect_zapier(db, payload, current_user)
 
@@ -144,7 +144,7 @@ async def connect_zapier(
 )
 async def test_zapier_connection(
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     return await integration_service.test_zapier_connection(db, current_user)
 
@@ -158,7 +158,7 @@ async def test_zapier_connection(
 async def trigger_zapier_event(
     payload: ZapierEventPayload,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     return await integration_service.trigger_zapier_event(db, payload, current_user)
 
@@ -204,7 +204,7 @@ async def update_hubspot_mapping(
 )
 async def get_slack_config(
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     return await integration_service.get_slack_config(db, current_user)
 
@@ -218,7 +218,7 @@ async def get_slack_config(
 async def connect_slack(
     payload: SlackConnectRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     return await integration_service.connect_slack(db, payload, current_user)
 
@@ -231,7 +231,7 @@ async def connect_slack(
 )
 async def test_slack_connection(
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     return await integration_service.test_slack_connection(db, current_user)
 
@@ -245,7 +245,7 @@ async def test_slack_connection(
 async def update_slack_events(
     payload: SlackEventsUpdateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     return await integration_service.update_slack_events(db, payload, current_user)
 
@@ -259,7 +259,7 @@ async def update_slack_events(
 async def trigger_slack_event(
     payload: SlackEventPayload,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     return await integration_service.trigger_slack_event(db, payload, current_user)
 
@@ -272,7 +272,7 @@ async def trigger_slack_event(
 )
 async def disconnect_slack(
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     return await integration_service.disconnect_slack(db, current_user)
 
@@ -286,7 +286,7 @@ async def disconnect_slack(
 async def send_slack_notification(
     payload: SlackNotifyPayload,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     return await integration_service.send_slack_notification(db, payload, current_user)
 
@@ -314,7 +314,7 @@ async def google_oauth_callback(
         await integration_service.complete_oauth(db, "google", code, state)
     except APIException:
         return RedirectResponse(_oauth_result_url("google-calendar", "error"))
-    return RedirectResponse(_oauth_result_url("google-calendar", "connected"))
+    return RedirectResponse(_oauth_result_url("google-calendar", "authenticated"))
 
 
 @oauth_router.get(
@@ -334,7 +334,7 @@ async def hubspot_oauth_callback(
         await integration_service.complete_oauth(db, "hubspot", code, state)
     except APIException:
         return RedirectResponse(_oauth_result_url("hubspot", "error"))
-    return RedirectResponse(_oauth_result_url("hubspot", "connected"))
+    return RedirectResponse(_oauth_result_url("hubspot", "authenticated"))
 
 
 @oauth_router.get(
@@ -354,7 +354,7 @@ async def slack_oauth_callback(
         await integration_service.complete_oauth(db, "slack", code, state)
     except APIException:
         return RedirectResponse(_oauth_result_url("slack-sync", "error"))
-    return RedirectResponse(_oauth_result_url("slack-sync", "connected"))
+    return RedirectResponse(_oauth_result_url("slack-sync", "authenticated"))
 
 
 @router.post(
@@ -433,7 +433,7 @@ async def get_integration_status(
 async def connect_integration(
     name: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     return await integration_service.connect_integration(db, name, current_user)
 

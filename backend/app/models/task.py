@@ -24,6 +24,18 @@ class Task(Base):
     project_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("projects.id", ondelete="SET NULL"), index=True
     )
+    lead_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("leads.id", ondelete="SET NULL"), index=True
+    )
+    contact_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("contacts.id", ondelete="SET NULL"), index=True
+    )
+    company_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("companies.id", ondelete="SET NULL"), index=True
+    )
+    deal_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("deals.id", ondelete="SET NULL"), index=True
+    )
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), onupdate=func.now(), server_default=func.now()

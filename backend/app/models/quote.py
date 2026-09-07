@@ -34,6 +34,10 @@ class Quote(Base):
     quote_number: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
     total_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
     status: Mapped[str] = mapped_column(String(50), default="Draft", index=True)
+    review_submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    review_submitted_by: Mapped[str | None] = mapped_column(
+        String, ForeignKey("users.id", ondelete="SET NULL")
+    )
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     approved_by: Mapped[str | None] = mapped_column(
         String, ForeignKey("users.id", ondelete="SET NULL")
@@ -42,6 +46,7 @@ class Quote(Base):
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     rejection_reason: Mapped[str | None] = mapped_column(String(500))
+    review_rejection_reason: Mapped[str | None] = mapped_column(String(500))
     accepted_by: Mapped[str | None] = mapped_column(String(255))
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     payment_terms: Mapped[str | None] = mapped_column(String(100))

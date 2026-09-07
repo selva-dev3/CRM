@@ -19,10 +19,22 @@ class MeetingRepository:
         limit: int,
         organization_id: str,
         search: str | None = None,
+        lead_id: str | None = None,
+        contact_id: str | None = None,
+        company_id: str | None = None,
+        deal_id: str | None = None,
     ) -> builtins.list[Meeting]:
         stmt = select(Meeting).where(Meeting.organization_id == organization_id)
         if search and search.strip():
             stmt = stmt.where(Meeting.title.ilike(f"%{search.strip()}%"))
+        for column, value in (
+            (Meeting.lead_id, lead_id),
+            (Meeting.contact_id, contact_id),
+            (Meeting.company_id, company_id),
+            (Meeting.deal_id, deal_id),
+        ):
+            if value:
+                stmt = stmt.where(column == value)
         stmt = stmt.order_by(Meeting.start_time.asc()).offset((page - 1) * limit).limit(limit)
         result = await db.execute(stmt)
         return list(result.scalars().all())
@@ -32,7 +44,10 @@ class MeetingRepository:
     ) -> builtins.list[Meeting]:
         result = await db.execute(
             select(Meeting)
-            .where(Meeting.organization_id == organization_id)
+            .where(
+                Meeting.organization_id == organization_id,
+                Meeting.status == "Scheduled",
+            )
             .order_by(Meeting.start_time.asc())
             .limit(limit)
         )

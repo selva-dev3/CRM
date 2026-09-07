@@ -5,7 +5,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.currency import normalize_currency_code_or_default
 from app.core.locale import normalize_locale_or_default
-from app.models import CallLog, Deal, Email, Lead, Meeting, Organization, Task, User
+from app.models import (
+    CallLog,
+    Deal,
+    Email,
+    Invoice,
+    Lead,
+    Meeting,
+    Organization,
+    Payment,
+    Quote,
+    Task,
+    User,
+)
 
 CLOSED_WON_STAGE = "Closed Won"
 CLOSED_LOST_STAGE = "Closed Lost"
@@ -25,6 +37,119 @@ class DashboardRepository:
             )
         )
         return result.scalar() or 0
+
+    async def financial_kpis(self, db: AsyncSession, organization_id: str) -> dict[str, float | int]:
+        quote_row = (
+            await db.execute(
+                select(
+                    func.count(Quote.id),
+                    func.coalesce(func.sum(Quote.total_amount), 0),
+                    func.coalesce(func.sum(case((Quote.status == "Accepted", 1), else_=0)), 0),
+                    func.coalesce(
+                        func.sum(
+                            case(
+                                (Quote.status.in_(("Sent", "Accepted", "Rejected")), 1),
+                                else_=0,
+                            )
+                        ),
+                        0,
+                    ),
+                ).where(Quote.organization_id == organization_id)
+            )
+        ).one()
+
+        paid = (
+            select(
+                Payment.invoice_id.label("invoice_id"),
+                func.sum(Payment.amount).label("paid_amount"),
+            )
+            .where(
+                Payment.organization_id == organization_id,
+                Payment.status == "Succeeded",
+            )
+            .group_by(Payment.invoice_id)
+            .subquery()
+        )
+        paid_amount = func.coalesce(paid.c.paid_amount, 0)
+        invoice_row = (
+            await db.execute(
+                select(
+                    func.count(Invoice.id),
+                    func.coalesce(func.sum(Invoice.amount), 0),
+                    func.coalesce(func.sum(paid_amount), 0),
+                    func.coalesce(
+                        func.sum(
+                            case(
+                                (Invoice.amount > paid_amount, Invoice.amount - paid_amount),
+                                else_=0,
+                            )
+                        ),
+                        0,
+                    ),
+                    func.coalesce(
+                        func.sum(
+                            case(
+                                (
+                                    and_(Invoice.status == "Accepted", paid_amount <= 0),
+                                    1,
+                                ),
+                                else_=0,
+                            )
+                        ),
+                        0,
+                    ),
+                    func.coalesce(
+                        func.sum(
+                            case(
+                                (
+                                    and_(
+                                        Invoice.status == "Accepted",
+                                        paid_amount > 0,
+                                        paid_amount < Invoice.amount,
+                                    ),
+                                    1,
+                                ),
+                                else_=0,
+                            )
+                        ),
+                        0,
+                    ),
+                    func.coalesce(
+                        func.sum(case((paid_amount >= Invoice.amount, 1), else_=0)),
+                        0,
+                    ),
+                )
+                .outerjoin(paid, paid.c.invoice_id == Invoice.id)
+                .where(
+                    Invoice.organization_id == organization_id,
+                    Invoice.status != "Cancelled",
+                )
+            )
+        ).one()
+        delivered_quotes = int(quote_row[3] or 0)
+        accepted_quotes = int(quote_row[2] or 0)
+        invoice_total = float(invoice_row[1] or 0)
+        collected = float(invoice_row[2] or 0)
+        return {
+            "quote_count": int(quote_row[0] or 0),
+            "quote_value": float(quote_row[1] or 0),
+            "quote_conversion_percentage": round(
+                accepted_quotes / delivered_quotes * 100, 2
+            )
+            if delivered_quotes
+            else 0.0,
+            "invoice_count": int(invoice_row[0] or 0),
+            "invoice_total": invoice_total,
+            "paid_amount": collected,
+            "outstanding_amount": float(invoice_row[3] or 0),
+            "pending_payment_count": int(invoice_row[4] or 0),
+            "partially_paid_invoice_count": int(invoice_row[5] or 0),
+            "paid_invoice_count": int(invoice_row[6] or 0),
+            "revenue": collected,
+            "collection_rate_percentage": round(collected / invoice_total * 100, 2)
+            if invoice_total
+            else 0.0,
+        }
 
     async def sum_pipeline_deals(self, db: AsyncSession, organization_id: str) -> float:
         result = await db.execute(

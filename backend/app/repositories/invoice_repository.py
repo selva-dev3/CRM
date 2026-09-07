@@ -36,8 +36,17 @@ class InvoiceRepository:
             stmt = stmt.with_for_update().execution_options(populate_existing=True)
         return (await db.execute(stmt)).scalar_one_or_none()
 
-    async def record_event(self, db: AsyncSession, invoice: Invoice, action: str) -> None:
-        db.add(AuditLog(organization_id=invoice.organization_id, action=action, details=invoice.id))
+    async def record_event(
+        self, db: AsyncSession, invoice: Invoice, action: str, *, user_id: str | None = None
+    ) -> None:
+        db.add(
+            AuditLog(
+                organization_id=invoice.organization_id,
+                user_id=user_id,
+                action=action,
+                details=invoice.id,
+            )
+        )
 
     async def get_by_quote(
         self, db: AsyncSession, *, quote_id: str, organization_id: str

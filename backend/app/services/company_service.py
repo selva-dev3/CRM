@@ -1,3 +1,5 @@
+from urllib.parse import urlsplit
+
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,6 +33,14 @@ def company_to_dict(company: Company) -> dict:
 
 class CompanyService:
     """Business logic for the Company domain."""
+
+    @staticmethod
+    def _identity(name: str, website: str | None) -> tuple[str, str | None]:
+        normalized_name = " ".join(name.split()).casefold()
+        raw = (website or "").strip()
+        host = urlsplit(raw if "://" in raw else f"//{raw}").hostname if raw else None
+        domain = host.casefold().removeprefix("www.") if host else None
+        return normalized_name, domain
 
     def __init__(
         self,
@@ -119,10 +129,26 @@ class CompanyService:
             values=payload.custom_fields,
         )
         website = getattr(payload, "website", None) or getattr(payload, "domain", None)
+        normalized_name, normalized_domain = self._identity(payload.name, website)
+        if not normalized_name:
+            raise APIException(message="Company name is required", status_code=422)
+        await self.repository.lock_organization(db, org_id)
+        duplicate = await self.repository.find_duplicate(
+            db,
+            organization_id=org_id,
+            normalized_name=normalized_name,
+            normalized_domain=normalized_domain,
+        )
+        if duplicate:
+            raise APIException(
+                message="A matching company already exists in this organization",
+                code="COMPANY_DUPLICATE",
+                status_code=409,
+            )
         emp_raw = getattr(payload, "employee_count", None) or getattr(payload, "size", None)
         data = {
             "organization_id": org_id,
-            "name": payload.name,
+            "name": " ".join(payload.name.split()),
             "industry": getattr(payload, "industry", None),
             "website": website,
             "employee_count": self._parse_employee_count(emp_raw),
@@ -163,12 +189,29 @@ class CompanyService:
             raise NotFoundError(message=f"Company '{company_id}' not found")
 
         name = getattr(payload, "name", None)
+        website = getattr(payload, "website", None) or getattr(payload, "domain", None)
+        candidate_name = name if name is not None else company.name
+        candidate_website = website if website is not None else company.website
+        normalized_name, normalized_domain = self._identity(candidate_name, candidate_website)
+        await self.repository.lock_organization(db, organization_id)
+        duplicate = await self.repository.find_duplicate(
+            db,
+            organization_id=organization_id,
+            normalized_name=normalized_name,
+            normalized_domain=normalized_domain,
+            exclude_id=company.id,
+        )
+        if duplicate:
+            raise APIException(
+                message="A matching company already exists in this organization",
+                code="COMPANY_DUPLICATE",
+                status_code=409,
+            )
         if name:
-            company.name = name
+            company.name = " ".join(name.split())
         industry = getattr(payload, "industry", None)
         if industry:
             company.industry = industry
-        website = getattr(payload, "website", None) or getattr(payload, "domain", None)
         if website:
             company.website = website
         emp_raw = getattr(payload, "employee_count", None) or getattr(payload, "size", None)

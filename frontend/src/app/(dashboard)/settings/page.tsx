@@ -700,11 +700,12 @@ export default function SettingsPage() {
                 <Button
                   size="sm"
                   onClick={handleTriggerBackup}
-                  disabled={triggerBackupMutation.isPending}
+                  disabled
+                  title="No database backup provider is configured"
                   className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs gap-1.5 cursor-pointer w-full sm:w-auto"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${triggerBackupMutation.isPending ? 'animate-spin' : ''}`} />
-                  <span>Trigger Manual Backup</span>
+                  <span>Backup Provider Not Configured</span>
                 </Button>
               </PermissionGate>
             </div>

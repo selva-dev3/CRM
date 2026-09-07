@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import APIException, NotFoundError
 from app.models import Meeting, User
 from app.repositories.meeting_repository import MeetingRepository
-from app.schemas.crm_schemas import MeetingBase, MeetingCreate
+from app.schemas.crm_schemas import MeetingCreate, MeetingUpdate
 from app.services.ai_domain_service import AIDomainService, ai_domain_service
 from app.services.notification_service import notification_service
 from app.services.org_service import organization_service
@@ -14,16 +14,24 @@ from app.services.org_service import organization_service
 
 def parse_datetime(val: str | None) -> datetime:
     if not val or not str(val).strip():
-        return datetime.now(UTC)
+        raise APIException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            code="MEETING_DATETIME_REQUIRED",
+            message="Meeting date and time are required",
+        )
     val_str = str(val).strip()
     try:
         return datetime.fromisoformat(val_str.replace("Z", "+00:00"))
-    except Exception:
+    except ValueError:
         try:
             d = date.fromisoformat(val_str)
             return datetime(d.year, d.month, d.day, tzinfo=UTC)
-        except Exception:
-            return datetime.now(UTC)
+        except ValueError as exc:
+            raise APIException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                code="INVALID_MEETING_DATETIME",
+                message="Meeting date and time must be valid ISO-8601 values",
+            ) from exc
 
 
 def meeting_to_dict(meeting: Meeting, attendees: list[str] | None = None) -> dict:
@@ -35,6 +43,11 @@ def meeting_to_dict(meeting: Meeting, attendees: list[str] | None = None) -> dic
         "attendees": attendees or [],
         "meeting_link": meeting.meeting_link,
         "location": getattr(meeting, "location", None),
+        "status": meeting.status,
+        "lead_id": meeting.lead_id,
+        "contact_id": meeting.contact_id,
+        "company_id": meeting.company_id,
+        "deal_id": meeting.deal_id,
         "ai_summary": meeting.ai_summary,
         "created_at": str(meeting.created_at) if meeting.created_at else None,
     }
@@ -68,6 +81,10 @@ class MeetingService:
         limit: int,
         organization_id: str,
         search: str | None = None,
+        lead_id: str | None = None,
+        contact_id: str | None = None,
+        company_id: str | None = None,
+        deal_id: str | None = None,
     ) -> list[dict]:
         meetings = await self.repository.list(
             db,
@@ -75,6 +92,10 @@ class MeetingService:
             limit=limit,
             organization_id=organization_id,
             search=search,
+            lead_id=lead_id,
+            contact_id=contact_id,
+            company_id=company_id,
+            deal_id=deal_id,
         )
         return [meeting_to_dict(m) for m in meetings]
 
@@ -91,12 +112,32 @@ class MeetingService:
         self, db: AsyncSession, payload: MeetingCreate, current_user: User | None = None
     ) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        start_time = parse_datetime(payload.start_time)
+        end_time = parse_datetime(payload.end_time)
+        if end_time <= start_time:
+            raise APIException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                code="INVALID_MEETING_RANGE",
+                message="Meeting end time must be after its start time",
+            )
+        from app.services.crm_relationship_service import validate_crm_relationships
+
+        relationships = await validate_crm_relationships(
+            db,
+            organization_id=org_id,
+            lead_id=payload.lead_id,
+            contact_id=payload.contact_id,
+            company_id=payload.company_id,
+            deal_id=payload.deal_id,
+        )
         data = {
             "organization_id": org_id,
             "title": payload.title,
-            "start_time": parse_datetime(payload.start_time),
-            "end_time": parse_datetime(payload.end_time),
-            "meeting_link": payload.meeting_link or "https://meet.google.com/crm-session",
+            "start_time": start_time,
+            "end_time": end_time,
+            "meeting_link": payload.meeting_link,
+            "location": payload.location,
+            **relationships,
         }
         meeting = await self.repository.create(db, data=data)
         await self._commit(db, "Failed to schedule meeting")
@@ -132,7 +173,7 @@ class MeetingService:
     async def bulk_cancel(self, db: AsyncSession, ids: list[str], organization_id: str) -> dict:
         meetings = await self.repository.list_by_ids(db, ids=ids, organization_id=organization_id)
         for meeting in meetings:
-            await self.repository.delete(db, meeting)
+            meeting.status = "Cancelled"
         await self._commit(db, "Failed to cancel meetings")
         return {"affected_count": len(meetings), "message": "Meetings cancelled successfully"}
 
@@ -140,7 +181,7 @@ class MeetingService:
         self,
         db: AsyncSession,
         meeting_id: str,
-        payload: MeetingBase,
+        payload: MeetingUpdate,
         organization_id: str,
     ) -> dict:
         meeting = await self.repository.get_by_id(
@@ -148,14 +189,35 @@ class MeetingService:
         )
         if not meeting:
             raise NotFoundError(message=f"Meeting '{meeting_id}' not found")
-        if payload.title:
-            meeting.title = payload.title
-        if payload.start_time:
-            meeting.start_time = parse_datetime(payload.start_time)
-        if payload.end_time:
-            meeting.end_time = parse_datetime(payload.end_time)
-        if payload.meeting_link:
-            meeting.meeting_link = payload.meeting_link
+        updates = payload.model_dump(exclude_unset=True)
+        if updates.get("title"):
+            meeting.title = updates["title"]
+        if updates.get("start_time"):
+            meeting.start_time = parse_datetime(updates["start_time"])
+        if updates.get("end_time"):
+            meeting.end_time = parse_datetime(updates["end_time"])
+        if meeting.end_time <= meeting.start_time:
+            raise APIException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                code="INVALID_MEETING_RANGE",
+                message="Meeting end time must be after its start time",
+            )
+        if "meeting_link" in updates:
+            meeting.meeting_link = updates["meeting_link"]
+        if "location" in updates:
+            meeting.location = updates["location"]
+        relationship_fields = {"lead_id", "contact_id", "company_id", "deal_id"}
+        if relationship_fields & updates.keys():
+            from app.services.crm_relationship_service import validate_crm_relationships
+
+            merged = {
+                field: updates.get(field, getattr(meeting, field)) for field in relationship_fields
+            }
+            relationships = await validate_crm_relationships(
+                db, organization_id=organization_id, **merged
+            )
+            for field in relationship_fields & updates.keys():
+                setattr(meeting, field, relationships[field])
         await self._commit(db, "Failed to update meeting")
         await db.refresh(meeting)
         attendees = await self.repository.list_attendee_emails(db, meeting_id)
@@ -167,9 +229,27 @@ class MeetingService:
         )
         if not meeting:
             raise NotFoundError(message=f"Meeting '{meeting_id}' not found")
-        await self.repository.delete(db, meeting)
+        meeting.status = "Cancelled"
         await self._commit(db, "Failed to cancel meeting")
         return {"message": f"Meeting {meeting_id} cancelled", "status": "success"}
+
+    async def complete_meeting(
+        self, db: AsyncSession, meeting_id: str, organization_id: str
+    ) -> dict:
+        meeting = await self.repository.get_by_id(
+            db, meeting_id=meeting_id, organization_id=organization_id
+        )
+        if not meeting:
+            raise NotFoundError(message=f"Meeting '{meeting_id}' not found")
+        if meeting.status != "Scheduled":
+            raise APIException(
+                message="Only scheduled meetings can be completed",
+                code="INVALID_MEETING_STATUS",
+                status_code=409,
+            )
+        meeting.status = "Completed"
+        await self._commit(db, "Failed to complete meeting")
+        return {"message": f"Meeting {meeting_id} completed", "status": "success"}
 
     async def reschedule_meeting(
         self,
@@ -184,8 +264,16 @@ class MeetingService:
         )
         if not meeting:
             raise NotFoundError(message=f"Meeting '{meeting_id}' not found")
-        meeting.start_time = parse_datetime(new_start_time)
-        meeting.end_time = parse_datetime(new_end_time)
+        start_time = parse_datetime(new_start_time)
+        end_time = parse_datetime(new_end_time)
+        if end_time <= start_time:
+            raise APIException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                code="INVALID_MEETING_RANGE",
+                message="Meeting end time must be after its start time",
+            )
+        meeting.start_time = start_time
+        meeting.end_time = end_time
         await self._commit(db, "Failed to reschedule meeting")
         return {
             "message": f"Meeting {meeting_id} rescheduled to {new_start_time}",

@@ -326,16 +326,17 @@ export default function CompaniesPage() {
             className="h-8 text-xs font-semibold"
             actions={[
               {
-                label: 'Export CSV',
+                label: 'Export CSV (Not available)',
                 permission: PERMISSIONS.COMPANIES.EXPORT,
                 icon: <FileSpreadsheet className="w-4 h-4 text-emerald-600" />,
+                disabled: true,
                 onSelect: handleExportCsv,
               },
               {
-                label: 'Import CSV',
+                label: 'Import CSV (Not available)',
                 permission: PERMISSIONS.COMPANIES.IMPORT,
                 icon: <Upload className="w-4 h-4 text-blue-600" />,
-                disabled: importCsvMutation.isPending,
+                disabled: true,
                 onSelect: handleImportCsv,
               },
             ]}

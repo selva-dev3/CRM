@@ -43,6 +43,8 @@ import {
   CalendarEventCreatePayload
 } from '@/lib/api/calendar';
 
+const EXTERNAL_CALENDAR_FEATURES_CONFIGURED = false;
+
 export default function CalendarPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
@@ -84,8 +86,12 @@ export default function CalendarPage() {
     search: debouncedSearchTerm || undefined,
   });
 
-  const { data: availability } = useAvailabilityQuery();
-  const { data: recurringRules = [] } = useRecurringEventsQuery();
+  const { data: availability } = useAvailabilityQuery(undefined, undefined, {
+    enabled: EXTERNAL_CALENDAR_FEATURES_CONFIGURED,
+  });
+  const { data: recurringRules = [] } = useRecurringEventsQuery({
+    enabled: EXTERNAL_CALENDAR_FEATURES_CONFIGURED,
+  });
 
   // Mutations
   const createEventMutation = useCreateCalendarEventMutation();
@@ -303,7 +309,7 @@ export default function CalendarPage() {
             <span>Calendar & Scheduling</span>
           </h1>
           <p className="text-slate-500 text-xs sm:text-sm mt-0.5">
-            2-Way Google & Outlook calendar sync, time slot availability, and recurring events
+            Organization calendar events and scheduling
           </p>
         </div>
 
@@ -313,11 +319,11 @@ export default function CalendarPage() {
               <Plus className="w-4 h-4" /><span>Create Event</span>
             </Button>
           </PermissionGate>
-          <ActionMenu label="More" className="w-full text-xs font-semibold sm:w-auto" actions={[
+          {EXTERNAL_CALENDAR_FEATURES_CONFIGURED && <ActionMenu label="More" className="w-full text-xs font-semibold sm:w-auto" actions={[
             { label: 'Sync Google', icon: syncGoogleMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Globe className="w-4 h-4 text-blue-600" />, disabled: syncGoogleMutation.isPending, onSelect: handleSyncGoogle },
             { label: 'Sync Outlook', icon: syncOutlookMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4 text-indigo-600" />, disabled: syncOutlookMutation.isPending, onSelect: handleSyncOutlook },
             { label: 'Recurring rule', icon: <Repeat className="w-4 h-4 text-amber-500" />, onSelect: () => setIsRecurringModalOpen(true) },
-          ]} />
+          ]} />}
         </div>
       </div>
 
@@ -327,8 +333,6 @@ export default function CalendarPage() {
         variant="default"
         tabs={[
           { value: 'table', label: `Events List (${events.length})` },
-          { value: 'availability', label: 'User Availability Slots' },
-          { value: 'recurring', label: `Recurring Rules (${recurringRules.length})` },
         ]}
         listClassName="border-b border-slate-200 bg-transparent pb-2"
         triggerClassName="text-xs font-bold data-[state=active]:bg-indigo-600 data-[state=active]:text-white"
@@ -341,7 +345,7 @@ export default function CalendarPage() {
           data={events}
           getRowKey={(item) => item.id}
           emptyTitle="No calendar events found"
-          emptyDescription="Create a new calendar event or trigger Google/Outlook sync."
+          emptyDescription="Create a calendar event to begin scheduling work."
           searchValue={searchTerm}
           onSearchChange={setSearchTerm}
           searchPlaceholder="Search event title..."
@@ -349,7 +353,7 @@ export default function CalendarPage() {
         />
       )}
 
-      {viewMode === 'availability' && (
+      {EXTERNAL_CALENDAR_FEATURES_CONFIGURED && viewMode === 'availability' && (
         <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6 shadow-sm space-y-4">
           <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider border-b border-slate-100 pb-3 flex items-center gap-2">
             <Clock className="w-4 h-4 text-emerald-600 shrink-0" />
@@ -368,7 +372,7 @@ export default function CalendarPage() {
         </div>
       )}
 
-      {viewMode === 'recurring' && (
+      {EXTERNAL_CALENDAR_FEATURES_CONFIGURED && viewMode === 'recurring' && (
         <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6 shadow-sm space-y-4">
           <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider border-b border-slate-100 pb-3 flex items-center gap-2">
             <Repeat className="w-4 h-4 text-amber-500 shrink-0" />
@@ -498,7 +502,7 @@ export default function CalendarPage() {
       )}
 
       {/* Recurring Rule Modal */}
-      {isRecurringModalOpen && (
+      {EXTERNAL_CALENDAR_FEATURES_CONFIGURED && isRecurringModalOpen && (
         <ModalShell
           isOpen={isRecurringModalOpen}
           onClose={() => setIsRecurringModalOpen(false)}

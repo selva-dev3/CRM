@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -324,12 +324,12 @@ class LeadRepository:
         return task
 
     async def list_emails(
-        self, db: AsyncSession, *, organization_id: str, lead_tag: str
+        self, db: AsyncSession, *, organization_id: str, lead_id: str, lead_tag: str
     ) -> list[Email]:
         result = await db.execute(
             select(Email).where(
                 Email.organization_id == organization_id,
-                Email.body_text.contains(lead_tag),
+                or_(Email.lead_id == lead_id, Email.body_text.contains(lead_tag)),
             )
         )
         return list(result.scalars().all())
@@ -357,12 +357,12 @@ class LeadRepository:
         return email
 
     async def list_calls(
-        self, db: AsyncSession, *, organization_id: str, lead_tag: str
+        self, db: AsyncSession, *, organization_id: str, lead_id: str, lead_tag: str
     ) -> list[CallLog]:
         result = await db.execute(
             select(CallLog).where(
                 CallLog.organization_id == organization_id,
-                CallLog.notes.contains(lead_tag),
+                or_(CallLog.lead_id == lead_id, CallLog.notes.contains(lead_tag)),
             )
         )
         return list(result.scalars().all())
@@ -372,7 +372,8 @@ class LeadRepository:
         db: AsyncSession,
         *,
         organization_id: str,
-        contact_id: str,
+        contact_id: str | None,
+        lead_id: str | None,
         call_type: str,
         duration_seconds: int,
         notes: str | None,
@@ -380,6 +381,7 @@ class LeadRepository:
         call = CallLog(
             organization_id=organization_id,
             contact_id=contact_id,
+            lead_id=lead_id,
             call_type=call_type,
             duration_seconds=duration_seconds,
             notes=notes,

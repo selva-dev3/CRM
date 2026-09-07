@@ -6,7 +6,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 from fastapi import status
-from pydantic import EmailStr, TypeAdapter, ValidationError
+from pydantic import EmailStr, TypeAdapter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, NotFoundError
@@ -14,7 +14,6 @@ from app.core.logging import get_logger
 from app.models import User
 from app.models.deal import Deal
 from app.models.quote import Quote
-from app.models.quote_delivery import QuoteDeliveryAttempt
 from app.repositories.deal_repository import DealRepository
 from app.repositories.invoice_repository import invoice_repository
 from app.repositories.notification_repository import NotificationRepository
@@ -22,11 +21,10 @@ from app.repositories.quote_repository import QuoteRepository, quote_repository
 from app.schemas.crm_schemas import QuoteBase
 from app.services.invoice_service import InvoiceService
 from app.services.org_service import organization_service
-from app.services.quote_delivery_service import acceptance_token
 from app.services.quote_state import assert_quote_transition
 from app.services.sales_totals import calculate_line, decimal_value
 
-EDITABLE_QUOTE_STATUSES = {"Draft", "Pending Approval"}
+EDITABLE_QUOTE_STATUSES = {"Draft"}
 DEFAULT_QUOTE_TERM_DAYS = 30
 _email_adapter = TypeAdapter(EmailStr)
 logger = get_logger(__name__)
@@ -40,6 +38,11 @@ def quote_to_dict(quote: Quote) -> dict:
         "items": [],
         "total_amount": quote.total_amount or 0.0,
         "status": quote.status or "Draft",
+        "review_submitted_at": quote.review_submitted_at.isoformat() if quote.review_submitted_at else None,
+        "review_submitted_by": quote.review_submitted_by,
+        "approved_at": quote.approved_at.isoformat() if quote.approved_at else None,
+        "approved_by": quote.approved_by,
+        "review_rejection_reason": quote.review_rejection_reason,
         "currency": quote.currency,
         "delivery_status": quote.delivery_status,
         "delivery_id": quote.delivery_id,
@@ -71,12 +74,81 @@ class QuoteService:
     async def approve_quote(
         self, db: AsyncSession, *, quote_id: str, organization_id: str, actor_id: str
     ) -> dict:
-        await self._require_quote(db, quote_id=quote_id, organization_id=organization_id)
-        raise APIException(
-            message="Internal approval is not part of the customer quote workflow; send the quote to the linked contact",
-            code="INTERNAL_APPROVAL_REMOVED",
-            status_code=409,
-        )
+        try:
+            quote = await self.repository.lock_scoped(
+                db, quote_id=quote_id, organization_id=organization_id
+            )
+            if not quote:
+                raise NotFoundError(message="Quote not found")
+            assert_quote_transition(quote.status, "Approved")
+            now = datetime.now(UTC)
+            await self.repository.approve(
+                db,
+                quote,
+                actor_id=actor_id,
+                at=now,
+                expires_at=quote.expires_at or now + timedelta(days=DEFAULT_QUOTE_TERM_DAYS),
+            )
+            await db.commit()
+            await db.refresh(quote)
+            return quote_to_dict(quote)
+        except Exception:
+            await db.rollback()
+            raise
+
+    async def submit_for_review(
+        self, db: AsyncSession, *, quote_id: str, organization_id: str, actor_id: str
+    ) -> dict:
+        try:
+            quote = await self.repository.lock_scoped(
+                db, quote_id=quote_id, organization_id=organization_id
+            )
+            if not quote:
+                raise NotFoundError(message="Quote not found")
+            await self.repository.submit_for_review(
+                db, quote, actor_id=actor_id, at=datetime.now(UTC)
+            )
+            await db.commit()
+            await db.refresh(quote)
+            return quote_to_dict(quote)
+        except Exception:
+            await db.rollback()
+            raise
+
+    async def return_to_draft(
+        self,
+        db: AsyncSession,
+        *,
+        quote_id: str,
+        organization_id: str,
+        actor_id: str,
+        reason: str | None,
+    ) -> dict:
+        normalized_reason = (reason or "").strip()
+        if not normalized_reason:
+            raise APIException(
+                message="A review rejection reason is required",
+                code="REVIEW_REASON_REQUIRED",
+                status_code=422,
+            )
+        try:
+            quote = await self.repository.lock_scoped(
+                db, quote_id=quote_id, organization_id=organization_id
+            )
+            if not quote:
+                raise NotFoundError(message="Quote not found")
+            await self.repository.return_to_draft(
+                db,
+                quote,
+                actor_id=actor_id,
+                reason=normalized_reason,
+            )
+            await db.commit()
+            await db.refresh(quote)
+            return quote_to_dict(quote)
+        except Exception:
+            await db.rollback()
+            raise
 
     async def accept_public_quote(self, db: AsyncSession, *, token: str) -> dict:
         try:

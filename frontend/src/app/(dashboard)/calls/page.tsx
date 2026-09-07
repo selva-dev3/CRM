@@ -43,6 +43,8 @@ import {
   CallLogBasePayload
 } from '@/lib/api/calls';
 
+const TELEPHONY_PROVIDER_CONFIGURED = false;
+
 export default function CallsPage() {
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
@@ -331,7 +333,7 @@ export default function CallsPage() {
             <PhoneCall className="w-7 h-7 text-indigo-600" />
             Call Logs & Telephony
           </h1>
-          <p className="text-slate-500 text-sm mt-0.5">Click-to-dial via Twilio, log call notes, drop voicemails & AI sentiment analysis</p>
+          <p className="text-slate-500 text-sm mt-0.5">Manual call history and AI-assisted note analysis</p>
         </div>
 
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
@@ -340,11 +342,11 @@ export default function CallsPage() {
               <Plus className="w-4 h-4" />Log Call
             </Button>
           </PermissionGate>
-          <ActionMenu label="More" className="w-full text-xs font-semibold sm:w-auto" actions={[
+          {TELEPHONY_PROVIDER_CONFIGURED && <ActionMenu label="More" className="w-full text-xs font-semibold sm:w-auto" actions={[
             { label: 'Click to dial', icon: <PhoneOutgoing className="w-4 h-4 text-emerald-600" />, onSelect: () => setIsDialModalOpen(true) },
             { label: 'Voicemail drop', icon: <Voicemail className="w-4 h-4 text-indigo-600" />, onSelect: () => setIsVoicemailModalOpen(true) },
             { label: `Dispositions (${dispositions.length})`, icon: <Tag className="w-4 h-4 text-amber-500" />, onSelect: () => setIsDispositionModalOpen(true) },
-          ]} />
+          ]} />}
         </div>
       </div>
 
@@ -357,7 +359,7 @@ export default function CallsPage() {
         getRowKey={(item) => item.id}
         onRowClick={(item) => router.push(`/calls/${item.id}`)}
         emptyTitle="No call logs found"
-        emptyDescription="Initiate a click-to-dial call or manually record a call log."
+        emptyDescription="Manually record a call to build customer history."
         searchValue={searchTerm}
         onSearchChange={setSearchTerm}
         searchPlaceholder="Search call notes..."
@@ -468,7 +470,7 @@ export default function CallsPage() {
       </ModalShell>
 
       {/* Click-to-Dial Modal */}
-      <ModalShell
+      {TELEPHONY_PROVIDER_CONFIGURED && <ModalShell
         isOpen={isDialModalOpen}
         onClose={() => setIsDialModalOpen(false)}
         size="md"
@@ -506,10 +508,10 @@ export default function CallsPage() {
             </button>
           </div>
         </form>
-      </ModalShell>
+      </ModalShell>}
 
       {/* Voicemail Drop Modal */}
-      <ModalShell
+      {TELEPHONY_PROVIDER_CONFIGURED && <ModalShell
         isOpen={isVoicemailModalOpen}
         onClose={() => setIsVoicemailModalOpen(false)}
         size="md"
@@ -558,10 +560,10 @@ export default function CallsPage() {
             </button>
           </div>
         </form>
-      </ModalShell>
+      </ModalShell>}
 
       {/* Dispositions Modal */}
-      <ModalShell
+      {TELEPHONY_PROVIDER_CONFIGURED && <ModalShell
         isOpen={isDispositionModalOpen}
         onClose={() => setIsDispositionModalOpen(false)}
         size="md"
@@ -599,7 +601,7 @@ export default function CallsPage() {
             </button>
           </div>
         </form>
-      </ModalShell>
+      </ModalShell>}
 
       {/* Confirm Delete Modal */}
       {callToDelete && (

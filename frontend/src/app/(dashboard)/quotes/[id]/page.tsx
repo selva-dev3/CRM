@@ -1,6 +1,7 @@
 ﻿'use client';
 
 import { Input } from "@/components/ui/input";
+import { Textarea } from '@/components/ui/textarea';
 
 import { getErrorMessage } from '@/lib/utils';
 import React, { useEffect, useRef, useState } from 'react';
@@ -17,8 +18,6 @@ import {
   AlertCircle,
   X,
   Loader2,
-  Trash2,
-  History
 } from 'lucide-react';
 import { ActionMenu } from '@/components/common/action-menu';
 import { ConfirmModal } from '@/components/common/confirm-modal';
@@ -28,10 +27,13 @@ import { ModalShell } from '@/components/common/modal-shell';
 import {
   useQuoteQuery,
   useQuotePdfQuery,
-  useQuoteRevisionsQuery,
   useSendQuoteEmailMutation,
-  useDeleteQuoteMutation
+  useDeleteQuoteMutation,
+  useSubmitQuoteForReviewMutation,
+  useApproveQuoteMutation,
+  useReturnQuoteToDraftMutation,
 } from '@/lib/api/quotes';
+import { PERMISSIONS } from '@/lib/permissions';
 
 function maskEmail(email?: string | null): string {
   if (!email) return 'Not available';
@@ -57,17 +59,21 @@ export default function QuoteDetailPage() {
     refetchInterval: query => ['Pending', 'Processing'].includes(query.state.data?.delivery_status || '') ? 5000 : false,
   });
   const { data: pdfData } = useQuotePdfQuery(quoteId, { enabled: !!quote?.pdf_available });
-  const { data: revisions = [] } = useQuoteRevisionsQuery(quoteId);
 
   // Mutations
   const sendEmailMutation = useSendQuoteEmailMutation();
   const deleteMutation = useDeleteQuoteMutation();
+  const submitReviewMutation = useSubmitQuoteForReviewMutation();
+  const approveMutation = useApproveQuoteMutation();
+  const returnDraftMutation = useReturnQuoteToDraftMutation();
   const awaitingDeliverySuccessRef = useRef(false);
 
   // State
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isSendEmailModalOpen, setIsSendEmailModalOpen] = useState(false);
   const [recipientEmailInput, setRecipientEmailInput] = useState('');
+  const [reviewAction, setReviewAction] = useState<'submit' | 'approve' | 'return' | null>(null);
+  const [reviewReason, setReviewReason] = useState('');
 
   // Toast / Alert notifications
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -195,7 +201,14 @@ export default function QuoteDetailPage() {
         </div>
 
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-          {hasPermission('quotes:send') && ['Draft', 'Pending Approval'].includes(s) && (
+          {s === 'Draft' && hasPermission(PERMISSIONS.QUOTES.UPDATE) && (
+            <Button variant="outline" onClick={() => setReviewAction('submit')}>Submit for review</Button>
+          )}
+          {s === 'Pending Approval' && hasPermission(PERMISSIONS.QUOTES.APPROVE) && <>
+            <Button onClick={() => setReviewAction('approve')}>Approve quote</Button>
+            <Button variant="outline" onClick={() => setReviewAction('return')}>Return to draft</Button>
+          </>}
+          {hasPermission('quotes:send') && s === 'Approved' && (
             <Button
               onClick={() => { setRecipientEmailInput(quote.contact_email || quote.recipient_email || ''); setIsSendEmailModalOpen(true); }}
               disabled={sendEmailMutation.isPending || deliveryStatus === 'Processing'}
@@ -224,14 +237,7 @@ export default function QuoteDetailPage() {
           <ActionMenu
             label="More"
             className="w-full text-xs font-semibold sm:w-auto"
-            actions={[
-              {
-                label: 'Delete quote',
-                icon: <Trash2 className="w-4 h-4" />,
-                variant: 'destructive',
-                onSelect: () => setIsDeleteModalOpen(true),
-              },
-            ]}
+            actions={[]}
           />
         </div>
       </div>
@@ -304,9 +310,9 @@ export default function QuoteDetailPage() {
       )}
 
       {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-6">
         {/* Left Column: Quote Line Items & Totals */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="space-y-6">
           <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-6">
             <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider border-b border-slate-100 pb-3">
               Quote Line Items & Breakdown
@@ -364,34 +370,6 @@ export default function QuoteDetailPage() {
           </div>
         </div>
 
-        {/* Right Column: Historical Revisions Drawer */}
-        <div className="space-y-6">
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
-            <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider border-b border-slate-100 pb-3 flex items-center gap-2">
-              <History className="w-4 h-4 text-amber-500" />
-              Proposal Revision History
-            </h3>
-
-            <div className="space-y-3">
-              {revisions.length === 0 ? (
-                <p className="text-xs text-slate-400 italic">No historical revisions found.</p>
-              ) : (
-                revisions.map((rev) => (
-                  <div key={rev.id} className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
-                    <div className="flex justify-between items-center text-xs font-bold text-slate-900">
-                      <span>{rev.quote_number}</span>
-                      <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded text-[10px] font-mono">{rev.version}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-[11px] text-slate-500">
-                      <span>Amount: ${rev.total_amount.toLocaleString()}</span>
-                      <span>{rev.created_at}</span>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
       </div>
 
       <section className="grid grid-cols-1 gap-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:grid-cols-2 lg:grid-cols-4">
@@ -415,6 +393,42 @@ export default function QuoteDetailPage() {
         {quote.accepted_at && <p className="mt-1 text-xs text-slate-500">Accepted at {new Date(quote.accepted_at).toLocaleString()}</p>}
         {quote.invoice_id && <p className="mt-2 text-xs font-medium text-emerald-700">Invoice {quote.invoice_number || quote.invoice_id} created · {quote.invoice_status || 'Pending'}</p>}
       </section>
+
+      <ConfirmModal
+        isOpen={reviewAction === 'submit' || reviewAction === 'approve'}
+        onClose={() => setReviewAction(null)}
+        title={reviewAction === 'approve' ? 'Approve quote?' : 'Submit quote for review?'}
+        description={reviewAction === 'approve' ? 'Approval makes this quote eligible for customer delivery.' : 'The quote will be locked while it is reviewed.'}
+        confirmText={reviewAction === 'approve' ? 'Approve quote' : 'Submit for review'}
+        variant="default"
+        isLoading={submitReviewMutation.isPending || approveMutation.isPending}
+        onConfirm={async () => {
+          try {
+            if (reviewAction === 'approve') await approveMutation.mutateAsync({ id: quoteId });
+            else await submitReviewMutation.mutateAsync({ id: quoteId });
+            setReviewAction(null);
+          } catch (error) {
+            setErrorMessage(getErrorMessage(error, 'Unable to update quote review status.'));
+          }
+        }}
+      />
+      <ModalShell isOpen={reviewAction === 'return'} onClose={() => setReviewAction(null)} title="Return quote to draft">
+        <div className="space-y-4">
+          <Textarea value={reviewReason} onChange={(event) => setReviewReason(event.target.value)} placeholder="Required review feedback" maxLength={500} />
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setReviewAction(null)}>Cancel</Button>
+            <Button disabled={!reviewReason.trim() || returnDraftMutation.isPending} onClick={async () => {
+              try {
+                await returnDraftMutation.mutateAsync({ id: quoteId, reason: reviewReason.trim() });
+                setReviewReason('');
+                setReviewAction(null);
+              } catch (error) {
+                setErrorMessage(getErrorMessage(error, 'Unable to return quote to draft.'));
+              }
+            }}>Return to draft</Button>
+          </div>
+        </div>
+      </ModalShell>
 
       {/* Send Email Modal */}
       {isSendEmailModalOpen && (

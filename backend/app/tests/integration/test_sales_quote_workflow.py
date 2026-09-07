@@ -136,6 +136,16 @@ async def test_http_approval_permission_and_tenant_scope(sales_database, monkeyp
         user.organization_id = org.id
         blocked = await client.post(endpoint)
         assert blocked.status_code == 409
+        permission.return_value = ["quotes:update"]
+        submitted = await client.post(
+            f"/api/v1/quotes/{result['quote_id']}/submit-for-review"
+        )
+        assert submitted.status_code == 200
+        assert submitted.json()["status"] == "Pending Approval"
+        permission.return_value = ["quotes:approve"]
+        approved = await client.post(endpoint)
+        assert approved.status_code == 200
+        assert approved.json()["status"] == "Approved"
         permission.return_value = ["quotes:send"]
         sent = await client.post(
             f"/api/v1/quotes/{result['quote_id']}/send?recipient_email={contact.email}"
@@ -373,6 +383,12 @@ async def prepare_customer_acceptance(sales_database, *, billing=True, unit_pric
             db, deal.id, None, organization_id=org.id, actor_id=user.id
         )
         quote = await db.get(Quote, won["quote_id"])
+        await QuoteService().submit_for_review(
+            db, quote_id=won["quote_id"], organization_id=org.id, actor_id=user.id
+        )
+        await QuoteService().approve_quote(
+            db, quote_id=won["quote_id"], organization_id=org.id, actor_id=user.id
+        )
         await QuoteService().send_quote(
             db, quote_id=won["quote_id"], organization_id=org.id, recipient_email=contact.email
         )
@@ -417,6 +433,12 @@ async def test_durable_quote_delivery_and_customer_acceptance(sales_database, mo
         won = await DealService().mark_deal_won(
             db, deal.id, None, organization_id=org.id, actor_id=user.id
         )
+        await QuoteService().submit_for_review(
+            db, quote_id=won["quote_id"], organization_id=org.id, actor_id=user.id
+        )
+        await QuoteService().approve_quote(
+            db, quote_id=won["quote_id"], organization_id=org.id, actor_id=user.id
+        )
         first = await QuoteService().send_quote(
             db, quote_id=won["quote_id"], organization_id=org.id, recipient_email=contact.email
         )
@@ -442,14 +464,14 @@ async def test_durable_quote_delivery_and_customer_acceptance(sales_database, mo
                     Email.subject == f"Quote {quote.quote_number}",
                 )
             )
-            assert email and email.status == "sent"
+            assert email and email.status == "Sent"
             token = acceptance_token(quote.id, quote.delivery_id)
             response = await QuoteService().public_quote(db, token=token)
             assert response["status"] == "Sent"
             result = await QuoteService().accept_public_quote(db, token=token)
             assert (await db.get(Invoice, result["invoice_id"])).status == "Draft"
         else:
-            assert quote.sent_at is None and quote.status == "Draft"
+            assert quote.sent_at is None and quote.status == "Approved"
             if outcome == "Failed":
                 sender.assert_not_called()
             else:

@@ -193,20 +193,12 @@ export default function InvoiceDetailPage() {
                 icon: <BellRing className="w-4 h-4 text-amber-500" />,
                 onSelect: handleSendReminder,
               },
-              {
-                label: 'Delete invoice',
-                icon: <Trash2 className="w-4 h-4" />,
-                variant: 'destructive',
-                onSelect: () => setIsDeleteModalOpen(true),
-              },
-            ] : [
-              {
-                label: 'Delete invoice',
-                icon: <Trash2 className="w-4 h-4" />,
-                variant: 'destructive',
-                onSelect: () => setIsDeleteModalOpen(true),
-              },
-            ]}
+            ] : !invoice.quote_id && s === 'Draft' ? [{
+              label: 'Delete invoice',
+              icon: <Trash2 className="w-4 h-4" />,
+              variant: 'destructive',
+              onSelect: () => setIsDeleteModalOpen(true),
+            }] : []}
           />
         </div>
       </div>

@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import NotFoundError
+from app.core.errors import APIException, NotFoundError
 from app.models import CalendarEventModel, User
 from app.repositories.calendar_repository import CalendarRepository
 from app.schemas.crm_schemas import CalendarEventCreatePayload
@@ -130,9 +130,10 @@ def test_parse_datetime_handles_z_suffix():
     assert parsed.hour == 10
 
 
-def test_parse_datetime_falls_back_to_now():
-    parsed = parse_datetime("not-a-date")
-    assert isinstance(parsed, datetime)
+def test_parse_datetime_rejects_invalid_value():
+    with pytest.raises(APIException) as exc_info:
+        parse_datetime("not-a-date")
+    assert exc_info.value.code == "INVALID_CALENDAR_DATETIME"
 
 
 def test_event_to_dict_defaults_event_type():

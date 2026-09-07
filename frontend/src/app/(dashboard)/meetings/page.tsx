@@ -44,6 +44,8 @@ import {
   MeetingCreatePayload
 } from '@/lib/api/meetings';
 
+const CONFERENCING_PROVIDERS_CONFIGURED = false;
+
 export default function MeetingsPage() {
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
@@ -357,7 +359,7 @@ export default function MeetingsPage() {
             <Video className="w-7 h-7 text-indigo-600" />
             Meetings & AI Summaries
           </h1>
-          <p className="text-slate-500 text-sm mt-0.5">Schedule meetings with Zoom/Teams integration & AI transcript summaries</p>
+          <p className="text-slate-500 text-sm mt-0.5">Schedule meetings and capture AI-assisted summaries</p>
         </div>
 
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
@@ -366,11 +368,11 @@ export default function MeetingsPage() {
               <Plus className="w-4 h-4" />Schedule Meeting
             </Button>
           </PermissionGate>
-          <ActionMenu label="More" className="w-full text-xs font-semibold sm:w-auto" actions={[
+          {CONFERENCING_PROVIDERS_CONFIGURED && <ActionMenu label="More" className="w-full text-xs font-semibold sm:w-auto" actions={[
             { label: 'Create Zoom link', icon: <Video className="w-4 h-4 text-blue-600" />, onSelect: () => setIsZoomModalOpen(true) },
             { label: 'Create Teams link', icon: <Share2 className="w-4 h-4 text-indigo-600" />, onSelect: () => setIsTeamsModalOpen(true) },
             { label: 'Export iCal', icon: <Download className="w-4 h-4 text-slate-500" />, onSelect: handleExportIcal },
-          ]} />
+          ]} />}
         </div>
       </div>
 
@@ -383,7 +385,7 @@ export default function MeetingsPage() {
         getRowKey={(item) => item.id}
         onRowClick={(item) => router.push(`/meetings/${item.id}`)}
         emptyTitle="No scheduled meetings found"
-        emptyDescription="Schedule a new meeting or generate Zoom/Teams room links."
+        emptyDescription="Schedule a meeting to begin tracking customer conversations."
         searchValue={searchTerm}
         onSearchChange={setSearchTerm}
         searchPlaceholder="Search meeting title..."
@@ -505,7 +507,7 @@ export default function MeetingsPage() {
       </ModalShell>
 
       {/* Generate Zoom Link Modal */}
-      <ModalShell
+      {CONFERENCING_PROVIDERS_CONFIGURED && <ModalShell
         isOpen={isZoomModalOpen}
         onClose={() => setIsZoomModalOpen(false)}
         size="md"
@@ -551,10 +553,10 @@ export default function MeetingsPage() {
             </button>
           </div>
         </form>
-      </ModalShell>
+      </ModalShell>}
 
       {/* Generate Teams Link Modal */}
-      <ModalShell
+      {CONFERENCING_PROVIDERS_CONFIGURED && <ModalShell
         isOpen={isTeamsModalOpen}
         onClose={() => setIsTeamsModalOpen(false)}
         size="md"
@@ -600,7 +602,7 @@ export default function MeetingsPage() {
             </button>
           </div>
         </form>
-      </ModalShell>
+      </ModalShell>}
 
       {/* Reschedule Modal */}
       <ModalShell

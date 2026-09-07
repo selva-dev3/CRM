@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.company import Company
+from app.models.organization import Organization
 
 
 class CompanyRepository:
@@ -94,3 +95,30 @@ class CompanyRepository:
 
     async def delete(self, db: AsyncSession, company: Company) -> None:
         await db.delete(company)
+
+    async def lock_organization(self, db: AsyncSession, organization_id: str) -> None:
+        await db.scalar(
+            select(Organization.id).where(Organization.id == organization_id).with_for_update()
+        )
+
+    async def find_duplicate(
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        normalized_name: str,
+        normalized_domain: str | None,
+        exclude_id: str | None = None,
+    ) -> Company | None:
+        stmt = select(Company).where(
+            Company.organization_id == organization_id,
+            func.lower(func.trim(Company.name)) == normalized_name,
+        )
+        if normalized_domain:
+            stmt = select(Company).where(
+                Company.organization_id == organization_id,
+                func.lower(Company.website).contains(normalized_domain),
+            )
+        if exclude_id:
+            stmt = stmt.where(Company.id != exclude_id)
+        return (await db.execute(stmt.limit(1))).scalars().first()

@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 from hashlib import sha256
 
@@ -58,7 +59,15 @@ async def get_current_user(
                 headers={"WWW-Authenticate": "Bearer"},
             )
         user = await db.get(User, api_key.created_by) if api_key.created_by else None
-        if user is None or not user.is_active:
+        organization = await db.get(Organization, api_key.organization_id)
+        if (
+            user is None
+            or not user.is_active
+            or user.organization_id != api_key.organization_id
+            or organization is None
+            or not organization.is_active
+            or organization.status != "active"
+        ):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="API key owner is unavailable",
@@ -67,6 +76,13 @@ async def get_current_user(
         api_key.last_used = datetime.now(UTC)
         api_key.usage_count += 1
         await db.commit()
+        try:
+            parsed_scopes = json.loads(api_key.scopes or "[]")
+        except ValueError:
+            parsed_scopes = (api_key.scopes or "").split(",")
+        user._api_key_scopes = {
+            str(scope).strip().lower() for scope in parsed_scopes if str(scope).strip()
+        }
         return user
 
     token = raw_token
@@ -193,6 +209,14 @@ def require_permission(permission: str):
         keys = await auth_service.get_user_permissions(db, current_user)
         if permission not in keys:
             raise ForbiddenError(message=f"Missing required permission: {permission}")
+        api_key_scopes = getattr(current_user, "_api_key_scopes", None)
+        if api_key_scopes is not None:
+            normalized_permission = permission.lower()
+            broad_scope = "api:read" if normalized_permission.endswith(":read") else "api:write"
+            if normalized_permission not in api_key_scopes and broad_scope not in api_key_scopes:
+                raise ForbiddenError(
+                    message=f"API key is missing required scope: {normalized_permission}"
+                )
         return current_user
 
     return permission_dependency

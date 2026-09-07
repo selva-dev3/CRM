@@ -99,6 +99,7 @@ async def get_deal_stages(
 async def create_deal_stage(
     name: str,
     probability: float,
+    order_index: int | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -106,6 +107,7 @@ async def create_deal_stage(
         db,
         name=name,
         probability=probability,
+        order_index=order_index,
         current_user=current_user,
     )
 

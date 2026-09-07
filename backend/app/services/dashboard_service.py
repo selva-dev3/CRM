@@ -58,6 +58,7 @@ class DashboardService:
         win_rate = round((won_deals / closed_deals * 100.0), 2) if closed_deals > 0 else 0.0
         avg_score = await self.repository.avg_lead_score(db, organization_id)
         scored_leads = await self.repository.count_scored_leads(db, organization_id)
+        financial = await self.repository.financial_kpis(db, organization_id)
         currency, locale = await self.repository.get_organization_currency_locale(
             db, organization_id
         )
@@ -84,6 +85,7 @@ class DashboardService:
             closed_deals_count=closed_deals,
             ai_lead_score_avg=avg_score,
             scored_leads_count=scored_leads,
+            **financial,
             currency=currency,
             locale=locale,
             recent_activity=recent_activity,

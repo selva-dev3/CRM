@@ -3,7 +3,10 @@
 export interface IntegrationItem {
   name: string;
   is_connected: boolean;
+  connection_status: 'disconnected' | 'authenticated' | 'connected';
+  sync_status: 'not_synced' | 'syncing' | 'synced' | 'sync_failed';
   last_synced?: string | null;
+  last_error?: string | null;
 }
 
 export interface ApiKeyItem {
@@ -14,6 +17,7 @@ export interface ApiKeyItem {
   created_at: string;
   last_used?: string | null;
   is_active: boolean;
+  scopes: string[];
 }
 
 export interface ZapierConfig {
@@ -46,8 +50,8 @@ export async function fetchApiKeysApi(): Promise<ApiKeyItem[]> {
   return apiClient.get<ApiKeyItem[]>('/auth/api-keys');
 }
 
-export async function createApiKeyApi(name: string): Promise<ApiKeyItem> {
-  return apiClient.post<ApiKeyItem>('/auth/api-keys', { name });
+export async function createApiKeyApi(name: string, scopes: string[]): Promise<ApiKeyItem> {
+  return apiClient.post<ApiKeyItem>('/auth/api-keys', { name, scopes });
 }
 
 export async function revokeApiKeyApi(keyId: string): Promise<{ message: string }> {
@@ -67,10 +71,6 @@ export async function connectIntegrationApi(name: string): Promise<{ message: st
 
 export async function disconnectIntegrationApi(name: string): Promise<{ message: string }> {
   return apiClient.post<{ message: string }>(`/integrations/${encodeURIComponent(name)}/disconnect`);
-}
-
-export async function syncIntegrationApi(name: string): Promise<{ message: string }> {
-  return apiClient.post<{ message: string }>(`/integrations/${encodeURIComponent(name)}/sync`);
 }
 
 // Dedicated Zapier REST API Methods

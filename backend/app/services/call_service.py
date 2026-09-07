@@ -1,5 +1,4 @@
 import asyncio
-from datetime import datetime
 
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,7 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import APIException, NotFoundError
 from app.models import CallLog, User
 from app.repositories.call_repository import CallRepository
-from app.repositories.contact_repository import ContactRepository
 from app.schemas.crm_schemas import CallLogBase
 from app.services.ai_domain_service import AIDomainService, ai_domain_service
 from app.services.org_service import organization_service
@@ -18,6 +16,9 @@ def call_to_dict(call: CallLog) -> dict:
     return {
         "id": call.id,
         "contact_id": call.contact_id,
+        "lead_id": call.lead_id,
+        "company_id": call.company_id,
+        "deal_id": call.deal_id,
         "call_type": call.call_type or "Outbound",
         "duration_seconds": call.duration_seconds or 0,
         "notes": call.notes,
@@ -34,7 +35,6 @@ class CallService:
         ai_service_instance: AIDomainService | None = None,
     ) -> None:
         self.repository = repository or CallRepository()
-        self.contact_repository = ContactRepository()
         self.ai_service = ai_service_instance or ai_domain_service
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
@@ -54,6 +54,10 @@ class CallService:
         limit: int,
         search: str | None = None,
         call_type: str | None = None,
+        lead_id: str | None = None,
+        contact_id: str | None = None,
+        company_id: str | None = None,
+        deal_id: str | None = None,
         current_user: User,
     ) -> list[dict]:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
@@ -64,6 +68,10 @@ class CallService:
             organization_id=org_id,
             search=search,
             call_type=call_type,
+            lead_id=lead_id,
+            contact_id=contact_id,
+            company_id=company_id,
+            deal_id=deal_id,
         )
         return [call_to_dict(c) for c in calls]
 
@@ -76,20 +84,25 @@ class CallService:
 
     async def log_call(self, db: AsyncSession, payload: CallLogBase, current_user: User) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
-        if not payload.contact_id:
+        if not any((payload.contact_id, payload.lead_id, payload.company_id, payload.deal_id)):
             raise APIException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 code="CONTACT_REQUIRED",
-                message="A valid contact is required to log a call",
+                message="A related lead, contact, company, or deal is required to log a call",
             )
-        contact = await self.contact_repository.get_by_id_scoped(
-            db, contact_id=payload.contact_id, organization_id=org_id
+        from app.services.crm_relationship_service import validate_crm_relationships
+
+        relationships = await validate_crm_relationships(
+            db,
+            organization_id=org_id,
+            lead_id=payload.lead_id,
+            contact_id=payload.contact_id,
+            company_id=payload.company_id,
+            deal_id=payload.deal_id,
         )
-        if not contact:
-            raise NotFoundError(message=f"Contact '{payload.contact_id}' not found")
         data = {
             "organization_id": org_id,
-            "contact_id": contact.id,
+            **relationships,
             "call_type": payload.call_type or "Outbound",
             "duration_seconds": payload.duration_seconds or 0,
             "notes": payload.notes,
@@ -97,14 +110,7 @@ class CallService:
         call = await self.repository.create(db, data=data)
         await self._commit(db, "Failed to log call")
         await db.refresh(call)
-        return {
-            "id": call.id,
-            "contact_id": call.contact_id,
-            "call_type": call.call_type,
-            "duration_seconds": call.duration_seconds,
-            "notes": call.notes,
-            "timestamp": str(call.timestamp),
-        }
+        return call_to_dict(call)
 
     async def bulk_delete(self, db: AsyncSession, ids: list[str], current_user: User) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
@@ -132,20 +138,26 @@ class CallService:
 
     async def get_recording(self, db: AsyncSession, call_id: str, current_user: User) -> dict:
         call = await self.require_call(db, call_id, current_user)
+        if not call.recording_url:
+            raise APIException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                code="CALL_RECORDING_NOT_FOUND",
+                message="This call log has no recording",
+            )
         try:
             recording_url = await asyncio.to_thread(
-                s3_service.generate_presigned_url, f"recordings/{call_id}.mp3"
+                s3_service.generate_presigned_url, call.recording_url
             )
-        except Exception:
+        except Exception as exc:
             raise APIException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 code="CALL_RECORDING_UNAVAILABLE",
                 message="Call recording storage is currently unavailable",
-            )
+            ) from exc
         return {
             "call_id": call_id,
             "recording_url": recording_url,
-            "duration_seconds": call.duration_seconds or 120,
+            "duration_seconds": call.duration_seconds or 0,
         }
 
     async def get_sentiment(self, db: AsyncSession, call_id: str, current_user: User) -> dict:
@@ -168,12 +180,11 @@ class CallService:
         }
 
     async def trigger_outbound(self, phone_number: str, contact_id: str) -> dict:
-        return {
-            "call_sid": f"CA{int(datetime.now().timestamp())}",
-            "status": "initiating",
-            "to": phone_number,
-            "contact_id": contact_id,
-        }
+        raise APIException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            code="CALL_PROVIDER_NOT_CONFIGURED",
+            message="Outbound calling is unavailable because no telephony provider is configured",
+        )
 
     async def get_dispositions(self) -> list[str]:
         return [
@@ -186,31 +197,25 @@ class CallService:
         ]
 
     async def create_disposition(self, name: str) -> dict:
-        return {"message": f"Disposition '{name}' created", "status": "success"}
+        raise APIException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            code="CUSTOM_CALL_DISPOSITIONS_NOT_SUPPORTED",
+            message="Custom call dispositions are not supported",
+        )
 
     async def get_rep_stats(self) -> list[dict]:
-        return [
-            {
-                "rep": "System Admin",
-                "total_calls": 42,
-                "connected": 30,
-                "voicemails": 8,
-                "total_duration": 4800,
-            },
-            {
-                "rep": "Sales Representative",
-                "total_calls": 28,
-                "connected": 20,
-                "voicemails": 5,
-                "total_duration": 3200,
-            },
-        ]
+        raise APIException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            code="CALL_REP_STATS_NOT_SUPPORTED",
+            message="Call performance reporting requires provider call ownership data",
+        )
 
     async def log_voicemail_drop(self, contact_id: str, voicemail_template_id: str) -> dict:
-        return {
-            "message": f"Voicemail template {voicemail_template_id} sent to {contact_id}",
-            "status": "success",
-        }
+        raise APIException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            code="VOICEMAIL_PROVIDER_NOT_CONFIGURED",
+            message="Voicemail delivery is unavailable because no telephony provider is configured",
+        )
 
 
 call_service = CallService()

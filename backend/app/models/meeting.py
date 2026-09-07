@@ -18,7 +18,23 @@ class Meeting(Base):
     description: Mapped[str | None] = mapped_column(Text)
     start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    location: Mapped[str | None] = mapped_column(String(500))
     meeting_link: Mapped[str | None] = mapped_column(String(500))
+    status: Mapped[str] = mapped_column(
+        String(50), default="Scheduled", server_default="Scheduled", index=True
+    )
+    lead_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("leads.id", ondelete="SET NULL"), index=True
+    )
+    contact_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("contacts.id", ondelete="SET NULL"), index=True
+    )
+    company_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("companies.id", ondelete="SET NULL"), index=True
+    )
+    deal_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("deals.id", ondelete="SET NULL"), index=True
+    )
     ai_summary: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

@@ -14,6 +14,27 @@ class Document(Base):
         String, ForeignKey("organizations.id", ondelete="CASCADE"), index=True
     )
     folder_id: Mapped[str | None] = mapped_column(String, index=True)
+    lead_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("leads.id", ondelete="SET NULL"), index=True
+    )
+    contact_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("contacts.id", ondelete="SET NULL"), index=True
+    )
+    company_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("companies.id", ondelete="SET NULL"), index=True
+    )
+    deal_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("deals.id", ondelete="SET NULL"), index=True
+    )
+    quote_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("quotes.id", ondelete="SET NULL"), index=True
+    )
+    invoice_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("invoices.id", ondelete="SET NULL"), index=True
+    )
+    payment_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("payments.id", ondelete="SET NULL"), index=True
+    )
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     file_size: Mapped[int] = mapped_column(Integer, default=0)
     mime_type: Mapped[str] = mapped_column(String(100), default="application/octet-stream")

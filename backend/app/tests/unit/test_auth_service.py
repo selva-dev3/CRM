@@ -729,6 +729,8 @@ async def test_list_api_keys_is_tenant_scoped_and_never_returns_hash():
                     "key_hash": "stored-secret-hash",
                     "created_at": datetime.now(UTC),
                     "last_used": None,
+                    "is_active": True,
+                    "scopes": '["leads:read"]',
                 },
             )()
         ]
@@ -740,6 +742,7 @@ async def test_list_api_keys_is_tenant_scoped_and_never_returns_hash():
     repo.list_api_keys.assert_awaited_once_with(ANY, "org-1")
     assert result[0]["api_key"] is None
     assert result[0]["key"] == "********"
+    assert result[0]["scopes"] == ["leads:read"]
     assert "stored-secret-hash" not in result[0].values()
 
 
@@ -766,6 +769,7 @@ async def test_create_api_key_uses_current_org_and_stores_only_digest(monkeypatc
     assert stored["key_hash"] == sha256(raw_key.encode("utf-8")).hexdigest()
     assert stored["organization_id"] == "org-1"
     assert stored["created_by"] == "user-1"
+    assert stored["scopes"] == '["api:read"]'
 
 
 @pytest.mark.asyncio

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Header, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
@@ -37,16 +37,19 @@ async def get_inbox(
 @router.post(
     "/send",
     response_model=EmailResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Send single outbound email",
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Queue a single outbound email for provider delivery",
     dependencies=[Depends(require_permission("emails:send"))],
 )
 async def send_email(
     payload: EmailSendRequest,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key", max_length=128),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await email_domain_service.send_email(db, payload, current_user)
+    return await email_domain_service.send_email(
+        db, payload, current_user, idempotency_key=idempotency_key
+    )
 
 
 @router.get(
@@ -54,18 +57,25 @@ async def send_email(
     summary="List saved email drafts",
     dependencies=[Depends(require_permission("emails:read"))],
 )
-async def list_drafts(db: AsyncSession = Depends(get_db)):
-    return await email_domain_service.list_drafts()
+async def list_drafts(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await email_domain_service.list_drafts(db, current_user)
 
 
 @router.post(
     "/drafts",
-    response_model=MessageResponse,
+    response_model=EmailResponse,
     summary="Save draft email message",
     dependencies=[Depends(require_permission("emails:send"))],
 )
-async def save_draft(payload: EmailSendRequest, db: AsyncSession = Depends(get_db)):
-    return await email_domain_service.save_draft()
+async def save_draft(
+    payload: EmailSendRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await email_domain_service.save_draft(db, payload, current_user)
 
 
 @router.get(
@@ -73,8 +83,12 @@ async def save_draft(payload: EmailSendRequest, db: AsyncSession = Depends(get_d
     summary="Get draft email by ID",
     dependencies=[Depends(require_permission("emails:read"))],
 )
-async def get_draft(draft_id: str, db: AsyncSession = Depends(get_db)):
-    return await email_domain_service.get_draft(draft_id)
+async def get_draft(
+    draft_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await email_domain_service.get_draft(db, draft_id, current_user)
 
 
 @router.delete(
@@ -83,8 +97,27 @@ async def get_draft(draft_id: str, db: AsyncSession = Depends(get_db)):
     summary="Delete draft email",
     dependencies=[Depends(require_permission("emails:delete"))],
 )
-async def delete_draft(draft_id: str, db: AsyncSession = Depends(get_db)):
-    return await email_domain_service.delete_draft(draft_id)
+async def delete_draft(
+    draft_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await email_domain_service.delete_draft(db, draft_id, current_user)
+
+
+@router.post(
+    "/{email_id}/retry",
+    response_model=EmailResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Retry a failed outbound email",
+    dependencies=[Depends(require_permission("emails:send"))],
+)
+async def retry_email(
+    email_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await email_domain_service.retry_email(db, email_id, current_user)
 
 
 @router.get(

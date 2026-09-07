@@ -3,7 +3,7 @@ from collections.abc import Sequence
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Integration, Organization, User
+from app.models import Integration, User
 
 
 class IntegrationRepository:
@@ -12,9 +12,7 @@ class IntegrationRepository:
     async def resolve_org_id(self, db: AsyncSession, current_user: User | None = None) -> str:
         if current_user and getattr(current_user, "organization_id", None):
             return current_user.organization_id
-        res = await db.execute(select(Organization).limit(1))
-        org = res.scalars().first()
-        return org.id if org else "org-1"
+        raise ValueError("Authenticated organization context is required")
 
     async def list_all(
         self, db: AsyncSession, organization_id: str, limit: int = 20

@@ -12,6 +12,7 @@ from app.schemas.crm_schemas import (
     MessageResponse,
     QuoteBase,
     QuoteResponse,
+    ReviewDecisionRequest,
 )
 from app.services.quote_service import quote_service
 
@@ -22,7 +23,6 @@ router = APIRouter()
     "/{quote_id}/approve",
     response_model=QuoteResponse,
     dependencies=[Depends(require_permission("quotes:approve"))],
-    deprecated=True,
 )
 async def approve_quote(
     quote_id: str,
@@ -32,6 +32,43 @@ async def approve_quote(
     organization_id = await quote_service.resolve_organization_id(db, current_user)
     return await quote_service.approve_quote(
         db, quote_id=quote_id, organization_id=organization_id, actor_id=current_user.id
+    )
+
+
+@router.post(
+    "/{quote_id}/submit-for-review",
+    response_model=QuoteResponse,
+    dependencies=[Depends(require_permission("quotes:update"))],
+)
+async def submit_quote_for_review(
+    quote_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await quote_service.resolve_organization_id(db, current_user)
+    return await quote_service.submit_for_review(
+        db, quote_id=quote_id, organization_id=organization_id, actor_id=current_user.id
+    )
+
+
+@router.post(
+    "/{quote_id}/return-to-draft",
+    response_model=QuoteResponse,
+    dependencies=[Depends(require_permission("quotes:approve"))],
+)
+async def return_quote_to_draft(
+    quote_id: str,
+    payload: ReviewDecisionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await quote_service.resolve_organization_id(db, current_user)
+    return await quote_service.return_to_draft(
+        db,
+        quote_id=quote_id,
+        organization_id=organization_id,
+        actor_id=current_user.id,
+        reason=payload.reason,
     )
 
 

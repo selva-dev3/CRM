@@ -18,6 +18,10 @@ celery_app.conf.update(
 
 # Hourly sweep of scheduled report deliveries (see workers/tasks.py).
 celery_app.conf.beat_schedule = {
+    "deliver-pending-emails": {
+        "task": "app.workers.tasks.deliver_pending_emails",
+        "schedule": 30.0,
+    },
     "deliver-due-scheduled-reports": {
         "task": "app.workers.tasks.deliver_due_scheduled_reports",
         "schedule": crontab(minute=0),
@@ -37,5 +41,13 @@ celery_app.conf.beat_schedule = {
     "send-due-invoice-reminders": {
         "task": "app.workers.tasks.send_due_invoice_reminders",
         "schedule": crontab(minute=15),
+    },
+    "reconcile-invoice-payment-aggregates": {
+        "task": "app.workers.tasks.reconcile_invoice_payment_aggregates",
+        "schedule": crontab(minute=30),
+    },
+    "reconcile-provider-subscriptions": {
+        "task": "app.workers.tasks.reconcile_provider_subscriptions",
+        "schedule": crontab(minute=45),
     },
 }

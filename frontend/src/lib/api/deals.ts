@@ -86,18 +86,7 @@ export async function fetchDealCustomFieldsApi(): Promise<DealCustomFieldDefinit
 }
 
 export async function getDealStagesApi(): Promise<DealStageItem[]> {
-  try {
-    return await apiClient.get<DealStageItem[]>('/deals/stages');
-  } catch {
-    return [
-      { id: 'stg-1', name: 'Prospecting', probability: 10 },
-      { id: 'stg-2', name: 'Qualification', probability: 30 },
-      { id: 'stg-3', name: 'Proposal', probability: 60 },
-      { id: 'stg-4', name: 'Negotiation', probability: 80 },
-      { id: 'stg-5', name: 'Closed Won', probability: 100 },
-      { id: 'stg-6', name: 'Closed Lost', probability: 0 },
-    ];
-  }
+  return apiClient.get<DealStageItem[]>('/deals/stages');
 }
 
 export async function createDealStageApi(payload: { name: string; probability: number }): Promise<DealStageItem> {

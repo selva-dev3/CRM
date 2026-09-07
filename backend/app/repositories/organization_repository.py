@@ -62,8 +62,8 @@ class OrganizationRepository:
     async def get_or_create_default(self, db: AsyncSession) -> Organization:
         org = Organization(
             id="org-1",
-            name="Default Enterprise Organization",
-            slug="default-enterprise",
+            name="Default Organization",
+            slug="default-organization",
             email="info@enterprise.com",
             phone="+91 9876543210",
             website="https://enterprise.com",
@@ -82,8 +82,8 @@ class OrganizationRepository:
             registration_number="CIN123456789",
             status="active",
             domain="enterprise.crm.com",
-            plan="Enterprise",
-            max_users=100,
+            plan="Free",
+            max_users=3,
         )
         db.add(org)
         await db.commit()
@@ -152,6 +152,19 @@ class OrganizationRepository:
             )
         )
         return result.scalar_one_or_none()
+
+    async def list_provider_subscription_org_ids(
+        self, db: AsyncSession, *, after_org_id: str | None = None, limit: int = 200
+    ) -> list[str]:
+        stmt = select(OrganizationSubscription.organization_id).where(
+            OrganizationSubscription.subscription_id.is_not(None)
+        )
+        if after_org_id:
+            stmt = stmt.where(OrganizationSubscription.organization_id > after_org_id)
+        result = await db.execute(
+            stmt.order_by(OrganizationSubscription.organization_id).limit(limit)
+        )
+        return list(result.scalars().all())
 
     async def get_processed_webhook_event(
         self, db: AsyncSession, event_id: str

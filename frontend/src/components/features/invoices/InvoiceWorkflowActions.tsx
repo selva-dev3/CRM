@@ -13,7 +13,12 @@ import { ConfirmModal } from '@/components/common/confirm-modal';
 import { useHasPermission } from '@/hooks/use-has-permission';
 import { PERMISSIONS } from '@/lib/permissions';
 import { ApiError } from '@/lib/api/client';
-import { useFinalizeInvoiceMutation, type InvoiceItem } from '@/lib/api/invoices';
+import {
+  useFinalizeInvoiceMutation,
+  useReturnInvoiceToDraftMutation,
+  useSubmitInvoiceForReviewMutation,
+  type InvoiceItem,
+} from '@/lib/api/invoices';
 import { useRecordInvoicePaymentMutation } from '@/lib/api/payments';
 import { manualPaymentSchema, paymentTypes, type ManualPaymentDto } from '@/lib/types/manual-payment';
 import { getErrorMessage } from '@/lib/utils';
@@ -24,8 +29,11 @@ export function InvoiceWorkflowActions({ invoice }: { invoice: InvoiceItem }) {
   const { hasPermission } = useHasPermission();
   const auth = useOptionalAuth();
   const finalize = useFinalizeInvoiceMutation();
+  const submitReview = useSubmitInvoiceForReviewMutation();
+  const returnDraft = useReturnInvoiceToDraftMutation();
   const record = useRecordInvoicePaymentMutation();
-  const [dialog, setDialog] = useState<'finalize' | 'payment' | null>(null);
+  const [dialog, setDialog] = useState<'submit-review' | 'finalize' | 'return-draft' | 'payment' | null>(null);
+  const [reviewReason, setReviewReason] = useState('');
   const [pending, setPending] = useState<PendingPayment | null>(null);
   const submitting = useRef(false);
   const form = useForm<ManualPaymentDto>({
@@ -86,13 +94,39 @@ export function InvoiceWorkflowActions({ invoice }: { invoice: InvoiceItem }) {
   }
 
   return <>
-    {invoice.status === 'Draft' && hasPermission(PERMISSIONS.INVOICES.UPDATE) && <Button onClick={() => setDialog('finalize')}>Finalize invoice</Button>}
+    {invoice.status === 'Draft' && hasPermission(PERMISSIONS.INVOICES.UPDATE) && <Button onClick={() => setDialog('submit-review')}>Submit for review</Button>}
+    {invoice.status === 'In Review' && hasPermission(PERMISSIONS.INVOICES.UPDATE) && <>
+      <Button onClick={() => setDialog('finalize')}>Approve & finalize</Button>
+      <Button variant="outline" onClick={() => setDialog('return-draft')}>Return to draft</Button>
+    </>}
     {canRecord && hasPermission(PERMISSIONS.INVOICES.PAYMENT) && <Button onClick={openPayment}>Add Payment</Button>}
-    <ConfirmModal isOpen={dialog === 'finalize'} onClose={() => !finalize.isPending && setDialog(null)} title="Finalize invoice?" description="Finalizing locks the invoice details and billing snapshot for customer acceptance." confirmText="Finalize invoice" variant="default" isLoading={finalize.isPending} onConfirm={async () => {
-      if (finalize.isPending) return;
-      try { await finalize.mutateAsync(invoice.id); setDialog(null); toast.success('Invoice finalized.'); }
-      catch (error) { toast.error(getErrorMessage(error, 'Unable to finalize invoice.')); }
+    <ConfirmModal isOpen={dialog === 'submit-review' || dialog === 'finalize'} onClose={() => !finalize.isPending && !submitReview.isPending && setDialog(null)} title={dialog === 'finalize' ? 'Approve and finalize invoice?' : 'Submit invoice for review?'} description={dialog === 'finalize' ? 'Finalizing locks the reviewed invoice for customer delivery and acceptance.' : 'The invoice will be locked while it is under review.'} confirmText={dialog === 'finalize' ? 'Approve & finalize' : 'Submit for review'} variant="default" isLoading={finalize.isPending || submitReview.isPending} onConfirm={async () => {
+      if (finalize.isPending || submitReview.isPending) return;
+      try {
+        if (dialog === 'finalize') {
+          await finalize.mutateAsync(invoice.id);
+          toast.success('Invoice finalized.');
+        } else {
+          await submitReview.mutateAsync(invoice.id);
+          toast.success('Invoice submitted for review.');
+        }
+        setDialog(null);
+      }
+      catch (error) { toast.error(getErrorMessage(error, 'Unable to update invoice review status.')); }
     }} />
+    <ModalShell isOpen={dialog === 'return-draft'} onClose={() => !returnDraft.isPending && setDialog(null)} title="Return invoice to draft">
+      <div className="space-y-4">
+        <Textarea value={reviewReason} onChange={(event) => setReviewReason(event.target.value)} placeholder="Required review feedback" maxLength={500} />
+        <div className="flex gap-2"><Button type="button" variant="outline" onClick={() => setDialog(null)}>Cancel</Button><Button type="button" disabled={!reviewReason.trim() || returnDraft.isPending} onClick={async () => {
+          try {
+            await returnDraft.mutateAsync({ id: invoice.id, reason: reviewReason.trim() });
+            setReviewReason('');
+            setDialog(null);
+            toast.success('Invoice returned to draft.');
+          } catch (error) { toast.error(getErrorMessage(error, 'Unable to return invoice to draft.')); }
+        }}>Return to draft</Button></div>
+      </div>
+    </ModalShell>
     <ModalShell isOpen={dialog === 'payment'} onClose={() => !record.isPending && setDialog(null)} title="Add Payment">
       <p className="mb-4 text-sm">Outstanding: {invoice.currency} {invoice.outstanding_amount}</p>
       {pending && <p role="status" className="mb-4 text-sm">A payment submission is awaiting confirmation. Retry the same payment to retrieve its result safely. The details are locked to prevent a duplicate payment, including after reloading this tab.</p>}

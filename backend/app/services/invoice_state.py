@@ -1,8 +1,9 @@
 from app.core.errors import APIException
 
-INVOICE_STATUSES = {"Draft", "Finalized", "Accepted", "Cancelled"}
+INVOICE_STATUSES = {"Draft", "In Review", "Finalized", "Accepted", "Cancelled"}
 INVOICE_TRANSITIONS: dict[str, set[str]] = {
-    "Draft": {"Draft", "Finalized", "Cancelled"},
+    "Draft": {"Draft", "In Review", "Cancelled"},
+    "In Review": {"In Review", "Draft", "Finalized", "Cancelled"},
     "Finalized": {"Finalized", "Accepted", "Cancelled"},
     "Accepted": {"Accepted", "Cancelled"},
     "Cancelled": {"Cancelled"},

@@ -134,6 +134,7 @@ class OAuthLoginRequest(BaseModel):
 
 class ApiKeyCreate(BaseModel):
     name: str
+    scopes: list[str] = Field(default_factory=lambda: ["api:read"], min_length=1, max_length=50)
 
 
 class ApiKeyResponse(BaseModel):
@@ -144,6 +145,7 @@ class ApiKeyResponse(BaseModel):
     created_at: str
     last_used: str | None = None
     is_active: bool = True
+    scopes: list[str] = Field(default_factory=list)
 
 
 # 2. User Schemas
@@ -600,6 +602,10 @@ class TaskBase(BaseModel):
     status: str = "Pending"
     assigned_to: str | None = None
     project_id: str | None = None
+    lead_id: str | None = None
+    contact_id: str | None = None
+    company_id: str | None = None
+    deal_id: str | None = None
 
 
 class TaskCreate(TaskBase):
@@ -607,9 +613,17 @@ class TaskCreate(TaskBase):
 
 
 class TaskUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    due_date: str | None = None
+    assigned_to: str | None = None
     status: str | None = None
     priority: str | None = None
     project_id: str | None = None
+    lead_id: str | None = None
+    contact_id: str | None = None
+    company_id: str | None = None
+    deal_id: str | None = None
 
 
 class TaskResponse(TaskBase):
@@ -624,20 +638,40 @@ class MeetingBase(BaseModel):
     end_time: str
     location: str | None = None
     meeting_link: str | None = None
+    lead_id: str | None = None
+    contact_id: str | None = None
+    company_id: str | None = None
+    deal_id: str | None = None
 
 
 class MeetingCreate(MeetingBase):
     attendee_emails: list[EmailStr]
 
 
+class MeetingUpdate(BaseModel):
+    title: str | None = None
+    start_time: str | None = None
+    end_time: str | None = None
+    location: str | None = None
+    meeting_link: str | None = None
+    lead_id: str | None = None
+    contact_id: str | None = None
+    company_id: str | None = None
+    deal_id: str | None = None
+
+
 class MeetingResponse(MeetingBase):
     id: str
+    status: str = "Scheduled"
     created_at: str
 
 
 # 11. Call Log Schemas
 class CallLogBase(BaseModel):
     contact_id: str | None = None
+    lead_id: str | None = None
+    company_id: str | None = None
+    deal_id: str | None = None
     call_type: str = "Outbound"  # Outbound, Inbound
     duration_seconds: int = 0
     notes: str | None = None
@@ -669,6 +703,10 @@ class EmailSendRequest(BaseModel):
     to: list[EmailStr]
     subject: str
     body: str
+    lead_id: str | None = None
+    contact_id: str | None = None
+    company_id: str | None = None
+    deal_id: str | None = None
 
 
 class EmailResponse(BaseModel):
@@ -676,7 +714,16 @@ class EmailResponse(BaseModel):
     from_email: str
     to: list[str]
     subject: str
-    sent_at: str
+    body: str | None = None
+    status: str
+    sent_at: str | None = None
+    provider_message_id: str | None = None
+    failure_reason: str | None = None
+    created_at: str | None = None
+    lead_id: str | None = None
+    contact_id: str | None = None
+    company_id: str | None = None
+    deal_id: str | None = None
 
 
 # 13. Note Schemas
@@ -700,6 +747,13 @@ class DocumentResponse(BaseModel):
     mime_type: str
     download_url: str
     uploaded_at: str
+    lead_id: str | None = None
+    contact_id: str | None = None
+    company_id: str | None = None
+    deal_id: str | None = None
+    quote_id: str | None = None
+    invoice_id: str | None = None
+    payment_id: str | None = None
 
 
 # 15. Product Catalog Schemas
@@ -757,6 +811,11 @@ class QuoteResponse(BaseModel):
     quote_number: str
     total_amount: float
     status: str
+    review_submitted_at: str | None = None
+    review_submitted_by: str | None = None
+    approved_at: str | None = None
+    approved_by: str | None = None
+    review_rejection_reason: str | None = None
     created_at: str
     items: list[QuoteItemSchema] = Field(default_factory=list)
     currency: str | None = None
@@ -777,6 +836,10 @@ class QuoteResponse(BaseModel):
     invoice_id: str | None = None
     invoice_number: str | None = None
     invoice_status: str | None = None
+
+
+class ReviewDecisionRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=500)
 
 
 # 17. Invoice Schemas
@@ -824,6 +887,9 @@ class InvoiceResponse(BaseModel):
     paid_amount: float = 0.0
     outstanding_amount: float = 0.0
     payment_status: str = "Pending"
+    review_submitted_at: str | None = None
+    review_submitted_by: str | None = None
+    review_rejection_reason: str | None = None
     finalized_at: str | None = None
     finalized_by: str | None = None
     accepted_at: str | None = None
@@ -1011,7 +1077,10 @@ class CalendarEventResponse(BaseModel):
 class IntegrationStatus(BaseModel):
     name: str
     is_connected: bool
+    connection_status: str = "disconnected"
+    sync_status: str = "not_synced"
     last_synced: str | None = None
+    last_error: str | None = None
 
 
 class SlackConnectRequest(BaseModel):

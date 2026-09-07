@@ -7,7 +7,7 @@ from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import APIException
+from app.core.errors import APIException, ForbiddenError
 from app.models import Role, User
 from app.repositories.role_repository import RoleRepository
 from app.repositories.setting_repository import SettingRepository
@@ -32,7 +32,7 @@ def _current_user() -> User:
 
 
 @pytest.mark.asyncio
-async def test_get_system_settings_returns_defaults(monkeypatch):
+async def test_get_system_settings_requires_authenticated_organization(monkeypatch):
     repo: Any = SettingRepository()
     repo.get_by_key = AsyncMock(return_value=None)
     service = _service_with(repo)
@@ -43,17 +43,12 @@ async def test_get_system_settings_returns_defaults(monkeypatch):
     monkeypatch.setattr(organization_service.repository, "get_by_id", AsyncMock(return_value=None))
     monkeypatch.setattr(organization_service.repository, "get_first", AsyncMock(return_value=None))
 
-    result = await service.get_system_settings(db, None)
-
-    assert result["organization_name"] == "Enterprise Organization"
-    assert result["currency"] == "USD"
-    assert result["timezone"] == "UTC"
-    assert result["smtp_enabled"] is True
-    assert result["ai_features_enabled"] is True
+    with pytest.raises(ForbiddenError):
+        await service.get_system_settings(db, None)
 
 
 @pytest.mark.asyncio
-async def test_get_system_settings_uses_stored_currency_without_organization(monkeypatch):
+async def test_get_system_settings_never_uses_another_organization(monkeypatch):
     repo: Any = SettingRepository()
     repo.get_by_key = AsyncMock(
         side_effect=lambda _db, key: (
@@ -67,9 +62,8 @@ async def test_get_system_settings_uses_stored_currency_without_organization(mon
 
     monkeypatch.setattr(organization_service.repository, "get_first", AsyncMock(return_value=None))
 
-    result = await service.get_system_settings(db, None)
-
-    assert result["currency"] == "EUR"
+    with pytest.raises(ForbiddenError):
+        await service.get_system_settings(db, None)
 
 
 @pytest.mark.asyncio
@@ -78,7 +72,7 @@ async def test_get_system_settings_uses_authenticated_organization_currency(monk
     repo.get_by_key = AsyncMock(return_value=None)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
-    org = SimpleNamespace(name="Acme", currency="INR")
+    org = SimpleNamespace(id="org-1", name="Acme", currency="INR")
     current_user = _current_user()
 
     from app.services.settings_service import organization_service
@@ -97,7 +91,7 @@ async def test_get_system_settings_falls_back_for_invalid_organization_currency(
     repo.get_by_key = AsyncMock(return_value=None)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
-    org = SimpleNamespace(name="Acme", currency="US Dollar")
+    org = SimpleNamespace(id="org-1", name="Acme", currency="US Dollar")
     current_user = _current_user()
 
     from app.services.settings_service import organization_service
@@ -117,7 +111,7 @@ async def test_get_system_settings_does_not_use_bootstrap_currency_for_organizat
     repo.get_by_key = AsyncMock(return_value=SimpleNamespace(value="EUR"))
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
-    org = SimpleNamespace(name="Acme", currency=None)
+    org = SimpleNamespace(id="org-1", name="Acme", currency=None)
     current_user = _current_user()
 
     from app.services.settings_service import organization_service
@@ -140,10 +134,14 @@ async def test_get_system_settings_reports_database_read_failure(monkeypatch):
 
     from app.services.settings_service import organization_service
 
-    monkeypatch.setattr(organization_service.repository, "get_first", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        organization_service.repository,
+        "get_by_id",
+        AsyncMock(return_value=SimpleNamespace(id="org-1", name="Acme", currency="INR")),
+    )
 
     with pytest.raises(APIException) as exc_info:
-        await service.get_system_settings(db, None)
+        await service.get_system_settings(db, _current_user())
 
     assert exc_info.value.status_code == 500
     assert exc_info.value.code == "SETTINGS_READ_FAILED"
@@ -155,7 +153,7 @@ async def test_update_system_settings_persists_currency_on_organization(monkeypa
     repo.upsert = AsyncMock()
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
-    org = SimpleNamespace(name="Acme", currency="USD")
+    org = SimpleNamespace(id="org-1", name="Acme", currency="USD")
     current_user = _current_user()
 
     from app.services.settings_service import organization_service
@@ -183,7 +181,7 @@ async def test_update_system_settings_persists_currency_on_organization(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_update_system_settings_persists_currency_without_organization(
+async def test_update_system_settings_rejects_missing_organization_context(
     monkeypatch,
 ):
     repo: Any = SettingRepository()
@@ -196,20 +194,19 @@ async def test_update_system_settings_persists_currency_without_organization(
 
     monkeypatch.setattr(organization_service.repository, "get_first", AsyncMock(return_value=None))
 
-    await service.update_system_settings(
-        db,
-        SystemSettings(
-            organization_name="Acme CRM",
-            currency="INR",
-            timezone="UTC",
-            smtp_enabled=True,
-            ai_features_enabled=True,
-        ),
-        None,
-    )
-
-    repo.upsert.assert_any_await(db, key="system_currency", value="INR")
-    db.commit.assert_awaited_once()
+    with pytest.raises(ForbiddenError):
+        await service.update_system_settings(
+            db,
+            SystemSettings(
+                organization_name="Acme CRM",
+                currency="INR",
+                timezone="UTC",
+                smtp_enabled=True,
+                ai_features_enabled=True,
+            ),
+            None,
+        )
+    db.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -222,13 +219,17 @@ async def test_update_system_settings_rolls_back_when_setting_upsert_fails(monke
     from app.schemas.crm_schemas import SystemSettings
     from app.services.settings_service import organization_service
 
-    monkeypatch.setattr(organization_service.repository, "get_first", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        organization_service.repository,
+        "get_by_id",
+        AsyncMock(return_value=SimpleNamespace(id="org-1", name="Acme", currency="INR")),
+    )
 
     with pytest.raises(APIException) as exc_info:
         await service.update_system_settings(
             db,
             SystemSettings(organization_name="Acme CRM", currency="INR"),
-            None,
+            _current_user(),
         )
 
     assert exc_info.value.status_code == 500
@@ -244,7 +245,7 @@ async def test_update_system_settings_rolls_back_when_commit_fails(monkeypatch):
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
     db.commit.side_effect = RuntimeError("commit failed")
-    org = SimpleNamespace(name="Acme", currency="USD")
+    org = SimpleNamespace(id="org-1", name="Acme", currency="USD")
     current_user = _current_user()
 
     from app.schemas.crm_schemas import SystemSettings

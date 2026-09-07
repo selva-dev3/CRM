@@ -26,7 +26,8 @@ class Invoice(Base):
     # Business rule: a standard one-time sale yields at most one invoice per deal.
     __table_args__ = (
         CheckConstraint(
-            "status IN ('Draft','Finalized','Accepted','Cancelled')", name="ck_invoices_lifecycle"
+            "status IN ('Draft','In Review','Finalized','Accepted','Cancelled')",
+            name="ck_invoices_lifecycle",
         ),
         CheckConstraint(
             "payment_status IN ('Pending','Partially Paid','Paid')",
@@ -70,6 +71,11 @@ class Invoice(Base):
     payment_status: Mapped[str] = mapped_column(
         String(30), default="Pending", server_default="Pending"
     )
+    review_submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    review_submitted_by: Mapped[str | None] = mapped_column(
+        String, ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    review_rejection_reason: Mapped[str | None] = mapped_column(String(500))
     finalized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finalized_by: Mapped[str | None] = mapped_column(
         String, ForeignKey("users.id", ondelete="SET NULL"), index=True

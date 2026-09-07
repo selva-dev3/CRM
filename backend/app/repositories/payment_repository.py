@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.selectable import Subquery
 
@@ -35,6 +35,17 @@ class InvoicePaymentSummaryRow:
 
 
 class PaymentRepository:
+    @staticmethod
+    def _payment_status_condition(status: str, paid_amount, invoice_amount):
+        normalized = status.strip()
+        if normalized == "Pending":
+            return paid_amount <= 0
+        if normalized == "Partially Paid":
+            return and_(paid_amount > 0, paid_amount < invoice_amount)
+        if normalized == "Paid":
+            return paid_amount >= invoice_amount
+        return None
+
     @staticmethod
     def _summary_subqueries() -> tuple[Subquery, Subquery]:
         paid = (
@@ -115,7 +126,10 @@ class PaymentRepository:
             )
         )
         if status and status.strip():
-            stmt = stmt.where(Invoice.payment_status == status.strip())
+            condition = self._payment_status_condition(
+                status, func.coalesce(paid.c.paid_amount, 0), Invoice.amount
+            )
+            stmt = stmt.where(condition) if condition is not None else stmt.where(False)
         if search and search.strip():
             term = f"%{search.strip()}%"
             stmt = stmt.where(
@@ -142,12 +156,17 @@ class PaymentRepository:
         status: str | None = None,
         search: str | None = None,
     ) -> int:
-        _paid, latest = self._summary_subqueries()
+        paid, latest = self._summary_subqueries()
         stmt = (
             select(func.count())
             .select_from(Invoice)
             .outerjoin(Company, Company.id == Invoice.company_id)
             .outerjoin(Contact, Contact.id == Invoice.contact_id)
+            .outerjoin(
+                paid,
+                (paid.c.invoice_id == Invoice.id)
+                & (paid.c.organization_id == Invoice.organization_id),
+            )
             .outerjoin(
                 latest,
                 (latest.c.invoice_id == Invoice.id)
@@ -162,7 +181,10 @@ class PaymentRepository:
             )
         )
         if status and status.strip():
-            stmt = stmt.where(Invoice.payment_status == status.strip())
+            condition = self._payment_status_condition(
+                status, func.coalesce(paid.c.paid_amount, 0), Invoice.amount
+            )
+            stmt = stmt.where(condition) if condition is not None else stmt.where(False)
         if search and search.strip():
             term = f"%{search.strip()}%"
             stmt = stmt.where(
@@ -178,24 +200,62 @@ class PaymentRepository:
 
     async def list_eligible_invoices(
         self, db: AsyncSession, *, organization_id: str, page: int = 1, limit: int = 100
-    ) -> list[tuple[Invoice, str | None, str | None, str | None]]:
+    ) -> list[tuple[Invoice, str | None, str | None, str | None, Decimal]]:
+        paid, _latest = self._summary_subqueries()
         result = await db.execute(
-            select(Invoice, Company.name, Contact.name, Contact.email)
+            select(
+                Invoice,
+                Company.name,
+                Contact.name,
+                Contact.email,
+                func.coalesce(paid.c.paid_amount, 0),
+            )
             .outerjoin(Company, Company.id == Invoice.company_id)
             .outerjoin(Contact, Contact.id == Invoice.contact_id)
+            .outerjoin(
+                paid,
+                (paid.c.invoice_id == Invoice.id)
+                & (paid.c.organization_id == Invoice.organization_id),
+            )
             .where(
                 Invoice.organization_id == organization_id,
                 Invoice.status == "Accepted",
                 Invoice.finalized_at.is_not(None),
                 Invoice.accepted_at.is_not(None),
-                Invoice.amount > Invoice.paid_amount,
-                Invoice.payment_status != "Paid",
+                Invoice.amount > func.coalesce(paid.c.paid_amount, 0),
             )
             .order_by(Invoice.created_at.desc())
             .offset((page - 1) * limit)
             .limit(limit)
         )
         return [tuple(row) for row in result.all()]
+
+    async def list_invoice_ids_for_reconciliation(
+        self, db: AsyncSession, *, after_id: str | None = None, limit: int = 200
+    ) -> list[tuple[str, str]]:
+        stmt = select(Invoice.id, Invoice.organization_id).order_by(Invoice.id).limit(limit)
+        if after_id:
+            stmt = stmt.where(Invoice.id > after_id)
+        return [tuple(row) for row in (await db.execute(stmt)).all()]
+
+    async def record_reconciliation_audit(
+        self,
+        db: AsyncSession,
+        *,
+        invoice: Invoice,
+        old_paid_amount: Decimal,
+        old_payment_status: str,
+    ) -> None:
+        db.add(
+            AuditLog(
+                organization_id=invoice.organization_id,
+                action="invoice.payment_reconciled",
+                details=(
+                    f"{invoice.id}: paid {old_paid_amount}->{invoice.paid_amount}; "
+                    f"status {old_payment_status}->{invoice.payment_status}"
+                ),
+            )
+        )
 
     async def sum_succeeded(
         self, db: AsyncSession, *, invoice_id: str, organization_id: str

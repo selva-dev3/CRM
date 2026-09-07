@@ -26,11 +26,36 @@ async def list_documents(
     limit: int = Query(20, ge=1, le=100),
     folder_id: str | None = None,
     search: str | None = Query(None),
+    lead_id: str | None = Query(None),
+    contact_id: str | None = Query(None),
+    company_id: str | None = Query(None),
+    deal_id: str | None = Query(None),
+    quote_id: str | None = Query(None),
+    invoice_id: str | None = Query(None),
+    payment_id: str | None = Query(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    relationship_filters = {
+        key: value
+        for key, value in {
+            "lead_id": lead_id,
+            "contact_id": contact_id,
+            "company_id": company_id,
+            "deal_id": deal_id,
+            "quote_id": quote_id,
+            "invoice_id": invoice_id,
+            "payment_id": payment_id,
+        }.items()
+        if isinstance(value, str) and value
+    }
     return await document_service.list_documents(
-        db, page=page, limit=limit, search=search, current_user=current_user
+        db,
+        page=page,
+        limit=limit,
+        search=search,
+        current_user=current_user,
+        **relationship_filters,
     )
 
 
@@ -43,10 +68,28 @@ async def list_documents(
 )
 async def upload_document(
     file: UploadFile = File(...),
+    lead_id: str | None = Query(None),
+    contact_id: str | None = Query(None),
+    company_id: str | None = Query(None),
+    deal_id: str | None = Query(None),
+    quote_id: str | None = Query(None),
+    invoice_id: str | None = Query(None),
+    payment_id: str | None = Query(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await document_service.upload_document(db, file, current_user=current_user)
+    return await document_service.upload_document(
+        db,
+        file,
+        current_user=current_user,
+        lead_id=lead_id,
+        contact_id=contact_id,
+        company_id=company_id,
+        deal_id=deal_id,
+        quote_id=quote_id,
+        invoice_id=invoice_id,
+        payment_id=payment_id,
+    )
 
 
 @router.get(

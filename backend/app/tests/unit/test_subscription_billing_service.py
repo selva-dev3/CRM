@@ -1,12 +1,12 @@
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from sqlalchemy.exc import MultipleResultsFound
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, ConflictError, ForbiddenError
-from app.models import Organization, SubscriptionPlan, User
+from app.models import Organization, OrganizationSubscription, SubscriptionPlan, User
 from app.repositories.organization_repository import OrganizationRepository
 from app.services.subscription_billing_service import SubscriptionBillingService
 from app.services.subscription_stripe_provider import SubscriptionStripeProvider
@@ -113,6 +113,45 @@ async def test_missing_stored_subscription_requires_reconciliation():
         "resource_type": "subscription",
         "retryable": False,
     }
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_marks_provider_cancelled_subscription_without_recreating_it():
+    repository = AsyncMock(spec=OrganizationRepository)
+    organization = Organization(id="org", name="Org", plan="Professional", is_active=True)
+    subscription = OrganizationSubscription(
+        id="subscription",
+        organization_id="org",
+        subscription_id="sub_existing",
+        customer_id="cus_existing",
+        invoice_id="in_existing",
+        status="active",
+        reconciliation_required=True,
+    )
+    repository.get_by_id_for_update.return_value = organization
+    repository.get_subscription.return_value = subscription
+    provider = AsyncMock(spec=SubscriptionStripeProvider)
+    provider.retrieve_subscription.return_value = {
+        "id": "sub_existing",
+        "customer": "cus_existing",
+        "status": "canceled",
+        "metadata": {"organization_id": "org", "scope": "organization_subscription"},
+        "items": {"data": [{"price": {"id": "price"}}]},
+    }
+    service = SubscriptionBillingService(repository=repository, provider=provider)
+    service._validate_remote_identity = Mock()
+    service._paid_plan = AsyncMock(return_value=None)
+    db = AsyncMock(spec=AsyncSession)
+
+    changed = await service.reconcile_subscription(db, organization_id="org")
+
+    assert changed is True
+    assert subscription.status == "cancelled"
+    assert subscription.auto_renew is False
+    assert subscription.reconciliation_required is False
+    provider.create_customer.assert_not_awaited()
+    provider.create_checkout.assert_not_awaited()
+    db.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
