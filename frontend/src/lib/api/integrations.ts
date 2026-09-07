@@ -32,6 +32,12 @@ export interface SlackConfig {
   last_synced?: string | null;
 }
 
+export interface MailchimpConnectPayload {
+  api_key: string;
+  server_prefix: string;
+  audience_id: string;
+}
+
 export async function fetchIntegrationsApi(): Promise<IntegrationItem[]> {
   return apiClient.get<IntegrationItem[]>('/integrations');
 }
@@ -49,7 +55,14 @@ export async function revokeApiKeyApi(keyId: string): Promise<{ message: string 
 }
 
 export async function connectIntegrationApi(name: string): Promise<{ message: string; auth_url?: string }> {
-  return apiClient.post<{ message: string; auth_url?: string }>(`/integrations/${encodeURIComponent(name)}/connect`);
+  const oauthPaths: Record<string, string> = {
+    'google-calendar': '/integrations/google/connect',
+    hubspot: '/integrations/hubspot/connect',
+    'slack-sync': '/integrations/slack/oauth/connect',
+  };
+  const path = oauthPaths[name];
+  if (!path) throw new Error(`OAuth is not supported for ${name}.`);
+  return apiClient.get<{ message: string; auth_url?: string }>(path);
 }
 
 export async function disconnectIntegrationApi(name: string): Promise<{ message: string }> {
@@ -70,6 +83,14 @@ export async function connectZapierApi(webhookUrl?: string): Promise<{ message: 
   return apiClient.post<{ message: string }>('/integrations/zapier/connect', {
     webhook_url: webhookUrl.trim(),
   });
+}
+
+export async function connectMailchimpApi(payload: MailchimpConnectPayload): Promise<{ message: string }> {
+  return apiClient.post<{ message: string }>('/integrations/mailchimp/connect', payload);
+}
+
+export async function deleteMailchimpApi(): Promise<{ message: string }> {
+  return apiClient.delete<{ message: string }>('/integrations/mailchimp');
 }
 
 export async function testZapierPingApi(): Promise<{ message: string }> {

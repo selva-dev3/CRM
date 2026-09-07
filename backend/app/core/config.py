@@ -32,6 +32,14 @@ class Settings(BaseSettings):
     AUTH_COOKIE_NAME: str = "token"
     AUTH_REFRESH_COOKIE_NAME: str = "refresh_token"
     GOOGLE_OAUTH_CLIENT_ID: str | None = None
+    GOOGLE_OAUTH_CLIENT_SECRET: str | None = None
+    GOOGLE_CALENDAR_REDIRECT_URI: str | None = None
+    HUBSPOT_CLIENT_ID: str | None = None
+    HUBSPOT_CLIENT_SECRET: str | None = None
+    HUBSPOT_REDIRECT_URI: str | None = None
+    SLACK_CLIENT_ID: str | None = None
+    SLACK_CLIENT_SECRET: str | None = None
+    SLACK_REDIRECT_URI: str | None = None
     MICROSOFT_OAUTH_CLIENT_ID: str | None = None
     MICROSOFT_OAUTH_TENANT: str = "common"
 

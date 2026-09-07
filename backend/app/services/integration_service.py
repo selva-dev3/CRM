@@ -1,21 +1,24 @@
 import base64
 import hashlib
 import json
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import HTTPException, status
+from jose import JWTError, jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.errors import APIException
 from app.core.logging import get_logger
+from app.core.security import ALGORITHM
 from app.models import Integration, User
 from app.repositories.integration_repository import IntegrationRepository
 from app.schemas.crm_schemas import (
+    MailchimpConnectPayload,
     SlackConnectRequest,
     SlackEventPayload,
     SlackEventsUpdateRequest,
@@ -205,6 +208,147 @@ class IntegrationService:
                 return {}
         return {}
 
+    @staticmethod
+    def _oauth_settings(provider: str) -> tuple[str | None, str | None, str | None, str]:
+        values = {
+            "google": (
+                settings.GOOGLE_OAUTH_CLIENT_ID,
+                settings.GOOGLE_OAUTH_CLIENT_SECRET,
+                settings.GOOGLE_CALENDAR_REDIRECT_URI,
+                "https://accounts.google.com/o/oauth2/v2/auth",
+            ),
+            "hubspot": (
+                settings.HUBSPOT_CLIENT_ID,
+                settings.HUBSPOT_CLIENT_SECRET,
+                settings.HUBSPOT_REDIRECT_URI,
+                "https://app.hubspot.com/oauth/authorize",
+            ),
+            "slack": (
+                settings.SLACK_CLIENT_ID,
+                settings.SLACK_CLIENT_SECRET,
+                settings.SLACK_REDIRECT_URI,
+                "https://slack.com/oauth/v2/authorize",
+            ),
+        }
+        if provider not in values:
+            raise APIException(status_code=400, message="Unsupported OAuth provider.")
+        return values[provider]
+
+    def _oauth_state(self, provider: str, current_user: User) -> str:
+        now = datetime.now(UTC)
+        payload = {
+            "purpose": "integration_oauth",
+            "provider": provider,
+            "sub": current_user.id,
+            "org": current_user.organization_id,
+            "iat": now,
+            "exp": now + timedelta(minutes=10),
+        }
+        return jwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITHM)
+
+    def _decode_oauth_state(self, provider: str, state: str) -> tuple[str, str]:
+        try:
+            payload = jwt.decode(state, settings.SECRET_KEY, algorithms=[ALGORITHM])
+        except JWTError as exc:
+            raise APIException(status_code=400, message="OAuth state is invalid or expired.") from exc
+        if payload.get("purpose") != "integration_oauth" or payload.get("provider") != provider:
+            raise APIException(status_code=400, message="OAuth state is invalid.")
+        user_id = payload.get("sub")
+        organization_id = payload.get("org")
+        if not isinstance(user_id, str) or not isinstance(organization_id, str):
+            raise APIException(status_code=400, message="OAuth state is invalid.")
+        return user_id, organization_id
+
+    async def start_oauth(self, provider: str, current_user: User) -> dict:
+        client_id, client_secret, redirect_uri, authorization_url = self._oauth_settings(provider)
+        if not client_id or not client_secret or not redirect_uri:
+            raise APIException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                message=f"{provider.title()} OAuth is not configured.",
+            )
+        scopes = {
+            "google": "https://www.googleapis.com/auth/calendar",
+            "hubspot": "oauth crm.objects.contacts.read crm.objects.contacts.write crm.objects.companies.read crm.objects.companies.write crm.objects.deals.read crm.objects.deals.write",
+            "slack": "chat:write channels:read",
+        }[provider]
+        params = {
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": scopes,
+            "state": self._oauth_state(provider, current_user),
+        }
+        if provider == "google":
+            params.update({"access_type": "offline", "prompt": "consent"})
+        from urllib.parse import urlencode
+
+        return {
+            "message": f"{provider.title()} authorization started.",
+            "auth_url": f"{authorization_url}?{urlencode(params)}",
+            "status": "pending",
+        }
+
+    async def complete_oauth(
+        self, db: AsyncSession, provider: str, code: str, state: str
+    ) -> str:
+        user_id, organization_id = self._decode_oauth_state(provider, state)
+        user = await db.get(User, user_id)
+        if user is None or user.organization_id != organization_id or not user.is_active:
+            raise APIException(status_code=403, message="OAuth user is unavailable.")
+        client_id, client_secret, redirect_uri, _ = self._oauth_settings(provider)
+        token_urls = {
+            "google": "https://oauth2.googleapis.com/token",
+            "hubspot": "https://api.hubapi.com/oauth/v3/token",
+            "slack": "https://slack.com/api/oauth.v2.access",
+        }
+        data = {
+            "code": code,
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "redirect_uri": redirect_uri,
+            "grant_type": "authorization_code",
+        }
+        try:
+            async with httpx.AsyncClient(timeout=20) as client:
+                response = await client.post(token_urls[provider], data=data)
+                response.raise_for_status()
+                token_data = response.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise APIException(status_code=502, message=f"{provider.title()} OAuth exchange failed.") from exc
+        if provider == "slack" and not token_data.get("ok"):
+            raise APIException(status_code=502, message="Slack OAuth exchange failed.")
+        access_token = token_data.get("access_token")
+        if not isinstance(access_token, str) or not access_token:
+            raise APIException(status_code=502, message=f"{provider.title()} returned no access token.")
+
+        provider_key = "slack_oauth" if provider == "slack" else provider
+        integration = await self.repository.get_by_provider(db, organization_id, provider_key)
+        if integration is None:
+            integration = await self.repository.create(
+                db,
+                data={
+                    "organization_id": organization_id,
+                    "name": {"google": "Google Calendar", "hubspot": "HubSpot Migration", "slack": "Slack Sync"}[provider],
+                    "provider": provider_key,
+                },
+            )
+        integration.is_connected = True
+        integration.status = "connected"
+        integration.access_token = self._encrypt_secret(access_token)
+        refresh_token = token_data.get("refresh_token")
+        if isinstance(refresh_token, str) and refresh_token:
+            integration.refresh_token = self._encrypt_secret(refresh_token)
+        integration.external_id = str(
+            token_data.get("hub_id")
+            or token_data.get("team", {}).get("id")
+            or token_data.get("user_id")
+            or ""
+        ) or None
+        integration.last_error = None
+        integration.last_synced = datetime.now(UTC)
+        await self.repository.commit(db)
+        return provider
+
     async def connect_zapier(
         self, db: AsyncSession, payload: ZapierConnectPayload, current_user: User | None
     ) -> dict:
@@ -351,6 +495,60 @@ class IntegrationService:
         except Exception:
             await db.rollback()
             raise
+
+    # --- Mailchimp ---
+    async def connect_mailchimp(
+        self, db: AsyncSession, payload: MailchimpConnectPayload, current_user: User
+    ) -> dict:
+        org_id = await self.repository.resolve_org_id(db, current_user)
+        url = f"https://{payload.server_prefix}.api.mailchimp.com/3.0/lists/{payload.audience_id}"
+        try:
+            async with httpx.AsyncClient(timeout=20) as client:
+                response = await client.get(url, auth=("anystring", payload.api_key))
+                response.raise_for_status()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise APIException(status_code=502, message="Mailchimp credentials or audience are invalid.") from exc
+
+        integration = await self.repository.get_by_provider(db, org_id, "mailchimp")
+        encrypted_config = self._encrypt_secret(
+            json.dumps(
+                {
+                    "api_key": payload.api_key,
+                    "server_prefix": payload.server_prefix,
+                    "audience_id": payload.audience_id,
+                }
+            )
+        )
+        if integration is None:
+            integration = await self.repository.create(
+                db,
+                data={
+                    "organization_id": org_id,
+                    "name": "Mailchimp Campaigns",
+                    "provider": "mailchimp",
+                },
+            )
+        integration.credentials = encrypted_config
+        integration.is_connected = True
+        integration.status = "connected"
+        integration.sync_enabled = True
+        integration.last_synced = datetime.now(UTC)
+        integration.last_error = None
+        await self.repository.commit(db)
+        return {"message": "Mailchimp connected successfully.", "status": "success"}
+
+    async def disconnect_mailchimp(self, db: AsyncSession, current_user: User) -> dict:
+        org_id = await self.repository.resolve_org_id(db, current_user)
+        integration = await self.repository.get_by_provider(db, org_id, "mailchimp")
+        if integration is None:
+            raise APIException(status_code=404, message="Mailchimp integration is not connected.")
+        integration.credentials = None
+        integration.is_connected = False
+        integration.status = "disconnected"
+        integration.sync_enabled = False
+        integration.last_error = None
+        await self.repository.commit(db)
+        return {"message": "Mailchimp disconnected successfully.", "status": "success"}
 
     # --- HubSpot mapping ---
     async def get_hubspot_mapping(self) -> dict:
@@ -798,10 +996,22 @@ class IntegrationService:
     async def disconnect_integration(
         self, db: AsyncSession, name: str, current_user: User
     ) -> dict:
-        raise APIException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            message=f"Provider-specific disconnection is not implemented for '{name}'.",
-        )
+        provider = {"google-calendar": "google", "hubspot": "hubspot", "slack-sync": "slack_oauth"}.get(name)
+        if provider is None:
+            raise APIException(status_code=400, message=f"Unsupported integration '{name}'.")
+        org_id = await self.repository.resolve_org_id(db, current_user)
+        integration = await self.repository.get_by_provider(db, org_id, provider)
+        if integration is None:
+            raise APIException(status_code=404, message="Integration is not connected.")
+        integration.is_connected = False
+        integration.status = "disconnected"
+        integration.access_token = None
+        integration.refresh_token = None
+        integration.external_id = None
+        integration.sync_enabled = False
+        integration.last_error = None
+        await self.repository.commit(db)
+        return {"message": f"{name} disconnected successfully.", "status": "success"}
 
     async def sync_integration(self, name: str) -> dict:
         raise APIException(
