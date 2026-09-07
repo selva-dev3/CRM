@@ -7,6 +7,12 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 from app.core.currency import normalize_currency_code
 
 
+def _validate_password_bytes(value: str) -> str:
+    if len(value.encode("utf-8")) > 72:
+        raise ValueError("Password must be at most 72 UTF-8 bytes")
+    return value
+
+
 # Common Pagination & Generic Schemas
 class PaginationParams(BaseModel):
     page: int = Field(1, ge=1)
@@ -87,15 +93,17 @@ class UserTokenInfo(BaseModel):
 
 class Token(BaseModel):
     token_type: str = "bearer"  # noqa: S105 - OAuth token type, not a credential
-    expires_in: int = 86400
+    expires_in: int = 900
     user: UserTokenInfo | None = None
 
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(max_length=256)
     remember_me: bool = True
     two_factor_code: str | None = Field(default=None, min_length=6, max_length=6)
+
+    _password_bytes = field_validator("password")(_validate_password_bytes)
 
 
 class RegisterRequest(BaseModel):
@@ -103,6 +111,8 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=72)
     organization_name: str
+
+    _password_bytes = field_validator("password")(_validate_password_bytes)
 
 
 class PasswordResetRequest(BaseModel):
@@ -113,10 +123,15 @@ class PasswordResetConfirmRequest(BaseModel):
     token: str = Field(min_length=14, max_length=128)
     new_password: str = Field(min_length=8, max_length=72)
 
+    _password_bytes = field_validator("new_password")(_validate_password_bytes)
+
 
 class PasswordChangeRequest(BaseModel):
     old_password: str = Field(min_length=1, max_length=72)
     new_password: str = Field(min_length=8, max_length=72)
+
+    _old_password_bytes = field_validator("old_password")(_validate_password_bytes)
+    _new_password_bytes = field_validator("new_password")(_validate_password_bytes)
 
 
 class TwoFactorSetupResponse(BaseModel):
@@ -131,6 +146,7 @@ class TwoFactorVerifyRequest(BaseModel):
 class OAuthLoginRequest(BaseModel):
     provider: str  # google, microsoft
     id_token: str
+    two_factor_code: str | None = Field(default=None, min_length=6, max_length=6)
 
 
 class ApiKeyCreate(BaseModel):

@@ -1,4 +1,5 @@
 import logging
+import re
 import sys
 
 from app.core.config import settings
@@ -13,6 +14,23 @@ class RequestIDFilter(logging.Filter):
         return True
 
 
+class SensitiveDataFilter(logging.Filter):
+    """Redact credentials that may appear in URLs, headers, or exception text."""
+
+    _pattern = re.compile(
+        r"(?i)(password|secret|token|id_token|access_token|refresh_token|authorization|api_key)"
+        r"(\s*[:=]\s*)([^&\s,]+)"
+    )
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.msg = self._pattern.sub(r"\1\2[REDACTED]", str(record.msg))
+        if record.args:
+            record.args = tuple(
+                self._pattern.sub(r"\1\2[REDACTED]", str(arg)) for arg in record.args
+            )
+        return True
+
+
 def configure_logging() -> None:
     """Configure the root logger with a consistent, correlation-id aware format."""
     level = logging.DEBUG if settings.ENVIRONMENT.lower() == "development" else logging.INFO
@@ -24,6 +42,7 @@ def configure_logging() -> None:
         )
     )
     handler.addFilter(RequestIDFilter())
+    handler.addFilter(SensitiveDataFilter())
 
     root = logging.getLogger()
     root.handlers = [handler]

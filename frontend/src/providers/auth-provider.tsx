@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { getCurrentUserApi, logoutApi, type CurrentUserResponse } from '@/lib/api/auth';
-import { invalidateAuthSession, markAuthSessionActive } from '@/lib/api/client';
+import { ApiError, invalidateAuthSession, markAuthSessionActive } from '@/lib/api/client';
 import { setOrganizationContext } from '@/lib/organization-context';
 import {
   AUTH_SESSION_BROADCAST_KEY,
@@ -70,7 +70,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setStatus('authenticated');
       return currentUser;
     } catch (error) {
-      setStatus('unauthenticated');
+      if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+        setStatus('unauthenticated');
+      }
       throw error;
     }
   }, []);
@@ -82,14 +84,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     authGenerationRef.current += 1;
     isLoggingOutRef.current = true;
     setIsLoggingOut(true);
-    resetLocalSession(true);
-
     const logoutPromise = (async () => {
       try {
         await logoutApi();
+        resetLocalSession(true);
       } catch (error) {
-        // Local logout is authoritative even when the server cannot be reached.
-        console.error('Backend logout failed after local logout completed', error);
+        // Clear local state to stop UI use, but propagate the failure so callers
+        // cannot report a successful server logout when revocation was unknown.
+        resetLocalSession(true);
+        throw error;
       } finally {
         isLoggingOutRef.current = false;
         setIsLoggingOut(false);

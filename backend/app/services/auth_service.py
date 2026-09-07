@@ -5,6 +5,7 @@ import json
 import logging
 import secrets
 import time
+import uuid
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from urllib.parse import quote
@@ -62,25 +63,41 @@ class AuthService:
             ) from e
 
     async def _create_refresh_token(
-        self, db: AsyncSession, user_id: str, *, is_persistent: bool = True
+        self, db: AsyncSession, user_id: str, *, is_persistent: bool = True,
+        family_id: str | None = None, generation: int = 0,
+        absolute_expires_at: datetime | None = None,
     ) -> str:
         refresh_token = generate_random_code(48)
-        expires_at = datetime.now(UTC) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+        now = datetime.now(UTC)
+        absolute_expires_at = absolute_expires_at or (
+            now + timedelta(days=settings.REFRESH_TOKEN_ABSOLUTE_EXPIRE_DAYS)
+        )
+        expires_at = min(
+            now + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS), absolute_expires_at
+        )
         await self.repository.create_refresh_token(
             db,
             user_id=user_id,
             token_digest=sha256(refresh_token.encode("utf-8")).hexdigest(),
             expires_at=expires_at,
             is_persistent=is_persistent,
+            family_id=family_id or uuid.uuid4().hex,
+            generation=generation,
+            absolute_expires_at=absolute_expires_at,
         )
         return refresh_token
 
-    async def _create_access_token(self, db: AsyncSession, user_id: str) -> str:
+    async def _create_access_token(
+        self, db: AsyncSession, user_id: str, *, family_id: str | None = None
+    ) -> str:
         access_token = create_access_token(user_id)
+        expires_at = datetime.now(UTC) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         await self.repository.create_access_session(
             db,
             token_digest=sha256(access_token.encode("utf-8")).hexdigest(),
             user_id=user_id,
+            family_id=family_id,
+            expires_at=expires_at,
         )
         return access_token
 
@@ -199,9 +216,10 @@ class AuthService:
                     message="Invalid two-factor authentication code",
                 )
 
-        access_token = await self._create_access_token(db, user.id)
+        family_id = uuid.uuid4().hex
+        access_token = await self._create_access_token(db, user.id, family_id=family_id)
         refresh_token = await self._create_refresh_token(
-            db, user.id, is_persistent=payload.remember_me
+            db, user.id, is_persistent=payload.remember_me, family_id=family_id
         )
         await self._commit(db, "Unable to create refresh token")
         user_role_name = await self.get_user_role_name(db, user)
@@ -343,6 +361,10 @@ class AuthService:
             db, token_digest=token_digest, now=datetime.now(UTC)
         )
         if not stored_token:
+            reused = await self.repository.get_refresh_token(db, token_digest)
+            if reused and reused.family_id:
+                await self.repository.revoke_refresh_family(db, reused.family_id)
+                await self._commit(db, "Unable to revoke replayed refresh session")
             raise APIException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 message="Invalid or expired refresh token",
@@ -362,9 +384,16 @@ class AuthService:
             if previous_session:
                 await self.repository.revoke_access_session(previous_session)
         next_refresh_token = await self._create_refresh_token(
-            db, user.id, is_persistent=stored_token.is_persistent
+            db,
+            user.id,
+            is_persistent=stored_token.is_persistent,
+            family_id=stored_token.family_id,
+            generation=(stored_token.generation or 0) + 1,
+            absolute_expires_at=stored_token.absolute_expires_at,
         )
-        next_access_token = await self._create_access_token(db, user.id)
+        next_access_token = await self._create_access_token(
+            db, user.id, family_id=stored_token.family_id
+        )
         await self._commit(db, "Unable to rotate refresh token")
         return {
             "access_token": next_access_token,
@@ -378,6 +407,7 @@ class AuthService:
         self, db: AsyncSession, refresh_token: str | None, access_token: str | None = None
     ) -> dict:
         """Revoke the current refresh token when present; logout remains idempotent."""
+        changed = False
         if refresh_token:
             token_digest = sha256(refresh_token.strip().encode("utf-8")).hexdigest()
             stored_token = await self.repository.get_active_refresh_token(
@@ -385,14 +415,24 @@ class AuthService:
             )
             if stored_token:
                 await self.repository.revoke_refresh_token(stored_token)
-                await self._commit(db, "Unable to revoke refresh token")
+                await self.repository.revoke_refresh_family(db, stored_token.family_id)
+                changed = True
+            elif access_token:
+                current = await self.repository.get_session_by_access_token(
+                    db, sha256(access_token.strip().encode("utf-8")).hexdigest()
+                )
+                if current and current.family_id:
+                    await self.repository.revoke_refresh_family(db, current.family_id)
+                    changed = True
         if access_token:
             session = await self.repository.get_session_by_access_token(
                 db, sha256(access_token.strip().encode("utf-8")).hexdigest()
             )
             if session and session.is_current:
                 await self.repository.revoke_access_session(session)
-                await self._commit(db, "Unable to revoke access session")
+                changed = True
+        if changed:
+            await self._commit(db, "Unable to revoke authentication session")
         return {"message": "Logged out successfully", "status": "success"}
 
     async def forgot_password(self, db: AsyncSession, payload: PasswordResetRequest) -> dict:
@@ -600,11 +640,16 @@ class AuthService:
             raise APIException(status_code=400, message="Unsupported OAuth provider")
 
         email = claims.get("email") or claims.get("preferred_username")
-        if not email or claims.get("email_verified", True) is not True:
+        verified = claims.get("email_verified", True)
+        if isinstance(verified, str):
+            verified = verified.strip().lower() == "true"
+        if not email or verified is not True:
             raise APIException(status_code=401, message="OAuth identity has no verified email")
         return {"email": str(email).lower()}
 
-    async def _oauth_issue_token(self, db: AsyncSession, provider: str, id_token: str) -> dict:
+    async def _oauth_issue_token(
+        self, db: AsyncSession, provider: str, id_token: str, two_factor_code: str | None = None
+    ) -> dict:
         identity = await self._verify_oauth_identity(provider, id_token)
         user = await self.repository.get_user_by_email(db, identity["email"])
         if not user or not user.is_active:
@@ -613,8 +658,16 @@ class AuthService:
                 message="No active CRM account is linked to this OAuth identity",
             )
         await self._validate_session_principal(db, user)
-        refresh_token = await self._create_refresh_token(db, user.id)
-        access_token = await self._create_access_token(db, user.id)
+        if user.two_factor_enabled:
+            if not two_factor_code or not self._is_valid_totp(user, two_factor_code):
+                raise APIException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    code="INVALID_TWO_FACTOR_CODE",
+                    message="Valid two-factor authentication is required",
+                )
+        family_id = uuid.uuid4().hex
+        refresh_token = await self._create_refresh_token(db, user.id, family_id=family_id)
+        access_token = await self._create_access_token(db, user.id, family_id=family_id)
         await self._commit(db, "Unable to create refresh token")
         return {
             "access_token": access_token,
@@ -628,14 +681,14 @@ class AuthService:
             raise APIException(
                 status_code=status.HTTP_400_BAD_REQUEST, message="Authorization code is required"
             )
-        return await self._oauth_issue_token(db, "google", payload.id_token)
+        return await self._oauth_issue_token(db, "google", payload.id_token, payload.two_factor_code)
 
     async def microsoft_oauth(self, db: AsyncSession, payload: OAuthLoginRequest) -> dict:
         if not payload.id_token:
             raise APIException(
                 status_code=status.HTTP_400_BAD_REQUEST, message="Authorization code is required"
             )
-        return await self._oauth_issue_token(db, "microsoft", payload.id_token)
+        return await self._oauth_issue_token(db, "microsoft", payload.id_token, payload.two_factor_code)
 
     async def get_auth_invitation_details(self, db: AsyncSession, token: str) -> dict:
         inv = await self.repository.get_invitation_by_token(db, token)
@@ -752,8 +805,9 @@ class AuthService:
             if is_new_user:
                 await db.flush()
             await self.repository.assign_user_role(db, user_id=user.id, role_id=role.id)
-            refresh_token = await self._create_refresh_token(db, user.id)
-            access_token = await self._create_access_token(db, user.id)
+            family_id = uuid.uuid4().hex
+            refresh_token = await self._create_refresh_token(db, user.id, family_id=family_id)
+            access_token = await self._create_access_token(db, user.id, family_id=family_id)
             inv.status = "accepted"
             await db.commit()
 
@@ -812,6 +866,9 @@ class AuthService:
         session = await self.repository.get_session_by_id(db, session_id, current_user.id)
         if not session:
             raise NotFoundError(message=f"Session '{session_id}' not found")
+        if session.family_id:
+            await self.repository.revoke_refresh_family(db, session.family_id)
+        await self.repository.revoke_access_session(session)
         await self.repository.delete_session(db, session)
         await self._commit(db, "Failed to revoke session")
         return {"message": f"Session {session_id} revoked", "status": "success"}
@@ -839,7 +896,9 @@ class AuthService:
         send_magic_link_email(email_to=user.email, token=magic_token, user_name=user.name)
         return response
 
-    async def verify_magic_link(self, db: AsyncSession, token: str) -> dict:
+    async def verify_magic_link(
+        self, db: AsyncSession, token: str, two_factor_code: str | None = None
+    ) -> dict:
         if not token or len(token) < 5:
             raise APIException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -861,9 +920,17 @@ class AuthService:
                 message="Invalid or expired magic link token",
             )
         await self._validate_session_principal(db, user)
+        if user.two_factor_enabled:
+            if not two_factor_code or not self._is_valid_totp(user, two_factor_code):
+                raise APIException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    code="INVALID_TWO_FACTOR_CODE",
+                    message="Valid two-factor authentication is required",
+                )
         await self.repository.consume_magic_link(magic_link)
-        refresh_token = await self._create_refresh_token(db, user.id)
-        access_token = await self._create_access_token(db, user.id)
+        family_id = uuid.uuid4().hex
+        refresh_token = await self._create_refresh_token(db, user.id, family_id=family_id)
+        access_token = await self._create_access_token(db, user.id, family_id=family_id)
         await self._commit(db, "Unable to complete magic link login")
         return {
             "access_token": access_token,

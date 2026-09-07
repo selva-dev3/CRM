@@ -1326,8 +1326,7 @@ class RoleService:
         entry = await self.repository.get_user_role_mapping(db, u.id)
         if entry:
             entry.role_id = r.id
-        else:
-            db.add(UserRole(user_id=u.id, role_id=r.id))
+        await self.repository.replace_user_role(db, u.id, r.id)
         await self._commit(db, "Failed to assign role")
         return {
             "message": f"Successfully assigned role '{r.name}' to user '{u.name}'",

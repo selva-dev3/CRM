@@ -27,8 +27,11 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Enterprise CRM API"
     API_V1_STR: str = "/api/v1"
     SECRET_KEY: str
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
+    REFRESH_TOKEN_ABSOLUTE_EXPIRE_DAYS: int = 30
+    JWT_ISSUER: str = "enterprise-crm"
+    JWT_AUDIENCE: str = "enterprise-crm-api"
     MAGIC_LINK_EXPIRE_MINUTES: int = 15
     AUTH_COOKIE_NAME: str = "token"
     AUTH_REFRESH_COOKIE_NAME: str = "refresh_token"

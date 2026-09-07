@@ -1,106 +1,99 @@
-from unittest.mock import AsyncMock, MagicMock
+from hashlib import sha256
+from unittest.mock import AsyncMock
 
 import pytest
 
 from app.api.v1.routers.websockets import _authenticate_websocket
-from app.models import User
-
-TEST_HASH = "h"
-VALID_CODE = "valid-token"
-INVALID_CODE = "bad-token"
-NO_SUB_CODE = "no-sub-token"
+from app.core.security import create_access_token
+from app.models import Organization, User, UserSession
 
 
-def _active_user() -> User:
-    return User(
-        id="u1",
-        name="Alex",
-        email="alex@crm.com",
-        hashed_password=TEST_HASH,
-        organization_id="org-1",
-        is_active=True,
+def _active_user(**overrides) -> User:
+    values = dict(
+        id="u1", name="Alex", email="alex@crm.com", hashed_password="h",
+        organization_id="org-1", is_active=True, is_platform_admin=True,
     )
+    values.update(overrides)
+    return User(**values)
 
 
-def _db_execute_returning(user) -> AsyncMock:
-    scalars = MagicMock()
-    scalars.first.return_value = user
-    result = MagicMock()
-    result.scalars.return_value = scalars
-    db = AsyncMock()
-    db.execute = AsyncMock(return_value=result)
-    return db
-
-
-def _ws(**query) -> AsyncMock:
+def _ws(token: str | None = None, organization_id: str = "org-1") -> AsyncMock:
     ws = AsyncMock()
-    ws.query_params = query
+    ws.cookies = {"token": token} if token else {}
+    ws.headers = {}
+    ws.query_params = {"organization_id": organization_id}
     return ws
 
 
-@pytest.mark.asyncio
-async def test_websocket_accepts_existing_active_user(monkeypatch):
-    monkeypatch.setattr("app.api.v1.routers.websockets.jwt.decode", lambda *a, **k: {"sub": "u1"})
-    db = _db_execute_returning(_active_user())
-    ws = _ws(token=VALID_CODE)
+def _db(user: User | None, session: UserSession | None, organization: Organization | None) -> AsyncMock:
+    db = AsyncMock()
+    async def get(model, key):
+        if model is User:
+            return user
+        if model is UserSession:
+            return session
+        return organization
+    db.get.side_effect = get
+    return db
 
-    assert await _authenticate_websocket(ws, db) is True
-    ws.close.assert_not_awaited()
+
+@pytest.mark.asyncio
+async def test_websocket_accepts_active_cookie_session():
+    user = _active_user()
+    token = create_access_token(user.id)
+    session = UserSession(id=sha256(token.encode()).hexdigest(), user_id=user.id, is_current=True)
+    result = await _authenticate_websocket(
+        _ws(token), _db(user, session, Organization(id="org-1", is_active=True, status="active"))
+    )
+    assert result is not None
+    assert result[0] is user
 
 
 @pytest.mark.asyncio
 async def test_websocket_rejects_missing_token():
     ws = _ws()
-    db = AsyncMock()
-
-    assert await _authenticate_websocket(ws, db) is False
+    assert await _authenticate_websocket(ws, AsyncMock()) is None
     ws.close.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_websocket_rejects_invalid_jwt(monkeypatch):
-    from jose import JWTError
-
-    def _raise(*a, **k):
-        raise JWTError
-
-    monkeypatch.setattr("app.api.v1.routers.websockets.jwt.decode", _raise)
-    ws = _ws(token=INVALID_CODE)
-    db = AsyncMock()
-
-    assert await _authenticate_websocket(ws, db) is False
+async def test_websocket_rejects_invalid_jwt():
+    ws = _ws("invalid")
+    assert await _authenticate_websocket(ws, AsyncMock()) is None
     ws.close.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_websocket_rejects_payload_without_sub(monkeypatch):
-    monkeypatch.setattr("app.api.v1.routers.websockets.jwt.decode", lambda *a, **k: {})
-    ws = _ws(token=NO_SUB_CODE)
-    db = AsyncMock()
-
-    assert await _authenticate_websocket(ws, db) is False
+async def test_websocket_rejects_revoked_session():
+    user = _active_user()
+    token = create_access_token(user.id)
+    session = UserSession(id=sha256(token.encode()).hexdigest(), user_id=user.id, is_current=False)
+    ws = _ws(token)
+    assert await _authenticate_websocket(
+        ws, _db(user, session, Organization(id="org-1", is_active=True, status="active"))
+    ) is None
     ws.close.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_websocket_rejects_unknown_user(monkeypatch):
-    monkeypatch.setattr(
-        "app.api.v1.routers.websockets.jwt.decode", lambda *a, **k: {"sub": "ghost"}
-    )
-    db = _db_execute_returning(None)
-    ws = _ws(token=VALID_CODE)
-
-    assert await _authenticate_websocket(ws, db) is False
+async def test_websocket_rejects_inactive_user():
+    user = _active_user(is_active=False)
+    token = create_access_token(user.id)
+    session = UserSession(id=sha256(token.encode()).hexdigest(), user_id=user.id, is_current=True)
+    ws = _ws(token)
+    assert await _authenticate_websocket(
+        ws, _db(user, session, Organization(id="org-1", is_active=True, status="active"))
+    ) is None
     ws.close.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_websocket_rejects_inactive_user(monkeypatch):
-    monkeypatch.setattr("app.api.v1.routers.websockets.jwt.decode", lambda *a, **k: {"sub": "u1"})
-    inactive = _active_user()
-    inactive.is_active = False
-    db = _db_execute_returning(inactive)
-    ws = _ws(token=VALID_CODE)
-
-    assert await _authenticate_websocket(ws, db) is False
+async def test_websocket_rejects_inactive_organization():
+    user = _active_user()
+    token = create_access_token(user.id)
+    session = UserSession(id=sha256(token.encode()).hexdigest(), user_id=user.id, is_current=True)
+    ws = _ws(token)
+    assert await _authenticate_websocket(
+        ws, _db(user, session, Organization(id="org-1", is_active=False, status="inactive"))
+    ) is None
     ws.close.assert_awaited_once()

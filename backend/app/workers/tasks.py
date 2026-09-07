@@ -14,6 +14,38 @@ _INTEGRATION_CLAIM_TTL = timedelta(minutes=2)
 _INTEGRATION_MAX_ATTEMPTS = 5
 
 
+@celery_app.task(name="app.workers.tasks.cleanup_expired_auth_records", ignore_result=True)
+def cleanup_expired_auth_records():
+    """Remove only expired or already-revoked authentication records."""
+    return asyncio.run(_cleanup_expired_auth_records())
+
+
+async def _cleanup_expired_auth_records() -> dict[str, int]:
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.core.config import settings
+    from app.models import MagicLinkToken, PasswordReset, RefreshToken, UserSession
+
+    now = datetime.now(UTC)
+    engine = create_async_engine(settings.DATABASE_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        async with factory() as db:
+            counts = {}
+            for name, model, predicate in (
+                ("refresh_tokens", RefreshToken, (RefreshToken.expires_at <= now) | RefreshToken.is_revoked.is_(True)),
+                ("sessions", UserSession, (UserSession.expires_at <= now) | UserSession.is_current.is_(False)),
+                ("magic_links", MagicLinkToken, (MagicLinkToken.expires_at <= now) | MagicLinkToken.is_used.is_(True)),
+                ("password_resets", PasswordReset, (PasswordReset.expires_at <= now) | PasswordReset.is_used.is_(True)),
+            ):
+                result = await db.execute(model.__table__.delete().where(predicate))
+                counts[name] = result.rowcount or 0
+            await db.commit()
+            return counts
+    finally:
+        await engine.dispose()
+
+
 @celery_app.task(name="app.workers.tasks.deliver_pending_integration_events", ignore_result=True)
 def deliver_pending_integration_events():
     return asyncio.run(_deliver_pending_integration_events())

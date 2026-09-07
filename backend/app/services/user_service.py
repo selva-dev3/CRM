@@ -371,8 +371,7 @@ class UserService:
             mapping = await self.role_repository.get_user_role_mapping(db, user.id)
             if mapping:
                 mapping.role_id = role.id
-            else:
-                db.add(UserRole(user_id=user.id, role_id=role.id))
+            await self.role_repository.replace_user_role(db, user.id, role.id)
         await self._commit(db, "Failed to update user")
         return user_to_dict(user)
 
@@ -391,6 +390,9 @@ class UserService:
                 message="You cannot deactivate your own account",
             )
         await self._ensure_not_last_admin(db, user)
+        from app.repositories.auth_repository import AuthRepository
+
+        await AuthRepository().revoke_all_user_sessions(db, user.id)
         user_name = user.name
         user_email = user.email
         user.is_active = False
@@ -431,6 +433,9 @@ class UserService:
                 message="You cannot deactivate your own account",
             )
         await self._ensure_not_last_admin(db, user)
+        from app.repositories.auth_repository import AuthRepository
+
+        await AuthRepository().revoke_all_user_sessions(db, user.id)
         user.is_active = False
         await self._commit(db, "Failed to deactivate user")
         return {
@@ -530,6 +535,12 @@ class UserService:
         for item in candidates:
             item.is_active = False
             deactivated_count += 1
+        if candidates:
+            from app.repositories.auth_repository import AuthRepository
+
+            auth_repository = AuthRepository()
+            for item in candidates:
+                await auth_repository.revoke_all_user_sessions(db, item.id)
         await self._commit(db, "Failed to bulk deactivate users")
         return {
             "affected_count": deactivated_count,

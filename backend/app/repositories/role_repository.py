@@ -319,6 +319,12 @@ class RoleRepository:
         res = await db.execute(select(UserRole).where(UserRole.user_id == user_id))
         return res.scalars().first()
 
+    async def replace_user_role(self, db: AsyncSession, user_id: str, role_id: str) -> UserRole:
+        await db.execute(delete(UserRole).where(UserRole.user_id == user_id))
+        mapping = UserRole(user_id=user_id, role_id=role_id)
+        db.add(mapping)
+        return mapping
+
     async def get_users_by_role(self, db: AsyncSession, value: str) -> Sequence[User]:
         res = await db.execute(select(User).where(User.role == value))
         return res.scalars().all()
