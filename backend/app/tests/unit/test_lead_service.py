@@ -111,6 +111,31 @@ async def test_get_lead_raises_not_found_when_missing():
 
 
 @pytest.mark.asyncio
+async def test_get_timeline_passes_lead_id_to_email_repository():
+    lead = _make_lead()
+    repo: Any = LeadRepository()
+    repo.get_by_id_for_org = AsyncMock(return_value=lead)
+    repo.list_activities = AsyncMock(return_value=[])
+    repo.list_notes = AsyncMock(return_value=[])
+    repo.list_attachments = AsyncMock(return_value=[])
+    repo.list_tasks = AsyncMock(return_value=[])
+    repo.list_emails = AsyncMock(return_value=[])
+    repo.list_calls = AsyncMock(return_value=[])
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.get_timeline(db, lead.id, organization_id=lead.organization_id)
+
+    assert result
+    repo.list_emails.assert_awaited_once_with(
+        db,
+        organization_id=lead.organization_id,
+        lead_id=lead.id,
+        lead_tag=f"[Lead:{lead.id}]",
+    )
+
+
+@pytest.mark.asyncio
 async def test_create_lead_resolves_org_and_serializes(monkeypatch):
     lead = _make_lead()
     repo: Any = LeadRepository()
