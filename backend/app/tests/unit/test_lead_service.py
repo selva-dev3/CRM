@@ -1,8 +1,9 @@
 import asyncio
 import io
+from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, create_autospec
 
 import pytest
 from fastapi import UploadFile
@@ -214,8 +215,29 @@ async def test_send_email_rejects_lead_without_valid_email(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_get_timeline_passes_lead_id_to_email_repository():
-    lead = _make_lead()
+@pytest.mark.parametrize("with_calls", [False, True])
+async def test_get_timeline_passes_lead_id_to_email_and_call_repositories(with_calls):
+    lead = _make_lead(created_at=datetime(2026, 9, 1))
+    calls = (
+        [
+            SimpleNamespace(
+                id="call-1",
+                call_type="Outbound",
+                notes="Discussed proposal\n[Lead:lead-1]",
+                duration_seconds=60,
+                timestamp=datetime(2026, 9, 2),
+            ),
+            SimpleNamespace(
+                id="call-2",
+                call_type="Inbound",
+                notes=None,
+                duration_seconds=30,
+                timestamp=datetime(2026, 9, 3),
+            ),
+        ]
+        if with_calls
+        else []
+    )
     repo: Any = LeadRepository()
     repo.get_by_id_for_org = AsyncMock(return_value=lead)
     repo.list_activities = AsyncMock(return_value=[])
@@ -223,7 +245,7 @@ async def test_get_timeline_passes_lead_id_to_email_repository():
     repo.list_attachments = AsyncMock(return_value=[])
     repo.list_tasks = AsyncMock(return_value=[])
     repo.list_emails = AsyncMock(return_value=[])
-    repo.list_calls = AsyncMock(return_value=[])
+    repo.list_calls = create_autospec(repo.list_calls, return_value=calls)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
@@ -236,6 +258,24 @@ async def test_get_timeline_passes_lead_id_to_email_repository():
         lead_id=lead.id,
         lead_tag=f"[Lead:{lead.id}]",
     )
+    repo.list_calls.assert_awaited_once_with(
+        db,
+        organization_id=lead.organization_id,
+        lead_id=lead.id,
+        lead_tag=f"[Lead:{lead.id}]",
+    )
+    if with_calls:
+        assert [event["id"] for event in result] == ["call-call-2", "call-call-1", "created-lead-1"]
+        assert result[0] == {
+            "id": "call-call-2",
+            "event_type": "call_logged",
+            "title": "Inbound Call Logged",
+            "description": "Duration: 30 sec",
+            "timestamp": "2026-09-03 00:00:00",
+        }
+        assert result[1]["description"] == "Discussed proposal"
+    else:
+        assert [event["event_type"] for event in result] == ["lead_created"]
 
 
 @pytest.mark.asyncio
