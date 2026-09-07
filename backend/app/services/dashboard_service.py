@@ -49,7 +49,14 @@ class DashboardService:
 
         return raw_source
 
-    async def get_kpis(self, db: AsyncSession, organization_id: str) -> DashboardKPIs:
+    async def get_kpis(
+        self,
+        db: AsyncSession,
+        organization_id: str,
+        *,
+        start_at: datetime | None = None,
+        end_at: datetime | None = None,
+    ) -> DashboardKPIs:
         total_leads = await self.repository.count_leads(db, organization_id)
         pipeline_revenue = await self.repository.sum_pipeline_deals(db, organization_id)
         deals_won_amount = await self.repository.sum_won_deals(db, organization_id)
@@ -58,9 +65,15 @@ class DashboardService:
         win_rate = round((won_deals / closed_deals * 100.0), 2) if closed_deals > 0 else 0.0
         avg_score = await self.repository.avg_lead_score(db, organization_id)
         scored_leads = await self.repository.count_scored_leads(db, organization_id)
-        financial = await self.repository.financial_kpis(db, organization_id)
         currency, locale = await self.repository.get_organization_currency_locale(
             db, organization_id
+        )
+        financial = await self.repository.financial_kpis(
+            db,
+            organization_id,
+            currency=currency,
+            start_at=start_at,
+            end_at=end_at,
         )
 
         recent_activity = []

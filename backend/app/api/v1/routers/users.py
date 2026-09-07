@@ -201,7 +201,7 @@ async def update_user(
 @router.delete(
     "/{user_id}",
     response_model=UserDeleteResponse,
-    summary="Delete user by ID (Protected against superadmin@gmail.com deletion)",
+    summary="Deactivate user by ID while preserving CRM history",
     dependencies=[Depends(require_permission("users:delete"))],
 )
 async def delete_user(
@@ -308,8 +308,8 @@ async def remove_user_team(
 @router.post(
     "/bulk-delete",
     response_model=BulkActionResponse,
-    summary="Bulk delete users (Filters out protected superadmin@gmail.com)",
-    dependencies=[Depends(require_permission("users:delete"))],
+    summary="Bulk deactivate users while preserving CRM history",
+    dependencies=[Depends(require_permission("users:update"))],
 )
 async def bulk_delete_users(
     payload: BulkDeleteRequest,

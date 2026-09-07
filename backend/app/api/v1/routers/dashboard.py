@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
@@ -30,9 +32,25 @@ router = APIRouter()
     dependencies=[Depends(require_permission("dashboard:read"))],
 )
 async def get_dashboard_kpis(
-    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+    start_at: datetime | None = Query(None),
+    end_at: datetime | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    return await dashboard_service.get_kpis(db, current_user.organization_id)
+    if start_at and end_at and start_at >= end_at:
+        from app.core.errors import APIException
+
+        raise APIException(
+            status_code=422,
+            code="INVALID_DATE_RANGE",
+            message="start_at must be earlier than end_at",
+        )
+    return await dashboard_service.get_kpis(
+        db,
+        current_user.organization_id,
+        start_at=start_at,
+        end_at=end_at,
+    )
 
 
 @router.get(

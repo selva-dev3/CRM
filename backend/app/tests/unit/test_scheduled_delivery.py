@@ -9,6 +9,12 @@ from app.workers import tasks as tasks_module
 from app.workers.tasks import _deliver_due_reports, _deliver_one
 
 
+@pytest.fixture(autouse=True)
+def _configured_email_provider(monkeypatch):
+    """Delivery tests opt into a provider; the unconfigured test overrides it."""
+    monkeypatch.setattr("app.core.config.settings.BREVO_API_KEY", "test-provider-key")
+
+
 class _FakeResult:
     """Mimics SQLAlchemy Result for .all() / .first() / .rowcount."""
 

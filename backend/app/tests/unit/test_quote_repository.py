@@ -78,6 +78,9 @@ async def test_delete_quote_sql_is_tenant_scoped():
     assert sql.startswith("DELETE FROM quotes")
     assert "quotes.id" in sql
     assert "quotes.organization_id" in sql
+    assert "quotes.status" in sql
+    assert "quotes.automatic_deal_id IS NULL" in sql
+    assert "NOT (EXISTS" in sql
 
 
 @pytest.mark.asyncio
@@ -97,6 +100,9 @@ async def test_bulk_delete_quote_sql_is_tenant_scoped(rowcount):
     assert sql.startswith("DELETE FROM quotes")
     assert "quotes.id IN" in sql
     assert "quotes.organization_id" in sql
+    assert "quotes.status" in sql
+    assert "quotes.automatic_deal_id IS NULL" in sql
+    assert "NOT (EXISTS" in sql
 
 
 @pytest.mark.asyncio

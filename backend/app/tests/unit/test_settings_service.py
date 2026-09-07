@@ -437,3 +437,47 @@ def test_resolve_username_prefers_existing_user():
     assert SettingsService._resolve_username(None, "a1@crm.com", "usr-1") == "a1@crm.com"
     assert SettingsService._resolve_username(None, None, "actual-user-id") == "actual-user-id"
     assert SettingsService._resolve_username(None, None, None) == "Admin User"
+
+
+@pytest.mark.asyncio
+async def test_webhook_registration_does_not_persist_without_delivery_engine():
+    repo: Any = SettingRepository()
+    repo.create_webhook = AsyncMock()
+    service = _service_with(repo)
+    service._resolve_org_id = AsyncMock(return_value="org-1")
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(APIException) as exc_info:
+        await service.create_webhook(
+            db,
+            target_url="https://example.test/events",
+            events=["lead.created"],
+            current_user=_current_user(),
+        )
+
+    assert exc_info.value.code == "WEBHOOK_DELIVERY_UNAVAILABLE"
+    repo.create_webhook.assert_not_awaited()
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_existing_undeliverable_webhook_is_not_reported_active():
+    repo: Any = SettingRepository()
+    repo.list_webhooks = AsyncMock(
+        return_value=[
+            SimpleNamespace(
+                id="webhook-1",
+                target_url="https://example.test/events",
+                events="lead.created",
+                is_active=True,
+            )
+        ]
+    )
+    service = _service_with(repo)
+    service._resolve_org_id = AsyncMock(return_value="org-1")
+
+    result = await service.list_webhooks(
+        AsyncMock(spec=AsyncSession), _current_user()
+    )
+
+    assert result[0]["is_active"] is False

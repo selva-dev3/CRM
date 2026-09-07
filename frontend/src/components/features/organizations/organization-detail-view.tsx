@@ -328,7 +328,7 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
                 </Badge>
               </h1>
               <p className="text-caption text-[#6B7280] mt-0.5 font-mono truncate break-all">
-                Domain: {activeOrg.domain || `${activeOrg.slug || 'org'}.crm.com`}
+                Domain: {activeOrg.domain || 'Not configured'}
               </p>
             </div>
           </div>
@@ -404,7 +404,7 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
           <div>
             <div className="text-caption font-bold text-[#9CA3AF] uppercase">S3 Storage Quota</div>
             <div className="text-body font-bold text-[#111827]">
-              {usage?.storage_gb_used ?? 0.5} GB / {usage?.storage_gb_limit ?? 500} GB
+              {storageUsed} GB / {storageLimit} GB
             </div>
           </div>
         </Card>
@@ -734,6 +734,9 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
           </div>
 
           <form onSubmit={handleVerifyDomain} className="space-y-3 max-w-md">
+            <p className="text-sm text-amber-700">
+              DNS verification is not configured for this deployment.
+            </p>
             <Label htmlFor="verify-domain">Domain Name to Verify</Label>
             <div className="flex gap-2">
               <Input
@@ -745,8 +748,9 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
               <Button
                 type="submit"
                 variant="primary"
-                disabled={verifyDomainMutation.isPending}
-                className="cursor-pointer shrink-0 shadow-saas-sm"
+                disabled
+                title="DNS verification is not configured"
+                className="shrink-0 shadow-saas-sm"
               >
                 Verify TXT
               </Button>

@@ -14,9 +14,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.errors import APIException, ConflictError, ForbiddenError, NotFoundError
+from app.core.logging import get_logger
 from app.models import Organization, OrganizationSubscription, User
 from app.repositories.organization_repository import OrganizationRepository
 from app.services.subscription_stripe_provider import SCOPE, SubscriptionStripeProvider
+
+logger = get_logger(__name__)
 
 
 def _id(value: Any) -> str | None:
@@ -154,6 +157,25 @@ class SubscriptionBillingService:
         request_id = fields.get("provider_request_id")
         sub.last_provider_request_id = request_id if isinstance(request_id, str) else None
         await db.commit()
+
+    async def _record_reconciliation_failure(
+        self, db: AsyncSession, organization_id: str, exc: APIException
+    ) -> None:
+        try:
+            await db.rollback()
+        except Exception:
+            logger.exception(
+                "Subscription reconciliation rollback failed organization=%s",
+                organization_id,
+            )
+            return
+        try:
+            await self._mark_reconciliation(db, organization_id, exc)
+        except Exception:
+            logger.exception(
+                "Subscription reconciliation failure state could not be persisted organization=%s",
+                organization_id,
+            )
 
     def _urls(self, plan_slug: str) -> tuple[str, str]:
         root = settings.frontend_base_url.rstrip("/")
@@ -928,9 +950,16 @@ class SubscriptionBillingService:
             await db.commit()
             return changed
         except APIException as exc:
-            await db.rollback()
-            await self._mark_reconciliation(db, organization_id, exc)
+            await self._record_reconciliation_failure(db, organization_id, exc)
             raise
         except Exception:
-            await db.rollback()
+            await self._record_reconciliation_failure(
+                db,
+                organization_id,
+                APIException(
+                    message="Unexpected provider reconciliation failure",
+                    code="SUBSCRIPTION_RECONCILIATION_FAILED",
+                    status_code=502,
+                ),
+            )
             raise

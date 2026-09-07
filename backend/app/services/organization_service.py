@@ -295,7 +295,6 @@ class OrganizationDomainService:
             "users_limit": plan_info["max_users"],
             "storage_gb_used": subscription.storage_used_gb or 0,
             "storage_gb_limit": plan_info["max_storage_gb"],
-            "ai_credits_used": 0,
             "ai_credits_limit": plan_info["ai_credits"],
             "billing_status": subscription.status or "active",
         }
@@ -364,10 +363,10 @@ class OrganizationDomainService:
         if org.domain:
             return [
                 {
-                    "id": "dom-1",
+                    "id": f"domain:{org.id}",
                     "domain": org.domain,
-                    "status": "verified",
-                    "verified_at": str(org.updated_at or org.created_at),
+                    "status": "pending",
+                    "verified_at": None,
                 }
             ]
         return []
@@ -379,9 +378,9 @@ class OrganizationDomainService:
             {
                 "id": log.id,
                 "action": log.action,
-                "actor": log.user_id or "System Admin",
+                "actor": log.user_id or "Unknown",
                 "timestamp": str(log.created_at),
-                "ip": log.ip_address or "127.0.0.1",
+                "ip": log.ip_address,
             }
             for log in logs
         ]

@@ -401,14 +401,14 @@ export default function EmailPage() {
           Templates ({templates.length})
         </button>
 
-        <button
+        {EMAIL_ADVANCED_FEATURES_ENABLED && <button
           onClick={() => setActiveFolder('signatures')}
           className={`shrink-0 whitespace-nowrap px-4 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
             activeFolder === 'signatures' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
           }`}
         >
           Signatures ({signatures.length})
-        </button>
+        </button>}
       </div>
 
       {/* Folder Views */}

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, exists, func, select
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -404,6 +404,8 @@ class QuoteRepository:
                     Quote.id == quote_id,
                     Quote.organization_id == organization_id,
                     Quote.automatic_deal_id.is_(None),
+                    Quote.status == "Draft",
+                    ~exists(select(Invoice.id).where(Invoice.quote_id == Quote.id)),
                 )
             ),
         )
@@ -421,6 +423,8 @@ class QuoteRepository:
                     Quote.id.in_(quote_ids),
                     Quote.organization_id == organization_id,
                     Quote.automatic_deal_id.is_(None),
+                    Quote.status == "Draft",
+                    ~exists(select(Invoice.id).where(Invoice.quote_id == Quote.id)),
                 )
             ),
         )

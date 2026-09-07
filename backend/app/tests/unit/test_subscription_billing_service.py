@@ -155,6 +155,62 @@ async def test_reconciliation_marks_provider_cancelled_subscription_without_recr
 
 
 @pytest.mark.asyncio
+async def test_reconciliation_marks_unexpected_provider_failure_for_recovery():
+    repository = AsyncMock(spec=OrganizationRepository)
+    organization = Organization(id="org", name="Org", plan="Professional", is_active=True)
+    subscription = OrganizationSubscription(
+        id="subscription",
+        organization_id="org",
+        subscription_id="sub_existing",
+        customer_id="cus_existing",
+        status="active",
+    )
+    repository.get_by_id_for_update.return_value = organization
+    repository.get_subscription.return_value = subscription
+    provider = AsyncMock(spec=SubscriptionStripeProvider)
+    provider.retrieve_subscription.side_effect = RuntimeError("provider unavailable")
+    service = SubscriptionBillingService(repository=repository, provider=provider)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(RuntimeError, match="provider unavailable"):
+        await service.reconcile_subscription(db, organization_id="org")
+
+    assert subscription.reconciliation_required is True
+    assert subscription.last_provider_error_code == "SUBSCRIPTION_RECONCILIATION_FAILED"
+    db.rollback.assert_awaited_once()
+    db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_preserves_provider_error_when_failure_marker_cannot_commit():
+    repository = AsyncMock(spec=OrganizationRepository)
+    organization = Organization(id="org", name="Org", plan="Professional", is_active=True)
+    subscription = OrganizationSubscription(
+        id="subscription",
+        organization_id="org",
+        subscription_id="sub_existing",
+        customer_id="cus_existing",
+        status="active",
+    )
+    repository.get_by_id_for_update.return_value = organization
+    repository.get_subscription.return_value = subscription
+    provider = AsyncMock(spec=SubscriptionStripeProvider)
+    provider.retrieve_subscription.side_effect = APIException(
+        message="Provider subscription is unavailable",
+        code="PROVIDER_SUBSCRIPTION_UNAVAILABLE",
+        status_code=502,
+    )
+    service = SubscriptionBillingService(repository=repository, provider=provider)
+    db = AsyncMock(spec=AsyncSession)
+    db.commit.side_effect = RuntimeError("marker commit failed")
+
+    with pytest.raises(APIException) as exc_info:
+        await service.reconcile_subscription(db, organization_id="org")
+
+    assert exc_info.value.code == "PROVIDER_SUBSCRIPTION_UNAVAILABLE"
+
+
+@pytest.mark.asyncio
 async def test_bad_signature_cannot_consume_webhook_event():
     repository = AsyncMock(spec=OrganizationRepository)
     provider = AsyncMock(spec=SubscriptionStripeProvider)

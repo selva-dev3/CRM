@@ -1,7 +1,5 @@
 ﻿'use client';
 
-import { ResponsiveSelect } from '@/components/common/responsive-select';
-
 import React, { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -14,7 +12,6 @@ import {
   Ban,
   CheckCircle2,
   AlertCircle,
-  Activity,
   RefreshCw,
   User,
   Power,
@@ -22,10 +19,8 @@ import {
   Target,
   DollarSign,
   PhoneCall,
-  Users,
   Lock,
   RotateCcw,
-  Plus,
   Pencil
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -42,15 +37,10 @@ import {
   useUserQuotaQuery,
   useUserPerformanceQuery,
   useUserPermissionsQuery,
-  useUserActivitiesQuery,
-  useUserTeamsQuery,
   useActivateUserMutation,
   useDeactivateUserMutation,
   useDeleteUserMutation,
-  useAssignUserTeamMutation,
-  useRemoveUserTeamMutation,
-  useSetUserQuotaMutation,
-  UserTeamItem
+  useSetUserQuotaMutation
 } from '@/lib/api/users';
 import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
 
@@ -59,22 +49,15 @@ export default function UserDetailPage() {
   const router = useRouter();
   const userId = params?.id as string;
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'performance' | 'security' | 'activity'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'performance' | 'security'>('profile');
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  // Team Create Modal State
-  const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
-  const [newTeamName, setNewTeamName] = useState('');
-  const [newTeamRole, setNewTeamRole] = useState('Member');
 
   // Quota Create/Edit Modal State
   const [isQuotaModalOpen, setIsQuotaModalOpen] = useState(false);
   const [quotaTargetInput, setQuotaTargetInput] = useState('');
-  const [quotaAchievedInput, setQuotaAchievedInput] = useState('');
 
-  // Confirmation Modal States for Deleting Team / Deleting User
-  const [teamToDelete, setTeamToDelete] = useState<{ id: string; name: string } | null>(null);
+  // Confirmation Modal State for deactivating a user
   const [isDeleteUserModalOpen, setIsDeleteUserModalOpen] = useState(false);
 
   // Queries
@@ -95,28 +78,11 @@ export default function UserDetailPage() {
     isLoading: isPermissionsLoading,
     isError: isPermissionsError,
   } = useUserPermissionsQuery(userId);
-  const {
-    data: activitiesData,
-    isLoading: isActivitiesLoading,
-    isError: isActivitiesError,
-  } = useUserActivitiesQuery(userId);
-  const {
-    data: teamsData,
-    isLoading: isTeamsLoading,
-    isError: isTeamsError,
-    refetch: refetchTeams,
-  } = useUserTeamsQuery(userId);
   const { data: currentOrganization } = useCurrentOrganizationQuery();
-
-  const activities = activitiesData ?? [];
-  const teams: UserTeamItem[] = teamsData ?? [];
-
   // Mutations
   const activateUserMutation = useActivateUserMutation();
   const deactivateUserMutation = useDeactivateUserMutation();
   const deleteUserMutation = useDeleteUserMutation();
-  const assignTeamMutation = useAssignUserTeamMutation();
-  const removeTeamMutation = useRemoveUserTeamMutation();
   const setQuotaMutation = useSetUserQuotaMutation();
 
   const orgName = currentOrganization?.id === user?.organization_id
@@ -125,7 +91,6 @@ export default function UserDetailPage() {
 
   const openQuotaModal = () => {
     setQuotaTargetInput(quota?.target_amount?.toString() ?? '');
-    setQuotaAchievedInput(quota?.achieved_amount.toString() ?? '0');
     setIsQuotaModalOpen(true);
   };
 
@@ -146,36 +111,9 @@ export default function UserDetailPage() {
     }
   };
 
-  const handleCreateTeamSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTeamName.trim()) {
-      setErrorMessage('Please enter a team name.');
-      return;
-    }
-    try {
-      setErrorMessage(null);
-      const newTeamId = `team-${Date.now().toString().slice(-4)}`;
-      const res = await assignTeamMutation.mutateAsync({
-        userId,
-        teamId: newTeamId,
-        teamName: newTeamName.trim(),
-        role: newTeamRole,
-      });
-
-      setSuccessMessage(res.message || `Assigned to team '${newTeamName.trim()}' successfully.`);
-      setNewTeamName('');
-      setNewTeamRole('Member');
-      setIsTeamModalOpen(false);
-      await refetchTeams();
-    } catch {
-      setErrorMessage('Failed to assign user to team.');
-    }
-  };
-
   const handleSetQuotaSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const target = parseFloat(quotaTargetInput);
-    const achieved = parseFloat(quotaAchievedInput) || 0;
     if (isNaN(target) || target <= 0) {
       setErrorMessage('Please enter a valid sales quota target amount.');
       return;
@@ -186,7 +124,6 @@ export default function UserDetailPage() {
       await setQuotaMutation.mutateAsync({
         userId,
         targetAmount: target,
-        achievedAmount: achieved,
       });
 
       setSuccessMessage(`Sales quota target $${target.toLocaleString()} assigned successfully.`);
@@ -194,21 +131,6 @@ export default function UserDetailPage() {
       await refetchQuota();
     } catch {
       setErrorMessage('Failed to set sales quota.');
-    }
-  };
-
-  const handleConfirmRemoveTeam = async () => {
-    if (!teamToDelete) return;
-    try {
-      setErrorMessage(null);
-      const res = await removeTeamMutation.mutateAsync({ userId, teamId: teamToDelete.id });
-
-      setSuccessMessage(res.message || `Removed from team '${teamToDelete.name}' successfully.`);
-      setTeamToDelete(null);
-      await refetchTeams();
-    } catch {
-      setErrorMessage('Failed to remove team.');
-      setTeamToDelete(null);
     }
   };
 
@@ -339,7 +261,7 @@ export default function UserDetailPage() {
               className="border-rose-300 text-rose-600 hover:bg-rose-50 font-semibold text-xs cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5 mr-1.5" />
-              Delete User
+              Deactivate Account
             </Button>
           </PermissionGate>
         </div>
@@ -482,17 +404,16 @@ export default function UserDetailPage() {
         value={activeTab}
         onValueChange={setActiveTab}
         tabs={[
-          { value: 'profile', label: 'Profile & Teams' },
+          { value: 'profile', label: 'Profile' },
           { value: 'performance', label: 'Sales Quota & Performance' },
           { value: 'security', label: 'Security & Permissions' },
-          { value: 'activity', label: 'Activity Timeline' },
         ]}
         listClassName="border-b border-slate-200"
       />
 
       {/* Tab Contents */}
       {activeTab === 'profile' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 gap-6">
           <Card className="p-6 border border-slate-200 bg-white shadow-sm rounded-xl space-y-4">
             <h3 className="font-bold text-slate-900 text-base flex items-center gap-2 border-b border-slate-100 pb-3">
               <User className="w-4 h-4 text-blue-600" />
@@ -507,57 +428,6 @@ export default function UserDetailPage() {
                 <span className="text-slate-500 font-medium block">Email Address</span>
                 <span className="font-semibold text-slate-900 text-sm">{user.email}</span>
               </div>
-            </div>
-          </Card>
-
-          <Card className="p-6 border border-slate-200 bg-white shadow-sm rounded-xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                <Users className="w-4 h-4 text-blue-600" />
-                <span>Assigned Teams & Squads</span>
-              </h3>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setIsTeamModalOpen(true)}
-                className="h-8 gap-1 border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-semibold cursor-pointer"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add Team</span>
-              </Button>
-            </div>
-
-            <div className="space-y-3">
-              {isTeamsLoading ? (
-                <div className="text-xs text-slate-500 p-4 text-center bg-slate-50 rounded-lg">
-                  Loading assigned teams...
-                </div>
-              ) : isTeamsError ? (
-                <div className="text-xs text-rose-600 p-4 text-center bg-rose-50 rounded-lg">
-                  Assigned teams are unavailable.
-                </div>
-              ) : teams.length > 0 ? (
-                teams.map((t) => (
-                  <div key={t.id} className="p-3 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-between">
-                    <div>
-                      <div className="font-bold text-slate-900 text-xs">{t.name}</div>
-                      {t.role && <div className="text-slate-500 text-[11px]">{t.role}</div>}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setTeamToDelete({ id: t.id, name: t.name })}
-                        className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
-                        title="Remove team membership"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="text-xs text-slate-500 p-4 text-center bg-slate-50 rounded-lg">No assigned teams</div>
-              )}
             </div>
           </Card>
         </div>
@@ -636,95 +506,6 @@ export default function UserDetailPage() {
         </Card>
       )}
 
-      {activeTab === 'activity' && (
-        <Card className="p-6 border border-slate-200 bg-white shadow-sm rounded-xl space-y-4">
-          <h3 className="font-bold text-slate-900 text-base flex items-center gap-2 border-b border-slate-100 pb-3">
-            <Activity className="w-4 h-4 text-blue-600" />
-            <span>User Activity Audit Log</span>
-          </h3>
-          <div className="space-y-3 text-xs">
-            {isActivitiesLoading ? (
-              <div className="text-sm text-slate-500">Loading activity...</div>
-            ) : isActivitiesError ? (
-              <div className="text-sm text-rose-600">Activity is unavailable.</div>
-            ) : activities.length ? (
-              activities.map((act) => (
-                <div key={act.id} className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
-                  <div>
-                    <div className="font-bold text-slate-900">{act.action}</div>
-                    {act.details && <div className="text-slate-500">{act.details}</div>}
-                    <div className="text-[10px] text-slate-400 mt-1">{new Date(act.timestamp).toLocaleString()}</div>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="text-sm text-slate-500">No activity recorded.</div>
-            )}
-          </div>
-        </Card>
-      )}
-
-      {/* CREATE TEAM MODAL */}
-      {isTeamModalOpen && (
-        <ModalShell
-          isOpen={isTeamModalOpen}
-          onClose={() => setIsTeamModalOpen(false)}
-          title={
-            <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-              <Users className="w-5 h-5 text-blue-600" />
-              <span>Assign / Create Team</span>
-            </h3>
-          }
-        >
-          <form onSubmit={handleCreateTeamSubmit} className="space-y-4 text-xs">
-            <div className="space-y-1">
-              <Label className="text-slate-700 font-semibold">Team Name</Label>
-                <Input
-                  type="text"
-                  placeholder="Enter team name"
-                value={newTeamName}
-                onChange={(e) => setNewTeamName(e.target.value)}
-                className="h-9 text-xs"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <Label className="text-slate-700 font-semibold">Role in Team</Label>
-              <ResponsiveSelect
-                value={newTeamRole}
-                onValueChange={setNewTeamRole}
-                className="w-full h-9 rounded-md border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="Member">Member</option>
-                <option value="Team Lead">Team Lead</option>
-                <option value="Manager">Manager</option>
-              </ResponsiveSelect>
-            </div>
-
-            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setIsTeamModalOpen(false)}
-                className="text-xs cursor-pointer"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                size="sm"
-                disabled={assignTeamMutation.isPending}
-                className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer"
-              >
-                {assignTeamMutation.isPending ? 'Assigning...' : 'Assign Team'}
-              </Button>
-            </div>
-          </form>
-        </ModalShell>
-      )}
-
       {/* SET SALES QUOTA MODAL */}
       {isQuotaModalOpen && (
         <ModalShell
@@ -749,16 +530,9 @@ export default function UserDetailPage() {
               />
             </div>
 
-            <div className="space-y-1">
-              <Label className="text-slate-700 font-semibold">Current Achieved Amount ($)</Label>
-                <Input
-                  type="number"
-                  placeholder="Enter achieved amount"
-                value={quotaAchievedInput}
-                onChange={(e) => setQuotaAchievedInput(e.target.value)}
-                className="h-9 text-xs"
-              />
-            </div>
+            <p className="text-xs text-slate-500">
+              Achieved revenue is calculated from this user&apos;s Closed Won deals.
+            </p>
 
             <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
               <Button
@@ -783,39 +557,19 @@ export default function UserDetailPage() {
         </ModalShell>
       )}
 
-      {/* REMOVE TEAM CONFIRMATION MODAL */}
-      <ConfirmModal
-        isOpen={!!teamToDelete}
-        onClose={() => setTeamToDelete(null)}
-        onConfirm={handleConfirmRemoveTeam}
-        title="Remove Team Membership"
-        description="This action cannot be undone."
-        confirmText="Remove Team"
-        variant="danger"
-        isLoading={removeTeamMutation.isPending}
-        message={
-          teamToDelete && (
-            <p>
-              Are you sure you want to remove <strong className="text-slate-900">{user.name}</strong> from team{' '}
-              <strong className="text-slate-900">{teamToDelete.name}</strong>?
-            </p>
-          )
-        }
-      />
-
       {/* DELETE USER CONFIRMATION MODAL */}
       <ConfirmModal
         isOpen={isDeleteUserModalOpen}
         onClose={() => setIsDeleteUserModalOpen(false)}
         onConfirm={handleConfirmDeleteUser}
-        title="Delete User Account"
-        description="This action cannot be undone."
-        confirmText="Delete User Account"
+        title="Deactivate User Account"
+        description="The account can be activated again later. Historical CRM data is preserved."
+        confirmText="Deactivate Account"
         variant="danger"
         isLoading={deleteUserMutation.isPending}
         message={
           <p>
-            Are you sure you want to delete user account <strong className="text-slate-900">{user.name || user.email}</strong>?
+            Are you sure you want to deactivate <strong className="text-slate-900">{user.name || user.email}</strong>?
           </p>
         }
       />
