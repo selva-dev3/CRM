@@ -850,7 +850,7 @@ class LeadService:
             )
 
         for call in await self.repository.list_calls(
-            db, organization_id=lead.organization_id, lead_tag=lead_tag
+            db, organization_id=lead.organization_id, lead_id=lead.id, lead_tag=lead_tag
         ):
             clean_notes = (
                 (call.notes or "").replace(f"\n{lead_tag}", "").replace(lead_tag, "").strip()
