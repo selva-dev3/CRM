@@ -865,6 +865,26 @@ class PaymentResponse(BaseModel):
     customer: dict[str, str | None] | None = None
 
 
+class InvoicePaymentSummaryResponse(BaseModel):
+    id: str
+    invoice_id: str
+    invoice_number: str
+    company_name: str | None = None
+    contact_name: str | None = None
+    contact_email: str | None = None
+    amount: float = 0.0
+    paid_amount: float = 0.0
+    outstanding_amount: float = 0.0
+    currency: str
+    payment_status: Literal["Pending", "Partially Paid", "Paid"]
+    latest_payment_id: str | None = None
+    payment_number: str | None = None
+    payment_type: str | None = None
+    latest_payment_amount: float | None = None
+    payment_date: str | None = None
+    notes: str | None = None
+
+
 class EligiblePaymentInvoiceResponse(BaseModel):
     id: str
     invoice_number: str

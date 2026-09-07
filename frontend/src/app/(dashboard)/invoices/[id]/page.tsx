@@ -266,7 +266,7 @@ export default function InvoiceDetailPage() {
               <div className="space-y-1">
                 <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Payment Status</span>
                 <div className="text-slate-900 font-semibold text-sm">
-                  {invoice.payment_status || 'Pending'}
+                  {invoice.payment_status ?? 'Unavailable'}
                 </div>
               </div>
 

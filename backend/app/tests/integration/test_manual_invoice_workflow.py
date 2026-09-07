@@ -193,6 +193,17 @@ async def test_public_http_view_accept_and_replay_are_safe(sales_database, monke
         assert accepted.status_code == 200
         assert accepted.json()["status"] == "Accepted"
         assert accepted.json()["payment_status"] == "Pending"
+        async with sessions() as db:
+            summaries = await PaymentService().list_invoice_summaries(
+                db, organization_id=org.id, page=1, limit=20
+            )
+            assert len(summaries) == 1
+            assert summaries[0]["invoice_id"] == invoice_id
+            assert summaries[0]["payment_status"] == "Pending"
+            assert summaries[0]["paid_amount"] == Decimal("0.00")
+            assert summaries[0]["outstanding_amount"] == Decimal("200.00")
+            assert summaries[0]["latest_payment_id"] is None
+            assert summaries[0]["payment_date"] is None
         again = await client.post("/api/v1/public/invoices/accept", json={"token": token})
         assert again.json() == accepted.json()
     async with sessions() as db:
@@ -257,6 +268,16 @@ async def test_full_and_multiple_partial_payments_persist_exact_balances(
             assert invoice.paid_amount == total
             assert invoice.status == "Accepted"
             assert invoice.payment_status == ("Paid" if total == 200 else "Partially Paid")
+            summaries = await PaymentService().list_invoice_summaries(
+                db, organization_id=org.id, page=1, limit=20
+            )
+            summary = next(item for item in summaries if item["invoice_id"] == invoice_id)
+            assert summary["paid_amount"] == total
+            assert summary["outstanding_amount"] == Decimal("200.00") - total
+            assert summary["payment_status"] == (
+                "Paid" if total == Decimal("200.00") else "Partially Paid"
+            )
+            assert summary["latest_payment_id"] == result["id"]
             payment = await db.get(Payment, result["id"])
             assert payment.recorded_by == user.id
             assert payment.receipt_delivery_status == "Pending"
@@ -340,6 +361,12 @@ async def test_foreign_org_cannot_record_or_read_payment(sales_database, monkeyp
         assert (
             await PaymentService().list_payments(
                 db, organization_id=foreign_org, page=1, limit=20, invoice_id=invoice_id
+            )
+            == []
+        )
+        assert (
+            await PaymentService().list_invoice_summaries(
+                db, organization_id=foreign_org, page=1, limit=20
             )
             == []
         )
@@ -431,6 +458,13 @@ async def test_http_manual_payment_validation_permission_and_tenant_scope(
         app.dependency_overrides[get_current_user] = lambda: user
         assert (await client.post(endpoint, json=payload, headers=headers)).status_code == 403
         permission.return_value = ["invoices:payment", "invoices:read"]
+        pending = await client.get("/api/v1/payments/invoice-summaries")
+        assert pending.status_code == 200
+        assert pending.headers["X-Total-Count"] == "1"
+        assert pending.json()[0]["payment_status"] == "Pending"
+        assert pending.json()[0]["paid_amount"] == 0
+        assert pending.json()[0]["outstanding_amount"] == 200
+        assert pending.json()[0]["payment_number"] is None
         assert (await client.post(endpoint, json=payload)).status_code == 422
         assert (
             await client.post(endpoint, json=payload | {"amount": "-1"}, headers=headers)
@@ -456,6 +490,11 @@ async def test_http_manual_payment_validation_permission_and_tenant_scope(
         listed = await client.get(f"/api/v1/payments?invoice_id={invoice_id}")
         assert listed.status_code == 200
         assert [payment["id"] for payment in listed.json()] == [result["id"]]
+        summary = await client.get("/api/v1/payments/invoice-summaries")
+        assert summary.json()[0]["payment_status"] == "Partially Paid"
+        assert summary.json()[0]["paid_amount"] == 40.1
+        assert summary.json()[0]["outstanding_amount"] == 159.9
+        assert summary.json()[0]["latest_payment_id"] == result["id"]
         async with sessions() as db:
             other_org = Organization(
                 id=str(uuid4()), name="Other invoice test tenant", currency="INR"
@@ -468,6 +507,7 @@ async def test_http_manual_payment_validation_permission_and_tenant_scope(
             assert (await client.post(endpoint, json=payload, headers=headers)).status_code == 404
             assert (await client.get(f"/api/v1/payments/{result['id']}")).status_code == 404
             assert (await client.get(f"/api/v1/payments?invoice_id={invoice_id}")).json() == []
+            assert (await client.get("/api/v1/payments/invoice-summaries")).json() == []
         finally:
             user.organization_id = original_org
 
