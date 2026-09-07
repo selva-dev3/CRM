@@ -700,13 +700,20 @@ class ContactEmailResponse(BaseModel):
 
 # 12. Email & Inbox Schemas
 class EmailSendRequest(BaseModel):
-    to: list[EmailStr]
-    subject: str
-    body: str
+    to: list[EmailStr] = Field(min_length=1)
+    subject: str = Field(min_length=1, max_length=500)
+    body: str = Field(min_length=1, max_length=100_000)
     lead_id: str | None = None
     contact_id: str | None = None
     company_id: str | None = None
     deal_id: str | None = None
+
+    @field_validator("subject", "body")
+    @classmethod
+    def reject_blank_content(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("must not be blank")
+        return value
 
 
 class EmailResponse(BaseModel):

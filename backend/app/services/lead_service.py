@@ -4,6 +4,7 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import UploadFile, status
+from pydantic import EmailStr, TypeAdapter, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -40,6 +41,7 @@ from app.services.s3_service import s3_service
 LEAD_SOURCES = ["Website", "LinkedIn", "Referral", "Cold Call", "Event", "Partner"]
 LEAD_STATUSES = ["New", "Contacted", "Qualified", "Unqualified", "Converted"]
 DIRECTLY_EDITABLE_LEAD_STATUSES = {"New", "Contacted"}
+EMAIL_ADAPTER = TypeAdapter(EmailStr)
 
 
 def _read_s3_object(key: str) -> bytes:
@@ -1050,13 +1052,29 @@ class LeadService:
         idempotency_key: str | None = None,
     ) -> dict:
         lead = await self.require_lead(db, lead_id, organization_id=organization_id)
-        to_addr = payload.to[0] if payload.to else lead.email
+        try:
+            lead_email = str(EMAIL_ADAPTER.validate_python((lead.email or "").strip()))
+        except ValidationError as exc:
+            raise APIException(
+                message="This lead does not have a valid email address.",
+                code="LEAD_EMAIL_INVALID",
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            ) from exc
+
+        requested_recipient = str(payload.to[0]).strip() if payload.to else lead_email
+        if len(payload.to) != 1 or requested_recipient.casefold() != lead_email.casefold():
+            raise APIException(
+                message="Lead emails must be sent to the lead's primary email address.",
+                code="LEAD_RECIPIENT_MISMATCH",
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+
         from app.services.email_domain_service import email_domain_service
 
         return await email_domain_service.queue_email(
             db,
             organization_id=lead.organization_id,
-            to_email=str(to_addr),
+            to_email=lead_email,
             subject=payload.subject,
             body=payload.body or "",
             idempotency_key=idempotency_key,

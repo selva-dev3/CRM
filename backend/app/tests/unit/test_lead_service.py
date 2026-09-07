@@ -14,6 +14,7 @@ from app.core.errors import APIException, ForbiddenError, NotFoundError
 from app.models import Lead, User
 from app.repositories.lead_repository import LeadRepository
 from app.schemas.crm_schemas import (
+    EmailSendRequest,
     LeadCreate,
     LeadDisqualificationRequest,
     LeadQualificationRequest,
@@ -108,6 +109,108 @@ async def test_get_lead_raises_not_found_when_missing():
 
     with pytest.raises(NotFoundError):
         await service.get_lead(db, "missing-lead", organization_id="org-1")
+
+
+@pytest.mark.asyncio
+async def test_send_email_uses_the_leads_primary_email(monkeypatch):
+    lead = _make_lead(email="jane@acme.com")
+    repo: Any = LeadRepository()
+    repo.get_by_id_for_org = AsyncMock(return_value=lead)
+    queue_email = AsyncMock(return_value={"id": "email-1", "status": "Pending"})
+    monkeypatch.setattr(
+        "app.services.email_domain_service.email_domain_service.queue_email", queue_email
+    )
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    await service.send_email(
+        db,
+        lead.id,
+        EmailSendRequest(to=[lead.email], subject="Hello", body="Hi Jane"),
+        organization_id=lead.organization_id,
+    )
+
+    queue_email.assert_awaited_once_with(
+        db,
+        organization_id=lead.organization_id,
+        to_email=lead.email,
+        subject="Hello",
+        body="Hi Jane",
+        idempotency_key=None,
+        lead_id=lead.id,
+    )
+
+
+@pytest.mark.asyncio
+async def test_send_email_rejects_recipient_override(monkeypatch):
+    lead = _make_lead(email="jane@acme.com")
+    repo: Any = LeadRepository()
+    repo.get_by_id_for_org = AsyncMock(return_value=lead)
+    queue_email = AsyncMock()
+    monkeypatch.setattr(
+        "app.services.email_domain_service.email_domain_service.queue_email", queue_email
+    )
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(APIException, match="primary email address"):
+        await service.send_email(
+            db,
+            lead.id,
+            EmailSendRequest(to=["other@example.com"], subject="Hello", body="Hi Jane"),
+            organization_id=lead.organization_id,
+        )
+
+    queue_email.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_send_email_rejects_multiple_recipients(monkeypatch):
+    lead = _make_lead(email="jane@example.com")
+    repo: Any = LeadRepository()
+    repo.get_by_id_for_org = AsyncMock(return_value=lead)
+    service = _service_with(repo)
+    queue_email = AsyncMock()
+    monkeypatch.setattr(
+        "app.services.email_domain_service.email_domain_service.queue_email", queue_email
+    )
+
+    with pytest.raises(APIException, match="primary email address"):
+        await service.send_email(
+            AsyncMock(),
+            lead.id,
+            EmailSendRequest(
+                to=["jane@example.com", "other@example.com"],
+                subject="Hello",
+                body="Body",
+            ),
+            organization_id=lead.organization_id,
+        )
+
+    queue_email.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_send_email_rejects_lead_without_valid_email(monkeypatch):
+    lead = _make_lead(email="")
+    repo: Any = LeadRepository()
+    repo.get_by_id_for_org = AsyncMock(return_value=lead)
+    queue_email = AsyncMock()
+    monkeypatch.setattr(
+        "app.services.email_domain_service.email_domain_service.queue_email", queue_email
+    )
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(APIException, match="valid email address"):
+        await service.send_email(
+            db,
+            lead.id,
+            EmailSendRequest(to=["lead@example.com"], subject="Hello", body="Hi Jane"),
+            organization_id=lead.organization_id,
+        )
+
+    queue_email.assert_not_awaited()
 
 
 @pytest.mark.asyncio

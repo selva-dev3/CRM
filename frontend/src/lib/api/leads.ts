@@ -125,7 +125,9 @@ export interface LeadEmailItem {
   from_email: string;
   to: string[];
   subject: string;
-  sent_at: string;
+  status: 'Draft' | 'Pending' | 'Processing' | 'Sent' | 'Failed' | 'Unknown';
+  sent_at: string | null;
+  failure_reason?: string | null;
 }
 
 export interface LeadCallLogItem {
@@ -221,8 +223,14 @@ export async function fetchLeadEmailsApi(leadId: string): Promise<LeadEmailItem[
   return apiClient.get<LeadEmailItem[]>(`/leads/${leadId}/emails`);
 }
 
-export async function sendLeadEmailApi(leadId: string, payload: { to: string[]; subject: string; body: string }): Promise<LeadEmailItem> {
-  return apiClient.post<LeadEmailItem>(`/leads/${leadId}/emails/send`, payload);
+export async function sendLeadEmailApi(
+  leadId: string,
+  payload: { to: string[]; subject: string; body: string },
+  idempotencyKey?: string,
+): Promise<LeadEmailItem> {
+  return apiClient.post<LeadEmailItem>(`/leads/${leadId}/emails/send`, payload, {
+    headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+  });
 }
 
 export async function fetchLeadCallsApi(leadId: string): Promise<LeadCallLogItem[]> {
@@ -345,6 +353,12 @@ export function useLeadEmailsQuery(leadId: string) {
     queryKey: ['lead-emails', leadId],
     queryFn: () => fetchLeadEmailsApi(leadId),
     enabled: !!leadId,
+    refetchInterval: (query) => {
+      const emails = query.state.data ?? [];
+      return emails.some((email) => email.status === 'Pending' || email.status === 'Processing')
+        ? 5000
+        : false;
+    },
   });
 }
 

@@ -3,6 +3,7 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException
@@ -77,6 +78,7 @@ async def test_get_inbox_maps_emails():
 
 @pytest.mark.asyncio
 async def test_send_email_creates_row(monkeypatch):
+    monkeypatch.setattr("app.services.email_domain_service.settings.BREVO_API_KEY", "test-key")
     org_id = {"value": "org-1"}
 
     async def fake_resolve_valid_org_id(db, current_user):
@@ -103,6 +105,15 @@ async def test_send_email_creates_row(monkeypatch):
     assert created["to_email"] == "client@example.com"
     assert result["id"] == "email-1"
     db.refresh.assert_awaited_once()
+
+
+@pytest.mark.parametrize("field", ["subject", "body"])
+def test_email_send_request_rejects_blank_content(field):
+    payload = {"to": ["client@example.com"], "subject": "Hello", "body": "Hi there"}
+    payload[field] = "   "
+
+    with pytest.raises(ValidationError):
+        EmailSendRequest(**payload)
 
 
 @pytest.mark.asyncio

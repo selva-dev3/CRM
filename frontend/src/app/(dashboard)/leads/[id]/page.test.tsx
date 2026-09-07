@@ -8,7 +8,9 @@ const useUsersQueryMock = vi.fn();
 const updateLeadMutateAsync = vi.fn();
 const assignLeadApiMock = vi.fn();
 const qualifyLeadApiMock = vi.fn();
+const sendLeadEmailApiMock = vi.fn();
 const useLeadTimelineQueryMock = vi.fn();
+const useLeadEmailsQueryMock = vi.fn();
 const refetchLeadMock = vi.fn();
 const refetchUsersMock = vi.fn();
 const customFieldsQueryMock = vi.fn();
@@ -67,12 +69,12 @@ vi.mock('@/lib/api/leads', () => ({
   useDeleteLeadMutation: () => ({ mutateAsync: vi.fn() }),
   useLeadNotesQuery: () => emptyQuery,
   useLeadTasksQuery: () => emptyQuery,
-  useLeadEmailsQuery: () => emptyQuery,
+  useLeadEmailsQuery: () => useLeadEmailsQueryMock(),
   useLeadCallsQuery: () => emptyQuery,
   useLeadDocumentsQuery: () => emptyQuery,
   addLeadNoteApi: vi.fn(),
   createLeadTaskApi: vi.fn(),
-  sendLeadEmailApi: vi.fn(),
+  sendLeadEmailApi: (...args: unknown[]) => sendLeadEmailApiMock(...args),
   logLeadCallApi: vi.fn(),
   uploadLeadDocumentApi: vi.fn(),
   recalculateLeadScoreApi: vi.fn(),
@@ -140,7 +142,16 @@ beforeEach(() => {
   updateLeadMutateAsync.mockResolvedValue({ ...lead, assigned_to: null });
   assignLeadApiMock.mockResolvedValue({ message: 'Assigned', status: 'success' });
   qualifyLeadApiMock.mockResolvedValue({ ...lead, status: 'Qualified' });
+  sendLeadEmailApiMock.mockResolvedValue({
+    id: 'email-1',
+    from_email: 'rep@crm.test',
+    to: [lead.email],
+    subject: 'Hello',
+    status: 'Pending',
+    sent_at: null,
+  });
   useLeadTimelineQueryMock.mockReturnValue(emptyQuery);
+  useLeadEmailsQueryMock.mockReturnValue(emptyQuery);
   useLeadQueryMock.mockReturnValue({
     data: lead,
     isLoading: false,
@@ -183,6 +194,51 @@ describe('LeadDetailPage custom fields', () => {
         }),
       );
     });
+  });
+});
+
+describe('LeadDetailPage email workflow', () => {
+  it('shows the Lead recipient and reports queued delivery', async () => {
+    const user = userEvent.setup();
+    render(<LeadDetailPage />);
+
+    await user.click(screen.getByRole('tab', { name: /Emails/ }));
+    await user.click(screen.getByRole('button', { name: 'Send Email' }));
+
+    expect(screen.getByText('The Lead\'s primary email is used as the recipient.')).toBeVisible();
+    expect(screen.getByText('jane@acme.test')).toBeVisible();
+
+    await user.type(screen.getByPlaceholderText('Enterprise CRM Proposal & Next Steps'), 'Hello');
+    await user.type(screen.getByPlaceholderText('Hi, following up on our recent demo...'), 'Hi Jane');
+    const sendButtons = screen.getAllByRole('button', { name: 'Send Email' });
+    await user.click(sendButtons[sendButtons.length - 1]);
+
+    await waitFor(() => {
+      expect(sendLeadEmailApiMock).toHaveBeenCalledWith(
+        'lead-1',
+        { to: ['jane@acme.test'], subject: 'Hello', body: 'Hi Jane' },
+        expect.any(String),
+      );
+    });
+    expect(await screen.findByText('Email queued for delivery.')).toBeVisible();
+  });
+
+  it('blocks sending when the Lead has no valid email', async () => {
+    const user = userEvent.setup();
+    useLeadQueryMock.mockReturnValue({
+      data: { ...lead, email: '' },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: refetchLeadMock,
+    });
+    render(<LeadDetailPage />);
+
+    await user.click(screen.getByRole('tab', { name: /Emails/ }));
+    await user.click(screen.getByRole('button', { name: 'Send Email' }));
+
+    expect(await screen.findByText('This lead does not have a valid email address.')).toBeVisible();
+    expect(sendLeadEmailApiMock).not.toHaveBeenCalled();
   });
 });
 

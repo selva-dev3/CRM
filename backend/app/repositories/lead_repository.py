@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -329,7 +329,10 @@ class LeadRepository:
         result = await db.execute(
             select(Email).where(
                 Email.organization_id == organization_id,
-                or_(Email.lead_id == lead_id, Email.body_text.contains(lead_tag)),
+                or_(
+                    Email.lead_id == lead_id,
+                    and_(Email.lead_id.is_(None), Email.body_text.contains(lead_tag)),
+                ),
             )
         )
         return list(result.scalars().all())
