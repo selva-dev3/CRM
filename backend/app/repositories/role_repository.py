@@ -1,9 +1,11 @@
 from collections.abc import Sequence
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import APIException
 from app.core.logging import get_logger
+from app.core.rbac_matrix import ADMIN_PERMISSIONS, SYSTEM_ROLE_NAMES, SYSTEM_ROLE_PERMISSIONS
 from app.models import (
     Permission,
     Role,
@@ -100,14 +102,21 @@ class RoleRepository:
         organization_id: str | None = None,
         is_system_role: bool = False,
     ) -> Role:
+        self.validate_custom_role_name(name, is_system_role=is_system_role)
         role = Role(
-            name=name,
+            name=name.strip(),
             description=description,
             organization_id=organization_id,
             is_system_role=is_system_role,
         )
         db.add(role)
         return role
+
+    @staticmethod
+    def validate_custom_role_name(name: str, *, is_system_role: bool = False) -> None:
+        normalized = name.strip().lower().replace("_", " ")
+        if not is_system_role and normalized in {n.lower() for n in SYSTEM_ROLE_NAMES}:
+            raise APIException(status_code=409, message="This name is reserved for a system role")
 
     async def create_user_role_mapping(
         self, db: AsyncSession, *, user_id: str, role_id: str
@@ -150,7 +159,7 @@ class RoleRepository:
         return res.scalars().all()
 
     async def create_permission(self, db: AsyncSession, *, data: dict) -> Permission:
-        permission = Permission(**data)
+        permission = Permission(**(data | {"key": data["key"].strip().lower()}))
         db.add(permission)
         return permission
 
@@ -197,7 +206,7 @@ class RoleRepository:
             standard_keys = [
                 item["key"]
                 for item in items
-                if item.get("key") and item["key"] != "all" and item["key"] != "super_admin:manage"
+                if item.get("key") in ADMIN_PERMISSIONS
             ]
             all_perms_res = await db.execute(
                 select(Permission).where(Permission.key.in_(standard_keys))
@@ -227,10 +236,47 @@ class RoleRepository:
                     exc_info=True,
                 )
                 await db.rollback()
+                raise
             except SQLAlchemyError as e:
                 logger.exception("Database error occurred during seed_permissions commit: %s", e)
                 await db.rollback()
                 raise
+
+    async def synchronize_system_roles(self, db: AsyncSession) -> None:
+        """Serialize initialization and reconcile registered grants without touching custom roles.
+
+        Existing tenant scopes are preserved. Missing templates are created globally;
+        an existing tenant template never causes a second global copy to be created.
+        The caller owns the transaction.
+        """
+        await db.execute(text("SELECT pg_advisory_xact_lock(7242310907)"))
+        roles = list((await db.execute(select(Role).where(Role.is_system_role.is_(True)))).scalars())
+        permissions = {p.key: p.id for p in (await db.execute(select(Permission))).scalars() if p.key != "all"}
+        for name in sorted(SYSTEM_ROLE_NAMES):
+            matches = [r for r in roles if r.name.strip().lower() == name.lower()]
+            if not matches:
+                # A legacy custom role must never be silently promoted.
+                collision = (await db.execute(select(Role.id).where(
+                    Role.organization_id.is_(None), func.lower(func.btrim(Role.name)) == name.lower()
+                ))).scalar_one_or_none()
+                if collision:
+                    raise APIException(status_code=409, message="System role conflicts with a custom role")
+                matches = [await self.create_role(db, name=name, description=f"System {name} role", is_system_role=True)]
+                await db.flush()
+            for role in matches:
+                if name == "Super Admin" and role.organization_id is not None:
+                    raise APIException(status_code=409, message="Scoped Super Admin requires an audited migration")
+                keys = set(permissions) if name == "Super Admin" else set(SYSTEM_ROLE_PERMISSIONS[name])
+                if not keys.issubset(permissions):
+                    raise APIException(status_code=409, message="Approved permission catalog is incomplete")
+                desired = {permissions[key] for key in keys}
+                await db.execute(delete(RolePermission).where(
+                    RolePermission.role_id == role.id, RolePermission.permission_id.not_in(desired)
+                ))
+                existing = set((await db.execute(select(RolePermission.permission_id).where(RolePermission.role_id == role.id))).scalars())
+                for permission_id in sorted(desired - existing):
+                    await self.add_role_permission(db, role.id, permission_id)
+                await db.flush()
 
     # --- RolePermission mapping ---
     async def get_role_permissions(self, db: AsyncSession, role_id: str) -> Sequence[Permission]:
