@@ -195,7 +195,7 @@ export default function IntegrationsPage() {
         const config = await fetchSlackConfigApi();
         setSlackEvents(config.events || []);
       } else {
-        let res: { message: string };
+        let res: { message: string; auth_url?: string };
         if (app.id === 'zapier') {
           if (!zapierWebhookUrl.trim()) {
             setErrorMessage('Please enter your Zapier catch-hook URL to connect.');
