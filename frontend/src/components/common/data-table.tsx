@@ -549,7 +549,11 @@ export function DataTable<TItem>({
                       const resolvedActions = typeof actions === 'function' ? actions(item) : actions;
                       if (!resolvedActions || resolvedActions.length === 0) return null;
                       return (
-                        <TableCell className={cn('px-4', actionVariant === 'inline' ? 'w-[100px] text-right' : 'w-[80px] text-center')}>
+                        <TableCell
+                          className={cn('px-4', actionVariant === 'inline' ? 'w-[100px] text-right' : 'w-[80px] text-center')}
+                          onClick={(event) => event.stopPropagation()}
+                          onKeyDown={(event) => event.stopPropagation()}
+                        >
                           {actionVariant === 'menu' ? (
                             <ActionMenu
                               iconOnly
