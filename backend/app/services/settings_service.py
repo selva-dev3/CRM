@@ -3,23 +3,19 @@ import io
 import urllib.parse
 
 from fastapi import status
-from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.currency import normalize_currency_code_or_default
 from app.core.errors import APIException, NotFoundError
 from app.core.logging import get_logger
-from app.core.security import get_password_hash
-from app.models import Organization, User
+from app.models import User
 from app.repositories.role_repository import RoleRepository
 from app.repositories.setting_repository import SettingRepository
 from app.schemas.crm_schemas import SystemSettings
 from app.services.custom_field_service import normalize_custom_field_entity_type
 from app.services.org_service import organization_service
-from app.services.role_service import ALL_STANDARD_PERMISSIONS
 
-PROTECTED_SUPERADMIN_EMAIL = "superadmin@gmail.com"
 logger = get_logger(__name__)
 
 
@@ -368,68 +364,11 @@ class SettingsService:
         return {"message": f"SLA Policy '{name}' created", "status": "success"}
 
     async def reset_database(self, db: AsyncSession, confirm: bool) -> dict:
-        if not confirm:
-            raise APIException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                message="Param 'confirm=true' required to confirm database reset",
-            )
-        try:
-            superadmin = await self.repository.get_user_by_email(db, PROTECTED_SUPERADMIN_EMAIL)
-            saved_name = superadmin.name if superadmin else "Super Admin"
-            saved_password = (
-                superadmin.hashed_password
-                if (superadmin and superadmin.hashed_password)
-                else get_password_hash("superadmin123")
-            )
-
-            tables = await self.repository.list_table_names(db)
-            if tables:
-                tables_str = ", ".join([f'"{t}"' for t in tables])
-                await db.execute(text(f"TRUNCATE TABLE {tables_str} RESTART IDENTITY CASCADE;"))
-                await db.flush()
-
-            org = Organization(
-                name="Primary System Organization", domain="crm.com", plan="Enterprise"
-            )
-            db.add(org)
-            await db.flush()
-
-            superadmin_user = User(
-                name=saved_name,
-                email=PROTECTED_SUPERADMIN_EMAIL,
-                hashed_password=saved_password,
-                role="Super Admin",
-                organization_id=org.id,
-                is_active=True,
-                is_verified=True,
-            )
-            db.add(superadmin_user)
-            await db.flush()
-
-            superadmin_role = await self.role_repository.create_role(
-                db,
-                name="Super Admin",
-                description="Protected global platform administrator role",
-                organization_id=None,
-                is_system_role=True,
-            )
-            await db.flush()
-            await self.role_repository.create_user_role_mapping(
-                db, user_id=superadmin_user.id, role_id=superadmin_role.id
-            )
-            await self.role_repository.seed_permissions(db, ALL_STANDARD_PERMISSIONS, commit=False)
-            await self._commit(db, "Failed to rebuild the protected administrator account")
-
-            return {
-                "message": f"Database reset complete. All 70 tables truncated. Protected user '{PROTECTED_SUPERADMIN_EMAIL}' preserved.",
-                "status": "success",
-            }
-        except Exception as e:
-            await db.rollback()
-            raise APIException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                message=f"Database reset failed: {str(e)}",
-            ) from e
+        raise APIException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            code="DATABASE_RESET_UNAVAILABLE",
+            message="Database reset requires an offline recovery procedure preserving the platform identity",
+        )
 
     async def list_backups(self) -> list:
         return []

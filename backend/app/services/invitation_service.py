@@ -8,7 +8,12 @@ from sqlalchemy import asc, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.permissions import ensure_can_assign_role, is_super_admin_role, is_super_admin_user
+from app.core.permissions import (
+    ensure_can_assign_role,
+    ensure_tenant_managed_user,
+    is_super_admin_role,
+    is_super_admin_user,
+)
 from app.core.security import create_access_token, get_password_hash
 from app.models import (
     AuditLog,
@@ -561,6 +566,14 @@ async def accept_organization_invitation(
 
     # 3. Find or Create User
     user = await db.scalar(select(User).where(User.email.ilike(email_clean)))
+    if user:
+        ensure_tenant_managed_user(user)
+    invited_role = await db.scalar(select(Role).where(
+        ((Role.id == inv.role_id) | (func.lower(Role.name) == (inv.role_id or "Admin").lower())),
+        ((Role.organization_id == org.id) | Role.organization_id.is_(None)),
+    ))
+    if not invited_role or is_super_admin_role(invited_role):
+        raise HTTPException(status_code=400, detail="Invitation role is not valid for organization membership")
     hashed_pwd = get_password_hash(payload.password)
 
     if user:

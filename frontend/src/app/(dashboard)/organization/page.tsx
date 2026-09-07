@@ -1,5 +1,7 @@
 ﻿'use client';
 
+import { useAuth } from '@/providers/auth-provider';
+import { PlatformOrganizations } from '@/components/features/organizations/platform-organizations';
 import { ResponsiveSelect } from '@/components/common/responsive-select';
 
 import { getErrorMessage } from '@/lib/utils';
@@ -52,7 +54,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import OrganizationDetail from '@/components/features/organization/OrganizationDetail';
 
-export default function OrganizationPage() {
+function OrganizationSettingsPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
 
@@ -840,4 +842,9 @@ export default function OrganizationPage() {
       />
     </div>
   );
+}
+
+export default function OrganizationPage() {
+  const { user } = useAuth();
+  return user?.is_platform_admin ? <PlatformOrganizations /> : <OrganizationSettingsPage />;
 }

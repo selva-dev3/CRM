@@ -26,6 +26,19 @@ from app.models import (
 class AuthRepository:
     """DB query layer for the Auth domain. No business logic here."""
 
+    async def lock_platform_provisioning(self, db: AsyncSession) -> None:
+        from sqlalchemy import text
+
+        await db.execute(text("SELECT pg_advisory_xact_lock(7242310908)"))
+
+    async def get_platform_admin(self, db: AsyncSession) -> User | None:
+        result = await db.execute(select(User).where(User.is_platform_admin.is_(True)).with_for_update())
+        return result.scalar_one_or_none()
+
+    async def get_unique_email_owner(self, db: AsyncSession, email: str) -> User | None:
+        result = await db.execute(select(User).where(User.email.ilike(email)).with_for_update())
+        return result.scalar_one_or_none()
+
     async def get_user_by_email(self, db: AsyncSession, email: str) -> User | None:
         result = await db.execute(select(User).where(User.email.ilike(email)))
         return result.scalars().first()

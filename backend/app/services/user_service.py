@@ -6,7 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.errors import APIException, NotFoundError
 from app.core.logging import get_logger
-from app.core.permissions import ensure_can_assign_role, is_super_admin_role, is_super_admin_user
+from app.core.permissions import (
+    ensure_can_assign_role,
+    ensure_tenant_managed_user,
+    is_super_admin_role,
+    is_super_admin_user,
+)
 from app.core.security import generate_random_code, get_password_hash
 from app.models import Role, User, UserRole
 from app.repositories.organization_repository import OrganizationRepository
@@ -32,7 +37,7 @@ def user_to_dict(user: User) -> dict:
         "name": user.name,
         "email": user.email,
         "role": user.role,
-        "organization_id": user.organization_id,
+        "organization_id": user.organization_id or "",
         "is_active": user.is_active,
         "created_at": str(user.created_at),
     }
@@ -353,6 +358,9 @@ class UserService:
         self, db: AsyncSession, user_id: str, payload: UserUpdate, *, current_user: User
     ) -> dict:
         user = await self._require_same_org_user(db, user_id, current_user)
+        ensure_tenant_managed_user(user)
+        if not user.organization_id:
+            raise NotFoundError(message="Organization user not found")
         if payload.name:
             user.name = payload.name
         if payload.role:
@@ -370,6 +378,7 @@ class UserService:
 
     async def delete_user(self, db: AsyncSession, user_id: str, *, current_user: User) -> dict:
         user = await self._require_same_org_user(db, user_id, current_user)
+        ensure_tenant_managed_user(user)
         if user.email.lower() == PROTECTED_SUPERADMIN_EMAIL:
             raise APIException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -409,6 +418,7 @@ class UserService:
 
     async def deactivate_user(self, db: AsyncSession, user_id: str, *, current_user: User) -> dict:
         user = await self._require_same_org_user(db, user_id, current_user)
+        ensure_tenant_managed_user(user)
         if user.email.lower() == PROTECTED_SUPERADMIN_EMAIL:
             raise APIException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -479,6 +489,8 @@ class UserService:
     async def bulk_delete_users(
         self, db: AsyncSession, ids: list[str], *, current_user: User
     ) -> dict:
+        if not current_user.organization_id:
+            raise APIException(status_code=403, message="Select an organization first")
         # Tenant scope: only ids belonging to the caller's organization may be
         # deleted; foreign-org ids are ignored entirely (not an error, matching
         # idempotent bulk semantics).
@@ -492,6 +504,7 @@ class UserService:
             for item in users
             if item.is_active
             and item.email.lower() != PROTECTED_SUPERADMIN_EMAIL
+            and getattr(item, "is_platform_admin", False) is not True
             and item.id != current_user.id
         ]
         active_users = await self.repository.lock_active_by_org(
@@ -551,7 +564,7 @@ class UserService:
         the existence of users in other organizations.
         """
         user = await self.require_user(db, user_id)
-        if getattr(current_user, "organization_id", None) != user.organization_id:
+        if not user.organization_id or getattr(current_user, "organization_id", None) != user.organization_id:
             raise NotFoundError(message=f"User '{user_id}' not found")
         return user
 
@@ -575,6 +588,8 @@ class UserService:
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 message="Quota target must not be negative.",
             )
+        if not user.organization_id:
+            raise NotFoundError(message="Organization user not found")
         await self.repository.upsert_quota(
             db,
             user_id=user.id,
@@ -597,6 +612,8 @@ class UserService:
     async def _ensure_not_last_admin(self, db: AsyncSession, user: User) -> None:
         if not user.is_active:
             return
+        if not user.organization_id:
+            raise NotFoundError(message="Organization user not found")
         active_users = await self.repository.lock_active_by_org(db, user.organization_id)
         role_values = {item.role for item in active_users if item.role}
         role_map = await self.repository.role_name_map(db, role_values)

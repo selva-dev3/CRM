@@ -80,7 +80,7 @@ async def get_current_user(
             parsed_scopes = json.loads(api_key.scopes or "[]")
         except ValueError:
             parsed_scopes = (api_key.scopes or "").split(",")
-        user._api_key_scopes = {
+        user.__dict__["_api_key_scopes"] = {
             str(scope).strip().lower() for scope in parsed_scopes if str(scope).strip()
         }
         return user
@@ -126,19 +126,6 @@ async def get_current_user(
             message="User session is inactive or account has been removed",
         )
 
-    organization_id = getattr(user, "organization_id", None)
-    if not organization_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Authenticated user has no current organization",
-        )
-    organization = await db.get(Organization, organization_id)
-    if not organization or not organization.is_active or organization.status != "active":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User organization is inactive or unavailable",
-        )
-
     access_session = await db.get(UserSession, sha256(token.encode("utf-8")).hexdigest())
     if (
         access_session is None
@@ -150,7 +137,37 @@ async def get_current_user(
             detail="Session has been revoked. Please log in again.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    await apply_organization_context(db, user, request.headers.get("X-Organization-ID"))
     return user
+
+
+async def apply_organization_context(
+    db: AsyncSession, user: User, requested_organization_id: str | None
+) -> None:
+    """Authorize selection without writing organization membership to the database."""
+    platform_admin = getattr(user, "is_platform_admin", False) is True
+    if platform_admin:
+        user.__dict__.pop("_request_organization_id", None)
+    organization_id = requested_organization_id or user.organization_id
+    if requested_organization_id and not platform_admin and requested_organization_id != user.organization_id:
+        raise ForbiddenError(message="You cannot select another organization")
+    if not organization_id:
+        if platform_admin:
+            return
+        raise ForbiddenError(message="Authenticated user has no current organization")
+    organization = await db.get(Organization, organization_id)
+    if not organization or not organization.is_active or organization.status != "active":
+        raise ForbiddenError(message="Selected organization is inactive or unavailable")
+    if platform_admin:
+        user.__dict__["_request_organization_id"] = organization_id
+
+
+async def require_platform_admin(current_user: User = Depends(get_current_user)) -> User:
+    if getattr(current_user, "is_platform_admin", False) is not True or getattr(
+        current_user, "_api_key_scopes", None
+    ) is not None:
+        raise ForbiddenError(message="Platform Super Admin access is required")
+    return current_user
 
 
 async def get_current_user_optional(
@@ -175,7 +192,7 @@ async def get_valid_org_id(db: AsyncSession, current_user: User | None = None) -
     if current_user and getattr(current_user, "organization_id", None):
         user_org_id = current_user.organization_id
         res = await db.execute(select(Organization).where(Organization.id == user_org_id))
-        if res.scalars().first():
+        if user_org_id and res.scalars().first():
             return user_org_id
     raise ForbiddenError(message="Authenticated user has no valid current organization")
 

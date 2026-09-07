@@ -1,23 +1,65 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    func,
+    text,
+)
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.sql import SQLColumnExpression
 
 from app.db.base import Base
 
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        Index("uq_users_normalized_email", text("lower(btrim(email))"), unique=True),
+        Index(
+            "uq_users_platform_admin",
+            "is_platform_admin",
+            unique=True,
+            postgresql_where=text("is_platform_admin"),
+        ),
+        CheckConstraint(
+            "(is_platform_admin AND organization_id IS NULL AND is_active) OR "
+            "(NOT is_platform_admin AND organization_id IS NOT NULL)",
+            name="ck_users_platform_scope",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(100), default="Sales Executive")
-    organization_id: Mapped[str] = mapped_column(
-        String, ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    is_platform_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    _organization_id: Mapped[str | None] = mapped_column(
+        "organization_id", String, ForeignKey("organizations.id", ondelete="CASCADE"), index=True
     )
+
+    @hybrid_property
+    def organization_id(self) -> str | None:
+        """Effective request context; the platform account's stored membership stays NULL."""
+        return self.__dict__.get("_request_organization_id", self._organization_id)
+
+    @organization_id.inplace.setter
+    def _set_organization_id(self, value: str | None) -> None:
+        self._organization_id = value
+
+    @organization_id.inplace.expression
+    @classmethod
+    def _organization_id_expression(cls) -> SQLColumnExpression[str | None]:
+        return cls._organization_id
+
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     two_factor_secret: Mapped[str | None] = mapped_column(String(512), nullable=True)

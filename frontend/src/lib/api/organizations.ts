@@ -3,6 +3,13 @@ import { apiClient } from '@/lib/api/client';
 import { notifyAuthUserChanged } from '@/hooks/use-has-permission';
 import { persistSessionUser } from '@/lib/auth-session';
 
+export function usePlatformOrganizationsQuery(page: number, limit = 20) {
+  return useQuery<OrganizationItem[]>({
+    queryKey: ['platform-organizations', page, limit],
+    queryFn: ({ signal }) => apiClient.get(`/organizations/all?limit=${limit}&offset=${(page - 1) * limit}`, { signal }),
+  });
+}
+
 export interface OrganizationItem {
   id: string;
   name: string;

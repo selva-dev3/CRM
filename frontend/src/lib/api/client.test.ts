@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setOrganizationContext } from '@/lib/organization-context';
 import {
   API_REQUEST_TIMEOUT_MS,
   apiClient,
@@ -12,6 +13,27 @@ import {
 describe('apiClient cookie authentication', () => {
   beforeEach(() => {
     markAuthSessionActive();
+  });
+
+  it('uses the same cookie session while changing organization context', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true, status: 200, headers: new Headers(), json: async () => ([]),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    for (const organization of ['org-a', 'org-b']) {
+      setOrganizationContext(organization);
+      await apiClient.get('/roles');
+      const options = fetchMock.mock.lastCall?.[1] as RequestInit;
+      expect(new Headers(options.headers).get('X-Organization-ID')).toBe(organization);
+      expect(options.credentials).toBe('include');
+    }
+    await apiClient.get('/organizations/all');
+    expect(new Headers(fetchMock.mock.lastCall?.[1].headers).has('X-Organization-ID')).toBe(false);
+    await apiClient.get('/auth/me');
+    expect(new Headers(fetchMock.mock.lastCall?.[1].headers).get('X-Organization-ID')).toBe('org-b');
+    setOrganizationContext(null);
+    await apiClient.get('/roles');
+    expect(new Headers(fetchMock.mock.lastCall?.[1].headers).has('X-Organization-ID')).toBe(false);
   });
 
   it('does not refresh, clear the CRM session, or redirect on invalid public invoice tokens', async () => {

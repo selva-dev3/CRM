@@ -8,6 +8,7 @@ import { AIChatAssistant } from '@/components/features/ai/ai-chat-assistant';
 import { GlobalSearchModal } from '@/components/common/global-search-modal';
 import { NotificationBell } from '@/components/features/notifications/notification-bell';
 import { ApiError } from '@/lib/api/client';
+import { getOrganizationContext, setOrganizationContext } from '@/lib/organization-context';
 import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
 import { PERMISSIONS } from '@/lib/permissions';
 import { useHasPermission } from '@/hooks/use-has-permission';
@@ -87,7 +88,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   } = useAuth();
   const [authError, setAuthError] = useState<string | null>(null);
   const [verificationAttempt, setVerificationAttempt] = useState(0);
-  const { data: currentOrg } = useCurrentOrganizationQuery(authStatus === 'authenticated');
+  const { data: currentOrg } = useCurrentOrganizationQuery(authStatus === 'authenticated' && Boolean(userProfile?.organization_id));
   const { permissions, hasPermission } = useHasPermission();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
@@ -142,11 +143,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     let active = true;
     void verifySession()
-      .then(() => {
+      .then((user) => {
         if (!active) return;
+        if (user.is_platform_admin && !getOrganizationContext() && pathname !== '/organization') router.replace('/organization');
       })
       .catch((error: unknown) => {
         if (!active) return;
+        if (error instanceof ApiError && error.status === 403 && getOrganizationContext()) {
+          setOrganizationContext(null);
+          window.location.assign('/organization');
+          return;
+        }
         if (error instanceof ApiError && error.status !== 401) {
           setAuthError(error.message);
           return;
@@ -156,7 +163,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return () => {
       active = false;
     };
-  }, [router, verificationAttempt, verifySession]);
+  }, [pathname, router, verificationAttempt, verifySession]);
 
   const closeMobileMenu = useCallback(() => setIsMobileMenuOpen(false), []);
   const closeSearch = useCallback(() => setIsSearchOpen(false), []);
@@ -221,6 +228,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const sidebarBody = (
     <>
       <nav className="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-thin">
+        {userProfile.is_platform_admin && <Button asChild variant="outline" className="w-full"><Link href="/organization" onClick={closeMobileMenu}>Switch organization</Link></Button>}
         {visibleSections.map((section, idx: number) => {
           const hasTitle = Boolean(section.title);
           const sectionKey = section.title || `section-${idx}`;
@@ -294,7 +302,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
           <div className="flex flex-col min-w-0 text-left">
             <span className="truncate group-hover:text-blue-600 transition font-bold text-xs text-slate-900 leading-tight">
-              {currentOrg?.name || 'Organization'}
+              {currentOrg?.name || (userProfile.is_platform_admin ? 'Global administration' : 'Organization')}
             </span>
             <span className="text-[10px] font-semibold text-blue-600 leading-tight truncate">
               Role: {userProfile.role}
@@ -382,7 +390,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </button>
 
             {/* Notifications Bell */}
-            {hasPermission(PERMISSIONS.NOTIFICATIONS.READ) && <NotificationBell />}
+            {userProfile.organization_id && hasPermission(PERMISSIONS.NOTIFICATIONS.READ) && <NotificationBell />}
 
             {/* Logout Button */}
             <button
@@ -400,15 +408,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* Dynamic Page View */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-50">
-          {!isForbidden && children}
+          {!isForbidden && (!userProfile.is_platform_admin || userProfile.organization_id || pathname === '/organization') && children}
         </main>
       </div>
 
       {/* Global Command Palette Search Modal */}
-      <GlobalSearchModal isOpen={isSearchOpen} onClose={closeSearch} />
+      {userProfile.organization_id && <GlobalSearchModal isOpen={isSearchOpen} onClose={closeSearch} />}
 
       {/* Global AI Assistant Floating Widget */}
-      {pathname !== '/ai' && <AIChatAssistant />}
+      {userProfile.organization_id && pathname !== '/ai' && <AIChatAssistant />}
     </div>
   );
 }

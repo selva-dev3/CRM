@@ -9,6 +9,7 @@ from app.core.errors import APIException, ForbiddenError, NotFoundError
 from app.core.logging import get_logger
 from app.core.permissions import (
     ensure_can_assign_role,
+    ensure_tenant_managed_user,
     is_global_super_admin_role,
     is_super_admin_role,
     is_super_admin_role_name,
@@ -1307,13 +1308,15 @@ class RoleService:
         self, db: AsyncSession, user_id: str, role_id: str, current_user: User
     ) -> dict:
         u = await self.repository.get_user_by_id_or_email(db, user_id)
+        if u:
+            ensure_tenant_managed_user(u)
         r = await self.repository.get_role_by_id_or_name(db, role_id)
         if not u or u.organization_id != self._current_org_id(current_user):
             raise NotFoundError(message=f"User '{user_id}' not found")
         if not r:
             raise NotFoundError(message=f"Role '{role_id}' not found")
         self._ensure_assignable_role_ownership(r, current_user)
-        # The super_admin role may only be assigned by a super_admin actor (403 otherwise).
+        # Platform identity can only be provisioned through the offline service.
         if is_super_admin_role(r):
             ensure_can_assign_role(
                 actor_is_super_admin=await is_super_admin_user(db, current_user),

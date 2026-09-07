@@ -1,3 +1,4 @@
+import os
 from typing import Literal
 
 from pydantic import field_validator
@@ -179,4 +180,4 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(case_sensitive=True, env_file=".env", extra="ignore")
 
 
-settings = Settings()
+settings = Settings(_env_file=None) if os.getenv("CRM_DISABLE_DOTENV") == "1" else Settings()
