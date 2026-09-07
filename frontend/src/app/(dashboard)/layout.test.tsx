@@ -25,7 +25,7 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('@/providers/auth-provider', () => ({
-  useAuth: () => ({ ...authState, verifySession, logout }),
+  useAuth: () => ({ ...authState, verifySession, logout, isLoggingOut: false }),
   useOptionalAuth: () => null,
 }));
 
@@ -103,5 +103,20 @@ describe('DashboardLayout', () => {
     await waitFor(() => {
       expect(screen.queryByRole('dialog', { name: 'CRM navigation' })).not.toBeInTheDocument();
     });
+  });
+
+  it('replaces the protected route after logout', async () => {
+    const user = userEvent.setup();
+    let releaseLogout: (() => void) | undefined;
+    logout.mockReturnValue(new Promise<void>((resolve) => {
+      releaseLogout = resolve;
+    }));
+    render(<DashboardLayout>Page content</DashboardLayout>);
+
+    await user.click(await screen.findByRole('button', { name: 'Logout' }));
+
+    await waitFor(() => expect(routerReplace).toHaveBeenCalledWith('/login'));
+    expect(routerPush).not.toHaveBeenCalledWith('/login');
+    releaseLogout?.();
   });
 });

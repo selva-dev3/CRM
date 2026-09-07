@@ -78,7 +78,13 @@ const ICON_MAP: Record<string, React.ElementType> = {
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { status: authStatus, user: userProfile, verifySession, logout } = useAuth();
+  const {
+    status: authStatus,
+    user: userProfile,
+    verifySession,
+    logout,
+    isLoggingOut,
+  } = useAuth();
   const [authError, setAuthError] = useState<string | null>(null);
   const [verificationAttempt, setVerificationAttempt] = useState(0);
   const { data: currentOrg } = useCurrentOrganizationQuery(authStatus === 'authenticated');
@@ -163,8 +169,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const handleLogout = async () => {
     try {
-      await logout();
-      router.push('/login');
+      const logoutRequest = logout();
+      router.replace('/login');
+      await logoutRequest;
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : 'Unable to sign out. Please try again.');
     }
@@ -381,11 +388,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <button
               type="button"
               onClick={handleLogout}
+              disabled={isLoggingOut}
               title="Sign Out"
-              className="p-2 rounded-xl text-slate-700 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer flex items-center gap-1.5 text-xs font-bold border border-transparent hover:border-rose-200"
+              className="p-2 rounded-xl text-slate-700 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer flex items-center gap-1.5 text-xs font-bold border border-transparent hover:border-rose-200 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <LogOut className="w-4 h-4" />
-              <span className="hidden sm:inline">Logout</span>
+              {isLoggingOut ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogOut className="w-4 h-4" />}
+              <span className="hidden sm:inline">{isLoggingOut ? 'Logging out…' : 'Logout'}</span>
             </button>
           </div>
         </header>

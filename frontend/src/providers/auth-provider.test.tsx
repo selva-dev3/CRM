@@ -3,6 +3,7 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthProvider, useAuth } from './auth-provider';
+import type { CurrentUserResponse } from '@/lib/api/auth';
 import { AUTH_SESSION_BROADCAST_KEY } from '@/lib/auth-session';
 
 const mocks = vi.hoisted(() => ({
@@ -21,8 +22,10 @@ function Consumer() {
     <div>
       <span>{auth.status}</span>
       <span>{auth.user?.email ?? 'no-user'}</span>
+      <span>{auth.isLoggingOut ? 'logging-out' : 'idle'}</span>
       <button type="button" onClick={() => auth.setSession({ id: 'user-1', name: 'Alex', email: 'alex@crm.com', role: 'Admin', permissions: [] }, true)}>Set session</button>
       <button type="button" onClick={() => void auth.logout().catch(() => undefined)}>Logout</button>
+      <button type="button" onClick={() => void auth.verifySession().catch(() => undefined)}>Verify</button>
     </div>
   );
 }
@@ -78,14 +81,67 @@ describe('AuthProvider', () => {
     expect(screen.getByText('no-user')).toBeInTheDocument();
   });
 
-  it('does not clear local state when backend logout fails', async () => {
+  it('clears local state when backend logout fails', async () => {
     const user = userEvent.setup();
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(['contacts'], [{ id: 'contact-1' }]);
     mocks.logoutApi.mockRejectedValue(new Error('Network unavailable'));
-    renderProvider();
+    renderProvider(queryClient);
     await user.click(screen.getByRole('button', { name: 'Set session' }));
     await user.click(screen.getByRole('button', { name: 'Logout' }));
 
-    expect(screen.getByText('authenticated')).toBeInTheDocument();
-    expect(sessionStorage.getItem('user')).toContain('alex@crm.com');
+    await waitFor(() => expect(screen.getByText('unauthenticated')).toBeInTheDocument());
+    expect(queryClient.getQueryData(['contacts'])).toBeUndefined();
+    expect(sessionStorage.getItem('user')).toBeNull();
+    expect(localStorage.getItem('user')).toBeNull();
+  });
+
+  it('clears only the current user pending session operations on logout', async () => {
+    const user = userEvent.setup();
+    sessionStorage.setItem('pending-invoice-payment:user-1:invoice-1', '{}');
+    sessionStorage.setItem('subscription-checkout:user-1:org-1', '{}');
+    sessionStorage.setItem('pending-invoice-payment:user-2:invoice-2', '{}');
+    sessionStorage.setItem('unrelated-session-state', 'keep');
+    renderProvider();
+
+    await user.click(screen.getByRole('button', { name: 'Set session' }));
+    await user.click(screen.getByRole('button', { name: 'Logout' }));
+
+    expect(sessionStorage.getItem('pending-invoice-payment:user-1:invoice-1')).toBeNull();
+    expect(sessionStorage.getItem('subscription-checkout:user-1:org-1')).toBeNull();
+    expect(sessionStorage.getItem('pending-invoice-payment:user-2:invoice-2')).toBe('{}');
+    expect(sessionStorage.getItem('unrelated-session-state')).toBe('keep');
+  });
+
+  it('shares one logout operation across duplicate calls', async () => {
+    let releaseLogout: (() => void) | undefined;
+    mocks.logoutApi.mockReturnValue(new Promise<void>((resolve) => {
+      releaseLogout = resolve;
+    }));
+    renderProvider();
+    await userEvent.click(screen.getByRole('button', { name: 'Set session' }));
+
+    const logoutButton = screen.getByRole('button', { name: 'Logout' });
+    await userEvent.click(logoutButton);
+    await waitFor(() => expect(screen.getByText('logging-out')).toBeInTheDocument());
+    await userEvent.click(logoutButton);
+    expect(mocks.logoutApi).toHaveBeenCalledOnce();
+
+    releaseLogout?.();
+    await waitFor(() => expect(screen.getByText('idle')).toBeInTheDocument());
+  });
+
+  it('does not restore a session from verification that started before logout', async () => {
+    let releaseVerification: ((user: CurrentUserResponse) => void) | undefined;
+    mocks.getCurrentUserApi.mockReturnValue(new Promise((resolve) => {
+      releaseVerification = resolve;
+    }));
+    renderProvider();
+    await userEvent.click(screen.getByRole('button', { name: 'Verify' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Logout' }));
+
+    releaseVerification?.({ id: 'user-1', name: 'Alex', email: 'alex@crm.com', role: 'Admin', permissions: [] });
+    await waitFor(() => expect(screen.getByText('unauthenticated')).toBeInTheDocument());
+    expect(screen.getByText('no-user')).toBeInTheDocument();
   });
 });
