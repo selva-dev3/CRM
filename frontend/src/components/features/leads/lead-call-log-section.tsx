@@ -3,15 +3,15 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useQueryClient } from '@tanstack/react-query';
 import { Loader2, Pencil, PhoneCall, Plus, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 
 import { ModalShell } from '@/components/common/modal-shell';
+import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { ResponsiveSelect } from '@/components/common/responsive-select';
 import { Alert, AlertDescription, Button, Card, Input, Label } from '@/components/ui';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import {
   deleteLeadCallApi,
@@ -118,6 +118,36 @@ export function LeadCallLogSection({
     defaultValues: defaultValues(),
   });
   const followUpRequired = useWatch({ control: form.control, name: 'follow_up_required' });
+  const columns = useMemo<readonly DataTableColumn<LeadCallLogItem>[]>(() => [
+    {
+      id: 'call',
+      header: 'Call',
+      cell: (call) => (
+        <div className="font-bold text-slate-900">
+          <p>{call.subject || `${call.call_type ?? 'Outbound'} Call`}</p>
+          <p className="text-[10px] font-medium text-slate-500">{call.call_type}</p>
+        </div>
+      ),
+    },
+    { id: 'outcome', header: 'Outcome', cell: (call) => call.disposition || 'Not recorded' },
+    { id: 'duration', header: 'Duration', cell: (call) => `${Math.floor((call.duration_seconds ?? 0) / 60)}m ${(call.duration_seconds ?? 0) % 60}s` },
+    { id: 'summary', header: 'Summary', cell: (call) => call.notes || 'No notes', className: 'max-w-64 whitespace-normal' },
+    { id: 'contact', header: 'Contact', cell: () => leadContactName },
+    { id: 'timestamp', header: 'Date & Time', cell: (call) => call.timestamp ? formatDateTime(call.timestamp, { timeZone }) : 'Unknown' },
+    { id: 'creator', header: 'Created By', cell: (call) => call.created_by_name || 'Legacy record' },
+    {
+      id: 'follow-up',
+      header: 'Follow-up',
+      cell: (call) => (
+        <div>
+          {call.follow_up_required
+            ? call.follow_up_at ? formatDateTime(call.follow_up_at, { timeZone }) : 'Required'
+            : 'None'}
+          {call.next_action && <p className="mt-1 text-[10px] text-slate-500">{call.next_action}</p>}
+        </div>
+      ),
+    },
+  ], [leadContactName, timeZone]);
 
   const refreshCallViews = async (): Promise<void> => {
     await Promise.all([
@@ -243,64 +273,24 @@ export function LeadCallLogSection({
             <Button type="button" variant="outline" size="sm" onClick={onRetry}>Retry</Button>
           </AlertDescription>
         </Alert>
-      ) : isLoading ? (
-        <div className="flex items-center justify-center gap-2 p-8 text-xs font-bold text-slate-500">
-          <Loader2 className="size-4 animate-spin text-indigo-600" /> Loading call logs...
-        </div>
-      ) : calls.length === 0 ? (
-        <div className="space-y-2 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
-          <PhoneCall className="mx-auto size-8 text-slate-300" />
-          <p className="text-xs font-bold text-slate-600">No call logs recorded yet.</p>
-          <p className="text-[11px] text-slate-400">Use Log Call to record a phone conversation.</p>
-        </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-slate-200">
-          <Table className="min-w-[900px] text-xs">
-            <TableHeader>
-              <TableRow className="bg-slate-50 text-[11px] font-black uppercase tracking-wider text-slate-700">
-                <TableHead>Call</TableHead><TableHead>Outcome</TableHead><TableHead>Duration</TableHead>
-                <TableHead>Summary</TableHead><TableHead>Contact</TableHead><TableHead>Date & Time</TableHead>
-                <TableHead>Created By</TableHead><TableHead>Follow-up</TableHead><TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {calls.map((call) => (
-                <TableRow key={call.id}>
-                  <TableCell className="font-bold text-slate-900">
-                    <p>{call.subject || `${call.call_type ?? 'Outbound'} Call`}</p>
-                    <p className="text-[10px] font-medium text-slate-500">{call.call_type}</p>
-                  </TableCell>
-                  <TableCell>{call.disposition || 'Not recorded'}</TableCell>
-                  <TableCell>{Math.floor((call.duration_seconds ?? 0) / 60)}m {(call.duration_seconds ?? 0) % 60}s</TableCell>
-                  <TableCell className="max-w-64 whitespace-normal">{call.notes || 'No notes'}</TableCell>
-                  <TableCell>{leadContactName}</TableCell>
-                  <TableCell>{call.timestamp ? formatDateTime(call.timestamp, { timeZone }) : 'Unknown'}</TableCell>
-                  <TableCell>{call.created_by_name || 'Legacy record'}</TableCell>
-                  <TableCell>
-                    {call.follow_up_required
-                      ? call.follow_up_at ? formatDateTime(call.follow_up_at, { timeZone }) : 'Required'
-                      : 'None'}
-                    {call.next_action && <p className="mt-1 text-[10px] text-slate-500">{call.next_action}</p>}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex justify-end gap-1">
-                      <PermissionGate permission={PERMISSIONS.CALLS.UPDATE}>
-                        <Button type="button" variant="ghost" size="icon-sm" aria-label={`Edit ${call.subject || 'call log'}`} onClick={() => openEdit(call)}>
-                          <Pencil className="size-3.5" />
-                        </Button>
-                      </PermissionGate>
-                      <PermissionGate permission={PERMISSIONS.CALLS.DELETE}>
-                        <Button type="button" variant="ghost" size="icon-sm" aria-label={`Delete ${call.subject || 'call log'}`} onClick={() => openDelete(call)} className="text-rose-600 hover:text-rose-700">
-                          <Trash2 className="size-3.5" />
-                        </Button>
-                      </PermissionGate>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <DataTable
+          columns={columns}
+          data={calls}
+          getRowKey={(call) => call.id}
+          emptyTitle="No call logs recorded yet"
+          emptyDescription="Use Log Call to record a phone conversation."
+          isLoading={isLoading}
+          tableClassName="min-w-[900px]"
+          className="shadow-none"
+          actionVariant="inline"
+          actionColumnClassName="w-[180px]"
+          pagination={{ pageSize: 15 }}
+          actions={(call) => [
+            { id: 'edit', label: 'Edit', ariaLabel: `Edit ${call.subject || 'call log'}`, icon: <Pencil className="size-3.5" />, permission: PERMISSIONS.CALLS.UPDATE, onClick: openEdit },
+            { id: 'delete', label: 'Delete', ariaLabel: `Delete ${call.subject || 'call log'}`, icon: <Trash2 className="size-3.5" />, permission: PERMISSIONS.CALLS.DELETE, variant: 'destructive', onClick: openDelete },
+          ]}
+        />
       )}
 
       <ModalShell

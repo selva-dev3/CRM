@@ -136,4 +136,121 @@ describe('DataTable selection', () => {
     expect(onEdit).toHaveBeenCalledWith(row);
     expect(onRowClick).not.toHaveBeenCalled();
   });
+
+  it('preserves compact table widths and disabled inline actions', async () => {
+    const user = userEvent.setup();
+    const onOpen = vi.fn();
+
+    render(
+      <DataTable
+        columns={columns}
+        data={[{ id: 'lead-1', name: 'Jane Doe' }]}
+        getRowKey={(item) => item.id}
+        emptyTitle="No rows"
+        emptyDescription="No rows found"
+        tableClassName="min-w-[560px]"
+        actionVariant="inline"
+        actions={[{
+          id: 'open',
+          label: 'Opening…',
+          ariaLabel: 'Open Jane Doe',
+          disabled: true,
+          isLoading: true,
+          onClick: onOpen,
+        }]}
+      />,
+    );
+
+    expect(screen.getByRole('table')).toHaveClass('min-w-[560px]');
+    expect(screen.getByRole('columnheader', { name: 'Actions' })).toBeInTheDocument();
+    const action = screen.getByRole('button', { name: 'Open Jane Doe' });
+    expect(action).toBeDisabled();
+    expect(action).toHaveAttribute('aria-busy', 'true');
+    await user.click(action);
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it('preserves inline action focus when its loading label changes', () => {
+    const row = { id: 'lead-1', name: 'Jane Doe' };
+    const { rerender } = render(
+      <DataTable
+        columns={columns}
+        data={[row]}
+        getRowKey={(item) => item.id}
+        emptyTitle="No rows"
+        emptyDescription="No rows found"
+        actionVariant="inline"
+        actions={[{ id: 'open', label: 'Open', ariaLabel: 'Open Jane Doe', onClick: vi.fn() }]}
+      />,
+    );
+
+    screen.getByRole('button', { name: 'Open Jane Doe' }).focus();
+    rerender(
+      <DataTable
+        columns={columns}
+        data={[row]}
+        getRowKey={(item) => item.id}
+        emptyTitle="No rows"
+        emptyDescription="No rows found"
+        actionVariant="inline"
+        actions={[{ id: 'open', label: 'Opening…', ariaLabel: 'Open Jane Doe', isLoading: true, onClick: vi.fn() }]}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Open Jane Doe' })).toHaveFocus();
+  });
+
+  it('announces loading state and hides decorative skeleton rows', () => {
+    render(
+      <DataTable
+        columns={columns}
+        data={[]}
+        getRowKey={(item) => item.id}
+        emptyTitle="No rows"
+        emptyDescription="No rows found"
+        isLoading
+        loadingLabel="Loading leads"
+      />,
+    );
+
+    expect(screen.getByRole('status')).toHaveTextContent('Loading leads');
+    expect(screen.getByRole('status').parentElement).toHaveAttribute('aria-busy', 'true');
+    expect(document.querySelector('tbody')).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('returns to the last available page when uncontrolled data shrinks', async () => {
+    const user = userEvent.setup();
+    const rows = Array.from({ length: 16 }, (_, index) => ({
+      id: `lead-${index + 1}`,
+      name: `Lead ${index + 1}`,
+    }));
+
+    const { rerender } = render(
+      <DataTable
+        columns={columns}
+        data={rows}
+        getRowKey={(item) => item.id}
+        emptyTitle="No rows"
+        emptyDescription="No rows found"
+        pagination={{ pageSize: 15 }}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    expect(screen.getByText('Lead 16')).toBeInTheDocument();
+
+    rerender(
+      <DataTable
+        columns={columns}
+        data={rows.slice(0, 15)}
+        getRowKey={(item) => item.id}
+        emptyTitle="No rows"
+        emptyDescription="No rows found"
+        pagination={{ pageSize: 15 }}
+      />,
+    );
+
+    expect(screen.getByText('Lead 1')).toBeInTheDocument();
+    expect(screen.queryByText('No rows')).not.toBeInTheDocument();
+  });
 });

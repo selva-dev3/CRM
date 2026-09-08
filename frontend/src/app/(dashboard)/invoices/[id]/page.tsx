@@ -8,7 +8,7 @@ import { formatDate } from '@/lib/formatters/date';
 import { useHasPermission } from '@/hooks/use-has-permission';
 import { PERMISSIONS } from '@/lib/permissions';
 import { getErrorMessage } from '@/lib/utils';
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -27,8 +27,8 @@ import {
 } from 'lucide-react';
 import { ActionMenu } from '@/components/common/action-menu';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ModalShell } from '@/components/common/modal-shell';
 import {
   useInvoiceQuery,
@@ -39,7 +39,7 @@ import {
 } from '@/lib/api/invoices';
 import { InvoiceWorkflowActions } from '@/components/features/invoices/InvoiceWorkflowActions';
 import { InvoiceSummary } from '@/components/features/invoices/InvoiceSummary';
-import { usePaymentsQuery } from '@/lib/api/payments';
+import { usePaymentsQuery, type PaymentItem } from '@/lib/api/payments';
 
 export default function InvoiceDetailPage() {
   const { hasPermission } = useHasPermission();
@@ -69,6 +69,14 @@ export default function InvoiceDetailPage() {
   // Toast / Alert notifications
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const paymentColumns = useMemo<readonly DataTableColumn<PaymentItem>[]>(() => [
+    { id: 'payment', header: 'Payment ID', cell: (payment) => <span className="font-mono">{payment.payment_number}</span> },
+    { id: 'amount', header: 'Amount', cell: (payment) => <span className="font-semibold">{payment.currency} {Number(payment.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span> },
+    { id: 'method', header: 'Method', cell: (payment) => payment.payment_type || 'Unavailable' },
+    { id: 'status', header: 'Status', cell: (payment) => payment.status },
+    { id: 'notes', header: 'Notes', cell: (payment) => <span className="block max-w-[180px] truncate font-mono" title={payment.notes || undefined}>{payment.notes || '—'}</span> },
+    { id: 'paid', header: 'Paid date', cell: (payment) => payment.payment_date || payment.paid_at || payment.created_at || '—' },
+  ], []);
 
   const handleSendEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -284,7 +292,17 @@ export default function InvoiceDetailPage() {
           <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-900"><CreditCard className="h-4 w-4 text-indigo-600" /> Recorded payments</h2>
           <span className="text-xs text-slate-500">Manual payment receipts</span>
         </div>
-        {paymentsQuery.isLoading ? <p className="text-sm text-slate-500">Loading payment records…</p> : paymentsQuery.isError ? <div className="flex items-center justify-between gap-3 text-sm text-rose-700"><span>Payment records could not be loaded.</span><button type="button" className="font-semibold underline" onClick={() => void paymentsQuery.refetch()}>Retry</button></div> : paymentsQuery.data?.length ? <div className="overflow-x-auto"><Table className="min-w-[680px] text-xs"><TableHeader><TableRow><TableHead>Payment ID</TableHead><TableHead>Amount</TableHead><TableHead>Method</TableHead><TableHead>Status</TableHead><TableHead>Notes</TableHead><TableHead>Paid date</TableHead></TableRow></TableHeader><TableBody>{paymentsQuery.data.map((payment) => <TableRow key={payment.id}><TableCell className="font-mono">{payment.payment_number}</TableCell><TableCell className="font-semibold">{payment.currency} {Number(payment.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell><TableCell>{payment.payment_type || 'Unavailable'}</TableCell><TableCell>{payment.status}</TableCell><TableCell className="max-w-[180px] truncate font-mono" title={payment.notes || undefined}>{payment.notes}</TableCell><TableCell>{payment.payment_date || payment.paid_at || payment.created_at || '—'}</TableCell></TableRow>)}</TableBody></Table></div> : <p className="text-sm text-slate-500">No payments have been recorded for this invoice.</p>}
+        {paymentsQuery.isError ? <div className="flex items-center justify-between gap-3 text-sm text-rose-700"><span>Payment records could not be loaded.</span><button type="button" className="font-semibold underline" onClick={() => void paymentsQuery.refetch()}>Retry</button></div> : <DataTable
+          columns={paymentColumns}
+          data={paymentsQuery.data ?? []}
+          getRowKey={(payment) => payment.id}
+          emptyTitle="No payments recorded"
+          emptyDescription="No payments have been recorded for this invoice."
+          isLoading={paymentsQuery.isLoading}
+          tableClassName="min-w-[680px]"
+          className="shadow-none"
+          pagination={{ pageSize: 15 }}
+        />}
       </section>
 
       {/* Send Email Modal */}

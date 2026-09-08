@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({
   query: vi.fn(), get: vi.fn(), cancel: vi.fn(), clear: vi.fn(), select: vi.fn(),
   create: vi.fn(), remove: vi.fn(), auth: vi.fn(),
 }));
-vi.mock('@/providers/auth-provider', () => ({ useAuth: mocks.auth }));
+vi.mock('@/providers/auth-provider', () => ({ useAuth: mocks.auth, useOptionalAuth: mocks.auth }));
 vi.mock('@/lib/api/organizations', () => ({
   usePlatformOrganizationsQuery: mocks.query,
   useCreateOrganizationMutation: () => ({ mutateAsync: mocks.create, isPending: false }),
