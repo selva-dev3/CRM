@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import APIException, ForbiddenError, NotFoundError
 from app.models import Organization, OrganizationSubscription, SubscriptionPlan, User
 from app.repositories.organization_repository import OrganizationRepository
+from app.repositories.user_repository import UserRepository
 from app.services.organization_service import OrganizationDomainService, org_to_dict
 
 
@@ -234,6 +235,71 @@ async def test_remove_member_missing_or_cross_tenant_user_is_not_found():
         await service.remove_member(db, "ghost-user", actor)
 
     repo.get_user_by_id.assert_awaited_once_with(db, user_id="ghost-user", organization_id="org-1")
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_list_members_displays_authoritative_mapped_role():
+    member = User(
+        id="member-1",
+        name="Member",
+        email="member@example.com",
+        organization_id="org-1",
+        role="stale-role",
+        is_active=True,
+    )
+    repo: Any = OrganizationRepository()
+    repo.get_by_id = AsyncMock(return_value=_make_org())
+    repo.list_members = AsyncMock(return_value=[member])
+    user_repo: Any = UserRepository()
+    user_repo.effective_role_names_for_users = AsyncMock(
+        return_value={member.id: "Admin"}
+    )
+    service = OrganizationDomainService(repository=repo, user_repository=user_repo)
+
+    result = await service.list_members(AsyncMock(spec=AsyncSession), _actor())
+
+    assert result[0]["role"] == "Admin"
+
+
+@pytest.mark.asyncio
+async def test_remove_member_rejects_last_admin_and_preserves_user(monkeypatch):
+    target = User(
+        id="admin-2",
+        name="Only Admin",
+        email="only-admin@example.com",
+        organization_id="org-1",
+        role="admin-role",
+        is_active=True,
+    )
+    repo: Any = OrganizationRepository()
+    repo.get_user_by_id = AsyncMock(return_value=target)
+    repo.delete_user = AsyncMock()
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    guard = AsyncMock(
+        side_effect=APIException(
+            status_code=409,
+            code="LAST_ADMIN_DEACTIVATION_FORBIDDEN",
+            message="last admin",
+        )
+    )
+    monkeypatch.setattr(
+        "app.services.organization_service.UserService._ensure_not_last_admin", guard
+    )
+    revoke = AsyncMock()
+    monkeypatch.setattr(
+        "app.services.organization_service.AuthRepository.revoke_all_user_sessions",
+        revoke,
+    )
+
+    with pytest.raises(APIException) as exc_info:
+        await service.remove_member(db, target.id, _actor())
+
+    assert exc_info.value.code == "LAST_ADMIN_DEACTIVATION_FORBIDDEN"
+    guard.assert_awaited_once()
+    revoke.assert_not_awaited()
+    repo.delete_user.assert_not_awaited()
     db.commit.assert_not_awaited()
 
 

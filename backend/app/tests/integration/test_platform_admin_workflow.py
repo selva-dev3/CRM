@@ -3,6 +3,7 @@
 import asyncio
 import os
 from pathlib import Path
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -34,7 +35,8 @@ from app.services.role_service import ALL_STANDARD_PERMISSIONS
 
 
 @pytest.mark.asyncio
-async def test_migration_singleton_provisioning_and_same_login_across_organizations(monkeypatch):
+@pytest.mark.parametrize("legacy_platform_role", [True, False])
+async def test_migration_singleton_provisioning_and_same_login_across_organizations(monkeypatch, legacy_platform_role):
     url = os.getenv("CRM_WORKFLOW_TEST_DATABASE_URL")
     if not url:
         pytest.skip("An isolated PostgreSQL workflow database is required")
@@ -65,14 +67,43 @@ async def test_migration_singleton_provisioning_and_same_login_across_organizati
                 text("""
                 INSERT INTO users (id,name,email,hashed_password,role,organization_id,is_active,is_verified)
                 VALUES ('intended-user','Platform','original@example.com',:hash,
-                        'super_admin','original-org',true,true)
+                            :role,'original-org',true,true)
             """),
-                {"hash": original_hash},
+                {"hash": original_hash, "role": "super_admin" if legacy_platform_role else "Sales Executive"},
             )
         await asyncio.to_thread(command.upgrade, config, "head")
+        if not legacy_platform_role:
+            async with engine.begin() as connection:
+                await connection.execute(text(
+                    "INSERT INTO roles (id,name,organization_id,is_system_role) "
+                    "VALUES ('tenant-role','Sales Executive','original-org',true)"
+                ))
+                await connection.execute(text("UPDATE users SET role='tenant-role' WHERE id='intended-user'"))
+                await connection.execute(text(
+                    "INSERT INTO user_roles (id,user_id,role_id) "
+                    "VALUES ('tenant-mapping','intended-user','tenant-role')"
+                ))
+            async with sessions() as db:
+                failed_provisioner = PlatformAdminService()
+                failed_provisioner.repository.revoke_all_user_sessions = AsyncMock(
+                    side_effect=RuntimeError("Injected session revocation failure")
+                )
+                with pytest.raises(RuntimeError, match="Injected"):
+                    await failed_provisioner.provision(
+                        db, email="superadmin@mycrm.com", password=SecretStr(test_password),
+                        existing_user_id="intended-user",
+                    )
+                preserved = await db.get(User, "intended-user")
+                assert not preserved.is_platform_admin
+                assert preserved.organization_id == "original-org"
+                assert preserved.hashed_password == original_hash
+                assert await db.scalar(text(
+                    "SELECT role_id FROM user_roles WHERE user_id='intended-user'"
+                )) == "tenant-role"
         async with sessions() as db:
             user = await db.get(User, "intended-user")
-            assert user.is_platform_admin and user.organization_id is None
+            assert user.is_platform_admin is legacy_platform_role
+            assert user.organization_id == (None if legacy_platform_role else "original-org")
             assert user.hashed_password == original_hash
             # Explicit provisioning must preserve the migrated identity.
             user_id = await PlatformAdminService().provision(
@@ -177,6 +208,15 @@ async def test_migration_singleton_provisioning_and_same_login_across_organizati
                     json=["leads:read", "leads:create"],
                 )
                 assert assigned.status_code == 200, assigned.text
+                # Replacing overlapping grants through either endpoint must
+                # flush deletes before inserting the same unique pairs.
+                replaced = await client.put(
+                    f"/roles/{role_id}",
+                    headers=selected,
+                    json={"permissions": ["leads:read", "leads:update"]},
+                )
+                assert replaced.status_code == 200, replaced.text
+                assert set(replaced.json()["permissions"]) == {"leads:read", "leads:update"}
                 created_user = await client.post(
                     "/users",
                     headers=selected,
@@ -216,7 +256,13 @@ async def test_migration_singleton_provisioning_and_same_login_across_organizati
                 ),
             ):
                 response = await client.request(method, endpoint, headers=normal, json=body)
-                assert response.status_code in {403, 404}, response.text
+                if endpoint == "/users" and method == "POST":
+                    # User creation validates roles strictly within the tenant;
+                    # a global role ID is an invalid request, never assignable.
+                    assert response.status_code == 400, response.text
+                    assert "Invalid role" in response.json()["message"]
+                else:
+                    assert response.status_code in {403, 404}, response.text
 
         # Direct database writes must not bypass the platform invariants.
         invalid_writes = [

@@ -11,8 +11,9 @@ from alembic import command
 from alembic.config import Config
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, text, update
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.api.v1.routers import auth, invitations, organizations
@@ -296,10 +297,64 @@ async def test_invitation_acceptance_assigns_exact_scoped_admin_and_is_single_us
 
 
 @pytest.mark.asyncio
+async def test_migrated_rbac_rejects_referenced_user_and_role_scope_changes(lifecycle):
+    client, sessions, _, password = lifecycle
+    organization = await create(
+        client,
+        "Scoped",
+        initial_admin={"name": "Admin", "email": "scope-admin@example.com"},
+    )
+    other = await create(client, "Other")
+    async with sessions() as db:
+        invitation = await db.scalar(
+            select(OrganizationInvitation).where(
+                OrganizationInvitation.organization_id == organization["id"]
+            )
+        )
+        token = invitation.token
+    accepted = await client.post(
+        f"/organizations/invitations/{token}/accept", json={"password": password}
+    )
+    assert accepted.status_code == 200, accepted.text
+    user_id = accepted.json()["user"]["id"]
+
+    async with sessions() as db:
+        role_id = await db.scalar(
+            select(UserRole.role_id).where(UserRole.user_id == user_id)
+        )
+        with pytest.raises(DBAPIError):
+            await db.execute(
+                update(User)
+                .where(User.id == user_id)
+                .values(organization_id=other["id"])
+            )
+            await db.flush()
+        await db.rollback()
+
+        with pytest.raises(DBAPIError):
+            await db.execute(
+                update(Role)
+                .where(Role.id == role_id)
+                .values(organization_id=other["id"])
+            )
+            await db.flush()
+        await db.rollback()
+
+
+@pytest.mark.asyncio
 async def test_delete_preserves_platform_login_and_allows_zero_then_new_organization(lifecycle):
     client, sessions, platform_id, password = lifecycle
-    organization = await create(client)
+    organization = await create(
+        client,
+        initial_admin={"name": "Tenant Admin", "email": "delete-admin@example.com"},
+    )
     async with sessions() as db:
+        invitation = await db.scalar(
+            select(OrganizationInvitation).where(
+                OrganizationInvitation.organization_id == organization["id"]
+            )
+        )
+        invitation_token = invitation.token
         db.add_all(
             [
                 CustomField(
@@ -317,6 +372,12 @@ async def test_delete_preserves_platform_login_and_allows_zero_then_new_organiza
             ]
         )
         await db.commit()
+    accepted = await client.post(
+        f"/organizations/invitations/{invitation_token}/accept",
+        json={"password": password},
+    )
+    assert accepted.status_code == 200, accepted.text
+    tenant_user_id = accepted.json()["user"]["id"]
     deleted = await client.delete(
         f"/organizations/{organization['id']}", headers={"X-Organization-ID": organization["id"]}
     )
@@ -332,6 +393,11 @@ async def test_delete_preserves_platform_login_and_allows_zero_then_new_organiza
     assert (await client.delete(f"/organizations/{organization['id']}")).status_code == 404
     async with sessions() as db:
         assert (await db.get(User, platform_id))._organization_id is None
+        assert await db.get(User, tenant_user_id) is None
+        assert (
+            await db.scalar(select(UserRole.id).where(UserRole.user_id == tenant_user_id))
+            is None
+        )
         login = await AuthService().login(
             db, LoginRequest(email="superadmin@mycrm.com", password=password)
         )
@@ -884,18 +950,14 @@ async def test_invitation_roles_stay_scoped_and_member_limit_is_serialized(lifec
     monkeypatch.setattr("app.services.invitation_service.send_user_invite_email", lambda **_: True)
     organization = await create(client, "Scoped invitations")
     async with sessions() as db:
-        legacy = await db.scalar(
-            select(Role).where(Role.organization_id.is_(None), Role.name == "Admin")
-        )
         scoped_id = await db.scalar(
             select(Role.id).where(Role.organization_id == organization["id"], Role.name == "Admin")
         )
-        legacy_id = legacy.id
         org = await db.get(Organization, organization["id"])
         org.max_users = 1
         await db.commit()
     tokens = []
-    for index, value in enumerate(("Admin", legacy_id)):
+    for index, value in enumerate(("Admin", scoped_id)):
         response = await client.post(
             "/organizations/invitations",
             headers={"X-Organization-ID": organization["id"]},

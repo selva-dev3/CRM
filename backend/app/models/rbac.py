@@ -59,6 +59,7 @@ class Permission(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
+        CheckConstraint("lower(btrim(key)) <> 'all'", name="ck_permissions_no_wildcard"),
         Index("uq_permissions_normalized_key", func.lower(func.btrim(key)), unique=True),
     )
 
@@ -78,12 +79,15 @@ class RolePermission(Base):
 
 class UserRole(Base):
     __tablename__ = "user_roles"
-    __table_args__ = (Index("uq_user_roles_pair", "user_id", "role_id", unique=True),)
+    __table_args__ = (
+        Index("uq_user_roles_pair", "user_id", "role_id", unique=True),
+        Index("uq_user_roles_user", "user_id", unique=True),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id: Mapped[str] = mapped_column(
         String, ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
     role_id: Mapped[str] = mapped_column(
-        String, ForeignKey("roles.id", ondelete="CASCADE"), index=True
+        String, ForeignKey("roles.id", ondelete="RESTRICT"), index=True
     )

@@ -62,9 +62,15 @@ import {
   PermissionItem
 } from '@/lib/api/roles';
 import { UserSelect } from '@/components/common/user-select';
+import { useHasPermission } from '@/hooks/use-has-permission';
+import { useAuth } from '@/providers/auth-provider';
 
 export default function RolesPage() {
   const router = useRouter();
+  const { user } = useAuth();
+  const { hasPermission } = useHasPermission();
+  const canAssignRolePermissions = hasPermission('roles:assign');
+  const canReadUsers = hasPermission('users:read');
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -113,7 +119,9 @@ export default function RolesPage() {
   const { data: roles = [], isLoading: isRolesLoading } = useRolesQuery(debouncedSearch.trim() || undefined);
   const { data: assignableRoles = [] } = useAssignableRolesQuery();
   const { data: defaultRole } = useDefaultRoleQuery();
-  const { data: permissionMatrix = [] } = usePermissionMatrixQuery();
+  const { data: permissionMatrix = [] } = usePermissionMatrixQuery({
+    enabled: canAssignRolePermissions,
+  });
   const { data: auditLogs = [] } = useRoleAuditLogsQuery();
 
   // Mutations
@@ -205,7 +213,7 @@ export default function RolesPage() {
     const payload = {
       name: roleName.trim(),
       description: roleDescription.trim(),
-      permissions: Array.from(selectedPerms),
+      ...(canAssignRolePermissions ? { permissions: Array.from(selectedPerms) } : {}),
     };
 
     try {
@@ -314,9 +322,7 @@ export default function RolesPage() {
 
   const groupedPermissions = React.useMemo(() => {
     const map: Record<string, PermissionItem[]> = {};
-    permissionMatrix
-      .filter((p) => p.key !== 'all' && p.id !== 'all' && p.category?.toLowerCase() !== 'all' && p.name !== 'All Permission')
-      .forEach((p) => {
+    permissionMatrix.forEach((p) => {
         const cat = p.category || p.module || 'General';
         if (!map[cat]) map[cat] = [];
         map[cat].push(p);
@@ -378,7 +384,7 @@ export default function RolesPage() {
                 className="font-bold text-slate-900 hover:text-indigo-600 cursor-pointer transition-colors text-xs flex items-center gap-2"
               >
                 {item.name}
-                {isDefault && !item.name.toLowerCase().includes('super') && item.name.toLowerCase() !== 'super_admin' && (
+                {isDefault && (
                   <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded text-[10px] font-bold uppercase flex items-center gap-1">
                     <Star className="w-3 h-3 text-amber-600" />
                     Default
@@ -395,18 +401,13 @@ export default function RolesPage() {
       id: 'is_system_role',
       header: 'TYPE',
       cell: (item) => {
-        const isSuper = item.name.toLowerCase().includes('super') || item.name.toLowerCase() === 'super_admin';
-        const displayType = isSuper
-          ? item.is_system_role
-            ? 'Built-in System'
-            : 'System'
-          : item.type === 'default'
+        const displayType = item.type === 'default'
           ? 'Default'
           : item.is_system_role
           ? 'Built-in System'
           : 'Custom';
-        const isDefaultType = !isSuper && item.type === 'default';
-        const isSystem = item.is_system_role || isSuper;
+        const isDefaultType = item.type === 'default';
+        const isSystem = item.is_system_role;
 
         return (
           <span
@@ -428,7 +429,7 @@ export default function RolesPage() {
       cell: (item) => (
         <div className="flex items-center gap-1.5 text-xs text-slate-700 font-medium">
           <KeyRound className="w-3.5 h-3.5 text-slate-400" />
-          <span>{item.permissions ? `${item.permissions.length} Action(s)` : 'Full Access'}</span>
+          <span>{`${item.permissions?.length ?? 0} Action(s)`}</span>
         </div>
       ),
     },
@@ -447,7 +448,6 @@ export default function RolesPage() {
       header: 'ACTIONS',
       cell: (item) => {
         const isDefault = defaultRole?.id === item.id;
-        const isSuperAdminRole = item.name.toLowerCase().includes('super') || item.name.toLowerCase() === 'super_admin' || item.id === 'sys-admin';
         return (
           <div onClick={(e) => e.stopPropagation()}>
             <DropdownMenu>
@@ -458,7 +458,7 @@ export default function RolesPage() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-52">
                 <PermissionGate permission="roles:update">
-                  {isSuperAdminRole && !isDefault && (
+                  {!isDefault && (
                     <DropdownMenuItem
                       onClick={(e) => {
                         e.stopPropagation();
@@ -472,7 +472,7 @@ export default function RolesPage() {
                   )}
                 </PermissionGate>
                 <PermissionGate permission="roles:create">
-                  <DropdownMenuItem
+                  {canAssignRolePermissions && <DropdownMenuItem
                     onClick={(e) => {
                       e.stopPropagation();
                       setCloningRole(item);
@@ -483,9 +483,9 @@ export default function RolesPage() {
                   >
                     <Copy className="w-3.5 h-3.5 text-indigo-600" />
                     Clone Role Configuration
-                  </DropdownMenuItem>
+                  </DropdownMenuItem>}
                 </PermissionGate>
-                <PermissionGate permission="users:roles">
+                {canReadUsers && <PermissionGate permission="users:assign_roles">
                   <DropdownMenuItem
                     onClick={(e) => {
                       e.stopPropagation();
@@ -497,7 +497,7 @@ export default function RolesPage() {
                     <UserCheck className="w-3.5 h-3.5 text-blue-600" />
                     Assign Role to User
                   </DropdownMenuItem>
-                </PermissionGate>
+                </PermissionGate>}
                 <PermissionGate permission="roles:update">
                   {!item.is_system_role && (
                     <DropdownMenuItem
@@ -609,7 +609,7 @@ export default function RolesPage() {
             </button>
           </PermissionGate>
 
-          <PermissionGate permission="roles:create">
+          {user?.is_platform_admin && <PermissionGate permission="roles:create">
             <button
               onClick={() => setIsPermModalOpen(true)}
               className="flex items-center justify-center gap-1.5 sm:gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer flex-1 sm:flex-initial min-w-[120px] sm:min-w-0"
@@ -617,7 +617,7 @@ export default function RolesPage() {
               <KeyRound className="w-4 h-4 text-emerald-600 shrink-0" />
               <span>+ New Permission</span>
             </button>
-          </PermissionGate>
+          </PermissionGate>}
 
           <PermissionGate permission="roles:create">
             <button
@@ -706,7 +706,7 @@ export default function RolesPage() {
             />
           </div>
 
-          <div>
+          {canAssignRolePermissions && <div>
             <div className="flex items-center justify-between mb-2">
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-600">
                 System Permissions Matrix ({permissionMatrix.length} Actions)
@@ -791,7 +791,7 @@ export default function RolesPage() {
                 })
               )}
             </div>
-          </div>
+          </div>}
 
           <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3 pt-3 border-t border-slate-100">
             <button type="button" onClick={() => setIsRoleModalOpen(false)} className="px-4 py-2 text-sm font-medium text-slate-600">
@@ -853,7 +853,7 @@ export default function RolesPage() {
 
       {/* Assign Role to User Modal */}
       <ModalShell
-        isOpen={isAssignModalOpen}
+        isOpen={canReadUsers && isAssignModalOpen}
         onClose={() => setIsAssignModalOpen(false)}
         size="md"
         title={

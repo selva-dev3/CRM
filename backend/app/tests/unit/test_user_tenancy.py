@@ -37,7 +37,9 @@ def _make_user(**overrides) -> User:
 def _service_with_target(target: User) -> tuple[UserService, Any]:
     repo: Any = UserRepository()
     repo.get_by_id = AsyncMock(return_value=target)
-    repo.role_name_map = AsyncMock(return_value={})
+    repo.effective_role_names_for_users = AsyncMock(
+        side_effect=lambda _db, users, _org: {user.id: user.role for user in users}
+    )
     return UserService(repository=repo), repo
 
 
@@ -102,12 +104,14 @@ async def test_delete_user_cross_org_never_deletes():
 async def test_bulk_delete_skips_foreign_org_ids():
     same_org = _make_user(id="u-same", email="same@crm.com")
     foreign = _make_user(id="u-foreign", email="foreign@crm.com", organization_id="org-other")
-    protected = _make_user(id="u-super", email="superadmin@gmail.com")
+    protected = _make_user(id="u-super", email="platform@example.com", is_platform_admin=True)
 
     repo: Any = UserRepository()
     repo.list_by_ids = AsyncMock(return_value=[same_org, foreign, protected])
     repo.lock_active_by_org = AsyncMock(return_value=[same_org, protected, _admin()])
-    repo.role_name_map = AsyncMock(return_value={})
+    repo.effective_role_names_for_users = AsyncMock(
+        side_effect=lambda _db, users, _org: {user.id: user.role for user in users}
+    )
     repo.delete = AsyncMock()
     service = UserService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -158,7 +162,9 @@ def _org_scoped_service(list_result):
         return [i for i in list_result if i.organization_id == kwargs["organization_id"]]
 
     repo.list_invitations = fake_list_invitations
-    repo.role_name_map = AsyncMock(return_value={})
+    repo.effective_role_names_for_users = AsyncMock(
+        side_effect=lambda _db, users, _org: {user.id: user.role for user in users}
+    )
     service = UserService(repository=repo)
     cast(Any, service.organization_repository).get_by_id = AsyncMock(
         return_value=_active_org("org-1")

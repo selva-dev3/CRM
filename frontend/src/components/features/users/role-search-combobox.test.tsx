@@ -29,9 +29,11 @@ async function openPanel(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe('RoleSearchCombobox', () => {
-  it('renders the placeholder when no role is selected', () => {
-    render(<RoleSearchCombobox value="" onChange={vi.fn()} />);
+  it('renders the placeholder without assigning a fallback role', () => {
+    const onChange = vi.fn();
+    render(<RoleSearchCombobox value="" onChange={onChange} />);
     expect(screen.getByRole('button', { name: /Search and select a role/ })).toBeInTheDocument();
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it('renders the selected role name', () => {

@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import { notifyPermissionsInvalidated } from '@/lib/auth-session';
 
 export interface RoleItem {
   id: string;
@@ -34,6 +35,7 @@ export interface RoleAuditLog {
   role_name: string;
   user: string;
   timestamp: string;
+  details: Record<string, unknown>;
 }
 
 export interface BulkActionResponse {
@@ -257,11 +259,13 @@ export function useUpdateRoleMutation(options?: UseMutationOptions<RoleItem, Err
   const queryClient = useQueryClient();
   return useMutation<RoleItem, Error, { id: string; payload: { name?: string; description?: string; permissions?: string[] } }>({
     mutationFn: ({ id, payload }) => updateRoleApi(id, payload),
-    onSuccess: (_, variables) => {
+    ...options,
+    onSuccess: (data, variables, context, mutation) => {
       queryClient.invalidateQueries({ queryKey: ['roles'] });
       queryClient.invalidateQueries({ queryKey: ['roles', 'detail', variables.id] });
+      notifyPermissionsInvalidated();
+      options?.onSuccess?.(data, variables, context, mutation);
     },
-    ...options,
   });
 }
 
@@ -291,10 +295,12 @@ export function useAssignPermissionsMutation(options?: UseMutationOptions<Messag
   const queryClient = useQueryClient();
   return useMutation<MessageResponse, Error, { roleId: string; permissions: string[] }>({
     mutationFn: ({ roleId, permissions }) => assignPermissionsApi(roleId, permissions),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['roles', 'detail', variables.roleId] });
-    },
     ...options,
+    onSuccess: (data, variables, context, mutation) => {
+      queryClient.invalidateQueries({ queryKey: ['roles', 'detail', variables.roleId] });
+      notifyPermissionsInvalidated();
+      options?.onSuccess?.(data, variables, context, mutation);
+    },
   });
 }
 
@@ -302,10 +308,13 @@ export function useAssignRoleToUserMutation(options?: UseMutationOptions<Message
   const queryClient = useQueryClient();
   return useMutation<MessageResponse, Error, { userId: string; roleId: string }>({
     mutationFn: ({ userId, roleId }) => assignRoleToUserApi(userId, roleId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['roles'] });
-    },
     ...options,
+    onSuccess: (data, variables, context, mutation) => {
+      queryClient.invalidateQueries({ queryKey: ['roles'] });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      notifyPermissionsInvalidated();
+      options?.onSuccess?.(data, variables, context, mutation);
+    },
   });
 }
 
@@ -313,10 +322,12 @@ export function useRemovePermissionMutation(options?: UseMutationOptions<Message
   const queryClient = useQueryClient();
   return useMutation<MessageResponse, Error, { roleId: string; permId: string }>({
     mutationFn: ({ roleId, permId }) => removePermissionApi(roleId, permId),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['roles', 'detail', variables.roleId] });
-    },
     ...options,
+    onSuccess: (data, variables, context, mutation) => {
+      queryClient.invalidateQueries({ queryKey: ['roles', 'detail', variables.roleId] });
+      notifyPermissionsInvalidated();
+      options?.onSuccess?.(data, variables, context, mutation);
+    },
   });
 }
 

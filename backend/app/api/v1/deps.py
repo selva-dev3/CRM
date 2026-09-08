@@ -10,7 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.errors import APIException, ForbiddenError
-from app.core.permissions import UserRole, check_permission
+from app.core.logging import get_logger
+from app.core.permissions import effective_organization_id
 from app.core.security import ALGORITHM
 from app.db.session import get_db
 from app.models import ApiKey, Organization, User, UserSession
@@ -18,6 +19,7 @@ from app.services.auth_service import api_key_scope_allows, auth_service
 
 # HTTP Bearer scheme auto-configured for FastAPI Swagger UI authentication
 security_scheme = HTTPBearer(auto_error=False)
+logger = get_logger(__name__)
 
 
 async def get_current_user(
@@ -164,6 +166,13 @@ async def apply_organization_context(
         user.__dict__["_request_organization_id"] = organization_id
 
 
+async def require_user_session(current_user: User = Depends(get_current_user)) -> User:
+    """Account security and credential management require a human login session."""
+    if getattr(current_user, "_api_key_scopes", None) is not None:
+        raise ForbiddenError(message="A user login session is required for this operation")
+    return current_user
+
+
 async def require_platform_admin(current_user: User = Depends(get_current_user)) -> User:
     if getattr(current_user, "is_platform_admin", False) is not True or getattr(
         current_user, "_api_key_scopes", None
@@ -191,26 +200,34 @@ async def get_current_user_optional(
 
 async def get_valid_org_id(db: AsyncSession, current_user: User | None = None) -> str:
     """Resolve only the authenticated user's organization; never fall back across tenants."""
-    if current_user and getattr(current_user, "organization_id", None):
-        user_org_id = current_user.organization_id
+    if current_user and effective_organization_id(current_user):
+        user_org_id = effective_organization_id(current_user)
         res = await db.execute(select(Organization).where(Organization.id == user_org_id))
         if user_org_id and res.scalars().first():
             return user_org_id
     raise ForbiddenError(message="Authenticated user has no valid current organization")
 
 
-def require_role(*roles: UserRole):
-    """Dependency factory enforcing that the authenticated user holds one of the given roles."""
-
-    async def role_dependency(current_user: User = Depends(get_current_user)) -> User:
-        if not check_permission(current_user.role, list(roles)):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You do not have permission to perform this action",
-            )
-        return current_user
-
-    return role_dependency
+async def authorize_permission(db: AsyncSession, current_user: User, permission: str) -> User:
+    """Authorize one explicit permission outside FastAPI's static dependency graph."""
+    keys = await auth_service.get_user_permissions(db, current_user)
+    if permission not in keys:
+        logger.warning(
+            "Authorization denied user_id=%s organization_id=%s permission=%s",
+            getattr(current_user, "id", None),
+            effective_organization_id(current_user),
+            permission,
+        )
+        raise ForbiddenError(message=f"Missing required permission: {permission}")
+    if not api_key_scope_allows(current_user, permission):
+        logger.warning(
+            "API key authorization denied user_id=%s organization_id=%s permission=%s",
+            getattr(current_user, "id", None),
+            effective_organization_id(current_user),
+            permission,
+        )
+        raise ForbiddenError(message=f"API key is missing required scope: {permission.lower()}")
+    return current_user
 
 
 def require_permission(permission: str):
@@ -225,13 +242,6 @@ def require_permission(permission: str):
         current_user: User = Depends(get_current_user),
         db: AsyncSession = Depends(get_db),
     ) -> User:
-        keys = await auth_service.get_user_permissions(db, current_user)
-        if permission not in keys:
-            raise ForbiddenError(message=f"Missing required permission: {permission}")
-        if not api_key_scope_allows(current_user, permission):
-            raise ForbiddenError(
-                message=f"API key is missing required scope: {permission.lower()}"
-            )
-        return current_user
+        return await authorize_permission(db, current_user, permission)
 
     return permission_dependency

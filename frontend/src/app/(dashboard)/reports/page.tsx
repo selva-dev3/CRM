@@ -411,9 +411,11 @@ export default function ReportsPage() {
       header: 'Action',
       className: 'text-center',
       cell: (row) => (
-        <button onClick={() => setReportToDelete(row.id)} className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer transition-colors">
-          <Trash2 className="w-4 h-4" />
-        </button>
+        <PermissionGate permission={PERMISSIONS.REPORTS.DELETE}>
+          <button onClick={() => setReportToDelete(row.id)} className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer transition-colors">
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </PermissionGate>
       )
     }
   ];

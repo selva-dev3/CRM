@@ -257,7 +257,7 @@ async def run_custom_report(
     "/custom-reports/{report_id}",
     response_model=MessageResponse,
     summary="Delete custom report entry",
-    dependencies=[Depends(require_permission("reports:create"))],
+    dependencies=[Depends(require_permission("reports:delete"))],
 )
 async def delete_custom_report(
     report_id: str,

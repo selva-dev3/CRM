@@ -123,7 +123,7 @@ async def create_quote(
 @router.get(
     "/export/csv",
     summary="Export quotes list as CSV",
-    dependencies=[Depends(require_permission("quotes:read"))],
+    dependencies=[Depends(require_permission("quotes:export"))],
 )
 async def export_quotes_csv(db: AsyncSession = Depends(get_db)):
     raise APIException(message="Quote export is not implemented", status_code=501)
@@ -133,7 +133,7 @@ async def export_quotes_csv(db: AsyncSession = Depends(get_db)):
     "/import/csv",
     response_model=MessageResponse,
     summary="Import quotes from CSV file",
-    dependencies=[Depends(require_permission("quotes:create"))],
+    dependencies=[Depends(require_permission("quotes:import"))],
 )
 async def import_quotes_csv(db: AsyncSession = Depends(get_db)):
     raise APIException(message="Quote import is not implemented", status_code=501)
@@ -281,7 +281,10 @@ async def get_quote_pdf(
     "/{quote_id}/convert-to-invoice",
     response_model=InvoiceResponse,
     summary="Convert accepted quote directly into an Invoice",
-    dependencies=[Depends(require_permission("quotes:create"))],
+    dependencies=[
+        Depends(require_permission("quotes:read")),
+        Depends(require_permission("invoices:create")),
+    ],
 )
 async def convert_quote_to_invoice(
     quote_id: str,

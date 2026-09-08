@@ -10,12 +10,13 @@ from app.models import User
 from app.schemas.crm_schemas import CallLogBase
 
 
-def _required_permission(route: APIRoute) -> str | None:
+def _required_permissions(route: APIRoute) -> set[str]:
+    permissions: set[str] = set()
     for dependency in route.dependencies:
         call = dependency.dependency
         if getattr(call, "__name__", "") == "permission_dependency":
-            return inspect.getclosurevars(call).nonlocals["permission"]
-    return None
+            permissions.add(inspect.getclosurevars(call).nonlocals["permission"])
+    return permissions
 
 
 @pytest.mark.parametrize(
@@ -37,7 +38,7 @@ def test_call_routes_use_call_permissions(router, path, method, permission):
         and method in (candidate.methods or set())
     )
 
-    assert _required_permission(route) == permission
+    assert permission in _required_permissions(route)
 
 
 @pytest.mark.asyncio

@@ -29,14 +29,14 @@ reports read create export schedule delete
 calendar read write sync
 users read create invite update delete export import roles reset_password assign_roles
 roles read create update delete assign
-organization read update billing domains branding audit members delete transfer_ownership
+organization read update billing domains branding audit members transfer_ownership
 invitations read create resend revoke
 integrations read manage apikeys
 notifications read manage send
 settings read update security
 activities read create export
 ai read generate configure
-api_keys read create
+api_keys read create revoke
 projects read create update delete assign
 """)
 
@@ -136,3 +136,28 @@ projects read
 }
 
 SYSTEM_ROLE_NAMES = frozenset({"Super Admin", *SYSTEM_ROLE_PERMISSIONS})
+
+# This is the authoritative permission-key catalog. Display metadata may live in
+# the role service, but authorization and tenant-managed roles must only accept
+# keys registered here. Platform authority itself remains controlled by
+# ``User.is_platform_admin`` rather than by this delegable permission.
+PLATFORM_PERMISSIONS = frozenset({"organization:delete", "super_admin:manage"})
+APPROVED_PERMISSION_KEYS = frozenset({*ADMIN_PERMISSIONS, *PLATFORM_PERMISSIONS})
+
+
+def validate_permission_keys(
+    values: list[str] | set[str] | frozenset[str], *, allow_platform: bool = False
+) -> list[str]:
+    """Return normalized approved keys or raise for unknown/legacy wildcard keys."""
+    normalized = list(dict.fromkeys(value.strip().lower() for value in values if value.strip()))
+    allowed = APPROVED_PERMISSION_KEYS if allow_platform else ADMIN_PERMISSIONS
+    invalid = sorted(set(normalized) - allowed)
+    if invalid:
+        from app.core.errors import APIException
+
+        raise APIException(
+            status_code=422,
+            code="INVALID_PERMISSION_KEYS",
+            message=f"Unknown or unsupported permission keys: {', '.join(invalid)}",
+        )
+    return normalized

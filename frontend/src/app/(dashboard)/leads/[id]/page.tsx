@@ -198,6 +198,8 @@ export default function LeadDetailPage() {
   const [taskDueDate, setTaskDueDate] = useState('');
   const [taskErrorMessage, setTaskErrorMessage] = useState<string | null>(null);
   const [isCreatingTask, setIsCreatingTask] = useState(false);
+  const taskTitleRef = useRef<HTMLInputElement | null>(null);
+  const taskDueDateRef = useRef<HTMLButtonElement | null>(null);
 
   const [emailTo, setEmailTo] = useState('');
   const [emailSubject, setEmailSubject] = useState('');
@@ -494,10 +496,12 @@ export default function LeadDetailPage() {
     e.preventDefault();
     if (!taskTitle.trim()) {
       setTaskErrorMessage('Task title is required.');
+      taskTitleRef.current?.focus();
       return;
     }
     if (!taskDueDate) {
       setTaskErrorMessage('Follow-up due date is required.');
+      taskDueDateRef.current?.focus();
       return;
     }
     setTaskErrorMessage(null);
@@ -1544,8 +1548,8 @@ export default function LeadDetailPage() {
               </Alert>
             )}
             <div className="space-y-1.5">
-              <Label className="text-xs font-black text-black">Task Title *</Label>
-              <Input required placeholder="Schedule follow-up call" value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} className="bg-slate-50 border-slate-300 text-xs font-bold text-black" />
+              <Label htmlFor="lead-task-title" className="text-xs font-black text-black">Task Title *</Label>
+              <Input id="lead-task-title" ref={taskTitleRef} required aria-invalid={Boolean(taskErrorMessage && !taskTitle.trim())} aria-describedby={taskErrorMessage ? 'lead-task-error' : undefined} placeholder="Schedule follow-up call" value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} className="bg-slate-50 border-slate-300 text-xs font-bold text-black" />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-black text-black">Description</Label>
@@ -1562,6 +1566,7 @@ export default function LeadDetailPage() {
             <div className="space-y-1.5">
               <Label htmlFor="lead-task-due-date" className="text-xs font-black text-black">Follow-up Due Date *</Label>
               <DateTimePicker
+                triggerRef={taskDueDateRef}
                 id="lead-task-due-date"
                 required
                 aria-describedby={taskErrorMessage ? 'lead-task-error' : undefined}

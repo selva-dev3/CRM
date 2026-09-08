@@ -19,17 +19,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.errors import APIException, ConflictError, ForbiddenError, NotFoundError
 from app.core.permissions import (
-    SUPER_ADMIN_ROLE_NAMES,
+    effective_organization_id,
     is_global_super_admin_role,
     is_super_admin_role_name,
 )
+from app.core.rbac_matrix import ADMIN_PERMISSIONS, APPROVED_PERMISSION_KEYS
 from app.core.security import (
     create_access_token,
     generate_random_code,
     get_password_hash,
     verify_password,
 )
-from app.models import Organization, Role, User, UserInvitation
+from app.models import AuditLog, Organization, Role, User, UserInvitation
 from app.repositories.auth_repository import AuthRepository
 from app.schemas.crm_schemas import (
     AcceptInviteRequest,
@@ -117,65 +118,64 @@ class AuthService:
             return "Super Admin"
         try:
             raw_role = (user.role or "").strip()
-
-            if is_super_admin_role_name(raw_role):
-                return raw_role
-
-            if len(raw_role) == 36 and "-" in raw_role:
-                role_db = await self.repository.get_role_name_by_id(db, raw_role)
-                if role_db:
-                    return role_db
-
+            organization_id = self._require_organization_id(user)
             user_role_id = await self.repository.get_user_role_id(db, user.id)
             if user_role_id:
-                role_db = await self.repository.get_role_name_by_id(db, user_role_id)
+                role_db = await self.repository.get_role_name_by_id(
+                    db, user_role_id, organization_id
+                )
                 if role_db:
                     return role_db
+                return "User"
 
             if raw_role:
-                return raw_role
+                role_db = await self.repository.get_role_name_by_id(
+                    db, raw_role, organization_id
+                )
+                if role_db:
+                    return role_db
+                if await self.repository.role_ids_by_name(db, raw_role, organization_id):
+                    return raw_role
         except Exception:
             logger.warning("Failed to resolve user role name", exc_info=True)
-        return "Admin"
+        return "User"
 
     async def get_user_permissions(
         self, db: AsyncSession, user: User, resolved_role_name: str = ""
     ) -> list[str]:
         """Resolve a user's effective permission keys from the RBAC tables.
 
-        Permissions are derived exclusively from the relationship graph
-        ``User -> UserRole -> Role -> RolePermission -> Permission`` (plus a
-        case-insensitive lookup of the legacy ``User.role`` string so existing
-        role-name assignments keep working). Only the ``super_admin`` role (by
-        name) is treated as unrestricted and granted every known permission key.
-        Every other role — including Admin and other system roles — resolves to
-        exactly the keys explicitly assigned through role_permissions; the
-        ``super_admin:manage`` permission key or the ``all`` sentinel do NOT
-        implicitly expand a non-super_admin role. There is intentionally no
-        grant-all fallback: an unknown/unmapped user or a resolution failure
-        yields an empty set (deny by default), matching fail-closed authorization.
+        Permissions are derived from the relationship graph
+        ``User -> UserRole -> Role -> RolePermission -> Permission``. A legacy
+        ``User.role`` value may resolve only to an organization-scoped role when
+        no mapping exists. Platform authority comes exclusively from the
+        authoritative ``is_platform_admin`` flag and expands to the explicit
+        approved catalog. Unknown mappings, multiple mappings, global roles on
+        tenant users, and resolution failures all yield an empty set.
         """
         permission_keys = set()
         try:
             if getattr(user, "is_platform_admin", False) is True:
-                return sorted(await self.repository.all_permission_keys(db))
+                return sorted(APPROVED_PERMISSION_KEYS)
             organization_id = self._require_organization_id(user)
-            role_ids = set(await self.repository.role_ids_for_user(db, user.id))
+            mapped_role_ids = list(dict.fromkeys(await self.repository.role_ids_for_user(db, user.id)))
+            if len(mapped_role_ids) > 1:
+                logger.error("User %s has multiple role mappings; denying permissions", user.id)
+                return []
+            role_ids = set(mapped_role_ids)
             raw_role = (user.role or "").strip()
             role_lookup = (resolved_role_name or raw_role).strip()
-            if len(raw_role) == 36 and "-" in raw_role:
-                role_ids.add(raw_role)
-            elif is_super_admin_role_name(raw_role):
-                for alias in sorted(SUPER_ADMIN_ROLE_NAMES):
+            if not role_ids:
+                if len(raw_role) == 36 and "-" in raw_role:
+                    role_ids.add(raw_role)
+                elif is_super_admin_role_name(raw_role):
+                    # A tenant principal can never inherit the global platform role
+                    # through a legacy string value. Platform users returned above.
+                    return []
+                elif role_lookup:
                     role_ids.update(
-                        await self.repository.role_ids_by_name(
-                            db, alias, organization_id, global_only=True
-                        )
+                        await self.repository.role_ids_by_name(db, role_lookup, organization_id)
                     )
-            elif role_lookup:
-                role_ids.update(
-                    await self.repository.role_ids_by_name(db, role_lookup, organization_id)
-                )
 
             if role_ids:
                 roles = await self.repository.roles_by_ids(db, list(role_ids), organization_id)
@@ -183,9 +183,12 @@ class AuthService:
                 if not authorized_role_ids:
                     return []
                 if any(is_global_super_admin_role(role) for role in roles):
-                    return sorted(await self.repository.all_permission_keys(db))
+                    logger.error(
+                        "Tenant user %s resolved a global role; denying permissions", user.id
+                    )
+                    return []
                 keys = await self.repository.permission_keys_for_roles(db, authorized_role_ids)
-                permission_keys.update(keys)
+                permission_keys.update(key for key in keys if key in ADMIN_PERMISSIONS)
         except Exception:
             logger.exception("Failed to resolve permissions for user %s", getattr(user, "id", None))
             permission_keys.clear()
@@ -271,7 +274,7 @@ class AuthService:
             "name": user.name,
             "email": user.email,
             "role": user_role_name,
-            "organization_id": user.organization_id or "",
+            "organization_id": effective_organization_id(user) or "",
             "is_platform_admin": getattr(user, "is_platform_admin", False) is True,
             "permissions": user_permissions,
         }
@@ -587,13 +590,14 @@ class AuthService:
                 message="No active CRM account is linked to this OAuth identity",
             )
         await self._validate_session_principal(db, user)
-        if user.two_factor_enabled:
-            if not two_factor_code or not self._is_valid_totp(user, two_factor_code):
-                raise APIException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    code="INVALID_TWO_FACTOR_CODE",
-                    message="Valid two-factor authentication is required",
-                )
+        if user.two_factor_enabled and (
+            not two_factor_code or not self._is_valid_totp(user, two_factor_code)
+        ):
+            raise APIException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                code="INVALID_TWO_FACTOR_CODE",
+                message="Valid two-factor authentication is required",
+            )
         family_id = uuid.uuid4().hex
         refresh_token = await self._create_refresh_token(db, user.id, family_id=family_id)
         access_token = await self._create_access_token(db, user.id, family_id=family_id)
@@ -623,6 +627,7 @@ class AuthService:
         inv = await self.repository.get_invitation_by_token(db, token)
         if not inv:
             raise NotFoundError(message="Invitation not found or token invalid")
+        self._validate_user_invitation(inv)
         role = await self._resolve_user_invitation_role(db, inv)
         return {
             "id": inv.id,
@@ -632,6 +637,25 @@ class AuthService:
             "organization_id": inv.organization_id,
             "created_at": str(inv.created_at),
         }
+
+    @staticmethod
+    def _validate_user_invitation(invitation: UserInvitation) -> None:
+        created_at = invitation.created_at
+        if (
+            not isinstance(created_at, datetime)
+            or created_at.utcoffset() is None
+            or created_at + timedelta(hours=24) <= datetime.now(UTC)
+        ):
+            raise APIException(
+                status_code=status.HTTP_410_GONE,
+                code="INVITATION_EXPIRED",
+                message="Invitation has expired. Request a new invitation.",
+            )
+        if invitation.status != "pending":
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Invitation is no longer active",
+            )
 
     async def _resolve_user_invitation_role(
         self, db: AsyncSession, invitation: UserInvitation
@@ -666,20 +690,19 @@ class AuthService:
     async def accept_auth_user_invitation(
         self, db: AsyncSession, payload: AcceptInviteRequest
     ) -> dict:
+        try:
+            return await self._accept_auth_user_invitation(db, payload)
+        except Exception:
+            await db.rollback()
+            raise
+
+    async def _accept_auth_user_invitation(
+        self, db: AsyncSession, payload: AcceptInviteRequest
+    ) -> dict:
         inv = await self.repository.get_invitation_by_token(db, payload.token, for_update=True)
         if not inv:
             raise NotFoundError(message="Invalid or expired invitation token")
-
-        if inv.status != "pending":
-            message = (
-                "Invitation has already been accepted"
-                if inv.status == "accepted"
-                else "Invitation is no longer active"
-            )
-            raise APIException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                message=message,
-            )
+        self._validate_user_invitation(inv)
 
         role = await self._resolve_user_invitation_role(db, inv)
         target_org_id = inv.organization_id
@@ -695,7 +718,7 @@ class AuthService:
                     code="ACTIVE_ACCOUNT_EXISTS",
                     message="An active account already exists for this invitation email",
                 )
-            if user and user.two_factor_enabled:
+            if user:
                 raise ConflictError(
                     code="INVITATION_ACCOUNT_REQUIRES_RECOVERY",
                     message="This account must complete account recovery before accepting an invitation",
@@ -711,38 +734,54 @@ class AuthService:
                     message="Unable to create account. Please try again later.",
                 ) from e
 
-            is_new_user = user is None
-            if user:
-                user.name = payload.name
-                user.hashed_password = hashed_pwd
-                user.role = role.id
-                user.is_active = True
-            else:
-                user = await self.repository.create_user(
-                    db,
-                    data={
-                        "name": payload.name,
-                        "email": inv.email,
-                        "hashed_password": hashed_pwd,
-                        "role": role.id,
-                        "organization_id": target_org_id,
-                        "is_active": True,
-                    },
-                )
+            from app.repositories.organization_lifecycle_repository import (
+                OrganizationLifecycleRepository,
+            )
+
+            lifecycle = OrganizationLifecycleRepository()
+            organization = await self.repository.get_organization_by_id(db, target_org_id)
+            member_count = await lifecycle.tenant_member_count(db, target_org_id)
+            if member_count >= organization.max_users:
+                raise ConflictError(code="ORGANIZATION_MEMBER_LIMIT", message="The organization has reached its member limit")
+            subscription = await lifecycle.subscription_for_membership(db, target_org_id)
+            if subscription is None:
+                raise ConflictError(message="The organization subscription requires administrator reconciliation")
+            user = await self.repository.create_user(
+                db,
+                data={
+                    "name": payload.name,
+                    "email": inv.email.strip().lower(),
+                    "hashed_password": hashed_pwd,
+                    "role": role.id,
+                    "organization_id": target_org_id,
+                    "is_active": True,
+                },
+            )
 
             user.is_verified = True
-            if is_new_user:
-                await db.flush()
+            await db.flush()
             await self.repository.assign_user_role(db, user_id=user.id, role_id=role.id)
             family_id = uuid.uuid4().hex
             refresh_token = await self._create_refresh_token(db, user.id, family_id=family_id)
             access_token = await self._create_access_token(db, user.id, family_id=family_id)
             inv.status = "accepted"
-            await db.commit()
+            subscription.current_users = member_count + 1
+            db.add(AuditLog(
+                organization_id=target_org_id,
+                user_id=user.id,
+                action="ROLE_ASSIGNED_TO_USER",
+                details=json.dumps({
+                    "target_type": "user", "target_id": user.id,
+                    "invitation_id": inv.id,
+                    "before": {"role_id": None},
+                    "after": {"role_id": role.id, "role_name": role.name},
+                }, sort_keys=True),
+            ))
 
             user_permissions = await self.get_user_permissions(
                 db, user, resolved_role_name=role.name
             )
+            await db.commit()
 
             return {
                 "message": "Invitation accepted successfully! Your account is active.",
@@ -768,10 +807,8 @@ class AuthService:
                 },
             }
         except APIException:
-            await db.rollback()
             raise
         except Exception as e:
-            await db.rollback()
             logger.exception("Unexpected failure during invitation acceptance")
             raise APIException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -849,13 +886,14 @@ class AuthService:
                 message="Invalid or expired magic link token",
             )
         await self._validate_session_principal(db, user)
-        if user.two_factor_enabled:
-            if not two_factor_code or not self._is_valid_totp(user, two_factor_code):
-                raise APIException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    code="INVALID_TWO_FACTOR_CODE",
-                    message="Valid two-factor authentication is required",
-                )
+        if user.two_factor_enabled and (
+            not two_factor_code or not self._is_valid_totp(user, two_factor_code)
+        ):
+            raise APIException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                code="INVALID_TWO_FACTOR_CODE",
+                message="Valid two-factor authentication is required",
+            )
         await self.repository.consume_magic_link(magic_link)
         family_id = uuid.uuid4().hex
         refresh_token = await self._create_refresh_token(db, user.id, family_id=family_id)
@@ -895,6 +933,10 @@ class AuthService:
     async def create_api_key(
         self, db: AsyncSession, payload: ApiKeyCreate, current_user: User
     ) -> dict:
+        if getattr(current_user, "is_platform_admin", False) is True:
+            raise ForbiddenError(
+                message="API keys must be created by an organization user, not the global platform account"
+            )
         try:
             organization_id = self._require_organization_id(current_user)
             scopes = self._validate_api_key_scopes(payload.scopes)

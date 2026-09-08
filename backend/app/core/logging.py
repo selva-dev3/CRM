@@ -17,17 +17,25 @@ class RequestIDFilter(logging.Filter):
 class SensitiveDataFilter(logging.Filter):
     """Redact credentials that may appear in URLs, headers, or exception text."""
 
+    _quoted_value = r'''(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')'''
+    _authorization_pattern = re.compile(
+        r'''(?i)(authorization)(['"]?\s*[:=]\s*)(?:'''
+        + _quoted_value
+        + r'''|(?:(?:bearer|basic)\s+)?[^&\s,;}]+)'''
+    )
     _pattern = re.compile(
-        r"(?i)(password|secret|token|id_token|access_token|refresh_token|authorization|api_key)"
-        r"(\s*[:=]\s*)([^&\s,]+)"
+        r"(?i)(password|secret|token|id_token|access_token|refresh_token|api_key)"
+        + r'''(['"]?\s*[:=]\s*)(?:'''
+        + _quoted_value
+        + r'''|[^&\s,;}]+)'''
     )
 
     def filter(self, record: logging.LogRecord) -> bool:
-        record.msg = self._pattern.sub(r"\1\2[REDACTED]", str(record.msg))
-        if record.args:
-            record.args = tuple(
-                self._pattern.sub(r"\1\2[REDACTED]", str(arg)) for arg in record.args
-            )
+        # Format typed arguments before redacting: converting them to strings
+        # first breaks numeric placeholders and mapping-based log messages.
+        message = self._authorization_pattern.sub(r"\1\2[REDACTED]", record.getMessage())
+        record.msg = self._pattern.sub(r"\1\2[REDACTED]", message)
+        record.args = ()
         return True
 
 

@@ -45,17 +45,23 @@ import {
   PermissionItem
 } from '@/lib/api/roles';
 import { UserSelect } from '@/components/common/user-select';
+import { useHasPermission } from '@/hooks/use-has-permission';
 
 export default function RoleDetailPage() {
   const params = useParams();
   const router = useRouter();
   const roleId = (params?.id as string) || '';
+  const { hasPermission } = useHasPermission();
+  const canReadUsers = hasPermission('users:read');
+  const canAssignPermissions = hasPermission('roles:assign');
 
   // Queries
   const { data: role, isLoading, isError } = useRoleQuery(roleId);
   const { data: defaultRole } = useDefaultRoleQuery();
   const { data: permissionMatrix = [] } = usePermissionMatrixQuery();
-  const { data: assignedUsers = [] } = useRoleUsersQuery(roleId);
+  const { data: assignedUsers = [] } = useRoleUsersQuery(roleId, {
+    enabled: !!roleId && canReadUsers,
+  });
 
   // System roles (e.g. super_admin) are immutable — enforced server-side; UI reflects this.
   const isSystemRole = role?.is_system_role === true;
@@ -74,29 +80,23 @@ export default function RoleDetailPage() {
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [isAddPermModalOpen, setIsAddPermModalOpen] = useState(false);
   const [cloneNewName, setCloneNewName] = useState('');
-  const [assignUserId, setAssignUserId] = useState('usr-101');
+  const [assignUserId, setAssignUserId] = useState('');
   const [selectedAddPerms, setSelectedAddPerms] = useState<Set<string>>(new Set());
 
   // Permission Simulator
   const [testPerm, setTestPerm] = useState('leads:create');
+  const [testUserId, setTestUserId] = useState('');
   const [testResult, setTestResult] = useState<string | null>(null);
 
   // Toast / Alert notifications
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Filter permissions assigned to this role (expanding 'all' to all individual granular permissions)
+  // Display only the explicit approved permissions returned for this role.
   const assignedPermissions = React.useMemo(() => {
     if (!role || !permissionMatrix.length) return [];
-    
-    // Exclude generic 'all' placeholder item from permissions table list
-    const cleanMatrix = permissionMatrix.filter((p) => p.key !== 'all' && p.id !== 'all' && p.name !== 'All Permission');
-
-    if (role.is_system_role || role.permissions?.includes('all')) {
-      return cleanMatrix;
-    }
     const permSet = new Set(role.permissions || []);
-    return cleanMatrix.filter(
+    return permissionMatrix.filter(
       (p) => permSet.has(p.id) || (p.key && permSet.has(p.key))
     );
   }, [role, permissionMatrix]);
@@ -153,7 +153,7 @@ export default function RoleDetailPage() {
       id: 'actions',
       header: 'ACTIONS',
       cell: (item) =>
-        !isSystemRole ? (
+        !isSystemRole && canAssignPermissions ? (
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -167,7 +167,7 @@ export default function RoleDetailPage() {
           </button>
         ) : (
           <span className="px-2.5 py-1 text-[11px] font-semibold text-purple-600 bg-purple-50 border border-purple-200 rounded-md">
-            Protected
+            {isSystemRole ? 'Protected' : 'Read only'}
           </span>
         ),
     },
@@ -249,7 +249,8 @@ export default function RoleDetailPage() {
 
   const handleCheckPermission = async () => {
     try {
-      const res = await checkPermissionApi('usr-1', testPerm);
+      if (!testUserId) return;
+      const res = await checkPermissionApi(testUserId, testPerm);
       setTestResult(res.allowed ? `ALLOWED: User holds permission '${testPerm}'` : `DENIED: Permission missing`);
     } catch (err: unknown) {
       setTestResult(`CHECK FAILED: ${getErrorMessage(err, 'Unknown error')}`);
@@ -325,7 +326,7 @@ export default function RoleDetailPage() {
         </div>
 
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-          <PermissionGate permission="users:roles">
+          {canReadUsers && <PermissionGate permission="users:assign_roles">
             <Button
               onClick={() => setIsAssignModalOpen(true)}
               className="w-full gap-2 text-xs font-semibold sm:w-auto"
@@ -333,28 +334,28 @@ export default function RoleDetailPage() {
               <UserCheck className="w-4 h-4" />
               <span>Assign to User</span>
             </Button>
-          </PermissionGate>
+          </PermissionGate>}
 
           <ActionMenu
             label="More"
             className="w-full text-xs font-semibold sm:w-auto"
             actions={[
-              ...((role.name.toLowerCase().includes('super') || role.name.toLowerCase() === 'super_admin' || role.id === 'sys-admin') && !isDefault ? [{
+              ...(!isDefault ? [{
                 label: 'Set registration default',
                 permission: 'roles:update' as const,
                 icon: setDefaultMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin text-amber-500" /> : <Star className="w-4 h-4 text-amber-500" />,
                 disabled: setDefaultMutation.isPending,
                 onSelect: handleSetDefault,
               }] : []),
-              {
+              ...(hasPermission('roles:assign') ? [{
                 label: 'Clone role',
-                permission: 'roles:create',
+                permission: 'roles:create' as const,
                 icon: <Copy className="w-4 h-4 text-indigo-600" />,
                 onSelect: () => {
                   setCloneNewName(`${role.name} Copy`);
                   setIsCloneModalOpen(true);
                 },
-              },
+              }] : []),
               ...(!role.is_system_role && !isDefault && role.type !== 'default' ? [{
                 label: 'Delete role',
                 permission: 'roles:delete' as const,
@@ -422,7 +423,7 @@ export default function RoleDetailPage() {
                 onSearchChange={setPermSearchTerm}
                 searchPlaceholder="Search assigned permissions..."
                 maxHeight="500px"
-                showCheckbox={!isSystemRole}
+                showCheckbox={!isSystemRole && canAssignPermissions}
                 selectedIds={permSelectedIds}
                 onToggleRow={(item, checked) => {
                   const key = item.key || item.id;
@@ -473,6 +474,7 @@ export default function RoleDetailPage() {
         {/* Right Column: Assigned Users & Permission Testing */}
         <div className="space-y-6">
           {/* Assigned Users */}
+          <PermissionGate permission="users:read">
           <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
             <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider border-b border-slate-100 pb-3 flex items-center gap-2">
               <Users className="w-4 h-4 text-blue-600" />
@@ -492,8 +494,10 @@ export default function RoleDetailPage() {
               )}
             </div>
           </div>
+          </PermissionGate>
 
           {/* Live Permission Check Simulator */}
+          {canReadUsers && <PermissionGate permission="users:roles">
           <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
             <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider border-b border-slate-100 pb-3 flex items-center gap-2">
               <Lock className="w-4 h-4 text-purple-600" />
@@ -501,6 +505,10 @@ export default function RoleDetailPage() {
             </h3>
 
             <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">User Account</label>
+                <UserSelect value={testUserId} onChange={setTestUserId} />
+              </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Permission Action Key</label>
                 <Input
@@ -513,6 +521,7 @@ export default function RoleDetailPage() {
 
               <button
                 onClick={handleCheckPermission}
+                disabled={!testUserId}
                 className="w-full bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
               >
                 Verify Permission
@@ -525,6 +534,7 @@ export default function RoleDetailPage() {
               )}
             </div>
           </div>
+          </PermissionGate>}
         </div>
       </div>
 
@@ -570,7 +580,7 @@ export default function RoleDetailPage() {
       )}
 
       {/* Assign User Modal */}
-      {isAssignModalOpen && (
+      {canReadUsers && isAssignModalOpen && (
         <ModalShell
           isOpen={isAssignModalOpen}
           onClose={() => setIsAssignModalOpen(false)}
@@ -608,7 +618,7 @@ export default function RoleDetailPage() {
       )}
 
       {/* Add Permissions Modal */}
-      {isAddPermModalOpen && (
+      {isAddPermModalOpen && canAssignPermissions && (
         <ModalShell
           isOpen={isAddPermModalOpen}
           onClose={() => setIsAddPermModalOpen(false)}

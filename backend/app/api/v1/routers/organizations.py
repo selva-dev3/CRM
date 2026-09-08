@@ -95,7 +95,7 @@ async def get_current_organization(
 @router.get(
     "/members",
     summary="List members in current organization",
-    dependencies=[Depends(require_permission("organization:read"))],
+    dependencies=[Depends(require_permission("organization:members"))],
 )
 async def list_members(
     db: AsyncSession = Depends(get_db),
@@ -108,7 +108,7 @@ async def list_members(
     "/members/{user_id}",
     response_model=MessageResponse,
     summary="Remove member from organization",
-    dependencies=[Depends(require_permission("organization:update"))],
+    dependencies=[Depends(require_permission("organization:members"))],
 )
 async def remove_member(
     user_id: str,
@@ -311,7 +311,7 @@ async def get_organization_audit_logs(
     "/transfer-ownership",
     response_model=MessageResponse,
     summary="Transfer organization primary ownership to another user",
-    dependencies=[Depends(require_permission("organization:update"))],
+    dependencies=[Depends(require_permission("organization:transfer_ownership"))],
 )
 async def transfer_organization_ownership(
     new_owner_user_id: str,
@@ -358,7 +358,7 @@ async def update_organization_by_id(
     "/{org_id}",
     response_model=OrganizationDeletionResponse,
     summary="Delete organization by ID",
-    dependencies=[Depends(require_permission("organization:update"))],
+    dependencies=[Depends(require_permission("organization:delete"))],
 )
 async def delete_organization_by_id(
     org_id: str,

@@ -142,7 +142,7 @@ async def create_recurring_invoice(
 @router.get(
     "/export/csv",
     summary="Export invoices as CSV",
-    dependencies=[Depends(require_permission("invoices:read"))],
+    dependencies=[Depends(require_permission("invoices:export"))],
 )
 async def export_invoices_csv(db: AsyncSession = Depends(get_db)):
     raise APIException(message="Invoice export is not implemented", status_code=501)
@@ -152,7 +152,7 @@ async def export_invoices_csv(db: AsyncSession = Depends(get_db)):
     "/import/csv",
     response_model=MessageResponse,
     summary="Import invoices from CSV",
-    dependencies=[Depends(require_permission("invoices:create"))],
+    dependencies=[Depends(require_permission("invoices:import"))],
 )
 async def import_invoices_csv(db: AsyncSession = Depends(get_db)):
     raise APIException(message="Invoice import is not implemented", status_code=501)

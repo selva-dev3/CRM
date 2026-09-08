@@ -265,11 +265,12 @@ export function useUserPerformanceQuery(id: string) {
   });
 }
 
-export function useUserPermissionsQuery(id: string) {
+export function useUserPermissionsQuery(id: string, options?: Omit<UseQueryOptions<UserPermissionsResponse, Error>, 'queryKey' | 'queryFn'>) {
   return useQuery({
     queryKey: ['user-permissions', id],
     queryFn: () => fetchUserPermissionsApi(id),
     enabled: !!id,
+    ...options,
   });
 }
 

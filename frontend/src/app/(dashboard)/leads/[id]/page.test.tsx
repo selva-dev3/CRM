@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { PERMISSIONS } from '@/lib/permissions';
 
 const useLeadQueryMock = vi.fn();
 const useUsersQueryMock = vi.fn();
@@ -138,7 +139,9 @@ async function openActionsTab() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  window.localStorage.setItem('user', JSON.stringify({ permissions: ['all'] }));
+  window.localStorage.setItem('user', JSON.stringify({
+    permissions: Object.values(PERMISSIONS).flatMap((group) => Object.values(group)),
+  }));
   refetchLeadMock.mockResolvedValue({ data: lead });
   refetchUsersMock.mockResolvedValue({ data: users });
   updateLeadMutateAsync.mockResolvedValue({ ...lead, assigned_to: null });

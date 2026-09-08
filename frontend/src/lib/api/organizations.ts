@@ -404,10 +404,11 @@ export function useUpdateOrganizationMutation() {
   });
 }
 
-export function useOrganizationMembersQuery() {
+export function useOrganizationMembersQuery(enabled = true) {
   return useQuery({
     queryKey: ['organization-members'],
     queryFn: getOrganizationMembersApi,
+    enabled,
   });
 }
 
@@ -421,10 +422,11 @@ export function useRemoveOrganizationMemberMutation() {
   });
 }
 
-export function useOrganizationSubscriptionQuery() {
+export function useOrganizationSubscriptionQuery(enabled = true) {
   return useQuery({
     queryKey: ['organization-subscription'],
     queryFn: getOrganizationSubscriptionApi,
+    enabled,
   });
 }
 
@@ -448,10 +450,11 @@ export function useResumeSubscriptionMutation() {
   });
 }
 
-export function useOrganizationUsageQuery() {
+export function useOrganizationUsageQuery(enabled = true) {
   return useQuery({
     queryKey: ['organization-usage'],
     queryFn: getOrganizationUsageApi,
+    enabled,
   });
 }
 
@@ -475,17 +478,19 @@ export function useVerifyDomainMutation() {
   });
 }
 
-export function useOrganizationDomainsQuery() {
+export function useOrganizationDomainsQuery(enabled = true) {
   return useQuery({
     queryKey: ['organization-domains'],
     queryFn: getOrganizationDomainsApi,
+    enabled,
   });
 }
 
-export function useOrganizationAuditLogsQuery() {
+export function useOrganizationAuditLogsQuery(enabled = true) {
   return useQuery({
     queryKey: ['organization-audit-logs'],
     queryFn: getOrganizationAuditLogsApi,
+    enabled,
   });
 }
 

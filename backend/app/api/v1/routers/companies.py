@@ -175,7 +175,10 @@ async def delete_company(
     "/{company_id}/contacts",
     response_model=list[ContactResponse],
     summary="List contacts working at company",
-    dependencies=[Depends(require_permission("companies:read"))],
+    dependencies=[
+        Depends(require_permission("companies:read")),
+        Depends(require_permission("contacts:read")),
+    ],
 )
 async def get_company_contacts(
     company_id: str,
@@ -192,7 +195,10 @@ async def get_company_contacts(
     "/{company_id}/deals",
     response_model=list[DealResponse],
     summary="List deals linked to company",
-    dependencies=[Depends(require_permission("companies:read"))],
+    dependencies=[
+        Depends(require_permission("companies:read")),
+        Depends(require_permission("deals:read")),
+    ],
 )
 async def get_company_deals(
     company_id: str,
@@ -244,7 +250,10 @@ async def set_parent_company(
     "/{company_id}/quotes",
     response_model=list[QuoteResponse],
     summary="List quotes generated for company",
-    dependencies=[Depends(require_permission("companies:read"))],
+    dependencies=[
+        Depends(require_permission("companies:read")),
+        Depends(require_permission("quotes:read")),
+    ],
 )
 async def get_company_quotes(
     company_id: str,
@@ -259,7 +268,10 @@ async def get_company_quotes(
     "/{company_id}/invoices",
     response_model=list[InvoiceResponse],
     summary="List invoices billed to company",
-    dependencies=[Depends(require_permission("companies:read"))],
+    dependencies=[
+        Depends(require_permission("companies:read")),
+        Depends(require_permission("invoices:read")),
+    ],
 )
 async def get_company_invoices(
     company_id: str,
@@ -276,7 +288,10 @@ async def get_company_invoices(
     "/{company_id}/notes",
     response_model=list[NoteResponse],
     summary="List notes for company",
-    dependencies=[Depends(require_permission("companies:read"))],
+    dependencies=[
+        Depends(require_permission("companies:read")),
+        Depends(require_permission("notes:read")),
+    ],
 )
 async def get_company_notes(
     company_id: str,
@@ -294,7 +309,10 @@ async def get_company_notes(
     "/{company_id}/notes",
     response_model=NoteResponse,
     summary="Add note to company",
-    dependencies=[Depends(require_permission("companies:create"))],
+    dependencies=[
+        Depends(require_permission("companies:read")),
+        Depends(require_permission("notes:create")),
+    ],
 )
 async def add_company_note(
     company_id: str,
@@ -323,7 +341,10 @@ async def add_company_note(
     "/{company_id}/documents",
     response_model=list[DocumentResponse],
     summary="List documents attached to company",
-    dependencies=[Depends(require_permission("companies:read"))],
+    dependencies=[
+        Depends(require_permission("companies:read")),
+        Depends(require_permission("documents:read")),
+    ],
 )
 async def get_company_documents(
     company_id: str,

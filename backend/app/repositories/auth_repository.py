@@ -310,7 +310,18 @@ class AuthRepository:
     ) -> UserInvitation | None:
         stmt = select(UserInvitation).where(UserInvitation.token == token.strip())
         if for_update:
+            from app.repositories.organization_lifecycle_repository import (
+                OrganizationLifecycleRepository,
+            )
+
+            candidate = await db.scalar(stmt)
+            if candidate is None:
+                return None
+            lifecycle = OrganizationLifecycleRepository()
+            await lifecycle.lock_invitation_email(db, candidate.email.strip().lower())
+            await lifecycle.lock_invitation_organization(db, candidate.organization_id)
             stmt = stmt.with_for_update()
+            stmt = stmt.execution_options(populate_existing=True)
         result = await db.execute(stmt)
         return result.scalars().first()
 
@@ -322,11 +333,12 @@ class AuthRepository:
     async def get_role_for_organization(
         self, db: AsyncSession, role_value: str, organization_id: str
     ) -> Role | None:
-        ownership_filter = (Role.organization_id.is_(None)) | (
-            Role.organization_id == organization_id
-        )
+        ownership_filter = Role.organization_id == organization_id
         result = await db.execute(
-            select(Role).where(Role.id == role_value, ownership_filter).limit(1)
+            select(Role)
+            .where(Role.id == role_value, ownership_filter)
+            .limit(1)
+            .with_for_update()
         )
         role = result.scalars().first()
         if role:
@@ -335,18 +347,21 @@ class AuthRepository:
         result = await db.execute(
             select(Role)
             .where(
-                func.lower(Role.name) == role_value.strip().lower(),
+                func.lower(func.btrim(Role.name)) == role_value.strip().lower(),
                 ownership_filter,
             )
-            .order_by(Role.organization_id.is_(None))
             .limit(1)
+            .with_for_update()
         )
         return result.scalars().first()
+
+    async def clear_user_roles(self, db: AsyncSession, *, user_id: str) -> None:
+        await db.execute(delete(UserRole).where(UserRole.user_id == user_id))
 
     async def assign_user_role(self, db: AsyncSession, *, user_id: str, role_id: str) -> UserRole:
         # User.role is singular throughout the application. Replace every
         # mapping so stale rows cannot retain permissions from an older role.
-        await db.execute(delete(UserRole).where(UserRole.user_id == user_id))
+        await self.clear_user_roles(db, user_id=user_id)
         mapping = UserRole(user_id=user_id, role_id=role_id)
         db.add(mapping)
         return mapping
@@ -369,8 +384,13 @@ class AuthRepository:
         result = await db.execute(stmt)
         return list(result.scalars().all())
 
-    async def get_role_name_by_id(self, db: AsyncSession, role_id: str) -> str | None:
-        result = await db.execute(select(Role.name).where(Role.id == role_id))
+    async def get_role_name_by_id(
+        self, db: AsyncSession, role_id: str, organization_id: str | None = None
+    ) -> str | None:
+        stmt = select(Role.name).where(Role.id == role_id)
+        if organization_id is not None:
+            stmt = stmt.where(Role.organization_id == organization_id)
+        result = await db.execute(stmt)
         return result.scalars().first()
 
     async def get_user_role_id(self, db: AsyncSession, user_id: str) -> str | None:
@@ -396,11 +416,11 @@ class AuthRepository:
         ownership_filter = (
             Role.organization_id.is_(None)
             if global_only
-            else (Role.organization_id.is_(None)) | (Role.organization_id == organization_id)
+            else Role.organization_id == organization_id
         )
         result = await db.execute(
             select(Role.id).where(
-                func.lower(Role.name) == role_name.strip().lower(),
+                func.lower(func.btrim(Role.name)) == role_name.strip().lower(),
                 ownership_filter,
             )
         )
@@ -412,7 +432,7 @@ class AuthRepository:
         result = await db.execute(
             select(Role).where(
                 Role.id.in_(list(role_ids)),
-                (Role.organization_id.is_(None)) | (Role.organization_id == organization_id),
+                Role.organization_id == organization_id,
             )
         )
         return list(result.scalars().all())

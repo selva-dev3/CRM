@@ -10,7 +10,7 @@ from uuid import uuid4
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from app.core.errors import APIException, ConflictError, NotFoundError, register_exception_handlers
 from app.core.rate_limiter import limiter
@@ -508,7 +508,7 @@ async def test_http_manual_payment_validation_permission_and_tenant_scope(
         assert summary.json()[0]["latest_payment_id"] == result["id"]
         async with sessions() as db:
             other_org = Organization(
-                id=str(uuid4()), name="Other invoice test tenant", currency="INR"
+                id=str(uuid4()), name=f"Other invoice test tenant {uuid4()}", currency="INR"
             )
             db.add(other_org)
             await db.commit()
@@ -521,6 +521,9 @@ async def test_http_manual_payment_validation_permission_and_tenant_scope(
             assert (await client.get("/api/v1/payments/invoice-summaries")).json() == []
         finally:
             user.organization_id = original_org
+            async with sessions() as db:
+                await db.execute(delete(Organization).where(Organization.id == other_org.id))
+                await db.commit()
 
 
 @pytest.mark.asyncio

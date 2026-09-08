@@ -127,7 +127,7 @@ async def get_tasks_board_view(
 @router.get(
     "/export/csv",
     summary="Export tasks as CSV file",
-    dependencies=[Depends(require_permission("tasks:read"))],
+    dependencies=[Depends(require_permission("tasks:export"))],
 )
 async def export_tasks_csv():
     return await task_service.export_csv()
@@ -137,7 +137,7 @@ async def export_tasks_csv():
     "/import/csv",
     response_model=MessageResponse,
     summary="Import tasks from CSV file",
-    dependencies=[Depends(require_permission("tasks:create"))],
+    dependencies=[Depends(require_permission("tasks:import"))],
 )
 async def import_tasks_csv():
     return await task_service.import_csv()

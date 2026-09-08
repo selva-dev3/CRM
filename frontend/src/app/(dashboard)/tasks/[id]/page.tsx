@@ -28,6 +28,8 @@ import {
 } from 'lucide-react';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
+import { PermissionGate } from '@/components/common/permission-gate';
+import { PERMISSIONS } from '@/lib/permissions';
 import {
   useTaskQuery,
   useUpdateTaskMutation,
@@ -250,33 +252,39 @@ export default function TaskDetailPage() {
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
-          <button
-            onClick={handleToggleComplete}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer transition-colors shadow-sm ${
-              s === 'Completed'
-                ? 'bg-amber-50 text-amber-700 border border-amber-300 hover:bg-amber-100'
-                : 'bg-emerald-600 text-white hover:bg-emerald-700'
-            }`}
-          >
-            <CheckCircle2 className="w-4 h-4" />
-            {s === 'Completed' ? 'Reopen Task' : 'Mark Completed'}
-          </button>
+          <PermissionGate permission={PERMISSIONS.TASKS.COMPLETE}>
+            <button
+              onClick={handleToggleComplete}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer transition-colors shadow-sm ${
+                s === 'Completed'
+                  ? 'bg-amber-50 text-amber-700 border border-amber-300 hover:bg-amber-100'
+                  : 'bg-emerald-600 text-white hover:bg-emerald-700'
+              }`}
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              {s === 'Completed' ? 'Reopen Task' : 'Mark Completed'}
+            </button>
+          </PermissionGate>
 
-          <button
-            onClick={handleOpenEditModal}
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm cursor-pointer"
-          >
-            <Edit className="w-4 h-4 text-slate-500" />
-            Edit Task
-          </button>
+          <PermissionGate permission={PERMISSIONS.TASKS.UPDATE}>
+            <button
+              onClick={handleOpenEditModal}
+              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm cursor-pointer"
+            >
+              <Edit className="w-4 h-4 text-slate-500" />
+              Edit Task
+            </button>
+          </PermissionGate>
 
-          <button
-            onClick={() => setIsDeleteModalOpen(true)}
-            className="flex items-center gap-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3.5 py-2 rounded-lg text-sm font-semibold transition-colors cursor-pointer"
-          >
-            <Trash2 className="w-4 h-4" />
-            Delete
-          </button>
+          <PermissionGate permission={PERMISSIONS.TASKS.DELETE}>
+            <button
+              onClick={() => setIsDeleteModalOpen(true)}
+              className="flex items-center gap-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3.5 py-2 rounded-lg text-sm font-semibold transition-colors cursor-pointer"
+            >
+              <Trash2 className="w-4 h-4" />
+              Delete
+            </button>
+          </PermissionGate>
         </div>
       </div>
 
@@ -357,6 +365,7 @@ export default function TaskDetailPage() {
               <span>Sub-tasks ({subtasks.length})</span>
             </h3>
 
+            <PermissionGate permission={PERMISSIONS.TASKS.CREATE}>
             <form onSubmit={handleAddSubtaskSubmit} className="flex gap-2">
               <Input
                 type="text"
@@ -374,6 +383,7 @@ export default function TaskDetailPage() {
                 Add Subtask
               </button>
             </form>
+            </PermissionGate>
 
             <div className="space-y-2 pt-1">
               {subtasks.length === 0 ? (
@@ -409,6 +419,7 @@ export default function TaskDetailPage() {
               </div>
             </div>
 
+            <PermissionGate permission={PERMISSIONS.TASKS.ASSIGN}>
             <form onSubmit={handleAssignUserSubmit} className="space-y-2 pt-2">
               <label className="block text-xs font-semibold text-slate-700">Reassign Task</label>
               <ResponsiveSelect
@@ -431,6 +442,7 @@ export default function TaskDetailPage() {
                 Reassign Task
               </button>
             </form>
+            </PermissionGate>
           </div>
 
           {/* Reminder Card */}
@@ -440,6 +452,7 @@ export default function TaskDetailPage() {
               Automated Reminder
             </h3>
 
+            <PermissionGate permission={PERMISSIONS.TASKS.UPDATE}>
             <form onSubmit={handleSetReminderSubmit} className="space-y-3">
               <div>
                 <label htmlFor="task-reminder-time" className="block text-xs font-semibold text-slate-700 mb-1">Set Reminder Date & Time</label>
@@ -459,6 +472,7 @@ export default function TaskDetailPage() {
                 Schedule Notification
               </button>
             </form>
+            </PermissionGate>
           </div>
         </div>
       </div>

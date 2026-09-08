@@ -63,7 +63,10 @@ async def list_invitations(
     response_model=InviteUserResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Invite Additional User to Organization",
-    dependencies=[Depends(require_permission("invitations:create"))],
+    dependencies=[
+        Depends(require_permission("invitations:create")),
+        Depends(require_permission("users:assign_roles")),
+    ],
 )
 async def invite_user(
     payload: OrganizationInviteRequest,

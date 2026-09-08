@@ -6,13 +6,16 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, ConflictError, ForbiddenError, NotFoundError
-from app.core.permissions import ensure_tenant_managed_user
+from app.core.permissions import effective_organization_id, ensure_tenant_managed_user
 from app.models import Organization, OrganizationSubscription, SubscriptionPlan, User
+from app.repositories.auth_repository import AuthRepository
 from app.repositories.organization_repository import OrganizationRepository
+from app.repositories.user_repository import UserRepository
 from app.schemas.crm_schemas import OrganizationUpdate
 from app.services.organization_storage_service import lock_organization_storage
 from app.services.s3_service import s3_service
 from app.services.subscription_plan_service import FREE_PLAN_SLUG, free_subscription_data
+from app.services.user_service import UserService
 
 
 def org_to_dict(org: Organization, members_count: int = 1) -> dict:
@@ -49,8 +52,13 @@ def org_to_dict(org: Organization, members_count: int = 1) -> dict:
 class OrganizationDomainService:
     """Business logic for the Organization domain (CRUD, subscription, branding)."""
 
-    def __init__(self, repository: OrganizationRepository | None = None) -> None:
+    def __init__(
+        self,
+        repository: OrganizationRepository | None = None,
+        user_repository: UserRepository | None = None,
+    ) -> None:
         self.repository = repository or OrganizationRepository()
+        self.user_repository = user_repository or UserRepository()
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
         try:
@@ -67,9 +75,10 @@ class OrganizationDomainService:
             ) from e
 
     async def _require_current_org(self, db: AsyncSession, current_user: User) -> Organization:
-        if not current_user.organization_id:
+        organization_id = effective_organization_id(current_user)
+        if not organization_id:
             raise ForbiddenError(message="Authenticated user has no current organization")
-        org = await self.repository.get_by_id(db, current_user.organization_id)
+        org = await self.repository.get_by_id(db, organization_id)
         if not org:
             raise NotFoundError(message="Current organization not found")
         return org
@@ -82,7 +91,7 @@ class OrganizationDomainService:
             if not org:
                 raise NotFoundError(message="Organization not found")
             return org
-        if current_user.organization_id != org_id:
+        if effective_organization_id(current_user) != org_id:
             raise NotFoundError(message="Organization not found")
         return await self._require_current_org(db, current_user)
 
@@ -166,7 +175,7 @@ class OrganizationDomainService:
 
     async def get_current_organization(self, db: AsyncSession, current_user: User) -> dict:
         """Return only the organization assigned to the authenticated user."""
-        org_id = current_user.organization_id
+        org_id = effective_organization_id(current_user)
         if not org_id:
             raise ForbiddenError(message="Authenticated user has no current organization")
 
@@ -182,12 +191,15 @@ class OrganizationDomainService:
         users = await self.repository.list_members(db, org.id)
         if not users:
             raise NotFoundError(message="No members found in the organization")
+        role_names = await self.user_repository.effective_role_names_for_users(
+            db, list(users), org.id
+        )
         return [
             {
                 "id": u.id,
                 "name": u.name,
                 "email": u.email,
-                "role": u.role or "Sales Executive",
+                "role": role_names.get(u.id) or "User",
                 "status": "Active" if u.is_active else "Inactive",
                 "joined_at": str(u.created_at),
             }
@@ -195,7 +207,8 @@ class OrganizationDomainService:
         ]
 
     async def remove_member(self, db: AsyncSession, user_id: str, current_user: User) -> dict:
-        if not current_user.organization_id:
+        organization_id = effective_organization_id(current_user)
+        if not organization_id:
             raise ForbiddenError(message="Authenticated user has no current organization")
         if user_id == current_user.id:
             raise APIException(
@@ -205,10 +218,12 @@ class OrganizationDomainService:
         user = await self.repository.get_user_by_id(
             db,
             user_id=user_id,
-            organization_id=current_user.organization_id,
+            organization_id=organization_id,
         )
         if user:
             ensure_tenant_managed_user(user)
+            await UserService()._ensure_not_last_admin(db, user)
+            await AuthRepository().revoke_all_user_sessions(db, user.id)
             await self.repository.delete_user(db, user)
             await self._commit(db, "Failed to remove member")
             return {
@@ -413,7 +428,19 @@ class OrganizationDomainService:
         if not user:
             raise NotFoundError(message="New owner was not found in the organization")
         ensure_tenant_managed_user(user)
-        user.role = "Admin"
+        from app.repositories.role_repository import RoleRepository
+
+        role_repository = RoleRepository()
+        admin_role = await role_repository.get_role_by_id_or_name(
+            db, "Admin", organization_id=org.id
+        )
+        if not admin_role or admin_role.organization_id != org.id:
+            raise ConflictError(
+                message="The organization Admin role is not provisioned",
+                code="ADMIN_ROLE_NOT_CONFIGURED",
+            )
+        user.role = admin_role.id
+        await role_repository.replace_user_role(db, user.id, admin_role.id)
         db.add(user)
         await self.repository.create_audit_log(
             db,

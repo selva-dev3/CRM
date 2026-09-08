@@ -58,6 +58,10 @@ export function clearStoredSession(options: { broadcast?: boolean } = {}): void 
   if (options.broadcast !== false) announceSessionChange('logout');
 }
 
+export function notifyPermissionsInvalidated(): void {
+  if (typeof window !== 'undefined') announceSessionChange('refresh');
+}
+
 export function parseAuthBroadcast(value: string | null): AuthSessionAction | null {
   if (!value) return null;
   try {

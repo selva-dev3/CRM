@@ -106,7 +106,7 @@ async def create_teams_link(subject: str = "CRM Meeting", start_time: str | None
 @router.get(
     "/export/ical",
     summary="Export calendar as iCal .ics format",
-    dependencies=[Depends(require_permission("meetings:read"))],
+    dependencies=[Depends(require_permission("meetings:export"))],
 )
 async def export_ical_feed(db: AsyncSession = Depends(get_db)):
     return await meeting_service.export_ical()

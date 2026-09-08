@@ -198,11 +198,13 @@ export default function InvoiceDetailPage() {
             actions={invoice.payment_status !== 'Paid' && ['Finalized', 'Accepted'].includes(s) ? [
               {
                 label: 'Send reminder',
+                permission: PERMISSIONS.INVOICES.SEND,
                 icon: <BellRing className="w-4 h-4 text-amber-500" />,
                 onSelect: handleSendReminder,
               },
             ] : !invoice.quote_id && s === 'Draft' ? [{
               label: 'Delete invoice',
+              permission: PERMISSIONS.INVOICES.DELETE,
               icon: <Trash2 className="w-4 h-4" />,
               variant: 'destructive',
               onSelect: () => setIsDeleteModalOpen(true),

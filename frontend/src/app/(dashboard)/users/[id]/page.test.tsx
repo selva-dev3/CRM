@@ -5,6 +5,7 @@ import UserDetailPage from './page';
 
 const routeUserId = 'dfd38bda-e378-4d3b-8485-7fd651741378';
 const organizationId = 'ff39188-e8e4-42db-8563-6e9ed72d9dc1';
+const permissionAccess = vi.hoisted(() => ({ allowed: true }));
 
 vi.mock('next/navigation', () => ({
   useParams: () => ({ id: routeUserId }),
@@ -19,6 +20,10 @@ vi.mock('next/link', () => ({
 
 vi.mock('@/components/common/permission-gate', () => ({
   PermissionGate: ({ children }: { children: ReactNode }) => children,
+}));
+
+vi.mock('@/hooks/use-has-permission', () => ({
+  useHasPermission: () => ({ hasPermission: () => permissionAccess.allowed }),
 }));
 
 vi.mock('@/lib/api/organizations', () => ({
@@ -87,5 +92,15 @@ describe('UserDetailPage', () => {
     expect(container).not.toHaveTextContent('68.5%');
     expect(container).not.toHaveTextContent('Enterprise Sales East');
     expect(container).not.toHaveTextContent('Global Account Executives');
+  });
+
+  it('hides the permissions tab when users:roles is unavailable', () => {
+    permissionAccess.allowed = false;
+
+    render(<UserDetailPage />);
+
+    expect(screen.queryByText('Security & Permissions')).not.toBeInTheDocument();
+    expect(screen.queryByText('No permissions assigned.')).not.toBeInTheDocument();
+    permissionAccess.allowed = true;
   });
 });

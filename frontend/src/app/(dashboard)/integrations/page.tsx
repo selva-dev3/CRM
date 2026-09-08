@@ -16,6 +16,10 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { PermissionGate } from '@/components/common/permission-gate';
+import { PERMISSIONS } from '@/lib/permissions';
+import { useHasPermission } from '@/hooks/use-has-permission';
+import { useAuth } from '@/providers/auth-provider';
 import {
   fetchIntegrationsApi,
   connectIntegrationApi,
@@ -88,6 +92,8 @@ const APPS: AppIntegration[] = [
 ];
 
 export default function IntegrationsPage() {
+  const { hasPermission } = useHasPermission();
+  const { user } = useAuth();
   const [apps, setApps] = useState<AppIntegration[]>(APPS);
   const [apiKey, setApiKey] = useState('');
   const [apiKeyId, setApiKeyId] = useState<string | null>(null);
@@ -162,10 +168,12 @@ export default function IntegrationsPage() {
         setErrorMessage(err instanceof Error ? err.message : 'Failed to load API key status.');
       }
     }
-    loadIntegrations();
-    loadSlackConfig();
-    loadApiKey();
-  }, []);
+    if (hasPermission(PERMISSIONS.INTEGRATIONS.READ)) {
+      loadIntegrations();
+      loadSlackConfig();
+    }
+    if (hasPermission(PERMISSIONS.API_KEYS.READ)) loadApiKey();
+  }, [hasPermission]);
 
   const toggleConnection = async (app: AppIntegration) => {
     setLoadingAppId(app.id);
@@ -391,6 +399,7 @@ export default function IntegrationsPage() {
       )}
 
       {/* API Key Management */}
+      <PermissionGate permission={PERMISSIONS.API_KEYS.READ}>
       <Card className="p-6 bg-white border border-slate-200 shadow-xs rounded-xl space-y-4">
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
           <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
@@ -420,6 +429,8 @@ export default function IntegrationsPage() {
             >
               {showKey ? 'Hide Key' : 'Show Key'}
             </Button>
+            {!user?.is_platform_admin && <PermissionGate permission={PERMISSIONS.API_KEYS.CREATE}>
+            <PermissionGate permission={apiKeyId ? PERMISSIONS.API_KEYS.REVOKE : undefined}>
             <Button
               type="button"
               variant="outline"
@@ -429,9 +440,14 @@ export default function IntegrationsPage() {
               className="h-9 text-xs border-slate-300 gap-1.5 cursor-pointer text-blue-600 hover:text-blue-700"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              <span>Regenerate Key</span>
+              <span>{apiKeyId ? 'Regenerate Key' : 'Create Key'}</span>
             </Button>
+            </PermissionGate>
+            </PermissionGate>}
           </div>
+          {user?.is_platform_admin && (
+            <p className="text-xs text-slate-600">API keys must be created by an organization user.</p>
+          )}
           <p className="text-[11px] text-slate-500">
             Use this bearer token in the <code className="font-mono bg-slate-100 px-1 rounded">Authorization: Bearer &lt;TOKEN&gt;</code> header for backend REST queries.
           </p>
@@ -455,6 +471,7 @@ export default function IntegrationsPage() {
           </div>
         </div>
       </Card>
+      </PermissionGate>
 
       {/* Native App Integrations */}
       <div className="space-y-4">
@@ -527,6 +544,7 @@ export default function IntegrationsPage() {
               <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
                 <span className="text-[10px] font-semibold text-slate-400">{app.category}</span>
                 <div className="flex items-center gap-1.5">
+                  <PermissionGate permission={PERMISSIONS.INTEGRATIONS.MANAGE}>
                   <Button
                     size="sm"
                     variant={app.status !== 'available' ? 'outline' : 'default'}
@@ -544,6 +562,7 @@ export default function IntegrationsPage() {
                       ? 'Disconnect'
                       : app.id === 'zapier' || app.id === 'mailchimp' ? 'Connect App' : 'Authenticate'}
                   </Button>
+                  </PermissionGate>
                 </div>
               </div>
             </Card>
@@ -584,6 +603,7 @@ export default function IntegrationsPage() {
             Create an Incoming Webhook in your Slack workspace and paste the URL here. It is stored server-side and never exposed in logs.
           </p>
           {!slackConnected && (
+            <PermissionGate permission={PERMISSIONS.INTEGRATIONS.MANAGE}>
             <Button
               type="button"
               size="sm"
@@ -593,6 +613,7 @@ export default function IntegrationsPage() {
             >
               {loadingAppId === 'slack-webhook' ? 'Connecting...' : 'Connect Webhook'}
             </Button>
+            </PermissionGate>
           )}
         </div>
 
@@ -616,6 +637,7 @@ export default function IntegrationsPage() {
                   </label>
                 ))}
               </div>
+              <PermissionGate permission={PERMISSIONS.INTEGRATIONS.MANAGE}>
               <Button
                 type="button"
                 size="sm"
@@ -625,9 +647,11 @@ export default function IntegrationsPage() {
               >
                 {slackEventsLoading ? 'Saving...' : 'Save Enabled Events'}
               </Button>
+              </PermissionGate>
             </div>
 
             <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center gap-2">
+              <PermissionGate permission={PERMISSIONS.INTEGRATIONS.MANAGE}>
               <Button
                 type="button"
                 size="sm"
@@ -638,6 +662,8 @@ export default function IntegrationsPage() {
               >
                 {slackTesting ? 'Sending test...' : 'Send Test Message'}
               </Button>
+              </PermissionGate>
+              <PermissionGate permission={PERMISSIONS.INTEGRATIONS.MANAGE}>
               <Button
                 type="button"
                 size="sm"
@@ -648,6 +674,7 @@ export default function IntegrationsPage() {
               >
                 {loadingAppId === 'slack-webhook' ? 'Disconnecting...' : 'Disconnect Webhook'}
               </Button>
+              </PermissionGate>
             </div>
           </>
         )}

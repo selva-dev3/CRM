@@ -23,8 +23,8 @@ describe('hasPermission', () => {
     expect(hasPermission([PERMISSIONS.CONTACTS.READ], PERMISSIONS.LEADS.READ)).toBe(false);
   });
 
-  it('honors the legacy "all" sentinel for previously persisted sessions', () => {
-    expect(hasPermission(['all'], PERMISSIONS.SUPER_ADMIN.MANAGE)).toBe(true);
+  it('rejects the legacy "all" wildcard', () => {
+    expect(hasPermission(['all'], PERMISSIONS.SUPER_ADMIN.MANAGE)).toBe(false);
   });
 });
 
