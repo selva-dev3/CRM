@@ -95,6 +95,9 @@ describe('LeadCallLogSection', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Log Call' }));
 
     expect(await within(dialog).findByText('Duration cannot be negative.')).toBeVisible();
+    expect(duration).toHaveAttribute('aria-invalid', 'true');
+    expect(duration).toHaveAttribute('aria-describedby', 'call-duration-error');
+    expect(duration).toHaveFocus();
     expect(logLeadCallApi).not.toHaveBeenCalled();
   });
 

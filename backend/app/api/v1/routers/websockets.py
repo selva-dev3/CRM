@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime
 from hashlib import sha256
 
@@ -10,7 +11,7 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.security import ALGORITHM
 from app.db.session import get_db
-from app.models import User, UserSession
+from app.models import Organization, User, UserSession
 from app.services.auth_service import auth_service
 
 router = APIRouter()
@@ -93,35 +94,76 @@ async def _authenticate_websocket(
     except Exception:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Organization denied")
         return None
-    organization_id = user.organization_id
+    organization_id = getattr(user, "_request_organization_id", None) or user.organization_id
     if not organization_id:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Organization required")
         return None
     permissions = await auth_service.get_user_permissions(db, user)
-    if "notifications:read" not in permissions and not getattr(user, "is_platform_admin", False):
+    if "notifications:read" not in permissions:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Permission denied")
         return None
     session.last_used_at = now
+    await db.commit()
     return user, session, organization_id
 
 
-async def _run_socket(websocket: WebSocket, db: AsyncSession, prefix: str) -> None:
+async def _run_socket(websocket: WebSocket, db: AsyncSession) -> None:
     authenticated = await _authenticate_websocket(websocket, db)
     if not authenticated:
         return
     user, session, organization_id = authenticated
-    await manager.connect(websocket, user.id, organization_id)
+    # Keep scalar identifiers across rollback boundaries; rollback expires ORM
+    # instances and accessing their attributes could otherwise trigger async IO.
+    user_id = user.id
+    session_id = session.id
+    await manager.connect(websocket, user_id, organization_id)
     try:
         while True:
-            data = await websocket.receive_text()
-            current = await db.get(UserSession, session.id)
-            if current is None or not current.is_current or current.revoked_at is not None:
-                await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Session revoked")
+            current_session = await db.get(UserSession, session_id, populate_existing=True)
+            current_user = await db.get(User, user_id, populate_existing=True)
+            organization = await db.get(Organization, organization_id, populate_existing=True)
+            if (
+                current_session is None
+                or not current_session.is_current
+                or current_session.revoked_at is not None
+                or (
+                    current_session.expires_at is not None
+                    and current_session.expires_at <= datetime.now(UTC)
+                )
+                or current_user is None
+                or not current_user.is_active
+                or organization is None
+                or not organization.is_active
+                or organization.status != "active"
+                or (
+                    not getattr(current_user, "is_platform_admin", False)
+                    and current_user.organization_id != organization_id
+                )
+            ):
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Authorization revoked")
                 return
-            if not data.strip():
-                await websocket.send_json({"error": "Empty message received"})
+            permissions = await auth_service.get_user_permissions(db, current_user)
+            if "notifications:read" not in permissions:
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Permission revoked")
+                return
+            # End the read transaction before waiting on the network so each
+            # long-lived socket does not reserve a pooled database connection.
+            await db.rollback()
+            try:
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=30)
+            except TimeoutError:
                 continue
-            await manager.broadcast(f"{prefix}: {data}", organization_id)
+            if data.strip().lower() == "ping":
+                await websocket.send_json({"type": "pong"})
+                continue
+            # These sockets are subscriptions. Client-originated publishing is
+            # intentionally prohibited; system alerts use the permission-gated
+            # HTTP endpoint instead.
+            await websocket.close(
+                code=status.WS_1008_POLICY_VIOLATION,
+                reason="Client publishing is not permitted",
+            )
+            return
     except WebSocketDisconnect:
         return
     except Exception:
@@ -129,16 +171,16 @@ async def _run_socket(websocket: WebSocket, db: AsyncSession, prefix: str) -> No
         try:
             await websocket.close(code=status.WS_1011_INTERNAL_ERROR, reason="Connection failed")
         except Exception:
-            pass
+            logger.debug("WebSocket was already closed during error cleanup", exc_info=True)
     finally:
         manager.disconnect(websocket)
 
 
 @router.websocket("/notifications")
 async def websocket_notifications(websocket: WebSocket, db: AsyncSession = Depends(get_db)) -> None:
-    await _run_socket(websocket, db, "Real-time update")
+    await _run_socket(websocket, db)
 
 
 @router.websocket("/live-events")
 async def websocket_live_events(websocket: WebSocket, db: AsyncSession = Depends(get_db)) -> None:
-    await _run_socket(websocket, db, "Event")
+    await _run_socket(websocket, db)

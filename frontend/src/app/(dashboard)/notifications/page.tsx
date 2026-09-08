@@ -26,8 +26,10 @@ import {
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
 import { PageTabs } from '@/components/common/page-tabs';
+import { PermissionGate } from '@/components/common/permission-gate';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
+import { PERMISSIONS } from '@/lib/permissions';
 import {
   useNotificationsQuery,
   useUnreadCountQuery,
@@ -234,30 +236,36 @@ export default function NotificationsPage() {
             Mark All Read
           </button>
 
-          <button
-            onClick={handleRegisterWebpush}
-            disabled={registerWebpushMutation.isPending}
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer disabled:opacity-50"
-          >
-            {registerWebpushMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Radio className="w-4 h-4 text-purple-600" />}
-            Register WebPush
-          </button>
+          <PermissionGate permission={PERMISSIONS.NOTIFICATIONS.MANAGE}>
+            <button
+              onClick={handleRegisterWebpush}
+              disabled={registerWebpushMutation.isPending}
+              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer disabled:opacity-50"
+            >
+              {registerWebpushMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Radio className="w-4 h-4 text-purple-600" />}
+              Register WebPush
+            </button>
+          </PermissionGate>
 
-          <button
-            onClick={() => setIsAlertModalOpen(true)}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer"
-          >
-            <Send className="w-4 h-4" />
-            Broadcast Alert
-          </button>
+          <PermissionGate permission={PERMISSIONS.NOTIFICATIONS.SEND}>
+            <button
+              onClick={() => setIsAlertModalOpen(true)}
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer"
+            >
+              <Send className="w-4 h-4" />
+              Broadcast Alert
+            </button>
+          </PermissionGate>
 
-          <button
-            onClick={handleOpenPreferencesModal}
-            className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-3.5 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer"
-          >
-            <Settings className="w-4 h-4 text-slate-300" />
-            Preferences
-          </button>
+          <PermissionGate permission={PERMISSIONS.NOTIFICATIONS.MANAGE}>
+            <button
+              onClick={handleOpenPreferencesModal}
+              className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-3.5 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer"
+            >
+              <Settings className="w-4 h-4 text-slate-300" />
+              Preferences
+            </button>
+          </PermissionGate>
         </div>
       </div>
 
@@ -282,12 +290,14 @@ export default function NotificationsPage() {
           {selectedIds.size > 0 && (
             <div className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1 sm:w-auto">
               <span className="text-xs font-semibold text-indigo-700">{selectedIds.size} selected</span>
-              <button
-                onClick={handleBulkDelete}
-                className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-semibold cursor-pointer"
-              >
-                Bulk Delete
-              </button>
+              <PermissionGate permission={PERMISSIONS.NOTIFICATIONS.MANAGE}>
+                <button
+                  onClick={handleBulkDelete}
+                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-semibold cursor-pointer"
+                >
+                  Bulk Delete
+                </button>
+              </PermissionGate>
             </div>
           )}
         </div>
@@ -354,13 +364,15 @@ export default function NotificationsPage() {
                     </button>
                   )}
 
-                  <button
-                    onClick={() => setNotificationToDelete(n)}
-                    title="Delete notification"
-                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <PermissionGate permission={PERMISSIONS.NOTIFICATIONS.MANAGE}>
+                    <button
+                      onClick={() => setNotificationToDelete(n)}
+                      title="Delete notification"
+                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </PermissionGate>
                 </div>
               </div>
             ))}

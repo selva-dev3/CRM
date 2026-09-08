@@ -365,7 +365,7 @@ export default function EmailPage() {
             </Button>
           </PermissionGate>
           <ActionMenu label="More" className="w-full text-xs font-semibold sm:w-auto" actions={[
-            { label: 'New template', icon: <Layers className="w-4 h-4 text-amber-500" />, onSelect: () => setIsTemplateModalOpen(true) },
+            { label: 'New template', permission: PERMISSIONS.EMAILS.TEMPLATES, icon: <Layers className="w-4 h-4 text-amber-500" />, onSelect: () => setIsTemplateModalOpen(true) },
           ]} />
         </div>
       </div>
@@ -426,12 +426,12 @@ export default function EmailPage() {
             selectedIds.size > 0 ? (
               <div className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1 sm:w-auto">
                 <span className="text-xs font-semibold text-indigo-700">{selectedIds.size} selected</span>
-                <button
+                <PermissionGate permission={PERMISSIONS.EMAILS.DELETE}><button
                   onClick={handleBulkDelete}
                   className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-semibold cursor-pointer"
                 >
                   Bulk Delete
-                </button>
+                </button></PermissionGate>
               </div>
             ) : undefined
           }

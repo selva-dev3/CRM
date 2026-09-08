@@ -186,7 +186,7 @@ async def test_http_lead_call_workflow_enforces_schema_permission_and_idempotenc
         async with sessions() as db:
             yield db
 
-    granted_permissions = ["calls:read", "calls:create", "calls:update", "calls:delete"]
+    granted_permissions = ["leads:read", "calls:read", "calls:create", "calls:update", "calls:delete"]
 
     async def permissions(*_args, **_kwargs):
         return granted_permissions
@@ -216,6 +216,10 @@ async def test_http_lead_call_workflow_enforces_schema_permission_and_idempotenc
         )
         assert forbidden.status_code == 403
         granted_permissions.append("calls:create")
+
+        granted_permissions.remove("leads:read")
+        assert (await client.post(endpoint, json=request)).status_code == 403
+        granted_permissions.append("leads:read")
 
         created = await client.post(endpoint, json=request, headers=headers)
         assert created.status_code == 201

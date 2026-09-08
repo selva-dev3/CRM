@@ -232,9 +232,9 @@ export default function NotesPage() {
           label="Open note actions"
           onTriggerClick={(event) => event.stopPropagation()}
           actions={[
-            { label: item.is_pinned ? 'Unpin note' : 'Pin note', icon: item.is_pinned ? <PinOff className="w-4 h-4 text-amber-600" /> : <Pin className="w-4 h-4 text-amber-600" />, onSelect: () => handleTogglePin(item) },
-            { label: 'Edit note', icon: <Edit className="w-4 h-4 text-indigo-600" />, onSelect: () => handleOpenEditModal(item) },
-            { label: 'Delete note', icon: <Trash2 className="w-4 h-4" />, variant: 'destructive', onSelect: () => setNoteToDelete(item) },
+            { label: item.is_pinned ? 'Unpin note' : 'Pin note', permission: PERMISSIONS.NOTES.UPDATE, icon: item.is_pinned ? <PinOff className="w-4 h-4 text-amber-600" /> : <Pin className="w-4 h-4 text-amber-600" />, onSelect: () => handleTogglePin(item) },
+            { label: 'Edit note', permission: PERMISSIONS.NOTES.UPDATE, icon: <Edit className="w-4 h-4 text-indigo-600" />, onSelect: () => handleOpenEditModal(item) },
+            { label: 'Delete note', permission: PERMISSIONS.NOTES.DELETE, icon: <Trash2 className="w-4 h-4" />, variant: 'destructive', onSelect: () => setNoteToDelete(item) },
           ]}
         />
       ),
@@ -318,9 +318,9 @@ export default function NotesPage() {
               <div key={p.id} className="p-3.5 bg-white rounded-xl border border-amber-200 shadow-2xs space-y-2">
                 <div className="flex justify-between items-center text-[11px] font-bold text-slate-500">
                   <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded font-mono">{p.entity_type}</span>
-                  <button onClick={() => handleTogglePin(p)} className="text-amber-600 hover:text-amber-800 cursor-pointer">
+                  <PermissionGate permission={PERMISSIONS.NOTES.UPDATE}><button onClick={() => handleTogglePin(p)} className="text-amber-600 hover:text-amber-800 cursor-pointer">
                     <PinOff className="w-3.5 h-3.5" />
-                  </button>
+                  </button></PermissionGate>
                 </div>
                 <p className="text-xs text-slate-800 font-medium line-clamp-2">{p.content}</p>
               </div>
@@ -343,12 +343,12 @@ export default function NotesPage() {
           selectedIds.size > 0 ? (
             <div className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1 sm:w-auto">
               <span className="text-xs font-semibold text-indigo-700">{selectedIds.size} selected</span>
-              <button
+              <PermissionGate permission={PERMISSIONS.NOTES.DELETE}><button
                 onClick={handleBulkDelete}
                 className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-semibold cursor-pointer"
               >
                 Bulk Delete
-              </button>
+              </button></PermissionGate>
             </div>
           ) : undefined
         }

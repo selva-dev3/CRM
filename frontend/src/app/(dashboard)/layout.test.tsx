@@ -11,7 +11,7 @@ const { routerPush, routerReplace, verifySession, logout, authState } = vi.hoist
   logout: vi.fn(),
   authState: {
     status: 'authenticated' as 'unknown' | 'authenticated' | 'unauthenticated',
-    user: { name: 'Jane Doe', email: 'jane@example.com', role: 'Manager', permissions: ['all'] },
+    user: { name: 'Jane Doe', email: 'jane@example.com', role: 'Manager', permissions: ['dashboard:read', 'leads:read'] },
   },
 }));
 
@@ -35,7 +35,10 @@ vi.mock('@/lib/api/organizations', () => ({
 
 vi.mock('@/hooks/use-has-permission', () => ({
   notifyAuthUserChanged: vi.fn(),
-  useHasPermission: () => ({ permissions: ['all'], hasPermission: () => true }),
+  useHasPermission: () => ({
+    permissions: authState.user.permissions,
+    hasPermission: (permission: string) => authState.user.permissions.includes(permission),
+  }),
 }));
 
 vi.mock('@/components/features/ai/ai-chat-assistant', () => ({
@@ -57,7 +60,7 @@ describe('DashboardLayout', () => {
     routerPush.mockReset();
     routerReplace.mockReset();
     authState.status = 'authenticated';
-    authState.user = { name: 'Jane Doe', email: 'jane@example.com', role: 'Manager', permissions: ['all'] };
+    authState.user = { name: 'Jane Doe', email: 'jane@example.com', role: 'Manager', permissions: ['dashboard:read', 'leads:read'] };
     verifySession.mockResolvedValue(authState.user);
     window.localStorage.clear();
     window.sessionStorage.clear();

@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
+import { PermissionGate } from '@/components/common/permission-gate';
 import { ModalShell } from '@/components/common/modal-shell';
 import { PERMISSIONS } from '@/lib/permissions';
 import {
@@ -346,18 +347,22 @@ export default function InvoicesPage() {
             {selectedIds.size > 0 && (
               <div className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1 sm:w-auto">
                 <span className="text-xs font-semibold text-indigo-700">{selectedIds.size} selected</span>
-                <button
-                  onClick={handleBulkRemind}
-                  className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-semibold cursor-pointer"
-                >
-                  Send Reminders
-                </button>
-                <button
-                  onClick={handleBulkDelete}
-                  className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-semibold cursor-pointer"
-                >
-                  Bulk Delete
-                </button>
+                <PermissionGate permission={PERMISSIONS.INVOICES.SEND}>
+                  <button
+                    onClick={handleBulkRemind}
+                    className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-semibold cursor-pointer"
+                  >
+                    Send Reminders
+                  </button>
+                </PermissionGate>
+                <PermissionGate permission={PERMISSIONS.INVOICES.DELETE}>
+                  <button
+                    onClick={handleBulkDelete}
+                    className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-semibold cursor-pointer"
+                  >
+                    Bulk Delete
+                  </button>
+                </PermissionGate>
               </div>
             )}
           </div>

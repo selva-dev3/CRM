@@ -4,7 +4,16 @@ from collections.abc import Sequence
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Deal, Organization, Role, User, UserInvitation, UserProfile, UserQuota
+from app.models import (
+    Deal,
+    Organization,
+    Role,
+    User,
+    UserInvitation,
+    UserProfile,
+    UserQuota,
+    UserRole,
+)
 
 
 class UserRepository:
@@ -148,6 +157,53 @@ class UserRepository:
                 role_map[role.id] = role.name
                 role_map[role.name] = role.name
         return role_map
+
+    async def effective_role_names_for_users(
+        self, db: AsyncSession, users: builtins.list[User], organization_id: str
+    ) -> dict[str, str]:
+        """Resolve each user's effective role with UserRole as authoritative."""
+        if not users:
+            return {}
+        user_ids = [user.id for user in users]
+        mapping_rows = (
+            await db.execute(
+                select(UserRole.user_id, Role.name, Role.organization_id)
+                .select_from(UserRole)
+                .join(Role, Role.id == UserRole.role_id)
+                .where(UserRole.user_id.in_(user_ids))
+            )
+        ).all()
+        effective = {
+            user_id: role_name if role_organization_id == organization_id else ""
+            for user_id, role_name, role_organization_id in mapping_rows
+        }
+        fallback_users = [user for user in users if user.id not in effective and user.role]
+        if not fallback_users:
+            return effective
+        raw_values = {user.role.strip() for user in fallback_users if user.role.strip()}
+        normalized_names = {value.lower() for value in raw_values}
+        roles = (
+            (
+                await db.execute(
+                    select(Role).where(
+                        Role.organization_id == organization_id,
+                        (Role.id.in_(raw_values))
+                        | (func.lower(func.btrim(Role.name)).in_(normalized_names)),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        by_value = {
+            value: role.name
+            for role in roles
+            for value in (role.id, role.name.strip().lower())
+        }
+        for user in fallback_users:
+            raw_role = user.role.strip()
+            effective[user.id] = by_value.get(raw_role, by_value.get(raw_role.lower(), ""))
+        return effective
 
     async def list_invitations(
         self,

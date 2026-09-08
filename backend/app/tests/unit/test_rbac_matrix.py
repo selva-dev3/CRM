@@ -6,7 +6,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.core.errors import APIException
-from app.core.rbac_matrix import ADMIN_PERMISSIONS, SYSTEM_ROLE_PERMISSIONS
+from app.core.rbac_matrix import (
+    APPROVED_PERMISSION_KEYS,
+    SYSTEM_ROLE_PERMISSIONS,
+)
 from app.repositories.role_repository import RoleRepository
 
 
@@ -23,6 +26,11 @@ def test_approved_counts_and_read_only_policy():
     for name, keys in SYSTEM_ROLE_PERMISSIONS.items():
         assert ("emails:send" in keys) == (name != "Read Only")
     assert "leads:assign" not in SYSTEM_ROLE_PERMISSIONS["Sales Executive"]
+    assert "api_keys:revoke" in SYSTEM_ROLE_PERMISSIONS["Admin"]
+    assert all(
+        "api_keys:revoke" not in keys
+        for name, keys in SYSTEM_ROLE_PERMISSIONS.items() if name != "Admin"
+    )
     assert "leads:convert" not in SYSTEM_ROLE_PERMISSIONS["Marketing Executive"]
     assert not any(
         key.startswith(("users:", "roles:", "organization:"))
@@ -51,14 +59,17 @@ async def test_repeated_initialization_preserves_scopes_and_only_restores_missin
         for name in SYSTEM_ROLE_PERMISSIONS
     ]
     roles.append(SimpleNamespace(id="Super Admin", name="Super Admin", organization_id=None))
-    catalog = ADMIN_PERMISSIONS | {"super_admin:manage", "settings:database_reset"}
+    catalog = APPROVED_PERMISSION_KEYS | {"settings:database_reset"}
     permissions = [SimpleNamespace(id=key, key=key) for key in catalog]
     db = MagicMock()
     db.flush = AsyncMock()
     for first_run in (True, False):
         responses = [None, _result(roles), _result(permissions)]
-        for name in sorted([*SYSTEM_ROLE_PERMISSIONS, "Super Admin"]):
-            keys = catalog if name == "Super Admin" else SYSTEM_ROLE_PERMISSIONS[name]
+        for role in roles:
+            name = role.name
+            keys = (
+                APPROVED_PERMISSION_KEYS if name == "Super Admin" else SYSTEM_ROLE_PERMISSIONS[name]
+            )
             existing = keys - {"emails:send"} if first_run and name == "Sales Executive" else keys
             responses.extend([None, _result(existing)])
         db.execute = AsyncMock(side_effect=responses)
@@ -74,10 +85,30 @@ async def test_initialization_rejects_incomplete_catalog():
     db.execute = AsyncMock(
         side_effect=[
             None,
-            _result([SimpleNamespace(id="admin", name="Admin", organization_id=None)]),
+            _result([SimpleNamespace(id="super-admin", name="Super Admin", organization_id=None)]),
             _result([]),
         ]
     )
     with pytest.raises(APIException, match="catalog is incomplete"):
         await RoleRepository().synchronize_system_roles(db)
     db.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_initialization_rejects_global_tenant_role():
+    global_admin = SimpleNamespace(id="admin", name="Admin", organization_id=None)
+    no_collision = MagicMock()
+    no_collision.scalar_one_or_none.return_value = None
+    db = MagicMock()
+    db.flush = AsyncMock()
+    db.execute = AsyncMock(
+        side_effect=[
+            None,
+            _result([global_admin]),
+            _result([SimpleNamespace(id=key, key=key) for key in APPROVED_PERMISSION_KEYS]),
+            no_collision,
+        ]
+    )
+
+    with pytest.raises(APIException, match="Global tenant roles"):
+        await RoleRepository().synchronize_system_roles(db)

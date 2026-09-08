@@ -292,7 +292,7 @@ export default function CallsPage() {
           onTriggerClick={(event) => event.stopPropagation()}
           actions={[
             { label: 'View audio & AI sentiment', icon: <Volume2 className="w-4 h-4 text-indigo-600" />, onSelect: () => router.push(`/calls/${item.id}`) },
-            { label: 'Delete call log', icon: <Trash2 className="w-4 h-4" />, variant: 'destructive', onSelect: () => setCallToDelete(item) },
+            { label: 'Delete call log', permission: PERMISSIONS.CALLS.DELETE, icon: <Trash2 className="w-4 h-4" />, variant: 'destructive', onSelect: () => setCallToDelete(item) },
           ]}
         />
       ),
@@ -342,11 +342,11 @@ export default function CallsPage() {
               <Plus className="w-4 h-4" />Log Call
             </Button>
           </PermissionGate>
-          {TELEPHONY_PROVIDER_CONFIGURED && <ActionMenu label="More" className="w-full text-xs font-semibold sm:w-auto" actions={[
+          {TELEPHONY_PROVIDER_CONFIGURED && <PermissionGate permission={PERMISSIONS.CALLS.CREATE}><ActionMenu label="More" className="w-full text-xs font-semibold sm:w-auto" actions={[
             { label: 'Click to dial', icon: <PhoneOutgoing className="w-4 h-4 text-emerald-600" />, onSelect: () => setIsDialModalOpen(true) },
             { label: 'Voicemail drop', icon: <Voicemail className="w-4 h-4 text-indigo-600" />, onSelect: () => setIsVoicemailModalOpen(true) },
             { label: `Dispositions (${dispositions.length})`, icon: <Tag className="w-4 h-4 text-amber-500" />, onSelect: () => setIsDispositionModalOpen(true) },
-          ]} />}
+          ]} /></PermissionGate>}
         </div>
       </div>
 
@@ -367,12 +367,12 @@ export default function CallsPage() {
           selectedIds.size > 0 ? (
             <div className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1 sm:w-auto">
               <span className="text-xs font-semibold text-indigo-700">{selectedIds.size} selected</span>
-              <button
+              <PermissionGate permission={PERMISSIONS.CALLS.DELETE}><button
                 onClick={handleBulkDelete}
                 className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-semibold cursor-pointer"
               >
                 Bulk Delete
-              </button>
+              </button></PermissionGate>
             </div>
           ) : undefined
         }

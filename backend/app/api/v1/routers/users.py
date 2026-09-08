@@ -1,7 +1,12 @@
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import get_current_user, require_permission
+from app.api.v1.deps import (
+    authorize_permission,
+    get_current_user,
+    require_permission,
+    require_user_session,
+)
 from app.core.errors import APIException
 from app.db.session import get_db
 from app.models import User
@@ -53,7 +58,7 @@ async def list_users(
     summary="Create new user",
     dependencies=[
         Depends(require_permission("users:create")),
-        Depends(require_permission("users:roles")),
+        Depends(require_permission("users:assign_roles")),
     ],
 )
 async def create_user(
@@ -69,7 +74,7 @@ async def create_user(
 )
 async def get_my_profile(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_user_session),
 ):
     return await user_service.get_my_profile(db, current_user)
 
@@ -78,7 +83,7 @@ async def get_my_profile(
 async def update_my_profile(
     payload: UserProfileUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_user_session),
 ):
     return await user_service.update_my_profile(db, payload, current_user)
 
@@ -89,7 +94,7 @@ async def update_my_profile(
 async def upload_avatar(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_user_session),
 ):
     if not file.filename:
         raise HTTPException(
@@ -111,7 +116,7 @@ async def upload_avatar(
     summary="Bulk invite users via email with name, email and 14-char random tokens",
     dependencies=[
         Depends(require_permission("users:invite")),
-        Depends(require_permission("users:roles")),
+        Depends(require_permission("users:assign_roles")),
     ],
 )
 async def invite_users(
@@ -184,10 +189,7 @@ async def get_user(
     "/{user_id}",
     response_model=UserResponse,
     summary="Update user by ID",
-    dependencies=[
-        Depends(require_permission("users:update")),
-        Depends(require_permission("users:roles")),
-    ],
+    dependencies=[Depends(require_permission("users:update"))],
 )
 async def update_user(
     user_id: str,
@@ -195,6 +197,8 @@ async def update_user(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    if payload.role is not None:
+        await authorize_permission(db, current_user, "users:assign_roles")
     return await user_service.update_user(db, user_id, payload, current_user=current_user)
 
 
@@ -309,7 +313,7 @@ async def remove_user_team(
     "/bulk-delete",
     response_model=BulkActionResponse,
     summary="Bulk deactivate users while preserving CRM history",
-    dependencies=[Depends(require_permission("users:update"))],
+    dependencies=[Depends(require_permission("users:delete"))],
 )
 async def bulk_delete_users(
     payload: BulkDeleteRequest,
@@ -355,7 +359,7 @@ async def get_user_effective_permissions(
     "/{user_id}/reset-password-admin",
     response_model=MessageResponse,
     summary="Admin trigger forced user password reset",
-    dependencies=[Depends(require_permission("users:update"))],
+    dependencies=[Depends(require_permission("users:reset_password"))],
 )
 async def admin_reset_user_password(
     user_id: str,

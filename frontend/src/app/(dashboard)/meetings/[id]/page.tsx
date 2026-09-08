@@ -30,6 +30,8 @@ import {
 } from 'lucide-react';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
+import { PermissionGate } from '@/components/common/permission-gate';
+import { PERMISSIONS } from '@/lib/permissions';
 import {
   useMeetingQuery,
   useMeetingAiSummaryQuery,
@@ -219,32 +221,38 @@ export default function MeetingDetailPage() {
             </a>
           )}
 
-          <button
-            onClick={() => {
-              setNewStartTime(meeting.start_time ? meeting.start_time.substring(0, 16) : '');
-              setIsRescheduleModalOpen(true);
-            }}
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm cursor-pointer"
-          >
-            <Clock className="w-4 h-4 text-slate-500" />
-            Reschedule
-          </button>
+          <PermissionGate permission={PERMISSIONS.MEETINGS.UPDATE}>
+            <button
+              onClick={() => {
+                setNewStartTime(meeting.start_time ? meeting.start_time.substring(0, 16) : '');
+                setIsRescheduleModalOpen(true);
+              }}
+              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm cursor-pointer"
+            >
+              <Clock className="w-4 h-4 text-slate-500" />
+              Reschedule
+            </button>
+          </PermissionGate>
 
-          <button
-            onClick={handleOpenEditModal}
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm cursor-pointer"
-          >
-            <Edit className="w-4 h-4 text-slate-500" />
-            Edit
-          </button>
+          <PermissionGate permission={PERMISSIONS.MEETINGS.UPDATE}>
+            <button
+              onClick={handleOpenEditModal}
+              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm cursor-pointer"
+            >
+              <Edit className="w-4 h-4 text-slate-500" />
+              Edit
+            </button>
+          </PermissionGate>
 
-          <button
-            onClick={() => setIsDeleteModalOpen(true)}
-            className="flex items-center gap-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3.5 py-2 rounded-lg text-sm font-semibold transition-colors cursor-pointer"
-          >
-            <Trash2 className="w-4 h-4" />
-            Cancel Meeting
-          </button>
+          <PermissionGate permission={PERMISSIONS.MEETINGS.DELETE}>
+            <button
+              onClick={() => setIsDeleteModalOpen(true)}
+              className="flex items-center gap-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3.5 py-2 rounded-lg text-sm font-semibold transition-colors cursor-pointer"
+            >
+              <Trash2 className="w-4 h-4" />
+              Cancel Meeting
+            </button>
+          </PermissionGate>
         </div>
       </div>
 
@@ -391,6 +399,7 @@ export default function MeetingDetailPage() {
             </div>
 
             {/* RSVP Form */}
+            <PermissionGate permission={PERMISSIONS.MEETINGS.INVITE}>
             <form onSubmit={handleRsvpSubmit} className="space-y-2 pt-3 border-t border-slate-100">
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-600">Update RSVP</label>
               <Input
@@ -418,6 +427,7 @@ export default function MeetingDetailPage() {
                 Record RSVP Status
               </button>
             </form>
+            </PermissionGate>
           </div>
 
           {/* Upload Transcript Card */}
@@ -427,6 +437,8 @@ export default function MeetingDetailPage() {
               Upload Transcript
             </h3>
 
+            <PermissionGate permission={PERMISSIONS.MEETINGS.UPDATE}>
+            <PermissionGate permission={PERMISSIONS.AI.GENERATE}>
             <form onSubmit={handleTranscriptSubmit} className="space-y-3">
               <Textarea
                 rows={4}
@@ -445,6 +457,8 @@ export default function MeetingDetailPage() {
                 Process & Summarize AI
               </button>
             </form>
+            </PermissionGate>
+            </PermissionGate>
           </div>
         </div>
       </div>

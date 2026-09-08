@@ -294,7 +294,7 @@ class RoleBase(BaseModel):
 
 
 class RoleCreate(RoleBase):
-    pass
+    permissions: list[str] = Field(default_factory=list)
 
 
 class RoleUpdate(BaseModel):
@@ -308,6 +308,15 @@ class RoleResponse(RoleBase):
     is_system_role: bool | None = False
     type: str | None = "custom"
     created_at: str
+
+
+class RoleAuditLogResponse(BaseModel):
+    id: str
+    action: str
+    role_name: str
+    user: str
+    timestamp: str
+    details: dict[str, Any]
 
 
 # 4. Organization Schemas

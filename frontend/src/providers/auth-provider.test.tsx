@@ -109,6 +109,26 @@ describe('AuthProvider', () => {
     expect(getOrganizationContext()).toBeNull();
   });
 
+  it('clears cached tenant data after an authoritative permission refresh', async () => {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(['contacts'], [{ id: 'contact-1' }]);
+    mocks.getCurrentUserApi.mockResolvedValue({
+      id: 'user-1',
+      name: 'Alex',
+      email: 'alex@crm.com',
+      role: 'Read Only',
+      permissions: ['contacts:read'],
+    });
+    renderProvider(queryClient);
+
+    act(() => window.dispatchEvent(new CustomEvent('auth:session-changed', {
+      detail: { action: 'refresh' },
+    })));
+
+    expect(await screen.findByText('alex@crm.com')).toBeInTheDocument();
+    await waitFor(() => expect(queryClient.getQueryData(['contacts'])).toBeUndefined());
+  });
+
   it('clears local state when backend logout fails', async () => {
     const user = userEvent.setup();
     const queryClient = new QueryClient();

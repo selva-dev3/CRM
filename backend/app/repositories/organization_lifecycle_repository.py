@@ -17,6 +17,7 @@ from app.models import (
     Permission,
     Role,
     User,
+    UserInvitation,
 )
 
 # Indirect ownership is explicit: never infer tenant ownership through an arbitrary FK.
@@ -93,14 +94,19 @@ class OrganizationLifecycleRepository:
     async def resolve_invitation_role(
         self, db: AsyncSession, role_value: str, organization_id: str | None
     ) -> Role | None:
+        normalized = role_value.strip()
         if organization_id:
             local = await db.scalar(
                 select(Role)
                 .where(
                     Role.organization_id == organization_id,
-                    or_(Role.id == role_value, func.lower(Role.name) == role_value.lower()),
+                    or_(
+                        Role.id == normalized,
+                        func.lower(func.btrim(Role.name)) == normalized.lower(),
+                    ),
                 )
                 .limit(1)
+                .with_for_update()
             )
             if local:
                 return local
@@ -108,22 +114,25 @@ class OrganizationLifecycleRepository:
             select(Role)
             .where(
                 Role.organization_id.is_(None),
-                or_(Role.id == role_value, func.lower(Role.name) == role_value.lower()),
+                or_(
+                    Role.id == normalized,
+                    func.lower(func.btrim(Role.name)) == normalized.lower(),
+                ),
             )
             .limit(1)
+            .with_for_update()
         )
         if legacy and organization_id:
-            local = await db.scalar(
+            return await db.scalar(
                 select(Role)
                 .where(
                     Role.organization_id == organization_id,
-                    func.lower(Role.name) == legacy.name.lower(),
+                    func.lower(func.btrim(Role.name)) == legacy.name.strip().lower(),
                 )
                 .limit(1)
+                .with_for_update()
             )
-            if local:
-                return local
-        return legacy
+        return legacy if organization_id is None else None
 
     async def role_names(self, db: AsyncSession, ids: list[str]) -> dict[str, str]:
         if not ids:
@@ -190,6 +199,20 @@ class OrganizationLifecycleRepository:
             )
             or 0
         )
+
+    async def subscription_for_membership(
+        self, db: AsyncSession, organization_id: str
+    ) -> OrganizationSubscription | None:
+        return await db.scalar(select(OrganizationSubscription).where(
+            OrganizationSubscription.organization_id == organization_id
+        ).with_for_update())
+
+    async def pending_legacy_invitation_exists(self, db: AsyncSession, email: str) -> bool:
+        return bool(await db.scalar(select(UserInvitation.id).where(
+            func.lower(func.btrim(UserInvitation.email)) == email,
+            func.lower(UserInvitation.status) == "pending",
+            UserInvitation.created_at > datetime.now(UTC) - timedelta(hours=24),
+        ).limit(1)))
 
     async def set_lock_timeout(self, db: AsyncSession) -> None:
         await db.execute(text("SET LOCAL lock_timeout = '3s'"))
@@ -299,10 +322,7 @@ class OrganizationLifecycleRepository:
                 select(User.id)
                 .where(
                     User._organization_id == organization_id,
-                    or_(
-                        User.is_platform_admin.is_(True),
-                        func.lower(User.email) == "superadmin@mycrm.com",
-                    ),
+                    User.is_platform_admin.is_(True),
                 )
                 .limit(1)
             )
@@ -459,6 +479,11 @@ class OrganizationLifecycleRepository:
 
     async def delete_dependencies(self, db: AsyncSession, organization_id: str) -> None:
         predicates = tenant_predicates(organization_id)
+        # UserRole intentionally restricts ordinary role deletion. Remove tenant
+        # mappings explicitly inside the organization-deletion transaction before
+        # the organization cascades through users and roles.
+        user_roles = Base.metadata.tables["user_roles"]
+        await db.execute(delete(user_roles).where(predicates["user_roles"]))
         for name in ("leads", "quotes", "deal_products"):
             await db.execute(delete(Base.metadata.tables[name]).where(predicates[name]))
         settings = Base.metadata.tables["settings"]

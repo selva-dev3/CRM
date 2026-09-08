@@ -14,6 +14,7 @@ from importlib.abc import MetaPathFinder
 from unittest.mock import patch
 
 from pydantic_settings import DotEnvSettingsSource
+from sqlalchemy.engine import make_url
 
 
 class BlockStripeImports(MetaPathFinder):
@@ -43,11 +44,22 @@ async def verify_startup() -> int:
 
 
 def main() -> int:
+    database_url = os.environ.get(
+        "CRM_WORKFLOW_TEST_DATABASE_URL",
+        "postgresql+asyncpg://workflow_test:disposable-test-only@127.0.0.1:55439/crm_workflow_test",
+    )
+    parsed = make_url(database_url)
+    if (
+        parsed.drivername != "postgresql+asyncpg"
+        or parsed.host not in {"localhost", "127.0.0.1"}
+        or parsed.database != "crm_workflow_test"
+    ):
+        raise ValueError("Use the dedicated localhost crm_workflow_test database")
     os.environ.clear()
     os.environ.update(
         {
             "PATH": "/usr/bin:/bin",
-            "DATABASE_URL": "postgresql+asyncpg://workflow_test:disposable-test-only@127.0.0.1:55439/crm_workflow_test",
+            "DATABASE_URL": database_url,
             "SECRET_KEY": "disposable-test-signing-key",
             "AWS_ACCESS_KEY_ID": "disposable-test-only",
             "AWS_SECRET_ACCESS_KEY": "disposable-test-only",

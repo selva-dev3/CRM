@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { PERMISSIONS } from '@/lib/permissions';
 
 const useLeadsQueryMock = vi.fn();
 const bulkDeleteMutateAsync = vi.fn();
@@ -59,7 +60,9 @@ const lead = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  window.localStorage.setItem('user', JSON.stringify({ permissions: ['all'] }));
+  window.localStorage.setItem('user', JSON.stringify({
+    permissions: Object.values(PERMISSIONS).flatMap((group) => Object.values(group)),
+  }));
   useLeadsQueryMock.mockReturnValue({
     data: { items: [lead], total: 1 },
     isLoading: false,

@@ -63,10 +63,7 @@ logger = get_logger(__name__)
 @router.get(
     "/configuration",
     response_model=AIOrganizationConfigResponse,
-    dependencies=[
-        Depends(require_permission("ai:read")),
-        Depends(require_permission("settings:read")),
-    ],
+    dependencies=[Depends(require_permission("ai:configure"))],
 )
 async def get_ai_configuration(
     db: AsyncSession = Depends(get_db),
@@ -78,10 +75,7 @@ async def get_ai_configuration(
 @router.put(
     "/configuration",
     response_model=AIOrganizationConfigResponse,
-    dependencies=[
-        Depends(require_permission("settings:update")),
-        Depends(require_permission("settings:security")),
-    ],
+    dependencies=[Depends(require_permission("ai:configure"))],
 )
 async def update_ai_configuration(
     payload: AIOrganizationConfigUpdate,

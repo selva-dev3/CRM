@@ -1,16 +1,4 @@
-from enum import StrEnum
-
 from app.core.errors import ForbiddenError
-
-
-class UserRole(StrEnum):
-    SUPER_ADMIN = "Super Admin"
-    ORG_ADMIN = "Organization Admin"
-    SALES_MANAGER = "Sales Manager"
-    SALES_EXECUTIVE = "Sales Executive"
-    MARKETING_EXECUTIVE = "Marketing Executive"
-    CUSTOMER_SUPPORT = "Customer Support"
-
 
 SUPER_ADMIN_ROLE_NAMES = {"super_admin", "super admin"}
 
@@ -34,27 +22,22 @@ def is_global_super_admin_role(role) -> bool:
     return is_super_admin_role(role) and getattr(role, "organization_id", None) is None
 
 
-async def is_super_admin_user(db, user) -> bool:
-    """Whether the given user is a platform super_admin.
+def effective_organization_id(user) -> str | None:
+    """Return the request-authorized tenant context for this principal.
 
-    Resolves the user's effective role from ``User.role`` (which may hold a role
-    name or a role UUID) before applying the name-based check, so the platform
-    super_admin is recognized regardless of how the role was assigned.
+    Only the platform principal may use the transient context populated by the
+    authentication dependency. Tenant principals always remain bound to their
+    persisted organization membership.
     """
     if getattr(user, "is_platform_admin", False) is True:
-        return True
-    from app.repositories.role_repository import RoleRepository
+        return getattr(user, "_request_organization_id", None)
+    return getattr(user, "organization_id", None)
 
-    role_value = (getattr(user, "role", "") or "").strip()
-    if is_super_admin_role_name(role_value):
-        role = await RoleRepository().get_global_role_by_names(
-            db, tuple(sorted(SUPER_ADMIN_ROLE_NAMES))
-        )
-        return bool(role and is_global_super_admin_role(role))
-    if not role_value:
-        return False
-    role = await RoleRepository().get_role_by_id_or_name(db, role_value)
-    return bool(role and is_global_super_admin_role(role))
+
+async def is_super_admin_user(db, user) -> bool:
+    """Return the authoritative, non-delegable platform-admin flag."""
+    del db
+    return getattr(user, "is_platform_admin", False) is True
 
 
 def ensure_can_assign_role(*, actor_is_super_admin: bool, target_is_super_admin: bool) -> None:
@@ -65,13 +48,5 @@ def ensure_can_assign_role(*, actor_is_super_admin: bool, target_is_super_admin:
 
 def ensure_tenant_managed_user(user) -> None:
     """Protect the platform principal independently of email or selected organization."""
-    if getattr(user, "is_platform_admin", False) is True or is_super_admin_role_name(
-        getattr(user, "role", "")
-    ):
+    if getattr(user, "is_platform_admin", False) is True:
         raise ForbiddenError(message="The platform Super Admin cannot be managed as an organization user.")
-
-
-def check_permission(user_role: str, required_roles: list[UserRole]) -> bool:
-    if user_role == UserRole.SUPER_ADMIN:
-        return True
-    return user_role in [role.value for role in required_roles]

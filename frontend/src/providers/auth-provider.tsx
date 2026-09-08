@@ -77,6 +77,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const refreshAuthorization = useCallback(async () => {
+    const currentUser = await verifySession();
+    await queryClient.cancelQueries();
+    queryClient.clear();
+    return currentUser;
+  }, [queryClient, verifySession]);
+
   const logout = useCallback(async () => {
     if (logoutPromiseRef.current) return logoutPromiseRef.current;
 
@@ -146,6 +153,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setStatus('authenticated');
         }
       }
+      if (action === 'refresh') {
+        void refreshAuthorization().catch(() => resetLocalSession(false));
+      }
     };
     const handleStorage = (event: StorageEvent) => {
       if (event.key === ORGANIZATION_DELETED_BROADCAST && event.newValue) {
@@ -167,6 +177,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setOrganizationContext(null);
         queryClient.clear();
         void verifySession().catch(() => resetLocalSession(false));
+      } else if (action === 'refresh') {
+        void refreshAuthorization().catch(() => resetLocalSession(false));
       }
     };
     const handleUnauthorized = () => {
@@ -187,7 +199,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener('organization:unavailable', unavailableOrganization);
       window.removeEventListener(ORGANIZATION_DELETED_EVENT, handleOrganizationDeleted);
     };
-  }, [queryClient, resetLocalSession, verifySession, user]);
+  }, [queryClient, refreshAuthorization, resetLocalSession, verifySession, user]);
 
   const value = useMemo(
     () => ({ status, user, setSession, verifySession, logout, isLoggingOut }),

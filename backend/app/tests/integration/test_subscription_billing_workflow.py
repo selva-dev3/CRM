@@ -535,7 +535,7 @@ async def test_webhook_wrong_customer_rolls_back_without_consuming_event(billing
     remote_id = provider.complete(response["session_id"])
     provider.subscriptions[remote_id]["customer"] = "cus_foreign"
     signed = event("checkout.session.completed", provider.sessions[response["session_id"]])
-    with pytest.raises(ConflictError, match="customer"):
+    with pytest.raises(ConflictError, match="does not belong to this organization"):
         await webhook(billing_context, signed)
     sessions, org, *_ = billing_context
     async with sessions() as db:

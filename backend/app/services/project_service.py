@@ -122,7 +122,7 @@ class ProjectService:
         if not owner_id:
             return
         permissions = await auth_service.get_user_permissions(db, current_user)
-        if "projects:assign" not in permissions and "all" not in permissions:
+        if "projects:assign" not in permissions:
             raise ForbiddenError(message="Missing required permission: projects:assign")
         owner = await self.repository.get_user_in_organization(
             db, user_id=owner_id, organization_id=current_user.organization_id

@@ -413,7 +413,10 @@ async def get_lead_timeline(
     "/{lead_id}/notes",
     response_model=list[NoteResponse],
     summary="List notes attached to lead",
-    dependencies=[Depends(require_permission("leads:read"))],
+    dependencies=[
+        Depends(require_permission("leads:read")),
+        Depends(require_permission("notes:read")),
+    ],
 )
 async def get_lead_notes(
     lead_id: str,
@@ -428,7 +431,10 @@ async def get_lead_notes(
     "/{lead_id}/notes",
     response_model=NoteResponse,
     summary="Add note to lead",
-    dependencies=[Depends(require_permission("leads:create"))],
+    dependencies=[
+        Depends(require_permission("leads:read")),
+        Depends(require_permission("notes:create")),
+    ],
 )
 async def add_lead_note(
     lead_id: str,
@@ -450,7 +456,10 @@ async def add_lead_note(
     "/{lead_id}/tasks",
     response_model=list[TaskResponse],
     summary="List tasks assigned to lead",
-    dependencies=[Depends(require_permission("leads:read"))],
+    dependencies=[
+        Depends(require_permission("leads:read")),
+        Depends(require_permission("tasks:read")),
+    ],
 )
 async def get_lead_tasks(
     lead_id: str,
@@ -465,7 +474,10 @@ async def get_lead_tasks(
     "/{lead_id}/tasks",
     response_model=TaskResponse,
     summary="Create task for lead",
-    dependencies=[Depends(require_permission("leads:create"))],
+    dependencies=[
+        Depends(require_permission("leads:read")),
+        Depends(require_permission("tasks:create")),
+    ],
 )
 async def create_lead_task(
     lead_id: str,
@@ -487,7 +499,10 @@ async def create_lead_task(
     "/{lead_id}/emails",
     response_model=list[EmailResponse],
     summary="List emails exchanged with lead",
-    dependencies=[Depends(require_permission("leads:read"))],
+    dependencies=[
+        Depends(require_permission("leads:read")),
+        Depends(require_permission("emails:read")),
+    ],
 )
 async def get_lead_emails(
     lead_id: str,
@@ -503,7 +518,10 @@ async def get_lead_emails(
     response_model=EmailResponse,
     status_code=status.HTTP_202_ACCEPTED,
     summary="Send email to lead",
-    dependencies=[Depends(require_permission("emails:send"))],
+    dependencies=[
+        Depends(require_permission("leads:read")),
+        Depends(require_permission("emails:send")),
+    ],
 )
 async def send_lead_email(
     lead_id: str,
@@ -526,7 +544,10 @@ async def send_lead_email(
     "/{lead_id}/calls",
     response_model=list[CallLogResponse],
     summary="List call logs for lead",
-    dependencies=[Depends(require_permission("calls:read"))],
+    dependencies=[
+        Depends(require_permission("leads:read")),
+        Depends(require_permission("calls:read")),
+    ],
 )
 async def get_lead_calls(
     lead_id: str,
@@ -542,7 +563,10 @@ async def get_lead_calls(
     response_model=CallLogResponse,
     summary="Log call with lead",
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_permission("calls:create"))],
+    dependencies=[
+        Depends(require_permission("leads:read")),
+        Depends(require_permission("calls:create")),
+    ],
 )
 async def log_lead_call(
     lead_id: str,
@@ -566,7 +590,10 @@ async def log_lead_call(
     "/{lead_id}/documents",
     response_model=list[DocumentResponse],
     summary="List documents attached to lead",
-    dependencies=[Depends(require_permission("leads:read"))],
+    dependencies=[
+        Depends(require_permission("leads:read")),
+        Depends(require_permission("documents:read")),
+    ],
 )
 async def get_lead_documents(
     lead_id: str,
@@ -580,7 +607,10 @@ async def get_lead_documents(
 @router.get(
     "/{lead_id}/documents/{document_id}/download",
     summary="Download lead document file",
-    dependencies=[Depends(require_permission("leads:read"))],
+    dependencies=[
+        Depends(require_permission("leads:read")),
+        Depends(require_permission("documents:read")),
+    ],
 )
 async def download_lead_document(
     lead_id: str,
@@ -602,7 +632,10 @@ async def download_lead_document(
     "/{lead_id}/documents",
     response_model=DocumentResponse,
     summary="Attach document file to lead via MinIO S3",
-    dependencies=[Depends(require_permission("leads:create"))],
+    dependencies=[
+        Depends(require_permission("leads:read")),
+        Depends(require_permission("documents:upload")),
+    ],
 )
 async def upload_lead_document(
     lead_id: str,

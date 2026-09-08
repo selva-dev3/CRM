@@ -5,7 +5,7 @@ import { PlatformOrganizations } from '@/components/features/organizations/platf
 import { ResponsiveSelect } from '@/components/common/responsive-select';
 
 import { getErrorMessage } from '@/lib/utils';
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 /* eslint-disable @next/next/no-img-element -- remote organization logo URL */
 import Link from 'next/link';
 import {
@@ -41,37 +41,8 @@ import OrganizationDetail from '@/components/features/organization/OrganizationD
 function OrganizationSettingsPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
-
-  // User Role State for RBAC
-  const [userRole, setUserRole] = useState<string>('');
-  const [userEmail, setUserEmail] = useState<string>('');
-  const [, setIsRoleChecked] = useState(false);
-
-
-
-  useEffect(() => {
-    try {
-      const userStr = localStorage.getItem('user');
-      if (userStr) {
-        const u = JSON.parse(userStr);
-        const r = u?.role || u?.role_name || '';
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate role from browser storage
-        setUserRole(r);
-        if (u?.email) setUserEmail(u.email);
-      }
-    } catch {}
-    setIsRoleChecked(true);
-  }, []);
-
-  const normalizedRole = userRole.toLowerCase().trim().replace(/[\s_-]+/g, '');
-  const cleanEmail = userEmail.toLowerCase().trim();
-
-  // ONLY actual system superadmin (role 'superadmin' OR email 'superadmin@gmail.com') gets multi-tenant list.
-  // Standard 'Admin' role or tenant users will ALWAYS get the current organization details view!
-  const isSuperAdmin =
-    (normalizedRole === 'superadmin' || cleanEmail === 'superadmin@gmail.com') &&
-    normalizedRole !== 'admin' &&
-    cleanEmail !== 'selvakumar152000@gmail.com';
+  const { user } = useAuth();
+  const isSuperAdmin = user?.is_platform_admin === true;
 
   // Search & Pagination State
   const [searchTerm, setSearchTerm] = useState('');

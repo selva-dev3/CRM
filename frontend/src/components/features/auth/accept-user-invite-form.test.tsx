@@ -1,6 +1,9 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { AuthProvider } from '@/providers/auth-provider';
+import { getOrganizationContext, setOrganizationContext } from '@/lib/organization-context';
 import { AcceptUserInviteForm } from './accept-user-invite-form';
 
 const mocks = vi.hoisted(() => ({
@@ -86,8 +89,18 @@ describe('AcceptUserInviteForm', () => {
     expect(mocks.acceptMutateAsync).not.toHaveBeenCalled();
   });
 
-  it('accepts the invitation, stores the resolved user, and redirects', async () => {
+  it('accepts the invitation, clears the prior tenant context/cache, and redirects', async () => {
     const user = userEvent.setup();
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(['contacts'], [{ id: 'other-tenant-contact' }]);
+    setOrganizationContext('other-organization');
+    let aborted = false;
+    void queryClient.fetchQuery({
+      queryKey: ['other-tenant-pending'],
+      queryFn: ({ signal }) => new Promise(() => {
+        signal.addEventListener('abort', () => { aborted = true; });
+      }),
+    }).catch(() => undefined);
     const acceptedUser = {
       id: 'user-1',
       name: 'Alex Manager',
@@ -107,7 +120,11 @@ describe('AcceptUserInviteForm', () => {
       status: 'success',
       user: acceptedUser,
     });
-    render(<AcceptUserInviteForm />);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider><AcceptUserInviteForm /></AuthProvider>
+      </QueryClientProvider>,
+    );
 
     await user.type(screen.getByLabelText('Full name'), 'Alex Manager');
     await user.type(screen.getByLabelText('Password'), 'secure-password');
@@ -124,6 +141,10 @@ describe('AcceptUserInviteForm', () => {
     expect(JSON.parse(sessionStorage.getItem('user') ?? '{}')).toEqual(acceptedUser);
     expect(localStorage.getItem('user')).toBeNull();
     expect(mocks.replace).toHaveBeenCalledWith('/dashboard');
+    expect(getOrganizationContext()).toBeNull();
+    expect(queryClient.getQueryData(['contacts'])).toBeUndefined();
+    expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
+    expect(aborted).toBe(true);
   });
 
   it('shows an error when the token is missing', () => {

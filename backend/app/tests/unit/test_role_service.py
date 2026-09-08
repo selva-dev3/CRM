@@ -42,20 +42,19 @@ def _actor(**overrides) -> User:
 @pytest.mark.asyncio
 async def test_list_roles_classifies_types():
     admin = _make_role(id="role-1", name="admin", is_system_role=True)
-    perm = type("P", (), {"key": "users:read"})()
-    perm2 = type("P", (), {"key": "leads:read"})()
     repo: Any = RoleRepository()
     repo.get_setting = AsyncMock(return_value=None)
-    repo.get_permission_keys = AsyncMock(return_value=["users:read", "leads:read"])
     repo.list_roles = AsyncMock(return_value=[admin])
-    repo.get_role_permissions = AsyncMock(return_value=[perm, perm2])
+    repo.get_permission_keys_by_role_ids = AsyncMock(
+        return_value={"role-1": ["users:read", "leads:read"]}
+    )
     service = RoleService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
     result = await service.list_roles(db, None)
 
     assert result[0]["type"] == "system"
-    assert result[0]["permissions"] == ["users:read", "leads:read"]
+    assert result[0]["permissions"] == ["leads:read", "users:read"]
 
 
 @pytest.mark.asyncio
@@ -79,9 +78,8 @@ async def test_import_permissions_reports_failure_after_rollback():
 async def test_list_roles_forwards_org_id_to_repository():
     repo: Any = RoleRepository()
     repo.get_setting = AsyncMock(return_value=None)
-    repo.get_permission_keys = AsyncMock(return_value=[])
     repo.list_roles = AsyncMock(return_value=[])
-    repo.get_role_permissions = AsyncMock(return_value=[])
+    repo.get_permission_keys_by_role_ids = AsyncMock(return_value={})
     service = RoleService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
@@ -143,6 +141,26 @@ async def test_create_role_with_permissions(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "permission", ["all", "database:destroy", "organization:delete", "super_admin:manage"]
+)
+async def test_create_role_rejects_unapproved_permission(permission):
+    repo: Any = RoleRepository()
+    repo.create_role = AsyncMock()
+    service = RoleService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(APIException) as exc:
+        await service.create_role(
+            db, RoleCreate(name="Unsafe", permissions=[permission]), _actor()
+        )
+
+    assert exc.value.code == "INVALID_PERMISSION_KEYS"
+    repo.create_role.assert_not_awaited()
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_create_permission_reports_failure_after_rollback():
     repo: Any = RoleRepository()
     repo.create_permission = AsyncMock(return_value=None)
@@ -155,7 +173,9 @@ async def test_create_permission_reports_failure_after_rollback():
     db.commit = AsyncMock(side_effect=commit_fail)
 
     with pytest.raises(APIException):
-        await service.create_permission(db, PermissionCreate(key="x:y", name="X Y"))
+        await service.create_permission(
+            db, PermissionCreate(key="leads:read", name="Read leads")
+        )
     db.rollback.assert_awaited_once()
 
 
@@ -167,7 +187,9 @@ async def test_set_multiple_default_roles():
     service = RoleService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
-    repo.get_role = AsyncMock(side_effect=[_make_role(id="role-1"), _make_role(id="role-2")])
+    repo.get_role_for_update = AsyncMock(
+        side_effect=[_make_role(id="role-1"), _make_role(id="role-2")]
+    )
     result = await service.set_multiple_default_roles(db, ["role-1", "role-2"], _actor())
 
     assert repo.upsert_setting.await_count == 2
@@ -178,7 +200,29 @@ async def test_set_multiple_default_roles():
 
 
 @pytest.mark.asyncio
-async def test_get_default_role_fallback():
+async def test_set_multiple_default_roles_locks_sorted_unique_ids_but_preserves_priority():
+    repo: Any = RoleRepository()
+    repo.get_setting = AsyncMock(return_value=None)
+    repo.upsert_setting = AsyncMock()
+    repo.get_role_for_update = AsyncMock(
+        side_effect=lambda _db, role_id, _organization_id: _make_role(id=role_id)
+    )
+    service = RoleService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    await service.set_multiple_default_roles(
+        db, ["role-2", "role-1", "role-2"], _actor()
+    )
+
+    assert [call.args[1] for call in repo.get_role_for_update.await_args_list] == [
+        "role-1",
+        "role-2",
+    ]
+    assert repo.upsert_setting.await_args_list[0].args[2] == '["role-2", "role-1"]'
+
+
+@pytest.mark.asyncio
+async def test_get_default_role_fails_closed_without_configured_role():
     repo: Any = RoleRepository()
     repo.get_setting = AsyncMock(return_value=None)
     repo.get_role_by_id_or_name = AsyncMock(return_value=None)
@@ -186,17 +230,36 @@ async def test_get_default_role_fallback():
     service = RoleService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.get_default_role(db, _actor())
+    with pytest.raises(APIException) as exc:
+        await service.get_default_role(db, _actor())
 
-    assert result["id"] == "sys-manager"
+    assert exc.value.code == "DEFAULT_ROLE_NOT_CONFIGURED"
+
+
+@pytest.mark.asyncio
+async def test_get_default_role_preserves_plural_setting_priority():
+    preferred = _make_role(id="role-z", name="Preferred")
+    plural = type("Setting", (), {"value": '["role-z", "role-a"]'})()
+    repo: Any = RoleRepository()
+    repo.get_setting = AsyncMock(side_effect=[None, plural])
+    repo.get_role_by_id_or_name = AsyncMock(return_value=preferred)
+    repo.get_role_permissions = AsyncMock(return_value=[])
+    service = RoleService(repository=repo)
+
+    result = await service.get_default_role(AsyncMock(spec=AsyncSession), _actor())
+
+    assert result["id"] == "role-z"
+    repo.get_role_by_id_or_name.assert_awaited_once_with(
+        ANY, "role-z", organization_id="org-1"
+    )
 
 
 @pytest.mark.asyncio
 async def test_list_system_roles_is_scoped_to_current_organization():
     repo: Any = RoleRepository()
-    repo.get_permission_keys = AsyncMock(return_value=[])
     repo.get_setting = AsyncMock(return_value=None)
     repo.get_system_roles = AsyncMock(return_value=[])
+    repo.get_permission_keys_by_role_ids = AsyncMock(return_value={})
     service = RoleService(repository=repo)
 
     await service.list_system_roles(AsyncMock(spec=AsyncSession), _actor())
@@ -209,6 +272,7 @@ async def test_delete_role_blocks_default(monkeypatch):
     role = _make_role()
     repo: Any = RoleRepository()
     repo.get_role_by_id_or_name = AsyncMock(return_value=role)
+    repo.get_role_for_update = AsyncMock(return_value=role)
     service = RoleService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
@@ -222,12 +286,13 @@ async def test_delete_role_blocks_default(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_check_permission_super_admin_permission_allows_all():
+async def test_check_permission_global_role_mapping_fails_closed_for_tenant():
     role = _make_role(name="Super Admin", is_system_role=True, organization_id=None)
     super_perm = type("P", (), {"key": "super_admin:manage"})()
     user = type("U", (), {"id": "u1", "role": "role-1", "email": "a@b.com", "name": "A"})()
     repo: Any = RoleRepository()
     repo.get_user_by_id_or_email = AsyncMock(return_value=user)
+    repo.get_user_role_mapping = AsyncMock(return_value=None)
     repo.get_role_by_id_or_name = AsyncMock(return_value=role)
     repo.get_role_permissions = AsyncMock(return_value=[super_perm])
     service = RoleService(repository=repo)
@@ -236,7 +301,7 @@ async def test_check_permission_super_admin_permission_allows_all():
     user.organization_id = "org-1"
     result = await service.check_permission(db, "u1", "anything:x", _actor())
 
-    assert result["allowed"] is True
+    assert result["allowed"] is False
 
 
 @pytest.mark.asyncio
@@ -246,9 +311,13 @@ async def test_check_permission_requires_exact_key():
     user = type("U", (), {"id": "u1", "role": "role-1", "email": "a@b.com", "name": "A"})()
     repo: Any = RoleRepository()
     repo.get_user_by_id_or_email = AsyncMock(return_value=user)
+    repo.get_user_role_mapping = AsyncMock(return_value=None)
     repo.get_role_by_id_or_name = AsyncMock(return_value=role)
     repo.get_role_permissions = AsyncMock(return_value=[perm])
     service = RoleService(repository=repo)
+    service.authorization_service.get_user_permissions = AsyncMock(
+        return_value=["deals:read"]
+    )
     db = AsyncMock(spec=AsyncSession)
 
     user.organization_id = "org-1"
@@ -266,6 +335,7 @@ async def test_check_permission_denies_admin_name_role_without_grants():
     user = type("U", (), {"id": "u1", "role": "role-1", "email": "a@b.com", "name": "A"})()
     repo: Any = RoleRepository()
     repo.get_user_by_id_or_email = AsyncMock(return_value=user)
+    repo.get_user_role_mapping = AsyncMock(return_value=None)
     repo.get_role_by_id_or_name = AsyncMock(return_value=role)
     repo.get_role_permissions = AsyncMock(return_value=[])
     service = RoleService(repository=repo)
@@ -282,8 +352,10 @@ async def test_check_permission_denies_unknown_role():
     user = type("U", (), {"id": "u1", "role": "ghost-role", "email": "a@b.com", "name": "A"})()
     repo: Any = RoleRepository()
     repo.get_user_by_id_or_email = AsyncMock(return_value=user)
+    repo.get_user_role_mapping = AsyncMock(return_value=None)
     repo.get_role_by_id_or_name = AsyncMock(return_value=None)
     service = RoleService(repository=repo)
+    service.authorization_service.get_user_permissions = AsyncMock(return_value=[])
     db = AsyncMock(spec=AsyncSession)
 
     user.organization_id = "org-1"
@@ -293,35 +365,43 @@ async def test_check_permission_denies_unknown_role():
 
 
 @pytest.mark.asyncio
-async def test_list_roles_admin_returns_only_assigned_permissions():
-    """Admin with 185 assigned role_permissions (incl. super_admin:manage) resolves to exactly those 185.
-
-    The other 9 keys present in the permission catalog must NOT be added implicitly.
-    """
+async def test_list_roles_filters_unknown_and_platform_permissions():
     admin = _make_role(id="role-admin", name="Admin", is_system_role=True)
-    all_db_keys = [f"perm:{i:03d}" for i in range(194)]
-    assigned_keys = [f"perm:{i:03d}" for i in range(184)] + ["super_admin:manage"]
-    assert len(assigned_keys) == 185
-    perms = [type("P", (), {"key": k})() for k in assigned_keys]
+    assigned_keys = ["leads:read", "leads:update", "unknown:permission", "super_admin:manage"]
     repo: Any = RoleRepository()
     repo.get_setting = AsyncMock(return_value=None)
-    repo.get_permission_keys = AsyncMock(return_value=all_db_keys)
     repo.list_roles = AsyncMock(return_value=[admin])
-    repo.get_role_permissions = AsyncMock(return_value=perms)
+    repo.get_permission_keys_by_role_ids = AsyncMock(
+        return_value={"role-admin": assigned_keys}
+    )
     service = RoleService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
     result = await service.list_roles(db, None)
 
-    assert len(result[0]["permissions"]) == 185
-    assert set(result[0]["permissions"]) == set(assigned_keys)
-    assert "super_admin:manage" in result[0]["permissions"]
-    assert "perm:184" not in result[0]["permissions"]
+    assert result[0]["permissions"] == ["leads:read", "leads:update"]
 
 
 @pytest.mark.asyncio
-async def test_super_admin_role_resolves_all_keys():
-    """The super_admin role (by name) is the only role granted every known key."""
+async def test_permission_matrix_excludes_platform_only_permissions():
+    repo: Any = RoleRepository()
+    repo.get_permission_matrix = AsyncMock(
+        return_value=[
+            type("P", (), {"id": "p1", "key": "leads:read", "name": "Read", "category": "Leads", "description": ""})(),
+            type("P", (), {"id": "p2", "key": "organization:delete", "name": "Delete org", "category": "Organization", "description": ""})(),
+            type("P", (), {"id": "p3", "key": "super_admin:manage", "name": "Platform", "category": "Platform", "description": ""})(),
+        ]
+    )
+
+    result = await RoleService(repository=repo).get_permission_matrix(
+        AsyncMock(spec=AsyncSession)
+    )
+
+    assert [item["key"] for item in result] == ["leads:read"]
+
+
+@pytest.mark.asyncio
+async def test_tenant_role_endpoint_does_not_expose_global_super_admin_role():
     role = _make_role(id="sys-1", name="super_admin", is_system_role=True, organization_id=None)
     all_db_keys = [f"perm:{i:03d}" for i in range(194)]
     repo: Any = RoleRepository()
@@ -333,9 +413,8 @@ async def test_super_admin_role_resolves_all_keys():
     service = RoleService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.get_role(db, "sys-1", _actor())
-
-    assert result["permissions"] == all_db_keys
+    with pytest.raises(NotFoundError):
+        await service.get_role(db, "sys-1", _actor())
 
 
 @pytest.mark.asyncio
@@ -361,9 +440,13 @@ async def test_check_permission_admin_holding_super_admin_manage_denies_unassign
     user = type("U", (), {"id": "u1", "role": "role-1", "email": "a@b.com", "name": "A"})()
     repo: Any = RoleRepository()
     repo.get_user_by_id_or_email = AsyncMock(return_value=user)
+    repo.get_user_role_mapping = AsyncMock(return_value=None)
     repo.get_role_by_id_or_name = AsyncMock(return_value=role)
     repo.get_role_permissions = AsyncMock(return_value=perms)
     service = RoleService(repository=repo)
+    service.authorization_service.get_user_permissions = AsyncMock(
+        return_value=["deals:read"]
+    )
     db = AsyncMock(spec=AsyncSession)
 
     user.organization_id = "org-1"
@@ -396,13 +479,19 @@ async def test_update_role_partial():
     role = _make_role()
     repo: Any = RoleRepository()
     repo.get_role = AsyncMock(return_value=role)
+    repo.get_role_for_update = AsyncMock(return_value=role)
+    repo.get_role_reference_kinds = AsyncMock(return_value=[])
     repo.get_role_permission_ids = AsyncMock(return_value=[])
-    repo.get_permissions_by_keys_or_ids = AsyncMock(return_value=[])
+    repo.get_role_permissions = AsyncMock(return_value=[])
+    repo.get_permissions_by_keys_or_ids = AsyncMock(
+        return_value=[type("P", (), {"id": "p1", "key": "leads:read"})()]
+    )
+    repo.add_role_permission = AsyncMock()
     service = RoleService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
     result = await service.update_role(
-        db, "role-1", RoleUpdate(name="New Name", permissions=["a:b"]), _actor()
+        db, "role-1", RoleUpdate(name="New Name", permissions=["leads:read"]), _actor()
     )
 
     assert role.name == "New Name"
@@ -411,11 +500,35 @@ async def test_update_role_partial():
 
 
 @pytest.mark.asyncio
+async def test_update_role_rejects_rename_when_legacy_references_exist():
+    role = _make_role(name="Regional Sales")
+    repo: Any = RoleRepository()
+    repo.get_role = AsyncMock(return_value=role)
+    repo.get_role_for_update = AsyncMock(return_value=role)
+    repo.get_role_permissions = AsyncMock(return_value=[])
+    repo.get_role_reference_kinds = AsyncMock(
+        return_value=["users", "user invitations", "default role settings"]
+    )
+    service = RoleService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(APIException) as exc_info:
+        await service.update_role(
+            db, role.id, RoleUpdate(name="Renamed Sales"), _actor()
+        )
+
+    assert exc_info.value.code == "ROLE_IN_USE"
+    assert role.name == "Regional Sales"
+    db.rollback.assert_awaited_once()
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_clone_role_copies_permissions():
     role = _make_role()
     orig_perms = [type("P", (), {"id": "p1", "key": "leads:read"})()]
     repo: Any = RoleRepository()
-    repo.get_role = AsyncMock(return_value=role)
+    repo.get_role_for_update = AsyncMock(return_value=role)
     repo.create_role = AsyncMock(return_value=_make_role(id="role-2", name="Cloned"))
     repo.get_role_permissions = AsyncMock(return_value=orig_perms)
     repo.add_role_permission = AsyncMock()
@@ -427,6 +540,7 @@ async def test_clone_role_copies_permissions():
     assert result["name"] == "Cloned"
     assert result["permissions"] == ["leads:read"]
     repo.add_role_permission.assert_awaited_once()
+    repo.get_role_for_update.assert_awaited_once_with(ANY, "role-1", "org-1")
 
 
 @pytest.mark.asyncio
@@ -438,6 +552,29 @@ async def test_assign_permissions_not_found():
 
     with pytest.raises(NotFoundError):
         await service.assign_permissions(db, "missing", ["a:b"], _actor())
+
+
+@pytest.mark.asyncio
+async def test_assign_permissions_locks_role_before_reading_and_mutating():
+    role = _make_role()
+    permission = type("P", (), {"id": "permission-1", "key": "leads:read"})()
+    repo: Any = RoleRepository()
+    repo.get_role = AsyncMock(return_value=role)
+    repo.get_role_for_update = AsyncMock(return_value=role)
+    repo.get_permissions_by_keys_or_ids = AsyncMock(return_value=[permission])
+    repo.get_role_permissions = AsyncMock(return_value=[])
+    repo.get_role_permission_ids = AsyncMock(return_value=[])
+    repo.add_role_permission = AsyncMock()
+    service = RoleService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.assign_permissions(
+        db, role.id, [permission.key], _actor()
+    )
+
+    assert result["status"] == "success"
+    repo.get_role_for_update.assert_awaited_once_with(db, role.id, "org-1")
+    repo.add_role_permission.assert_awaited_once_with(db, role.id, permission.id)
 
 
 @pytest.mark.asyncio
@@ -454,10 +591,34 @@ async def test_get_role_users_rejects_unknown_role():
 
 
 @pytest.mark.asyncio
+async def test_get_user_role_prefers_mapping_over_stale_user_field():
+    user = _actor(id="user-2", role="stale-role")
+    mapped_role = _make_role(id="admin-role", name="Admin")
+    repo: Any = RoleRepository()
+    repo.get_user_by_id_or_email = AsyncMock(return_value=user)
+    repo.get_user_role_mapping = AsyncMock(
+        return_value=type("Mapping", (), {"role_id": mapped_role.id})()
+    )
+    repo.get_role_by_id_or_name = AsyncMock(return_value=mapped_role)
+    repo.get_role_permissions = AsyncMock(return_value=[])
+    service = RoleService(repository=repo)
+
+    result = await service.get_user_role(
+        AsyncMock(spec=AsyncSession), user.id, _actor()
+    )
+
+    assert result["id"] == mapped_role.id
+    repo.get_role_by_id_or_name.assert_awaited_once_with(
+        ANY, mapped_role.id, organization_id="org-1"
+    )
+
+
+@pytest.mark.asyncio
 async def test_set_default_role_adds_and_removes():
     role = _make_role()
     repo: Any = RoleRepository()
     repo.get_role_by_id_or_name = AsyncMock(return_value=role)
+    repo.get_role_for_update = AsyncMock(return_value=role)
     repo.get_setting = AsyncMock(return_value=None)
     repo.upsert_setting = AsyncMock()
     service = RoleService(repository=repo)
@@ -470,37 +631,73 @@ async def test_set_default_role_adds_and_removes():
     result2 = await service.set_default_role(db, "role-1", _actor())
     assert "removed from default" in result2["message"]
     assert all(call.args[1].endswith(":org-1") for call in repo.upsert_setting.await_args_list)
+    assert repo.upsert_setting.await_args_list[-1].args[2] == ""
+    assert db.add.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_role_audit_logs_expose_role_name_from_persisted_details():
+    log = type(
+        "Log",
+        (),
+        {
+            "id": "audit-1",
+            "action": "ROLE_UPDATED",
+            "user_id": "admin-1",
+            "created_at": datetime(2026, 8, 5, tzinfo=UTC),
+            "details": '{"target_id":"role-1","after":{"name":"Regional Sales"}}',
+        },
+    )()
+    result_proxy = MagicMock()
+    result_proxy.scalars.return_value.all.return_value = [log]
+    db = AsyncMock(spec=AsyncSession)
+    db.execute.return_value = result_proxy
+
+    result = await RoleService().role_audit_logs(db, _actor())
+
+    assert result[0]["role_name"] == "Regional Sales"
+    assert result[0]["details"]["target_id"] == "role-1"
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("is_system_role", [True, False])
-async def test_sales_manager_assignment_ignores_system_role_flag(is_system_role):
+async def test_sales_manager_assignment_ignores_system_role_flag(is_system_role, monkeypatch):
     target = _actor(id="user-2", name="Seller", email="seller@crm.com", role="old-role")
     role = _make_role(
         id="sales-manager",
         name="Sales Manager",
-        organization_id=None,
+        organization_id="org-1",
         is_system_role=is_system_role,
     )
     mapping = type("Mapping", (), {"role_id": "old-role"})()
     repo: Any = RoleRepository()
     repo.get_user_by_id_or_email = AsyncMock(return_value=target)
     repo.get_role_by_id_or_name = AsyncMock(return_value=role)
+    repo.get_role_for_update = AsyncMock(return_value=role)
     repo.get_user_role_mapping = AsyncMock(return_value=mapping)
+    repo.replace_user_role = AsyncMock()
     service = RoleService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
+    monkeypatch.setattr(
+        "app.repositories.user_repository.UserRepository.lock_active_by_org",
+        AsyncMock(return_value=[target]),
+    )
+    monkeypatch.setattr(
+        "app.repositories.user_repository.UserRepository.effective_role_names_for_users",
+        AsyncMock(return_value={target.id: "Sales Executive"}),
+    )
 
     result = await service.assign_role_to_user(db, target.id, role.id, _actor())
 
     assert result["status"] == "success"
     assert target.role == role.id
-    assert mapping.role_id == role.id
+    repo.replace_user_role.assert_awaited_once_with(db, target.id, role.id)
     repo.get_role_by_id_or_name.assert_awaited_once_with(db, role.id, organization_id="org-1")
     db.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_assign_role_remaps_legacy_global_uuid_with_tenant_context():
+async def test_assign_role_remaps_legacy_global_uuid_with_tenant_context(monkeypatch):
     target = _actor(id="user-2", email="seller@crm.com", role="old-role")
     scoped_role = _make_role(id="scoped-admin", name="Admin", organization_id="org-1")
     mapping = type("Mapping", (), {"role_id": "old-role"})()
@@ -513,16 +710,26 @@ async def test_assign_role_remaps_legacy_global_uuid_with_tenant_context():
         return scoped_role
 
     repo.get_role_by_id_or_name = AsyncMock(side_effect=resolve_role)
+    repo.get_role_for_update = AsyncMock(return_value=scoped_role)
     repo.get_user_role_mapping = AsyncMock(return_value=mapping)
+    repo.replace_user_role = AsyncMock()
     service = RoleService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
+    monkeypatch.setattr(
+        "app.repositories.user_repository.UserRepository.lock_active_by_org",
+        AsyncMock(return_value=[target]),
+    )
+    monkeypatch.setattr(
+        "app.repositories.user_repository.UserRepository.effective_role_names_for_users",
+        AsyncMock(return_value={target.id: "Sales Executive"}),
+    )
 
     await service.assign_role_to_user(
         db, target.id, "legacy-global-admin", _actor(organization_id="org-1")
     )
 
     assert target.role == scoped_role.id
-    assert mapping.role_id == scoped_role.id
+    repo.replace_user_role.assert_awaited_once_with(db, target.id, scoped_role.id)
     db.commit.assert_awaited_once()
 
 
@@ -571,7 +778,7 @@ async def test_non_super_admin_cannot_assign_super_admin(monkeypatch):
         "app.services.role_service.is_super_admin_user", AsyncMock(return_value=False)
     )
 
-    with pytest.raises(ForbiddenError):
+    with pytest.raises(NotFoundError):
         await service.assign_role_to_user(db, target.id, role.id, _actor())
     db.commit.assert_not_awaited()
 
@@ -630,6 +837,8 @@ async def test_delete_system_role_forbidden():
     role = _system_role()
     repo: Any = RoleRepository()
     repo.get_role_by_id_or_name = AsyncMock(return_value=role)
+    repo.get_role_for_update = AsyncMock(return_value=role)
+    repo.get_role_reference_kinds = AsyncMock(return_value=[])
     repo.delete_role = AsyncMock()
     service = RoleService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -653,6 +862,8 @@ async def test_delete_normal_role_succeeds():
     role = _make_role(id="role-1", name="Sales Manager")
     repo: Any = RoleRepository()
     repo.get_role_by_id_or_name = AsyncMock(return_value=role)
+    repo.get_role_for_update = AsyncMock(return_value=role)
+    repo.get_role_reference_kinds = AsyncMock(return_value=[])
     repo.delete_role = AsyncMock()
     service = RoleService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -667,6 +878,79 @@ async def test_delete_normal_role_succeeds():
 
     assert result["status"] == "success"
     repo.delete_role.assert_awaited_once_with(db, role)
+
+
+@pytest.mark.asyncio
+async def test_delete_role_blocks_legacy_and_invitation_references():
+    role = _make_role(id="role-1", name="Regional Seller")
+    repo: Any = RoleRepository()
+    repo.get_role_by_id_or_name = AsyncMock(return_value=role)
+    repo.get_role_for_update = AsyncMock(return_value=role)
+    repo.get_setting = AsyncMock(return_value=None)
+    repo.get_role_reference_kinds = AsyncMock(
+        return_value=["users", "user invitations", "default role settings"]
+    )
+    repo.delete_role = AsyncMock()
+    service = RoleService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(APIException) as exc_info:
+        await service.delete_role(db, role.id, _actor())
+
+    assert exc_info.value.code == "ROLE_IN_USE"
+    repo.get_role_for_update.assert_awaited_once_with(db, role.id, "org-1")
+    repo.delete_role.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_role_reference_check_uses_exact_default_role_values():
+    role = _make_role(id="sales-role", name="Sales")
+    db = AsyncMock(spec=AsyncSession)
+    db.scalar = AsyncMock(return_value=None)
+    settings_result = MagicMock()
+    settings_result.scalars.return_value = [
+        type(
+            "Setting",
+            (),
+            {
+                "key": "default_registration_roles:org-1",
+                "value": '["sales-manager-role", "Sales Manager"]',
+            },
+        )()
+    ]
+    db.execute = AsyncMock(return_value=settings_result)
+
+    references = await RoleRepository().get_role_reference_kinds(db, role)
+
+    assert references == []
+
+
+@pytest.mark.asyncio
+async def test_role_assignment_blocks_last_admin_demotion(monkeypatch):
+    target = _actor(id="admin-2", role="Admin")
+    replacement = _make_role(id="read-only", name="Read Only")
+    repo: Any = RoleRepository()
+    repo.get_user_by_id_or_email = AsyncMock(return_value=target)
+    repo.get_role_by_id_or_name = AsyncMock(return_value=replacement)
+    repo.get_role_for_update = AsyncMock(return_value=replacement)
+    repo.replace_user_role = AsyncMock()
+    guard = AsyncMock(
+        side_effect=APIException(
+            status_code=409,
+            code="LAST_ADMIN_DEACTIVATION_FORBIDDEN",
+            message="last admin",
+        )
+    )
+    monkeypatch.setattr(
+        "app.services.user_service.UserService._ensure_not_last_admin", guard
+    )
+
+    with pytest.raises(APIException):
+        await RoleService(repository=repo).assign_role_to_user(
+            AsyncMock(spec=AsyncSession), target.id, replacement.id, _actor()
+        )
+
+    repo.replace_user_role.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -707,6 +991,9 @@ async def test_bulk_delete_roles_with_system_role_forbidden():
     repo.get_role = AsyncMock(
         side_effect=lambda db, role_id: role if role_id == "role-1" else sys_role
     )
+    repo.get_role_for_update = AsyncMock(
+        side_effect=lambda db, role_id, organization_id: role if role_id == "role-1" else sys_role
+    )
     repo.delete_role = AsyncMock()
     service = RoleService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -733,7 +1020,13 @@ async def test_bulk_delete_roles_skips_defaults_only():
     repo.get_role = AsyncMock(
         side_effect=lambda db, role_id: role if role_id == "role-1" else default_role
     )
+    repo.get_role_for_update = AsyncMock(
+        side_effect=lambda db, role_id, organization_id: role
+        if role_id == "role-1"
+        else default_role
+    )
     repo.delete_role = AsyncMock()
+    repo.get_role_reference_kinds = AsyncMock(return_value=[])
     service = RoleService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
@@ -749,6 +1042,28 @@ async def test_bulk_delete_roles_skips_defaults_only():
     repo.delete_role.assert_awaited_once_with(db, role)
 
 
+@pytest.mark.asyncio
+async def test_bulk_delete_roles_locks_sorted_unique_ids():
+    roles = {role_id: _make_role(id=role_id, name=f"Custom {role_id}") for role_id in ("a", "b")}
+    repo: Any = RoleRepository()
+    repo.get_role_for_update = AsyncMock(
+        side_effect=lambda _db, role_id, _organization_id: roles[role_id]
+    )
+    repo.get_role_reference_kinds = AsyncMock(return_value=[])
+    repo.delete_role = AsyncMock()
+    service = RoleService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    from unittest.mock import patch
+
+    with patch.object(service, "_get_default_role_ids", AsyncMock(return_value=set())):
+        result = await service.bulk_delete_roles(db, ["b", "a", "b"], _actor())
+
+    assert [call.args[1] for call in repo.get_role_for_update.await_args_list] == ["a", "b"]
+    assert result["affected_count"] == 2
+    assert repo.delete_role.await_count == 2
+
+
 def _make_result_mock(items=None, first_item=None) -> MagicMock:
     res = MagicMock()
     res.scalars.return_value.all.return_value = items if items is not None else []
@@ -757,8 +1072,8 @@ def _make_result_mock(items=None, first_item=None) -> MagicMock:
 
 
 @pytest.mark.asyncio
-async def test_seed_permissions_global_system_admin_is_synchronized():
-    """TEST 1: Global system Admin (is_system_role=True, organization_id=None) is synchronized with standard permissions."""
+async def test_seed_permissions_does_not_grant_global_admin_role():
+    """Permission seeding never grants a legacy global tenant Admin role."""
     admin_role = _make_role(id="admin-1", name="Admin", is_system_role=True, organization_id=None)
     perm_bill = type("P", (), {"id": "p-bill", "key": "organization:billing"})()
     perm_brand = type("P", (), {"id": "p-brand", "key": "organization:branding"})()
@@ -766,7 +1081,9 @@ async def test_seed_permissions_global_system_admin_is_synchronized():
     repo: Any = RoleRepository()
     db = AsyncMock(spec=AsyncSession)
 
-    mock_res_keys = _make_result_mock(items=["dashboard:read"])
+    mock_res_keys = _make_result_mock(
+        items=["dashboard:read", "organization:billing", "organization:branding"]
+    )
     mock_res_admin = _make_result_mock(first_item=admin_role)
     mock_res_perms = _make_result_mock(items=[perm_bill, perm_brand])
     mock_res_rp = _make_result_mock(items=[])
@@ -797,9 +1114,7 @@ async def test_seed_permissions_global_system_admin_is_synchronized():
     added_rp = [
         call.args[0] for call in db.add.call_args_list if isinstance(call.args[0], RolePermission)
     ]
-    assert len(added_rp) == 2
-    assert {rp.permission_id for rp in added_rp} == {"p-bill", "p-brand"}
-    assert all(rp.role_id == "admin-1" for rp in added_rp)
+    assert len(added_rp) == 0
     db.commit.assert_awaited()
 
 
@@ -866,8 +1181,8 @@ async def test_seed_permissions_non_system_global_admin_not_synchronized():
 
 
 @pytest.mark.asyncio
-async def test_seed_permissions_only_standard_permissions_synchronized():
-    """TEST 4: Only standard permissions are synchronized; custom/arbitrary permissions are NOT attached to Admin."""
+async def test_seed_permissions_does_not_attach_permissions_to_global_admin():
+    """Approved and arbitrary catalog rows are never attached during seeding."""
     admin_role = _make_role(id="admin-1", name="Admin", is_system_role=True, organization_id=None)
     perm_std = type("P", (), {"id": "p-std", "key": "organization:billing"})()
 
@@ -899,13 +1214,12 @@ async def test_seed_permissions_only_standard_permissions_synchronized():
     added_rp = [
         call.args[0] for call in db.add.call_args_list if isinstance(call.args[0], RolePermission)
     ]
-    assert len(added_rp) == 1
-    assert added_rp[0].permission_id == "p-std"
+    assert len(added_rp) == 0
 
 
 @pytest.mark.asyncio
-async def test_seed_permissions_existing_admin_mappings_remain_intact():
-    """TEST 5: Existing Admin permission mappings remain intact and are not duplicated."""
+async def test_seed_permissions_does_not_modify_existing_admin_mappings():
+    """Existing legacy Admin mappings are left for the integrity migration."""
     admin_role = _make_role(id="admin-1", name="Admin", is_system_role=True, organization_id=None)
     perm_existing = type("P", (), {"id": "p-existing", "key": "organization:read"})()
     perm_new = type("P", (), {"id": "p-new", "key": "organization:billing"})()
@@ -944,8 +1258,7 @@ async def test_seed_permissions_existing_admin_mappings_remain_intact():
     added_rp = [
         call.args[0] for call in db.add.call_args_list if isinstance(call.args[0], RolePermission)
     ]
-    assert len(added_rp) == 1
-    assert added_rp[0].permission_id == "p-new"
+    assert len(added_rp) == 0
 
 
 @pytest.mark.asyncio
@@ -1067,7 +1380,7 @@ def test_standard_permissions_catalog_superset_of_migration_catalog():
 
 
 @pytest.mark.asyncio
-async def test_role_lookup_remaps_legacy_global_uuid_to_scoped_equivalent():
+async def test_role_lookup_does_not_fallback_to_global_role():
     global_role = _make_role(
         id="global-admin", name="Admin", organization_id=None, is_system_role=True
     )
@@ -1081,5 +1394,5 @@ async def test_role_lookup_remaps_legacy_global_uuid_to_scoped_equivalent():
         db, "global-admin", organization_id="org-1"
     )
 
-    assert role is scoped_role
-    assert db.scalar.await_count == 3
+    assert role is None
+    assert db.scalar.await_count == 1

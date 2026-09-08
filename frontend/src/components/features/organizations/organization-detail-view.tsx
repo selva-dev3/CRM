@@ -31,6 +31,8 @@ import { Badge } from '@/components/ui/badge';
 import { PageTabs } from '@/components/common/page-tabs';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { getErrorMessage } from '@/lib/utils';
+import { useHasPermission } from '@/hooks/use-has-permission';
+import { PERMISSIONS } from '@/lib/permissions';
 import {
   useCurrentOrganizationQuery,
   useOrganizationByIdQuery,
@@ -52,6 +54,14 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
   const router = useRouter();
   const params = useParams();
   const routeOrgId = typeof params?.id === 'string' ? params.id : '';
+  const { hasPermission } = useHasPermission();
+  const canUpdate = hasPermission(PERMISSIONS.ORGANIZATION.UPDATE);
+  const canBrand = hasPermission(PERMISSIONS.ORGANIZATION.BRANDING);
+  const canManageMembers = hasPermission(PERMISSIONS.ORGANIZATION.MEMBERS);
+  const canManageBilling = hasPermission(PERMISSIONS.ORGANIZATION.BILLING);
+  const canManageDomains = hasPermission(PERMISSIONS.ORGANIZATION.DOMAINS);
+  const canReadAudit = hasPermission(PERMISSIONS.ORGANIZATION.AUDIT);
+  const canTransferOwnership = hasPermission(PERMISSIONS.ORGANIZATION.TRANSFER_OWNERSHIP);
 
   const [activeTab, setActiveTab] = useState<
     'profile' | 'branding' | 'members' | 'subscription' | 'usage' | 'domains' | 'ownership'
@@ -80,11 +90,11 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
   const isOrgLoading = isCurrentOrgView ? isCurrentLoading : isOrgByIdLoading;
   const isOrgError = isCurrentOrgView ? isCurrentError : isOrgByIdError;
   const refetchOrg = isCurrentOrgView ? refetchCurrent : refetchById;
-  const { data: members = [], refetch: refetchMembers } = useOrganizationMembersQuery();
-  const { data: subscription, isLoading: isSubscriptionLoading, isError: isSubscriptionError } = useOrganizationSubscriptionQuery();
-  const { data: usage } = useOrganizationUsageQuery();
-  const { refetch: refetchDomains } = useOrganizationDomainsQuery();
-  const { data: auditLogs = [] } = useOrganizationAuditLogsQuery();
+  const { data: members = [], refetch: refetchMembers } = useOrganizationMembersQuery(canManageMembers);
+  const { data: subscription, isLoading: isSubscriptionLoading, isError: isSubscriptionError } = useOrganizationSubscriptionQuery(canManageBilling);
+  const { data: usage } = useOrganizationUsageQuery(canManageBilling);
+  const { refetch: refetchDomains } = useOrganizationDomainsQuery(canManageDomains);
+  const { data: auditLogs = [] } = useOrganizationAuditLogsQuery(canReadAudit);
 
   // Mutations
   const updateOrgMutation = useUpdateOrganizationMutation();
@@ -160,6 +170,14 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
       setStatus(org.status || 'active');
     }
   }, [org]);
+
+  const activeTabIsPermitted = activeTab === 'profile'
+    || (activeTab === 'branding' && canBrand)
+    || (activeTab === 'members' && canManageMembers)
+    || ((activeTab === 'subscription' || activeTab === 'usage') && canManageBilling)
+    || (activeTab === 'domains' && canManageDomains)
+    || (activeTab === 'ownership' && (canTransferOwnership || canReadAudit));
+  const visibleActiveTab = activeTabIsPermitted ? activeTab : 'profile';
 
   // Handlers
   const handleUpdateProfile = async (e: React.FormEvent) => {
@@ -334,7 +352,7 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
           </div>
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0">
+        {canUpdate && <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0">
           <Button
             onClick={handleUpdateProfile}
             disabled={updateOrgMutation.isPending}
@@ -344,7 +362,7 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
             <Save className="w-4 h-4 mr-2" />
             <span>{updateOrgMutation.isPending ? 'Saving...' : 'Save Profile'}</span>
           </Button>
-        </div>
+        </div>}
       </div>
 
       {/* Alert Banners */}
@@ -373,7 +391,7 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
           </div>
         </Card>
 
-        <Card className="p-4 bg-white border border-[#E5E7EB] shadow-saas-sm rounded-btn flex items-center gap-3">
+        {canManageBilling && <Card className="p-4 bg-white border border-[#E5E7EB] shadow-saas-sm rounded-btn flex items-center gap-3">
           <div className="w-10 h-10 rounded-btn bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
             <Crown className="w-5 h-5" />
           </div>
@@ -383,9 +401,9 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
               {activeOrg.plan ? `${activeOrg.plan} Plan` : 'Plan unavailable'}
             </div>
           </div>
-        </Card>
+        </Card>}
 
-        <Card className="p-4 bg-white border border-[#E5E7EB] shadow-saas-sm rounded-btn flex items-center gap-3">
+        {canManageBilling && <Card className="p-4 bg-white border border-[#E5E7EB] shadow-saas-sm rounded-btn flex items-center gap-3">
           <div className="w-10 h-10 rounded-btn bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
             <Users className="w-5 h-5" />
           </div>
@@ -395,9 +413,9 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
               {usage?.users_used ?? 0} / {usage?.users_limit ?? activeOrg.max_users ?? 0} Seats
             </div>
           </div>
-        </Card>
+        </Card>}
 
-        <Card className="p-4 bg-white border border-[#E5E7EB] shadow-saas-sm rounded-btn flex items-center gap-3">
+        {canManageBilling && <Card className="p-4 bg-white border border-[#E5E7EB] shadow-saas-sm rounded-btn flex items-center gap-3">
           <div className="w-10 h-10 rounded-btn bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
             <HardDrive className="w-5 h-5" />
           </div>
@@ -407,28 +425,30 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
               {storageUsed} GB / {storageLimit} GB
             </div>
           </div>
-        </Card>
+        </Card>}
       </div>
 
       <PageTabs
-        value={activeTab}
+        value={visibleActiveTab}
         onValueChange={setActiveTab}
         variant="default"
         tabs={[
           { value: 'profile', icon: <Building className="size-4" />, label: 'Org Profile & Details' },
-          { value: 'branding', icon: <Upload className="size-4" />, label: 'S3 Branding & Logo' },
-          { value: 'members', icon: <UserCheck className="size-4" />, label: 'Members & Team' },
-          { value: 'subscription', icon: <CreditCard className="size-4" />, label: 'Subscription & Billing' },
-          { value: 'usage', icon: <Zap className="size-4" />, label: 'Usage Quotas' },
-          { value: 'domains', icon: <Globe className="size-4" />, label: 'Custom Domains' },
-          { value: 'ownership', icon: <ArrowRightLeft className="size-4" />, label: 'Ownership & Audit Logs' },
+          ...(canBrand ? [{ value: 'branding' as const, icon: <Upload className="size-4" />, label: 'S3 Branding & Logo' }] : []),
+          ...(canManageMembers ? [{ value: 'members' as const, icon: <UserCheck className="size-4" />, label: 'Members & Team' }] : []),
+          ...(canManageBilling ? [
+            { value: 'subscription' as const, icon: <CreditCard className="size-4" />, label: 'Subscription & Billing' },
+            { value: 'usage' as const, icon: <Zap className="size-4" />, label: 'Usage Quotas' },
+          ] : []),
+          ...(canManageDomains ? [{ value: 'domains' as const, icon: <Globe className="size-4" />, label: 'Custom Domains' }] : []),
+          ...(canTransferOwnership || canReadAudit ? [{ value: 'ownership' as const, icon: <ArrowRightLeft className="size-4" />, label: 'Ownership & Audit Logs' }] : []),
         ]}
         listClassName="border-b border-[#E5E7EB] bg-transparent pb-2"
         triggerClassName="text-caption sm:text-button data-[state=active]:bg-[#2563EB]/10 data-[state=active]:text-[#2563EB]"
       />
 
       {/* TAB 1: PROFILE & DETAILS */}
-      {activeTab === 'profile' && (
+      {visibleActiveTab === 'profile' && (
         <Card className="p-6 bg-white border border-[#E5E7EB] shadow-saas-sm rounded-btn space-y-6">
           <div className="border-b border-[#E5E7EB] pb-3">
             <h3 className="font-semibold text-[#111827] text-subheading flex items-center gap-2">
@@ -438,7 +458,7 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
           </div>
 
           <form onSubmit={handleUpdateProfile} className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <fieldset disabled={!canUpdate} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="org-name">Organization Name</Label>
                 <Input id="org-name" value={name} onChange={(e) => setName(e.target.value)} />
@@ -499,9 +519,9 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
                   onChange={(e) => setMaxUsers(Number(e.target.value))}
                 />
               </div>
-            </div>
+            </fieldset>
 
-            <div className="pt-4 border-t border-[#E5E7EB] flex justify-end">
+            {canUpdate && <div className="pt-4 border-t border-[#E5E7EB] flex justify-end">
               <Button
                 type="submit"
                 variant="primary"
@@ -511,13 +531,13 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
                 <Save className="w-4 h-4 mr-2" />
                 <span>{updateOrgMutation.isPending ? 'Saving...' : 'Save Organization Profile'}</span>
               </Button>
-            </div>
+            </div>}
           </form>
         </Card>
       )}
 
       {/* TAB 2: BRANDING & S3 UPLOAD */}
-      {activeTab === 'branding' && (
+      {visibleActiveTab === 'branding' && canBrand && (
         <Card className="p-6 bg-white border border-[#E5E7EB] shadow-saas-sm rounded-btn space-y-6">
           <div className="border-b border-[#E5E7EB] pb-3">
             <h3 className="font-semibold text-[#111827] text-subheading flex items-center gap-2">
@@ -571,7 +591,7 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
       )}
 
       {/* TAB 3: MEMBERS */}
-      {activeTab === 'members' && (
+      {visibleActiveTab === 'members' && canManageMembers && (
         <Card className="p-6 bg-white border border-[#E5E7EB] shadow-saas-sm rounded-btn space-y-4">
           <div className="flex items-center justify-between border-b border-[#E5E7EB] pb-3">
             <h3 className="font-semibold text-[#111827] text-subheading flex items-center gap-2">
@@ -613,7 +633,7 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
       )}
 
       {/* TAB 4: SUBSCRIPTION */}
-      {activeTab === 'subscription' && (
+      {visibleActiveTab === 'subscription' && canManageBilling && (
         <Card className="p-4 sm:p-6 bg-white border border-[#E5E7EB] shadow-saas-sm rounded-btn space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4 border-b border-[#E5E7EB] pb-3">
             <h3 className="font-semibold text-[#111827] text-body sm:text-subheading flex items-center gap-2">
@@ -690,7 +710,7 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
       )}
 
       {/* TAB 5: USAGE METRICS */}
-      {activeTab === 'usage' && (
+      {visibleActiveTab === 'usage' && canManageBilling && (
         <Card className="p-6 bg-white border border-[#E5E7EB] shadow-saas-sm rounded-btn space-y-6">
           <div className="border-b border-[#E5E7EB] pb-3">
             <h3 className="font-semibold text-[#111827] text-subheading flex items-center gap-2">
@@ -724,7 +744,7 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
       )}
 
       {/* TAB 6: CUSTOM DOMAINS */}
-      {activeTab === 'domains' && (
+      {visibleActiveTab === 'domains' && canManageDomains && (
         <Card className="p-6 bg-white border border-[#E5E7EB] shadow-saas-sm rounded-btn space-y-4">
           <div className="border-b border-[#E5E7EB] pb-3">
             <h3 className="font-semibold text-[#111827] text-subheading flex items-center gap-2">
@@ -760,9 +780,9 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
       )}
 
       {/* TAB 7: OWNERSHIP & AUDIT LOGS */}
-      {activeTab === 'ownership' && (
+      {visibleActiveTab === 'ownership' && (canTransferOwnership || canReadAudit) && (
         <div className="space-y-6">
-          <Card className="p-6 bg-white border border-[#E5E7EB] shadow-saas-sm rounded-btn space-y-4">
+          {canTransferOwnership && <Card className="p-6 bg-white border border-[#E5E7EB] shadow-saas-sm rounded-btn space-y-4">
             <div className="border-b border-[#E5E7EB] pb-3">
               <h3 className="font-semibold text-[#111827] text-subheading flex items-center gap-2">
                 <ShieldAlert className="w-5 h-5 text-[#DC2626]" />
@@ -792,10 +812,10 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
                 </Button>
               </div>
             </form>
-          </Card>
+          </Card>}
 
           {/* Audit Logs Table */}
-          <Card className="p-4 sm:p-6 bg-white border border-[#E5E7EB] shadow-saas-sm rounded-btn space-y-4">
+          {canReadAudit && <Card className="p-4 sm:p-6 bg-white border border-[#E5E7EB] shadow-saas-sm rounded-btn space-y-4">
             <div className="border-b border-[#E5E7EB] pb-3">
               <h3 className="font-semibold text-[#111827] text-body sm:text-subheading flex items-center gap-2">
                 <FileText className="w-5 h-5 text-[#2563EB] shrink-0" />
@@ -829,7 +849,7 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
                 </div>
               )}
             </div>
-          </Card>
+          </Card>}
         </div>
       )}
     </div>

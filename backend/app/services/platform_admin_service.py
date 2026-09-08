@@ -58,6 +58,12 @@ class PlatformAdminService:
                 )
             hashed_password = get_password_hash(password.get_secret_value())
             if user:
+                if not user.is_platform_admin:
+                    # Scope integrity rejects a platform account retaining a
+                    # tenant mapping. Clear it before changing the user scope;
+                    # rollback restores both if provisioning later fails.
+                    await self.repository.clear_user_roles(db, user_id=user.id)
+                    await db.flush()
                 user.email = normalized_email
                 user.hashed_password = hashed_password
                 user.is_platform_admin = True

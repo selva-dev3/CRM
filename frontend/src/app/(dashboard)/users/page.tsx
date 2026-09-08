@@ -48,6 +48,7 @@ import {
 import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
 import { RoleSearchCombobox } from '@/components/features/users/role-search-combobox';
 import { useQueryClient } from '@tanstack/react-query';
+import { PERMISSIONS } from '@/lib/permissions';
 
 const EMPTY_USERS: UserItem[] = [];
 
@@ -330,11 +331,12 @@ export default function UsersPage() {
           let roleName = item.role || 'Assigned Role';
           // Sanitize raw UUID / ID strings like "6b0c7205-c427-4172-acc1-f314f8ac1e1e"
           if (roleName.length > 20 && roleName.includes('-')) {
-            roleName = item.email?.toLowerCase().includes('superadmin') ? 'Super Administrator' : 'Sales Manager';
+            roleName = 'Assigned Role';
           }
 
-          const isAdmin = roleName.toLowerCase().includes('admin');
-          const isManager = roleName.toLowerCase().includes('manager');
+          const normalizedRole = roleName.trim().toLowerCase();
+          const isAdmin = normalizedRole === 'admin' || normalizedRole === 'organization admin';
+          const isManager = normalizedRole === 'sales manager';
 
           return (
             <span
@@ -477,7 +479,7 @@ export default function UsersPage() {
       label: user.is_active ? 'Deactivate User' : 'Activate User',
       icon: user.is_active ? <Ban className="w-4 h-4 mr-2 text-[#F59E0B]" /> : <Power className="w-4 h-4 mr-2 text-[#16A34A]" />,
       onClick: (item) => handleToggleActivate(item),
-      permission: 'users:update',
+      permission: PERMISSIONS.USERS.UPDATE,
     },
   ];
 
@@ -494,30 +496,38 @@ export default function UsersPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <PermissionGate permission="users:create">
-            <Button
-              type="button"
-              onClick={handleOpenCreateModal}
-              size="default"
-              variant="outline"
-              className="shadow-saas-sm px-4 text-button cursor-pointer"
-            >
-              <Plus className="w-4 h-4 mr-2 text-[#2563EB]" />
-              + Create User
-            </Button>
+          <PermissionGate permission={PERMISSIONS.USERS.CREATE}>
+            <PermissionGate permission={PERMISSIONS.USERS.ASSIGN_ROLES}>
+              <PermissionGate permission={PERMISSIONS.ROLES.READ}>
+                <Button
+                type="button"
+                onClick={handleOpenCreateModal}
+                size="default"
+                variant="outline"
+                className="shadow-saas-sm px-4 text-button cursor-pointer"
+              >
+                <Plus className="w-4 h-4 mr-2 text-[#2563EB]" />
+                + Create User
+                </Button>
+              </PermissionGate>
+            </PermissionGate>
           </PermissionGate>
 
-          <PermissionGate permission="users:invite">
-            <Button
-              type="button"
-              onClick={handleOpenModal}
-              size="default"
-              variant="primary"
-              className="shadow-saas-sm px-4 text-button cursor-pointer"
-            >
-              <UserPlus className="w-4 h-4 mr-2" />
-              + Invite User
-            </Button>
+          <PermissionGate permission={PERMISSIONS.USERS.INVITE}>
+            <PermissionGate permission={PERMISSIONS.USERS.ASSIGN_ROLES}>
+              <PermissionGate permission={PERMISSIONS.ROLES.READ}>
+                <Button
+                type="button"
+                onClick={handleOpenModal}
+                size="default"
+                variant="primary"
+                className="shadow-saas-sm px-4 text-button cursor-pointer"
+              >
+                <UserPlus className="w-4 h-4 mr-2" />
+                + Invite User
+                </Button>
+              </PermissionGate>
+            </PermissionGate>
           </PermissionGate>
         </div>
       </div>
@@ -597,7 +607,7 @@ export default function UsersPage() {
                     {selectedIds.size > 0 ? `Bulk Actions (${selectedIds.size} selected)` : 'Select users below to apply'}
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  <PermissionGate permission="users:update">
+                  <PermissionGate permission={PERMISSIONS.USERS.DELETE}>
                     <DropdownMenuItem
                       disabled={selectedIds.size === 0 || bulkDeactivateUsersMutation.isPending}
                       onClick={handleBulkDeactivate}

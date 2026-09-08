@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   AlertCircle,
   Check,
@@ -31,11 +31,6 @@ export interface RoleSearchComboboxProps {
   disabled?: boolean;
 }
 
-const SUPER_ADMIN_ROLE_NAMES = new Set(['super_admin', 'super admin', 'superadmin']);
-
-const isSuperAdminRoleName = (value: string | undefined | null): boolean =>
-  Boolean(value && SUPER_ADMIN_ROLE_NAMES.has(value.trim().toLowerCase()));
-
 export function RoleSearchCombobox({
   value,
   onChange,
@@ -51,25 +46,7 @@ export function RoleSearchCombobox({
     debouncedSearch.trim() || undefined
   );
 
-  const displayedRoles = useMemo(
-    () => roles.filter((role) => !isSuperAdminRoleName(role.name)),
-    [roles]
-  );
-  const defaultAdminRole = useMemo(() => {
-    if (displayedRoles.length === 0) return null;
-    return (
-      displayedRoles.find((role) => {
-        const roleName = role.name.toLowerCase().trim();
-        return roleName === 'admin' || roleName === 'administrator';
-      }) ?? displayedRoles[0]
-    );
-  }, [displayedRoles]);
-
-  useEffect(() => {
-    if (!value && defaultAdminRole?.id) onChange(defaultAdminRole.id);
-  }, [defaultAdminRole, onChange, value]);
-
-  const selectedRole = displayedRoles.find((role) => role.id === value);
+  const selectedRole = roles.find((role) => role.id === value);
   const activeRoleName = selectedRole?.name || selectedRoleName;
 
   const selectRole = (role: RoleItem) => {
@@ -148,7 +125,7 @@ export function RoleSearchCombobox({
             ) : (
               <>
                 <CommandEmpty>No roles found</CommandEmpty>
-                {displayedRoles.map((role) => (
+                {roles.map((role) => (
                   <CommandItem
                     key={role.id}
                     value={role.name}

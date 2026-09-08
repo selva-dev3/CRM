@@ -46,9 +46,9 @@ describe('filterNavigationSections', () => {
     expect(filterNavigationSections(open, []).length).toBe(1);
   });
 
-  it('treats the legacy "all" sentinel as access to every gated item', () => {
+  it('does not grant navigation access for the legacy "all" sentinel', () => {
     const result = filterNavigationSections(sections, ['all']);
-    expect(result).toEqual(sections);
+    expect(result).toEqual([]);
   });
 });
 

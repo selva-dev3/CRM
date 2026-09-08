@@ -7,7 +7,7 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, NotFoundError
-from app.models import User
+from app.models import User, UserInvitation
 from app.repositories.user_repository import UserRepository
 from app.schemas.crm_schemas import UserCreate, UserUpdate
 from app.services.user_service import UserService, user_to_dict
@@ -62,8 +62,32 @@ def _make_org(**overrides):
     return type("Org", (), defaults)()
 
 
+
+@pytest.fixture(autouse=True)
+def invitation_membership_repository(monkeypatch):
+    from app.models import OrganizationSubscription
+    from app.repositories.organization_lifecycle_repository import OrganizationLifecycleRepository
+
+    for method in ("lock_invitation_email",):
+        monkeypatch.setattr(OrganizationLifecycleRepository, method, AsyncMock())
+    monkeypatch.setattr(OrganizationLifecycleRepository, "lock_invitation_organization", AsyncMock(return_value=_make_org(max_users=100)))
+    monkeypatch.setattr(OrganizationLifecycleRepository, "tenant_member_count", AsyncMock(return_value=0))
+    monkeypatch.setattr(OrganizationLifecycleRepository, "subscription_for_membership", AsyncMock(return_value=OrganizationSubscription(current_users=0)))
+    for method in ("email_in_use", "pending_invitation_exists", "pending_legacy_invitation_exists"):
+        monkeypatch.setattr(OrganizationLifecycleRepository, method, AsyncMock(return_value=False))
+
 def _service_with(repo: UserRepository) -> UserService:
-    return UserService(repository=repo)
+    service = UserService(repository=repo)
+
+    async def lock_resolved_role(db, role_id, organization_id):
+        return await service.role_repository.get_role_by_id_or_name(
+            db, role_id, organization_id=organization_id
+        )
+
+    cast(Any, service.role_repository).get_role_for_update = AsyncMock(
+        side_effect=lock_resolved_role
+    )
+    return service
 
 
 @pytest.mark.asyncio
@@ -71,8 +95,8 @@ async def test_list_users_maps_role_names():
     user = _make_user(role="role-uuid-1")
     repo: Any = UserRepository()
     repo.list = AsyncMock(return_value=[user])
-    repo.role_name_map = AsyncMock(
-        return_value={"role-uuid-1": "Sales Manager", "Sales Manager": "Sales Manager"}
+    repo.effective_role_names_for_users = AsyncMock(
+        return_value={user.id: "Sales Manager"}
     )
     service = _service_with(repo)
     cast(Any, service.organization_repository).get_by_id = AsyncMock(return_value=_make_org())
@@ -86,18 +110,18 @@ async def test_list_users_maps_role_names():
 
 
 @pytest.mark.asyncio
-async def test_list_users_fallback_role_for_superadmin():
+async def test_list_users_does_not_infer_role_from_email():
     user = _make_user(role=None, email="superadmin@gmail.com")
     repo: Any = UserRepository()
     repo.list = AsyncMock(return_value=[user])
-    repo.role_name_map = AsyncMock(return_value={})
+    repo.effective_role_names_for_users = AsyncMock(return_value={})
     service = _service_with(repo)
     cast(Any, service.organization_repository).get_by_id = AsyncMock(return_value=_make_org())
     db = AsyncMock(spec=AsyncSession)
 
     result = await service.list_users(db, page=1, limit=20, search=None, current_user=_make_user())
 
-    assert result[0]["role"] == "Super Administrator"
+    assert result[0]["role"] == "User"
 
 
 @pytest.mark.asyncio
@@ -118,8 +142,8 @@ async def test_get_user_maps_role_id_to_display_name():
     user = _make_user(role="95efa96f-4d75-46ff-9e2f-183a16f7531d")
     repo: Any = UserRepository()
     repo.get_by_id = AsyncMock(return_value=user)
-    repo.role_name_map = AsyncMock(
-        return_value={"95efa96f-4d75-46ff-9e2f-183a16f7531d": "Sales Manager"}
+    repo.effective_role_names_for_users = AsyncMock(
+        return_value={user.id: "Sales Manager"}
     )
     service = _service_with(repo)
 
@@ -140,7 +164,7 @@ async def test_create_user_hashes_password(monkeypatch):
 
     monkeypatch.setattr("app.services.user_service.get_password_hash", lambda pwd: f"hashed-{pwd}")
 
-    role = type("R", (), {"id": "role-1", "name": "Sales Executive", "organization_id": None})()
+    role = type("R", (), {"id": "role-1", "name": "Sales Executive", "organization_id": "org-1"})()
     cast(Any, service.role_repository).get_role_by_id_or_name = AsyncMock(return_value=role)
     cast(Any, service.organization_repository).get_by_id = AsyncMock(return_value=_make_org())
 
@@ -156,7 +180,9 @@ async def test_create_user_hashes_password(monkeypatch):
         repo.create.await_args_list[-1].kwargs["data"]["hashed_password"] == EXPECTED_HASHED_VALUE
     )
     assert repo.create.await_args_list[-1].kwargs["data"]["organization_id"] == "org-1"
-    db.add.assert_called_once()
+    assert db.add.call_count == 2
+    assert any(type(call.args[0]).__name__ == "UserRole" for call in db.add.call_args_list)
+    assert any(type(call.args[0]).__name__ == "AuditLog" for call in db.add.call_args_list)
 
 
 @pytest.mark.asyncio
@@ -165,7 +191,7 @@ async def test_create_user_derives_org_from_authenticated_user():
     repo.create = AsyncMock(return_value=_make_user())
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
-    role = type("R", (), {"id": "role-1", "name": "Sales Executive", "organization_id": None})()
+    role = type("R", (), {"id": "role-1", "name": "Sales Executive", "organization_id": "org-current"})()
     cast(Any, service.role_repository).get_role_by_id_or_name = AsyncMock(return_value=role)
     cast(Any, service.organization_repository).get_by_id = AsyncMock(
         return_value=_make_org(id="org-current")
@@ -209,7 +235,7 @@ async def test_create_user_rejects_role_from_another_organization():
 
 
 @pytest.mark.asyncio
-async def test_create_user_allows_system_role_with_no_org():
+async def test_create_user_rejects_global_system_role():
     repo: Any = UserRepository()
     repo.create = AsyncMock(return_value=_make_user())
     service = _service_with(repo)
@@ -225,9 +251,9 @@ async def test_create_user_allows_system_role_with_no_org():
         name="Alex Smith", email="alex@crm.com", role="role-1", password=VALID_INPUT
     )
 
-    await service.create_user(db, payload, current_user=current_user)
-
-    assert repo.create.await_args_list[-1].kwargs["data"]["organization_id"] == "org-1"
+    with pytest.raises(APIException):
+        await service.create_user(db, payload, current_user=current_user)
+    repo.create.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -321,7 +347,7 @@ async def test_create_user_assigns_system_role():
             {
                 "id": "role-sales-manager",
                 "name": "Sales Manager",
-                "organization_id": None,
+                "organization_id": "org-1",
                 "is_system_role": True,
             },
         )()
@@ -343,10 +369,14 @@ async def test_create_user_assigns_system_role():
 
 
 @pytest.mark.asyncio
-async def test_delete_user_protects_superadmin():
-    user = _make_user(email="superadmin@gmail.com")
+async def test_delete_user_protects_platform_admin():
+    user = _make_user(email="platform@example.com", is_platform_admin=True)
     repo: Any = UserRepository()
     repo.get_by_id = AsyncMock(return_value=user)
+    repo.lock_active_by_org = AsyncMock(return_value=[user])
+    repo.effective_role_names_for_users = AsyncMock(
+        return_value={user.id: "Sales Executive"}
+    )
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
@@ -364,7 +394,9 @@ async def test_delete_user_deactivates_and_preserves_record():
     repo: Any = UserRepository()
     repo.get_by_id = AsyncMock(return_value=target)
     repo.lock_active_by_org = AsyncMock(return_value=[target, active_admin])
-    repo.role_name_map = AsyncMock(return_value={})
+    repo.effective_role_names_for_users = AsyncMock(
+        return_value={target.id: "Sales Executive", active_admin.id: "Admin"}
+    )
     repo.delete = AsyncMock()
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -383,7 +415,7 @@ async def test_deactivate_user_rejects_last_active_admin():
     repo: Any = UserRepository()
     repo.get_by_id = AsyncMock(return_value=target)
     repo.lock_active_by_org = AsyncMock(return_value=[target])
-    repo.role_name_map = AsyncMock(return_value={})
+    repo.effective_role_names_for_users = AsyncMock(return_value={target.id: "Admin"})
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
@@ -415,8 +447,8 @@ async def test_deactivate_user_rejects_current_user():
 
 
 @pytest.mark.asyncio
-async def test_deactivate_user_protects_superadmin():
-    user = _make_user(email="superadmin@gmail.com")
+async def test_deactivate_user_protects_platform_admin():
+    user = _make_user(email="platform@example.com", is_platform_admin=True)
     repo: Any = UserRepository()
     repo.get_by_id = AsyncMock(return_value=user)
     service = _service_with(repo)
@@ -430,13 +462,15 @@ async def test_deactivate_user_protects_superadmin():
 
 
 @pytest.mark.asyncio
-async def test_bulk_delete_skips_superadmin():
+async def test_bulk_delete_skips_platform_admin():
     regular_user = _make_user(id="u1", email="a@crm.com")
-    protected_user = _make_user(id="u2", email="superadmin@gmail.com")
+    protected_user = _make_user(id="u2", email="platform@example.com", is_platform_admin=True)
     repo: Any = UserRepository()
     repo.list_by_ids = AsyncMock(return_value=[regular_user, protected_user])
     repo.lock_active_by_org = AsyncMock(return_value=[regular_user, protected_user])
-    repo.role_name_map = AsyncMock(return_value={})
+    repo.effective_role_names_for_users = AsyncMock(
+        return_value={regular_user.id: "Sales Executive", protected_user.id: "Super Admin"}
+    )
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
@@ -456,7 +490,9 @@ async def test_bulk_delete_keeps_one_active_admin():
     repo: Any = UserRepository()
     repo.list_by_ids = AsyncMock(return_value=[first_admin, second_admin])
     repo.lock_active_by_org = AsyncMock(return_value=[first_admin, second_admin])
-    repo.role_name_map = AsyncMock(return_value={})
+    repo.effective_role_names_for_users = AsyncMock(
+        return_value={first_admin.id: "Admin", second_admin.id: "Admin"}
+    )
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
@@ -473,7 +509,7 @@ async def test_bulk_delete_keeps_one_active_admin():
 @pytest.mark.asyncio
 async def test_invite_users_uses_current_user_org_and_stores_role_id(monkeypatch):
     repo: Any = UserRepository()
-    repo.create_invitation = AsyncMock(return_value=None)
+    repo.create_invitation = AsyncMock(return_value=UserInvitation(id="inv-test"))
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
     current_user = _make_user(id="user-1", organization_id="org-1")
@@ -481,7 +517,7 @@ async def test_invite_users_uses_current_user_org_and_stores_role_id(monkeypatch
     role = type(
         "R",
         (),
-        {"id": "role-1", "name": "Sales Manager", "organization_id": None, "is_system_role": False},
+        {"id": "role-1", "name": "Sales Manager", "organization_id": "org-1", "is_system_role": False},
     )()
     cast(Any, service.role_repository).get_role_by_id_or_name = AsyncMock(return_value=role)
 
@@ -500,7 +536,7 @@ async def test_invite_users_uses_current_user_org_and_stores_role_id(monkeypatch
 @pytest.mark.asyncio
 async def test_invite_users_accepts_normalized_active_organization_status(monkeypatch):
     repo: Any = UserRepository()
-    repo.create_invitation = AsyncMock(return_value=None)
+    repo.create_invitation = AsyncMock(return_value=UserInvitation(id="inv-test"))
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
     current_user = _make_user(id="user-1", organization_id="org-1")
@@ -542,7 +578,7 @@ async def test_invite_users_rejects_inactive_or_disabled_organization(
     monkeypatch, organization, expected_message
 ):
     repo: Any = UserRepository()
-    repo.create_invitation = AsyncMock(return_value=None)
+    repo.create_invitation = AsyncMock(return_value=UserInvitation(id="inv-test"))
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
     current_user = _make_user(id="user-1", organization_id="org-1")
@@ -569,7 +605,7 @@ async def test_invite_users_rejects_inactive_or_disabled_organization(
 @pytest.mark.asyncio
 async def test_invite_users_derives_org_from_session_not_payload():
     repo: Any = UserRepository()
-    repo.create_invitation = AsyncMock(return_value=None)
+    repo.create_invitation = AsyncMock(return_value=UserInvitation(id="inv-test"))
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
     current_user = _make_user(id="user-1", organization_id="org-2")
@@ -655,7 +691,7 @@ async def test_invite_users_assigns_sales_manager_when_system_role(monkeypatch):
         {
             "id": "role-sales-manager",
             "name": "Sales Manager",
-            "organization_id": None,
+            "organization_id": "org-1",
             "is_system_role": True,
         },
     )()
@@ -696,12 +732,17 @@ async def test_update_user_only_changes_provided_fields():
     user = _make_user()
     repo: Any = UserRepository()
     repo.get_by_id = AsyncMock(return_value=user)
+    repo.lock_active_by_org = AsyncMock(return_value=[user])
+    repo.effective_role_names_for_users = AsyncMock(
+        return_value={user.id: "Sales Executive"}
+    )
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
-    role = type("R", (), {"id": "role-9", "name": "Sales Manager", "organization_id": None})()
+    role = type("R", (), {"id": "role-9", "name": "Sales Manager", "organization_id": "org-1"})()
     cast(Any, service.role_repository).get_role_by_id_or_name = AsyncMock(return_value=role)
     mapping = type("Mapping", (), {"role_id": "old-role"})()
     cast(Any, service.role_repository).get_user_role_mapping = AsyncMock(return_value=mapping)
+    cast(Any, service.role_repository).replace_user_role = AsyncMock()
 
     result = await service.update_user(
         db, "user-1", UserUpdate(role="Sales Manager"), current_user=_make_user(role="Admin")
@@ -710,7 +751,69 @@ async def test_update_user_only_changes_provided_fields():
     assert user.role == "role-9"
     assert user.name == "Alex Smith"
     assert result["role"] == "role-9"
-    assert mapping.role_id == "role-9"
+    cast(Any, service.role_repository).replace_user_role.assert_awaited_once_with(
+        db, user.id, "role-9"
+    )
+
+
+@pytest.mark.asyncio
+async def test_update_user_rejects_last_admin_demotion():
+    admin = _make_user(id="admin-1", role="Admin")
+    replacement = type(
+        "R",
+        (),
+        {"id": "read-only", "name": "Read Only", "organization_id": "org-1"},
+    )()
+    repo: Any = UserRepository()
+    repo.get_by_id = AsyncMock(return_value=admin)
+    repo.lock_active_by_org = AsyncMock(return_value=[admin])
+    repo.effective_role_names_for_users = AsyncMock(return_value={admin.id: "Admin"})
+    service = _service_with(repo)
+    cast(Any, service.role_repository).get_role_by_id_or_name = AsyncMock(
+        return_value=replacement
+    )
+    cast(Any, service.role_repository).replace_user_role = AsyncMock()
+
+    with pytest.raises(APIException) as exc_info:
+        await service.update_user(
+            AsyncMock(spec=AsyncSession),
+            admin.id,
+            UserUpdate(role=replacement.id),
+            current_user=_make_user(id="manager", role="Sales Manager"),
+        )
+
+    assert exc_info.value.code == "LAST_ADMIN_DEACTIVATION_FORBIDDEN"
+    cast(Any, service.role_repository).replace_user_role.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_update_user_uses_authoritative_mapping_for_non_uuid_last_admin():
+    admin = _make_user(id="admin-1", role="stale-read-only")
+    replacement = type(
+        "R",
+        (),
+        {"id": "read-only", "name": "Read Only", "organization_id": "org-1"},
+    )()
+    repo: Any = UserRepository()
+    repo.get_by_id = AsyncMock(return_value=admin)
+    repo.lock_active_by_org = AsyncMock(return_value=[admin])
+    repo.effective_role_names_for_users = AsyncMock(return_value={admin.id: "Admin"})
+    service = _service_with(repo)
+    cast(Any, service.role_repository).get_role_by_id_or_name = AsyncMock(
+        return_value=replacement
+    )
+    cast(Any, service.role_repository).replace_user_role = AsyncMock()
+
+    with pytest.raises(APIException) as exc_info:
+        await service.update_user(
+            AsyncMock(spec=AsyncSession),
+            admin.id,
+            UserUpdate(role=replacement.id),
+            current_user=_make_user(id="manager", role="Sales Manager"),
+        )
+
+    assert exc_info.value.code == "LAST_ADMIN_DEACTIVATION_FORBIDDEN"
+    cast(Any, service.role_repository).replace_user_role.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -736,6 +839,10 @@ async def test_update_user_assigns_sales_manager_when_system_role():
     user = _make_user()
     repo: Any = UserRepository()
     repo.get_by_id = AsyncMock(return_value=user)
+    repo.lock_active_by_org = AsyncMock(return_value=[user])
+    repo.effective_role_names_for_users = AsyncMock(
+        return_value={user.id: "Sales Executive"}
+    )
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
     role = type(
@@ -744,12 +851,13 @@ async def test_update_user_assigns_sales_manager_when_system_role():
         {
             "id": "role-9",
             "name": "Sales Manager",
-            "organization_id": None,
+            "organization_id": "org-1",
             "is_system_role": True,
         },
     )()
     cast(Any, service.role_repository).get_role_by_id_or_name = AsyncMock(return_value=role)
     cast(Any, service.role_repository).get_user_role_mapping = AsyncMock(return_value=None)
+    cast(Any, service.role_repository).replace_user_role = AsyncMock()
 
     result = await service.update_user(
         db, "user-1", UserUpdate(role="role-9"), current_user=_make_user(role="Admin")
@@ -757,9 +865,9 @@ async def test_update_user_assigns_sales_manager_when_system_role():
 
     assert result["role"] == "role-9"
     assert user.role == "role-9"
-    added_mapping = db.add.call_args.args[0]
-    assert added_mapping.user_id == "user-1"
-    assert added_mapping.role_id == "role-9"
+    cast(Any, service.role_repository).replace_user_role.assert_awaited_once_with(
+        db, "user-1", "role-9"
+    )
 
 
 @pytest.mark.asyncio
@@ -853,3 +961,50 @@ async def test_set_user_quota_rejects_cross_org_target():
             db, user_id="user-1", target_amount=1000.0, current_user=_make_user(role="Admin")
         )
     repo.upsert_quota.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_invitation_batch_failure_rolls_back_and_sends_no_email(monkeypatch):
+    from unittest.mock import Mock
+
+    from app.repositories.organization_lifecycle_repository import OrganizationLifecycleRepository
+    from app.schemas.crm_schemas import UserInviteRequest
+
+    repo = UserRepository()
+    repo.create_invitation = AsyncMock(return_value=UserInvitation(id="inv-test"))
+    service = _service_with(repo)
+    service.organization_repository.get_by_id = AsyncMock(return_value=_make_org())
+    service._resolve_assignable_role = AsyncMock(return_value=type("Role", (), {"id": "role-1", "name": "Sales Executive"})())
+    monkeypatch.setattr(OrganizationLifecycleRepository, "email_in_use", AsyncMock(side_effect=[False, True]))
+    send = Mock()
+    monkeypatch.setattr("app.services.user_service.send_user_invite_email", send)
+    db = AsyncMock(spec=AsyncSession)
+    with pytest.raises(APIException) as error:
+        await service.invite_users(db, UserInviteRequest(
+            users=[{"email": "first@example.com"}, {"email": "second@example.com"}], role="role-1"
+        ), current_user=_make_user())
+    assert error.value.status_code == 409
+    repo.create_invitation.assert_awaited_once()
+    db.commit.assert_not_awaited()
+    db.rollback.assert_awaited_once()
+    send.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_direct_user_creation_enforces_member_limit_before_writes(monkeypatch):
+    from app.repositories.organization_lifecycle_repository import OrganizationLifecycleRepository
+
+    repo = UserRepository()
+    repo.create = AsyncMock()
+    service = _service_with(repo)
+    service.organization_repository.get_by_id = AsyncMock(return_value=_make_org())
+    monkeypatch.setattr(OrganizationLifecycleRepository, "tenant_member_count", AsyncMock(return_value=100))
+    db = AsyncMock(spec=AsyncSession)
+    with pytest.raises(APIException) as error:
+        await service.create_user(db, UserCreate(
+            name="New User", email="new@example.com", role="role-1", password=VALID_INPUT
+        ), current_user=_make_user())
+    assert error.value.status_code == 409
+    repo.create.assert_not_awaited()
+    db.commit.assert_not_awaited()
+    db.rollback.assert_awaited_once()

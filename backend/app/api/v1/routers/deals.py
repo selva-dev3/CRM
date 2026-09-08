@@ -318,7 +318,10 @@ async def assign_deal(
     "/{deal_id}/products",
     response_model=list[ProductResponse],
     summary="List products attached to deal",
-    dependencies=[Depends(require_permission("deals:read"))],
+    dependencies=[
+        Depends(require_permission("deals:read")),
+        Depends(require_permission("products:read")),
+    ],
 )
 async def get_deal_products(
     deal_id: str,
@@ -333,7 +336,10 @@ async def get_deal_products(
     "/{deal_id}/products",
     response_model=MessageResponse,
     summary="Add product item to deal",
-    dependencies=[Depends(require_permission("deals:create"))],
+    dependencies=[
+        Depends(require_permission("deals:update")),
+        Depends(require_permission("products:read")),
+    ],
 )
 async def add_deal_product(
     deal_id: str,
@@ -364,7 +370,10 @@ async def add_deal_product(
     "/{deal_id}/products/{product_id}",
     response_model=MessageResponse,
     summary="Remove product item from deal",
-    dependencies=[Depends(require_permission("deals:delete"))],
+    dependencies=[
+        Depends(require_permission("deals:update")),
+        Depends(require_permission("products:read")),
+    ],
 )
 async def remove_deal_product(
     deal_id: str,
@@ -396,7 +405,10 @@ async def get_deal_timeline(
     "/{deal_id}/notes",
     response_model=list[NoteResponse],
     summary="List notes for deal",
-    dependencies=[Depends(require_permission("deals:read"))],
+    dependencies=[
+        Depends(require_permission("deals:read")),
+        Depends(require_permission("notes:read")),
+    ],
 )
 async def get_deal_notes(
     deal_id: str,
@@ -410,7 +422,10 @@ async def get_deal_notes(
     "/{deal_id}/notes",
     response_model=NoteResponse,
     summary="Add note to deal",
-    dependencies=[Depends(require_permission("deals:create"))],
+    dependencies=[
+        Depends(require_permission("deals:read")),
+        Depends(require_permission("notes:create")),
+    ],
 )
 async def add_deal_note(
     deal_id: str,
@@ -431,7 +446,10 @@ async def add_deal_note(
     "/{deal_id}/quotes",
     response_model=list[QuoteResponse],
     summary="List quotes created for deal",
-    dependencies=[Depends(require_permission("deals:read"))],
+    dependencies=[
+        Depends(require_permission("deals:read")),
+        Depends(require_permission("quotes:read")),
+    ],
 )
 async def get_deal_quotes(
     deal_id: str,
@@ -498,7 +516,10 @@ async def get_deal_commission(
     response_model=InvoiceResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create an invoice from a Closed Won deal (idempotent)",
-    dependencies=[Depends(require_permission("invoices:create"))],
+    dependencies=[
+        Depends(require_permission("deals:read")),
+        Depends(require_permission("invoices:create")),
+    ],
 )
 async def create_invoice_from_deal(
     deal_id: str,
@@ -519,7 +540,10 @@ async def create_invoice_from_deal(
     "/{deal_id}/invoices",
     response_model=list[InvoiceResponse],
     summary="List invoices created from this deal",
-    dependencies=[Depends(require_permission("deals:read"))],
+    dependencies=[
+        Depends(require_permission("deals:read")),
+        Depends(require_permission("invoices:read")),
+    ],
 )
 async def get_deal_invoices(
     deal_id: str,

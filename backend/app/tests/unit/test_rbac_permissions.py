@@ -1,3 +1,4 @@
+import inspect
 from datetime import UTC, datetime
 from unittest.mock import ANY, AsyncMock, patch
 
@@ -17,13 +18,16 @@ from app.api.v1.routers import (
     documents,
     emails,
     integrations,
+    invitations,
     invoices,
     leads,
     meetings,
     notes,
     notifications,
     organizations,
+    payments,
     products,
+    projects,
     quotes,
     reports,
     roles,
@@ -33,6 +37,7 @@ from app.api.v1.routers import (
 )
 from app.core.errors import ForbiddenError
 from app.core.permissions import is_super_admin_user
+from app.core.rbac_matrix import APPROVED_PERMISSION_KEYS, SYSTEM_ROLE_PERMISSIONS
 from app.models import User
 from app.services.auth_service import AuthService, auth_service
 
@@ -117,13 +122,12 @@ async def test_require_permission_denies_when_user_has_no_grants():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("is_system_role", [True, False])
-async def test_user_invite_role_assignment_requires_both_permissions(is_system_role):
-    """Permission denial happens before role resolution for system and custom roles alike."""
+async def test_user_invite_role_assignment_requires_both_permissions():
+    """Permission denial happens before role resolution."""
     user = _make_user()
     for required, granted in (
-        ("users:invite", ["users:roles"]),
-        ("users:roles", ["users:invite"]),
+        ("users:invite", ["users:assign_roles"]),
+        ("users:assign_roles", ["users:invite"]),
     ):
         with pytest.raises(ForbiddenError):
             await _run_permission_dependency(required, user, granted)
@@ -143,7 +147,24 @@ async def test_user_invite_role_assignment_requires_both_permissions(is_system_r
             for cell in (dependency_callable.__closure__ or ())
             if isinstance(cell.cell_contents, str)
         )
-    assert {"users:invite", "users:roles"}.issubset(closure_values)
+    assert {"users:invite", "users:assign_roles"}.issubset(closure_values)
+
+    organization_invite_route = next(
+        route
+        for route in invitations.router.routes
+        if isinstance(route, APIRoute)
+        and route.path == ""
+        and "POST" in (route.methods or set())
+    )
+    organization_invite_permissions = {
+        cell.cell_contents
+        for dependency in organization_invite_route.dependencies
+        for cell in (dependency.dependency.__closure__ or ())
+        if isinstance(cell.cell_contents, str)
+    }
+    assert {"invitations:create", "users:assign_roles"}.issubset(
+        organization_invite_permissions
+    )
 
 
 @pytest.mark.asyncio
@@ -181,8 +202,8 @@ async def test_get_user_permissions_denies_empty_grants():
 
 
 @pytest.mark.asyncio
-async def test_get_user_permissions_grants_all_for_super_admin_role():
-    """The super_admin role (by name) is the only role that receives every key."""
+async def test_get_user_permissions_denies_non_platform_super_admin_role():
+    """A role name cannot confer non-delegable platform authority."""
     repo = AsyncMock()
     repo.all_permission_keys = AsyncMock(
         return_value=["deals:read", "roles:update", "super_admin:manage"]
@@ -198,12 +219,12 @@ async def test_get_user_permissions_grants_all_for_super_admin_role():
     db = AsyncMock(spec=AsyncSession)
 
     keys = await service.get_user_permissions(db, user)
-    assert set(keys) == {"deals:read", "roles:update", "super_admin:manage"}
+    assert keys == []
 
 
 @pytest.mark.asyncio
-async def test_get_user_permissions_grants_all_when_resolved_role_is_super_admin():
-    """Super_admin identity is also detected when the role is resolved from the DB."""
+async def test_get_user_permissions_denies_non_platform_resolved_super_admin_role():
+    """A corrupt global-role mapping fails closed for a tenant principal."""
     repo = AsyncMock()
     repo.all_permission_keys = AsyncMock(
         return_value=["deals:read", "roles:update", "super_admin:manage"]
@@ -219,11 +240,11 @@ async def test_get_user_permissions_grants_all_when_resolved_role_is_super_admin
     db = AsyncMock(spec=AsyncSession)
 
     keys = await service.get_user_permissions(db, user)
-    assert set(keys) == {"deals:read", "roles:update", "super_admin:manage"}
+    assert keys == []
 
 
 @pytest.mark.asyncio
-async def test_legacy_super_admin_alias_resolves_global_role_without_mapping():
+async def test_legacy_super_admin_alias_does_not_grant_platform_access():
     repo = AsyncMock()
     repo.all_permission_keys.return_value = ["dashboard:read", "organization:read"]
     repo.role_ids_for_user.return_value = []
@@ -242,8 +263,8 @@ async def test_legacy_super_admin_alias_resolves_global_role_without_mapping():
 
     keys = await service.get_user_permissions(AsyncMock(spec=AsyncSession), user)
 
-    assert keys == ["dashboard:read", "organization:read"]
-    assert repo.role_ids_by_name.await_count == 2
+    assert keys == []
+    repo.role_ids_by_name.assert_not_awaited()
     for call in repo.role_ids_by_name.await_args_list:
         assert call.kwargs == {"global_only": True}
 
@@ -271,21 +292,12 @@ async def test_tenant_super_admin_named_role_does_not_receive_global_access():
 
 
 @pytest.mark.asyncio
-async def test_super_admin_actor_requires_protected_global_role(monkeypatch):
-    global_role = type("R", (), {"name": "Super Admin", "organization_id": None})()
-    get_global_role = AsyncMock(return_value=global_role)
-    monkeypatch.setattr(
-        "app.repositories.role_repository.RoleRepository.get_global_role_by_names",
-        get_global_role,
-    )
-    user = _make_user(role="super_admin")
+async def test_super_admin_actor_requires_authoritative_platform_flag():
+    tenant_user = _make_user(role="super_admin", is_platform_admin=False)
+    platform_user = _make_user(role="Super Admin", organization_id=None, is_platform_admin=True)
 
-    assert await is_super_admin_user(AsyncMock(spec=AsyncSession), user) is True
-
-    get_global_role.return_value = type(
-        "R", (), {"name": "Super Admin", "organization_id": "org-1"}
-    )()
-    assert await is_super_admin_user(AsyncMock(spec=AsyncSession), user) is False
+    assert await is_super_admin_user(AsyncMock(spec=AsyncSession), tenant_user) is False
+    assert await is_super_admin_user(AsyncMock(spec=AsyncSession), platform_user) is True
 
 
 @pytest.mark.asyncio
@@ -302,7 +314,7 @@ async def test_get_user_permissions_admin_holding_super_admin_manage_gets_only_a
     db = AsyncMock(spec=AsyncSession)
 
     keys = await service.get_user_permissions(db, user)
-    assert set(keys) == {"a:read", "super_admin:manage"}
+    assert keys == []
     repo.all_permission_keys.assert_not_awaited()
 
 
@@ -332,9 +344,7 @@ async def test_get_user_permissions_ignores_foreign_role_mapping():
     keys = await service.get_user_permissions(AsyncMock(spec=AsyncSession), user)
 
     assert keys == []
-    repo.roles_by_ids.assert_awaited_once_with(
-        ANY, ["foreign-role"], "org-1"
-    )
+    repo.roles_by_ids.assert_awaited_once_with(ANY, ["foreign-role"], "org-1")
     repo.permission_keys_for_roles.assert_not_awaited()
 
 
@@ -351,13 +361,16 @@ GATED_ROUTERS = [
     documents,
     emails,
     integrations,
+    invitations,
     invoices,
     leads,
     meetings,
     notes,
     notifications,
     organizations,
+    payments,
     products,
+    projects,
     quotes,
     reports,
     roles,
@@ -368,9 +381,9 @@ GATED_ROUTERS = [
 
 # Endpoints that legitimately stay permission-free (public token endpoints / self-service).
 NO_PERMISSION_PATHS = {
-    ("invitations", "GET", "/organizations/invitations/{token}"),
-    ("invitations", "POST", "/organizations/invitations/{token}/accept"),
-    ("invitations", "GET", "/organizations/invitations/validate/{token}"),
+    ("invitations", "GET", "/{token}"),
+    ("invitations", "POST", "/{token}/accept"),
+    ("invitations", "GET", "/validate/{token}"),
     ("users", "GET", "/me/profile"),
     ("users", "PUT", "/me/profile"),
     ("users", "POST", "/me/avatar"),
@@ -393,6 +406,60 @@ def _route_signature(router, route: APIRoute):
     return (router.router.prefix.rstrip("/") + (route.path or "")).replace("//", "/")
 
 
+def _route_permissions(router, path: str, method: str) -> set[str]:
+    route = next(
+        item
+        for item in router.router.routes
+        if isinstance(item, APIRoute)
+        and item.path == path
+        and method in (item.methods or set())
+    )
+    return {
+        cell.cell_contents
+        for dependency in route.dependencies
+        for cell in (dependency.dependency.__closure__ or ())
+        if isinstance(cell.cell_contents, str)
+    }
+
+
+def test_role_user_access_and_assignment_routes_use_exact_permissions():
+    assert _route_permissions(roles, "/users/{user_id}/role", "GET") == {
+        "roles:read",
+        "users:roles",
+    }
+    assert _route_permissions(roles, "/users/{user_id}/role", "PUT") == {
+        "users:assign_roles"
+    }
+    assert _route_permissions(roles, "/check-permission", "POST") == {
+        "roles:read",
+        "users:roles",
+    }
+    assert _route_permissions(roles, "/{role_id}/users", "GET") == {
+        "roles:read",
+        "users:read",
+    }
+    assert _route_permissions(users, "/bulk-delete", "POST") == {"users:delete"}
+    assert _route_permissions(users, "/{user_id}", "PUT") == {"users:update"}
+    assert 'authorize_permission(db, current_user, "users:assign_roles")' in inspect.getsource(
+        users.update_user
+    )
+    from app.api.v1.routers import auth as auth_router
+
+    assert _route_permissions(auth_router, "/api-keys/{key_id}", "DELETE") == {
+        "api_keys:revoke"
+    }
+
+
+def test_role_grant_mutations_require_roles_assign():
+    assert "roles:assign" in _route_permissions(roles, "/{role_id}/clone", "POST")
+    assert 'authorize_permission(db, current_user, "roles:assign")' in inspect.getsource(
+        roles.create_role
+    )
+    assert 'authorize_permission(db, current_user, "roles:assign")' in inspect.getsource(
+        roles.update_role
+    )
+
+
 @pytest.mark.parametrize("router", GATED_ROUTERS, ids=lambda r: r.__name__)
 def test_all_routes_have_permission_dependency(router):
     http_routes = [r for r in (router.router.routes or []) if isinstance(r, APIRoute)]
@@ -406,12 +473,15 @@ def test_all_routes_have_permission_dependency(router):
             if (router.__name__.rsplit(".", 1)[-1], method, path) in NO_PERMISSION_PATHS:
                 continue
             if router.__name__.endswith(".organizations") and (method, path) in {
-                ("POST", ""), ("GET", "/deletions/{operation_id}"),
+                ("POST", ""),
+                ("GET", "/deletions/{operation_id}"),
                 ("POST", "/deletions/{operation_id}/retry"),
             }:
                 from app.api.v1.deps import require_platform_admin
 
-                assert any(dep.call is require_platform_admin for dep in route.dependant.dependencies)
+                assert any(
+                    dep.call is require_platform_admin for dep in route.dependant.dependencies
+                )
                 continue
             dependencies = route.dependencies or []
             dep_names = {
@@ -470,11 +540,11 @@ def test_self_service_auth_endpoints_require_authentication():
                 for dep in dependant_deps
                 if getattr(dep, "call", None) is not None
             ]
-            has_auth = "get_current_user" in func_sigs
+            has_auth = "require_user_session" in func_sigs
 
             if path in self_service:
                 assert method in self_service[path], f"{method} {path} not in self_service map"
-                assert has_auth, f"{method} {path} should require get_current_user"
+                assert has_auth, f"{method} {path} should require a human login session"
             elif path in public:
                 assert not has_auth, f"{method} {path} should stay public"
 
@@ -514,8 +584,8 @@ async def test_organization_subscription_raises_forbidden_when_billing_permissio
 
 
 @pytest.mark.asyncio
-async def test_organization_sub_permissions_pass_for_super_admin():
-    """Super Admin receives unrestricted access to all organization sub-permissions."""
+async def test_organization_sub_permissions_pass_for_platform_admin():
+    """The authoritative platform principal receives the explicit catalog."""
     repo = AsyncMock()
     repo.all_permission_keys = AsyncMock(
         return_value=[
@@ -535,7 +605,7 @@ async def test_organization_sub_permissions_pass_for_super_admin():
         return_value=[type("R", (), {"id": "sa-1", "name": "super_admin"})()]
     )
     service = AuthService(repository=repo)
-    user = _make_user(role="super_admin")
+    user = _make_user(role="Super Admin", organization_id=None, is_platform_admin=True)
     db = AsyncMock(spec=AsyncSession)
 
     keys = await service.get_user_permissions(db, user)
@@ -544,3 +614,73 @@ async def test_organization_sub_permissions_pass_for_super_admin():
     assert "organization:domains" in keys
     assert "organization:audit" in keys
     assert "users:create" in keys
+
+
+@pytest.mark.asyncio
+async def test_api_key_cannot_access_account_or_credential_management():
+    from fastapi import FastAPI
+    from httpx import ASGITransport, AsyncClient
+
+    from app.api.v1.deps import get_current_user, require_user_session
+    from app.api.v1.routers import auth as auth_router
+    from app.db.session import get_db
+
+    user = _make_user()
+    user._api_key_scopes = {"leads:read"}
+    app = FastAPI()
+    app.include_router(auth_router.router, prefix="/auth")
+    app.include_router(users.router, prefix="/users")
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_db] = lambda: AsyncMock(spec=AsyncSession)
+    # Exercise the real session dependency before endpoint business logic.
+    with pytest.raises(ForbiddenError):
+        await require_user_session(user)
+    for router, names in (
+        (auth_router, {"get_current_user_me", "change_password", "setup_2fa", "verify_2fa", "disable_2fa", "list_sessions", "revoke_session", "list_api_keys", "create_api_key", "revoke_api_key"}),
+        (users, {"get_my_profile", "update_my_profile", "upload_avatar"}),
+    ):
+        for route in router.router.routes:
+            if isinstance(route, APIRoute) and route.endpoint.__name__ in names:
+                assert any(dep.call is require_user_session for dep in route.dependant.dependencies)
+    # APIException is deliberately not converted here: its rejection is the result.
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        with pytest.raises(ForbiddenError):
+            await client.get("/auth/sessions")
+        with pytest.raises(ForbiddenError):
+            await client.put("/users/me/profile", json={"name": "Changed by key"})
+
+
+@pytest.mark.asyncio
+async def test_human_login_session_retains_account_access():
+    from app.api.v1.deps import require_user_session
+
+    user = _make_user()
+    assert await require_user_session(user) is user
+
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("permission", sorted(APPROVED_PERMISSION_KEYS))
+async def test_each_registered_permission_requires_an_explicit_grant(permission):
+    user = _make_user()
+    assert await _run_permission_dependency(permission, user, [permission]) is user
+    for denied_grants in ([], ["all"]):
+        with pytest.raises(ForbiddenError):
+            await _run_permission_dependency(permission, user, denied_grants)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role_name", sorted(SYSTEM_ROLE_PERMISSIONS))
+async def test_each_tenant_system_role_resolves_its_explicit_permission_set(role_name):
+    from app.models import Role
+
+    repo = AsyncMock()
+    role = Role(id="role-1", name=role_name, organization_id="org-1", is_system_role=True)
+    repo.role_ids_for_user.return_value = [role.id]
+    repo.roles_by_ids.return_value = [role]
+    repo.permission_keys_for_roles.return_value = list(SYSTEM_ROLE_PERMISSIONS[role_name])
+    permissions = await AuthService(repository=repo).get_user_permissions(
+        AsyncMock(spec=AsyncSession), _make_user(role=role.id)
+    )
+    assert set(permissions) == SYSTEM_ROLE_PERMISSIONS[role_name]
+    repo.roles_by_ids.assert_awaited_once_with(ANY, [role.id], "org-1")

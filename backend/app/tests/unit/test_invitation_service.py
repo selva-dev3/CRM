@@ -6,6 +6,7 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import ConflictError
 from app.models import SubscriptionPlan, User
 from app.models.rbac import Role
 from app.schemas.organization_invitation_schemas import OrganizationInviteRequest
@@ -36,6 +37,24 @@ async def test_require_free_plan_returns_active_database_record():
     db.scalar.return_value = plan
 
     assert await _require_free_plan(db) is plan
+
+
+@pytest.mark.asyncio
+async def test_platform_admin_lists_invitations_in_selected_organization():
+    user = _make_user(organization_id=None, is_platform_admin=True)
+    user.__dict__["_request_organization_id"] = "org-selected"
+    db = AsyncMock(spec=AsyncSession)
+    count_result = MagicMock()
+    count_result.scalar.return_value = 0
+    rows_result = MagicMock()
+    rows_result.scalars.return_value.all.return_value = []
+    db.execute = AsyncMock(side_effect=[count_result, rows_result])
+
+    result = await list_organization_invitations(db, user)
+
+    assert result.total == 0
+    statements = [str(call.args[0]) for call in db.execute.await_args_list]
+    assert all("organization_invitations.organization_id" in statement for statement in statements)
 
 
 def _make_role(**overrides) -> Role:
@@ -131,7 +150,7 @@ async def test_list_organization_invitations_is_tenant_scoped():
 @pytest.mark.asyncio
 async def test_create_organization_user_invitation_uses_current_user_org(monkeypatch):
     db = AsyncMock(spec=AsyncSession)
-    db.scalar = AsyncMock(side_effect=[_make_org(), None, None, None, None])
+    db.scalar = AsyncMock(side_effect=[_make_org(), None, None, None, None, None])
     current_user = _make_user(organization_id="org-1")
 
     monkeypatch.setattr(
@@ -190,7 +209,7 @@ async def test_create_invitation_rejects_organization_deleted_before_parent_lock
 async def test_expired_invitation_status_update_is_conditional_against_concurrent_management():
     invitation = SimpleNamespace(
         id="invitation-1",
-        token="expired-token",
+        token="expired-token",  # noqa: S106 - synthetic expired invitation fixture
         status="Pending",
         expires_at=datetime.now(UTC) - timedelta(minutes=1),
     )
@@ -217,7 +236,7 @@ async def test_create_organization_user_invitation_ignores_client_organization_i
     """A client-supplied organization_id must never be trusted — the invitation
     always lands in the authenticated user's current organization."""
     db = AsyncMock(spec=AsyncSession)
-    db.scalar = AsyncMock(side_effect=[_make_org(), None, None, None, None])
+    db.scalar = AsyncMock(side_effect=[_make_org(), None, None, None, None, None])
     current_user = _make_user(organization_id="org-1")
 
     monkeypatch.setattr(
@@ -276,7 +295,7 @@ async def test_create_organization_user_invitation_rejects_inactive_org():
 async def test_create_organization_user_invitation_rejects_existing_account(monkeypatch, is_active):
     db = AsyncMock(spec=AsyncSession)
     existing = _make_user(id="user-existing", email="taken@crm.com", is_active=is_active)
-    db.scalar = AsyncMock(side_effect=[_make_org(), None, None, None, existing])
+    db.scalar = AsyncMock(side_effect=[_make_org(), None, None, None, None, existing])
     current_user = _make_user(organization_id="org-1")
 
     monkeypatch.setattr(
@@ -297,3 +316,23 @@ async def test_create_organization_user_invitation_rejects_existing_account(monk
         await create_organization_user_invitation(db, payload, current_user)
     assert exc_info.value.status_code == 409
     db.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_create_organization_invitation_rejects_pending_legacy_invitation(monkeypatch):
+    db = AsyncMock(spec=AsyncSession)
+    db.scalar = AsyncMock(side_effect=[_make_org(), None, None, "legacy-invitation"])
+    monkeypatch.setattr(
+        "app.services.invitation_service._resolve_invitation_role",
+        AsyncMock(return_value=_make_role()),
+    )
+    monkeypatch.setattr(
+        "app.repositories.organization_lifecycle_repository.OrganizationLifecycleRepository.lock_invitation_organization",
+        AsyncMock(return_value=_make_org()),
+    )
+    with pytest.raises(ConflictError, match="pending invitation"):
+        await create_organization_user_invitation(
+            db, OrganizationInviteRequest(email="new@crm.com", role="role-1"), _make_user()
+        )
+    db.add.assert_not_called()
+    db.commit.assert_not_awaited()

@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.core.errors import ConflictError
 from app.core.logging import get_logger
 from app.core.permissions import (
+    effective_organization_id,
     ensure_can_assign_role,
     is_super_admin_role,
     is_super_admin_user,
@@ -65,7 +66,7 @@ async def _require_free_plan(db: AsyncSession) -> SubscriptionPlan:
 
 
 def _require_current_organization_id(current_user: User) -> str:
-    organization_id = getattr(current_user, "organization_id", None)
+    organization_id = effective_organization_id(current_user)
     if not organization_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -125,7 +126,7 @@ async def _resolve_invitation_role(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid role: '{role_value}'",
         )
-    if role.organization_id is not None and role.organization_id != target_organization_id:
+    if role.organization_id != target_organization_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Role '{role.name}' does not belong to the target organization",
@@ -192,7 +193,7 @@ async def create_organization_user_invitation(
     trusted, so an inviter cannot place another user into an organization they
     do not belong to.
     """
-    target_org_id = getattr(current_user, "organization_id", None)
+    target_org_id = effective_organization_id(current_user)
     if not target_org_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -240,8 +241,8 @@ async def create_organization_user_invitation(
 
     if await lifecycle_repository.pending_invitation_in_other_organization(
         db, email_clean, target_org_id
-    ):
-        raise ConflictError(message="This email has a pending invitation to another organization")
+    ) or await lifecycle_repository.pending_legacy_invitation_exists(db, email_clean):
+        raise ConflictError(message="This email already has a pending invitation")
     existing_inv = await lifecycle_repository.pending_invitation_for_organization(
         db, email_clean, target_org_id
     )

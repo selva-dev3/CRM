@@ -231,7 +231,10 @@ async def delete_contact(
     "/{contact_id}/deals",
     response_model=list[DealResponse],
     summary="List deals linked to contact",
-    dependencies=[Depends(require_permission("contacts:read"))],
+    dependencies=[
+        Depends(require_permission("contacts:read")),
+        Depends(require_permission("deals:read")),
+    ],
 )
 async def get_contact_deals(
     contact_id: str,
@@ -248,7 +251,10 @@ async def get_contact_deals(
     "/{contact_id}/activities",
     response_model=list[ContactActivityResponse],
     summary="Get activity timeline for contact",
-    dependencies=[Depends(require_permission("contacts:read"))],
+    dependencies=[
+        Depends(require_permission("contacts:read")),
+        Depends(require_permission("activities:read")),
+    ],
 )
 async def get_contact_activities(
     contact_id: str,
@@ -299,7 +305,10 @@ async def unstar_contact(
     "/{contact_id}/notes",
     response_model=list[NoteResponse],
     summary="List notes for contact",
-    dependencies=[Depends(require_permission("contacts:read"))],
+    dependencies=[
+        Depends(require_permission("contacts:read")),
+        Depends(require_permission("notes:read")),
+    ],
 )
 async def get_contact_notes(
     contact_id: str,
@@ -321,7 +330,10 @@ async def get_contact_notes(
     "/{contact_id}/notes",
     response_model=NoteResponse,
     summary="Add note to contact",
-    dependencies=[Depends(require_permission("contacts:create"))],
+    dependencies=[
+        Depends(require_permission("contacts:read")),
+        Depends(require_permission("notes:create")),
+    ],
 )
 async def add_contact_note(
     contact_id: str,
@@ -350,7 +362,10 @@ async def add_contact_note(
     "/{contact_id}/emails",
     response_model=list[ContactEmailResponse],
     summary="List emails linked to contact",
-    dependencies=[Depends(require_permission("contacts:read"))],
+    dependencies=[
+        Depends(require_permission("contacts:read")),
+        Depends(require_permission("emails:read")),
+    ],
 )
 async def get_contact_emails(
     contact_id: str,
@@ -367,7 +382,10 @@ async def get_contact_emails(
     "/{contact_id}/calls",
     response_model=list[CallLogResponse],
     summary="List call logs for contact",
-    dependencies=[Depends(require_permission("calls:read"))],
+    dependencies=[
+        Depends(require_permission("contacts:read")),
+        Depends(require_permission("calls:read")),
+    ],
 )
 async def get_contact_calls(
     contact_id: str,

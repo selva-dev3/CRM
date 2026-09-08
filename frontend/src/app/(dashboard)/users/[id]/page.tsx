@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -32,6 +32,7 @@ import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
 import { PageTabs } from '@/components/common/page-tabs';
 import { PermissionGate } from '@/components/common/permission-gate';
+import { useHasPermission } from '@/hooks/use-has-permission';
 import {
   useUserQuery,
   useUserQuotaQuery,
@@ -47,7 +48,10 @@ import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
 export default function UserDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const { hasPermission } = useHasPermission();
   const userId = params?.id as string;
+  const canUpdateUsers = hasPermission('users:update');
+  const canReadUserPermissions = hasPermission('users:roles');
 
   const [activeTab, setActiveTab] = useState<'profile' | 'performance' | 'security'>('profile');
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -77,7 +81,7 @@ export default function UserDetailPage() {
     data: permissionsData,
     isLoading: isPermissionsLoading,
     isError: isPermissionsError,
-  } = useUserPermissionsQuery(userId);
+  } = useUserPermissionsQuery(userId, { enabled: !!userId && canReadUserPermissions });
   const { data: currentOrganization } = useCurrentOrganizationQuery();
   // Mutations
   const activateUserMutation = useActivateUserMutation();
@@ -93,6 +97,13 @@ export default function UserDetailPage() {
     setQuotaTargetInput(quota?.target_amount?.toString() ?? '');
     setIsQuotaModalOpen(true);
   };
+
+  useEffect(() => {
+    if (!canReadUserPermissions && activeTab === 'security') {
+      const resetTab = window.setTimeout(() => setActiveTab('profile'), 0);
+      return () => window.clearTimeout(resetTab);
+    }
+  }, [activeTab, canReadUserPermissions]);
 
   const handleToggleStatus = async () => {
     if (!user) return;
@@ -225,17 +236,6 @@ export default function UserDetailPage() {
             <Button
               variant="outline"
               size="sm"
-              disabled
-              title="Administrator password reset delivery is not configured"
-              className="border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold text-xs cursor-pointer"
-            >
-              <RotateCcw className="w-3.5 h-3.5 mr-1.5 text-blue-600" />
-              Reset Password (Not available)
-            </Button>
-
-            <Button
-              variant="outline"
-              size="sm"
               onClick={handleToggleStatus}
               className="border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold text-xs cursor-pointer"
             >
@@ -250,6 +250,19 @@ export default function UserDetailPage() {
                   Activate Account
                 </>
               )}
+            </Button>
+          </PermissionGate>
+
+          <PermissionGate permission="users:reset_password">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled
+              title="Administrator password reset delivery is not configured"
+              className="border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold text-xs cursor-pointer"
+            >
+              <RotateCcw className="w-3.5 h-3.5 mr-1.5 text-blue-600" />
+              Reset Password (Not available)
             </Button>
           </PermissionGate>
 
@@ -337,15 +350,17 @@ export default function UserDetailPage() {
               </div>
             )}
           </div>
-          <button
-            type="button"
-            onClick={openQuotaModal}
-            disabled={isQuotaLoading || isQuotaError}
-            className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 transition cursor-pointer"
-            title="Edit Sales Quota Target"
-          >
-            <Target className="w-5 h-5" />
-          </button>
+          {canUpdateUsers && (
+            <button
+              type="button"
+              onClick={openQuotaModal}
+              disabled={isQuotaLoading || isQuotaError}
+              className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 transition cursor-pointer"
+              title="Edit Sales Quota Target"
+            >
+              <Target className="w-5 h-5" />
+            </button>
+          )}
         </Card>
 
         <Card className="p-4 border border-slate-200 bg-white shadow-sm rounded-xl flex items-center justify-between">
@@ -406,7 +421,9 @@ export default function UserDetailPage() {
         tabs={[
           { value: 'profile', label: 'Profile' },
           { value: 'performance', label: 'Sales Quota & Performance' },
-          { value: 'security', label: 'Security & Permissions' },
+          ...(canReadUserPermissions
+            ? [{ value: 'security' as const, label: 'Security & Permissions' }]
+            : []),
         ]}
         listClassName="border-b border-slate-200"
       />
@@ -440,16 +457,18 @@ export default function UserDetailPage() {
               <Target className="w-4 h-4 text-blue-600" />
               <span>Sales Quota Progress Bar</span>
             </h3>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={openQuotaModal}
-              disabled={isQuotaLoading || isQuotaError}
-              className="h-8 gap-1 border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-semibold cursor-pointer"
-            >
-              <Pencil className="w-3.5 h-3.5" />
-              <span>Update Quota Target</span>
-            </Button>
+            {canUpdateUsers && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={openQuotaModal}
+                disabled={isQuotaLoading || isQuotaError}
+                className="h-8 gap-1 border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-semibold cursor-pointer"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                <span>Update Quota Target</span>
+              </Button>
+            )}
           </div>
 
           {isQuotaLoading ? (
@@ -482,7 +501,7 @@ export default function UserDetailPage() {
         </Card>
       )}
 
-      {activeTab === 'security' && (
+      {canReadUserPermissions && activeTab === 'security' && (
         <Card className="p-6 border border-slate-200 bg-white shadow-sm rounded-xl space-y-4">
           <h3 className="font-bold text-slate-900 text-base flex items-center gap-2 border-b border-slate-100 pb-3">
             <Lock className="w-4 h-4 text-blue-600" />
@@ -507,7 +526,7 @@ export default function UserDetailPage() {
       )}
 
       {/* SET SALES QUOTA MODAL */}
-      {isQuotaModalOpen && (
+      {canUpdateUsers && isQuotaModalOpen && (
         <ModalShell
           isOpen={isQuotaModalOpen}
           onClose={() => setIsQuotaModalOpen(false)}

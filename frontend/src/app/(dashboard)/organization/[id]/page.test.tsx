@@ -7,11 +7,22 @@ const mocks = vi.hoisted(() => ({
   subscription: vi.fn(),
   cancel: vi.fn(),
   resume: vi.fn(),
+  permissions: new Set<string>(['*']),
+  members: vi.fn(),
+  usage: vi.fn(),
+  domains: vi.fn(),
+  audit: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({
   useParams: mocks.useParams,
   useRouter: () => ({ push: vi.fn() }),
+}));
+
+vi.mock('@/hooks/use-has-permission', () => ({
+  useHasPermission: () => ({
+    hasPermission: (permission: string) => mocks.permissions.has('*') || mocks.permissions.has(permission),
+  }),
 }));
 
 vi.mock('@/lib/api/organizations', () => ({
@@ -30,16 +41,16 @@ vi.mock('@/lib/api/organizations', () => ({
   }),
   useOrganizationByIdQuery: mocks.useOrganizationByIdQuery,
   useUpdateOrganizationMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useOrganizationMembersQuery: () => ({ data: [], refetch: vi.fn() }),
+  useOrganizationMembersQuery: (...args: unknown[]) => mocks.members(...args),
   useRemoveOrganizationMemberMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useOrganizationSubscriptionQuery: mocks.subscription,
   useCancelSubscriptionMutation: () => ({ mutateAsync: mocks.cancel, isPending: false }),
   useResumeSubscriptionMutation: () => ({ mutateAsync: mocks.resume, isPending: false }),
-  useOrganizationUsageQuery: () => ({ data: undefined }),
+  useOrganizationUsageQuery: (...args: unknown[]) => mocks.usage(...args),
   useUpdateBrandingMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useVerifyDomainMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useOrganizationDomainsQuery: () => ({ data: [], refetch: vi.fn() }),
-  useOrganizationAuditLogsQuery: () => ({ data: [] }),
+  useOrganizationDomainsQuery: (...args: unknown[]) => mocks.domains(...args),
+  useOrganizationAuditLogsQuery: (...args: unknown[]) => mocks.audit(...args),
   useTransferOwnershipMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
@@ -50,6 +61,12 @@ describe('Organization detail route and current organization mode', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.useParams.mockReturnValue({});
+    mocks.permissions.clear();
+    mocks.permissions.add('*');
+    mocks.members.mockReturnValue({ data: [], refetch: vi.fn() });
+    mocks.usage.mockReturnValue({ data: undefined });
+    mocks.domains.mockReturnValue({ data: [], refetch: vi.fn() });
+    mocks.audit.mockReturnValue({ data: [] });
     mocks.subscription.mockReturnValue({ data: undefined });
     mocks.cancel.mockReset();
     mocks.resume.mockReset();
@@ -82,6 +99,23 @@ describe('Organization detail route and current organization mode', () => {
     expect(mocks.useOrganizationByIdQuery).toHaveBeenCalledWith('org-selected', true);
     expect(screen.getByDisplayValue('Selected CRM')).toBeInTheDocument();
     expect(screen.queryByDisplayValue('Current CRM')).not.toBeInTheDocument();
+  });
+
+  it('does not query or render privileged sections with organization read only', () => {
+    mocks.permissions.clear();
+    mocks.permissions.add('organization:read');
+
+    render(<OrganizationDetail isCurrentOrgView />);
+
+    expect(mocks.members).toHaveBeenCalledWith(false);
+    expect(mocks.subscription).toHaveBeenCalledWith(false);
+    expect(mocks.usage).toHaveBeenCalledWith(false);
+    expect(mocks.domains).toHaveBeenCalledWith(false);
+    expect(mocks.audit).toHaveBeenCalledWith(false);
+    expect(screen.queryByRole('tab', { name: 'Members & Team' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Subscription & Billing' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save Profile' })).not.toBeInTheDocument();
+    expect(screen.getByDisplayValue('Current CRM')).toBeDisabled();
   });
 
   function openBilling(data?: Record<string, unknown>, flags = {}) {

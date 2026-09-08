@@ -7,7 +7,11 @@ from sqlalchemy import inspect
 
 from app.api.v1.deps import apply_organization_context, require_platform_admin
 from app.core.errors import ConflictError, ForbiddenError
-from app.core.permissions import ensure_can_assign_role, ensure_tenant_managed_user
+from app.core.permissions import (
+    effective_organization_id,
+    ensure_can_assign_role,
+    ensure_tenant_managed_user,
+)
 from app.models import User
 from app.services.auth_service import AuthService
 from app.services.organization_service import OrganizationDomainService
@@ -33,6 +37,7 @@ async def test_platform_context_does_not_change_persisted_membership():
         get=AsyncMock(return_value=SimpleNamespace(is_active=True, status="active"))
     )
     await apply_organization_context(db, user, "org-a")
+    assert effective_organization_id(user) == "org-a"
     assert user.organization_id == "org-a"
     assert user._organization_id is None
     assert inspect(user).attrs._organization_id.history.added == [None]
@@ -41,6 +46,7 @@ async def test_platform_context_does_not_change_persisted_membership():
     assert user._organization_id is None
     await apply_organization_context(db, user, None)
     assert user.organization_id is None
+    assert effective_organization_id(user) is None
 
 
 @pytest.mark.asyncio

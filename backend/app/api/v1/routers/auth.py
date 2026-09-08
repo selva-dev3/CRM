@@ -1,7 +1,7 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import get_current_user, require_permission
+from app.api.v1.deps import require_permission, require_user_session
 from app.core.auth_cookies import (
     clear_auth_cookie,
     clear_refresh_cookie,
@@ -76,7 +76,7 @@ async def login(
 @router.get("/me", summary="Get current authenticated user info with DB role and permissions")
 async def get_current_user_me(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_user_session),
 ):
     return await auth_service.get_current_user_me(db, user=current_user)
 
@@ -166,7 +166,7 @@ async def reset_password(
 async def change_password(
     payload: PasswordChangeRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_user_session),
 ):
     return await auth_service.change_password(
         db,
@@ -181,7 +181,7 @@ async def change_password(
 )
 async def setup_2fa(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_user_session),
 ):
     return await auth_service.setup_2fa(db, current_user)
 
@@ -190,7 +190,7 @@ async def setup_2fa(
 async def verify_2fa(
     payload: TwoFactorVerifyRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_user_session),
 ):
     return await auth_service.verify_2fa(db, current_user, payload)
 
@@ -198,7 +198,7 @@ async def verify_2fa(
 @router.post("/2fa/disable", response_model=MessageResponse, summary="Disable 2FA authentication")
 async def disable_2fa(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_user_session),
 ):
     return await auth_service.disable_2fa(db, current_user)
 
@@ -264,7 +264,7 @@ async def accept_auth_user_invitation(
 @router.get("/sessions", summary="List active user sessions")
 async def list_sessions(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_user_session),
 ):
     return await auth_service.list_sessions(db, current_user)
 
@@ -275,7 +275,7 @@ async def list_sessions(
 async def revoke_session(
     session_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_user_session),
 ):
     return await auth_service.revoke_session(db, session_id, current_user)
 
@@ -307,11 +307,11 @@ async def verify_magic_link(
     "/api-keys",
     response_model=list[ApiKeyResponse],
     summary="List organization API keys",
-    dependencies=[Depends(require_permission("integrations:apikeys"))],
+    dependencies=[Depends(require_permission("api_keys:read"))],
 )
 async def list_api_keys(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_user_session),
 ):
     return await auth_service.list_api_keys(db, current_user)
 
@@ -320,12 +320,12 @@ async def list_api_keys(
     "/api-keys",
     response_model=ApiKeyResponse,
     summary="Create new API key",
-    dependencies=[Depends(require_permission("integrations:apikeys"))],
+    dependencies=[Depends(require_permission("api_keys:create"))],
 )
 async def create_api_key(
     payload: ApiKeyCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_user_session),
 ):
     return await auth_service.create_api_key(db, payload, current_user)
 
@@ -334,11 +334,11 @@ async def create_api_key(
     "/api-keys/{key_id}",
     response_model=MessageResponse,
     summary="Revoke an organization API key",
-    dependencies=[Depends(require_permission("integrations:apikeys"))],
+    dependencies=[Depends(require_permission("api_keys:revoke"))],
 )
 async def revoke_api_key(
     key_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_user_session),
 ):
     return await auth_service.revoke_api_key(db, key_id, current_user)

@@ -203,7 +203,7 @@ async def sales_database():
             assigned_to=user.id,
             company_id=company.id,
             contact_id=contact.id,
-            stage="Qualification",
+            stage="Negotiation",
             amount=0,
         )
         db.add(deal)
@@ -297,7 +297,7 @@ async def test_failed_win_rolls_back_stage(sales_database):
                 db, deal.id, None, organization_id=org.id, actor_id=user.id
             )
     async with sessions() as db:
-        assert (await db.get(Deal, deal.id)).stage == "Qualification"
+        assert (await db.get(Deal, deal.id)).stage == "Negotiation"
         assert (
             await db.scalar(
                 select(func.count()).select_from(Quote).where(Quote.automatic_deal_id == deal.id)

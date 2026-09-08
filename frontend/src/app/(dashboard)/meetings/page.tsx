@@ -317,8 +317,8 @@ export default function MeetingsPage() {
           onTriggerClick={(event) => event.stopPropagation()}
           actions={[
             { label: 'View details & transcript', icon: <FileText className="w-4 h-4 text-indigo-600" />, onSelect: () => router.push(`/meetings/${item.id}`) },
-            { label: 'Reschedule meeting', icon: <Clock className="w-4 h-4 text-amber-500" />, onSelect: () => { setRescheduleMeeting(item); setNewStartTime(item.start_time ? item.start_time.substring(0, 16) : ''); } },
-            { label: 'Cancel meeting', icon: <Trash2 className="w-4 h-4" />, variant: 'destructive', onSelect: () => setMeetingToDelete(item) },
+            { label: 'Reschedule meeting', permission: PERMISSIONS.MEETINGS.UPDATE, icon: <Clock className="w-4 h-4 text-amber-500" />, onSelect: () => { setRescheduleMeeting(item); setNewStartTime(item.start_time ? item.start_time.substring(0, 16) : ''); } },
+            { label: 'Cancel meeting', permission: PERMISSIONS.MEETINGS.DELETE, icon: <Trash2 className="w-4 h-4" />, variant: 'destructive', onSelect: () => setMeetingToDelete(item) },
           ]}
         />
       ),
@@ -369,9 +369,9 @@ export default function MeetingsPage() {
             </Button>
           </PermissionGate>
           {CONFERENCING_PROVIDERS_CONFIGURED && <ActionMenu label="More" className="w-full text-xs font-semibold sm:w-auto" actions={[
-            { label: 'Create Zoom link', icon: <Video className="w-4 h-4 text-blue-600" />, onSelect: () => setIsZoomModalOpen(true) },
-            { label: 'Create Teams link', icon: <Share2 className="w-4 h-4 text-indigo-600" />, onSelect: () => setIsTeamsModalOpen(true) },
-            { label: 'Export iCal', icon: <Download className="w-4 h-4 text-slate-500" />, onSelect: handleExportIcal },
+            { label: 'Create Zoom link', permission: PERMISSIONS.MEETINGS.CREATE, icon: <Video className="w-4 h-4 text-blue-600" />, onSelect: () => setIsZoomModalOpen(true) },
+            { label: 'Create Teams link', permission: PERMISSIONS.MEETINGS.CREATE, icon: <Share2 className="w-4 h-4 text-indigo-600" />, onSelect: () => setIsTeamsModalOpen(true) },
+            { label: 'Export iCal', permission: PERMISSIONS.MEETINGS.EXPORT, icon: <Download className="w-4 h-4 text-slate-500" />, onSelect: handleExportIcal },
           ]} />}
         </div>
       </div>
@@ -393,12 +393,14 @@ export default function MeetingsPage() {
           selectedIds.size > 0 ? (
             <div className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1 sm:w-auto">
               <span className="text-xs font-semibold text-indigo-700">{selectedIds.size} selected</span>
-              <button
-                onClick={handleBulkCancel}
-                className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-semibold cursor-pointer"
-              >
-                Bulk Cancel
-              </button>
+              <PermissionGate permission={PERMISSIONS.MEETINGS.DELETE}>
+                <button
+                  onClick={handleBulkCancel}
+                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-semibold cursor-pointer"
+                >
+                  Bulk Cancel
+                </button>
+              </PermissionGate>
             </div>
           ) : undefined
         }

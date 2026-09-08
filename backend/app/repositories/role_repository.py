@@ -1,18 +1,25 @@
+import json
 from collections.abc import Sequence
 
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import delete, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import aliased
 
 from app.core.errors import APIException
 from app.core.logging import get_logger
-from app.core.rbac_matrix import ADMIN_PERMISSIONS, SYSTEM_ROLE_NAMES, SYSTEM_ROLE_PERMISSIONS
+from app.core.rbac_matrix import (
+    ADMIN_PERMISSIONS,
+    APPROVED_PERMISSION_KEYS,
+    SYSTEM_ROLE_NAMES,
+    SYSTEM_ROLE_PERMISSIONS,
+)
 from app.models import (
+    OrganizationInvitation,
     Permission,
     Role,
     RolePermission,
     SystemSetting,
     User,
+    UserInvitation,
     UserRole,
 )
 
@@ -36,6 +43,12 @@ class RoleRepository:
         else:
             db.add(SystemSetting(key=key, value=value, description=description))
 
+    async def lock_default_roles(self, db: AsyncSession, organization_id: str) -> None:
+        await db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:lock_key, 0))"),
+            {"lock_key": f"rbac-default-roles:{organization_id}"},
+        )
+
     # --- Role ---
     async def list_roles(
         self,
@@ -43,32 +56,30 @@ class RoleRepository:
         search: str | None = None,
         org_id: str | None = None,
     ) -> Sequence[Role]:
-        """List roles, optionally filtered by search term and restricted to the
-        current organization plus global/system roles (``organization_id IS NULL``)."""
+        """List roles restricted to one organization when a scope is supplied."""
         stmt = select(Role)
         cleaned = search.strip() if search and isinstance(search, str) and search.strip() else None
         if cleaned:
             pattern = f"%{cleaned}%"
             stmt = stmt.where(Role.name.ilike(pattern) | Role.description.ilike(pattern))
         if org_id:
-            scoped = aliased(Role)
-            local_name = (
-                select(scoped.id)
-                .where(
-                    scoped.organization_id == org_id,
-                    func.lower(scoped.name) == func.lower(Role.name),
-                )
-                .exists()
-            )
-            stmt = stmt.where(
-                (Role.organization_id == org_id) | (Role.organization_id.is_(None) & ~local_name)
-            )
+            stmt = stmt.where(Role.organization_id == org_id)
         res = await db.execute(stmt.limit(50))
         return res.scalars().all()
 
     async def get_role(self, db: AsyncSession, role_id: str) -> Role | None:
         res = await db.execute(select(Role).where(Role.id == role_id))
         return res.scalars().first()
+
+    async def get_role_for_update(
+        self, db: AsyncSession, role_id: str, organization_id: str
+    ) -> Role | None:
+        """Lock a tenant role so assignment/default/delete operations serialize."""
+        return await db.scalar(
+            select(Role)
+            .where(Role.id == role_id, Role.organization_id == organization_id)
+            .with_for_update()
+        )
 
     async def get_role_by_id_or_name(
         self, db: AsyncSession, value: str, *, organization_id: str | None = None
@@ -80,30 +91,9 @@ class RoleRepository:
         if not organization_id:
             return await db.scalar(select(Role).where(identity_filter).limit(1))
 
-        local_role = await db.scalar(
+        return await db.scalar(
             select(Role).where(Role.organization_id == organization_id, identity_filter).limit(1)
         )
-        if local_role:
-            return local_role
-
-        global_role = await db.scalar(
-            select(Role).where(Role.organization_id.is_(None), identity_filter).limit(1)
-        )
-        if not global_role:
-            return None
-
-        # Older clients may still submit a global role UUID. New tenants shadow
-        # those catalog roles with scoped copies, so resolve by the global role's
-        # name before falling back for legacy organizations without scoped roles.
-        scoped_equivalent = await db.scalar(
-            select(Role)
-            .where(
-                Role.organization_id == organization_id,
-                func.lower(func.btrim(Role.name)) == global_role.name.strip().lower(),
-            )
-            .limit(1)
-        )
-        return scoped_equivalent or global_role
 
     async def get_global_role_by_names(self, db: AsyncSession, names: Sequence[str]) -> Role | None:
         normalized_names = [name.strip().lower() for name in names if name.strip()]
@@ -124,7 +114,7 @@ class RoleRepository:
         res = await db.execute(
             select(Role).where(
                 Role.is_system_role.is_(True),
-                (Role.organization_id.is_(None)) | (Role.organization_id == organization_id),
+                Role.organization_id == organization_id,
             )
         )
         return res.scalars().all()
@@ -170,8 +160,10 @@ class RoleRepository:
 
     # --- Permission ---
     async def get_permission_keys(self, db: AsyncSession) -> list[str]:
-        p_res = await db.execute(select(Permission.key).where(Permission.key != "all"))
-        return sorted({k for k in p_res.scalars().all() if k and k != "all"})
+        p_res = await db.execute(
+            select(Permission.key).where(Permission.key.in_(APPROVED_PERMISSION_KEYS))
+        )
+        return sorted(set(p_res.scalars().all()))
 
     async def get_permissions_by_keys_or_ids(
         self, db: AsyncSession, values: list[str]
@@ -188,7 +180,7 @@ class RoleRepository:
         res = await db.execute(
             select(Permission)
             .where(
-                Permission.key != "all",
+                Permission.key.in_(ADMIN_PERMISSIONS),
                 sa_func.lower(Permission.category) != "all",
                 Permission.name != "All Permission",
                 Permission.id != "all",
@@ -206,7 +198,6 @@ class RoleRepository:
     async def seed_permissions(
         self, db: AsyncSession, items: list[dict], *, commit: bool = True
     ) -> None:
-        from sqlalchemy import func
         from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
         p_res = await db.execute(select(Permission.key))
@@ -214,7 +205,7 @@ class RoleRepository:
 
         for item in items:
             key_str = item.get("key")
-            if key_str and key_str != "all" and key_str not in existing_keys:
+            if key_str in APPROVED_PERMISSION_KEYS and key_str not in existing_keys:
                 try:
                     async with db.begin_nested():
                         db.add(
@@ -229,38 +220,6 @@ class RoleRepository:
                         existing_keys.add(key_str)
                 except IntegrityError:
                     existing_keys.add(key_str)
-
-        # Ensure ONLY the global system Admin role has standard permissions attached
-        admin_role_res = await db.execute(
-            select(Role)
-            .where(
-                func.lower(Role.name) == "admin",
-                Role.is_system_role.is_(True),
-                Role.organization_id.is_(None),
-            )
-            .order_by(Role.created_at.asc())
-            .limit(1)
-        )
-        admin_role = admin_role_res.scalars().first()
-        if admin_role:
-            standard_keys = [item["key"] for item in items if item.get("key") in ADMIN_PERMISSIONS]
-            all_perms_res = await db.execute(
-                select(Permission).where(Permission.key.in_(standard_keys))
-            )
-            all_perms = all_perms_res.scalars().all()
-            existing_rp_res = await db.execute(
-                select(RolePermission.permission_id).where(RolePermission.role_id == admin_role.id)
-            )
-            existing_pids = set(existing_rp_res.scalars().all())
-            for p in all_perms:
-                if p.id not in existing_pids:
-                    try:
-                        async with db.begin_nested():
-                            db.add(RolePermission(role_id=admin_role.id, permission_id=p.id))
-                            await db.flush()
-                            existing_pids.add(p.id)
-                    except IntegrityError:
-                        existing_pids.add(p.id)
 
         if commit:
             try:
@@ -281,72 +240,98 @@ class RoleRepository:
     async def synchronize_system_roles(self, db: AsyncSession) -> None:
         """Serialize initialization and reconcile registered grants without touching custom roles.
 
-        Existing tenant scopes are preserved. Missing templates are created globally;
-        an existing tenant template never causes a second global copy to be created.
-        The caller owns the transaction.
+        The sole global role is Super Admin. Existing organization-scoped system
+        roles are reconciled in place; missing tenant roles remain the
+        organization provisioner's responsibility. The caller owns the transaction.
         """
         await db.execute(text("SELECT pg_advisory_xact_lock(7242310907)"))
         roles = list(
             (await db.execute(select(Role).where(Role.is_system_role.is_(True)))).scalars()
         )
         permissions = {
-            p.key: p.id for p in (await db.execute(select(Permission))).scalars() if p.key != "all"
+            p.key: p.id
+            for p in (await db.execute(select(Permission))).scalars()
+            if p.key in APPROVED_PERMISSION_KEYS
         }
-        for name in sorted(SYSTEM_ROLE_NAMES):
-            matches = [r for r in roles if r.name.strip().lower() == name.lower()]
-            if not matches:
-                # A legacy custom role must never be silently promoted.
-                collision = (
-                    await db.execute(
-                        select(Role.id).where(
-                            Role.organization_id.is_(None),
-                            func.lower(func.btrim(Role.name)) == name.lower(),
-                        )
-                    )
-                ).scalar_one_or_none()
-                if collision:
-                    raise APIException(
-                        status_code=409, message="System role conflicts with a custom role"
-                    )
-                matches = [
-                    await self.create_role(
-                        db, name=name, description=f"System {name} role", is_system_role=True
-                    )
-                ]
-                await db.flush()
-            for role in matches:
-                if name == "Super Admin" and role.organization_id is not None:
-                    raise APIException(
-                        status_code=409, message="Scoped Super Admin requires an audited migration"
-                    )
-                keys = (
-                    set(permissions)
-                    if name == "Super Admin"
-                    else set(SYSTEM_ROLE_PERMISSIONS[name])
-                )
-                if not keys.issubset(permissions):
-                    raise APIException(
-                        status_code=409, message="Approved permission catalog is incomplete"
-                    )
-                desired = {permissions[key] for key in keys}
+
+        def normalized(value: str) -> str:
+            return value.strip().lower().replace("_", " ")
+
+        scoped_super_admins = [
+            role
+            for role in roles
+            if normalized(role.name) == "super admin" and role.organization_id is not None
+        ]
+        if scoped_super_admins:
+            raise APIException(
+                status_code=409, message="Scoped Super Admin requires an audited migration"
+            )
+        global_super_admins = [
+            role
+            for role in roles
+            if normalized(role.name) == "super admin" and role.organization_id is None
+        ]
+        if not global_super_admins:
+            collision = (
                 await db.execute(
-                    delete(RolePermission).where(
-                        RolePermission.role_id == role.id,
-                        RolePermission.permission_id.not_in(desired),
+                    select(Role.id).where(
+                        Role.organization_id.is_(None),
+                        func.lower(func.replace(func.btrim(Role.name), "_", " ")) == "super admin",
                     )
                 )
-                existing = set(
-                    (
-                        await db.execute(
-                            select(RolePermission.permission_id).where(
-                                RolePermission.role_id == role.id
-                            )
-                        )
-                    ).scalars()
+            ).scalar_one_or_none()
+            if collision:
+                raise APIException(
+                    status_code=409, message="Super Admin role conflicts with a custom role"
                 )
-                for permission_id in sorted(desired - existing):
-                    await self.add_role_permission(db, role.id, permission_id)
-                await db.flush()
+            global_super_admins = [
+                await self.create_role(
+                    db,
+                    name="Super Admin",
+                    description="Global platform Super Admin role",
+                    is_system_role=True,
+                )
+            ]
+            roles.extend(global_super_admins)
+            await db.flush()
+
+        canonical_names = {normalized(name): name for name in SYSTEM_ROLE_NAMES}
+        for role in roles:
+            canonical_name = canonical_names.get(normalized(role.name))
+            if not canonical_name:
+                continue
+            if canonical_name == "Super Admin":
+                keys = set(APPROVED_PERMISSION_KEYS)
+            else:
+                if role.organization_id is None:
+                    raise APIException(
+                        status_code=409,
+                        message="Global tenant roles require the RBAC integrity migration",
+                    )
+                keys = set(SYSTEM_ROLE_PERMISSIONS[canonical_name])
+            if not keys.issubset(permissions):
+                raise APIException(
+                    status_code=409, message="Approved permission catalog is incomplete"
+                )
+            desired = {permissions[key] for key in keys}
+            await db.execute(
+                delete(RolePermission).where(
+                    RolePermission.role_id == role.id,
+                    RolePermission.permission_id.not_in(desired),
+                )
+            )
+            existing = set(
+                (
+                    await db.execute(
+                        select(RolePermission.permission_id).where(
+                            RolePermission.role_id == role.id
+                        )
+                    )
+                ).scalars()
+            )
+            for permission_id in sorted(desired - existing):
+                await self.add_role_permission(db, role.id, permission_id)
+            await db.flush()
 
     # --- RolePermission mapping ---
     async def get_role_permissions(self, db: AsyncSession, role_id: str) -> Sequence[Permission]:
@@ -357,6 +342,26 @@ class RoleRepository:
         )
         res = await db.execute(stmt)
         return res.scalars().all()
+
+    async def get_permission_keys_by_role_ids(
+        self, db: AsyncSession, role_ids: list[str]
+    ) -> dict[str, list[str]]:
+        if not role_ids:
+            return {}
+        rows = (
+            await db.execute(
+                select(RolePermission.role_id, Permission.key)
+                .join(Permission, Permission.id == RolePermission.permission_id)
+                .where(
+                    RolePermission.role_id.in_(role_ids),
+                    Permission.key.in_(APPROVED_PERMISSION_KEYS),
+                )
+            )
+        ).all()
+        result: dict[str, list[str]] = {role_id: [] for role_id in role_ids}
+        for role_id, key in rows:
+            result[role_id].append(key)
+        return result
 
     async def get_role_permission_ids(
         self, db: AsyncSession, role_id: str
@@ -372,13 +377,14 @@ class RoleRepository:
 
     async def remove_permission_from_role(
         self, db: AsyncSession, role_id: str, permission_id: str
-    ) -> None:
+    ) -> bool:
         rp_stmt = select(RolePermission).where(
             (RolePermission.role_id == role_id) & (RolePermission.permission_id == permission_id)
         )
         rp_items = (await db.execute(rp_stmt)).scalars().all()
         for rp in rp_items:
             await db.delete(rp)
+        return bool(rp_items)
 
     # --- User / UserRole ---
     async def get_user_by_id_or_email(self, db: AsyncSession, value: str) -> User | None:
@@ -395,8 +401,13 @@ class RoleRepository:
         db.add(mapping)
         return mapping
 
-    async def get_users_by_role(self, db: AsyncSession, value: str) -> Sequence[User]:
-        res = await db.execute(select(User).where(User.role == value))
+    async def get_users_by_role(
+        self, db: AsyncSession, value: str, role_name: str | None = None
+    ) -> Sequence[User]:
+        values = [value]
+        if role_name:
+            values.append(role_name)
+        res = await db.execute(select(User).where(User.role.in_(values)))
         return res.scalars().all()
 
     async def get_users_by_user_role_id(self, db: AsyncSession, role_id: str) -> Sequence[User]:
@@ -406,6 +417,101 @@ class RoleRepository:
             .where(UserRole.role_id == role_id)
         )
         return res.scalars().all()
+
+    async def get_effective_users_by_role(
+        self,
+        db: AsyncSession,
+        *,
+        role_id: str,
+        role_name: str,
+        organization_id: str,
+    ) -> Sequence[User]:
+        """List users whose authoritative mapping, or unmapped legacy value, matches."""
+        result = await db.execute(
+            select(User)
+            .outerjoin(UserRole, UserRole.user_id == User.id)
+            .where(
+                User.organization_id == organization_id,
+                or_(
+                    UserRole.role_id == role_id,
+                    (
+                        UserRole.id.is_(None)
+                        & or_(
+                            User.role == role_id,
+                            func.lower(func.btrim(User.role)) == role_name.strip().lower(),
+                        )
+                    ),
+                ),
+            )
+        )
+        return result.scalars().all()
+
+    async def get_role_reference_kinds(self, db: AsyncSession, role: Role) -> list[str]:
+        """Return durable references that make a custom role unsafe to delete."""
+        references: list[str] = []
+        if await db.scalar(
+            select(User.id).where(
+                User.organization_id == role.organization_id,
+                or_(
+                    func.btrim(User.role) == role.id,
+                    func.lower(func.btrim(User.role)) == role.name.strip().lower(),
+                ),
+            ).limit(1)
+        ):
+            references.append("users")
+        if await db.scalar(
+            select(UserRole.id).where(UserRole.role_id == role.id).limit(1)
+        ):
+            references.append("user role mappings")
+        if await db.scalar(
+            select(UserInvitation.id).where(
+                UserInvitation.organization_id == role.organization_id,
+                func.lower(UserInvitation.status) == "pending",
+                or_(
+                    func.btrim(UserInvitation.role) == role.id,
+                    func.lower(func.btrim(UserInvitation.role)) == role.name.strip().lower(),
+                ),
+            ).limit(1)
+        ):
+            references.append("user invitations")
+        if await db.scalar(
+            select(OrganizationInvitation.id).where(
+                OrganizationInvitation.organization_id == role.organization_id,
+                func.lower(OrganizationInvitation.status) == "pending",
+                or_(
+                    func.btrim(OrganizationInvitation.role_id) == role.id,
+                    func.lower(func.btrim(OrganizationInvitation.role_id))
+                    == role.name.strip().lower(),
+                ),
+            ).limit(1)
+        ):
+            references.append("organization invitations")
+        setting_keys = (
+            f"default_registration_role:{role.organization_id}",
+            f"default_registration_roles:{role.organization_id}",
+        )
+        settings = list(
+            (
+                await db.execute(select(SystemSetting).where(SystemSetting.key.in_(setting_keys)))
+            ).scalars()
+        )
+        role_references = {role.id, role.name.strip().lower()}
+        for setting in settings:
+            value = (setting.value or "").strip()
+            values: list[str]
+            if setting.key.startswith("default_registration_roles:"):
+                try:
+                    parsed = json.loads(value)
+                except (TypeError, json.JSONDecodeError):
+                    parsed = value
+                values = parsed if isinstance(parsed, list) else [str(parsed)]
+            else:
+                values = [value]
+            normalized = {str(item).strip().lower() for item in values}
+            if role_references & normalized:
+                references.append("default role settings")
+                break
+        return references
 
     async def get_permission_by_id_or_key(self, db: AsyncSession, value: str) -> Permission | None:
         res = await db.execute(

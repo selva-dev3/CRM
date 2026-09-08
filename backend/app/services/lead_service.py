@@ -117,7 +117,7 @@ class LeadService:
 
     async def _require_permission(self, db: AsyncSession, user: User, permission: str) -> None:
         permissions = set(await auth_service.get_user_permissions(db, user))
-        if permission not in permissions and "all" not in permissions:
+        if permission not in permissions:
             raise ForbiddenError(message=f"Missing required permission: {permission}")
 
     @staticmethod

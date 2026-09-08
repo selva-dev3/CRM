@@ -463,7 +463,7 @@ class AIDomainService:
 
     @staticmethod
     def _require_permission(permission_keys: set[str], permission: str) -> None:
-        if permission not in permission_keys and "all" not in permission_keys:
+        if permission not in permission_keys:
             raise ForbiddenError(message=f"Missing required permission: {permission}")
 
     @classmethod
@@ -601,7 +601,7 @@ class AIDomainService:
     @classmethod
     def _field_is_authorized(cls, entity: str, field: str, permissions: set[str]) -> bool:
         requirements = cls._RELATED_FIELD_PERMISSIONS.get((entity, field), ())
-        return "all" in permissions or all(item in permissions for item in requirements)
+        return all(item in permissions for item in requirements)
 
     @classmethod
     def _search_catalog(cls, permissions: set[str]) -> dict[str, dict[str, object]]:
@@ -624,7 +624,7 @@ class AIDomainService:
                 ),
             }
             for entity, fields in cls._SEARCH_FIELDS.items()
-            if cls._SEARCH_PERMISSIONS[entity] in permissions or "all" in permissions
+            if cls._SEARCH_PERMISSIONS[entity] in permissions
         }
         if "report" in catalog:
             catalog["report"]["report_types"] = sorted(cls._REPORT_GETTERS)
@@ -730,7 +730,7 @@ class AIDomainService:
             raise NotFoundError(message=f"Lead with ID '{lead_id}' not found")
         permissions = await self._permission_keys(db, current_user)
         assignment_candidates = []
-        if "users:read" in permissions or "all" in permissions:
+        if "users:read" in permissions:
             assignment_candidates = await self.repository.get_lead_assignment_candidates(
                 db,
                 organization_id=organization_id,
@@ -1464,8 +1464,8 @@ class AIDomainService:
             entity_type="company",
             entity_id=company.id,
             organization_id=current_user.organization_id or "",
-            include_deals="deals:read" in permissions or "all" in permissions,
-            include_calls="calls:read" in permissions or "all" in permissions,
+            include_deals="deals:read" in permissions,
+            include_calls="calls:read" in permissions,
         )
         output, run = await self._run(
             db,
@@ -1592,14 +1592,14 @@ class AIDomainService:
                 "call": "calls:read",
                 "meeting": "meetings:read",
             }.items()
-            if permission in permissions or "all" in permissions
+            if permission in permissions
         }
         rows = await self.repository.search_transcripts(
             db,
             organization_id=current_user.organization_id or "",
             query=query,
             allowed_source_types=allowed_source_types,
-            allow_unlinked="calls:recording" in permissions or "all" in permissions,
+            allow_unlinked="calls:recording" in permissions,
         )
         return [
             {
@@ -1944,8 +1944,8 @@ class AIDomainService:
         permissions = await self._permission_keys(db, current_user)
         base_permission = "companies:read" if entity_type == "company" else "contacts:read"
         self._require_permission(permissions, base_permission)
-        include_deals = "deals:read" in permissions or "all" in permissions
-        include_calls = "calls:read" in permissions or "all" in permissions
+        include_deals = "deals:read" in permissions
+        include_calls = "calls:read" in permissions
         context = await self.repository.get_customer_context(
             db,
             entity_type=entity_type,

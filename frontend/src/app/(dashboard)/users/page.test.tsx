@@ -14,6 +14,7 @@ const useCurrentOrganizationQueryMock = vi.fn();
 const createMutateAsyncMock = vi.fn();
 const inviteMutateAsyncMock = vi.fn();
 const queryClientMock = { invalidateQueries: vi.fn() };
+const permissionMocks = vi.hoisted(() => ({ allowed: new Set<string>(['*']) }));
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -38,7 +39,8 @@ vi.mock('@/lib/api/organizations', () => ({
 }));
 
 vi.mock('@/components/common/permission-gate', () => ({
-  PermissionGate: ({ children }: { children: ReactNode }) => <>{children}</>,
+  PermissionGate: ({ children, permission }: { children: ReactNode; permission?: string }) =>
+    !permission || permissionMocks.allowed.has('*') || permissionMocks.allowed.has(permission) ? <>{children}</> : null,
 }));
 
 vi.mock('@/components/common/data-table', () => ({
@@ -63,6 +65,8 @@ import UsersPage from './page';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  permissionMocks.allowed.clear();
+  permissionMocks.allowed.add('*');
   useUsersPageQueryMock.mockReturnValue({
     data: { items: [], total: 0 },
     isLoading: false,
@@ -97,6 +101,18 @@ async function openInviteModal(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe('UsersPage invite modal', () => {
+  it('hides role-dependent create actions without roles:read', () => {
+    permissionMocks.allowed.clear();
+    permissionMocks.allowed.add('users:create');
+    permissionMocks.allowed.add('users:invite');
+    permissionMocks.allowed.add('users:assign_roles');
+
+    render(<UsersPage />);
+
+    expect(screen.queryByRole('button', { name: /Create User/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Invite User/ })).not.toBeInTheDocument();
+  });
+
   it('shows no Organization field and submits the selected role id', async () => {
     const user = userEvent.setup();
     render(<UsersPage />);

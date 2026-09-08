@@ -18,6 +18,7 @@ import {
   AlertCircle,
   X,
   Loader2,
+  Trash2,
 } from 'lucide-react';
 import { ActionMenu } from '@/components/common/action-menu';
 import { ConfirmModal } from '@/components/common/confirm-modal';
@@ -237,7 +238,13 @@ export default function QuoteDetailPage() {
           <ActionMenu
             label="More"
             className="w-full text-xs font-semibold sm:w-auto"
-            actions={[]}
+            actions={[{
+              label: 'Delete quote',
+              permission: PERMISSIONS.QUOTES.DELETE,
+              icon: <Trash2 className="w-4 h-4" />,
+              variant: 'destructive',
+              onSelect: () => setIsDeleteModalOpen(true),
+            }]}
           />
         </div>
       </div>

@@ -1,16 +1,14 @@
 /**
  * Centralized RBAC permission catalog for the frontend.
  *
- * Single source of truth for permission keys. Must stay in sync with the backend
- * catalog defined in `backend/app/services/role_service.py` (`ALL_STANDARD_PERMISSIONS`)
- * plus the `super_admin:manage` key inserted by migration `d1e2f3a4b5c6`.
+ * UI mirror of the authoritative backend catalog in
+ * `backend/app/core/rbac_matrix.py`. A backend regression test compares both
+ * catalogs so drift fails CI.
  *
  * The backend resolves a user's effective keys via `AuthService.get_user_permissions`
- * (`backend/app/services/auth_service.py`): super admins (resolved role name in
- * `SUPER_ADMIN_ROLE_NAMES` or a DB role whose name matches) are granted every key,
- * every other user gets exactly the keys attached to their roles. The `"all"` legacy
- * sentinel is NOT emitted by the backend; the `hasPermission` helpers still honor it
- * so previously persisted sessions keep working.
+ * (`backend/app/services/auth_service.py`): platform authority comes only from
+ * `is_platform_admin`; tenant users get approved keys explicitly assigned to
+ * their single organization-scoped role.
  */
 
 export const PERMISSIONS = {
@@ -69,6 +67,8 @@ export const PERMISSIONS = {
     DELETE: 'tasks:delete',
     ASSIGN: 'tasks:assign',
     COMPLETE: 'tasks:complete',
+    EXPORT: 'tasks:export',
+    IMPORT: 'tasks:import',
   },
   PROJECTS: {
     READ: 'projects:read',
@@ -83,6 +83,7 @@ export const PERMISSIONS = {
     UPDATE: 'meetings:update',
     DELETE: 'meetings:delete',
     INVITE: 'meetings:invite',
+    EXPORT: 'meetings:export',
   },
   CALLS: {
     READ: 'calls:read',
@@ -124,6 +125,8 @@ export const PERMISSIONS = {
     APPROVE: 'quotes:approve',
     DELETE: 'quotes:delete',
     SEND: 'quotes:send',
+    EXPORT: 'quotes:export',
+    IMPORT: 'quotes:import',
   },
   INVOICES: {
     READ: 'invoices:read',
@@ -132,10 +135,13 @@ export const PERMISSIONS = {
     SEND: 'invoices:send',
     DELETE: 'invoices:delete',
     PAYMENT: 'invoices:payment',
+    EXPORT: 'invoices:export',
+    IMPORT: 'invoices:import',
   },
   REPORTS: {
     READ: 'reports:read',
     CREATE: 'reports:create',
+    DELETE: 'reports:delete',
     EXPORT: 'reports:export',
     SCHEDULE: 'reports:schedule',
   },
@@ -153,6 +159,8 @@ export const PERMISSIONS = {
     EXPORT: 'users:export',
     IMPORT: 'users:import',
     ROLES: 'users:roles',
+    ASSIGN_ROLES: 'users:assign_roles',
+    RESET_PASSWORD: 'users:reset_password',
   },
   ROLES: {
     READ: 'roles:read',
@@ -168,6 +176,9 @@ export const PERMISSIONS = {
     DOMAINS: 'organization:domains',
     BRANDING: 'organization:branding',
     AUDIT: 'organization:audit',
+    MEMBERS: 'organization:members',
+    DELETE: 'organization:delete',
+    TRANSFER_OWNERSHIP: 'organization:transfer_ownership',
   },
   INVITATIONS: {
     READ: 'invitations:read',
@@ -198,6 +209,12 @@ export const PERMISSIONS = {
   AI: {
     READ: 'ai:read',
     GENERATE: 'ai:generate',
+    CONFIGURE: 'ai:configure',
+  },
+  API_KEYS: {
+    READ: 'api_keys:read',
+    CREATE: 'api_keys:create',
+    REVOKE: 'api_keys:revoke',
   },
   SUPER_ADMIN: {
     MANAGE: 'super_admin:manage',
@@ -208,17 +225,12 @@ export type PermissionKey = {
   [K in keyof typeof PERMISSIONS]: (typeof PERMISSIONS)[K][keyof (typeof PERMISSIONS)[K]];
 }[keyof typeof PERMISSIONS];
 
-const LEGACY_ALL_SENTINEL = 'all';
-
 /**
- * Returns true when `required` is missing (nothing required -> allowed),
- * the permission list is empty (deny), the list contains the legacy `all`
- * sentinel (wildcard), or the exact key is present.
+ * Returns true when `required` is missing or the exact permission is present.
  */
 export function hasPermission(permissions: readonly string[] | undefined, required?: PermissionKey): boolean {
   if (!required) return true;
   if (!permissions || permissions.length === 0) return false;
-  if (permissions.includes(LEGACY_ALL_SENTINEL)) return true;
   return permissions.includes(required);
 }
 

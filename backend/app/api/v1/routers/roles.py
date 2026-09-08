@@ -1,8 +1,14 @@
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import get_current_user, require_permission, require_platform_admin
+from app.api.v1.deps import (
+    authorize_permission,
+    get_current_user,
+    require_permission,
+    require_platform_admin,
+)
 from app.core.errors import ForbiddenError
+from app.core.permissions import effective_organization_id
 from app.db.session import get_db
 from app.models import User
 from app.schemas.crm_schemas import (
@@ -11,6 +17,7 @@ from app.schemas.crm_schemas import (
     MessageResponse,
     PermissionCreate,
     PermissionItem,
+    RoleAuditLogResponse,
     RoleCreate,
     RoleResponse,
     RoleUpdate,
@@ -22,7 +29,7 @@ router = APIRouter()
 
 
 def _current_organization_id(current_user: User) -> str:
-    organization_id = getattr(current_user, "organization_id", None)
+    organization_id = effective_organization_id(current_user)
     if not organization_id:
         raise ForbiddenError(message="Authenticated user has no current organization")
     return organization_id
@@ -57,6 +64,8 @@ async def create_role(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    if payload.permissions:
+        await authorize_permission(db, current_user, "roles:assign")
     return await role_service.create_role(db, payload, current_user)
 
 
@@ -150,11 +159,15 @@ async def get_default_role(
 
 @router.get(
     "/audit-logs",
+    response_model=list[RoleAuditLogResponse],
     summary="Get audit history of role modifications",
     dependencies=[Depends(require_permission("roles:read"))],
 )
-async def role_audit_logs(db: AsyncSession = Depends(get_db)):
-    return await role_service.role_audit_logs()
+async def role_audit_logs(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await role_service.role_audit_logs(db, current_user)
 
 
 @router.get(
@@ -194,7 +207,10 @@ async def bulk_delete_roles(
     "/users/{user_id}/role",
     response_model=RoleResponse,
     summary="Get current role of specific user",
-    dependencies=[Depends(require_permission("roles:read"))],
+    dependencies=[
+        Depends(require_permission("roles:read")),
+        Depends(require_permission("users:roles")),
+    ],
 )
 async def get_user_role(
     user_id: str,
@@ -208,11 +224,11 @@ async def get_user_role(
     "/users/{user_id}/role",
     response_model=MessageResponse,
     summary="Assign role to user",
-    dependencies=[Depends(require_permission("roles:assign"))],
+    dependencies=[Depends(require_permission("users:assign_roles"))],
 )
 async def assign_role_to_user(
     user_id: str,
-    role_id: str = Query("sys-manager"),
+    role_id: str = Query(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -222,11 +238,14 @@ async def assign_role_to_user(
 @router.post(
     "/check-permission",
     summary="Verify user permission for resource action",
-    dependencies=[Depends(require_permission("roles:read"))],
+    dependencies=[
+        Depends(require_permission("roles:read")),
+        Depends(require_permission("users:roles")),
+    ],
 )
 async def check_permission(
-    user_id: str = Query("usr-1"),
-    permission: str = Query("leads:create"),
+    user_id: str = Query(...),
+    permission: str = Query(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -259,6 +278,8 @@ async def update_role(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    if payload.permissions is not None:
+        await authorize_permission(db, current_user, "roles:assign")
     return await role_service.update_role(db, role_id, payload, current_user)
 
 
@@ -280,7 +301,10 @@ async def delete_role(
     "/{role_id}/clone",
     response_model=RoleResponse,
     summary="Clone an existing role configuration",
-    dependencies=[Depends(require_permission("roles:create"))],
+    dependencies=[
+        Depends(require_permission("roles:create")),
+        Depends(require_permission("roles:assign")),
+    ],
 )
 async def clone_role(
     role_id: str,
@@ -324,7 +348,10 @@ async def remove_permission(
 @router.get(
     "/{role_id}/users",
     summary="List users belonging to specific role",
-    dependencies=[Depends(require_permission("roles:read"))],
+    dependencies=[
+        Depends(require_permission("roles:read")),
+        Depends(require_permission("users:read")),
+    ],
 )
 async def get_role_users(
     role_id: str,
