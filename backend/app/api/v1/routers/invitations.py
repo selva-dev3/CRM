@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import get_current_user, require_permission
+from app.api.v1.deps import get_current_user, require_permission, require_platform_admin
 from app.core.auth_cookies import set_auth_cookie, set_refresh_cookie
 from app.db.session import get_db
 from app.models import User
@@ -92,7 +92,7 @@ async def invite_user(
 async def invite_new_organization(
     payload: CreateOrganizationInvitationRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_platform_admin),
 ):
     return await create_new_organization_invitation(db, payload, current_user)
 

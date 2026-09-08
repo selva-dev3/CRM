@@ -1,9 +1,11 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
+from app.schemas.crm_schemas import validate_password_bytes
 
 
 class OrganizationInviteRequest(BaseModel):
     email: EmailStr = Field(..., examples=["user@company.com"])
-    full_name: str | None = Field(None, examples=["Jane Smith"])
+    full_name: str | None = Field(None, min_length=1, max_length=255, examples=["Jane Smith"])
     role: str | None = Field("Admin", examples=["Admin"])
 
 
@@ -12,8 +14,14 @@ class CreateOrganizationInvitationRequest(BaseModel):
     backend-generated ID — a client-supplied organization_id is never accepted."""
 
     email: EmailStr = Field(..., examples=["admin@acme.com"])
-    full_name: str = Field(..., min_length=1, examples=["Jane Smith"])
+    full_name: str = Field(..., min_length=1, max_length=230, examples=["Jane Smith"])
     role_id: str | None = Field("Admin", examples=["Admin"])
+
+    @field_validator("full_name", mode="before")
+    @classmethod
+    def trim_full_name(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
 
 
 class InvitationResponse(BaseModel):
@@ -42,14 +50,22 @@ class NewOrganizationInviteResponse(BaseModel):
 
 
 class AcceptInvitationRequest(BaseModel):
-    password: str = Field(..., min_length=6, examples=["Password123!"])
-    full_name: str | None = Field(None, examples=["Jane Smith"])
-    organization_name: str | None = Field(None, examples=["Acme Corporation"])
-    domain: str | None = Field(None, examples=["acme.crm.com"])
-    industry: str | None = Field(None, examples=["Technology"])
-    country: str | None = Field(None, examples=["India"])
-    city: str | None = Field(None, examples=["Chennai"])
-    phone: str | None = Field(None, examples=["+91 9876543210"])
+    password: str = Field(..., min_length=8, max_length=72, examples=["Password123!"])
+    full_name: str | None = Field(None, min_length=1, max_length=255, examples=["Jane Smith"])
+    organization_name: str | None = Field(None, min_length=1, max_length=255, examples=["Acme Corporation"])
+    domain: str | None = Field(None, max_length=255, examples=["acme.crm.com"])
+    industry: str | None = Field(None, max_length=100, examples=["Technology"])
+    country: str | None = Field(None, max_length=100, examples=["India"])
+    city: str | None = Field(None, max_length=100, examples=["Chennai"])
+    phone: str | None = Field(None, max_length=50, examples=["+91 9876543210"])
+
+
+    @field_validator("organization_name", "full_name", mode="before")
+    @classmethod
+    def trim_organization_name(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+    _password_bytes = field_validator("password")(validate_password_bytes)
 
 
 class InviteUserResponse(BaseModel):

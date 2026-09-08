@@ -22,6 +22,11 @@ celery_app.conf.beat_schedule = {
         "task": "app.workers.tasks.cleanup_expired_auth_records",
         "schedule": crontab(minute=10),
     },
+    "cleanup-deleted-organization-files": {
+        "task": "app.workers.tasks.cleanup_deleted_organization_files",
+        "options": {"queue": "organization_cleanup"},
+        "schedule": 30.0,
+    },
     "deliver-pending-emails": {
         "task": "app.workers.tasks.deliver_pending_emails",
         "schedule": 30.0,
@@ -59,3 +64,9 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(minute=45),
     },
 }
+
+# Dedicated cleanup deployments must not schedule unrelated delivery backlog.
+if settings.ORGANIZATION_CLEANUP_ONLY:
+    celery_app.conf.beat_schedule = {
+        "cleanup-deleted-organization-files": celery_app.conf.beat_schedule["cleanup-deleted-organization-files"]
+    }

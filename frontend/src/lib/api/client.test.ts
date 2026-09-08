@@ -36,6 +36,47 @@ describe('apiClient cookie authentication', () => {
     expect(new Headers(fetchMock.mock.lastCall?.[1].headers).has('X-Organization-ID')).toBe(false);
   });
 
+  it('keeps platform mutations independent of a stale selected organization', async () => {
+    setOrganizationContext('deleted-organization');
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, headers: new Headers(), json: async () => ({}) });
+    vi.stubGlobal('fetch', fetchMock);
+    await apiClient.post('/organizations', { name: 'New' });
+    await apiClient.delete('/organizations/deleted-organization');
+    for (const [, options] of fetchMock.mock.calls) {
+      expect(new Headers(options.headers).has('X-Organization-ID')).toBe(false);
+      expect(options.credentials).toBe('include');
+    }
+  });
+
+  it('identifies the request organization when reporting an unavailable context', async () => {
+    setOrganizationContext('old-organization');
+    const listener = vi.fn();
+    window.addEventListener('organization:unavailable', listener);
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => {
+      setOrganizationContext('new-organization');
+      return { ok: false, status: 403, json: async () => ({ code: 'ORGANIZATION_UNAVAILABLE', message: 'Unavailable' }) };
+    }));
+    await expect(apiClient.get('/roles')).rejects.toThrow('Unavailable');
+    expect(listener.mock.calls[0][0].detail).toBe('old-organization');
+    window.removeEventListener('organization:unavailable', listener);
+  });
+
+  it('allows a lifecycle request to finish after the default timeout', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockImplementation(() => new Promise(resolve => {
+      setTimeout(() => resolve({ ok: true, status: 200, headers: new Headers(), json: async () => ({ status: 'success' }) }), 20_000);
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const request = apiClient.delete('/organizations/slow', { timeoutMs: 120_000 });
+      await vi.advanceTimersByTimeAsync(20_000);
+      await expect(request).resolves.toEqual({ status: 'success' });
+      expect(fetchMock.mock.calls[0][1].signal.aborted).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('does not refresh, clear the CRM session, or redirect on invalid public invoice tokens', async () => {
     sessionStorage.setItem('user', 'existing-session');
     const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 401, json: async () => ({ message: 'Invalid invoice link' }) });

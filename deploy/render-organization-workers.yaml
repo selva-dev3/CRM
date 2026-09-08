@@ -1,0 +1,55 @@
+# Review only: do not apply without approval for paid services and backlog processing.
+# Confirm branch and region against the existing service before applying.
+services:
+  - type: worker
+    name: crm-organization-worker
+    runtime: docker
+    plan: 0.5c-512mb
+    repo: https://github.com/selva-dev3/CRM
+    branch: main
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: celery -A app.workers.celery_app:celery_app worker --loglevel=INFO --concurrency=1 --queues=organization_cleanup
+    numInstances: 1
+    autoDeployTrigger: off
+    envVars: &workerEnvironment
+      - key: ENVIRONMENT
+        value: production
+      - key: CRM_DISABLE_DOTENV
+        value: "1"
+      - key: ORGANIZATION_CLEANUP_ONLY
+        value: "true"
+      - key: ORGANIZATION_DELETION_ENABLED
+        value: "false"
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: CELERY_BROKER_URL
+        sync: false
+      - key: CELERY_RESULT_BACKEND
+        sync: false
+      - key: AWS_ENDPOINT_URL
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_S3_BUCKET
+        sync: false
+      - key: AWS_REGION
+        sync: false
+  - type: worker
+    name: crm-organization-scheduler
+    runtime: docker
+    plan: 0.5c-512mb
+    repo: https://github.com/selva-dev3/CRM
+    branch: main
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: celery -A app.workers.celery_app:celery_app beat --loglevel=INFO --schedule=/tmp/crm-celerybeat-schedule
+    numInstances: 1
+    autoDeployTrigger: off
+    envVars: *workerEnvironment

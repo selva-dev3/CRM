@@ -78,7 +78,9 @@ class UserInvitation(Base):
     email: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
     token: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     role: Mapped[str] = mapped_column(String(100), default="Sales Executive")
-    organization_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(
+        String, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     status: Mapped[str] = mapped_column(String(50), default="pending")  # pending, accepted, expired
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

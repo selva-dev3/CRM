@@ -165,7 +165,7 @@ async def sales_database():
     engine = create_async_engine(database_url)
     sessions = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
     async with sessions() as db:
-        org = Organization(id=str(uuid4()), name="Workflow test tenant", currency="INR")
+        org = Organization(id=str(uuid4()), name=f"Workflow test tenant {uuid4()}", currency="INR")
         user = User(
             id=str(uuid4()),
             organization_id=org.id,

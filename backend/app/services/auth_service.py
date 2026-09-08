@@ -42,7 +42,6 @@ from app.schemas.crm_schemas import (
     TwoFactorVerifyRequest,
 )
 from app.services.email_service import send_magic_link_email, send_reset_password_email
-from app.services.subscription_plan_service import FREE_PLAN_SLUG
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +99,17 @@ class AuthService:
             expires_at=expires_at,
         )
         return access_token
+
+    async def issue_session_tokens(
+        self, db: AsyncSession, user_id: str, *, is_persistent: bool = True
+    ) -> tuple[str, str]:
+        """Stage one access/refresh token family in the caller's transaction."""
+        family_id = uuid.uuid4().hex
+        access_token = await self._create_access_token(db, user_id, family_id=family_id)
+        refresh_token = await self._create_refresh_token(
+            db, user_id, is_persistent=is_persistent, family_id=family_id
+        )
+        return access_token, refresh_token
 
     async def get_user_role_name(self, db: AsyncSession, user: User) -> str:
         """Resolve human-readable role name (e.g. 'Admin', 'Super Admin') for a user."""
@@ -267,91 +277,10 @@ class AuthService:
         }
 
     async def register(self, db: AsyncSession, payload: RegisterRequest) -> dict:
-        try:
-            existing = await self.repository.get_user_by_email(db, payload.email)
-            if existing:
-                raise APIException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    message="User with this email already exists",
-                )
-
-            free_plan = await self.repository.get_active_subscription_plan_by_slug(
-                db, FREE_PLAN_SLUG
-            )
-            if not free_plan:
-                raise APIException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    code="FREE_SUBSCRIPTION_PLAN_UNAVAILABLE",
-                    message="The default subscription plan is not configured",
-                )
-
-            org = await self.repository.create_org(
-                db, name=payload.organization_name, plan=free_plan
-            )
-            await db.flush()
-
-            try:
-                hashed_pwd = get_password_hash(payload.password)
-            except Exception as e:
-                logger.exception("Password hashing failed during registration")
-                raise APIException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    code="PASSWORD_HASHING_FAILED",
-                    message="Unable to create account. Please try again later.",
-                ) from e
-
-            user = await self.repository.create_user(
-                db,
-                data={
-                    "name": payload.name,
-                    "email": payload.email,
-                    "hashed_password": hashed_pwd,
-                    "organization_id": org.id,
-                    "role": "Admin",
-                },
-            )
-            await db.flush()
-            await self.repository.create_organization_setting(
-                db,
-                organization_id=org.id,
-                timezone=org.timezone or "Asia/Kolkata",
-                currency=org.currency or "INR",
-            )
-            await self.repository.create_organization_subscription(
-                db,
-                organization_id=org.id,
-                plan=free_plan,
-            )
-            admin_role = await self.repository.get_role_for_organization(db, "Admin", org.id)
-            if not admin_role:
-                raise APIException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    code="RBAC_NOT_INITIALIZED",
-                    message="Default roles are not initialized",
-                )
-            await self.repository.assign_user_role(db, user_id=user.id, role_id=admin_role.id)
-            await self.repository.record_organization_initialization(
-                db, organization_id=org.id, user_id=user.id
-            )
-            await db.commit()
-            return {
-                "message": "Registration successful",
-                "user_id": user.id,
-                "org_id": org.id,
-                "name": user.name,
-                "email": user.email,
-                "role": user.role,
-            }
-        except APIException:
-            await db.rollback()
-            raise
-        except Exception as e:
-            await db.rollback()
-            logger.exception("Registration transaction failed")
-            raise APIException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                message="Registration failed. Please try again.",
-            ) from e
+        raise ForbiddenError(
+            message="Organization registration is invitation-only. Contact the platform administrator.",
+            code="ORGANIZATION_REGISTRATION_DISABLED",
+        )
 
     async def refresh_token(
         self, db: AsyncSession, refresh_token: str, access_token: str | None = None

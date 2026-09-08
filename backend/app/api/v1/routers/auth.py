@@ -84,7 +84,7 @@ async def get_current_user_me(
 @router.post(
     "/register",
     status_code=status.HTTP_201_CREATED,
-    summary="Register new tenant & admin user",
+    summary="Public registration is disabled; organization access is invitation-only",
 )
 @limiter.limit(AUTH_REGISTER_RATE_LIMIT)
 async def register(request: Request, payload: RegisterRequest, db: AsyncSession = Depends(get_db)):

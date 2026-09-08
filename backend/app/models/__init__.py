@@ -50,6 +50,7 @@ from app.models.organization import (
     ProcessedWebhookEvent,
     SubscriptionPlan,
 )
+from app.models.organization_deletion import OrganizationDeletion, OrganizationFileCleanup
 from app.models.payment import Payment
 from app.models.product import Product, ProductCategory
 from app.models.project import Project
@@ -74,6 +75,8 @@ from app.models.user import User, UserInvitation
 from app.models.user_quota import UserQuota
 
 __all__ = [
+    "OrganizationDeletion",
+    "OrganizationFileCleanup",
     "Payment",
     "Base",
     "Organization",

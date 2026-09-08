@@ -17,7 +17,6 @@ from app.models import (
     PasswordReset,
     RefreshToken,
     Role,
-    SubscriptionPlan,
     User,
     UserInvitation,
     UserRole,
@@ -478,122 +477,20 @@ async def test_get_user_role_name_preserves_legacy_super_admin_identity():
 
 
 @pytest.mark.asyncio
-async def test_register_creates_org_and_user(monkeypatch):
-    free_plan = SubscriptionPlan(
-        id="plan-free",
-        name="Free",
-        slug="free",
-        price_monthly=0,
-        currency="INR",
-        billing_cycle="month",
-        max_users=3,
-        max_storage_gb=5,
-        ai_credits=50,
-        is_active=True,
-    )
-    org = type("O", (), {"id": "org-9", "timezone": "Asia/Kolkata", "currency": "INR"})()
-    user = _make_user()
-    repo: Any = AuthRepository()
-    repo.get_user_by_email = AsyncMock(return_value=None)
-    repo.get_active_subscription_plan_by_slug = AsyncMock(return_value=free_plan)
-    repo.create_org = AsyncMock(return_value=org)
-    repo.create_user = AsyncMock(return_value=user)
-    repo.create_organization_setting = AsyncMock()
-    repo.create_organization_subscription = AsyncMock()
-    repo.get_role_for_organization = AsyncMock(
-        return_value=type("Role", (), {"id": "admin-role"})()
-    )
-    repo.assign_user_role = AsyncMock()
-    repo.record_organization_initialization = AsyncMock()
-    service = _service_with(repo)
+async def test_register_is_disabled_without_reading_or_writing_accounts():
+    repo = AsyncMock(spec=AuthRepository)
     db = AsyncMock(spec=AsyncSession)
-
-    monkeypatch.setattr("app.services.auth_service.get_password_hash", lambda pwd: f"h-{pwd}")
-
-    result = await service.register(
-        db,
-        RegisterRequest(
-            name="Alex", email="a@crm.com", password=REGISTRATION_INPUT, organization_name="Acme"
-        ),
-    )
-
-    assert result["user_id"] == "user-1"
-    assert result["org_id"] == "org-9"
-    create_user_call = repo.create_user.await_args
-    assert create_user_call is not None
-    created = create_user_call.kwargs["data"]
-    assert created["hashed_password"] == EXPECTED_REGISTRATION_HASH
-    repo.create_org.assert_awaited_once_with(db, name="Acme", plan=free_plan)
-    repo.create_organization_setting.assert_awaited_once_with(
-        db,
-        organization_id="org-9",
-        timezone="Asia/Kolkata",
-        currency="INR",
-    )
-    repo.assign_user_role.assert_awaited_once_with(db, user_id="user-1", role_id="admin-role")
-    repo.create_organization_subscription.assert_awaited_once_with(
-        db, organization_id="org-9", plan=free_plan
-    )
-    db.commit.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_register_rolls_back_when_free_plan_is_missing():
-    repo: Any = AuthRepository()
-    repo.get_user_by_email = AsyncMock(return_value=None)
-    repo.get_active_subscription_plan_by_slug = AsyncMock(return_value=None)
-    repo.create_org = AsyncMock()
     service = _service_with(repo)
-    db = AsyncMock(spec=AsyncSession)
-
-    with pytest.raises(APIException) as exc_info:
-        await service.register(
-            db,
-            RegisterRequest(
-                name="Alex",
-                email="a@crm.com",
-                password=REGISTRATION_INPUT,
-                organization_name="Acme",
-            ),
-        )
-
-    assert exc_info.value.code == "FREE_SUBSCRIPTION_PLAN_UNAVAILABLE"
+    with pytest.raises(APIException) as error:
+        await service.register(db, RegisterRequest(
+            name="Alex", email="a@crm.com", password=REGISTRATION_INPUT,
+            organization_name="Acme",
+        ))
+    assert error.value.status_code == 403
+    assert error.value.code == "ORGANIZATION_REGISTRATION_DISABLED"
+    repo.get_user_by_email.assert_not_awaited()
     repo.create_org.assert_not_awaited()
-    db.rollback.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_register_rolls_back_when_password_hashing_fails(monkeypatch):
-    free_plan = SubscriptionPlan(id="plan-free", name="Free", slug="free", is_active=True)
-    org = type("O", (), {"id": "org-9"})()
-    repo: Any = AuthRepository()
-    repo.get_user_by_email = AsyncMock(return_value=None)
-    repo.get_active_subscription_plan_by_slug = AsyncMock(return_value=free_plan)
-    repo.create_org = AsyncMock(return_value=org)
-    repo.create_user = AsyncMock()
-    service = _service_with(repo)
-    db = AsyncMock(spec=AsyncSession)
-
-    def raise_hashing_error(_password):
-        raise RuntimeError("bcrypt unavailable")
-
-    monkeypatch.setattr("app.services.auth_service.get_password_hash", raise_hashing_error)
-
-    with pytest.raises(APIException) as exc_info:
-        await service.register(
-            db,
-            RegisterRequest(
-                name="Alex",
-                email="a@crm.com",
-                password=REGISTRATION_INPUT,
-                organization_name="Acme",
-            ),
-        )
-
-    assert exc_info.value.status_code == 500
-    assert exc_info.value.code == "PASSWORD_HASHING_FAILED"
-    repo.create_user.assert_not_awaited()
-    db.rollback.assert_awaited_once()
+    db.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio

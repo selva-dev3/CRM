@@ -46,6 +46,25 @@ async def _cleanup_expired_auth_records() -> dict[str, int]:
         await engine.dispose()
 
 
+@celery_app.task(name="app.workers.tasks.cleanup_deleted_organization_files", ignore_result=True, queue="organization_cleanup")
+def cleanup_deleted_organization_files():
+    return asyncio.run(_cleanup_deleted_organization_files())
+
+
+async def _cleanup_deleted_organization_files() -> int:
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.core.config import settings
+    from app.services.organization_cleanup_service import cleanup_organization_files
+
+    engine = create_async_engine(settings.DATABASE_URL, pool_pre_ping=True)
+    try:
+        async with async_sessionmaker(engine, expire_on_commit=False)() as db:
+            return await cleanup_organization_files(db)
+    finally:
+        await engine.dispose()
+
+
 @celery_app.task(name="app.workers.tasks.deliver_pending_integration_events", ignore_result=True)
 def deliver_pending_integration_events():
     return asyncio.run(_deliver_pending_integration_events())

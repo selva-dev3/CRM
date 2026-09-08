@@ -469,9 +469,7 @@ async def test_set_default_role_adds_and_removes():
     repo.get_setting = AsyncMock(return_value=type("S", (), {"value": '["role-1"]'})())
     result2 = await service.set_default_role(db, "role-1", _actor())
     assert "removed from default" in result2["message"]
-    assert all(
-        call.args[1].endswith(":org-1") for call in repo.upsert_setting.await_args_list
-    )
+    assert all(call.args[1].endswith(":org-1") for call in repo.upsert_setting.await_args_list)
 
 
 @pytest.mark.asyncio
@@ -497,6 +495,34 @@ async def test_sales_manager_assignment_ignores_system_role_flag(is_system_role)
     assert result["status"] == "success"
     assert target.role == role.id
     assert mapping.role_id == role.id
+    repo.get_role_by_id_or_name.assert_awaited_once_with(db, role.id, organization_id="org-1")
+    db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_assign_role_remaps_legacy_global_uuid_with_tenant_context():
+    target = _actor(id="user-2", email="seller@crm.com", role="old-role")
+    scoped_role = _make_role(id="scoped-admin", name="Admin", organization_id="org-1")
+    mapping = type("Mapping", (), {"role_id": "old-role"})()
+    repo: Any = RoleRepository()
+    repo.get_user_by_id_or_email = AsyncMock(return_value=target)
+
+    async def resolve_role(db, role_id, *, organization_id=None):
+        assert role_id == "legacy-global-admin"
+        assert organization_id == "org-1"
+        return scoped_role
+
+    repo.get_role_by_id_or_name = AsyncMock(side_effect=resolve_role)
+    repo.get_user_role_mapping = AsyncMock(return_value=mapping)
+    service = RoleService(repository=repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    await service.assign_role_to_user(
+        db, target.id, "legacy-global-admin", _actor(organization_id="org-1")
+    )
+
+    assert target.role == scoped_role.id
+    assert mapping.role_id == scoped_role.id
     db.commit.assert_awaited_once()
 
 
@@ -541,7 +567,9 @@ async def test_non_super_admin_cannot_assign_super_admin(monkeypatch):
     repo.get_role_by_id_or_name = AsyncMock(return_value=role)
     service = RoleService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
-    monkeypatch.setattr("app.services.role_service.is_super_admin_user", AsyncMock(return_value=False))
+    monkeypatch.setattr(
+        "app.services.role_service.is_super_admin_user", AsyncMock(return_value=False)
+    )
 
     with pytest.raises(ForbiddenError):
         await service.assign_role_to_user(db, target.id, role.id, _actor())
@@ -592,9 +620,7 @@ async def test_update_system_role_permissions_forbidden():
     db = AsyncMock(spec=AsyncSession)
 
     with pytest.raises(ForbiddenError) as excinfo:
-        await service.update_role(
-            db, "sys-1", RoleUpdate(permissions=["leads:read"]), _actor()
-        )
+        await service.update_role(db, "sys-1", RoleUpdate(permissions=["leads:read"]), _actor())
     _assert_forbidden(excinfo)
     db.commit.assert_not_awaited()
 
@@ -1035,6 +1061,25 @@ def test_standard_permissions_catalog_superset_of_migration_catalog():
     migration_keys = {p["key"] for p in migration_mod.STANDARD_PERMISSIONS}
 
     missing_in_runtime = migration_keys - runtime_keys
-    assert not missing_in_runtime, (
-        f"Migration contains keys not in runtime catalog: {missing_in_runtime}"
+    assert (
+        not missing_in_runtime
+    ), f"Migration contains keys not in runtime catalog: {missing_in_runtime}"
+
+
+@pytest.mark.asyncio
+async def test_role_lookup_remaps_legacy_global_uuid_to_scoped_equivalent():
+    global_role = _make_role(
+        id="global-admin", name="Admin", organization_id=None, is_system_role=True
     )
+    scoped_role = _make_role(
+        id="scoped-admin", name="Admin", organization_id="org-1", is_system_role=True
+    )
+    db = AsyncMock(spec=AsyncSession)
+    db.scalar = AsyncMock(side_effect=[None, global_role, scoped_role])
+
+    role = await RoleRepository().get_role_by_id_or_name(
+        db, "global-admin", organization_id="org-1"
+    )
+
+    assert role is scoped_role
+    assert db.scalar.await_count == 3

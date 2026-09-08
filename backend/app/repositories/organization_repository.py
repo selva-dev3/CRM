@@ -15,6 +15,13 @@ from app.models import (
 class OrganizationRepository:
     """DB query layer for the Organization entity. No business logic here."""
 
+    async def lock_storage_writer(self, db: AsyncSession, organization_id: str) -> bool:
+        # KEY SHARE conflicts with lifecycle FOR UPDATE, but permits concurrent uploads.
+        return bool(await db.scalar(select(Organization.id).where(
+            Organization.id == organization_id,
+            Organization.is_active.is_(True), Organization.status == "active",
+        ).with_for_update(read=True, key_share=True)))
+
     async def get_by_id(self, db: AsyncSession, org_id: str) -> Organization | None:
         result = await db.execute(select(Organization).where(Organization.id == org_id))
         return result.scalars().first()
