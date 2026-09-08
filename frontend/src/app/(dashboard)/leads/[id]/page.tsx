@@ -256,6 +256,11 @@ export default function LeadDetailPage() {
       cell: (email) => email.from_email || 'N/A',
     },
     {
+      id: 'status',
+      header: 'Status',
+      cell: (email) => email.status || 'N/A',
+    },
+    {
       id: 'sent_at',
       header: 'Sent Date',
       cell: (email) => email.sent_at
