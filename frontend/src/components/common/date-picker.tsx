@@ -11,12 +11,15 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { cn } from '@/lib/utils';
 
 interface PickerBaseProps {
+  'aria-describedby'?: string;
+  'aria-invalid'?: boolean;
   'aria-label'?: string;
   className?: string;
   disabled?: boolean;
   id?: string;
   placeholder?: string;
   required?: boolean;
+  triggerRef?: React.Ref<HTMLButtonElement>;
 }
 
 interface DatePickerProps extends PickerBaseProps {
@@ -143,6 +146,9 @@ export function DateTimePicker({
   id,
   placeholder = 'Select date and time',
   required,
+  triggerRef,
+  'aria-describedby': ariaDescribedBy,
+  'aria-invalid': ariaInvalid,
   'aria-label': ariaLabel,
 }: DateTimePickerProps): React.JSX.Element {
   const selected = parseLocalDate(value);
@@ -164,10 +170,13 @@ export function DateTimePicker({
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <Button
+          ref={triggerRef}
           id={id}
           type="button"
           variant="outline"
           disabled={disabled}
+          aria-describedby={ariaDescribedBy}
+          aria-invalid={ariaInvalid}
           aria-label={ariaLabel}
           aria-required={required}
           className={cn(triggerClassName, !displayValue && 'text-muted-foreground', className)}

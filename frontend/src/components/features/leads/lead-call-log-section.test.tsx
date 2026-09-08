@@ -98,6 +98,21 @@ describe('LeadCallLogSection', () => {
     expect(logLeadCallApi).not.toHaveBeenCalled();
   });
 
+  it('focuses the shared picker when a required follow-up date is missing', async () => {
+    const user = userEvent.setup();
+    renderSection(['calls:read', 'calls:create']);
+    await user.click(screen.getByRole('button', { name: 'Log Call' }));
+    const dialog = screen.getByRole('dialog', { name: 'Log phone call' });
+    await user.click(within(dialog).getByLabelText('Follow-up required'));
+    const followUpPicker = within(dialog).getByLabelText('Follow-up Date / Time *');
+
+    await user.click(within(dialog).getByRole('button', { name: 'Log Call' }));
+
+    expect(await within(dialog).findByText('Follow-up date and time are required.')).toBeVisible();
+    await waitFor(() => expect(followUpPicker).toHaveFocus());
+    expect(logLeadCallApi).not.toHaveBeenCalled();
+  });
+
   it('creates once with an idempotency key and refreshes calls and timeline', async () => {
     const user = userEvent.setup();
     const { invalidate } = renderSection(['calls:read', 'calls:create']);
