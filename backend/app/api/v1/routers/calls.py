@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Header, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
@@ -9,6 +9,7 @@ from app.schemas.crm_schemas import (
     BulkDeleteRequest,
     CallLogBase,
     CallLogResponse,
+    CallLogUpdate,
     MessageResponse,
 )
 from app.services.call_service import call_service
@@ -64,10 +65,15 @@ async def list_calls(
 )
 async def log_call(
     payload: CallLogBase,
+    idempotency_key: str | None = Header(
+        default=None, alias="Idempotency-Key", min_length=1, max_length=128
+    ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await call_service.log_call(db, payload, current_user)
+    return await call_service.log_call(
+        db, payload, current_user, idempotency_key=idempotency_key
+    )
 
 
 @router.post(
@@ -143,6 +149,21 @@ async def get_call(
     current_user: User = Depends(get_current_user),
 ):
     return await call_service.get_call(db, call_id, current_user)
+
+
+@router.put(
+    "/{call_id}",
+    response_model=CallLogResponse,
+    summary="Update a call log",
+    dependencies=[Depends(require_permission("calls:update"))],
+)
+async def update_call(
+    call_id: str,
+    payload: CallLogUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await call_service.update_call(db, call_id, payload, current_user)
 
 
 @router.delete(

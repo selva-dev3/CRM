@@ -124,7 +124,7 @@ export default function CallsPage() {
     const duration = parseInt(durationMinutes || '0', 10) * 60;
     const payload: CallLogBasePayload = {
       contact_id: contactId.trim(),
-      call_type: callType,
+      call_type: callType === 'Inbound' ? 'Inbound' : 'Outbound',
       duration_seconds: duration,
       notes: notes.trim() || undefined,
     };

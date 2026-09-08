@@ -962,3 +962,13 @@ class AuthService:
 
 
 auth_service = AuthService()
+
+
+def api_key_scope_allows(current_user: User, permission: str) -> bool:
+    """Apply the API-key scope restriction used after authoritative RBAC."""
+    normalized_permission = permission.lower()
+    api_key_scopes = getattr(current_user, "_api_key_scopes", None)
+    if api_key_scopes is None:
+        return True
+    broad_scope = "api:read" if normalized_permission.endswith(":read") else "api:write"
+    return normalized_permission in api_key_scopes or broad_scope in api_key_scopes

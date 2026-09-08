@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 from app.core.currency import normalize_currency_code
 
@@ -703,18 +703,82 @@ class MeetingResponse(MeetingBase):
 
 # 11. Call Log Schemas
 class CallLogBase(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    contact_id: str | None = Field(default=None, max_length=36)
+    lead_id: str | None = Field(default=None, max_length=36)
+    company_id: str | None = Field(default=None, max_length=36)
+    deal_id: str | None = Field(default=None, max_length=36)
+    call_type: Literal["Outbound", "Inbound"] = "Outbound"
+    disposition: Literal["Completed", "No Answer", "Busy", "Failed", "Other"] = "Completed"
+    timestamp: datetime | None = None
+    duration_seconds: int = Field(default=0, ge=0, le=86400, strict=True)
+    subject: str | None = Field(default=None, max_length=255)
+    notes: str | None = Field(default=None, max_length=10000)
+    follow_up_required: bool = False
+    follow_up_at: datetime | None = None
+    next_action: str | None = Field(default=None, max_length=1000)
+
+    @model_validator(mode="after")
+    def validate_follow_up(self) -> "CallLogBase":
+        for name in ("timestamp", "follow_up_at"):
+            value = getattr(self, name)
+            if value is not None and value.tzinfo is None:
+                raise ValueError(f"{name} must include a timezone")
+        if self.follow_up_required and self.follow_up_at is None:
+            raise ValueError("follow_up_at is required when follow_up_required is true")
+        if not self.follow_up_required and self.follow_up_at is not None:
+            raise ValueError("follow_up_at requires follow_up_required to be true")
+        return self
+
+
+class CallLogUpdate(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    contact_id: str | None = Field(default=None, max_length=36)
+    company_id: str | None = Field(default=None, max_length=36)
+    deal_id: str | None = Field(default=None, max_length=36)
+    call_type: Literal["Outbound", "Inbound"] | None = None
+    disposition: Literal["Completed", "No Answer", "Busy", "Failed", "Other"] | None = None
+    timestamp: datetime | None = None
+    duration_seconds: int | None = Field(default=None, ge=0, le=86400, strict=True)
+    subject: str | None = Field(default=None, max_length=255)
+    notes: str | None = Field(default=None, max_length=10000)
+    follow_up_required: bool | None = None
+    follow_up_at: datetime | None = None
+    next_action: str | None = Field(default=None, max_length=1000)
+
+    @model_validator(mode="after")
+    def validate_update(self) -> "CallLogUpdate":
+        for name in ("call_type", "disposition", "timestamp", "duration_seconds"):
+            if name in self.model_fields_set and getattr(self, name) is None:
+                raise ValueError(f"{name} cannot be null")
+        for name in ("timestamp", "follow_up_at"):
+            value = getattr(self, name)
+            if value is not None and value.tzinfo is None:
+                raise ValueError(f"{name} must include a timezone")
+        return self
+
+
+class CallLogResponse(BaseModel):
+    id: str
     contact_id: str | None = None
     lead_id: str | None = None
     company_id: str | None = None
     deal_id: str | None = None
-    call_type: str = "Outbound"  # Outbound, Inbound
-    duration_seconds: int = 0
-    notes: str | None = None
-
-
-class CallLogResponse(CallLogBase):
-    id: str
+    call_type: str
+    disposition: str | None = None
     timestamp: str
+    duration_seconds: int
+    subject: str | None = None
+    notes: str | None = None
+    follow_up_required: bool
+    follow_up_at: str | None = None
+    next_action: str | None = None
+    created_by: str | None = None
+    created_by_name: str | None = None
+    created_at: str
+    updated_at: str
 
 
 class ContactActivityResponse(BaseModel):

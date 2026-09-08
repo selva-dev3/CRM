@@ -216,7 +216,9 @@ async def test_send_email_rejects_lead_without_valid_email(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("with_calls", [False, True])
-async def test_get_timeline_passes_lead_id_to_email_and_call_repositories(with_calls):
+async def test_get_timeline_passes_lead_id_to_email_and_call_repositories(
+    with_calls, monkeypatch
+):
     lead = _make_lead(created_at=datetime(2026, 9, 1))
     calls = (
         [
@@ -248,8 +250,19 @@ async def test_get_timeline_passes_lead_id_to_email_and_call_repositories(with_c
     repo.list_calls = create_autospec(repo.list_calls, return_value=calls)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
+    actor = _make_user()
+    actor.__dict__["_api_key_scopes"] = {"calls:read"}
+    monkeypatch.setattr(
+        "app.services.lead_service.auth_service.get_user_permissions",
+        AsyncMock(return_value=["calls:read"]),
+    )
 
-    result = await service.get_timeline(db, lead.id, organization_id=lead.organization_id)
+    result = await service.get_timeline(
+        db,
+        lead.id,
+        organization_id=lead.organization_id,
+        current_user=actor,
+    )
 
     assert result
     repo.list_emails.assert_awaited_once_with(
@@ -270,12 +283,51 @@ async def test_get_timeline_passes_lead_id_to_email_and_call_repositories(with_c
             "id": "call-call-2",
             "event_type": "call_logged",
             "title": "Inbound Call Logged",
-            "description": "Duration: 30 sec",
+            "description": "Duration: 30 sec · Direction: Inbound",
             "timestamp": "2026-09-03 00:00:00",
         }
-        assert result[1]["description"] == "Discussed proposal"
+        assert result[1]["description"] == "Discussed proposal · Direction: Outbound"
     else:
         assert [event["event_type"] for event in result] == ["lead_created"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("role_permissions", "api_key_scopes"),
+    [
+        (["leads:read"], None),
+        (["leads:read", "calls:read"], {"leads:read"}),
+    ],
+)
+async def test_timeline_does_not_expose_calls_without_effective_calls_read(
+    role_permissions, api_key_scopes, monkeypatch
+):
+    lead = _make_lead(created_at=datetime(2026, 9, 1))
+    repo: Any = LeadRepository()
+    repo.get_by_id_for_org = AsyncMock(return_value=lead)
+    repo.list_activities = AsyncMock(return_value=[])
+    repo.list_notes = AsyncMock(return_value=[])
+    repo.list_attachments = AsyncMock(return_value=[])
+    repo.list_tasks = AsyncMock(return_value=[])
+    repo.list_emails = AsyncMock(return_value=[])
+    repo.list_calls = AsyncMock()
+    monkeypatch.setattr(
+        "app.services.lead_service.auth_service.get_user_permissions",
+        AsyncMock(return_value=role_permissions),
+    )
+    actor = _make_user()
+    if api_key_scopes is not None:
+        actor.__dict__["_api_key_scopes"] = api_key_scopes
+
+    result = await _service_with(repo).get_timeline(
+        AsyncMock(spec=AsyncSession),
+        lead.id,
+        organization_id=lead.organization_id,
+        current_user=actor,
+    )
+
+    assert all(item["event_type"] != "call_logged" for item in result)
+    repo.list_calls.assert_not_called()
 
 
 @pytest.mark.asyncio

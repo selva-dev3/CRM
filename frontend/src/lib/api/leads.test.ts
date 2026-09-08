@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { fetchLeadsApi, sendLeadEmailApi } from './leads';
+import {
+  deleteLeadCallApi,
+  fetchLeadsApi,
+  logLeadCallApi,
+  sendLeadEmailApi,
+  updateLeadCallApi,
+} from './leads';
 
 const lead = {
   id: 'lead-1',
@@ -98,5 +104,32 @@ describe('sendLeadEmailApi', () => {
     expect(new Headers(request.headers).get('Idempotency-Key')).toBe(
       '11111111-1111-4111-8111-111111111111',
     );
+  });
+});
+
+describe('lead call APIs', () => {
+  it('sends the create idempotency key and uses generic update/delete routes', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: vi.fn().mockResolvedValue({ id: 'call-1', status: 'success' }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await logLeadCallApi(
+      'lead-1',
+      { call_type: 'Outbound', disposition: 'Completed', duration_seconds: 0 },
+      'call-key-1',
+    );
+    await updateLeadCallApi('call-1', { notes: 'Updated' });
+    await deleteLeadCallApi('call-1');
+
+    expect(fetchMock.mock.calls[0][0]).toContain('/leads/lead-1/calls');
+    expect(new Headers((fetchMock.mock.calls[0][1] as RequestInit).headers).get('Idempotency-Key')).toBe('call-key-1');
+    expect(fetchMock.mock.calls[1][0]).toContain('/calls/call-1');
+    expect(fetchMock.mock.calls[1][1]).toEqual(expect.objectContaining({ method: 'PUT' }));
+    expect(fetchMock.mock.calls[2][0]).toContain('/calls/call-1');
+    expect(fetchMock.mock.calls[2][1]).toEqual(expect.objectContaining({ method: 'DELETE' }));
   });
 });

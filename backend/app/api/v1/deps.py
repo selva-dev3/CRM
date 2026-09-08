@@ -14,7 +14,7 @@ from app.core.permissions import UserRole, check_permission
 from app.core.security import ALGORITHM
 from app.db.session import get_db
 from app.models import ApiKey, Organization, User, UserSession
-from app.services.auth_service import auth_service
+from app.services.auth_service import api_key_scope_allows, auth_service
 
 # HTTP Bearer scheme auto-configured for FastAPI Swagger UI authentication
 security_scheme = HTTPBearer(auto_error=False)
@@ -228,14 +228,10 @@ def require_permission(permission: str):
         keys = await auth_service.get_user_permissions(db, current_user)
         if permission not in keys:
             raise ForbiddenError(message=f"Missing required permission: {permission}")
-        api_key_scopes = getattr(current_user, "_api_key_scopes", None)
-        if api_key_scopes is not None:
-            normalized_permission = permission.lower()
-            broad_scope = "api:read" if normalized_permission.endswith(":read") else "api:write"
-            if normalized_permission not in api_key_scopes and broad_scope not in api_key_scopes:
-                raise ForbiddenError(
-                    message=f"API key is missing required scope: {normalized_permission}"
-                )
+        if not api_key_scope_allows(current_user, permission):
+            raise ForbiddenError(
+                message=f"API key is missing required scope: {permission.lower()}"
+            )
         return current_user
 
     return permission_dependency

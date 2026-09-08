@@ -15,7 +15,6 @@ from app.repositories.contact_repository import ContactRepository
 from app.repositories.deal_repository import DealRepository
 from app.repositories.lead_repository import LeadRepository
 from app.schemas.crm_schemas import (
-    CallLogBase,
     CustomFieldDefinition,
     EmailSendRequest,
     LeadConvertRequest,
@@ -25,7 +24,7 @@ from app.schemas.crm_schemas import (
     LeadUpdate,
     TaskCreate,
 )
-from app.services.auth_service import auth_service
+from app.services.auth_service import api_key_scope_allows, auth_service
 from app.services.custom_field_service import CustomFieldService, custom_field_service
 from app.services.document_service import (
     _normalize_mime_type,
@@ -763,7 +762,12 @@ class LeadService:
         }
 
     async def get_timeline(
-        self, db: AsyncSession, lead_id: str, *, organization_id: str
+        self,
+        db: AsyncSession,
+        lead_id: str,
+        *,
+        organization_id: str,
+        current_user: User,
     ) -> list[dict]:
         lead = await self.require_lead(db, lead_id, organization_id=organization_id)
 
@@ -850,18 +854,35 @@ class LeadService:
                 }
             )
 
-        for call in await self.repository.list_calls(
-            db, organization_id=lead.organization_id, lead_id=lead.id, lead_tag=lead_tag
-        ):
+        permissions = await auth_service.get_user_permissions(db, current_user)
+        can_read_calls = "calls:read" in permissions and api_key_scope_allows(
+            current_user, "calls:read"
+        )
+        calls = (
+            await self.repository.list_calls(
+                db, organization_id=lead.organization_id, lead_id=lead.id, lead_tag=lead_tag
+            )
+            if can_read_calls
+            else []
+        )
+        for call in calls:
             clean_notes = (
                 (call.notes or "").replace(f"\n{lead_tag}", "").replace(lead_tag, "").strip()
             )
+            creator = getattr(call, "created_by_user", None)
+            details = [clean_notes or f"Duration: {call.duration_seconds} sec"]
+            disposition = getattr(call, "disposition", None)
+            if disposition:
+                details.append(f"Outcome: {disposition}")
+            if creator and creator.name:
+                details.append(f"Logged by: {creator.name}")
+            details.append(f"Direction: {call.call_type or 'Outbound'}")
             timeline.append(
                 {
                     "id": f"call-{call.id}",
                     "event_type": "call_logged",
-                    "title": f"{call.call_type} Call Logged",
-                    "description": clean_notes or f"Duration: {call.duration_seconds} sec",
+                    "title": getattr(call, "subject", None) or f"{call.call_type} Call Logged",
+                    "description": " · ".join(details),
                     "timestamp": str(call.timestamp),
                 }
             )
@@ -1090,53 +1111,18 @@ class LeadService:
         calls = await self.repository.list_calls(
             db, organization_id=lead.organization_id, lead_id=lead_id, lead_tag=lead_tag
         )
+        from app.services.call_service import call_to_dict
+
         output = []
         for call in calls:
             clean_notes = (
                 (call.notes or "").replace(f"\n{lead_tag}", "").replace(lead_tag, "").strip()
             )
-            output.append(
-                {
-                    "id": call.id,
-                    "contact_id": call.contact_id,
-                    "lead_id": lead_id,
-                    "call_type": call.call_type,
-                    "duration_seconds": call.duration_seconds,
-                    "notes": clean_notes if clean_notes else None,
-                    "timestamp": str(call.timestamp),
-                }
-            )
+            item = call_to_dict(call)
+            item["lead_id"] = lead_id
+            item["notes"] = clean_notes if clean_notes else None
+            output.append(item)
         return output
-
-    async def log_call(
-        self,
-        db: AsyncSession,
-        lead_id: str,
-        payload: CallLogBase,
-        *,
-        organization_id: str,
-    ) -> dict:
-        lead = await self.require_lead(db, lead_id, organization_id=organization_id)
-        call = await self.repository.create_call(
-            db,
-            organization_id=lead.organization_id,
-            contact_id=payload.contact_id,
-            lead_id=lead.id,
-            call_type=payload.call_type or "Outbound",
-            duration_seconds=payload.duration_seconds or 0,
-            notes=payload.notes,
-        )
-        await self._commit(db, "Failed to log call")
-        await db.refresh(call)
-        return {
-            "id": call.id,
-            "contact_id": call.contact_id,
-            "lead_id": lead_id,
-            "call_type": call.call_type,
-            "duration_seconds": call.duration_seconds,
-            "notes": payload.notes,
-            "timestamp": str(call.timestamp),
-        }
 
     async def get_documents(
         self, db: AsyncSession, lead_id: str, *, organization_id: str
