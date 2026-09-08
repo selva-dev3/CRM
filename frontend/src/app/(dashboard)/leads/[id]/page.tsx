@@ -1,6 +1,7 @@
 'use client';
 
 import { ResponsiveSelect } from '@/components/common/responsive-select';
+import { DateTimePicker } from '@/components/common/date-picker';
 import { Textarea } from '@/components/ui/textarea';
 
 import { getErrorMessage } from '@/lib/utils';
@@ -195,6 +196,7 @@ export default function LeadDetailPage() {
   const [taskDesc, setTaskDesc] = useState('');
   const [taskPriority, setTaskPriority] = useState('Medium');
   const [taskDueDate, setTaskDueDate] = useState('');
+  const [taskErrorMessage, setTaskErrorMessage] = useState<string | null>(null);
   const [isCreatingTask, setIsCreatingTask] = useState(false);
 
   const [emailTo, setEmailTo] = useState('');
@@ -490,10 +492,15 @@ export default function LeadDetailPage() {
 
   const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!taskTitle.trim() || !taskDueDate) {
-      setErrorMessage('Task title and due date are required.');
+    if (!taskTitle.trim()) {
+      setTaskErrorMessage('Task title is required.');
       return;
     }
+    if (!taskDueDate) {
+      setTaskErrorMessage('Follow-up due date is required.');
+      return;
+    }
+    setTaskErrorMessage(null);
     try {
       setIsCreatingTask(true);
       await createLeadTaskApi(leadId, {
@@ -505,13 +512,14 @@ export default function LeadDetailPage() {
       setTaskTitle('');
       setTaskDesc('');
       setTaskDueDate('');
+      setTaskErrorMessage(null);
       setIsTaskModalOpen(false);
       await refetchTasks();
       await Promise.all([refetch(), refetchTimeline()]);
       setSuccessMessage('Task created successfully!');
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err: unknown) {
-      setErrorMessage(getErrorMessage(err, 'Failed to create task.'));
+      setTaskErrorMessage(getErrorMessage(err, 'Failed to create task.'));
     } finally {
       setIsCreatingTask(false);
     }
@@ -1174,7 +1182,10 @@ export default function LeadDetailPage() {
             </div>
             <Button
               type="button"
-              onClick={() => setIsTaskModalOpen(true)}
+              onClick={() => {
+                setTaskErrorMessage(null);
+                setIsTaskModalOpen(true);
+              }}
               className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 h-9 shadow-xs cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5 mr-1.5" /> Create Task
@@ -1526,6 +1537,12 @@ export default function LeadDetailPage() {
           }
         >
           <form onSubmit={handleCreateTask} className="space-y-4">
+            {taskErrorMessage && (
+              <Alert id="lead-task-error" variant="destructive" className="bg-rose-50 border-rose-300 text-rose-950 font-bold">
+                <AlertCircle className="h-4 w-4 text-rose-600 mr-2" />
+                <AlertDescription className="text-rose-900 font-bold text-xs">{taskErrorMessage}</AlertDescription>
+              </Alert>
+            )}
             <div className="space-y-1.5">
               <Label className="text-xs font-black text-black">Task Title *</Label>
               <Input required placeholder="Schedule follow-up call" value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} className="bg-slate-50 border-slate-300 text-xs font-bold text-black" />
@@ -1543,12 +1560,17 @@ export default function LeadDetailPage() {
               </ResponsiveSelect>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs font-black text-black">Follow-up Due Date *</Label>
-              <Input
-                type="datetime-local"
+              <Label htmlFor="lead-task-due-date" className="text-xs font-black text-black">Follow-up Due Date *</Label>
+              <DateTimePicker
+                id="lead-task-due-date"
                 required
+                aria-describedby={taskErrorMessage ? 'lead-task-error' : undefined}
+                aria-invalid={Boolean(taskErrorMessage && !taskDueDate)}
                 value={taskDueDate}
-                onChange={(event) => setTaskDueDate(event.target.value)}
+                onValueChange={(value) => {
+                  setTaskDueDate(value);
+                  if (value) setTaskErrorMessage(null);
+                }}
                 className="bg-slate-50 border-slate-300 text-xs font-bold text-black"
               />
             </div>

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -9,6 +9,7 @@ const updateLeadMutateAsync = vi.fn();
 const assignLeadApiMock = vi.fn();
 const qualifyLeadApiMock = vi.fn();
 const sendLeadEmailApiMock = vi.fn();
+const createLeadTaskApiMock = vi.fn();
 const useLeadTimelineQueryMock = vi.fn();
 const useLeadEmailsQueryMock = vi.fn();
 const useLeadCallsQueryMock = vi.fn();
@@ -74,7 +75,7 @@ vi.mock('@/lib/api/leads', () => ({
   useLeadCallsQuery: (...args: unknown[]) => useLeadCallsQueryMock(...args),
   useLeadDocumentsQuery: () => emptyQuery,
   addLeadNoteApi: vi.fn(),
-  createLeadTaskApi: vi.fn(),
+  createLeadTaskApi: (...args: unknown[]) => createLeadTaskApiMock(...args),
   sendLeadEmailApi: (...args: unknown[]) => sendLeadEmailApiMock(...args),
   logLeadCallApi: vi.fn(),
   uploadLeadDocumentApi: vi.fn(),
@@ -151,6 +152,7 @@ beforeEach(() => {
     status: 'Pending',
     sent_at: null,
   });
+  createLeadTaskApiMock.mockResolvedValue({ id: 'task-1' });
   useLeadTimelineQueryMock.mockReturnValue(emptyQuery);
   useLeadEmailsQueryMock.mockReturnValue(emptyQuery);
   useLeadCallsQueryMock.mockReturnValue(emptyQuery);
@@ -283,6 +285,25 @@ describe('LeadDetailPage email workflow', () => {
 
     expect(await screen.findByText('This lead does not have a valid email address.')).toBeVisible();
     expect(sendLeadEmailApiMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('LeadDetailPage task workflow', () => {
+  it('shows an associated error when the shared due-date picker is empty', async () => {
+    const user = userEvent.setup();
+    render(<LeadDetailPage />);
+    await user.click(screen.getByRole('tab', { name: /Tasks/ }));
+    await user.click(screen.getByRole('button', { name: 'Create Task' }));
+    const dialog = screen.getByRole('dialog');
+    await user.type(within(dialog).getByPlaceholderText('Schedule follow-up call'), 'Call customer');
+    const dueDatePicker = within(dialog).getByLabelText('Follow-up Due Date *');
+
+    await user.click(within(dialog).getByRole('button', { name: 'Create Task' }));
+
+    expect(await within(dialog).findByText('Follow-up due date is required.')).toBeVisible();
+    expect(dueDatePicker).toHaveAttribute('aria-invalid', 'true');
+    expect(dueDatePicker).toHaveAttribute('aria-describedby', 'lead-task-error');
+    expect(createLeadTaskApiMock).not.toHaveBeenCalled();
   });
 });
 
