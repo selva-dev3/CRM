@@ -1,4 +1,5 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -12,6 +13,7 @@ from app.services.invitation_service import (
     _require_free_plan,
     _resolve_invitation_role,
     create_organization_user_invitation,
+    get_and_validate_invitation_by_token,
     list_organization_invitations,
 )
 
@@ -129,7 +131,7 @@ async def test_list_organization_invitations_is_tenant_scoped():
 @pytest.mark.asyncio
 async def test_create_organization_user_invitation_uses_current_user_org(monkeypatch):
     db = AsyncMock(spec=AsyncSession)
-    db.scalar = AsyncMock(side_effect=[_make_org(), None, None, None])
+    db.scalar = AsyncMock(side_effect=[_make_org(), None, None, None, None])
     current_user = _make_user(organization_id="org-1")
 
     monkeypatch.setattr(
@@ -140,6 +142,10 @@ async def test_create_organization_user_invitation_uses_current_user_org(monkeyp
     monkeypatch.setattr(
         "app.services.invitation_service._resolve_invitation_role",
         AsyncMock(return_value=_make_role()),
+    )
+    monkeypatch.setattr(
+        "app.repositories.organization_lifecycle_repository.OrganizationLifecycleRepository.lock_invitation_organization",
+        AsyncMock(return_value=_make_org()),
     )
 
     payload = OrganizationInviteRequest(email="new@crm.com", role="role-1")
@@ -153,11 +159,65 @@ async def test_create_organization_user_invitation_uses_current_user_org(monkeyp
 
 
 @pytest.mark.asyncio
+async def test_create_invitation_rejects_organization_deleted_before_parent_lock(monkeypatch):
+    db = AsyncMock(spec=AsyncSession)
+    db.scalar = AsyncMock(return_value=_make_org())
+    resolve_role = AsyncMock(return_value=_make_role())
+    monkeypatch.setattr("app.services.invitation_service._resolve_invitation_role", resolve_role)
+    monkeypatch.setattr(
+        "app.repositories.organization_lifecycle_repository.OrganizationLifecycleRepository.lock_invitation_email",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(
+        "app.repositories.organization_lifecycle_repository.OrganizationLifecycleRepository.lock_invitation_organization",
+        AsyncMock(return_value=None),
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await create_organization_user_invitation(
+            db,
+            OrganizationInviteRequest(email="new@crm.com", role="role-1"),
+            _make_user(organization_id="org-1"),
+        )
+
+    assert exc_info.value.status_code == 404
+    resolve_role.assert_not_awaited()
+    db.add.assert_not_called()
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_expired_invitation_status_update_is_conditional_against_concurrent_management():
+    invitation = SimpleNamespace(
+        id="invitation-1",
+        token="expired-token",
+        status="Pending",
+        expires_at=datetime.now(UTC) - timedelta(minutes=1),
+    )
+    db = AsyncMock(spec=AsyncSession)
+    db.scalar = AsyncMock(return_value=invitation)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await get_and_validate_invitation_by_token(db, "expired-token")
+
+    assert exc_info.value.status_code == 410
+    assert invitation.status == "Pending"
+    db.commit.assert_awaited_once()
+    statement = db.execute.await_args.args[0]
+    sql = str(statement)
+    assert "organization_invitations.id" in sql
+    assert "organization_invitations.token" in sql
+    assert "organization_invitations.status" in sql
+    assert "organization_invitations.expires_at" in sql
+    assert statement.get_execution_options()["synchronize_session"] is False
+
+
+@pytest.mark.asyncio
 async def test_create_organization_user_invitation_ignores_client_organization_id(monkeypatch):
     """A client-supplied organization_id must never be trusted — the invitation
     always lands in the authenticated user's current organization."""
     db = AsyncMock(spec=AsyncSession)
-    db.scalar = AsyncMock(side_effect=[_make_org(), None, None, None])
+    db.scalar = AsyncMock(side_effect=[_make_org(), None, None, None, None])
     current_user = _make_user(organization_id="org-1")
 
     monkeypatch.setattr(
@@ -166,6 +226,10 @@ async def test_create_organization_user_invitation_ignores_client_organization_i
     monkeypatch.setattr(
         "app.services.invitation_service._resolve_invitation_role",
         AsyncMock(return_value=_make_role()),
+    )
+    monkeypatch.setattr(
+        "app.repositories.organization_lifecycle_repository.OrganizationLifecycleRepository.lock_invitation_organization",
+        AsyncMock(return_value=_make_org()),
     )
 
     # organization_id is not part of the request contract anymore; even if a
@@ -208,10 +272,11 @@ async def test_create_organization_user_invitation_rejects_inactive_org():
 
 
 @pytest.mark.asyncio
-async def test_create_organization_user_invitation_rejects_existing_active_user(monkeypatch):
+@pytest.mark.parametrize("is_active", [True, False])
+async def test_create_organization_user_invitation_rejects_existing_account(monkeypatch, is_active):
     db = AsyncMock(spec=AsyncSession)
-    existing = _make_user(id="user-existing", email="taken@crm.com")
-    db.scalar = AsyncMock(side_effect=[_make_org(), None, existing, None])
+    existing = _make_user(id="user-existing", email="taken@crm.com", is_active=is_active)
+    db.scalar = AsyncMock(side_effect=[_make_org(), None, None, None, existing])
     current_user = _make_user(organization_id="org-1")
 
     monkeypatch.setattr(
@@ -220,6 +285,10 @@ async def test_create_organization_user_invitation_rejects_existing_active_user(
     monkeypatch.setattr(
         "app.services.invitation_service._resolve_invitation_role",
         AsyncMock(return_value=_make_role()),
+    )
+    monkeypatch.setattr(
+        "app.repositories.organization_lifecycle_repository.OrganizationLifecycleRepository.lock_invitation_organization",
+        AsyncMock(return_value=_make_org()),
     )
 
     payload = OrganizationInviteRequest(email="taken@crm.com", role="role-1")

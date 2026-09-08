@@ -2,10 +2,72 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
 import { notifyAuthUserChanged } from '@/hooks/use-has-permission';
 import { persistSessionUser } from '@/lib/auth-session';
+import type { CurrentUserResponse } from '@/lib/api/auth';
+import { broadcastOrganizationDeleted, rememberOrganizationDeletion, getOrganizationContext, setOrganizationContext } from '@/lib/organization-context';
+
+export const platformOrganizationKeys = {
+  all: ['platform-organizations'] as const,
+  page: (page: number, limit: number) => ['platform-organizations', page, limit] as const,
+  deletion: (id: string) => ['organization-deletion', id] as const,
+};
+
+export interface PlatformOrganizationCreate {
+  name: string;
+  initial_admin?: { name: string; email: string };
+}
+
+export interface OrganizationCreateResult {
+  organization: OrganizationItem;
+  invitation: { id: string; delivery_status: 'sent' | 'failed' } | null;
+}
+
+export interface OrganizationDeletionResult {
+  message: string;
+  status: 'success';
+  operation_id: string;
+  cleanup_status: 'pending' | 'complete' | 'failed';
+}
+
+export interface OrganizationDeletionStatus {
+  id: string;
+  organization_id: string;
+  organization_name: string;
+  cleanup_status: 'pending' | 'complete' | 'failed';
+  pending_files: number;
+  failed_files: number;
+  completed_files: number;
+  created_at: string;
+}
+
+export function useCreateOrganizationMutation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: PlatformOrganizationCreate) => apiClient.post<OrganizationCreateResult>('/organizations', payload),
+    retry: false,
+    onSuccess: () => client.invalidateQueries({ queryKey: platformOrganizationKeys.all }),
+  });
+}
+
+export function useOrganizationDeletionQuery(id: string | null) {
+  return useQuery({
+    queryKey: platformOrganizationKeys.deletion(id ?? ''),
+    queryFn: () => apiClient.get<OrganizationDeletionStatus>(`/organizations/deletions/${encodeURIComponent(id ?? '')}`),
+    enabled: Boolean(id),
+    refetchInterval: (query) => query.state.data?.cleanup_status === 'pending' && query.state.dataUpdateCount < 60 ? 5000 : false,
+  });
+}
+
+export function useRetryOrganizationCleanupMutation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiClient.post<OrganizationDeletionStatus>(`/organizations/deletions/${encodeURIComponent(id)}/retry`),
+    onSuccess: (data) => client.setQueryData(platformOrganizationKeys.deletion(data.id), data),
+  });
+}
 
 export function usePlatformOrganizationsQuery(page: number, limit = 20) {
   return useQuery<OrganizationItem[]>({
-    queryKey: ['platform-organizations', page, limit],
+    queryKey: platformOrganizationKeys.page(page, limit),
     queryFn: ({ signal }) => apiClient.get(`/organizations/all?limit=${limit}&offset=${(page - 1) * limit}`, { signal }),
   });
 }
@@ -254,8 +316,8 @@ export async function updateOrganizationApi(id: string, payload: UpdateOrganizat
 }
 
 // 3b. DELETE /api/v1/organizations/{org_id} (Delete organization by ID)
-export async function deleteOrganizationApi(id: string): Promise<{ message: string; status: string }> {
-  return apiClient.delete<{ message: string; status: string }>(`/organizations/${id}`);
+export async function deleteOrganizationApi(id: string): Promise<OrganizationDeletionResult> {
+  return apiClient.delete<OrganizationDeletionResult>(`/organizations/${encodeURIComponent(id)}`, { timeoutMs: 120_000 });
 }
 
 // 4. GET /api/v1/organizations/members (List members)
@@ -449,9 +511,21 @@ export function useDeleteOrganizationMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: deleteOrganizationApi,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['organizations'] });
-      queryClient.invalidateQueries({ queryKey: ['current-organization'] });
+    retry: false,
+    onError: () => queryClient.invalidateQueries({ queryKey: platformOrganizationKeys.all }),
+    onSuccess: async (result, id) => {
+      rememberOrganizationDeletion(result.operation_id);
+      await queryClient.cancelQueries();
+      const selected = getOrganizationContext() === id;
+      if (selected) {
+        queryClient.clear();
+        setOrganizationContext(null);
+      } else {
+        queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== 'platform-organizations' && query.queryKey[0] !== 'organization-deletion' });
+      }
+      broadcastOrganizationDeleted(id);
+      if (selected) window.location.assign('/organization');
+      else await queryClient.invalidateQueries({ queryKey: platformOrganizationKeys.all });
     },
   });
 }
@@ -518,14 +592,7 @@ export interface AcceptInvitationPayload {
 
 export interface AcceptInvitationResponse {
   token_type: string;
-  user: {
-    id: string;
-    name: string;
-    email: string;
-    role: string;
-    organization_id: string;
-    is_active: boolean;
-  };
+  user: CurrentUserResponse;
   organization?: {
     id: string;
     name: string;
@@ -563,10 +630,11 @@ export function useAcceptInvitationMutation() {
     mutationFn: acceptInvitationApi,
     onSuccess: (data) => {
       if (data.user) {
+        setOrganizationContext(null);
+        queryClient.clear();
         persistSessionUser(data.user, { remember: true });
         notifyAuthUserChanged();
       }
-      queryClient.invalidateQueries({ queryKey: ['current-organization'] });
     },
   });
 }

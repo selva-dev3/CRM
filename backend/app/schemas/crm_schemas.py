@@ -7,7 +7,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 from app.core.currency import normalize_currency_code
 
 
-def _validate_password_bytes(value: str) -> str:
+def validate_password_bytes(value: str) -> str:
     if len(value.encode("utf-8")) > 72:
         raise ValueError("Password must be at most 72 UTF-8 bytes")
     return value
@@ -103,7 +103,7 @@ class LoginRequest(BaseModel):
     remember_me: bool = True
     two_factor_code: str | None = Field(default=None, min_length=6, max_length=6)
 
-    _password_bytes = field_validator("password")(_validate_password_bytes)
+    _password_bytes = field_validator("password")(validate_password_bytes)
 
 
 class RegisterRequest(BaseModel):
@@ -112,7 +112,7 @@ class RegisterRequest(BaseModel):
     password: str = Field(min_length=8, max_length=72)
     organization_name: str
 
-    _password_bytes = field_validator("password")(_validate_password_bytes)
+    _password_bytes = field_validator("password")(validate_password_bytes)
 
 
 class PasswordResetRequest(BaseModel):
@@ -123,15 +123,15 @@ class PasswordResetConfirmRequest(BaseModel):
     token: str = Field(min_length=14, max_length=128)
     new_password: str = Field(min_length=8, max_length=72)
 
-    _password_bytes = field_validator("new_password")(_validate_password_bytes)
+    _password_bytes = field_validator("new_password")(validate_password_bytes)
 
 
 class PasswordChangeRequest(BaseModel):
     old_password: str = Field(min_length=1, max_length=72)
     new_password: str = Field(min_length=8, max_length=72)
 
-    _old_password_bytes = field_validator("old_password")(_validate_password_bytes)
-    _new_password_bytes = field_validator("new_password")(_validate_password_bytes)
+    _old_password_bytes = field_validator("old_password")(validate_password_bytes)
+    _new_password_bytes = field_validator("new_password")(validate_password_bytes)
 
 
 class TwoFactorSetupResponse(BaseModel):
@@ -345,7 +345,12 @@ class OrganizationCreate(OrganizationBase):
 
 
 class OrganizationUpdate(BaseModel):
-    name: str | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def trim_organization_name(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
     slug: str | None = None
     email: str | None = None
     phone: str | None = None

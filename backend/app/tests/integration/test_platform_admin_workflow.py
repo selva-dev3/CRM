@@ -21,10 +21,16 @@ from app.core.config import settings
 from app.core.errors import ConflictError, register_exception_handlers
 from app.core.security import get_password_hash, verify_password
 from app.db.session import get_db
-from app.models import Organization, User
-from app.schemas.crm_schemas import LoginRequest, RegisterRequest
+from app.models import Organization, OrganizationInvitation, User
+from app.repositories.role_repository import RoleRepository
+from app.schemas.crm_schemas import LoginRequest
+from app.schemas.organization_invitation_schemas import AcceptInvitationRequest
+from app.schemas.organization_lifecycle import InitialAdminInvitation, PlatformOrganizationCreate
 from app.services.auth_service import AuthService
+from app.services.invitation_service import accept_organization_invitation
+from app.services.organization_lifecycle_service import OrganizationLifecycleService
 from app.services.platform_admin_service import PlatformAdminService
+from app.services.role_service import ALL_STANDARD_PERMISSIONS
 
 
 @pytest.mark.asyncio
@@ -84,20 +90,22 @@ async def test_migration_singleton_provisioning_and_same_login_across_organizati
                     db, email="duplicate@example.com", password=SecretStr(test_password)
                 )
 
-        # Exercise the real registration transaction twice; neither creates a platform user.
+        monkeypatch.setattr("app.services.organization_lifecycle_service.send_user_invite_email", lambda **_: True)
+        async with sessions() as db:
+            await RoleRepository().seed_permissions(db, ALL_STANDARD_PERMISSIONS, commit=False)
+            await RoleRepository().synchronize_system_roles(db)
+            await db.commit()
         org_ids = []
         for name in ("A", "B"):
             async with sessions() as db:
-                result = await AuthService().register(
-                    db,
-                    RegisterRequest(
-                        name=f"Admin {name}",
-                        email=f"admin-{name.lower()}@example.com",
-                        password=test_password,
-                        organization_name=f"Organization {name}",
-                    ),
-                )
-                org_ids.append(result["org_id"])
+                actor = await db.get(User, "intended-user")
+                result = await OrganizationLifecycleService().create(db, PlatformOrganizationCreate(
+                    name=f"Organization {name}", initial_admin=InitialAdminInvitation(
+                        name=f"Admin {name}", email=f"admin-{name.lower()}@example.com",
+                    )), actor)
+                org_ids.append(result.organization.id)
+                invitation = await db.get(OrganizationInvitation, result.invitation.id)
+                await accept_organization_invitation(db, invitation.token, AcceptInvitationRequest(password=test_password))
         async with sessions() as db:
             assert await db.scalar(text("SELECT count(*) FROM users WHERE is_platform_admin")) == 1
             login = await AuthService().login(

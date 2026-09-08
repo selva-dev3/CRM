@@ -8,10 +8,12 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -20,6 +22,7 @@ from app.db.base import Base
 
 class Organization(Base):
     __tablename__ = "organizations"
+    __table_args__ = (Index("uq_organizations_normalized_name", text("lower(btrim(name))"), unique=True),)
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     name: Mapped[str] = mapped_column(String(255), nullable=False)

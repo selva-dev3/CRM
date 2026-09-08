@@ -3,10 +3,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   query: vi.fn(), get: vi.fn(), cancel: vi.fn(), clear: vi.fn(), select: vi.fn(),
+  create: vi.fn(), remove: vi.fn(), auth: vi.fn(),
 }));
-vi.mock('@/lib/api/organizations', () => ({ usePlatformOrganizationsQuery: mocks.query }));
-vi.mock('@/lib/api/client', () => ({ apiClient: { get: mocks.get } }));
-vi.mock('@/lib/organization-context', () => ({ setOrganizationContext: mocks.select }));
+vi.mock('@/providers/auth-provider', () => ({ useAuth: mocks.auth }));
+vi.mock('@/lib/api/organizations', () => ({
+  usePlatformOrganizationsQuery: mocks.query,
+  useCreateOrganizationMutation: () => ({ mutateAsync: mocks.create, isPending: false }),
+  useDeleteOrganizationMutation: () => ({ mutateAsync: mocks.remove, isPending: false }),
+  useOrganizationDeletionQuery: () => ({ data: undefined }),
+  useRetryOrganizationCleanupMutation: () => ({ isPending: false }),
+}));
+vi.mock('@/lib/api/client', async (importOriginal) => ({ ...await importOriginal<typeof import('@/lib/api/client')>(), apiClient: { get: mocks.get } }));
+vi.mock('@/lib/organization-context', () => ({ setOrganizationContext: mocks.select, getLastOrganizationDeletion: () => null }));
 vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ cancelQueries: mocks.cancel, clear: mocks.clear }),
 }));
@@ -16,7 +24,8 @@ import { PlatformOrganizations } from './platform-organizations';
 describe('platform organization selection', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.query.mockReturnValue({ data: [], isPending: false, isError: false });
+    mocks.auth.mockReturnValue({ user: { is_platform_admin: true } });
+    mocks.query.mockReturnValue({ data: [], isPending: false, isError: false, refetch: vi.fn() });
   });
   afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
@@ -58,5 +67,38 @@ describe('platform organization selection', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Access denied');
     expect(mocks.select).not.toHaveBeenCalled();
     expect(mocks.clear).not.toHaveBeenCalled();
+  });
+
+  it('hides platform mutations from tenant users', () => {
+    mocks.auth.mockReturnValue({ user: { is_platform_admin: false } });
+    mocks.query.mockReturnValue({ data: [{ id: 'a', name: 'A', status: 'active' }] });
+    render(<PlatformOrganizations />);
+    expect(screen.queryByRole('button', { name: '+ Create Organization' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete A' })).not.toBeInTheDocument();
+  });
+
+  it('requires deletion confirmation and supports cancel', async () => {
+    mocks.query.mockReturnValue({ data: [{ id: 'a', name: 'A', status: 'active' }], refetch: vi.fn() });
+    mocks.remove.mockResolvedValue({ operation_id: 'op', cleanup_status: 'complete' });
+    render(<PlatformOrganizations />);
+    fireEvent.click(screen.getByRole('button', { name: 'Delete A' }));
+    expect(mocks.remove).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(mocks.remove).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete A' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Organization' }));
+    await vi.waitFor(() => expect(mocks.remove).toHaveBeenCalledWith('a'));
+  });
+
+  it('validates the create form and provisions name-only organizations', async () => {
+    mocks.create.mockResolvedValue({ organization: { id: 'new', name: 'New' }, invitation: null });
+    render(<PlatformOrganizations />);
+    fireEvent.click(screen.getByRole('button', { name: '+ Create Organization' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create Organization' }));
+    expect(await screen.findByText('Organization name is required')).toBeInTheDocument();
+    expect(mocks.create).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('Organization Name'), { target: { value: ' New ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create Organization' }));
+    await vi.waitFor(() => expect(mocks.create).toHaveBeenCalledWith({ name: 'New' }));
   });
 });

@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthProvider, useAuth } from './auth-provider';
 import type { CurrentUserResponse } from '@/lib/api/auth';
+import { getOrganizationContext, setOrganizationContext } from '@/lib/organization-context';
 import { AUTH_SESSION_BROADCAST_KEY } from '@/lib/auth-session';
 
 const mocks = vi.hoisted(() => ({
@@ -49,6 +50,17 @@ describe('AuthProvider', () => {
     mocks.logoutApi.mockResolvedValue(undefined);
   });
 
+  it('ignores an unavailable response from an organization that is no longer selected', async () => {
+    const queryClient = new QueryClient();
+    renderProvider(queryClient);
+    await userEvent.click(screen.getByRole('button', { name: 'Set session' }));
+    setOrganizationContext('new-organization');
+    queryClient.setQueryData(['contacts'], [{ id: 'new-contact' }]);
+    act(() => window.dispatchEvent(new CustomEvent('organization:unavailable', { detail: 'old-organization' })));
+    expect(screen.getByText('authenticated')).toBeInTheDocument();
+    expect(queryClient.getQueryData(['contacts'])).toEqual([{ id: 'new-contact' }]);
+  });
+
   it('clears protected query data after a successful logout', async () => {
     const user = userEvent.setup();
     const queryClient = new QueryClient();
@@ -79,6 +91,22 @@ describe('AuthProvider', () => {
 
     expect(await screen.findByText('unauthenticated')).toBeInTheDocument();
     expect(screen.getByText('no-user')).toBeInTheDocument();
+  });
+
+  it('clears stale organization context on a same-tab login event', async () => {
+    renderProvider();
+    setOrganizationContext('previous-organization');
+    sessionStorage.setItem('user', JSON.stringify({
+      id: 'invited-user', name: 'Invitee', email: 'invitee@crm.com', role: 'Admin',
+      organization_id: 'new-organization', permissions: ['users:read'],
+    }));
+
+    act(() => window.dispatchEvent(new CustomEvent('auth:session-changed', {
+      detail: { action: 'login' },
+    })));
+
+    expect(await screen.findByText('invitee@crm.com')).toBeInTheDocument();
+    expect(getOrganizationContext()).toBeNull();
   });
 
   it('clears local state when backend logout fails', async () => {

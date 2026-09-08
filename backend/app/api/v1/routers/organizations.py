@@ -15,11 +15,44 @@ from app.schemas.crm_schemas import (
     SubscriptionCheckoutVerifyResponse,
     SubscriptionPlanResponse,
 )
+from app.schemas.organization_lifecycle import (
+    OrganizationCreateResponse,
+    OrganizationDeletionResponse,
+    OrganizationDeletionStatus,
+    PlatformOrganizationCreate,
+)
+from app.services.organization_lifecycle_service import organization_lifecycle_service
 from app.services.organization_service import organization_domain_service
 from app.services.subscription_billing_service import SubscriptionBillingService
 
 router = APIRouter()
 subscription_billing_service = SubscriptionBillingService()
+
+
+@router.post("", response_model=OrganizationCreateResponse, status_code=201,
+             summary="Provision an organization as Global Super Admin")
+async def create_organization(
+    payload: PlatformOrganizationCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_platform_admin),
+):
+    return await organization_lifecycle_service.create(db, payload, current_user)
+
+
+@router.get("/deletions/{operation_id}", response_model=OrganizationDeletionStatus)
+async def organization_deletion_status(
+    operation_id: str, db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_platform_admin),
+):
+    return await organization_lifecycle_service.deletion_status(db, operation_id, current_user)
+
+
+@router.post("/deletions/{operation_id}/retry", response_model=OrganizationDeletionStatus)
+async def retry_organization_cleanup(
+    operation_id: str, db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_platform_admin),
+):
+    return await organization_lifecycle_service.retry_cleanup(db, operation_id, current_user)
 
 
 @router.get("/all", response_model=list[OrganizationResponse], summary="List platform organizations",
@@ -323,13 +356,13 @@ async def update_organization_by_id(
 
 @router.delete(
     "/{org_id}",
-    response_model=MessageResponse,
+    response_model=OrganizationDeletionResponse,
     summary="Delete organization by ID",
     dependencies=[Depends(require_permission("organization:update"))],
 )
 async def delete_organization_by_id(
     org_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_platform_admin),
 ):
     return await organization_domain_service.delete_organization_by_id(db, org_id, current_user)

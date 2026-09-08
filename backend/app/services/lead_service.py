@@ -36,6 +36,7 @@ from app.services.document_service import (
 )
 from app.services.notification_service import notification_service
 from app.services.org_service import organization_service
+from app.services.organization_storage_service import lock_organization_storage
 from app.services.s3_service import s3_service
 
 LEAD_SOURCES = ["Website", "LinkedIn", "Referral", "Cold Call", "Event", "Partner"]
@@ -1216,6 +1217,7 @@ class LeadService:
         file_size = len(contents)
         object_name = f"leads/{lead_id}/{uuid.uuid4().hex}{extension}"
 
+        await lock_organization_storage(db, organization_id)
         try:
             s3_key = await asyncio.to_thread(
                 s3_service.upload_file,

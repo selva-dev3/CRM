@@ -255,7 +255,7 @@ export function LoginForm() {
           href="/register"
           className="font-semibold text-indigo-700 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600/40"
         >
-          Create your organization
+          How to join an organization
         </Link>
       </p>
     </div>

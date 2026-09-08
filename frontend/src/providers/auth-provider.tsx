@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useQueryClient } from '@tanstack/react-query';
 import { getCurrentUserApi, logoutApi, type CurrentUserResponse } from '@/lib/api/auth';
 import { ApiError, invalidateAuthSession, markAuthSessionActive } from '@/lib/api/client';
-import { setOrganizationContext } from '@/lib/organization-context';
+import { getOrganizationContext, setOrganizationContext, ORGANIZATION_DELETED_EVENT, ORGANIZATION_DELETED_BROADCAST } from '@/lib/organization-context';
 import {
   AUTH_SESSION_BROADCAST_KEY,
   AUTH_SESSION_CHANGED_EVENT,
@@ -105,6 +105,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [resetLocalSession]);
 
   useEffect(() => {
+    const recoverOrganization = () => {
+      void queryClient.cancelQueries();
+      queryClient.clear();
+      setOrganizationContext(null);
+      if (user?.is_platform_admin) window.location.assign('/organization');
+      else { resetLocalSession(false); window.location.assign('/login'); }
+    };
+    const unavailableOrganization = (event: Event) => {
+      const requestedOrganization: unknown = (event as CustomEvent).detail;
+      if (typeof requestedOrganization === 'string' && requestedOrganization !== getOrganizationContext()) return;
+      recoverOrganization();
+    };
+    const deletedOrganization = (organizationId: string) => {
+      void queryClient.invalidateQueries({ queryKey: ['platform-organizations'] });
+      if (getOrganizationContext() === organizationId || (!user?.is_platform_admin && user?.organization_id === organizationId)) {
+        recoverOrganization();
+
+      }
+    };
+    const handleOrganizationDeleted = (event: Event) => {
+      const organizationId: unknown = (event as CustomEvent).detail;
+      if (typeof organizationId === 'string') deletedOrganization(organizationId);
+    };
     const handleSessionEvent = (event: Event) => {
       const action = (event as CustomEvent<{ action?: string }>).detail?.action;
       if (action === 'logout') {
@@ -115,6 +138,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (action === 'login') {
         const storedUser = readStoredUser();
         if (storedUser) {
+          setOrganizationContext(null);
+          queryClient.clear();
           markAuthSessionActive();
           authGenerationRef.current += 1;
           setUser(storedUser);
@@ -123,6 +148,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     };
     const handleStorage = (event: StorageEvent) => {
+      if (event.key === ORGANIZATION_DELETED_BROADCAST && event.newValue) {
+        try {
+          const payload: unknown = JSON.parse(event.newValue);
+          if (payload && typeof payload === 'object' && 'organizationId' in payload && typeof payload.organizationId === 'string') {
+            deletedOrganization(payload.organizationId);
+          }
+        } catch { /* Ignore malformed cross-tab notifications; the API enforces access. */ }
+        return;
+      }
       if (event.key !== AUTH_SESSION_BROADCAST_KEY) return;
       const action = parseAuthBroadcast(event.newValue);
       if (action === 'logout') {
@@ -144,12 +178,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     window.addEventListener(AUTH_SESSION_CHANGED_EVENT, handleSessionEvent);
     window.addEventListener('storage', handleStorage);
     window.addEventListener('auth:unauthorized', handleUnauthorized);
+    window.addEventListener('organization:unavailable', unavailableOrganization);
+    window.addEventListener(ORGANIZATION_DELETED_EVENT, handleOrganizationDeleted);
     return () => {
       window.removeEventListener(AUTH_SESSION_CHANGED_EVENT, handleSessionEvent);
       window.removeEventListener('storage', handleStorage);
       window.removeEventListener('auth:unauthorized', handleUnauthorized);
+      window.removeEventListener('organization:unavailable', unavailableOrganization);
+      window.removeEventListener(ORGANIZATION_DELETED_EVENT, handleOrganizationDeleted);
     };
-  }, [queryClient, resetLocalSession, verifySession]);
+  }, [queryClient, resetLocalSession, verifySession, user]);
 
   const value = useMemo(
     () => ({ status, user, setSession, verifySession, logout, isLoggingOut }),

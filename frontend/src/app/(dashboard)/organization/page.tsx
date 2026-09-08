@@ -5,16 +5,13 @@ import { PlatformOrganizations } from '@/components/features/organizations/platf
 import { ResponsiveSelect } from '@/components/common/responsive-select';
 
 import { getErrorMessage } from '@/lib/utils';
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 /* eslint-disable @next/next/no-img-element -- remote organization logo URL */
 import Link from 'next/link';
 import {
   Mail,
   Globe,
-  Sliders,
-  ChevronDown,
   Pencil,
-  Trash2,
   RefreshCw,
   AlertCircle,
   CheckCircle2,
@@ -23,33 +20,20 @@ import {
   MapPin,
   Building2,
   ArrowLeft,
-  UserPlus
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useHasPermission } from '@/hooks/use-has-permission';
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-} from '@/components/ui/dropdown-menu';
+
 import { DataTable, type DataTableColumn, type TableActionOption } from '@/components/common/data-table';
-import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
 import { PERMISSIONS } from '@/lib/permissions';
 import {
   useCurrentOrganizationQuery,
   useUpdateOrganizationMutation,
-  useDeleteOrganizationMutation,
-  useInviteNewOrganizationMutation,
   OrganizationItem,
   UpdateOrganizationPayload,
-  deleteOrganizationApi
 } from '@/lib/api/organizations';
 import { useQueryClient } from '@tanstack/react-query';
 import OrganizationDetail from '@/components/features/organization/OrganizationDetail';
@@ -62,11 +46,8 @@ function OrganizationSettingsPage() {
   const [userRole, setUserRole] = useState<string>('');
   const [userEmail, setUserEmail] = useState<string>('');
   const [, setIsRoleChecked] = useState(false);
-  const { hasPermission } = useHasPermission();
 
-  // Invite Organization permission — the backend independently enforces both keys.
-  const canInviteOrganization =
-    hasPermission(PERMISSIONS.ORGANIZATION.UPDATE) && hasPermission(PERMISSIONS.INVITATIONS.CREATE);
+
 
   useEffect(() => {
     try {
@@ -97,9 +78,6 @@ function OrganizationSettingsPage() {
   const [page, setPage] = useState(1);
   const limit = 15;
 
-  // Bulk Selection State
-  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
-
   // Queries & Mutations
   const { data: currentOrganization, isLoading, refetch } = useCurrentOrganizationQuery();
   const organizations = useMemo(
@@ -107,23 +85,12 @@ function OrganizationSettingsPage() {
     [currentOrganization],
   );
   const updateOrgMutation = useUpdateOrganizationMutation();
-  const deleteOrgMutation = useDeleteOrganizationMutation();
-  const inviteNewOrgMutation = useInviteNewOrganizationMutation();
 
 
   // Modal & Notification States
   const [orgToEdit, setOrgToEdit] = useState<OrganizationItem | null>(null);
-  const [orgToDelete, setOrgToDelete] = useState<OrganizationItem | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  // Invite Organization Modal States — the payload only ever carries
-  // { email, full_name, role_id }; no organization_id is collected or sent.
-  const [isInviteOrgModalOpen, setIsInviteOrgModalOpen] = useState(false);
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteFullName, setInviteFullName] = useState('');
-  const [, setInviteRoleId] = useState('');
-  const [inviteErrorMessage, setInviteErrorMessage] = useState<string | null>(null);
 
   // Form States for Create/Edit
   const [formName, setFormName] = useState('');
@@ -213,62 +180,6 @@ function OrganizationSettingsPage() {
     }
   };
 
-  const handleConfirmDelete = async () => {
-    if (!orgToDelete) return;
-    try {
-      await deleteOrgMutation.mutateAsync(orgToDelete.id);
-      await queryClient.invalidateQueries({ queryKey: ['organizations'] });
-      await refetch();
-
-      setSuccessMessage(`Organization "${orgToDelete.name}" deleted successfully.`);
-      setOrgToDelete(null);
-      setTimeout(() => setSuccessMessage(null), 4000);
-    } catch (err: unknown) {
-      setErrorMessage(getErrorMessage(err, 'Failed to delete organization.'));
-    }
-  };
-
-  // Bulk Selection Handlers
-  const handleToggleRow = useCallback((org: OrganizationItem, checked: boolean) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (checked) {
-        next.add(org.id);
-      } else {
-        next.delete(org.id);
-      }
-      return next;
-    });
-  }, []);
-
-  const handleToggleAllRows = useCallback(
-    (checked: boolean) => {
-      if (checked) {
-        setSelectedIds(new Set(organizations.map((o) => o.id)));
-      } else {
-        setSelectedIds(new Set());
-      }
-    },
-    [organizations]
-  );
-
-  const handleBulkDelete = async () => {
-    if (selectedIds.size === 0) return;
-    try {
-      for (const id of Array.from(selectedIds)) {
-        await deleteOrganizationApi(id).catch(() => null);
-      }
-      await queryClient.invalidateQueries({ queryKey: ['organizations'] });
-      await refetch();
-      setSuccessMessage(`Deleted ${selectedIds.size} selected organization(s).`);
-      setSelectedIds(new Set());
-      setTimeout(() => setSuccessMessage(null), 4000);
-    } catch {
-      setErrorMessage('Failed to complete bulk delete.');
-    }
-  };
-
-  // DataTable Columns Definition
   const columns: DataTableColumn<OrganizationItem>[] = useMemo(
     () => [
       {
@@ -426,54 +337,7 @@ function OrganizationSettingsPage() {
       icon: <Pencil className="w-4 h-4 mr-2 text-[#2563EB]" />,
       onClick: (item) => handleOpenEditModal(item),
     },
-    {
-      label: 'Delete Organization',
-      variant: 'destructive',
-      permission: PERMISSIONS.ORGANIZATION.UPDATE,
-      icon: <Trash2 className="w-4 h-4 mr-2 text-[#DC2626]" />,
-      onClick: (item) => setOrgToDelete(item),
-    },
   ];
-
-  const handleOpenInviteMemberModal = () => {
-    setInviteEmail('');
-    setInviteFullName('');
-    setInviteRoleId('');
-    setInviteErrorMessage(null);
-    setIsInviteOrgModalOpen(true);
-  };
-
-  const handleInviteOrgSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const email = inviteEmail.trim();
-    const fullName = inviteFullName.trim();
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setInviteErrorMessage('Please enter a valid email address.');
-      return;
-    }
-    if (!fullName) {
-      setInviteErrorMessage('Please enter the invitee\'s full name.');
-      return;
-    }
-
-    try {
-      const res = await inviteNewOrgMutation.mutateAsync({
-        email,
-        full_name: fullName,
-      });
-      await queryClient.invalidateQueries({ queryKey: ['organizations'] });
-      await refetch();
-      setSuccessMessage(res.message || `Organization "${res.organization?.name}" created and invitation sent to ${email}.`);
-      setIsInviteOrgModalOpen(false);
-      setInviteEmail('');
-      setInviteFullName('');
-      setInviteRoleId('');
-      setInviteErrorMessage(null);
-      setTimeout(() => setSuccessMessage(null), 6000);
-    } catch (err: unknown) {
-      setInviteErrorMessage(err instanceof Error ? err.message : 'Failed to create the organization invitation.');
-    }
-  };
 
   if (!isSuperAdmin) {
     return <OrganizationDetail isCurrentOrgView />;
@@ -500,17 +364,7 @@ function OrganizationSettingsPage() {
             <ArrowLeft className="w-4 h-4 text-slate-500" />
             <span>Back to Settings</span>
           </Link>
-          <Button
-            type="button"
-            onClick={handleOpenInviteMemberModal}
-            size="default"
-            variant="primary"
-            className="shadow-saas-sm px-4 text-button cursor-pointer w-full sm:w-auto"
-            disabled={!canInviteOrganization}
-          >
-            <UserPlus className="w-4 h-4 mr-2" />
-            Invite Organization
-          </Button>
+
         </div>
       </div>
 
@@ -536,11 +390,7 @@ function OrganizationSettingsPage() {
         getRowKey={(item) => item.id}
         onRowClick={(org) => router.push(`/organization/${org.id}`)}
         emptyTitle="No organizations found"
-        emptyDescription="Create your first organization or adjust your search filter."
-        showCheckbox
-        selectedIds={selectedIds}
-        onToggleRow={handleToggleRow}
-        onToggleAllRows={handleToggleAllRows}
+        emptyDescription="Contact your administrator if your organization is unavailable."
         actionVariant="menu"
         actions={actions}
         searchValue={searchTerm}
@@ -555,37 +405,6 @@ function OrganizationSettingsPage() {
         }}
         toolbarActions={
           <div className="flex items-center gap-2">
-            {/* Bulk Actions Dropdown */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button type="button" variant="outline" className="w-full gap-2 text-button font-medium sm:w-auto">
-                <Sliders className="w-4 h-4 text-[#2563EB]" />
-                <span>Bulk Actions</span>
-                {selectedIds.size > 0 && (
-                  <span className="ml-1 px-2 py-0.5 rounded-full bg-[#2563EB] text-white text-badge font-semibold">
-                    {selectedIds.size}
-                  </span>
-                )}
-                <ChevronDown className="w-4 h-4 text-[#9CA3AF]" />
-              </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
-                <DropdownMenuLabel className="text-badge font-semibold text-[#111827]">
-                  {selectedIds.size > 0 ? `Bulk Actions (${selectedIds.size} selected)` : 'Select orgs below to apply'}
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  variant="destructive"
-                  disabled={selectedIds.size === 0}
-                  onClick={handleBulkDelete}
-                  className={`cursor-pointer text-button font-medium ${selectedIds.size === 0 ? 'opacity-50 cursor-not-allowed' : 'text-[#DC2626] hover:bg-[#DC2626]/10'}`}
-                >
-                  <Trash2 className="w-4 h-4 mr-2 text-[#DC2626]" />
-                  <span>Bulk Delete ({selectedIds.size})</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-
             <Button
               type="button"
               variant="outline"
@@ -599,84 +418,6 @@ function OrganizationSettingsPage() {
           </div>
         }
       />
-
-      {/* INVITE ORGANIZATION MODAL DIALOG */}
-      <ModalShell
-        isOpen={isInviteOrgModalOpen}
-        onClose={() => setIsInviteOrgModalOpen(false)}
-        size="lg"
-        title={
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-btn bg-[#2563EB] flex items-center justify-center text-white shadow-saas-sm shrink-0">
-              <UserPlus className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="text-subheading font-semibold text-[#111827]">
-                Invite Organization
-              </h3>
-              <p className="text-caption text-[#6B7280]">
-                Provision a new tenant organization and invite its admin
-              </p>
-            </div>
-          </div>
-        }
-      >
-        <form onSubmit={handleInviteOrgSubmit} className="space-y-4">
-          {inviteErrorMessage && (
-            <div className="p-4 rounded-btn bg-[#DC2626]/10 border border-[#DC2626]/20 text-[#DC2626] text-body font-medium flex items-center gap-2">
-              <AlertCircle className="w-5 h-5 shrink-0" />
-              <span>{inviteErrorMessage}</span>
-            </div>
-          )}
-
-          <div>
-            <Label htmlFor="invite-email">Email Address <span className="text-[#DC2626]">*</span></Label>
-            <Input
-              id="invite-email"
-              type="email"
-              required
-              placeholder="e.g. admin@acme.com"
-              value={inviteEmail}
-              onChange={(e) => setInviteEmail(e.target.value)}
-            />
-            <p className="text-caption text-[#6B7280] mt-1">
-              The invitee becomes the initial admin of a brand-new organization.
-            </p>
-          </div>
-
-          <div>
-            <Label htmlFor="invite-full-name">Full Name <span className="text-[#DC2626]">*</span></Label>
-            <Input
-              id="invite-full-name"
-              type="text"
-              required
-              placeholder="e.g. Jane Smith"
-              value={inviteFullName}
-              onChange={(e) => setInviteFullName(e.target.value)}
-            />
-          </div>
-
-          {/* Modal Actions */}
-          <div className="pt-4 border-t border-[#E5E7EB] flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setIsInviteOrgModalOpen(false)}
-              className="cursor-pointer"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              variant="primary"
-              disabled={inviteNewOrgMutation.isPending}
-              className="cursor-pointer shadow-saas-sm"
-            >
-              {inviteNewOrgMutation.isPending ? 'Sending Invitation...' : 'Send Invitation'}
-            </Button>
-          </div>
-        </form>
-      </ModalShell>
 
       {/* EDIT ORGANIZATION MODAL DIALOG */}
       {orgToEdit && (
@@ -829,17 +570,6 @@ function OrganizationSettingsPage() {
         </ModalShell>
       )}
 
-      {/* CONFIRM DELETE MODAL */}
-      <ConfirmModal
-        isOpen={Boolean(orgToDelete)}
-        onClose={() => setOrgToDelete(null)}
-        onConfirm={handleConfirmDelete}
-        title="Delete Organization"
-        description={`Are you sure you want to delete organization "${orgToDelete?.name}"? This action cannot be undone.`}
-        confirmText="Delete Organization"
-        variant="default"
-        isLoading={deleteOrgMutation.isPending}
-      />
     </div>
   );
 }

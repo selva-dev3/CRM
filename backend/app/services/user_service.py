@@ -24,6 +24,7 @@ from app.schemas.crm_schemas import (
     UserUpdate,
 )
 from app.services.email_service import send_user_invite_email
+from app.services.organization_storage_service import lock_organization_storage
 from app.services.s3_service import s3_service
 
 PROTECTED_SUPERADMIN_EMAIL = "superadmin@gmail.com"
@@ -115,7 +116,7 @@ class UserService:
         Assignment is independent of role mutability: ``is_system_role`` protects
         built-in roles from editing/deletion, but does not make them unassignable.
         """
-        role = await self.role_repository.get_role_by_id_or_name(db, role_value)
+        role = await self.role_repository.get_role_by_id_or_name(db, role_value, organization_id=org_id)
         if not role:
             raise APIException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -219,6 +220,8 @@ class UserService:
         current_user: User,
     ) -> dict:
         user = await self.require_user(db, current_user.id)
+        if user._organization_id:
+            await lock_organization_storage(db, user._organization_id)
         try:
             object_name = f"avatars/{user.id}_{filename}"
             s3_key = await asyncio.to_thread(

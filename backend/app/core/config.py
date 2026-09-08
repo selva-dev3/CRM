@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     POSTGRES_DB: str | None = None
     POSTGRES_PORT: str | None = None
     DATABASE_URL: str
+    # Enable only after the documented recovery drill and worker readiness checks.
+    ORGANIZATION_CLEANUP_ONLY: bool = False
+    ORGANIZATION_DELETION_ENABLED: bool = False
 
     @field_validator("DATABASE_URL", mode="before")
     @classmethod

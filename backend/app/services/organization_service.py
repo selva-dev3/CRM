@@ -2,6 +2,7 @@ import asyncio
 import uuid
 
 from fastapi import status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, ConflictError, ForbiddenError, NotFoundError
@@ -9,6 +10,7 @@ from app.core.permissions import ensure_tenant_managed_user
 from app.models import Organization, OrganizationSubscription, SubscriptionPlan, User
 from app.repositories.organization_repository import OrganizationRepository
 from app.schemas.crm_schemas import OrganizationUpdate
+from app.services.organization_storage_service import lock_organization_storage
 from app.services.s3_service import s3_service
 from app.services.subscription_plan_service import FREE_PLAN_SLUG, free_subscription_data
 
@@ -53,6 +55,11 @@ class OrganizationDomainService:
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
         try:
             await db.commit()
+        except IntegrityError as e:
+            await db.rollback()
+            if "uq_organizations_normalized_name" in str(e.orig):
+                raise ConflictError(message="An organization with this name already exists", code="ORGANIZATION_NAME_CONFLICT", fields={"name": "An organization with this name already exists"}) from e
+            raise ConflictError(message=error_message) from e
         except Exception as e:
             await db.rollback()
             raise APIException(
@@ -89,15 +96,9 @@ class OrganizationDomainService:
     async def get_or_create_default_org(
         self, db: AsyncSession, current_user: User | None = None
     ) -> Organization:
-        if current_user and current_user.organization_id:
-            user_org = await self.repository.get_by_id(db, current_user.organization_id)
-            if user_org:
-                return user_org
-
-        org = await self.repository.get_first(db)
-        if not org:
-            org = await self.repository.get_or_create_default(db)
-        return org
+        if current_user:
+            return await self._require_current_org(db, current_user)
+        raise ForbiddenError(message="Authenticated organization context is required")
 
     async def get_or_create_subscription(
         self, db: AsyncSession, org: Organization
@@ -322,6 +323,7 @@ class OrganizationDomainService:
         current_user: User,
     ) -> dict:
         org = await self._require_current_org(db, current_user)
+        await lock_organization_storage(db, org.id)
         try:
             logo_url = org.logo_url
             if logo_file:
@@ -478,13 +480,10 @@ class OrganizationDomainService:
     async def delete_organization_by_id(
         self, db: AsyncSession, org_id: str, current_user: User
     ) -> dict:
-        org = await self._require_requested_org(db, org_id=org_id, current_user=current_user)
-        await self.repository.delete(db, org)
-        await self._commit(db, "Failed to delete organization")
-        return {
-            "message": f"Organization '{org.name}' ({org_id}) deleted successfully",
-            "status": "success",
-        }
+        from app.services.organization_lifecycle_service import organization_lifecycle_service
+
+        return await organization_lifecycle_service.delete(db, org_id, current_user)
+
 
 
 organization_domain_service = OrganizationDomainService()

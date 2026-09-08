@@ -405,6 +405,14 @@ def test_all_routes_have_permission_dependency(router):
             path = _route_signature(router, route)
             if (router.__name__.rsplit(".", 1)[-1], method, path) in NO_PERMISSION_PATHS:
                 continue
+            if router.__name__.endswith(".organizations") and (method, path) in {
+                ("POST", ""), ("GET", "/deletions/{operation_id}"),
+                ("POST", "/deletions/{operation_id}/retry"),
+            }:
+                from app.api.v1.deps import require_platform_admin
+
+                assert any(dep.call is require_platform_admin for dep in route.dependant.dependencies)
+                continue
             dependencies = route.dependencies or []
             dep_names = {
                 getattr(d.dependency, "__name__", "")

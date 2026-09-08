@@ -77,13 +77,17 @@ export function clearSessionToken(): void {
   localStorage.removeItem('user');
 }
 
+export interface ApiRequestOptions extends RequestInit {
+  timeoutMs?: number;
+}
+
 export interface ApiClient {
-  <T>(endpoint: string, options?: RequestInit): Promise<T>;
-  get<T>(endpoint: string, options?: RequestInit): Promise<T>;
-  getWithMetadata<T>(endpoint: string, options?: RequestInit): Promise<ApiResponse<T>>;
-  post<T>(endpoint: string, data?: unknown, options?: RequestInit): Promise<T>;
-  put<T>(endpoint: string, data?: unknown, options?: RequestInit): Promise<T>;
-  delete<T>(endpoint: string, options?: RequestInit): Promise<T>;
+  <T>(endpoint: string, options?: ApiRequestOptions): Promise<T>;
+  get<T>(endpoint: string, options?: ApiRequestOptions): Promise<T>;
+  getWithMetadata<T>(endpoint: string, options?: ApiRequestOptions): Promise<ApiResponse<T>>;
+  post<T>(endpoint: string, data?: unknown, options?: ApiRequestOptions): Promise<T>;
+  put<T>(endpoint: string, data?: unknown, options?: ApiRequestOptions): Promise<T>;
+  delete<T>(endpoint: string, options?: ApiRequestOptions): Promise<T>;
 }
 
 export interface ApiResponse<T> {
@@ -116,9 +120,12 @@ export class ApiError extends Error {
   }
 }
 
-async function throwResponseError(response: Response, redirectUnauthorized = true): Promise<never> {
+async function throwResponseError(response: Response, redirectUnauthorized = true, organizationId: string | null = null): Promise<never> {
   const errorData = await response.json().catch(() => ({}));
   if (response.status === 401 && redirectUnauthorized) handleUnauthorized(errorData.code);
+  if (errorData.code === 'ORGANIZATION_UNAVAILABLE' && typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('organization:unavailable', { detail: organizationId }));
+  }
   throw new ApiError(
     errorData.detail || errorData.message || 'An unexpected error occurred',
     'http',
@@ -287,7 +294,7 @@ function handleUnauthorized(code?: string): void {
 
 async function request<T>(
   endpoint: string,
-  options: RequestInit = {},
+  options: ApiRequestOptions = {},
   allowRefresh = true,
 ): Promise<ApiResponse<T>> {
   const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
@@ -295,7 +302,11 @@ async function request<T>(
     ...(options.headers as Record<string, string>),
   };
   const organizationId = getOrganizationContext();
-  if (organizationId && !endpoint.startsWith('/auth/') && !endpoint.startsWith('/organizations/all')) {
+  const platformOperation = endpoint.startsWith('/organizations/all') || endpoint.startsWith('/organizations/deletions/')
+    || (endpoint === '/organizations' && options.method === 'POST')
+    || (/^\/organizations\/[^/]+$/.test(endpoint) && options.method === 'DELETE')
+    || endpoint === '/organizations/invitations/new-organization';
+  if (organizationId && !endpoint.startsWith('/auth/') && !platformOperation) {
     headers['X-Organization-ID'] = organizationId;
   }
   if (organizationId && endpoint === '/auth/me') headers['X-Organization-ID'] = organizationId;
@@ -310,7 +321,7 @@ async function request<T>(
     ...options,
     headers,
     credentials: options.credentials ?? 'include',
-  }, API_REQUEST_TIMEOUT_MS);
+  }, options.timeoutMs ?? API_REQUEST_TIMEOUT_MS);
 
   if (response.status === 401 && allowRefresh && canRefresh(endpoint)) {
     const refreshed = await getRefreshRequest();
@@ -319,12 +330,12 @@ async function request<T>(
         ...options,
         headers,
         credentials: options.credentials ?? 'include',
-      }, API_REQUEST_TIMEOUT_MS);
+      }, options.timeoutMs ?? API_REQUEST_TIMEOUT_MS);
     }
   }
 
   if (!response.ok) {
-    return throwResponseError(response, !endpoint.startsWith('/public/'));
+    return throwResponseError(response, !endpoint.startsWith('/public/'), headers['X-Organization-ID'] ?? null);
   }
 
   return {
@@ -362,30 +373,30 @@ export async function openApiStream(
       API_REQUEST_TIMEOUT_MS,
     );
   }
-  if (!response.ok) return throwResponseError(response);
+  if (!response.ok) return throwResponseError(response, true, organizationId);
   return response;
 }
 
 const mainClient = async function <T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: ApiRequestOptions = {}
 ): Promise<T> {
   const response = await request<T>(endpoint, options);
   return response.data;
 } as ApiClient;
 
-mainClient.get = function <T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+mainClient.get = function <T>(endpoint: string, options: ApiRequestOptions = {}): Promise<T> {
   return mainClient<T>(endpoint, { ...options, method: 'GET' });
 };
 
 mainClient.getWithMetadata = function <T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: ApiRequestOptions = {}
 ): Promise<ApiResponse<T>> {
   return request<T>(endpoint, { ...options, method: 'GET' });
 };
 
-mainClient.post = function <T>(endpoint: string, data?: unknown, options: RequestInit = {}): Promise<T> {
+mainClient.post = function <T>(endpoint: string, data?: unknown, options: ApiRequestOptions = {}): Promise<T> {
   const isFormData = typeof FormData !== 'undefined' && data instanceof FormData;
   return mainClient<T>(endpoint, {
     ...options,
@@ -394,7 +405,7 @@ mainClient.post = function <T>(endpoint: string, data?: unknown, options: Reques
   });
 };
 
-mainClient.put = function <T>(endpoint: string, data?: unknown, options: RequestInit = {}): Promise<T> {
+mainClient.put = function <T>(endpoint: string, data?: unknown, options: ApiRequestOptions = {}): Promise<T> {
   const isFormData = typeof FormData !== 'undefined' && data instanceof FormData;
   return mainClient<T>(endpoint, {
     ...options,
@@ -403,7 +414,7 @@ mainClient.put = function <T>(endpoint: string, data?: unknown, options: Request
   });
 };
 
-mainClient.delete = function <T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+mainClient.delete = function <T>(endpoint: string, options: ApiRequestOptions = {}): Promise<T> {
   return mainClient<T>(endpoint, { ...options, method: 'DELETE' });
 };
 

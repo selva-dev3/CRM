@@ -5,15 +5,42 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { apiClient } from '@/lib/api/client';
-import { usePlatformOrganizationsQuery, type OrganizationItem } from '@/lib/api/organizations';
-import { setOrganizationContext } from '@/lib/organization-context';
+import { usePlatformOrganizationsQuery, useDeleteOrganizationMutation, useOrganizationDeletionQuery, useRetryOrganizationCleanupMutation, type OrganizationItem } from '@/lib/api/organizations';
+import { getLastOrganizationDeletion, setOrganizationContext } from '@/lib/organization-context';
+import { useAuth } from '@/providers/auth-provider';
+import { ConfirmModal } from '@/components/common/confirm-modal';
+import { CreateOrganizationDialog } from './create-organization-dialog';
 
 export function PlatformOrganizations() {
+  const { user } = useAuth();
+  const [creating, setCreating] = useState(false);
+  const [deleting, setDeleting] = useState<OrganizationItem | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [operationId, setOperationId] = useState<string | null>(getLastOrganizationDeletion);
+  const deleteMutation = useDeleteOrganizationMutation();
+  const cleanupQuery = useOrganizationDeletionQuery(operationId);
+  const retryCleanup = useRetryOrganizationCleanupMutation();
   const [page, setPage] = useState(1);
   const [opening, setOpening] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const { data: organizations = [], isPending, isError, refetch } = usePlatformOrganizationsQuery(page);
+  const busy = opening !== null || deleteMutation.isPending;
+
+  const confirmDelete = async () => {
+    if (!deleting || deleteMutation.isPending) return;
+    setError(null);
+    try {
+      const result = await deleteMutation.mutateAsync(deleting.id);
+      setOperationId(result.operation_id);
+      setNotice(`Organization "${deleting.name}" deleted. File cleanup: ${result.cleanup_status}.`);
+      setDeleting(null);
+      if (organizations.length === 1 && page > 1) setPage(page - 1);
+      else await refetch();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to delete organization.');
+    }
+  };
 
   const openOrganization = async (organization: OrganizationItem) => {
     setOpening(organization.id);
@@ -40,7 +67,15 @@ export function PlatformOrganizations() {
       <div>
         <h1 className="text-2xl font-semibold">Organizations</h1>
         <p className="text-sm text-muted-foreground">Select an organization to manage its users, roles, and settings.</p>
+        {user?.is_platform_admin && <Button className="mt-3" disabled={busy} onClick={() => setCreating(true)}>+ Create Organization</Button>}
       </div>
+      {notice && <p role="status">{notice}</p>}
+      {operationId && <div className="space-y-2 text-sm">
+        {cleanupQuery.isError ? <p role="alert">Unable to load file cleanup status.</p> : cleanupQuery.data && <p>File cleanup: {cleanupQuery.data.cleanup_status}. {cleanupQuery.data.pending_files} pending, {cleanupQuery.data.failed_files} failed.</p>}
+        <Button variant="outline" onClick={() => void cleanupQuery.refetch()}>Refresh cleanup status</Button>
+        {cleanupQuery.data?.cleanup_status === 'failed' && <Button disabled={retryCleanup.isPending} onClick={() => retryCleanup.mutate(operationId)}>Retry file cleanup</Button>}
+        {retryCleanup.isError && <p role="alert">Unable to retry file cleanup.</p>}
+      </div>}
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       {isPending ? <p role="status">Loading organizations…</p> : isError ? (
         <div role="alert" className="space-y-2">
@@ -56,12 +91,14 @@ export function PlatformOrganizations() {
                 <TableCell className="font-medium">{organization.name}</TableCell>
                 <TableCell>{organization.status}</TableCell>
                 <TableCell>{organization.members_count ?? 0}</TableCell>
-                <TableCell><Button
+                <TableCell><div className="flex flex-wrap gap-2"><Button
                   variant="outline"
-                  disabled={opening !== null || organization.status !== 'active'}
+                  disabled={busy || organization.status !== 'active'}
                   aria-label={`Open ${organization.name}`}
                   onClick={() => void openOrganization(organization)}
-                >{opening === organization.id ? 'Opening…' : 'Open organization'}</Button></TableCell>
+                >{opening === organization.id ? 'Opening…' : 'Open organization'}</Button>
+                {user?.is_platform_admin && <Button variant="outline" disabled={busy} aria-label={`Delete ${organization.name}`} onClick={() => { setError(null); setDeleting(organization); }}>Delete</Button>}
+                </div></TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -72,6 +109,16 @@ export function PlatformOrganizations() {
         <span className="text-sm">Page {page}</span>
         <Button variant="outline" disabled={organizations.length < 20 || opening !== null || isPending || isError} onClick={() => setPage(page + 1)}>Next</Button>
       </div>
+      {creating && user?.is_platform_admin && <CreateOrganizationDialog onClose={() => setCreating(false)} onCreated={(result) => {
+        setCreating(false);
+        setNotice(`Organization "${result.organization.name}" created.${result.invitation?.delivery_status === 'failed' ? ' Invitation email failed; open the organization to resend it.' : ''}`);
+        setPage(1);
+        void refetch();
+      }} />}
+      {deleting && <ConfirmModal isOpen={Boolean(user?.is_platform_admin)} onClose={() => { if (!deleteMutation.isPending) setDeleting(null); }} onConfirm={() => void confirmDelete()}
+        title="Delete Organization?" confirmText="Delete Organization" isLoading={deleteMutation.isPending}
+        description={`Organization: ${deleting?.name ?? ''}. This permanently removes the organization, its tenant accounts, and associated database records. Stored files are queued for deletion; existing file links may work until cleanup completes. Audit and recovery records are retained.`}
+        message={error ? <p role="alert" className="text-destructive">{error}</p> : undefined} />}
     </section>
   );
 }

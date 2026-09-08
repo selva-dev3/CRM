@@ -159,7 +159,7 @@ async def apply_organization_context(
         raise ForbiddenError(message="Authenticated user has no current organization")
     organization = await db.get(Organization, organization_id)
     if not organization or not organization.is_active or organization.status != "active":
-        raise ForbiddenError(message="Selected organization is inactive or unavailable")
+        raise ForbiddenError(message="Selected organization is inactive or unavailable", code="ORGANIZATION_UNAVAILABLE")
     if platform_admin:
         user.__dict__["_request_organization_id"] = organization_id
 

@@ -12,6 +12,7 @@ from app.core.errors import APIException, ForbiddenError, NotFoundError
 from app.core.logging import get_logger
 from app.models import Document, User
 from app.repositories.document_repository import DocumentRepository
+from app.services.organization_storage_service import lock_organization_storage
 from app.services.s3_service import s3_service
 
 logger = get_logger(__name__)
@@ -315,6 +316,7 @@ class DocumentService:
                 message=f"File exceeds the maximum allowed size of {max_size} bytes.",
             )
 
+        await lock_organization_storage(db, org_id)
         object_key = _build_object_key(org_id, ext)
         try:
             file_stream = io.BytesIO(file_bytes)

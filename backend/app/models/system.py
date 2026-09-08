@@ -19,7 +19,9 @@ class CustomField(Base):
     __tablename__ = "custom_fields"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    organization_id: Mapped[str | None] = mapped_column(String, index=True)
+    organization_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
     entity_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     field_name: Mapped[str] = mapped_column(String(100), nullable=False)
     field_type: Mapped[str] = mapped_column(String(50), nullable=False, default="text")
@@ -32,7 +34,9 @@ class SLAPolicy(Base):
     __tablename__ = "sla_policies"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    organization_id: Mapped[str | None] = mapped_column(String, index=True)
+    organization_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     response_time_hours: Mapped[int] = mapped_column(Integer, default=1)
     resolution_time_hours: Mapped[int] = mapped_column(Integer, default=24)

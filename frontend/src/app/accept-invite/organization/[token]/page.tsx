@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
-  Sparkles,
   Eye,
   EyeOff,
   ArrowRight,
@@ -35,14 +34,7 @@ export default function AcceptInvitationPage() {
 
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [fullName, setFullName] = useState('Jane Smith');
-  const [organizationName, setOrganizationName] = useState('Acme Corporation');
-  const [domain, setDomain] = useState('acme.crm.com');
-  const [industry, setIndustry] = useState('Technology');
-  const [country, setCountry] = useState('India');
-  const [city, setCity] = useState('Chennai');
-  const [phone, setPhone] = useState('+91 9876543210');
-
+  const [fullName, setFullName] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successData, setSuccessData] = useState<AcceptInvitationResponse | null>(null);
 
@@ -57,41 +49,30 @@ export default function AcceptInvitationPage() {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate invite form from API status
         setFullName(invStatus.full_name);
       }
-      if (invStatus.organization?.name) {
-        setOrganizationName(invStatus.organization.name);
-      }
-      if (invStatus.organization?.domain) {
-        setDomain(invStatus.organization.domain);
-      }
     }
   }, [invStatus]);
 
-  const handleAutofillDemo = () => {
-    setPassword('12345678');
-    setFullName('Jane Smith');
-    setOrganizationName('Acme Corporation');
-    setDomain('acme.crm.com');
-    setIndustry('Technology');
-    setCountry('India');
-    setCity('Chennai');
-    setPhone('+91 9876543210');
-  };
+  useEffect(() => {
+    if (!successData) return;
+    const timer = setTimeout(() => router.push('/dashboard'), 3500);
+    return () => clearTimeout(timer);
+  }, [successData, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (acceptMutation.isPending) return;
     if (!rawToken) {
       setErrorMessage('Invitation token is missing.');
       return;
     }
-    if (!password || password.length < 6) {
-      setErrorMessage('Password must be at least 6 characters.');
+    if (!password || password.length < 8) {
+      setErrorMessage('Password must be at least 8 characters.');
       return;
     }
-    if (!organizationName.trim()) {
-      setErrorMessage('Please enter an Organization Name.');
+    if (new TextEncoder().encode(password).length > 72) {
+      setErrorMessage('Password must be at most 72 UTF-8 bytes.');
       return;
     }
-
     try {
       setErrorMessage(null);
       const res = await acceptMutation.mutateAsync({
@@ -99,20 +80,12 @@ export default function AcceptInvitationPage() {
         payload: {
           password,
           full_name: fullName.trim(),
-          organization_name: organizationName.trim(),
-          domain: domain.trim() || undefined,
-          industry: industry.trim() || undefined,
-          country: country.trim() || undefined,
-          city: city.trim() || undefined,
-          phone: phone.trim() || undefined
+
         }
       });
 
       setSuccessData(res);
-      // Auto redirect after 3.5 seconds
-      setTimeout(() => {
-        router.push('/dashboard');
-      }, 3500);
+
     } catch (err: unknown) {
       setErrorMessage(getErrorMessage(err, 'Failed to accept invitation.'));
     }
@@ -164,7 +137,7 @@ export default function AcceptInvitationPage() {
 
           <div className="space-y-2">
             <Badge className="bg-[#16A34A]/10 text-[#16A34A] border-[#16A34A]/20 font-bold px-3 py-1 text-badge">
-              Account & Organization Activated!
+              Account Activated!
             </Badge>
             <h2 className="text-page-title font-bold text-[#111827]">
               Welcome, {successData.user.name}!
@@ -218,7 +191,7 @@ export default function AcceptInvitationPage() {
         </div>
 
         <h2 className="text-center text-subheading font-bold text-[#111827]">
-          Complete Organization Onboarding & Accept Invitation
+          Accept Organization Invitation
         </h2>
         <p className="mt-1 text-center text-caption text-[#6B7280]">
           Invited Email: <span className="font-mono font-bold text-[#2563EB]">{invStatus?.email || 'User'}</span>
@@ -230,18 +203,9 @@ export default function AcceptInvitationPage() {
           <div className="flex items-center justify-between border-b border-[#E5E7EB] pb-3">
             <div className="flex items-center gap-2 font-semibold text-[#111827]">
               <ShieldCheck className="w-5 h-5 text-[#2563EB]" />
-              <span>Admin Profile & Organization Details</span>
+              <span>Your Profile</span>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleAutofillDemo}
-              className="text-caption font-semibold border-[#2563EB]/30 text-[#2563EB] hover:bg-[#2563EB]/10 cursor-pointer h-8"
-            >
-              <Sparkles className="w-3.5 h-3.5 mr-1" />
-              1-Click Demo Fill
-            </Button>
+
           </div>
 
           {errorMessage && (
@@ -259,103 +223,38 @@ export default function AcceptInvitationPage() {
                 <Input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
-                  placeholder="Password123!"
+                  placeholder="Choose a password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="pr-10"
+                  maxLength={72}
                   required
                 />
                 <button
                   type="button"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-2.5 text-[#9CA3AF] hover:text-[#374151] cursor-pointer"
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-              <p className="text-caption text-[#6B7280] mt-1">Minimum 6 characters required.</p>
+              <p className="text-caption text-[#6B7280] mt-1">
+                Use 8 to 72 characters; Unicode characters may use multiple bytes.
+              </p>
             </div>
 
-            {/* Admin Full Name */}
+            {/* Full Name */}
             <div>
-              <Label htmlFor="full_name">Admin Full Name *</Label>
+              <Label htmlFor="full_name">Full Name *</Label>
               <Input
                 id="full_name"
+                maxLength={255}
                 placeholder="Jane Smith"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 required
               />
-            </div>
-
-            {/* Organization Name */}
-            <div>
-              <Label htmlFor="organization_name">Organization Name *</Label>
-              <Input
-                id="organization_name"
-                placeholder="Acme Corporation"
-                value={organizationName}
-                onChange={(e) => setOrganizationName(e.target.value)}
-                required
-              />
-            </div>
-
-            {/* Custom Domain */}
-            <div>
-              <Label htmlFor="domain">Custom Domain</Label>
-              <Input
-                id="domain"
-                placeholder="acme.crm.com"
-                value={domain}
-                onChange={(e) => setDomain(e.target.value)}
-                className="font-mono text-caption"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Industry */}
-              <div>
-                <Label htmlFor="industry">Industry Sector</Label>
-                <Input
-                  id="industry"
-                  placeholder="Technology"
-                  value={industry}
-                  onChange={(e) => setIndustry(e.target.value)}
-                />
-              </div>
-
-              {/* Phone */}
-              <div>
-                <Label htmlFor="phone">Phone Number</Label>
-                <Input
-                  id="phone"
-                  placeholder="+91 9876543210"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                />
-              </div>
-
-              {/* Country */}
-              <div>
-                <Label htmlFor="country">Country</Label>
-                <Input
-                  id="country"
-                  placeholder="India"
-                  value={country}
-                  onChange={(e) => setCountry(e.target.value)}
-                />
-              </div>
-
-              {/* City */}
-              <div>
-                <Label htmlFor="city">City</Label>
-                <Input
-                  id="city"
-                  placeholder="Chennai"
-                  value={city}
-                  onChange={(e) => setCity(e.target.value)}
-                />
-              </div>
             </div>
 
             <div className="pt-4 border-t border-[#E5E7EB]">
@@ -368,12 +267,12 @@ export default function AcceptInvitationPage() {
                 {acceptMutation.isPending ? (
                   <span className="flex items-center gap-2">
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Activating Account & Creating Organization...</span>
+                    <span>Activating Account...</span>
                   </span>
                 ) : (
                   <span className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4" />
-                    <span>Accept Invitation & Create Organization</span>
+                    <span>Accept Invitation</span>
                   </span>
                 )}
               </Button>

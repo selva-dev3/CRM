@@ -19,6 +19,7 @@ from app.repositories.report_repository import (
     ReportRepository,
 )
 from app.schemas.report_schemas import ReportTypeEnum
+from app.services.organization_storage_service import lock_organization_storage
 from app.services.s3_service import s3_service
 
 logger = get_logger(__name__)
@@ -921,6 +922,7 @@ class ReportService:
             lines=summary_lines,
         )
 
+        await lock_organization_storage(db, target_org)
         object_name = _build_export_object_key(target_org, "pdf")
         try:
             file_obj = io.BytesIO(pdf_bytes)
@@ -1095,6 +1097,7 @@ class ReportService:
         csv_content = self._rows_to_csv(
             report_type_value, payload.get("metrics", {}).get("table_rows") or []
         ).encode("utf-8")
+        await lock_organization_storage(db, target_org)
         object_name = _build_export_object_key(target_org, "csv")
         try:
             file_obj = io.BytesIO(csv_content)

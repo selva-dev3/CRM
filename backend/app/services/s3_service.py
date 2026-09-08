@@ -1,3 +1,4 @@
+from collections.abc import Set
 from datetime import timedelta
 from io import SEEK_END, SEEK_SET
 from typing import BinaryIO
@@ -5,6 +6,7 @@ from urllib.parse import urlparse
 
 from minio import Minio
 from minio.error import MinioException, S3Error
+from urllib3 import PoolManager, Timeout
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -41,6 +43,7 @@ class S3Service:
             secret_key=self.secret_key,
             secure=parsed_endpoint.scheme == "https",
             region=self.region,
+            http_client=PoolManager(timeout=Timeout(connect=5, read=30), retries=2),
         )
         self.s3_client = _MinioClientCompatibilityAdapter(self.minio_client)
 
@@ -120,6 +123,22 @@ class S3Service:
             return True
         except S3Error as exc:
             raise RuntimeError(f"Failed to delete object {object_name}: {exc}") from exc
+
+    def list_file_keys(
+        self,
+        prefix: str,
+        limit: int = 10000,
+        known_keys: Set[str] | None = None,
+    ) -> list[str]:
+        """Return new keys under a prefix, bounded after known-key deduplication."""
+        known = known_keys or set()
+        keys = []
+        for item in self.minio_client.list_objects(self.bucket_name, prefix=prefix, recursive=True):
+            if item.object_name and item.object_name not in known:
+                keys.append(item.object_name)
+            if len(keys) > limit:
+                raise ValueError("Storage inventory exceeds the online deletion limit")
+        return keys
 
 
 s3_service = S3Service()
