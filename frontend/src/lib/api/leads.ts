@@ -1,6 +1,13 @@
 ﻿import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
 import type { CustomFieldValue } from '@/lib/api/custom-fields';
+import {
+  deleteCallApi,
+  updateCallApi,
+  type CallLogBasePayload,
+  type CallLogItem,
+  type CallLogUpdatePayload,
+} from '@/lib/api/calls';
 
 export interface Lead {
   id: string;
@@ -131,14 +138,7 @@ export interface LeadEmailItem {
   failure_reason?: string | null;
 }
 
-export interface LeadCallLogItem {
-  id: string;
-  contact_id: string;
-  call_type: string;
-  duration_seconds: number;
-  notes?: string;
-  timestamp: string;
-}
+export type LeadCallLogItem = CallLogItem;
 
 export interface LeadDocumentItem {
   id: string;
@@ -238,8 +238,27 @@ export async function fetchLeadCallsApi(leadId: string): Promise<LeadCallLogItem
   return apiClient.get<LeadCallLogItem[]>(`/leads/${leadId}/calls`);
 }
 
-export async function logLeadCallApi(leadId: string, payload: { call_type: string; duration_seconds: number; notes?: string }): Promise<LeadCallLogItem> {
-  return apiClient.post<LeadCallLogItem>(`/leads/${leadId}/calls`, payload);
+export async function logLeadCallApi(
+  leadId: string,
+  payload: CallLogBasePayload,
+  idempotencyKey?: string,
+): Promise<LeadCallLogItem> {
+  return apiClient.post<LeadCallLogItem>(`/leads/${leadId}/calls`, payload, {
+    headers: { 'Idempotency-Key': idempotencyKey ?? crypto.randomUUID() },
+  });
+}
+
+export async function updateLeadCallApi(
+  callId: string,
+  payload: CallLogUpdatePayload,
+): Promise<LeadCallLogItem> {
+  return updateCallApi(callId, payload);
+}
+
+export async function deleteLeadCallApi(
+  callId: string,
+): Promise<{ message: string; status: string }> {
+  return deleteCallApi(callId);
 }
 
 export async function fetchLeadDocumentsApi(leadId: string): Promise<LeadDocumentItem[]> {
@@ -363,11 +382,11 @@ export function useLeadEmailsQuery(leadId: string) {
   });
 }
 
-export function useLeadCallsQuery(leadId: string) {
+export function useLeadCallsQuery(leadId: string, enabled = true) {
   return useQuery({
     queryKey: ['lead-calls', leadId],
     queryFn: () => fetchLeadCallsApi(leadId),
-    enabled: !!leadId,
+    enabled: !!leadId && enabled,
   });
 }
 

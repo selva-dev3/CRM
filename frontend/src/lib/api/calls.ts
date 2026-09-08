@@ -7,21 +7,41 @@ export interface CallLogItem {
   lead_id?: string;
   company_id?: string;
   deal_id?: string;
-  call_type?: string;
+  call_type?: CallType;
+  disposition?: CallDisposition | null;
   duration_seconds?: number;
-  notes?: string;
+  subject?: string | null;
+  notes?: string | null;
+  follow_up_required?: boolean;
+  follow_up_at?: string | null;
+  next_action?: string | null;
+  created_by?: string | null;
+  created_by_name?: string | null;
   timestamp?: string;
+  created_at?: string;
+  updated_at?: string;
 }
+
+export type CallType = 'Outbound' | 'Inbound';
+export type CallDisposition = 'Completed' | 'No Answer' | 'Busy' | 'Failed' | 'Other';
 
 export interface CallLogBasePayload {
   contact_id?: string;
   lead_id?: string;
   company_id?: string;
   deal_id?: string;
-  call_type?: string;
+  call_type?: CallType;
+  disposition?: CallDisposition;
+  timestamp?: string;
   duration_seconds?: number;
+  subject?: string;
   notes?: string;
+  follow_up_required?: boolean;
+  follow_up_at?: string | null;
+  next_action?: string;
 }
+
+export type CallLogUpdatePayload = Omit<CallLogBasePayload, 'lead_id'>;
 
 export interface OutboundCallResponse {
   call_sid: string;
@@ -93,8 +113,13 @@ export async function fetchCallsApi(params?: FetchCallsParams): Promise<CallLogI
   return apiClient.get<CallLogItem[]>(endpoint);
 }
 
-export async function logCallApi(payload: CallLogBasePayload): Promise<CallLogItem> {
-  return apiClient.post<CallLogItem>('/calls', payload);
+export async function logCallApi(
+  payload: CallLogBasePayload,
+  idempotencyKey?: string,
+): Promise<CallLogItem> {
+  return apiClient.post<CallLogItem>('/calls', payload, {
+    headers: { 'Idempotency-Key': idempotencyKey ?? crypto.randomUUID() },
+  });
 }
 
 export async function triggerOutboundCallApi(phone_number: string, contact_id: string): Promise<OutboundCallResponse> {
@@ -127,6 +152,13 @@ export async function fetchCallApi(callId: string): Promise<CallLogItem> {
 
 export async function deleteCallApi(callId: string): Promise<MessageResponse> {
   return apiClient.delete<MessageResponse>(`/calls/${callId}`);
+}
+
+export async function updateCallApi(
+  callId: string,
+  payload: CallLogUpdatePayload,
+): Promise<CallLogItem> {
+  return apiClient.put<CallLogItem>(`/calls/${callId}`, payload);
 }
 
 export async function fetchCallRecordingApi(callId: string): Promise<RecordingResponse> {
@@ -198,7 +230,7 @@ export function useCallSentimentQuery(callId: string, options?: Omit<UseQueryOpt
 export function useLogCallMutation(options?: UseMutationOptions<CallLogItem, Error, CallLogBasePayload>) {
   const queryClient = useQueryClient();
   return useMutation<CallLogItem, Error, CallLogBasePayload>({
-    mutationFn: logCallApi,
+    mutationFn: (payload) => logCallApi(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['calls'] });
     },

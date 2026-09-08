@@ -11,6 +11,7 @@ const qualifyLeadApiMock = vi.fn();
 const sendLeadEmailApiMock = vi.fn();
 const useLeadTimelineQueryMock = vi.fn();
 const useLeadEmailsQueryMock = vi.fn();
+const useLeadCallsQueryMock = vi.fn();
 const refetchLeadMock = vi.fn();
 const refetchUsersMock = vi.fn();
 const customFieldsQueryMock = vi.fn();
@@ -70,7 +71,7 @@ vi.mock('@/lib/api/leads', () => ({
   useLeadNotesQuery: () => emptyQuery,
   useLeadTasksQuery: () => emptyQuery,
   useLeadEmailsQuery: () => useLeadEmailsQueryMock(),
-  useLeadCallsQuery: () => emptyQuery,
+  useLeadCallsQuery: (...args: unknown[]) => useLeadCallsQueryMock(...args),
   useLeadDocumentsQuery: () => emptyQuery,
   addLeadNoteApi: vi.fn(),
   createLeadTaskApi: vi.fn(),
@@ -152,6 +153,7 @@ beforeEach(() => {
   });
   useLeadTimelineQueryMock.mockReturnValue(emptyQuery);
   useLeadEmailsQueryMock.mockReturnValue(emptyQuery);
+  useLeadCallsQueryMock.mockReturnValue(emptyQuery);
   useLeadQueryMock.mockReturnValue({
     data: lead,
     isLoading: false,
@@ -172,6 +174,20 @@ beforeEach(() => {
     ],
     isLoading: false,
     isError: false,
+  });
+});
+
+describe('LeadDetailPage call permissions', () => {
+  it('hides the Calls tab and disables its query without calls:read', () => {
+    window.localStorage.setItem(
+      'user',
+      JSON.stringify({ permissions: ['leads:read'] }),
+    );
+
+    render(<LeadDetailPage />);
+
+    expect(screen.queryByRole('tab', { name: /Calls/ })).not.toBeInTheDocument();
+    expect(useLeadCallsQueryMock).toHaveBeenCalledWith('lead-1', false);
   });
 });
 

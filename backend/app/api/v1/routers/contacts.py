@@ -257,7 +257,7 @@ async def get_contact_activities(
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     return await contact_service.list_contact_activities(
-        db, contact_id, organization_id=organization_id
+        db, contact_id, organization_id=organization_id, current_user=current_user
     )
 
 
@@ -367,7 +367,7 @@ async def get_contact_emails(
     "/{contact_id}/calls",
     response_model=list[CallLogResponse],
     summary="List call logs for contact",
-    dependencies=[Depends(require_permission("contacts:read"))],
+    dependencies=[Depends(require_permission("calls:read"))],
 )
 async def get_contact_calls(
     contact_id: str,

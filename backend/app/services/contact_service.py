@@ -18,6 +18,7 @@ from app.schemas.crm_schemas import (
     ContactUpdate,
     CustomFieldDefinition,
 )
+from app.services.auth_service import api_key_scope_allows, auth_service
 from app.services.custom_field_service import CustomFieldService, custom_field_service
 from app.services.notification_service import notification_service
 from app.services.org_service import organization_service
@@ -159,7 +160,12 @@ class ContactService:
         return ContactAddressResponse.model_validate(address, from_attributes=True)
 
     async def list_contact_activities(
-        self, db: AsyncSession, contact_id: str, *, organization_id: str
+        self,
+        db: AsyncSession,
+        contact_id: str,
+        *,
+        organization_id: str,
+        current_user: User,
     ) -> list[ContactActivityResponse]:
         contact = await self.require_contact(db, contact_id, organization_id=organization_id)
         notes = await self.note_repository.list_by_entity(
@@ -168,8 +174,16 @@ class ContactService:
             entity_id=contact.id,
             organization_id=organization_id,
         )
-        calls = await self.call_repository.list_by_contact(
-            db, contact_id=contact.id, organization_id=organization_id
+        permissions = await auth_service.get_user_permissions(db, current_user)
+        can_read_calls = "calls:read" in permissions and api_key_scope_allows(
+            current_user, "calls:read"
+        )
+        calls = (
+            await self.call_repository.list_by_contact(
+                db, contact_id=contact.id, organization_id=organization_id
+            )
+            if can_read_calls
+            else []
         )
         deal_activities = await self.deal_repository.list_activities_by_contact(
             db, contact_id=contact.id, organization_id=organization_id

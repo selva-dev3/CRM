@@ -138,7 +138,7 @@ async def test_update_billing_address_creates_missing_address():
 
 
 @pytest.mark.asyncio
-async def test_list_contact_activities_combines_existing_related_records():
+async def test_list_contact_activities_combines_existing_related_records(monkeypatch):
     repo: Any = ContactRepository()
     repo.get_by_id_scoped = AsyncMock(return_value=_make_contact())
     service = _service_with(repo)
@@ -150,14 +150,63 @@ async def test_list_contact_activities_combines_existing_related_records():
         return_value=[SimpleNamespace(id="deal-activity-1", action="Deal won", timestamp="2026-01-01")]
     )
     db = AsyncMock(spec=AsyncSession)
+    monkeypatch.setattr(
+        "app.services.auth_service.auth_service.get_user_permissions",
+        AsyncMock(return_value=["calls:read"]),
+    )
+    actor = _make_user()
+    actor.__dict__["_api_key_scopes"] = {"calls:read"}
 
-    result = await service.list_contact_activities(db, "cnt-1", organization_id="org-1")
+    result = await service.list_contact_activities(
+        db,
+        "cnt-1",
+        organization_id="org-1",
+        current_user=actor,
+    )
 
     assert [item.type for item in result] == ["Note", "Deal Activity"]
     assert result[0].description == "Followed up"
     service.note_repository.list_by_entity.assert_awaited_once_with(
         db, entity_type="contact", entity_id="cnt-1", organization_id="org-1"
     )
+    service.call_repository.list_by_contact.assert_awaited_once_with(
+        db, contact_id="cnt-1", organization_id="org-1"
+    )
+
+
+@pytest.mark.asyncio
+async def test_list_contact_activities_omits_calls_without_effective_permission(monkeypatch):
+    repo: Any = ContactRepository()
+    repo.get_by_id_scoped = AsyncMock(return_value=_make_contact())
+    service = _service_with(repo)
+    service.note_repository.list_by_entity = AsyncMock(return_value=[])
+    service.call_repository.list_by_contact = AsyncMock(
+        return_value=[
+            SimpleNamespace(
+                id="call-1",
+                call_type="Outbound",
+                notes="Sensitive call notes",
+                timestamp="2026-01-02",
+            )
+        ]
+    )
+    service.deal_repository.list_activities_by_contact = AsyncMock(return_value=[])
+    monkeypatch.setattr(
+        "app.services.auth_service.auth_service.get_user_permissions",
+        AsyncMock(return_value=["contacts:read", "calls:read"]),
+    )
+    actor = _make_user()
+    actor.__dict__["_api_key_scopes"] = {"contacts:read"}
+
+    result = await service.list_contact_activities(
+        AsyncMock(spec=AsyncSession),
+        "cnt-1",
+        organization_id="org-1",
+        current_user=actor,
+    )
+
+    assert result == []
+    service.call_repository.list_by_contact.assert_not_awaited()
 
 
 @pytest.mark.asyncio

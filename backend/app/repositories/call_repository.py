@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import builtins
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import CallLog
@@ -27,7 +27,8 @@ class CallRepository:
     ) -> builtins.list[CallLog]:
         stmt = select(CallLog).where(CallLog.organization_id == organization_id)
         if search and search.strip():
-            stmt = stmt.where(CallLog.notes.ilike(f"%{search.strip()}%"))
+            term = f"%{search.strip()}%"
+            stmt = stmt.where(or_(CallLog.subject.ilike(term), CallLog.notes.ilike(term)))
         if call_type and call_type.strip():
             stmt = stmt.where(CallLog.call_type == call_type.strip())
         for column, value in (
@@ -49,6 +50,23 @@ class CallRepository:
             select(CallLog).where(
                 CallLog.id == call_id,
                 CallLog.organization_id == organization_id,
+            )
+        )
+        return result.scalars().first()
+
+    async def get_by_idempotency_key(
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        created_by: str,
+        idempotency_key: str,
+    ) -> CallLog | None:
+        result = await db.execute(
+            select(CallLog).where(
+                CallLog.organization_id == organization_id,
+                CallLog.created_by == created_by,
+                CallLog.idempotency_key == idempotency_key,
             )
         )
         return result.scalars().first()
@@ -80,6 +98,11 @@ class CallRepository:
     async def create(self, db: AsyncSession, *, data: dict) -> CallLog:
         call = CallLog(**data)
         db.add(call)
+        return call
+
+    async def update(self, db: AsyncSession, call: CallLog, *, data: dict) -> CallLog:
+        for field, value in data.items():
+            setattr(call, field, value)
         return call
 
     async def delete(self, db: AsyncSession, call: CallLog) -> None:

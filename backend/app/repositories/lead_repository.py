@@ -363,34 +363,17 @@ class LeadRepository:
         self, db: AsyncSession, *, organization_id: str, lead_id: str, lead_tag: str
     ) -> list[CallLog]:
         result = await db.execute(
-            select(CallLog).where(
+            select(CallLog)
+            .where(
                 CallLog.organization_id == organization_id,
-                or_(CallLog.lead_id == lead_id, CallLog.notes.contains(lead_tag)),
+                or_(
+                    CallLog.lead_id == lead_id,
+                    and_(CallLog.lead_id.is_(None), CallLog.notes.contains(lead_tag)),
+                ),
             )
+            .order_by(CallLog.timestamp.desc())
         )
         return list(result.scalars().all())
-
-    async def create_call(
-        self,
-        db: AsyncSession,
-        *,
-        organization_id: str,
-        contact_id: str | None,
-        lead_id: str | None,
-        call_type: str,
-        duration_seconds: int,
-        notes: str | None,
-    ) -> CallLog:
-        call = CallLog(
-            organization_id=organization_id,
-            contact_id=contact_id,
-            lead_id=lead_id,
-            call_type=call_type,
-            duration_seconds=duration_seconds,
-            notes=notes,
-        )
-        db.add(call)
-        return call
 
     async def get_organization(self, db: AsyncSession, org_id: str) -> Organization | None:
         result = await db.execute(select(Organization).where(Organization.id == org_id))

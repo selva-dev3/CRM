@@ -28,6 +28,7 @@ from app.schemas.crm_schemas import (
     TaskResponse,
 )
 from app.services.ai_domain_service import ai_domain_service
+from app.services.call_service import call_service
 from app.services.lead_service import (
     LEAD_SOURCES,
     LEAD_STATUSES,
@@ -400,7 +401,12 @@ async def get_lead_timeline(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await lead_service.get_timeline(db, lead_id, organization_id=organization_id)
+    return await lead_service.get_timeline(
+        db,
+        lead_id,
+        organization_id=organization_id,
+        current_user=current_user,
+    )
 
 
 @router.get(
@@ -520,7 +526,7 @@ async def send_lead_email(
     "/{lead_id}/calls",
     response_model=list[CallLogResponse],
     summary="List call logs for lead",
-    dependencies=[Depends(require_permission("leads:read"))],
+    dependencies=[Depends(require_permission("calls:read"))],
 )
 async def get_lead_calls(
     lead_id: str,
@@ -535,16 +541,25 @@ async def get_lead_calls(
     "/{lead_id}/calls",
     response_model=CallLogResponse,
     summary="Log call with lead",
-    dependencies=[Depends(require_permission("leads:create"))],
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission("calls:create"))],
 )
 async def log_lead_call(
     lead_id: str,
     payload: CallLogBase,
+    idempotency_key: str | None = Header(
+        default=None, alias="Idempotency-Key", min_length=1, max_length=128
+    ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await lead_service.log_call(db, lead_id, payload, organization_id=organization_id)
+    lead_payload = payload.model_copy(update={"lead_id": lead_id})
+    return await call_service.log_call(
+        db,
+        lead_payload,
+        current_user,
+        idempotency_key=idempotency_key,
+    )
 
 
 @router.get(
