@@ -25,8 +25,8 @@ import {
 } from 'lucide-react';
 import {
   Button, Card, CardHeader, CardTitle, CardDescription, CardContent, Switch,
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui';
+import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { ModalShell } from '@/components/common/modal-shell';
 import { useHasPermission } from '@/hooks/use-has-permission';
 import { PERMISSIONS } from '@/lib/permissions';
@@ -42,7 +42,8 @@ import {
   useSaveCustomWidgetsMutation,
   DEFAULT_DASHBOARD_CURRENCY,
   DEFAULT_DASHBOARD_LOCALE,
-  type CustomWidget
+  type CustomWidget,
+  type RecentDealItem,
 } from '@/lib/api/dashboard';
 
 function DashboardSectionError({
@@ -108,6 +109,25 @@ export default function DashboardPage() {
   }, [kpis]);
 
   const formatCurrency = (value: number) => currencyFormatter.format(value);
+  const recentDealColumns = useMemo<readonly DataTableColumn<RecentDealItem>[]>(() => [
+    {
+      id: 'title',
+      header: 'Opportunity Title',
+      cell: (deal) => (
+        <div className="flex items-center gap-3 font-semibold text-slate-900">
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-indigo-100 bg-indigo-50 text-xs font-bold text-indigo-600">
+            {deal.title.charAt(0)}
+          </div>
+          <Link href={`/deals/${deal.deal_id}`} className="max-w-[200px] truncate rounded text-indigo-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600">
+            {deal.title}
+          </Link>
+        </div>
+      ),
+    },
+    { id: 'value', header: 'Value', cell: (deal) => <span className="font-bold text-emerald-700 tabular-nums">{currencyFormatter.format(deal.amount)}</span> },
+    { id: 'stage', header: 'Stage', cell: (deal) => <span className="inline-flex rounded-full border border-indigo-100 bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700">{deal.stage || 'In Pipeline'}</span> },
+    { id: 'owner', header: 'Sales Rep', cell: (deal) => <span className="text-xs font-medium text-slate-600">{deal.owner || 'Selva Admin'}</span> },
+  ], [currencyFormatter]);
 
   const saveWidgetsMutation = useSaveCustomWidgetsMutation();
 
@@ -559,9 +579,6 @@ export default function DashboardPage() {
             </Link>
           </CardHeader>
           <CardContent className="p-0">
-            {recentDealsQuery.isLoading && (
-              <div className="m-5 h-48 rounded-xl bg-slate-100 animate-pulse" aria-hidden="true" />
-            )}
             {recentDealsQuery.isError && (
               <DashboardSectionError
                 className="m-5"
@@ -569,54 +586,16 @@ export default function DashboardPage() {
                 onRetry={() => void recentDealsQuery.refetch()}
               />
             )}
-            {!recentDealsQuery.isLoading && !recentDealsQuery.isError && recentDeals.length === 0 && (
-              <p className="p-12 text-center text-sm text-slate-600">No opportunities are available yet.</p>
-            )}
-            {recentDeals.length > 0 && (
-            <div className="overflow-x-auto">
-              <Table className="w-full text-left text-sm">
-                <TableHeader>
-                  <TableRow className="border-b border-slate-100 bg-slate-50/70 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                    <TableHead className="py-3 px-3 sm:px-6">Opportunity Title</TableHead>
-                    <TableHead className="py-3 px-3 sm:px-6">Value</TableHead>
-                    <TableHead className="py-3 px-3 sm:px-6">Stage</TableHead>
-                    <TableHead className="py-3 px-3 sm:px-6">Sales Rep</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody className="divide-y divide-slate-100">
-                  {recentDeals.map((deal) => (
-                    <TableRow
-                      key={deal.deal_id}
-                      className="hover:bg-slate-50/80 transition duration-150"
-                    >
-                      <TableCell className="py-4 px-3 sm:px-6 font-semibold text-slate-900 flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center font-bold text-indigo-600 text-xs shrink-0">
-                          {deal.title.charAt(0)}
-                        </div>
-                        <Link
-                          href={`/deals/${deal.deal_id}`}
-                          className="truncate max-w-[200px] rounded text-indigo-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600"
-                        >
-                          {deal.title}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="py-4 px-3 sm:px-6 font-bold text-emerald-700 tabular-nums">
-                        {formatCurrency(deal.amount)}
-                      </TableCell>
-                      <TableCell className="py-4 px-3 sm:px-6">
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">
-                          {deal.stage || 'In Pipeline'}
-                        </span>
-                      </TableCell>
-                      <TableCell className="py-4 px-3 sm:px-6 text-slate-600 text-xs font-medium">
-                        {deal.owner || 'Selva Admin'}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-            )}
+            {!recentDealsQuery.isError && <DataTable
+              columns={recentDealColumns}
+              data={recentDeals}
+              getRowKey={(deal) => deal.deal_id}
+              emptyTitle="No opportunities available"
+              emptyDescription="No opportunities are available yet."
+              isLoading={recentDealsQuery.isLoading}
+              tableClassName="min-w-[640px]"
+              transparent
+            />}
           </CardContent>
         </Card>
         )}

@@ -50,11 +50,15 @@ export interface DataTableColumn<TItem> {
 // Row actions
 // ---------------------------------------------------------------------------
 export interface TableActionOption<TItem> {
+  readonly id?: string;
   readonly label: string;
   readonly onClick: (item: TItem) => void;
   readonly variant?: 'default' | 'destructive';
   readonly icon?: ReactNode;
   readonly permission?: PermissionKey;
+  readonly disabled?: boolean;
+  readonly isLoading?: boolean;
+  readonly ariaLabel?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -96,6 +100,7 @@ interface DataTableProps<TItem> {
   readonly emptyDescription: string;
   readonly onRowClick?: (item: TItem) => void;
   readonly className?: string;
+  readonly tableClassName?: string;
 
   // Checkbox selection
   readonly showCheckbox?: boolean;
@@ -115,6 +120,7 @@ interface DataTableProps<TItem> {
   // Row actions
   readonly actionVariant?: 'menu' | 'inline';
   readonly actions?: readonly TableActionOption<TItem>[] | ((item: TItem) => readonly TableActionOption<TItem>[]);
+  readonly actionColumnClassName?: string;
 
   // Scroll
   readonly maxHeight?: string;
@@ -145,6 +151,7 @@ interface DataTableProps<TItem> {
   // Loading
   readonly isLoading?: boolean;
   readonly loadingRowCount?: number;
+  readonly loadingLabel?: string;
 
   // Expandable rows
   readonly expandableRow?: (item: TItem) => ReactNode;
@@ -173,6 +180,7 @@ export function DataTable<TItem>({
   emptyDescription,
   onRowClick,
   className,
+  tableClassName,
   // Checkbox
   showCheckbox = false,
   selectedIds,
@@ -188,6 +196,7 @@ export function DataTable<TItem>({
   // Row actions
   actionVariant = 'menu',
   actions,
+  actionColumnClassName,
   // Scroll
   maxHeight,
   // Toolbar
@@ -206,6 +215,7 @@ export function DataTable<TItem>({
   // Loading
   isLoading = false,
   loadingRowCount = 5,
+  loadingLabel = 'Loading data',
   // Expandable rows
   expandableRow,
   // Styling
@@ -213,15 +223,29 @@ export function DataTable<TItem>({
   padding = true,
 }: DataTableProps<TItem>): React.JSX.Element {
   // --- Controlled vs uncontrolled pagination ---
-  const [internalPageIndex, setInternalPageIndex] = useState(0);
   const [internalPageSize] = useState<number>(
     pagination && !isControlledPagination(pagination) ? pagination.pageSize ?? 15 : 15,
   );
 
-  const pageIndex = isControlledPagination(pagination) ? pagination.pageIndex : internalPageIndex;
+  const controlledPagination = isControlledPagination(pagination);
   const pageCount = isControlledPagination(pagination)
     ? pagination.pageCount
     : Math.max(1, Math.ceil(data.length / internalPageSize));
+  const [internalPagination, setInternalPagination] = useState(() => ({
+    pageIndex: pagination && !isControlledPagination(pagination) ? pagination.defaultPage ?? 0 : 0,
+    pageCount,
+  }));
+
+  if (!controlledPagination && internalPagination.pageCount !== pageCount) {
+    setInternalPagination({
+      pageIndex: Math.min(internalPagination.pageIndex, pageCount - 1),
+      pageCount,
+    });
+  }
+
+  const pageIndex = controlledPagination
+    ? pagination.pageIndex
+    : Math.min(internalPagination.pageIndex, pageCount - 1);
   const totalRecords = isControlledPagination(pagination)
     ? pagination.totalRecords
     : data.length;
@@ -231,7 +255,7 @@ export function DataTable<TItem>({
       if (isControlledPagination(pagination)) {
         pagination.onPageChange(page);
       } else {
-        setInternalPageIndex(page);
+        setInternalPagination((current) => ({ ...current, pageIndex: page }));
       }
     },
     [pagination],
@@ -303,7 +327,11 @@ export function DataTable<TItem>({
   // --- Loading state ---
   if (isLoading) {
     return (
-      <div className={cn(!transparent && 'rounded-xl border border-slate-200 bg-white shadow-xs', className)}>
+      <div
+        aria-busy="true"
+        className={cn(!transparent && 'rounded-xl border border-slate-200 bg-white shadow-xs', className)}
+      >
+        <span className="sr-only" role="status" aria-live="polite">{loadingLabel}</span>
         {hasToolbar && (
           <DataTableToolbar
             searchValue={searchValue}
@@ -323,7 +351,7 @@ export function DataTable<TItem>({
           />
         )}
         <div className={cn(padding && 'p-2 overflow-x-auto')}>
-          <Table>
+          <Table className={tableClassName}>
             <TableHeader>
               <TableRow>
                 {showCheckbox && <TableHead className="w-10 px-4" />}
@@ -333,10 +361,14 @@ export function DataTable<TItem>({
                   </TableHead>
                 ))}
                 {expandableRow && <TableHead className="w-10 px-4" />}
-                {actions && <TableHead className="w-[80px] px-4" />}
+                {actions && (
+                  <TableHead className={cn('w-[80px] px-4', actionColumnClassName)}>
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
+                )}
               </TableRow>
             </TableHeader>
-            <TableBody>
+            <TableBody aria-hidden="true">
               {Array.from({ length: loadingRowCount }).map((_, idx) => (
                 <TableRow key={idx}>
                   {showCheckbox && (
@@ -351,7 +383,7 @@ export function DataTable<TItem>({
                   ))}
                   {expandableRow && <TableCell className="w-10 px-4" />}
                   {actions && (
-                    <TableCell className="w-[80px] px-4 text-center">
+                    <TableCell className={cn('w-[80px] px-4 text-center', actionColumnClassName)}>
                       <Skeleton className="h-8 w-8 mx-auto rounded-md" />
                     </TableCell>
                   )}
@@ -422,7 +454,7 @@ export function DataTable<TItem>({
         )}
         style={maxHeight ? { maxHeight } : undefined}
       >
-        <Table className="w-full min-w-[720px]">
+        <Table className={cn('w-full min-w-[720px]', tableClassName)}>
           <TableHeader className="sticky top-0 z-10 bg-[#F9FAFB] border-b border-[#E5E7EB]">
             <TableRow className="border-b border-[#E5E7EB] hover:bg-transparent">
               {showCheckbox && (
@@ -447,8 +479,8 @@ export function DataTable<TItem>({
                 </TableHead>
               ))}
               {actions && (
-                <TableHead className={cn('px-4 text-table font-semibold py-3', actionVariant === 'inline' ? 'w-[100px] text-right' : 'w-[80px] text-center')}>
-                  {actionVariant === 'menu' ? 'Actions' : ''}
+                <TableHead className={cn('px-4 text-table font-semibold py-3', actionVariant === 'inline' ? 'w-[100px] text-right' : 'w-[80px] text-center', actionColumnClassName)}>
+                  <span className={actionVariant === 'inline' ? 'sr-only' : undefined}>Actions</span>
                 </TableHead>
               )}
             </TableRow>
@@ -550,7 +582,7 @@ export function DataTable<TItem>({
                       if (!resolvedActions || resolvedActions.length === 0) return null;
                       return (
                         <TableCell
-                          className={cn('px-4', actionVariant === 'inline' ? 'w-[100px] text-right' : 'w-[80px] text-center')}
+                          className={cn('px-4', actionVariant === 'inline' ? 'w-[100px] text-right' : 'w-[80px] text-center', actionColumnClassName)}
                           onClick={(event) => event.stopPropagation()}
                           onKeyDown={(event) => event.stopPropagation()}
                         >
@@ -566,16 +598,20 @@ export function DataTable<TItem>({
                                 icon: action.icon,
                                 permission: action.permission,
                                 variant: action.variant,
+                                disabled: action.disabled || action.isLoading,
                                 onSelect: () => action.onClick(item),
                               }))}
                             />
                           ) : (
                             <div className="flex justify-end gap-1">
-                              {resolvedActions.map((action) => (
-                                <PermissionGate key={action.label} permission={action.permission}>
+                              {resolvedActions.map((action) => {
+                                const button = (
                                   <Button
                                     size="sm"
                                     variant="ghost"
+                                    disabled={action.disabled || action.isLoading}
+                                    aria-busy={action.isLoading || undefined}
+                                    aria-label={action.ariaLabel}
                                     onClick={(e: React.MouseEvent) => {
                                       e.stopPropagation();
                                       action.onClick(item);
@@ -590,8 +626,14 @@ export function DataTable<TItem>({
                                     {action.icon ? action.icon : <Pencil className="h-3.5 w-3.5 mr-1" />}
                                     {action.label}
                                   </Button>
-                                </PermissionGate>
-                              ))}
+                                );
+                                const actionKey = action.id ?? action.ariaLabel ?? action.label;
+                                return action.permission ? (
+                                  <PermissionGate key={actionKey} permission={action.permission}>
+                                    {button}
+                                  </PermissionGate>
+                                ) : <Fragment key={actionKey}>{button}</Fragment>;
+                              })}
                             </div>
                           )}
                         </TableCell>

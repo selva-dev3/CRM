@@ -2,14 +2,21 @@
 
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { ExternalLink, Loader2, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { apiClient } from '@/lib/api/client';
 import { usePlatformOrganizationsQuery, useDeleteOrganizationMutation, useOrganizationDeletionQuery, useRetryOrganizationCleanupMutation, type OrganizationItem } from '@/lib/api/organizations';
 import { getLastOrganizationDeletion, setOrganizationContext } from '@/lib/organization-context';
 import { useAuth } from '@/providers/auth-provider';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { CreateOrganizationDialog } from './create-organization-dialog';
+
+const organizationColumns: readonly DataTableColumn<OrganizationItem>[] = [
+  { id: 'organization', header: 'Organization', cell: (organization) => organization.name },
+  { id: 'status', header: 'Status', cell: (organization) => organization.status },
+  { id: 'members', header: 'Members', cell: (organization) => organization.members_count ?? 0 },
+];
 
 export function PlatformOrganizations() {
   const { user } = useAuth();
@@ -82,27 +89,37 @@ export function PlatformOrganizations() {
           <p>Unable to load organizations.</p>
           <Button variant="outline" onClick={() => void refetch()}>Try again</Button>
         </div>
-      ) : organizations.length === 0 ? <p>No organizations found.</p> : (
-        <Table>
-          <TableHeader><TableRow><TableHead>Organization</TableHead><TableHead>Status</TableHead><TableHead>Members</TableHead><TableHead>Action</TableHead></TableRow></TableHeader>
-          <TableBody>
-            {organizations.map((organization) => (
-              <TableRow key={organization.id}>
-                <TableCell className="font-medium">{organization.name}</TableCell>
-                <TableCell>{organization.status}</TableCell>
-                <TableCell>{organization.members_count ?? 0}</TableCell>
-                <TableCell><div className="flex flex-wrap gap-2"><Button
-                  variant="outline"
-                  disabled={busy || organization.status !== 'active'}
-                  aria-label={`Open ${organization.name}`}
-                  onClick={() => void openOrganization(organization)}
-                >{opening === organization.id ? 'Opening…' : 'Open organization'}</Button>
-                {user?.is_platform_admin && <Button variant="outline" disabled={busy} aria-label={`Delete ${organization.name}`} onClick={() => { setError(null); setDeleting(organization); }}>Delete</Button>}
-                </div></TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+      ) : (
+        <DataTable
+          columns={organizationColumns}
+          data={organizations}
+          getRowKey={(organization) => organization.id}
+          emptyTitle="No organizations found."
+          emptyDescription="Create an organization to begin managing a tenant."
+          tableClassName="min-w-[640px]"
+          actionVariant="inline"
+          actionColumnClassName="w-[260px]"
+          actions={(organization) => [
+            {
+              id: 'open',
+              label: opening === organization.id ? 'Opening…' : 'Open organization',
+              ariaLabel: `Open ${organization.name}`,
+              icon: opening === organization.id ? <Loader2 className="size-3.5 animate-spin" /> : <ExternalLink className="size-3.5" />,
+              disabled: busy || organization.status !== 'active',
+              isLoading: opening === organization.id,
+              onClick: () => void openOrganization(organization),
+            },
+            ...(user?.is_platform_admin ? [{
+              id: 'delete',
+              label: 'Delete',
+              ariaLabel: `Delete ${organization.name}`,
+              icon: <Trash2 className="size-3.5" />,
+              variant: 'destructive' as const,
+              disabled: busy,
+              onClick: () => { setError(null); setDeleting(organization); },
+            }] : []),
+          ]}
+        />
       )}
       <div className="flex items-center gap-3">
         <Button variant="outline" disabled={page === 1 || opening !== null || isPending} onClick={() => setPage(page - 1)}>Previous</Button>

@@ -45,7 +45,6 @@ import {
   History,
 } from 'lucide-react';
 import { Button, Card, Label, Input, Alert, AlertDescription } from '@/components/ui';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ModalShell } from '@/components/common/modal-shell';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { EmailBodyPreview } from '@/components/common/email-body-preview';
@@ -85,6 +84,9 @@ import {
   archiveLeadApi,
   unarchiveLeadApi,
   type LeadEmailItem,
+  type LeadNoteItem,
+  type LeadTaskItem,
+  type LeadDocumentItem,
   type LeadIntelligenceResult,
 } from '@/lib/api/leads';
 import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
@@ -112,6 +114,13 @@ function createIdempotencyKey(): string {
     return crypto.randomUUID();
   }
   return `lead-email-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function formatFileSize(bytes: number): string {
+  if (!bytes) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const unitIndex = Math.floor(Math.log(bytes) / Math.log(1024));
+  return `${parseFloat((bytes / Math.pow(1024, unitIndex)).toFixed(1))} ${units[unitIndex]}`;
 }
 
 export default function LeadDetailPage() {
@@ -272,6 +281,70 @@ export default function LeadDetailPage() {
         : 'N/A',
     },
   ], [leadTimeZone]);
+  const noteColumns = useMemo<readonly DataTableColumn<LeadNoteItem>[]>(() => [
+    { id: 'content', header: 'Note Content', cell: (note) => <span className="font-bold text-slate-900">{note.content}</span>, className: 'max-w-md whitespace-normal' },
+    { id: 'author', header: 'Author / Created By', cell: (note) => <span className="font-bold text-indigo-600">{note.created_by || 'System User'}</span> },
+    { id: 'created', header: 'Created Date', cell: (note) => <span className="font-bold text-slate-600">{formatDateTime(note.created_at, { timeZone: leadTimeZone })}</span> },
+  ], [leadTimeZone]);
+  const taskColumns = useMemo<readonly DataTableColumn<LeadTaskItem>[]>(() => [
+    {
+      id: 'task',
+      header: 'Task Title & Description',
+      cell: (task) => (
+        <div className="space-y-0.5">
+          <div className="font-black text-slate-900">{task.title}</div>
+          {task.description && <div className="text-[11px] font-bold text-slate-500">{task.description}</div>}
+        </div>
+      ),
+    },
+    {
+      id: 'priority',
+      header: 'Priority',
+      cell: (task) => (
+        <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${task.priority === 'High' ? 'border border-rose-200 bg-rose-50 text-rose-700' : task.priority === 'Medium' ? 'border border-amber-200 bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-700'}`}>
+          {task.priority || 'Medium'}
+        </span>
+      ),
+    },
+    {
+      id: 'status',
+      header: 'Status',
+      cell: (task) => <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-black text-indigo-700">{task.status || 'Pending'}</span>,
+    },
+    { id: 'due', header: 'Due Date', cell: (task) => <span className="font-bold text-slate-600">{formatDate(task.due_date)}</span> },
+  ], []);
+  const documentColumns = useMemo<readonly DataTableColumn<LeadDocumentItem>[]>(() => [
+    {
+      id: 'filename',
+      header: 'Filename',
+      cell: (document) => (
+        <div className="flex items-center gap-2 font-black text-slate-900">
+          <Paperclip className="size-3.5 shrink-0 text-indigo-600" />
+          <span className="max-w-[200px] truncate">{document.filename}</span>
+        </div>
+      ),
+    },
+    { id: 'size', header: 'File Size', cell: (document) => <span className="font-bold text-slate-700">{formatFileSize(document.file_size)}</span> },
+    { id: 'type', header: 'MIME Type', cell: (document) => <span className="font-bold text-slate-600">{document.mime_type || 'application/pdf'}</span> },
+    { id: 'uploaded', header: 'Uploaded Date', cell: (document) => <span className="font-bold text-slate-600">{formatDateTime(document.uploaded_at, { timeZone: leadTimeZone })}</span> },
+    {
+      id: 'download',
+      header: 'Action',
+      className: 'text-right',
+      cell: (document) => document.download_url ? (
+        <a
+          href={document.download_url.startsWith('http') && !document.download_url.includes('.internal')
+            ? document.download_url
+            : `${BASE_URL.replace(/\/$/, '')}/leads/${leadId}/documents/${document.id}/download`}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center text-xs font-black text-indigo-600 hover:text-indigo-800 hover:underline"
+        >
+          <Download className="mr-1 size-3" /> Download
+        </a>
+      ) : '—',
+    },
+  ], [leadId, leadTimeZone]);
   const savedAssignedUser = lead?.assigned_to
     ? users.find(
         (user) => user.id === lead.assigned_to || user.email === lead.assigned_to || user.name === lead.assigned_to,
@@ -300,14 +373,6 @@ export default function LeadDetailPage() {
     }
     return lead.assigned_to;
   }, [lead, users]);
-
-  const formatFileSize = (bytes: number) => {
-    if (!bytes || bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-  };
 
   const handleOpenEditModal = () => {
     if (!lead) return;
@@ -1083,38 +1148,17 @@ export default function LeadDetailPage() {
             </Button>
           </div>
 
-          {isNotesLoading ? (
-            <div className="p-8 text-center text-slate-500 text-xs font-bold flex items-center justify-center gap-2">
-              <Loader2 className="w-4 h-4 animate-spin text-indigo-600" /> Loading notes...
-            </div>
-          ) : notes.length === 0 ? (
-            <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl space-y-2">
-              <FileText className="w-8 h-8 text-slate-300 mx-auto" />
-              <p className="text-xs font-bold text-slate-600">No notes attached yet.</p>
-              <p className="text-[11px] text-slate-400">Use Add Note above to attach a note.</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto rounded-xl border border-slate-200">
-              <Table className="w-full min-w-[560px] text-left border-collapse text-xs">
-                <TableHeader>
-                  <TableRow className="bg-slate-50 border-b border-slate-200 text-[11px] font-black uppercase text-slate-700 tracking-wider">
-                    <TableHead className="py-3 px-4">Note Content</TableHead>
-                    <TableHead className="py-3 px-4">Author / Created By</TableHead>
-                    <TableHead className="py-3 px-4">Created Date</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody className="divide-y divide-slate-100">
-                  {notes.map((n) => (
-                    <TableRow key={n.id} className="hover:bg-slate-50 transition">
-                      <TableCell className="py-3.5 px-4 font-bold text-slate-900 max-w-md">{n.content}</TableCell>
-                      <TableCell className="py-3.5 px-4 font-bold text-indigo-600">{n.created_by || 'System User'}</TableCell>
-                      <TableCell className="py-3.5 px-4 font-bold text-slate-600">{formatDateTime(n.created_at, { timeZone: leadTimeZone })}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+          <DataTable
+            columns={noteColumns}
+            data={notes}
+            getRowKey={(note) => note.id}
+            emptyTitle="No notes attached yet"
+            emptyDescription="Use Add Note above to attach a note."
+            isLoading={isNotesLoading}
+            tableClassName="min-w-[560px]"
+            className="shadow-none"
+            pagination={{ pageSize: 15 }}
+          />
         </Card>
       )}
 
@@ -1137,53 +1181,17 @@ export default function LeadDetailPage() {
             </Button>
           </div>
 
-          {isTasksLoading ? (
-            <div className="p-8 text-center text-slate-500 text-xs font-bold flex items-center justify-center gap-2">
-              <Loader2 className="w-4 h-4 animate-spin text-indigo-600" /> Loading tasks...
-            </div>
-          ) : tasks.length === 0 ? (
-            <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl space-y-2">
-              <CheckSquare className="w-8 h-8 text-slate-300 mx-auto" />
-              <p className="text-xs font-bold text-slate-600">No tasks created for this lead yet.</p>
-              <p className="text-[11px] text-slate-400">Use Create Task above to assign a new task.</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto rounded-xl border border-slate-200">
-              <Table className="w-full min-w-[560px] text-left border-collapse text-xs">
-                <TableHeader>
-                  <TableRow className="bg-slate-50 border-b border-slate-200 text-[11px] font-black uppercase text-slate-700 tracking-wider">
-                    <TableHead className="py-3 px-4">Task Title & Description</TableHead>
-                    <TableHead className="py-3 px-4">Priority</TableHead>
-                    <TableHead className="py-3 px-4">Status</TableHead>
-                    <TableHead className="py-3 px-4">Due Date</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody className="divide-y divide-slate-100">
-                  {tasks.map((t) => (
-                    <TableRow key={t.id} className="hover:bg-slate-50 transition">
-                      <TableCell className="py-3.5 px-4 space-y-0.5">
-                        <div className="font-black text-slate-900">{t.title}</div>
-                        {t.description && <div className="text-[11px] font-bold text-slate-500">{t.description}</div>}
-                      </TableCell>
-                      <TableCell className="py-3.5 px-4 font-bold">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${t.priority === 'High' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
-                            t.priority === 'Medium' ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-slate-100 text-slate-700'
-                          }`}>
-                          {t.priority || 'Medium'}
-                        </span>
-                      </TableCell>
-                      <TableCell className="py-3.5 px-4 font-bold">
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200">
-                          {t.status || 'Pending'}
-                        </span>
-                      </TableCell>
-                      <TableCell className="py-3.5 px-4 font-bold text-slate-600">{formatDate(t.due_date)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+          <DataTable
+            columns={taskColumns}
+            data={tasks}
+            getRowKey={(task) => task.id}
+            emptyTitle="No tasks created for this lead yet"
+            emptyDescription="Use Create Task above to assign a new task."
+            isLoading={isTasksLoading}
+            tableClassName="min-w-[560px]"
+            className="shadow-none"
+            pagination={{ pageSize: 15 }}
+          />
         </Card>
       )}
 
@@ -1272,60 +1280,17 @@ export default function LeadDetailPage() {
             </Button>
           </div>
 
-          {isDocsLoading ? (
-            <div className="p-8 text-center text-slate-500 text-xs font-bold flex items-center justify-center gap-2">
-              <Loader2 className="w-4 h-4 animate-spin text-indigo-600" /> Loading documents...
-            </div>
-          ) : documents.length === 0 ? (
-            <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl space-y-2">
-              <Paperclip className="w-8 h-8 text-slate-300 mx-auto" />
-              <p className="text-xs font-bold text-slate-600">No documents uploaded yet.</p>
-              <p className="text-[11px] text-slate-400">Use Upload Document above to attach a file.</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto rounded-xl border border-slate-200">
-              <Table className="w-full min-w-[560px] text-left border-collapse text-xs">
-                <TableHeader>
-                  <TableRow className="bg-slate-50 border-b border-slate-200 text-[11px] font-black uppercase text-slate-700 tracking-wider">
-                    <TableHead className="py-3 px-4">Filename</TableHead>
-                    <TableHead className="py-3 px-4">File Size</TableHead>
-                    <TableHead className="py-3 px-4">MIME Type</TableHead>
-                    <TableHead className="py-3 px-4">Uploaded Date</TableHead>
-                    <TableHead className="py-3 px-4 text-right">Action</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody className="divide-y divide-slate-100">
-                  {documents.map((d) => (
-                    <TableRow key={d.id} className="hover:bg-slate-50 transition">
-                      <TableCell className="py-3.5 px-4 font-black text-slate-900 flex items-center gap-2">
-                        <Paperclip className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                        <span className="truncate max-w-[200px]">{d.filename}</span>
-                      </TableCell>
-                      <TableCell className="py-3.5 px-4 font-bold text-slate-700">{formatFileSize(d.file_size)}</TableCell>
-                      <TableCell className="py-3.5 px-4 font-bold text-slate-600">{d.mime_type || 'application/pdf'}</TableCell>
-                      <TableCell className="py-3.5 px-4 font-bold text-slate-600">{formatDateTime(d.uploaded_at, { timeZone: leadTimeZone })}</TableCell>
-                      <TableCell className="py-3.5 px-4 text-right">
-                        {d.download_url && (
-                          <a
-                            href={
-                              d.download_url.startsWith('http') && !d.download_url.includes('.internal')
-                                ? d.download_url
-                                : `${BASE_URL.replace(/\/$/, '')}/leads/${leadId}/documents/${d.id}/download`
-                            }
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center text-xs font-black text-indigo-600 hover:text-indigo-800 hover:underline"
-                          >
-                            <Download className="w-3 h-3 mr-1" /> Download
-                          </a>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+          <DataTable
+            columns={documentColumns}
+            data={documents}
+            getRowKey={(document) => document.id}
+            emptyTitle="No documents uploaded yet"
+            emptyDescription="Use Upload Document above to attach a file."
+            isLoading={isDocsLoading}
+            tableClassName="min-w-[560px]"
+            className="shadow-none"
+            pagination={{ pageSize: 15 }}
+          />
         </Card>
       )}
 

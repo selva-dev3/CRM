@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { useHasPermission } from '@/hooks/use-has-permission';
 import {
   aiService,
@@ -47,9 +47,19 @@ function displayValue(value: unknown): string {
 }
 
 function ResultBlock({ block }: { readonly block: AIResultBlock }) {
-  const columns = Array.from(
+  const columnKeys = Array.from(
     new Set(block.results.flatMap((record) => Object.keys(record))),
   ).slice(0, 8);
+  const rows = block.results.slice(0, 20).map((record, index) => ({
+    key: String(record.id ?? `${block.key}-${index}`),
+    record,
+  }));
+  const columns: readonly DataTableColumn<(typeof rows)[number]>[] = columnKeys.map((column) => ({
+    id: column,
+    header: column.replaceAll('_', ' '),
+    cell: (row) => displayValue(row.record[column]),
+    className: 'max-w-64 whitespace-normal break-words px-4 py-2 text-slate-700',
+  }));
   return (
     <section className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white">
       <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
@@ -62,20 +72,17 @@ function ResultBlock({ block }: { readonly block: AIResultBlock }) {
         </span>
       </div>
       {block.results.length > 0 && (
-        <div className="max-h-80 overflow-auto">
-          <Table className="min-w-full text-left text-xs">
-            <TableHeader className="sticky top-0 bg-slate-50 text-slate-500">
-              <TableRow>{columns.map((column) => <TableHead key={column} className="h-auto whitespace-nowrap px-4 py-2 font-medium capitalize">{column.replaceAll('_', ' ')}</TableHead>)}</TableRow>
-            </TableHeader>
-            <TableBody className="divide-y divide-slate-100">
-              {block.results.slice(0, 20).map((record, index) => (
-                <TableRow key={String(record.id ?? index)}>
-                  {columns.map((column) => <TableCell key={column} className="max-w-64 break-words px-4 py-2 text-slate-700">{displayValue(record[column])}</TableCell>)}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <DataTable
+          columns={columns}
+          data={rows}
+          getRowKey={(row) => row.key}
+          emptyTitle="No results"
+          emptyDescription="The assistant returned no records."
+          maxHeight="20rem"
+          tableClassName="min-w-full text-xs"
+          transparent
+          padding={false}
+        />
       )}
     </section>
   );
