@@ -1,4 +1,5 @@
 fastapi>=0.115.0
+phonenumbers==9.0.38
 uvicorn[standard]>=0.30.0
 sqlalchemy>=2.0.35
 asyncpg>=0.29.0

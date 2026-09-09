@@ -73,8 +73,26 @@ from app.models.system import (
 from app.models.task import Task, TaskAttachment, TaskComment
 from app.models.user import User, UserInvitation
 from app.models.user_quota import UserQuota
+from app.models.whatsapp import (
+    WhatsAppContactIdentity,
+    WhatsAppConversation,
+    WhatsAppIntegration,
+    WhatsAppMessage,
+    WhatsAppPhoneRepair,
+    WhatsAppReadState,
+    WhatsAppTemplate,
+    WhatsAppWebhookEvent,
+)
 
 __all__ = [
+    "WhatsAppContactIdentity",
+    "WhatsAppConversation",
+    "WhatsAppIntegration",
+    "WhatsAppMessage",
+    "WhatsAppPhoneRepair",
+    "WhatsAppReadState",
+    "WhatsAppTemplate",
+    "WhatsAppWebhookEvent",
     "OrganizationDeletion",
     "OrganizationFileCleanup",
     "Payment",

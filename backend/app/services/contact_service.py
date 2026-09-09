@@ -1,6 +1,7 @@
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.errors import APIException, NotFoundError
 from app.models import User
 from app.models.contact import Contact
@@ -9,6 +10,7 @@ from app.repositories.contact_repository import ContactRepository
 from app.repositories.deal_repository import DealRepository
 from app.repositories.email_repository import EmailRepository
 from app.repositories.note_repository import NoteRepository
+from app.repositories.whatsapp_repository import WhatsAppRepository
 from app.schemas.crm_schemas import (
     ContactActivityResponse,
     ContactAddressResponse,
@@ -56,6 +58,7 @@ class ContactService:
         self,
         repository: ContactRepository | None = None,
         custom_field_service_instance: CustomFieldService | None = None,
+        whatsapp_repository: WhatsAppRepository | None = None,
     ) -> None:
         self.repository = repository or ContactRepository()
         self.deal_repository = DealRepository()
@@ -63,6 +66,7 @@ class ContactService:
         self.email_repository = EmailRepository()
         self.note_repository = NoteRepository()
         self.custom_field_service = custom_field_service_instance or custom_field_service
+        self.whatsapp_repository = whatsapp_repository or WhatsAppRepository()
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
         try:
@@ -113,10 +117,18 @@ class ContactService:
         )
 
     async def require_contact(
-        self, db: AsyncSession, contact_id: str, *, organization_id: str
+        self,
+        db: AsyncSession,
+        contact_id: str,
+        *,
+        organization_id: str,
+        populate_existing: bool = False,
     ) -> Contact:
         contact = await self.repository.get_by_id_scoped(
-            db, contact_id=contact_id, organization_id=organization_id
+            db,
+            contact_id=contact_id,
+            organization_id=organization_id,
+            populate_existing=populate_existing,
         )
         if not contact:
             raise NotFoundError(message=f"Contact '{contact_id}' not found")
@@ -215,6 +227,25 @@ class ContactService:
             )
             for activity in deal_activities
         )
+        whatsapp_permissions = {
+            p
+            for p in permissions
+            if p.startswith("whatsapp:") and api_key_scope_allows(current_user, p)
+        }
+        if {"whatsapp:read_assigned", "whatsapp:read_all"} & whatsapp_permissions:
+            from app.repositories.whatsapp_repository import WhatsAppRepository
+
+            for message in await WhatsAppRepository().timeline_messages(
+                db, current_user, whatsapp_permissions, contact_id=contact.id
+            ):
+                activities.append(
+                    ContactActivityResponse(
+                        id=f"whatsapp-{message.id}",
+                        type="WhatsApp",
+                        description=f"{message.direction} · {message.message_type} · {message.source} · {message.status}",
+                        created_at=str(message.provider_timestamp or message.created_at),
+                    )
+                )
         activities.sort(key=lambda activity: activity.created_at, reverse=True)
         return activities
 
@@ -272,6 +303,10 @@ class ContactService:
         normalized_email, normalized_phone = self._identity(payload.email, payload.phone)
         if not normalized_email:
             raise APIException(message="Contact email is required", status_code=422)
+        if settings.WHATSAPP_ENABLED:
+            # Contact inserts fire the phone-normalization trigger. Take its
+            # advisory guard before the tenant row lock used for deduplication.
+            await self.whatsapp_repository.lock_phone_guard(db, org_id)
         await self.repository.lock_organization(db, org_id)
         duplicate = await self.repository.find_duplicate(
             db,
@@ -305,6 +340,7 @@ class ContactService:
             "custom_fields": custom_fields,
         }
         contact = await self.repository.create(db, data=data)
+        await self.whatsapp_repository.prepare_crm_phone(db, org_id, contact)
         await self._commit(db, "Failed to create contact")
         await db.refresh(contact)
         await notification_service.notify(
@@ -333,7 +369,17 @@ class ContactService:
         *,
         organization_id: str,
     ) -> dict:
-        contact = await self.require_contact(db, contact_id, organization_id=organization_id)
+        phone_change_requested = payload.phone is not None
+        if settings.WHATSAPP_ENABLED and phone_change_requested:
+            # Acquire before the Contact read so verification decisions use a
+            # fresh state serialized with every other phone-identity writer.
+            await self.whatsapp_repository.lock_phone_guard(db, organization_id)
+        contact = await self.require_contact(
+            db,
+            contact_id,
+            organization_id=organization_id,
+            populate_existing=phone_change_requested,
+        )
 
         candidate_email = payload.email if payload.email is not None else contact.email
         candidate_phone = payload.phone if payload.phone is not None else contact.phone
@@ -365,6 +411,7 @@ class ContactService:
             contact.email = normalized_email
         if payload.phone is not None:
             contact.phone = payload.phone
+            await self.whatsapp_repository.prepare_crm_phone(db, organization_id, contact)
         if payload.company_id is not None:
             if payload.company_id and not await self.repository.company_exists(
                 db,
@@ -407,6 +454,9 @@ class ContactService:
         self, db: AsyncSession, contact_id: str, *, organization_id: str
     ) -> dict:
         contact = await self.require_contact(db, contact_id, organization_id=organization_id)
+        await self.whatsapp_repository.detach_crm_identities(
+            db, organization_id, contact_ids={contact.id}
+        )
         await self.repository.delete(db, contact)
         await self._commit(db, "Failed to delete contact")
         return {"message": f"Contact {contact_id} deleted successfully", "status": "success"}
@@ -435,6 +485,9 @@ class ContactService:
 
     async def bulk_delete(self, db: AsyncSession, ids: list[str], *, organization_id: str) -> dict:
         contacts = await self.repository.list_by_ids(db, ids, organization_id=organization_id)
+        await self.whatsapp_repository.detach_crm_identities(
+            db, organization_id, contact_ids={contact.id for contact in contacts}
+        )
         for contact in contacts:
             await self.repository.delete(db, contact)
         await self._commit(db, "Failed to bulk delete contacts")

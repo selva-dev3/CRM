@@ -477,6 +477,47 @@ async def test_admin_user_gets_only_assigned_permissions(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_batch_permissions_use_bounded_queries_and_deny_multiple_mappings():
+    repo: Any = AuthRepository()
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    mapped = _make_user(id="mapped", role="stale")
+    legacy = _make_user(id="legacy", role="Sales Executive")
+    invalid = _make_user(id="invalid", role="Admin")
+    repo.role_ids_for_users = AsyncMock(
+        return_value=[
+            ("mapped", "role-mapped"),
+            ("invalid", "role-one"),
+            ("invalid", "role-two"),
+        ]
+    )
+    repo.roles_by_ids_or_names = AsyncMock(
+        return_value=[
+            Role(id="role-mapped", name="Custom", organization_id="org-1"),
+            Role(id="role-legacy", name="Sales Executive", organization_id="org-1"),
+        ]
+    )
+    repo.permission_keys_by_role = AsyncMock(
+        return_value=[
+            ("role-mapped", "whatsapp:read_all"),
+            ("role-legacy", "whatsapp:read_assigned"),
+            ("role-legacy", "unknown:permission"),
+        ]
+    )
+
+    result = await service.get_users_permissions(db, [mapped, legacy, invalid], "org-1")
+
+    assert result == {
+        "mapped": {"whatsapp:read_all"},
+        "legacy": {"whatsapp:read_assigned"},
+        "invalid": set(),
+    }
+    repo.role_ids_for_users.assert_awaited_once()
+    repo.roles_by_ids_or_names.assert_awaited_once()
+    repo.permission_keys_by_role.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_get_user_role_name_resolves_uuid_role():
     repo: Any = AuthRepository()
     repo.get_user_role_id = AsyncMock(return_value=None)

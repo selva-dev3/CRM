@@ -5,7 +5,7 @@ export interface NavItem {
   href: string;
   icon: string;
   badge?: string;
-  permission?: PermissionKey;
+  permission?: PermissionKey | readonly PermissionKey[];
 }
 
 export interface NavSection {
@@ -30,6 +30,7 @@ export const navigationSections: NavSection[] = [
       { title: 'Meetings', href: '/meetings', icon: 'CalendarDays', permission: PERMISSIONS.MEETINGS.READ },
       { title: 'Calls', href: '/calls', icon: 'PhoneCall', permission: PERMISSIONS.CALLS.READ },
       { title: 'Emails', href: '/email', icon: 'Mail', permission: PERMISSIONS.EMAILS.READ },
+      { title: 'WhatsApp', href: '/whatsapp', icon: 'MessageCircle', permission: [PERMISSIONS.WHATSAPP.READ_ASSIGNED, PERMISSIONS.WHATSAPP.READ_ALL] },
       { title: 'Notes', href: '/notes', icon: 'StickyNote', permission: PERMISSIONS.NOTES.READ },
       { title: 'Documents', href: '/documents', icon: 'FileText', permission: PERMISSIONS.DOCUMENTS.READ },
       { title: 'Products', href: '/products', icon: 'Package', permission: PERMISSIONS.PRODUCTS.READ },
@@ -65,7 +66,7 @@ export const navigationConfig: NavItem[] = navigationSections.flatMap((s) => s.i
  *
  * Keys are the real backend permission keys (see `src/lib/permissions.ts`).
  */
-export const protectedRoutes: Record<string, PermissionKey> = {
+export const protectedRoutes: Record<string, PermissionKey | readonly PermissionKey[]> = {
   dashboard: PERMISSIONS.DASHBOARD.READ,
   leads: PERMISSIONS.LEADS.READ,
   contacts: PERMISSIONS.CONTACTS.READ,
@@ -89,6 +90,7 @@ export const protectedRoutes: Record<string, PermissionKey> = {
   settings: PERMISSIONS.SETTINGS.READ,
   organization: PERMISSIONS.ORGANIZATION.READ,
   integrations: PERMISSIONS.INTEGRATIONS.READ,
+  whatsapp: [PERMISSIONS.WHATSAPP.READ_ASSIGNED, PERMISSIONS.WHATSAPP.READ_ALL],
   notifications: PERMISSIONS.NOTIFICATIONS.READ,
   ai: PERMISSIONS.AI.READ,
 };
@@ -96,8 +98,8 @@ export const protectedRoutes: Record<string, PermissionKey> = {
 /** Returns the permission required to view `pathname`, or undefined when unguarded. */
 export function getRoutePermission(
   pathname: string,
-  routes: Record<string, PermissionKey> = protectedRoutes
-): PermissionKey | undefined {
+  routes: Record<string, PermissionKey | readonly PermissionKey[]> = protectedRoutes
+): PermissionKey | readonly PermissionKey[] | undefined {
   if (!pathname || pathname === '/') return undefined;
   const topSegment = pathname.split('/').filter(Boolean)[0]?.toLowerCase();
   return topSegment ? routes[topSegment] : undefined;
@@ -115,7 +117,11 @@ export function filterNavigationSections(
   return sections
     .map((section) => ({
       ...section,
-      items: section.items.filter((item) => item.permission === undefined || hasPermission(permissions, item.permission)),
+      items: section.items.filter((item) => item.permission === undefined || (
+        Array.isArray(item.permission)
+          ? item.permission.some((permission) => hasPermission(permissions, permission))
+          : hasPermission(permissions, item.permission as PermissionKey)
+      )),
     }))
     .filter((section) => section.items.length > 0);
 }

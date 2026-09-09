@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -405,6 +405,16 @@ class AuthRepository:
         result = await db.execute(select(UserRole.role_id).where(UserRole.user_id == user_id))
         return [role_id for role_id in result.scalars().all() if role_id]
 
+    async def role_ids_for_users(
+        self, db: AsyncSession, user_ids: list[str]
+    ) -> list[tuple[str, str]]:
+        if not user_ids:
+            return []
+        result = await db.execute(
+            select(UserRole.user_id, UserRole.role_id).where(UserRole.user_id.in_(user_ids))
+        )
+        return [(user_id, role_id) for user_id, role_id in result.all() if role_id]
+
     async def role_ids_by_name(
         self,
         db: AsyncSession,
@@ -437,6 +447,25 @@ class AuthRepository:
         )
         return list(result.scalars().all())
 
+    async def roles_by_ids_or_names(
+        self,
+        db: AsyncSession,
+        role_ids: set[str],
+        role_names: set[str],
+        organization_id: str,
+    ) -> list[Role]:
+        if not role_ids and not role_names:
+            return []
+        filters = []
+        if role_ids:
+            filters.append(Role.id.in_(role_ids))
+        if role_names:
+            filters.append(func.lower(func.btrim(Role.name)).in_(role_names))
+        result = await db.execute(
+            select(Role).where(Role.organization_id == organization_id, or_(*filters))
+        )
+        return list(result.scalars().all())
+
     async def permission_keys_for_roles(self, db: AsyncSession, role_ids: list[str]) -> list[str]:
         result = await db.execute(
             select(Permission.key)
@@ -444,6 +473,18 @@ class AuthRepository:
             .where(RolePermission.role_id.in_(list(role_ids)))
         )
         return [key for key in result.scalars().all() if key]
+
+    async def permission_keys_by_role(
+        self, db: AsyncSession, role_ids: set[str]
+    ) -> list[tuple[str, str]]:
+        if not role_ids:
+            return []
+        result = await db.execute(
+            select(RolePermission.role_id, Permission.key)
+            .join(Permission, Permission.id == RolePermission.permission_id)
+            .where(RolePermission.role_id.in_(role_ids))
+        )
+        return [(role_id, key) for role_id, key in result.all() if key]
 
     async def list_sessions(self, db: AsyncSession, user_id: str) -> list[UserSession]:
         result = await db.execute(

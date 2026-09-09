@@ -14,6 +14,7 @@ from app.repositories.company_repository import CompanyRepository
 from app.repositories.contact_repository import ContactRepository
 from app.repositories.deal_repository import DealRepository
 from app.repositories.lead_repository import LeadRepository
+from app.repositories.whatsapp_repository import WhatsAppRepository
 from app.schemas.crm_schemas import (
     CustomFieldDefinition,
     EmailSendRequest,
@@ -98,9 +99,11 @@ class LeadService:
         self,
         repository: LeadRepository | None = None,
         custom_field_service_instance: CustomFieldService | None = None,
+        whatsapp_repository: WhatsAppRepository | None = None,
     ) -> None:
         self.repository = repository or LeadRepository()
         self.custom_field_service = custom_field_service_instance or custom_field_service
+        self.whatsapp_repository = whatsapp_repository or WhatsAppRepository()
 
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
         try:
@@ -123,7 +126,9 @@ class LeadService:
     @staticmethod
     def _require_active_lead(lead: Lead) -> None:
         if lead.is_archived:
-            raise APIException(status_code=409, message="Archived leads cannot change lifecycle state")
+            raise APIException(
+                status_code=409, message="Archived leads cannot change lifecycle state"
+            )
         if lead.status == "Converted" or lead.converted_at is not None:
             raise APIException(status_code=409, message="Converted leads are read-only")
 
@@ -264,6 +269,7 @@ class LeadService:
             "next_follow_up_at": payload.next_follow_up_at,
         }
         lead = await self.repository.create(db, data=data)
+        await self.whatsapp_repository.prepare_crm_phone(db, org_id, lead)
         await db.flush()
         await self.repository.record_activity(
             db,
@@ -303,11 +309,15 @@ class LeadService:
         if not organization_id:
             raise ForbiddenError(message="Organization context is required.")
 
+        updates = payload.model_dump(exclude_unset=True)
+        if settings.WHATSAPP_ENABLED and "phone" in updates:
+            # Serialize before reading the Lead so a concurrent conversion cannot
+            # leave this request validating and mutating a stale pre-conversion row.
+            await self.whatsapp_repository.lock_phone_guard(db, organization_id)
         lead = await self.repository.get_by_id_for_org(db, lead_id, organization_id)
         if not lead:
             raise NotFoundError(message=f"Lead '{lead_id}' not found")
 
-        updates = payload.model_dump(exclude_unset=True)
         self._require_active_lead(lead)
         requested_org = updates.pop("organization_id", organization_id)
         if requested_org != organization_id:
@@ -347,6 +357,8 @@ class LeadService:
         previous_follow_up = lead.next_follow_up_at
         for field, value in updates.items():
             setattr(lead, field, value)
+        if "phone" in updates:
+            await self.whatsapp_repository.prepare_crm_phone(db, organization_id, lead)
 
         if previous_status != lead.status:
             await self.repository.record_activity(
@@ -398,6 +410,9 @@ class LeadService:
 
     async def delete_lead(self, db: AsyncSession, lead_id: str, *, organization_id: str) -> dict:
         lead = await self.require_lead(db, lead_id, organization_id=organization_id)
+        await self.whatsapp_repository.detach_crm_identities(
+            db, organization_id, lead_ids={lead.id}
+        )
         await self.repository.delete(db, lead)
         await self._commit(db, "Failed to delete lead")
         return {"message": f"Lead {lead_id} deleted successfully", "status": "success"}
@@ -406,6 +421,9 @@ class LeadService:
         if not ids:
             return {"affected_count": 0, "message": "No lead IDs provided"}
         leads = await self.repository.list_by_ids(db, ids, organization_id=organization_id)
+        await self.whatsapp_repository.detach_crm_identities(
+            db, organization_id, lead_ids={lead.id for lead in leads}
+        )
         for lead in leads:
             await self.repository.delete(db, lead)
         await self._commit(db, "Bulk delete failed")
@@ -512,7 +530,9 @@ class LeadService:
         if lead.status == "Qualified":
             return lead_to_dict(lead)
         if lead.status not in {"New", "Contacted"}:
-            raise APIException(status_code=409, message="Lead cannot be qualified from its current status")
+            raise APIException(
+                status_code=409, message="Lead cannot be qualified from its current status"
+            )
         self._validate_qualification_details(lead)
         now = self._now()
         lead.status = "Qualified"
@@ -595,6 +615,10 @@ class LeadService:
         if not organization_id:
             raise ForbiddenError(message="Organization membership is required")
         try:
+            if settings.WHATSAPP_ENABLED:
+                # This precedes the Organization/Lead row locks below. Inbound
+                # inserts take the same guard before their organization FK checks.
+                await self.whatsapp_repository.lock_phone_guard(db, organization_id)
             lead = await self.repository.lock_conversion(db, lead_id, organization_id)
             if not lead:
                 raise NotFoundError(message="Lead not found")
@@ -704,6 +728,20 @@ class LeadService:
                 converted_at=datetime.now(UTC),
             )
             result = self._conversion_result(lead)
+            if settings.WHATSAPP_ENABLED:
+                if not contacts:
+                    # Trigger-managed Contact inserts enqueue a repair record. Resolve
+                    # it synchronously so conversion cannot make the inherited phone
+                    # identity temporarily ambiguous.
+                    await self.whatsapp_repository.prepare_crm_phone(db, organization_id, contact)
+                    if (
+                        lead.whatsapp_phone_verified_at
+                        and lead.normalized_phone
+                        and contact.normalized_phone == lead.normalized_phone
+                    ):
+                        contact.whatsapp_phone_verified_at = lead.whatsapp_phone_verified_at
+                    await db.flush()
+                await self.whatsapp_repository.link_converted_lead(db, lead, contact)
             await self._commit(db, "Failed to convert lead")
             return result
         except Exception:
@@ -887,6 +925,26 @@ class LeadService:
                 }
             )
 
+        whatsapp_permissions = {
+            p
+            for p in permissions
+            if p.startswith("whatsapp:") and api_key_scope_allows(current_user, p)
+        }
+        if {"whatsapp:read_assigned", "whatsapp:read_all"} & whatsapp_permissions:
+            from app.repositories.whatsapp_repository import WhatsAppRepository
+
+            for message in await WhatsAppRepository().timeline_messages(
+                db, current_user, whatsapp_permissions, lead_id=lead.id
+            ):
+                timeline.append(
+                    {
+                        "id": f"whatsapp-{message.id}",
+                        "event_type": "whatsapp_message",
+                        "title": f"WhatsApp {message.direction.lower()}",
+                        "description": f"{message.message_type} · {message.source} · {message.status}",
+                        "timestamp": str(message.provider_timestamp or message.created_at),
+                    }
+                )
         timeline.sort(key=lambda item: item.get("timestamp", ""), reverse=True)
         return timeline
 

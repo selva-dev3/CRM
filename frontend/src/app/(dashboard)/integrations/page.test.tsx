@@ -19,6 +19,9 @@ vi.mock('@/lib/api/integrations', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/lib/api/integrations')>(),
   fetchApiKeysApi: () => { state.fetchKeys(); return Promise.resolve(state.keys); },
 }));
+vi.mock('@/components/features/whatsapp/whatsapp-integration-card', () => ({
+  WhatsAppIntegrationCard: () => null,
+}));
 
 describe('API key action authorization', () => {
   beforeEach(() => {

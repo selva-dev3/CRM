@@ -20,6 +20,7 @@ import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
 import { useHasPermission } from '@/hooks/use-has-permission';
 import { useAuth } from '@/providers/auth-provider';
+import { WhatsAppIntegrationCard } from '@/components/features/whatsapp/whatsapp-integration-card';
 import {
   fetchIntegrationsApi,
   connectIntegrationApi,
@@ -397,6 +398,8 @@ export default function IntegrationsPage() {
           <span>{errorMessage}</span>
         </div>
       )}
+
+      <WhatsAppIntegrationCard />
 
       {/* API Key Management */}
       <PermissionGate permission={PERMISSIONS.API_KEYS.READ}>

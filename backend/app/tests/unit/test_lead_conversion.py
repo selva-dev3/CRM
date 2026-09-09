@@ -1,5 +1,6 @@
 """Conversion transaction and tenant-boundary regression tests."""
 
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -7,6 +8,7 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.errors import APIException, NotFoundError
 from app.models import Lead
 from app.models.audit import AuditLog
@@ -135,9 +137,7 @@ async def test_conversion_preserves_owner_and_creates_missing_contact_address(mo
     lead.postal_code = "600001"
     get_address = AsyncMock(return_value=None)
     create_address = AsyncMock()
-    monkeypatch.setattr(
-        "app.services.lead_service.ContactRepository.get_address", get_address
-    )
+    monkeypatch.setattr("app.services.lead_service.ContactRepository.get_address", get_address)
     monkeypatch.setattr(
         "app.services.lead_service.ContactRepository.create_address", create_address
     )
@@ -160,3 +160,40 @@ async def test_conversion_preserves_owner_and_creates_missing_contact_address(mo
         "country": "India",
         "postal_code": "600001",
     }
+
+
+@pytest.mark.asyncio
+async def test_conversion_resolves_contact_phone_before_linking_identity(monkeypatch):
+    db, lead, repository, user = conversion_fixture()
+    verified_at = datetime.now(UTC)
+    lead.phone = "+1 (415) 555-2671"
+    lead.normalized_phone = "+14155552671"
+    lead.whatsapp_phone_verified_at = verified_at
+    calls: list[str] = []
+
+    async def lock_phone_guard(*_args):
+        calls.append("guard")
+
+    async def prepare_phone(_db, _organization_id, contact):
+        calls.append("prepare")
+        contact.normalized_phone = "+14155552671"
+
+    async def link_identity(*_args):
+        calls.append("link")
+
+    whatsapp = SimpleNamespace(
+        lock_phone_guard=AsyncMock(side_effect=lock_phone_guard),
+        prepare_crm_phone=AsyncMock(side_effect=prepare_phone),
+        link_converted_lead=AsyncMock(side_effect=link_identity),
+    )
+    monkeypatch.setattr(settings, "WHATSAPP_ENABLED", True)
+
+    result = await LeadService(repository=repository, whatsapp_repository=whatsapp).convert_lead(
+        db, lead.id, LeadConvertRequest(), user
+    )
+
+    created_contact = whatsapp.prepare_crm_phone.await_args.args[2]
+    assert result["contact_id"] == created_contact.id
+    assert created_contact.normalized_phone == lead.normalized_phone
+    assert created_contact.whatsapp_phone_verified_at == verified_at
+    assert calls == ["guard", "prepare", "link"]

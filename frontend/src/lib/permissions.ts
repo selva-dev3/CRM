@@ -12,6 +12,14 @@
  */
 
 export const PERMISSIONS = {
+  WHATSAPP: {
+    READ_ASSIGNED: 'whatsapp:read_assigned',
+    READ_ALL: 'whatsapp:read_all',
+    SEND: 'whatsapp:send',
+    ASSIGN: 'whatsapp:assign',
+    TAKEOVER: 'whatsapp:takeover',
+    MANAGE_AI: 'whatsapp:manage_ai',
+  },
   DASHBOARD: {
     READ: 'dashboard:read',
     CUSTOMIZE: 'dashboard:customize',

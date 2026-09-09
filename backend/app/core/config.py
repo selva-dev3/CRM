@@ -1,7 +1,7 @@
 import os
 from typing import Literal
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -57,6 +57,34 @@ class Settings(BaseSettings):
     # Enable only after the documented recovery drill and worker readiness checks.
     ORGANIZATION_CLEANUP_ONLY: bool = False
     ORGANIZATION_DELETION_ENABLED: bool = False
+    # Disabled until migration, worker and live-provider acceptance checks pass.
+    WHATSAPP_ENABLED: bool = False
+    WHATSAPP_APP_ID: str | None = None
+    WHATSAPP_APP_SECRET: str | None = None
+    WHATSAPP_WEBHOOK_VERIFY_TOKEN: str | None = None
+    WHATSAPP_PUBLIC_WEBHOOK_URL: str | None = None
+    WHATSAPP_API_VERSION: str | None = None
+    WHATSAPP_WEBHOOK_MAX_BYTES: int = 1048576
+    WHATSAPP_WEBHOOK_RATE_PER_MINUTE: int = 300
+    WHATSAPP_SEND_RATE_PER_MINUTE: int = 30
+    WHATSAPP_MEDIA_MAX_BYTES: int = 16 * 1024 * 1024
+
+    @model_validator(mode="after")
+    def validate_whatsapp(self):
+        if not self.WHATSAPP_ENABLED:
+            return self
+        required = {
+            "WHATSAPP_APP_ID": self.WHATSAPP_APP_ID,
+            "WHATSAPP_APP_SECRET": self.WHATSAPP_APP_SECRET,
+            "WHATSAPP_WEBHOOK_VERIFY_TOKEN": self.WHATSAPP_WEBHOOK_VERIFY_TOKEN,
+            "WHATSAPP_PUBLIC_WEBHOOK_URL": self.WHATSAPP_PUBLIC_WEBHOOK_URL,
+        }
+        missing = [name for name, value in required.items() if not value]
+        if missing:
+            raise ValueError(f"WhatsApp configuration is incomplete: {', '.join(missing)}")
+        if not self.WHATSAPP_PUBLIC_WEBHOOK_URL.startswith("https://"):
+            raise ValueError("WHATSAPP_PUBLIC_WEBHOOK_URL must use HTTPS")
+        return self
 
     @field_validator("DATABASE_URL", mode="before")
     @classmethod

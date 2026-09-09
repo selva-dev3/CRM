@@ -45,6 +45,7 @@ import {
   Building,
   Layers,
   Sparkles,
+  MessageCircle,
   ChevronDown,
   ChevronRight
 } from 'lucide-react';
@@ -74,6 +75,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Building,
   Layers,
   Sparkles,
+  MessageCircle,
 };
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -89,7 +91,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [authError, setAuthError] = useState<string | null>(null);
   const [verificationAttempt, setVerificationAttempt] = useState(0);
   const { data: currentOrg } = useCurrentOrganizationQuery(authStatus === 'authenticated' && Boolean(userProfile?.organization_id));
-  const { permissions, hasPermission } = useHasPermission();
+  const { permissions, hasPermission, hasAnyPermission } = useHasPermission();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     CRM: true,
@@ -132,7 +134,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   );
 
   const requiredPermission = React.useMemo(() => getRoutePermission(pathname), [pathname]);
-  const isForbidden = Boolean(requiredPermission) && !hasPermission(requiredPermission);
+  const isForbidden = Boolean(requiredPermission) && (
+    Array.isArray(requiredPermission)
+      ? !hasAnyPermission(requiredPermission)
+      : !hasPermission(requiredPermission as Parameters<typeof hasPermission>[0])
+  );
 
   useEffect(() => {
     if (authStatus === 'authenticated' && isForbidden && pathname !== '/forbidden') {

@@ -18,6 +18,12 @@ EXPECTED_NON_ROUTER_PERMISSIONS = {
     "dashboard:export",
     "documents:share",
     "projects:assign",
+    "whatsapp:assign",
+    "whatsapp:manage_ai",
+    "whatsapp:read_all",
+    "whatsapp:read_assigned",
+    "whatsapp:send",
+    "whatsapp:takeover",
     # Platform authority is enforced by require_platform_admin and cannot be delegated.
     "super_admin:manage",
 }
@@ -53,7 +59,10 @@ def test_rbac_migration_catalog_matches_runtime_catalog() -> None:
         / "versions"
         / "u5e6f7a8b9c0_harden_rbac_integrity.py"
     )
-    migration_keys = set(PERMISSION_PATTERN.findall(migration.read_text(encoding="utf-8")))
+    whatsapp_migration = REPOSITORY_ROOT / "backend" / "alembic" / "versions" / "v6f7a8b9c0d1_whatsapp_channel.py"
+    migration_keys = set(PERMISSION_PATTERN.findall(migration.read_text(encoding="utf-8"))) | set(
+        PERMISSION_PATTERN.findall(whatsapp_migration.read_text(encoding="utf-8"))
+    )
 
     assert migration_keys == set(APPROVED_PERMISSION_KEYS)
 

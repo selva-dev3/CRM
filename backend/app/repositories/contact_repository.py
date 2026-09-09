@@ -78,14 +78,20 @@ class ContactRepository:
         return result.scalars().first()
 
     async def get_by_id_scoped(
-        self, db: AsyncSession, *, contact_id: str, organization_id: str
+        self,
+        db: AsyncSession,
+        *,
+        contact_id: str,
+        organization_id: str,
+        populate_existing: bool = False,
     ) -> Contact | None:
-        result = await db.execute(
-            select(Contact).where(
-                Contact.id == contact_id,
-                Contact.organization_id == organization_id,
-            )
+        query = select(Contact).where(
+            Contact.id == contact_id,
+            Contact.organization_id == organization_id,
         )
+        if populate_existing:
+            query = query.execution_options(populate_existing=True)
+        result = await db.execute(query)
         return result.scalars().first()
 
     async def list_by_ids(
