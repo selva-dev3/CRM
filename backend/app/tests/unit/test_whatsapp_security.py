@@ -2,11 +2,31 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from pydantic import ValidationError
+from redis.exceptions import RedisError
 
+from app.core import whatsapp_security
 from app.core.errors import ForbiddenError
 from app.core.phone import normalize_phone
 from app.core.whatsapp_security import service_window_open, verify_signature
 from app.schemas.whatsapp import WebhookPayload
+
+
+class _RedisClient:
+    def __init__(self, value=None, error: Exception | None = None):
+        self.value = value
+        self.error = error
+        self.set_calls = []
+
+    async def get(self, _key):
+        if self.error:
+            raise self.error
+        return self.value
+
+    async def set(self, *args, **kwargs):
+        self.set_calls.append((args, kwargs))
+
+    async def aclose(self):
+        return None
 
 
 @pytest.mark.parametrize(
@@ -47,11 +67,37 @@ def test_signature_validation_is_constant_format_and_secret_bound():
 
 
 def test_customer_service_window_is_strictly_less_than_24_hours():
-    now = datetime(2026, 9, 9, tzinfo=UTC)
+    now = datetime.now(UTC)
     assert service_window_open(now - timedelta(hours=23, minutes=59), now)
     assert not service_window_open(now - timedelta(hours=24), now)
     assert not service_window_open(now + timedelta(seconds=1), now)
     assert not service_window_open(None, now)
+
+
+@pytest.mark.asyncio
+async def test_worker_heartbeat_reports_only_valid_shared_redis_state(monkeypatch):
+    now = datetime.now(UTC)
+    client = _RedisClient(now.isoformat().encode())
+    monkeypatch.setattr(whatsapp_security.Redis, "from_url", lambda _url: client)
+
+    status, timestamp = await whatsapp_security.worker_heartbeat()
+
+    assert status == "HEALTHY"
+    assert timestamp == now
+
+    # An in-progress sweep can legitimately exceed the old 60-second TTL.
+    client.value = (now - timedelta(seconds=200)).isoformat()
+    assert (await whatsapp_security.worker_heartbeat())[0] == "HEALTHY"
+
+    stale = _RedisClient((now - timedelta(minutes=5)).isoformat())
+    monkeypatch.setattr(whatsapp_security.Redis, "from_url", lambda _url: stale)
+    status, timestamp = await whatsapp_security.worker_heartbeat()
+    assert status == "OFFLINE"
+    assert timestamp is not None
+
+    unavailable = _RedisClient(error=RedisError("synthetic outage"))
+    monkeypatch.setattr(whatsapp_security.Redis, "from_url", lambda _url: unavailable)
+    assert await whatsapp_security.worker_heartbeat() == ("UNAVAILABLE", None)
 
 
 def test_webhook_schema_accepts_message_and_status_without_extra_identity_sources():

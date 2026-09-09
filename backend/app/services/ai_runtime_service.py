@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.errors import APIException, ForbiddenError
 from app.core.logging import get_logger
-from app.models import AIRun, User
+from app.models import AIOrganizationConfig, AIRun, User
 from app.repositories.ai_repository import AIRepository
 from app.schemas.ai import TranscriptionResponse
 from app.services.ai_provider_service import (
@@ -30,6 +30,43 @@ class AIRuntimeService:
     ) -> None:
         self.repository = repository or AIRepository()
         self.provider_gateway = provider_gateway or ai_provider_gateway
+
+    async def enabled_configuration(
+        self, db: AsyncSession, organization_id: str
+    ) -> AIOrganizationConfig | None:
+        global_setting = await self.repository.get_global_feature_setting(db)
+        if global_setting and global_setting.value.lower() not in {"true", "1", "yes"}:
+            raise ForbiddenError(code="AI_FEATURES_DISABLED", message="AI features are disabled.")
+        config = await self.repository.get_organization_config(db, organization_id)
+        if config and not config.enabled:
+            raise ForbiddenError(
+                code="AI_FEATURES_DISABLED", message="AI features are disabled for this organization."
+            )
+        return config
+
+    @staticmethod
+    def configured_provider_model(config: AIOrganizationConfig | None) -> tuple[str, str]:
+        return (
+            config.provider if config and config.provider else settings.AI_PROVIDER,
+            config.model_name if config and config.model_name else settings.AI_MODEL,
+        )
+
+    async def configuration_readiness(self, db: AsyncSession, organization_id: str) -> str:
+        """Configuration snapshot only; live credentials and quotas are checked at execution."""
+        try:
+            config = await self.enabled_configuration(db, organization_id)
+        except ForbiddenError:
+            return "DISABLED"
+        provider, model = self.configured_provider_model(config)
+        credential = {
+            "openai": settings.OPENAI_API_KEY,
+            "anthropic": settings.ANTHROPIC_API_KEY,
+            "gemini": settings.GEMINI_API_KEY,
+            "openrouter": settings.OPENROUTER_API_KEY,
+        }.get(provider)
+        if not model.strip() or not self.provider_gateway.has_usable_api_key(credential):
+            return "PROVIDER_UNAVAILABLE"
+        return "READY"
 
     @staticmethod
     def _rate_limit() -> tuple[int, timedelta]:
@@ -74,19 +111,7 @@ class AIRuntimeService:
         if not organization_id:
             raise ForbiddenError(message="An organization is required to use AI features.")
 
-        global_setting = await self.repository.get_global_feature_setting(db)
-        if global_setting and global_setting.value.lower() not in {"true", "1", "yes"}:
-            raise ForbiddenError(
-                code="AI_FEATURES_DISABLED",
-                message="AI features are disabled for this deployment.",
-            )
-
-        organization_config = await self.repository.get_organization_config(db, organization_id)
-        if organization_config and not organization_config.enabled:
-            raise ForbiddenError(
-                code="AI_FEATURES_DISABLED",
-                message="AI features are disabled for this organization.",
-            )
+        organization_config = await self.enabled_configuration(db, organization_id)
 
         monthly_cost = await self.repository.monthly_cost(db, organization_id)
         cost_limit = (
@@ -133,20 +158,10 @@ class AIRuntimeService:
         if subscription.ai_credits > 0:
             subscription.ai_credits -= 1
 
-        provider = provider_override or (
-            organization_config.provider
-            if organization_config and organization_config.provider
-            else settings.AI_PROVIDER
-        )
-        configured_model = (
-            settings.AI_MODEL
-            if provider_override
-            else (
-                organization_config.model_name
-                if organization_config and organization_config.model_name
-                else settings.AI_MODEL
-            )
-        )
+        configured_provider, configured_model = self.configured_provider_model(organization_config)
+        provider = provider_override or configured_provider
+        if provider_override:
+            configured_model = settings.AI_MODEL
         model = model_override or (model_overrides or {}).get(provider) or configured_model
         run = await self.repository.create_run(
             db,

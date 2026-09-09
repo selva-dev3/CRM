@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   action: vi.fn(),
   send: vi.fn(),
   sendTemplate: vi.fn(),
+  retryMessage: vi.fn(),
   list: vi.fn(),
   detail: vi.fn(),
   messages: vi.fn(),
@@ -38,6 +39,7 @@ vi.mock('@/lib/api/whatsapp', () => ({
   useWhatsAppAssignees: (...args: unknown[]) => mocks.assignees(...args),
   useWhatsAppSend: () => ({ mutateAsync: mocks.send, isPending: false }),
   useWhatsAppSendTemplate: () => ({ mutateAsync: mocks.sendTemplate, isPending: false }),
+  useWhatsAppRetryMessage: () => ({ mutateAsync: mocks.retryMessage, isPending: false }),
   useWhatsAppConversationAction: () => ({ mutateAsync: mocks.action, isPending: false }),
   useWhatsAppIdentityAction: () => ({ mutateAsync: mocks.identityAction, isPending: false }),
 }));
@@ -74,9 +76,24 @@ beforeEach(() => {
   mocks.identityAction.mockResolvedValue({});
   mocks.send.mockResolvedValue({});
   mocks.sendTemplate.mockResolvedValue({});
+  mocks.retryMessage.mockResolvedValue({});
 });
 
 describe('WhatsAppInbox', () => {
+  it('hides manual retry during automatic backoff', () => {
+    mocks.permissions.add(PERMISSIONS.WHATSAPP.READ_ALL);
+    mocks.permissions.add(PERMISSIONS.WHATSAPP.SEND);
+    mocks.params = new URLSearchParams('conversation=conversation-a');
+    mocks.detail.mockReturnValue({ data: conversation, isLoading: false, isError: false });
+    mocks.messages.mockReturnValue({ data: [{
+      id: 'pending-message', direction: 'OUTBOUND', source: 'HUMAN', message_type: 'text',
+      body: 'Waiting for automatic retry', status: 'PENDING', retryable: false,
+      error_code: 'WHATSAPP_PROVIDER_RATE_LIMITED', error_message: null, media_available: false,
+    }], isLoading: false, isError: false });
+    render(<WhatsAppInbox />);
+    expect(screen.getByText('Waiting for automatic retry')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry safely' })).not.toBeInTheDocument();
+  });
   it('enforces the permission gate and does not enable data access', () => {
     render(<WhatsAppInbox />);
 
@@ -110,7 +127,7 @@ describe('WhatsAppInbox', () => {
     mocks.messages.mockReturnValue({
       data: [{
         id: 'message-a', direction: 'OUTBOUND', source: 'AI', message_type: 'text', body: 'Hello',
-        status: 'FAILED', error_code: 'WHATSAPP_PROVIDER_400', error_message: 'WhatsApp rejected the request.',
+        status: 'FAILED', retryable: true, error_code: 'WHATSAPP_PROVIDER_RATE_LIMITED', error_message: 'WhatsApp temporarily rate limited the request.',
         media_available: false, created_at: new Date().toISOString(), provider_timestamp: null,
         sent_at: null, delivered_at: null, read_at: null,
       }],
@@ -124,7 +141,8 @@ describe('WhatsAppInbox', () => {
 
     expect(screen.getByText('2')).toBeInTheDocument();
     expect(screen.getByText('AI · FAILED')).toBeInTheDocument();
-    expect(screen.getByText('WhatsApp rejected the request.')).toBeInTheDocument();
+    expect(screen.getByText('WhatsApp temporarily rate limited the request.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Retry safely' }));
     fireEvent.change(screen.getByLabelText('Assigned agent'), { target: { value: 'agent-b' } });
     await user.click(screen.getByRole('button', { name: 'Disable AI' }));
     await user.click(screen.getByRole('button', { name: 'Take over' }));
@@ -136,6 +154,7 @@ describe('WhatsAppInbox', () => {
     expect(mocks.action).toHaveBeenCalledWith({ type: 'update', payload: { ai_enabled: false } });
     expect(mocks.action).toHaveBeenCalledWith({ type: 'takeover' });
     expect(mocks.send).toHaveBeenCalledWith(expect.objectContaining({ body: 'A human reply' }));
+    expect(mocks.retryMessage).toHaveBeenCalledWith('message-a');
   });
 
   it('reuses the idempotency key when an accepted send response is lost', async () => {

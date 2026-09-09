@@ -55,12 +55,14 @@ export function WhatsAppIntegrationCard() {
   return <Card className="space-y-5 p-5 sm:p-6">
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div><h2 className="flex items-center gap-2 text-lg font-semibold"><MessageCircle className="size-5" />WhatsApp Connection</h2><p className="mt-1 text-sm text-muted-foreground">Meta Cloud API · credentials are write-only and encrypted by the backend.</p></div>
-      <span className="w-fit rounded-full border px-3 py-1 text-xs font-medium">{data?.enabled ? 'Connected' : data?.configured ? data.status : 'Disconnected'}</span>
+      <span className="w-fit rounded-full border px-3 py-1 text-xs font-medium">{data?.ready ? 'Ready' : data?.enabled ? 'Connected · setup incomplete' : data?.configured ? data.status : 'Disconnected'}</span>
     </div>
     {data?.configured && <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
-      <div><dt className="text-muted-foreground">Business account</dt><dd>{data.business_account_id}</dd></div><div><dt className="text-muted-foreground">Phone</dt><dd>{data.display_phone_number ?? 'Not verified'}</dd></div>
-      <div><dt className="text-muted-foreground">Webhook</dt><dd>{data.last_webhook_at ? new Date(data.last_webhook_at).toLocaleString() : 'No verified event'}</dd></div><div><dt className="text-muted-foreground">Phone index</dt><dd>{data.phone_index_ready ? 'Ready' : 'Normalization required'}</dd></div>
+      <div><dt className="text-muted-foreground">Business account</dt><dd>{data.business_account_id}</dd></div><div><dt className="text-muted-foreground">Phone</dt><dd>{data.masked_phone_number ?? 'Not verified'}</dd></div>
+      <div><dt className="text-muted-foreground">Webhook</dt><dd>{data.webhook_status === 'OBSERVED' && data.last_webhook_at ? `Observed ${new Date(data.last_webhook_at).toLocaleString()}` : data.webhook_status === 'STALE' ? 'Last event is stale' : 'No verified event'}</dd></div><div><dt className="text-muted-foreground">Worker</dt><dd>{data.worker_status === 'HEALTHY' ? 'Healthy' : data.worker_status.toLowerCase()}</dd></div>
+      <div><dt className="text-muted-foreground">AI service user</dt><dd>{data.ai_status === 'READY' ? 'Ready' : data.ai_status.toLowerCase().replaceAll('_', ' ')}</dd></div><div><dt className="text-muted-foreground">Phone index</dt><dd>{data.phone_index_ready ? 'Ready' : 'Normalization required'}</dd></div>
     </dl>}
+    {data?.configured && <p className="text-sm text-muted-foreground">{data.backlog_age_seconds >= 300 ? 'Message processing is delayed. Ask an administrator to check the worker queue.' : 'Readiness reflects configuration and recent worker activity. Delivery and AI provider access still require a successful message test.'}</p>}
     {canManage && <Form {...form}><form onSubmit={form.handleSubmit(save)} className="space-y-4" autoComplete="off">
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {(['business_account_id', 'phone_number_id', 'api_version', 'default_phone_region'] as const).map((name) => <FormField key={name} control={form.control} name={name} render={({ field }) => <FormItem><FormLabel>{name.replaceAll('_', ' ')}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} autoComplete="off" /></FormControl><FormMessage /></FormItem>} />)}

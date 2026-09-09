@@ -256,6 +256,20 @@ class WhatsAppMessage(Base):
     def media_available(self) -> bool:
         return bool(self.media_s3_key)
 
+    @property
+    def retryable(self) -> bool:
+        """Only definite, pre-delivery failures can be manually requeued."""
+        return (
+            self.direction == "OUTBOUND"
+            and self.status == "FAILED"
+            and self.work_status == "FAILED"
+            and self.provider_message_id is None
+            and self.error_code in {
+                "WHATSAPP_PROVIDER_RATE_LIMITED", "WHATSAPP_RATE_LIMITED",
+                "WHATSAPP_RATE_LIMIT_UNAVAILABLE", "WHATSAPP_SENDING_DISABLED",
+            }
+        )
+
 
 class WhatsAppWebhookEvent(Base):
     __tablename__ = "whatsapp_webhook_events"

@@ -4,9 +4,13 @@ const date = z.string().nullable();
 export const whatsappIntegrationSchema = z.object({
   configured: z.boolean(), enabled: z.boolean(), phone_index_ready: z.boolean(), status: z.string(),
   business_account_id: z.string().nullable(), phone_number_id: z.string().nullable(),
-  display_phone_number: z.string().nullable(), verified_name: z.string().nullable(),
+  display_phone_number: z.string().nullable(), masked_phone_number: z.string().nullable().default(null), verified_name: z.string().nullable(),
   api_version: z.string().nullable(), default_phone_region: z.string().nullable(), last_webhook_at: date, last_successful_message_at: date,
   ai_user_id: z.string().nullable(), default_assignee_id: z.string().nullable(),
+  webhook_status: z.enum(['NOT_OBSERVED', 'OBSERVED', 'STALE']).default('NOT_OBSERVED'),
+  worker_status: z.enum(['HEALTHY', 'OFFLINE', 'UNAVAILABLE', 'INVALID']).default('UNAVAILABLE'), worker_last_seen_at: date.default(null),
+  backlog_age_seconds: z.number().int().nonnegative().default(0),
+  ai_status: z.enum(['NOT_CONFIGURED', 'USER_INVALID', 'PERMISSION_MISSING', 'PROVIDER_UNAVAILABLE', 'DISABLED', 'READY']).default('NOT_CONFIGURED'), ready: z.boolean().default(false),
 });
 export const whatsappConversationSchema = z.object({
   id: z.string(), identity_id: z.string(), status: z.enum(['OPEN', 'HUMAN_HANDOFF', 'CLOSED']),
@@ -17,6 +21,7 @@ export const whatsappConversationSchema = z.object({
   contact_id: z.string().nullable(), lead_id: z.string().nullable(), unread_count: z.number().int().nonnegative(),
 });
 export const whatsappMessageSchema = z.object({
+  retryable: z.boolean().default(false),
   id: z.string(), direction: z.enum(['INBOUND', 'OUTBOUND']), source: z.string(), message_type: z.string(),
   body: z.string().nullable(), status: z.enum(['RECEIVED', 'PENDING', 'PROCESSING', 'ACCEPTED', 'SENT', 'DELIVERED', 'READ', 'FAILED', 'UNKNOWN']),
   error_code: z.string().nullable(), error_message: z.string().nullable(), media_available: z.boolean(), created_at: z.string(), provider_timestamp: date, sent_at: date, delivered_at: date, read_at: date,

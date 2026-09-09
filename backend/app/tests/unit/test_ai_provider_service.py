@@ -799,6 +799,25 @@ async def test_runtime_rejects_user_without_organization():
 
 
 @pytest.mark.asyncio
+async def test_readiness_resolves_org_provider_and_disabled_flags(monkeypatch):
+    repository = _repository()
+    config = SimpleNamespace(enabled=True, provider="gemini", model_name="tenant-model")
+    repository.get_organization_config.return_value = config
+    monkeypatch.setattr("app.services.ai_runtime_service.settings.AI_PROVIDER", "openrouter")
+    monkeypatch.setattr("app.services.ai_runtime_service.settings.OPENROUTER_API_KEY", "synthetic-key")
+    monkeypatch.setattr("app.services.ai_runtime_service.settings.GEMINI_API_KEY", None)
+    service = AIRuntimeService(repository=repository, provider_gateway=AIProviderGateway())
+    db = AsyncMock(spec=AsyncSession)
+    assert await service.configuration_readiness(db, "org-a") == "PROVIDER_UNAVAILABLE"
+    repository.get_organization_config.assert_awaited_with(db, "org-a")
+    monkeypatch.setattr("app.services.ai_runtime_service.settings.GEMINI_API_KEY", "synthetic-key")
+    assert await service.configuration_readiness(db, "org-a") == "READY"
+    config.enabled = False
+    assert await service.configuration_readiness(db, "org-a") == "DISABLED"
+    repository.create_run.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_runtime_overrides_stale_gemini_org_config_for_crm_search(monkeypatch):
     repository = _repository()
     repository.get_organization_config.return_value = SimpleNamespace(

@@ -30,6 +30,7 @@ vi.mock('@/components/common/user-select', () => ({
 }));
 
 import { PERMISSIONS } from '@/lib/permissions';
+import { whatsappIntegrationSchema, whatsappMessageSchema } from '@/lib/types/whatsapp';
 import { WhatsAppIntegrationCard } from './whatsapp-integration-card';
 
 const connected = {
@@ -40,6 +41,7 @@ const connected = {
   business_account_id: '1001',
   phone_number_id: '2002',
   display_phone_number: '+14155552671',
+  masked_phone_number: '••••2671',
   verified_name: 'Example Business',
   api_version: 'v23.0',
   default_phone_region: 'US',
@@ -47,6 +49,11 @@ const connected = {
   last_successful_message_at: null,
   ai_user_id: 'user-a',
   default_assignee_id: 'user-a',
+  webhook_status: 'OBSERVED',
+  worker_status: 'HEALTHY',
+  worker_last_seen_at: '2026-09-09T10:00:00Z',
+  ai_status: 'READY',
+  ready: true,
 };
 
 beforeEach(() => {
@@ -58,12 +65,22 @@ beforeEach(() => {
 });
 
 describe('WhatsAppIntegrationCard', () => {
+  it('accepts legacy backend metadata with conservative readiness defaults', () => {
+    const { masked_phone_number, webhook_status, worker_status, worker_last_seen_at, ai_status, ready, ...legacy } = connected;
+    void [masked_phone_number, webhook_status, worker_status, worker_last_seen_at, ai_status, ready];
+    const parsed = whatsappIntegrationSchema.parse(legacy);
+    expect(parsed.ready).toBe(false);
+    expect(parsed.worker_status).toBe('UNAVAILABLE');
+    expect(parsed.masked_phone_number).toBeNull();
+    expect(whatsappMessageSchema.shape.retryable.parse(undefined)).toBe(false);
+  });
   it('renders safe connection metadata but no credential form without manage permission', () => {
     mocks.permissions.add(PERMISSIONS.INTEGRATIONS.READ);
     render(<WhatsAppIntegrationCard />);
 
-    expect(screen.getByText('Connected')).toBeInTheDocument();
-    expect(screen.getByText('+14155552671')).toBeInTheDocument();
+    expect(screen.getAllByText('Ready')).toHaveLength(3);
+    expect(screen.getByText('••••2671')).toBeInTheDocument();
+    expect(screen.queryByText('+14155552671')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Access token')).not.toBeInTheDocument();
   });
 

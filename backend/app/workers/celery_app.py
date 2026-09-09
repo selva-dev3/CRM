@@ -21,6 +21,7 @@ celery_app.conf.beat_schedule = {
     "process-whatsapp-inbox-outbox": {
         "task": "app.workers.whatsapp.process_pending",
         "schedule": 10.0,
+        "options": {"expires": 10},
     },
     "cleanup-expired-auth-records": {
         "task": "app.workers.tasks.cleanup_expired_auth_records",

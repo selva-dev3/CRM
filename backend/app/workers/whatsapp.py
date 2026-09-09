@@ -15,7 +15,11 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.core.config import settings
 from app.core.errors import APIException
 from app.core.logging import get_logger
-from app.core.whatsapp_security import enforce_rate_limit, service_window_open
+from app.core.whatsapp_security import (
+    enforce_rate_limit,
+    record_worker_heartbeat,
+    service_window_open,
+)
 from app.models.whatsapp import WhatsAppConversation as Conversation
 from app.models.whatsapp import WhatsAppMessage as Message
 from app.models.whatsapp import WhatsAppWebhookEvent as Event
@@ -25,6 +29,7 @@ from app.services.whatsapp_service import whatsapp_service as service
 from app.workers.celery_app import celery_app
 
 logger = get_logger(__name__)
+DOWNLOADABLE_MEDIA_TYPES = frozenset({"image", "audio", "video", "document"})
 
 
 @celery_app.task(
@@ -71,6 +76,14 @@ async def process_event(db) -> bool:
                 )
                 if result:
                     conversation, message = result
+                    logger.info(
+                        "whatsapp.inbound_persisted",
+                        extra={
+                            "request_id": event.correlation_id,
+                            "message_id": message.id,
+                            "message_type": message.message_type,
+                        },
+                    )
                     await service.ensure_eligible_assignee(db, conversation, config)
                     text = (message.body or "").strip().lower()
                     identity = await service.repository.identity(db, conversation)
@@ -100,7 +113,7 @@ async def process_event(db) -> bool:
                     ):
                         conversation.ai_enabled = False
                         conversation.status = "HUMAN_HANDOFF"
-                        if message.message_type == "text":
+                        if message.message_type not in DOWNLOADABLE_MEDIA_TYPES:
                             message.work_status = "DONE"
                         if (
                             needs_human
@@ -238,6 +251,10 @@ async def process_message(factory) -> bool:
                 )
             if message.direction == "INBOUND":
                 if message.message_type != "text":
+                    if message.message_type not in DOWNLOADABLE_MEDIA_TYPES:
+                        message.work_status = "DONE"
+                        await service.commit(db)
+                        return True
                     metadata = message.media_metadata or {}
                     media_id = metadata.get("id")
                     if not isinstance(media_id, str):
@@ -285,12 +302,25 @@ async def process_message(factory) -> bool:
                 # Existing AI runtime owns its credit/run transactions. Release row
                 # locks before generation and re-check takeover state after it returns.
                 await service.commit(db)
+                logger.info(
+                    "whatsapp.ai_processing_started",
+                    extra={"request_id": message.id, "conversation_id": conversation.id},
+                )
                 reply, handoff, topic = await ai_domain_service.whatsapp_customer_chat(
                     db,
                     current_user=user,
                     conversation_id=conversation.id,
                     message=message.body or "",
                     history=history,
+                )
+                logger.info(
+                    "whatsapp.ai_processing_completed",
+                    extra={
+                        "request_id": message.id,
+                        "conversation_id": conversation.id,
+                        "handoff": handoff,
+                        "topic": topic,
+                    },
                 )
                 await db.refresh(conversation, with_for_update=True)
                 await db.refresh(message, with_for_update=True)
@@ -399,6 +429,13 @@ async def process_message(factory) -> bool:
                         code="WHATSAPP_ORGANIZATION_INACTIVE",
                     )
                 client = await service.provider(db, config)
+                logger.info(
+                    "whatsapp.provider_send_started",
+                    extra={
+                        "request_id": message.id,
+                        "message_type": message.message_type,
+                    },
+                )
                 if message.message_type == "template":
                     template_data = message.template_payload or {}
                     template = await service.repository.template(
@@ -439,6 +476,10 @@ async def process_message(factory) -> bool:
                 message.provider_message_id = provider_id
                 message.status = "ACCEPTED"
                 message.work_status = "DONE"
+                logger.info(
+                    "whatsapp.provider_send_accepted",
+                    extra={"request_id": message.id, "message_status": message.status},
+                )
                 config.last_successful_message_at = datetime.now(UTC)
                 conversation.last_message_at = datetime.now(UTC)
                 service.audit(db, organization_id, "outbound_accepted", message.id, user.id)
@@ -459,14 +500,19 @@ async def process_message(factory) -> bool:
             retryable_outbound = message.direction == "OUTBOUND" and exc.code in {
                 "WHATSAPP_RATE_LIMITED",
                 "WHATSAPP_RATE_LIMIT_UNAVAILABLE",
+                "WHATSAPP_PROVIDER_RATE_LIMITED",
             }
             if (retryable_inbound or retryable_outbound) and message.attempts < 3:
                 message.work_status = "PENDING"
                 if message.direction == "OUTBOUND":
                     message.status = "PENDING"
-                message.next_attempt_at = datetime.now(UTC) + timedelta(
-                    seconds=30 * 2 ** (message.attempts - 1)
+                retry_after = (exc.fields or {}).get("retry_after_seconds")
+                delay_seconds = (
+                    retry_after
+                    if isinstance(retry_after, int)
+                    else 30 * 2 ** (message.attempts - 1)
                 )
+                message.next_attempt_at = datetime.now(UTC) + timedelta(seconds=delay_seconds)
                 await service.commit(db)
                 logger.warning(
                     "whatsapp.message_retry_scheduled",
@@ -543,6 +589,7 @@ async def sweep() -> None:
     engine = create_async_engine(settings.DATABASE_URL)
     factory = async_sessionmaker(engine, expire_on_commit=False)
     try:
+        await record_worker_heartbeat()
         async with factory() as db:
             await recover_interrupted(db)
         async with factory() as db:
@@ -560,5 +607,6 @@ async def sweep() -> None:
         for _ in range(10):
             if not await process_message(factory):
                 break
+        await record_worker_heartbeat()
     finally:
         await engine.dispose()

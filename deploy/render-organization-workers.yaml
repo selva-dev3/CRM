@@ -2,6 +2,84 @@
 # Confirm branch and region against the existing service before applying.
 services:
   - type: worker
+    name: crm-application-worker
+    runtime: docker
+    plan: 0.5c-512mb
+    repo: https://github.com/selva-dev3/CRM
+    branch: main
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: celery -A app.workers.celery_app:celery_app worker --loglevel=INFO --concurrency=1 --queues=celery
+    numInstances: 1
+    autoDeployTrigger: off
+    envVars: &applicationWorkerEnvironment
+      - key: ENVIRONMENT
+        value: production
+      - key: CRM_DISABLE_DOTENV
+        value: "1"
+      - key: ORGANIZATION_CLEANUP_ONLY
+        value: "false"
+      - key: ORGANIZATION_DELETION_ENABLED
+        value: "false"
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: CELERY_BROKER_URL
+        sync: false
+      - key: CELERY_RESULT_BACKEND
+        sync: false
+      - key: RATE_LIMIT_STORAGE_URI
+        sync: false
+      - key: WHATSAPP_ENABLED
+        value: "true"
+      - key: WHATSAPP_APP_ID
+        sync: false
+      - key: WHATSAPP_APP_SECRET
+        sync: false
+      - key: WHATSAPP_WEBHOOK_VERIFY_TOKEN
+        sync: false
+      - key: WHATSAPP_PUBLIC_WEBHOOK_URL
+        sync: false
+      - key: WHATSAPP_API_VERSION
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: AI_PROVIDER
+        sync: false
+      - key: AI_MODEL
+        sync: false
+      - key: AWS_ENDPOINT_URL
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_S3_BUCKET
+        sync: false
+      - key: AWS_REGION
+        sync: false
+  - type: worker
+    name: crm-application-scheduler
+    runtime: docker
+    plan: 0.5c-512mb
+    repo: https://github.com/selva-dev3/CRM
+    branch: main
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: celery -A app.workers.celery_app:celery_app beat --loglevel=INFO --schedule=/tmp/crm-celerybeat-schedule
+    numInstances: 1
+    autoDeployTrigger: off
+    envVars: *applicationWorkerEnvironment
+  - type: worker
     name: crm-organization-worker
     runtime: docker
     plan: 0.5c-512mb
@@ -40,16 +118,3 @@ services:
         sync: false
       - key: AWS_REGION
         sync: false
-  - type: worker
-    name: crm-organization-scheduler
-    runtime: docker
-    plan: 0.5c-512mb
-    repo: https://github.com/selva-dev3/CRM
-    branch: main
-    rootDir: backend
-    dockerfilePath: ./Dockerfile
-    dockerContext: .
-    dockerCommand: celery -A app.workers.celery_app:celery_app beat --loglevel=INFO --schedule=/tmp/crm-celerybeat-schedule
-    numInstances: 1
-    autoDeployTrigger: off
-    envVars: *workerEnvironment

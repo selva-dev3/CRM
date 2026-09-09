@@ -1,5 +1,7 @@
 import os
+import re
 from typing import Literal
+from urllib.parse import urlparse
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -78,12 +80,25 @@ class Settings(BaseSettings):
             "WHATSAPP_APP_SECRET": self.WHATSAPP_APP_SECRET,
             "WHATSAPP_WEBHOOK_VERIFY_TOKEN": self.WHATSAPP_WEBHOOK_VERIFY_TOKEN,
             "WHATSAPP_PUBLIC_WEBHOOK_URL": self.WHATSAPP_PUBLIC_WEBHOOK_URL,
+            "WHATSAPP_API_VERSION": self.WHATSAPP_API_VERSION,
         }
         missing = [name for name, value in required.items() if not value]
         if missing:
             raise ValueError(f"WhatsApp configuration is incomplete: {', '.join(missing)}")
         if not self.WHATSAPP_PUBLIC_WEBHOOK_URL.startswith("https://"):
             raise ValueError("WHATSAPP_PUBLIC_WEBHOOK_URL must use HTTPS")
+        webhook_url = urlparse(self.WHATSAPP_PUBLIC_WEBHOOK_URL)
+        expected_path = f"{self.API_V1_STR}/whatsapp/webhook"
+        if (
+            webhook_url.path.rstrip("/") != expected_path
+            or webhook_url.query
+            or webhook_url.fragment
+        ):
+            raise ValueError(f"WHATSAPP_PUBLIC_WEBHOOK_URL must end with {expected_path}")
+        if not re.fullmatch(r"\d{1,100}", self.WHATSAPP_APP_ID or ""):
+            raise ValueError("WHATSAPP_APP_ID must be a numeric Meta app ID")
+        if not re.fullmatch(r"v\d{2}\.0", self.WHATSAPP_API_VERSION or ""):
+            raise ValueError("WHATSAPP_API_VERSION must use the vNN.0 format")
         return self
 
     @field_validator("DATABASE_URL", mode="before")

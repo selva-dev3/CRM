@@ -32,6 +32,7 @@ class IntegrationRead(BaseModel):
     business_account_id: str | None = None
     phone_number_id: str | None = None
     display_phone_number: str | None = None
+    masked_phone_number: str | None = None
     verified_name: str | None = None
     api_version: str | None = None
     default_phone_region: str | None = None
@@ -39,6 +40,14 @@ class IntegrationRead(BaseModel):
     last_successful_message_at: datetime | None = None
     ai_user_id: str | None = None
     default_assignee_id: str | None = None
+    webhook_status: Literal["NOT_OBSERVED", "OBSERVED", "STALE"] = "NOT_OBSERVED"
+    worker_status: Literal["HEALTHY", "OFFLINE", "UNAVAILABLE", "INVALID"] = "OFFLINE"
+    worker_last_seen_at: datetime | None = None
+    backlog_age_seconds: int = 0
+    ai_status: Literal[
+        "NOT_CONFIGURED", "USER_INVALID", "PERMISSION_MISSING", "PROVIDER_UNAVAILABLE", "DISABLED", "READY"
+    ] = "NOT_CONFIGURED"
+    ready: bool = False
 
 
 class MessageWrite(BaseModel):
@@ -105,6 +114,7 @@ class MessageRead(BaseModel):
     error_code: str | None
     error_message: str | None
     media_available: bool = False
+    retryable: bool = False
     created_at: datetime
     provider_timestamp: datetime | None
     sent_at: datetime | None
@@ -191,6 +201,18 @@ class WebhookEntry(BaseModel):
 class WebhookPayload(BaseModel):
     object: Literal["whatsapp_business_account"]
     entry: list[WebhookEntry] = Field(max_length=100)
+
+
+class WebhookIngestResult(BaseModel):
+    matched_changes: int = 0
+    unmatched_changes: int = 0
+    inserted_messages: int = 0
+    inserted_statuses: int = 0
+    duplicate_events: int = 0
+
+    @property
+    def inserted_events(self) -> int:
+        return self.inserted_messages + self.inserted_statuses
 
 
 class CustomerAIOutput(BaseModel):

@@ -32,7 +32,8 @@ class WhatsAppProviderService:
         self, method: str, resource: str, *, payload: dict | None = None, params: dict | None = None
     ) -> dict:
         if not re.fullmatch(
-            r"\d{1,100}(?:/(?:messages|phone_numbers|message_templates))?", resource
+            r"\d{1,100}(?:/(?:messages|phone_numbers|message_templates|subscribed_apps))?",
+            resource,
         ):
             raise ValueError("Invalid provider resource")
         async with httpx.AsyncClient(
@@ -56,6 +57,18 @@ class WhatsAppProviderService:
             raise APIException(
                 message="Provider outcome is unknown; review required.",
                 code="WHATSAPP_OUTCOME_UNKNOWN",
+                status_code=503,
+            )
+        if response.status_code == 429:
+            retry_after_header = response.headers.get("retry-after")
+            try:
+                retry_after_seconds = int(retry_after_header or "60")
+            except ValueError:
+                retry_after_seconds = 60
+            raise APIException(
+                message="WhatsApp temporarily rate limited the request.",
+                code="WHATSAPP_PROVIDER_RATE_LIMITED",
+                fields={"retry_after_seconds": max(1, min(retry_after_seconds, 3600))},
                 status_code=503,
             )
         if not response.is_success:

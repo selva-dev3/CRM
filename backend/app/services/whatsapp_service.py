@@ -1,6 +1,6 @@
 """Authenticated WhatsApp operations, reusing CRM identity, RBAC and audit models."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.errors import APIException, ConflictError, ForbiddenError, NotFoundError
 from app.core.phone import normalize_phone
-from app.core.whatsapp_security import enforce_rate_limit, service_window_open
+from app.core.whatsapp_security import enforce_rate_limit, service_window_open, worker_heartbeat
 from app.models import User
 from app.models.whatsapp import (
     WhatsAppConversation,
@@ -23,6 +23,7 @@ from app.schemas.whatsapp import (
     IntegrationWrite,
     MessageWrite,
     TemplateMessageWrite,
+    WebhookIngestResult,
     WebhookPayload,
 )
 from app.services.auth_service import auth_service
@@ -45,7 +46,7 @@ class WhatsAppService:
 
     async def ingest_webhook(
         self, db: AsyncSession, payload: WebhookPayload, correlation_id: str
-    ) -> int:
+    ) -> WebhookIngestResult:
         return await self.repository.ingest(db, payload, correlation_id)
 
     @staticmethod
@@ -83,11 +84,58 @@ class WhatsAppService:
         if not config:
             return IntegrationRead()
         catalog = await self.repository.catalog(db, config)
+        worker_status, worker_last_seen_at = await worker_heartbeat()
+        oldest_pending_at = await self.repository.oldest_pending_at(db, user.organization_id)
+        backlog_age_seconds = (
+            max(0, int((datetime.now(UTC) - oldest_pending_at).total_seconds()))
+            if oldest_pending_at else 0
+        )
+        if config.last_webhook_at is None:
+            webhook_status = "NOT_OBSERVED"
+        elif datetime.now(UTC) - config.last_webhook_at > timedelta(hours=24):
+            webhook_status = "STALE"
+        else:
+            webhook_status = "OBSERVED"
+        ai_status = "NOT_CONFIGURED"
+        if config.ai_user_id:
+            ai_user = await self.repository.user(db, config.organization_id, config.ai_user_id)
+            if ai_user is None:
+                ai_status = "USER_INVALID"
+            else:
+                ai_permissions = set(await auth_service.get_user_permissions(db, ai_user))
+                if not {"ai:generate", "whatsapp:send", "whatsapp:read_all"}.issubset(ai_permissions):
+                    ai_status = "PERMISSION_MISSING"
+                else:
+                    from app.services.ai_runtime_service import ai_runtime_service
+
+                    ai_status = await ai_runtime_service.configuration_readiness(
+                        db, config.organization_id
+                    )
+        masked_phone_number = None
+        if config.display_phone_number:
+            digits = "".join(character for character in config.display_phone_number if character.isdigit())
+            masked_phone_number = "••••" + digits[-4:] if len(digits) >= 4 else "••••"
+        ready = bool(
+            config.enabled
+            and catalog.status == "connected"
+            and config.phone_index_ready
+            and webhook_status == "OBSERVED"
+            and worker_status == "HEALTHY"
+            and backlog_age_seconds < 300
+            and ai_status == "READY"
+        )
         return IntegrationRead(
             configured=True,
             enabled=config.enabled,
             phone_index_ready=config.phone_index_ready,
             status=catalog.status,
+            masked_phone_number=masked_phone_number,
+            webhook_status=webhook_status,
+            worker_status=worker_status,
+            worker_last_seen_at=worker_last_seen_at,
+            backlog_age_seconds=backlog_age_seconds,
+            ai_status=ai_status,
+            ready=ready,
             **{
                 k: getattr(config, k)
                 for k in (
@@ -111,6 +159,10 @@ class WhatsAppService:
         self.available()
         await self.permissions(db, user, "integrations:manage")
         await enforce_rate_limit("configure:" + user.organization_id, 10)
+        if settings.WHATSAPP_API_VERSION and payload.api_version != settings.WHATSAPP_API_VERSION:
+            raise ConflictError(
+                message="The API version must match the WhatsApp version configured for this deployment."
+            )
         for user_id in (payload.ai_user_id, payload.default_assignee_id):
             if user_id and not await self.repository.user(db, user.organization_id, user_id):
                 raise NotFoundError(message="User not found.")
@@ -224,6 +276,35 @@ class WhatsAppService:
             raise APIException(
                 message="The configured phone does not belong to this business account.",
                 code="WHATSAPP_PHONE_NOT_VERIFIED",
+            )
+        subscriptions = await client.request(
+            "GET",
+            f"{config.business_account_id}/subscribed_apps",
+            params={"limit": 100},
+        )
+        subscribed_apps = subscriptions.get("data")
+        if not isinstance(subscribed_apps, list):
+            raise APIException(
+                message="Invalid webhook subscription response from WhatsApp.",
+                code="WHATSAPP_SUBSCRIPTION_INVALID",
+                status_code=502,
+            )
+        app_subscribed = any(
+            isinstance(item, dict)
+            and (
+                item.get("id") == settings.WHATSAPP_APP_ID
+                or (
+                    isinstance(item.get("whatsapp_business_api_data"), dict)
+                    and item["whatsapp_business_api_data"].get("id")
+                    == settings.WHATSAPP_APP_ID
+                )
+            )
+            for item in subscribed_apps
+        )
+        if not app_subscribed:
+            raise ConflictError(
+                message="The configured Meta app is not subscribed to this WhatsApp business account.",
+                code="WHATSAPP_WEBHOOK_NOT_SUBSCRIBED",
             )
         config.display_phone_number = normalize_phone(number.get("display_phone_number", ""))
         config.verified_name = str(number.get("verified_name", ""))[:255]
@@ -491,6 +572,44 @@ class WhatsAppService:
         conversation.ai_enabled = False
         conversation.status = "HUMAN_HANDOFF"
         self.audit(db, user.organization_id, "template_queued", message.id, user.id)
+        await self.commit(db)
+        return message
+
+    async def retry_failed_message(
+        self, db: AsyncSession, user: User, conversation_id: str, message_id: str
+    ) -> WhatsAppMessage:
+        self.available()
+        conversation = await self.conversation(
+            db, user, conversation_id, required="whatsapp:send", lock=True
+        )
+        message = await self.repository.message(
+            db, user.organization_id, conversation.id, message_id
+        )
+        if message is None or message.direction != "OUTBOUND":
+            raise NotFoundError(message="Message not found.")
+        if message.status == "UNKNOWN":
+            raise ConflictError(
+                message="An unknown provider outcome must be reconciled from a signed status webhook; resending is unsafe.",
+                code="WHATSAPP_UNKNOWN_RETRY_PROHIBITED",
+            )
+        if not message.retryable:
+            raise ConflictError(
+                message="This message is not eligible for a safe retry.",
+                code="WHATSAPP_MESSAGE_NOT_RETRYABLE",
+            )
+        config = await self.repository.configuration(db, user.organization_id)
+        identity = await self.repository.identity(db, conversation)
+        if config is None or not config.enabled or identity.consent == "OPTED_OUT":
+            raise ConflictError(message="WhatsApp sending is not currently available.")
+        message.status = "PENDING"
+        message.work_status = "PENDING"
+        message.attempts = 0
+        message.next_attempt_at = datetime.now(UTC)
+        message.claimed_at = None
+        message.error_code = None
+        message.error_message = None
+        message.failed_at = None
+        self.audit(db, user.organization_id, "outbound_retry_queued", message.id, user.id)
         await self.commit(db)
         return message
 
