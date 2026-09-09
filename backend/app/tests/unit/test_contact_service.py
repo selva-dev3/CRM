@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.errors import NotFoundError
 from app.models import User
 from app.models.contact import Contact, ContactAddress
@@ -49,7 +50,12 @@ def _service_with(repo: ContactRepository) -> ContactService:
         repo.lock_organization = AsyncMock()
     if "find_duplicate" not in repo.__dict__:
         repo.find_duplicate = AsyncMock(return_value=None)
-    return ContactService(repository=repo)
+    whatsapp = SimpleNamespace(
+        lock_phone_guard=AsyncMock(),
+        prepare_crm_phone=AsyncMock(),
+        detach_crm_identities=AsyncMock(),
+    )
+    return ContactService(repository=repo, whatsapp_repository=whatsapp)
 
 
 @pytest.mark.asyncio
@@ -87,9 +93,7 @@ async def test_get_billing_address_is_scoped_to_contact_and_organization():
     repo: Any = ContactRepository()
     repo.get_by_id_scoped = AsyncMock(return_value=_make_contact())
     repo.get_address = AsyncMock(
-        return_value=ContactAddress(
-            contact_id="cnt-1", street="123 Main Street", country="IN"
-        )
+        return_value=ContactAddress(contact_id="cnt-1", street="123 Main Street", country="IN")
     )
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -98,9 +102,7 @@ async def test_get_billing_address_is_scoped_to_contact_and_organization():
 
     assert result.street == "123 Main Street"
     assert result.country == "IN"
-    repo.get_address.assert_awaited_once_with(
-        db, contact_id="cnt-1", organization_id="org-1"
-    )
+    repo.get_address.assert_awaited_once_with(db, contact_id="cnt-1", organization_id="org-1")
 
 
 @pytest.mark.asyncio
@@ -108,9 +110,7 @@ async def test_update_billing_address_creates_missing_address():
     repo: Any = ContactRepository()
     repo.get_by_id_scoped = AsyncMock(return_value=_make_contact())
     repo.get_address = AsyncMock(return_value=None)
-    address = ContactAddress(
-        contact_id="cnt-1", street="123 Main Street", country="IN"
-    )
+    address = ContactAddress(contact_id="cnt-1", street="123 Main Street", country="IN")
     repo.create_address = AsyncMock(return_value=address)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
@@ -147,7 +147,9 @@ async def test_list_contact_activities_combines_existing_related_records(monkeyp
     )
     service.call_repository.list_by_contact = AsyncMock(return_value=[])
     service.deal_repository.list_activities_by_contact = AsyncMock(
-        return_value=[SimpleNamespace(id="deal-activity-1", action="Deal won", timestamp="2026-01-01")]
+        return_value=[
+            SimpleNamespace(id="deal-activity-1", action="Deal won", timestamp="2026-01-01")
+        ]
     )
     db = AsyncMock(spec=AsyncSession)
     monkeypatch.setattr(
@@ -291,7 +293,13 @@ async def test_create_contact_validates_and_persists_custom_fields(monkeypatch):
     repo.find_duplicate = AsyncMock(return_value=None)
     custom_fields = AsyncMock()
     custom_fields.validate_values.return_value = {"preferred_channel": "Email"}
-    service = ContactService(repository=repo, custom_field_service_instance=custom_fields)
+    service = ContactService(
+        repository=repo,
+        custom_field_service_instance=custom_fields,
+        whatsapp_repository=SimpleNamespace(
+            prepare_crm_phone=AsyncMock(), detach_crm_identities=AsyncMock()
+        ),
+    )
     monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())
     db = AsyncMock(spec=AsyncSession)
 
@@ -319,6 +327,66 @@ async def test_create_contact_validates_and_persists_custom_fields(monkeypatch):
     )
     assert repo.create.await_args.kwargs["data"]["custom_fields"] == {"preferred_channel": "Email"}
     assert result["custom_fields"] == {"preferred_channel": "Email"}
+
+
+@pytest.mark.asyncio
+async def test_create_contact_takes_phone_guard_before_organization_lock(monkeypatch):
+    calls: list[str] = []
+    contact = _make_contact(phone="+14155552671")
+    repo: Any = ContactRepository()
+    repo.create = AsyncMock(return_value=contact)
+    repo.find_duplicate = AsyncMock(return_value=None)
+    repo.lock_organization = AsyncMock(side_effect=lambda *_args: calls.append("organization"))
+    whatsapp = SimpleNamespace(
+        lock_phone_guard=AsyncMock(side_effect=lambda *_args: calls.append("phone")),
+        prepare_crm_phone=AsyncMock(),
+        detach_crm_identities=AsyncMock(),
+    )
+    service = ContactService(repository=repo, whatsapp_repository=whatsapp)
+    monkeypatch.setattr(settings, "WHATSAPP_ENABLED", True)
+    monkeypatch.setattr(
+        "app.services.contact_service.organization_service.resolve_valid_org_id",
+        AsyncMock(return_value="org-1"),
+    )
+    monkeypatch.setattr("app.services.contact_service.notification_service.notify", AsyncMock())
+
+    await service.create_contact(
+        AsyncMock(spec=AsyncSession),
+        ContactCreate(name="Jane Doe", email="jane@acme.com", phone="+14155552671"),
+        _make_user(),
+    )
+
+    assert calls == ["phone", "organization"]
+
+
+@pytest.mark.asyncio
+async def test_update_contact_takes_phone_guard_before_fresh_contact_read(monkeypatch):
+    calls: list[str] = []
+    contact = _make_contact(phone="+14155552671")
+    repo: Any = ContactRepository()
+    repo.get_by_id_scoped = AsyncMock(
+        side_effect=lambda *_args, **_kwargs: (calls.append("read"), contact)[1]
+    )
+    repo.find_duplicate = AsyncMock(return_value=None)
+    repo.lock_organization = AsyncMock(side_effect=lambda *_args: calls.append("organization"))
+    whatsapp = SimpleNamespace(
+        lock_phone_guard=AsyncMock(side_effect=lambda *_args: calls.append("phone")),
+        prepare_crm_phone=AsyncMock(side_effect=lambda *_args: calls.append("prepare")),
+        detach_crm_identities=AsyncMock(),
+    )
+    service = ContactService(repository=repo, whatsapp_repository=whatsapp)
+    monkeypatch.setattr(settings, "WHATSAPP_ENABLED", True)
+    monkeypatch.setattr("app.services.contact_service.notification_service.notify", AsyncMock())
+
+    await service.update_contact(
+        AsyncMock(spec=AsyncSession),
+        contact.id,
+        ContactUpdate(phone="+14155552672"),
+        organization_id=contact.organization_id,
+    )
+
+    assert calls == ["phone", "read", "organization", "prepare"]
+    assert repo.get_by_id_scoped.await_args.kwargs["populate_existing"] is True
 
 
 @pytest.mark.asyncio

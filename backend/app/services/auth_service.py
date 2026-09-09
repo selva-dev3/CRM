@@ -195,6 +195,82 @@ class AuthService:
 
         return sorted(permission_keys)
 
+    async def get_users_permissions(
+        self, db: AsyncSession, users: list[User], organization_id: str
+    ) -> dict[str, set[str]]:
+        """Resolve tenant-user permissions in a bounded set of batch queries.
+
+        This follows the same deny-closed mapping and legacy-role rules as
+        ``get_user_permissions`` and exists for permission-filtered user lists.
+        """
+        resolved = {user.id: set() for user in users}
+        candidates = [
+            user
+            for user in users
+            if user.organization_id == organization_id
+            and user.is_active
+            and not user.is_platform_admin
+        ]
+        if not candidates:
+            return resolved
+        mappings: dict[str, list[str]] = {user.id: [] for user in candidates}
+        for user_id, role_id in await self.repository.role_ids_for_users(
+            db, [user.id for user in candidates]
+        ):
+            if user_id in mappings and role_id not in mappings[user_id]:
+                mappings[user_id].append(role_id)
+
+        requested_ids: set[str] = set()
+        requested_names: set[str] = set()
+        for user in candidates:
+            mapped = mappings[user.id]
+            if len(mapped) > 1:
+                logger.error("User %s has multiple role mappings; denying permissions", user.id)
+                continue
+            if mapped:
+                requested_ids.add(mapped[0])
+                continue
+            raw_role = (user.role or "").strip()
+            if len(raw_role) == 36 and "-" in raw_role:
+                requested_ids.add(raw_role)
+            elif raw_role and not is_super_admin_role_name(raw_role):
+                requested_names.add(raw_role.lower())
+
+        roles = await self.repository.roles_by_ids_or_names(
+            db, requested_ids, requested_names, organization_id
+        )
+        roles_by_id = {role.id: role for role in roles}
+        role_ids_by_name: dict[str, set[str]] = {}
+        for role in roles:
+            role_ids_by_name.setdefault(role.name.strip().lower(), set()).add(role.id)
+        user_role_ids: dict[str, set[str]] = {}
+        for user in candidates:
+            mapped = mappings[user.id]
+            if len(mapped) > 1:
+                continue
+            if mapped:
+                role_ids = {mapped[0]} if mapped[0] in roles_by_id else set()
+            else:
+                raw_role = (user.role or "").strip()
+                if is_super_admin_role_name(raw_role):
+                    role_ids = set()
+                elif len(raw_role) == 36 and "-" in raw_role:
+                    role_ids = {raw_role} if raw_role in roles_by_id else set()
+                else:
+                    role_ids = role_ids_by_name.get(raw_role.lower(), set())
+            user_role_ids[user.id] = role_ids
+
+        permissions_by_role: dict[str, set[str]] = {}
+        all_role_ids = {role_id for values in user_role_ids.values() for role_id in values}
+        for role_id, key in await self.repository.permission_keys_by_role(db, all_role_ids):
+            if key in ADMIN_PERMISSIONS:
+                permissions_by_role.setdefault(role_id, set()).add(key)
+        for user_id, role_ids in user_role_ids.items():
+            resolved[user_id] = {
+                key for role_id in role_ids for key in permissions_by_role.get(role_id, set())
+            }
+        return resolved
+
     async def login(self, db: AsyncSession, payload: LoginRequest) -> dict:
         user = await self.repository.get_user_by_email(db, payload.email)
         if not user:

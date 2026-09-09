@@ -24,11 +24,13 @@ const ENTITY_ROUTES: Record<string, string> = {
   product: '/products',
   quote: '/quotes',
   call: '/calls',
+  whatsapp_conversation: '/whatsapp?conversation=',
 };
 
 function notificationHref(n: NotificationItem): string | null {
   if (n.entity_type && n.entity_id && ENTITY_ROUTES[n.entity_type]) {
-    return `${ENTITY_ROUTES[n.entity_type]}/${n.entity_id}`;
+    const base = ENTITY_ROUTES[n.entity_type];
+    return base.endsWith('=') ? `${base}${encodeURIComponent(n.entity_id)}` : `${base}/${n.entity_id}`;
   }
   return null;
 }

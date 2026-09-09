@@ -13,11 +13,15 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
-    imports=("app.workers.tasks",),
+    imports=("app.workers.tasks", "app.workers.whatsapp"),
 )
 
 # Hourly sweep of scheduled report deliveries (see workers/tasks.py).
 celery_app.conf.beat_schedule = {
+    "process-whatsapp-inbox-outbox": {
+        "task": "app.workers.whatsapp.process_pending",
+        "schedule": 10.0,
+    },
     "cleanup-expired-auth-records": {
         "task": "app.workers.tasks.cleanup_expired_auth_records",
         "schedule": crontab(minute=10),

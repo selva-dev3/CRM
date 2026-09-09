@@ -32,6 +32,7 @@ roles read create update delete assign
 organization read update billing domains branding audit members transfer_ownership
 invitations read create resend revoke
 integrations read manage apikeys
+whatsapp read_assigned read_all send assign takeover manage_ai
 notifications read manage send
 settings read update security
 activities read create export
@@ -43,6 +44,7 @@ projects read create update delete assign
 SYSTEM_ROLE_PERMISSIONS = {
     "Admin": ADMIN_PERMISSIONS,
     "Sales Manager": _keys("""
+whatsapp read_assigned read_all send assign takeover manage_ai
 dashboard read customize export
 leads read create update delete export import assign convert bulk_delete bulk_update
 contacts read create update delete export import assign bulk_delete bulk_update
@@ -64,6 +66,7 @@ ai read generate
 projects read create update delete assign
 """),
     "Sales Executive": _keys("""
+whatsapp read_assigned send takeover
 dashboard read
 leads read create update convert export
 contacts read create update export
@@ -97,6 +100,7 @@ activities read create
 ai read generate
 """),
     "Customer Support": _keys("""
+whatsapp read_assigned read_all send assign takeover manage_ai
 dashboard read
 leads read
 contacts read update

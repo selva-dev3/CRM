@@ -15,11 +15,11 @@ from app.repositories.role_repository import RoleRepository
 
 def test_approved_counts_and_read_only_policy():
     assert {name: len(keys) for name, keys in SYSTEM_ROLE_PERMISSIONS.items()} == {
-        "Admin": 149,
-        "Sales Manager": 107,
-        "Sales Executive": 50,
+        "Admin": 155,
+        "Sales Manager": 113,
+        "Sales Executive": 53,
         "Marketing Executive": 30,
-        "Customer Support": 29,
+        "Customer Support": 35,
         "Read Only": 19,
     }
     assert all(key.endswith(":read") for key in SYSTEM_ROLE_PERMISSIONS["Read Only"])

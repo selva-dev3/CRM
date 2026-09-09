@@ -68,6 +68,15 @@ describe('getRoutePermission', () => {
     expect(getRoutePermission('/users')).toBe(PERMISSIONS.USERS.READ);
     expect(getRoutePermission('/roles')).toBe(PERMISSIONS.ROLES.READ);
     expect(getRoutePermission('/ai')).toBe(PERMISSIONS.AI.READ);
+    expect(getRoutePermission('/whatsapp')).toEqual([
+      PERMISSIONS.WHATSAPP.READ_ASSIGNED,
+      PERMISSIONS.WHATSAPP.READ_ALL,
+    ]);
+  });
+
+  it('shows WhatsApp navigation to read-all-only roles', () => {
+    const visible = filterNavigationSections(navigationSections, [PERMISSIONS.WHATSAPP.READ_ALL]);
+    expect(visible.flatMap((section) => section.items).map((item) => item.href)).toContain('/whatsapp');
   });
 
   it('lets detail routes inherit the parent permission', () => {
@@ -86,7 +95,7 @@ describe('navigation/route consistency', () => {
       for (const item of section.items) {
         const segment = item.href.split('/').filter(Boolean)[0];
         expect(protectedRoutes[segment]).toBeDefined();
-        expect(protectedRoutes[segment]).toBe(item.permission);
+        expect(protectedRoutes[segment]).toEqual(item.permission);
       }
     }
   });

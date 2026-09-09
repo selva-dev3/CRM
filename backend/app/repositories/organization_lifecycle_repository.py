@@ -70,6 +70,7 @@ STORAGE_COLUMNS = {
     "invoices": {"pdf_s3_key": "key"},
     "payments": {"receipt_s3_key": "key"},
     "report_exports": {"s3_key": "key", "download_url": "url"},
+    "whatsapp_messages": {"media_s3_key": "key"},
     # Unscoped upload records are never guessed to belong to a tenant.
     "file_uploads": {"file_path": "url"},
 }
@@ -358,6 +359,9 @@ class OrganizationLifecycleRepository:
     async def has_active_work(self, db: AsyncSession, organization_id: str) -> bool:
         predicates = tenant_predicates(organization_id)
         for name, column, states in (
+            ("whatsapp_messages", "status", ("PENDING", "PROCESSING", "UNKNOWN")),
+            ("whatsapp_messages", "work_status", ("PENDING", "PROCESSING")),
+            ("whatsapp_webhook_events", "status", ("PENDING",)),
             ("emails", "status", ("Processing", "Unknown")),
             ("integration_deliveries", "status", ("Processing",)),
             ("quotes", "delivery_status", ("processing", "sending", "unknown")),

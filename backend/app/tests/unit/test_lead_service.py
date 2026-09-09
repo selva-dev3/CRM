@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import Headers
 
+from app.core.config import settings
 from app.core.errors import APIException, ForbiddenError, NotFoundError
 from app.models import Lead, User
 from app.repositories.lead_repository import LeadRepository
@@ -53,7 +54,8 @@ def _make_lead(**overrides) -> Lead:
 
 
 def _service_with(repo: LeadRepository) -> LeadService:
-    return LeadService(repository=repo)
+    whatsapp = SimpleNamespace(prepare_crm_phone=AsyncMock(), detach_crm_identities=AsyncMock())
+    return LeadService(repository=repo, whatsapp_repository=whatsapp)
 
 
 def _make_user(**overrides) -> User:
@@ -216,9 +218,7 @@ async def test_send_email_rejects_lead_without_valid_email(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("with_calls", [False, True])
-async def test_get_timeline_passes_lead_id_to_email_and_call_repositories(
-    with_calls, monkeypatch
-):
+async def test_get_timeline_passes_lead_id_to_email_and_call_repositories(with_calls, monkeypatch):
     lead = _make_lead(created_at=datetime(2026, 9, 1))
     calls = (
         [
@@ -359,7 +359,13 @@ async def test_create_lead_validates_and_persists_custom_fields(monkeypatch):
     repo.get_organization = AsyncMock(return_value=SimpleNamespace(id="org-1"))
     custom_fields = AsyncMock()
     custom_fields.validate_values.return_value = {"territory": "South"}
-    service = LeadService(repository=repo, custom_field_service_instance=custom_fields)
+    service = LeadService(
+        repository=repo,
+        custom_field_service_instance=custom_fields,
+        whatsapp_repository=SimpleNamespace(
+            prepare_crm_phone=AsyncMock(), detach_crm_identities=AsyncMock()
+        ),
+    )
     monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())
     db = AsyncMock(spec=AsyncSession)
 
@@ -429,6 +435,38 @@ async def test_update_lead_only_applies_provided_fields(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_phone_update_takes_guard_before_reading_lead(monkeypatch):
+    calls: list[str] = []
+    lead = _make_lead(phone="+14155552671")
+    repo: Any = LeadRepository()
+
+    async def read_lead(*_args):
+        calls.append("read")
+        return lead
+
+    repo.get_by_id_for_org = AsyncMock(side_effect=read_lead)
+    repo.record_activity = AsyncMock()
+    whatsapp = SimpleNamespace(
+        lock_phone_guard=AsyncMock(side_effect=lambda *_args: calls.append("guard")),
+        prepare_crm_phone=AsyncMock(side_effect=lambda *_args: calls.append("prepare")),
+        detach_crm_identities=AsyncMock(),
+    )
+    monkeypatch.setattr(settings, "WHATSAPP_ENABLED", True)
+    monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())
+
+    from app.schemas.crm_schemas import LeadUpdate
+
+    await LeadService(repository=repo, whatsapp_repository=whatsapp).update_lead(
+        AsyncMock(spec=AsyncSession),
+        lead.id,
+        LeadUpdate(phone="+12025550123"),
+        _make_user(),
+    )
+
+    assert calls == ["guard", "read", "prepare"]
+
+
+@pytest.mark.asyncio
 async def test_update_lead_rejects_qualification_without_customer_details():
     lead = _make_lead(company="")
     repo: Any = LeadRepository()
@@ -438,9 +476,7 @@ async def test_update_lead_rejects_qualification_without_customer_details():
     db = AsyncMock(spec=AsyncSession)
 
     with pytest.raises(APIException, match="required to qualify"):
-        await service.qualify_lead(
-            db, "lead-1", LeadQualificationRequest(), _make_user()
-        )
+        await service.qualify_lead(db, "lead-1", LeadQualificationRequest(), _make_user())
 
     repo.record_activity.assert_not_awaited()
     db.commit.assert_not_awaited()
@@ -532,9 +568,7 @@ async def test_update_lead_requires_assign_permission(monkeypatch):
     from app.schemas.crm_schemas import LeadUpdate
 
     with pytest.raises(ForbiddenError, match="leads:assign"):
-        await service.update_lead(
-            db, "lead-1", LeadUpdate(assigned_to="usr-2"), _make_user()
-        )
+        await service.update_lead(db, "lead-1", LeadUpdate(assigned_to="usr-2"), _make_user())
 
     db.commit.assert_not_awaited()
 
@@ -730,9 +764,7 @@ async def test_assign_lead_fires_lead_assigned_event(monkeypatch):
     monkeypatch.setattr(integration_service, "notify_slack_event", notify)
     db = AsyncMock(spec=AsyncSession)
 
-    await service.assign_lead(
-        db, "lead-1", "usr-9", organization_id="org-1", actor_id="usr-1"
-    )
+    await service.assign_lead(db, "lead-1", "usr-9", organization_id="org-1", actor_id="usr-1")
 
     notify.assert_awaited_once()
     kwargs = notify.await_args_list[-1].kwargs

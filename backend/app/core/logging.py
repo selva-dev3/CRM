@@ -39,6 +39,17 @@ class SensitiveDataFilter(logging.Filter):
         return True
 
 
+class WebhookAccessFilter(logging.Filter):
+    """Meta verification places a secret in the query string; suppress access logs.
+
+    Channel service logs contain a correlation ID without the query or payload.
+    Reverse-proxy access logs must apply the same exclusion (see deployment docs).
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "/whatsapp/webhook" not in record.getMessage()
+
+
 def configure_logging() -> None:
     """Configure the root logger with a consistent, correlation-id aware format."""
     level = logging.DEBUG if settings.ENVIRONMENT.lower() == "development" else logging.INFO
@@ -55,6 +66,7 @@ def configure_logging() -> None:
     root = logging.getLogger()
     root.handlers = [handler]
     root.setLevel(level)
+    logging.getLogger("uvicorn.access").addFilter(WebhookAccessFilter())
 
 
 def get_logger(name: str) -> logging.Logger:

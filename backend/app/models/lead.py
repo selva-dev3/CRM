@@ -1,6 +1,18 @@
 import uuid
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -8,6 +20,10 @@ from app.db.base import Base
 
 class Lead(Base):
     __tablename__ = "leads"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "id"),
+        Index("ix_leads_org_normalized_phone", "organization_id", "normalized_phone"),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     organization_id: Mapped[str] = mapped_column(
@@ -18,6 +34,8 @@ class Lead(Base):
     contact_name: Mapped[str] = mapped_column(String(255), nullable=False)
     email: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
     phone: Mapped[str | None] = mapped_column(String(50))
+    normalized_phone: Mapped[str | None] = mapped_column(String(16))
+    whatsapp_phone_verified_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
     website: Mapped[str | None] = mapped_column(String(255))
     industry: Mapped[str | None] = mapped_column(String(100))
     company_size: Mapped[str | None] = mapped_column(String(50))
@@ -56,9 +74,7 @@ class Lead(Base):
     converted_by: Mapped[str | None] = mapped_column(
         String, ForeignKey("users.id", ondelete="SET NULL")
     )
-    next_follow_up_at: Mapped[DateTime | None] = mapped_column(
-        DateTime(timezone=True), index=True
-    )
+    next_follow_up_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), index=True)
     archived_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(
