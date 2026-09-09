@@ -47,10 +47,22 @@ from app.models.whatsapp import WhatsAppTemplate as Template
 from app.models.whatsapp import (
     WhatsAppWebhookEvent as Event,
 )
-from app.schemas.whatsapp import InboundEvent, StatusEvent, WebhookPayload
+from app.schemas.whatsapp import InboundEvent, StatusEvent, WebhookIngestResult, WebhookPayload
 
 
 class WhatsAppRepository:
+    async def oldest_pending_at(self, db: AsyncSession, organization_id: str) -> datetime | None:
+        """Measure durable work age within the requesting tenant, including active processing."""
+        event_age = select(func.min(Event.created_at)).where(
+            Event.organization_id == organization_id, Event.status == "PENDING"
+        ).scalar_subquery()
+        message_age = select(func.min(Message.created_at)).where(
+            Message.organization_id == organization_id,
+            Message.work_status.in_(["PENDING", "PROCESSING"]),
+        ).scalar_subquery()
+        row = (await db.execute(select(event_age, message_age))).one()
+        return min((value for value in row if value is not None), default=None)
+
     @staticmethod
     async def flush(db: AsyncSession) -> None:
         await db.flush()
@@ -892,8 +904,10 @@ class WhatsAppRepository:
         )
         return list(reversed(rows))
 
-    async def ingest(self, db: AsyncSession, payload: WebhookPayload, correlation_id: str) -> int:
-        count = 0
+    async def ingest(
+        self, db: AsyncSession, payload: WebhookPayload, correlation_id: str
+    ) -> WebhookIngestResult:
+        result_summary = WebhookIngestResult()
         for entry in payload.entry:
             for change in entry.changes:
                 # Never resolve tenant from headers, sender text, or a customer identifier.
@@ -906,7 +920,9 @@ class WhatsAppRepository:
                     )
                 ).scalar_one_or_none()
                 if config is None:
+                    result_summary.unmatched_changes += 1
                     continue
+                result_summary.matched_changes += 1
                 config.last_webhook_at = datetime.now(UTC)
                 for kind, events in (
                     ("message", change.value.messages),
@@ -931,7 +947,7 @@ class WhatsAppRepository:
                         key = hashlib.sha256(
                             json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()
                         ).hexdigest()
-                        result = await db.execute(
+                        insert_result = await db.execute(
                             insert(Event)
                             .values(
                                 id=str(uuid4()),
@@ -946,8 +962,13 @@ class WhatsAppRepository:
                             .on_conflict_do_nothing(index_elements=["integration_id", "event_key"])
                             .returning(Event.id)
                         )
-                        count += result.scalar_one_or_none() is not None
-        return count
+                        if insert_result.scalar_one_or_none() is None:
+                            result_summary.duplicate_events += 1
+                        elif kind == "message":
+                            result_summary.inserted_messages += 1
+                        else:
+                            result_summary.inserted_statuses += 1
+        return result_summary
 
     async def match(
         self, db: AsyncSession, config: Configuration, phone: str

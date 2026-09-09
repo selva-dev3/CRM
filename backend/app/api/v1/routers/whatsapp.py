@@ -80,10 +80,28 @@ async def receive_webhook(request: Request, db: AsyncSession = Depends(get_db)) 
             code="WHATSAPP_INVALID_WEBHOOK",
             status_code=400,
         ) from exc
-    await service.ingest_webhook(db, payload, correlation_id)
+    result = await service.ingest_webhook(db, payload, correlation_id)
     await service.commit(db)
     # DB inbox + existing beat sweep means queue outages cannot lose an ACKed event.
-    logger.info("whatsapp.webhook_received", extra={"request_id": correlation_id})
+    logger.info(
+        "whatsapp.webhook_received",
+        extra={
+            "request_id": correlation_id,
+            "matched_changes": result.matched_changes,
+            "unmatched_changes": result.unmatched_changes,
+            "inserted_messages": result.inserted_messages,
+            "inserted_statuses": result.inserted_statuses,
+            "duplicate_events": result.duplicate_events,
+        },
+    )
+    if result.unmatched_changes:
+        logger.warning(
+            "whatsapp.webhook_integration_unmatched",
+            extra={
+                "request_id": correlation_id,
+                "unmatched_changes": result.unmatched_changes,
+            },
+        )
     return Response(status_code=204)
 
 
@@ -214,6 +232,20 @@ async def send_template_message(
     user: User = Depends(require_user_session),
 ):
     return await service.send_template(db, user, conversation_id, payload)
+
+
+@router.post(
+    "/conversations/{conversation_id}/messages/{message_id}/retry",
+    response_model=MessageRead,
+    status_code=202,
+)
+async def retry_failed_message(
+    conversation_id: str,
+    message_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_user_session),
+):
+    return await service.retry_failed_message(db, user, conversation_id, message_id)
 
 
 @router.patch("/conversations/{conversation_id}", response_model=ConversationRead)

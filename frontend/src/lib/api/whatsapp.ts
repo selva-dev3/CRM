@@ -71,6 +71,13 @@ export function useWhatsAppSendTemplate(id: string) {
     onSuccess: async () => { await client.invalidateQueries({ queryKey: whatsappKeys.all(scope) }); } });
 }
 
+export function useWhatsAppRetryMessage(id: string) {
+  const scope = useWhatsAppScope();
+  const client = useQueryClient();
+  return useMutation({ retry: false, mutationFn: async (messageId: string) => whatsappMessageSchema.parse(await apiClient.post(`/whatsapp/conversations/${encodeURIComponent(id)}/messages/${encodeURIComponent(messageId)}/retry`)),
+    onSuccess: async () => { await client.invalidateQueries({ queryKey: whatsappKeys.all(scope) }); } });
+}
+
 export function useWhatsAppConversationAction(id: string) {
   const scope = useWhatsAppScope();
   const client = useQueryClient();

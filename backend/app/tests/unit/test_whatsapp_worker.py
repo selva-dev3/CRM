@@ -201,7 +201,9 @@ async def test_inbound_event_is_retained_while_organization_is_suspended(monkeyp
     conversation = SimpleNamespace(
         id="conversation-a", ai_enabled=True, status="OPEN", assigned_user_id=None
     )
-    message = SimpleNamespace(body="STOP", message_type="text", work_status="PENDING")
+    message = SimpleNamespace(
+        id="message-stop", body="STOP", message_type="text", work_status="PENDING"
+    )
     event.next_attempt_at = datetime.now(UTC)
     repository.organization_active.return_value = True
     monkeypatch.setattr(
@@ -216,6 +218,59 @@ async def test_inbound_event_is_retained_while_organization_is_suspended(monkeyp
     assert identity.consent == "OPTED_OUT"
     assert conversation.ai_enabled is False
     assert event.status == "DONE"
+
+
+@pytest.mark.asyncio
+async def test_unsupported_inbound_message_is_persisted_for_handoff_without_media_retry(
+    monkeypatch,
+):
+    event = SimpleNamespace(
+        id="event-location",
+        organization_id="org-a",
+        integration_id="integration-a",
+        correlation_id="request-location",
+        status="PENDING",
+        attempts=0,
+        next_attempt_at=datetime.now(UTC),
+        error_code=None,
+        payload={
+            "kind": "message",
+            "data": {
+                "id": "wamid.location",
+                "from": "14155552671",
+                "timestamp": "1788900000",
+                "type": "location",
+            },
+        },
+    )
+    config = SimpleNamespace(id="integration-a", organization_id="org-a")
+    identity = SimpleNamespace(id="identity-a", state="MATCHED_CONTACT", consent="UNKNOWN")
+    conversation = SimpleNamespace(
+        id="conversation-a", ai_enabled=True, status="OPEN", assigned_user_id=None
+    )
+    message = SimpleNamespace(
+        id="message-location", body=None, message_type="location", work_status="PENDING"
+    )
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=_Result(event))
+    repository = worker.service.repository
+    monkeypatch.setattr(repository, "configuration", AsyncMock(return_value=config))
+    monkeypatch.setattr(repository, "organization_active", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        repository, "persist_inbound", AsyncMock(return_value=(conversation, message))
+    )
+    monkeypatch.setattr(repository, "identity", AsyncMock(return_value=identity))
+    monkeypatch.setattr(worker.service, "ensure_eligible_assignee", AsyncMock())
+    monkeypatch.setattr(worker.service, "notify", AsyncMock())
+    monkeypatch.setattr(worker.service, "audit", MagicMock())
+    monkeypatch.setattr(worker.service, "commit", AsyncMock())
+
+    assert await worker.process_event(db) is True
+
+    assert event.status == "DONE"
+    assert message.work_status == "DONE"
+    assert conversation.ai_enabled is False
+    assert conversation.status == "HUMAN_HANDOFF"
 
 
 @pytest.mark.asyncio
@@ -333,6 +388,51 @@ async def test_pre_send_rate_limit_is_retried_without_provider_call(monkeypatch)
     assert message.work_status == "PENDING"
     assert message.status == "PENDING"
     assert message.attempts == 1
+
+
+@pytest.mark.asyncio
+async def test_provider_rate_limit_uses_retry_after_without_marking_message_failed(monkeypatch):
+    message, conversation, config, identity, user, claim_db, process_db = _outbound_fixture()
+    repository = worker.service.repository
+    monkeypatch.setattr(repository, "configuration", AsyncMock(return_value=config))
+    monkeypatch.setattr(repository, "identity", AsyncMock(return_value=identity))
+    monkeypatch.setattr(repository, "organization_active", AsyncMock(return_value=True))
+    monkeypatch.setattr(repository, "has_pending_inbound_events", AsyncMock(return_value=False))
+    monkeypatch.setattr(repository, "user", AsyncMock(return_value=user))
+    monkeypatch.setattr(repository, "conversation", AsyncMock(return_value=conversation))
+    monkeypatch.setattr(
+        repository,
+        "match",
+        AsyncMock(return_value=("MATCHED_CONTACT", "contact-a", None)),
+    )
+    monkeypatch.setattr(repository, "customer_answer", AsyncMock(return_value="Current answer"))
+    monkeypatch.setattr(
+        worker.service,
+        "permissions",
+        AsyncMock(return_value={"ai:generate", "whatsapp:send", "whatsapp:read_all"}),
+    )
+    provider = MagicMock()
+    provider.send_text = AsyncMock(
+        side_effect=APIException(
+            message="Provider throttled the request.",
+            code="WHATSAPP_PROVIDER_RATE_LIMITED",
+            fields={"retry_after_seconds": 90},
+            status_code=503,
+        )
+    )
+    monkeypatch.setattr(worker.service, "provider", AsyncMock(return_value=provider))
+    monkeypatch.setattr(worker.service, "commit", AsyncMock())
+    monkeypatch.setattr(worker.service, "notify", AsyncMock())
+    monkeypatch.setattr(worker.service, "audit", MagicMock())
+    monkeypatch.setattr(worker, "enforce_rate_limit", AsyncMock())
+    started_at = datetime.now(UTC)
+
+    assert await worker.process_message(_factory(claim_db, process_db)) is True
+
+    assert message.work_status == "PENDING"
+    assert message.status == "PENDING"
+    assert message.error_code == "WHATSAPP_PROVIDER_RATE_LIMITED"
+    assert message.next_attempt_at >= started_at + worker.timedelta(seconds=90)
 
 
 @pytest.mark.asyncio
