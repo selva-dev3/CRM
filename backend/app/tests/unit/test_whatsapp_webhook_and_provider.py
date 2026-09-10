@@ -402,6 +402,75 @@ async def test_connection_verification_requires_current_app_waba_subscription(mo
 
 
 @pytest.mark.asyncio
+async def test_connection_verification_accepts_meta_test_display_number(monkeypatch):
+    monkeypatch.setattr(settings, "WHATSAPP_ENABLED", True)
+    monkeypatch.setattr(settings, "WHATSAPP_APP_ID", "3003")
+    monkeypatch.setattr(
+        "app.services.whatsapp_service.enforce_rate_limit", AsyncMock()
+    )
+    service = WhatsAppService()
+    user = SimpleNamespace(id="admin-a", organization_id="org-a", is_active=True)
+    assignee = SimpleNamespace(id="agent-a", organization_id="org-a", is_active=True)
+    config = SimpleNamespace(
+        id="config-a",
+        organization_id="org-a",
+        business_account_id="1001",
+        phone_number_id="2002",
+        api_version="v25.0",
+        default_assignee_id="agent-a",
+        ai_user_id=None,
+        catalog_integration_id="catalog-a",
+        updated_at=None,
+        display_phone_number=None,
+        verified_name=None,
+        enabled=False,
+    )
+    catalog = SimpleNamespace(
+        access_token="enc:v1:synthetic",  # noqa: S106
+        updated_at=None,
+        status="unverified",
+        is_connected=False,
+    )
+    client = MagicMock()
+    client.request = AsyncMock(
+        side_effect=[
+            {
+                "data": [
+                    {
+                        "id": "2002",
+                        "display_phone_number": "+1 (555) 673-4737",
+                        "verified_name": "Meta Test Number",
+                    }
+                ]
+            },
+            {"data": [{"id": "3003"}]},
+        ]
+    )
+    expected = SimpleNamespace(verified=True)
+    service.permissions = AsyncMock(
+        side_effect=[{"integrations:manage"}, {"whatsapp:read_assigned"}]
+    )
+    service.repository.configuration = AsyncMock(return_value=config)
+    service.repository.catalog = AsyncMock(return_value=catalog)
+    service.repository.user = AsyncMock(return_value=assignee)
+    service.provider = AsyncMock(return_value=client)
+    service.lock_account_revision = AsyncMock(return_value=(config, catalog))
+    service.audit = MagicMock()
+    service.commit = AsyncMock()
+    service.status = AsyncMock(return_value=expected)
+
+    result = await service.verify(AsyncMock(), user)
+
+    assert result is expected
+    assert config.display_phone_number == "+15556734737"
+    assert config.verified_name == "Meta Test Number"
+    assert config.enabled is True
+    assert catalog.status == "connected"
+    assert catalog.is_connected is True
+    service.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_status_reports_runtime_readiness_without_exposing_full_phone(monkeypatch):
     now = datetime.now(UTC)
     monkeypatch.setattr(settings, "AI_PROVIDER", "openrouter")

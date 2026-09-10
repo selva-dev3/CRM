@@ -6,7 +6,7 @@ from redis.exceptions import RedisError
 
 from app.core import whatsapp_security
 from app.core.errors import ForbiddenError
-from app.core.phone import normalize_phone
+from app.core.phone import normalize_phone, normalize_provider_display_phone
 from app.core.whatsapp_security import service_window_open, verify_signature
 from app.schemas.whatsapp import WebhookPayload
 
@@ -51,6 +51,16 @@ def test_provider_phone_requires_digits_and_adds_plus():
     assert normalize_phone("14155552671", provider=True) == "+14155552671"
     with pytest.raises(ValueError):
         normalize_phone("+14155552671", provider=True)
+
+
+def test_provider_display_phone_accepts_meta_test_number():
+    assert normalize_provider_display_phone("+1 (555) 673-4737") == "+15556734737"
+
+
+@pytest.mark.parametrize("raw", ["5556734737", "+123", "+1 555 test", ""])
+def test_provider_display_phone_rejects_malformed_values(raw):
+    with pytest.raises(ValueError):
+        normalize_provider_display_phone(raw)
 
 
 def test_signature_validation_is_constant_format_and_secret_bound():

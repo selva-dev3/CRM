@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.errors import APIException, ConflictError, ForbiddenError, NotFoundError
-from app.core.phone import normalize_phone
+from app.core.phone import normalize_phone, normalize_provider_display_phone
 from app.core.whatsapp_security import enforce_rate_limit, service_window_open, worker_heartbeat
 from app.models import Integration, User
 from app.models.whatsapp import (
@@ -404,7 +404,16 @@ class WhatsAppService:
         config, catalog = await self.lock_account_revision(
             db, config.organization_id, account_revision
         )
-        config.display_phone_number = normalize_phone(number.get("display_phone_number", ""))
+        try:
+            config.display_phone_number = normalize_provider_display_phone(
+                str(number.get("display_phone_number", ""))
+            )
+        except ValueError as exc:
+            raise APIException(
+                message="WhatsApp returned an invalid display phone number.",
+                code="WHATSAPP_PHONE_RESPONSE_INVALID",
+                status_code=502,
+            ) from exc
         config.verified_name = str(number.get("verified_name", ""))[:255]
         config.enabled = True
         catalog.status = "connected"

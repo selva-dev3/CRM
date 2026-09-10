@@ -25,3 +25,21 @@ def normalize_phone(value: str, region: str | None = None, *, provider: bool = F
     if number.extension or not phonenumbers.is_valid_number(number):
         raise ValueError("Invalid international phone number")
     return phonenumbers.format_number(number, phonenumbers.PhoneNumberFormat.E164)
+
+
+def normalize_provider_display_phone(value: str) -> str:
+    """Normalize a phone display value returned by an authenticated provider API."""
+    try:
+        return normalize_phone(value)
+    except ValueError:
+        value = value.strip()
+        if (
+            not value.startswith("+")
+            or len(value) > 64
+            or not re.fullmatch(r"[+\d\s().-]+", value, re.ASCII)
+        ):
+            raise ValueError("Invalid provider display phone number") from None
+        digits = "".join(character for character in value if character.isdigit())
+        if not re.fullmatch(r"\d{7,15}", digits, re.ASCII):
+            raise ValueError("Invalid provider display phone number") from None
+        return "+" + digits
