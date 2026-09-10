@@ -29,6 +29,28 @@ def test_project_plan_rejects_unsupported_field() -> None:
         AIDomainService._validate_search_plan(plan)
 
 
+def test_search_plan_accepts_explicit_id_result_field() -> None:
+    plan = CRMSearchPlan(entity_type="deal", include_fields=["id", "amount"])
+
+    AIDomainService._validate_search_plan(plan)
+
+
+@pytest.mark.parametrize(
+    "plan",
+    [
+        CRMSearchPlan(
+            entity_type="deal",
+            filters=[{"field": "id", "operator": "equals", "value": "deal-1"}],
+        ),
+        CRMSearchPlan(entity_type="deal", sort_by="id"),
+        CRMSearchPlan(entity_type="deal", date_field="id"),
+    ],
+)
+def test_search_plan_does_not_allow_id_for_querying(plan: CRMSearchPlan) -> None:
+    with pytest.raises(APIException, match="unsupported CRM fields"):
+        AIDomainService._validate_search_plan(plan)
+
+
 def test_project_search_requires_project_permission() -> None:
     plan = CRMSearchPlan(entity_type="project")
 
