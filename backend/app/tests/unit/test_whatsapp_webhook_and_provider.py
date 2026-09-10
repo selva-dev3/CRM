@@ -9,16 +9,169 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 from fastapi import Request
+from sqlalchemy.exc import IntegrityError
 
 from app.api.v1.routers import whatsapp as router
 from app.core.config import settings
 from app.core.errors import APIException, ConflictError, ForbiddenError
-from app.schemas.whatsapp import WebhookIngestResult
+from app.schemas.whatsapp import IntegrationWrite, WebhookIngestResult
 from app.services.whatsapp_provider_service import WhatsAppProviderService, matches_media_sha256
 from app.services.whatsapp_service import WhatsAppService
 
 TEST_APP_SECRET = "unit-test-app-secret"  # noqa: S105 - synthetic test credential
 TEST_VERIFY_TOKEN = "unit-test-verify-token"  # noqa: S105 - synthetic test credential
+
+
+@pytest.fixture
+def account_correction(monkeypatch):
+    monkeypatch.setattr(settings, "WHATSAPP_ENABLED", True)
+    monkeypatch.setattr(settings, "WHATSAPP_API_VERSION", "v25.0")
+    monkeypatch.setattr("app.services.whatsapp_service.enforce_rate_limit", AsyncMock())
+    monkeypatch.setattr(
+        "app.services.whatsapp_service.IntegrationService._encrypt_secret",
+        lambda value: "enc:v1:synthetic",
+    )
+    service = WhatsAppService()
+    config = SimpleNamespace(
+        id="config-a",
+        organization_id="org-a",
+        business_account_id="1001",
+        phone_number_id="2001",
+        enabled=False,
+        last_webhook_at=None,
+        last_successful_message_at=None,
+        display_phone_number="old-display",
+        verified_name="old-name",
+        phone_index_ready=True,
+        phone_backfill_stage="done",
+        phone_backfill_cursor="old-cursor",
+        default_phone_region="IN",
+        api_version="v25.0",
+        default_assignee_id=None,
+        ai_user_id=None,
+        catalog_integration_id="catalog-a",
+        updated_at=None,
+    )
+    service.permissions = AsyncMock(return_value={"integrations:manage"})
+    service.repository.configuration = AsyncMock(return_value=config)
+    service.repository.has_account_records = AsyncMock(return_value=False)
+    service.repository.catalog = AsyncMock(
+        return_value=SimpleNamespace(access_token="enc:v1:old", updated_at=None)  # noqa: S106
+    )
+    service.audit = MagicMock()
+    service.status = AsyncMock(return_value="status-result")
+    user = SimpleNamespace(id="admin-a", organization_id="org-a")
+    payload = IntegrationWrite(
+        business_account_id="1002",
+        phone_number_id="2002",
+        access_token="synthetic-token-for-unit-tests",  # noqa: S106 - synthetic test credential
+        api_version="v25.0",
+        default_phone_region="IN",
+    )
+    return service, config, user, payload
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("changed_field", ["both", "business_account_id", "phone_number_id"])
+async def test_unused_account_identity_can_be_corrected(account_correction, changed_field):
+    service, config, user, payload = account_correction
+    if changed_field != "both":
+        other = (
+            "phone_number_id" if changed_field == "business_account_id" else "business_account_id"
+        )
+        setattr(payload, other, getattr(config, other))
+    db = AsyncMock()
+    assert await service.configure(db, user, payload) == "status-result"
+    assert config.business_account_id == payload.business_account_id
+    assert config.phone_number_id == payload.phone_number_id
+    assert config.display_phone_number is None
+    assert config.verified_name is None
+    assert config.phone_index_ready is False
+    assert config.phone_backfill_stage == "contacts"
+    assert config.phone_backfill_cursor is None
+    assert config.enabled is False
+    service.repository.configuration.assert_awaited_once_with(db, "org-a", lock=True)
+    service.repository.has_account_records.assert_awaited_once_with(db, config)
+    db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "blocker", ["records", "enabled", "last_webhook_at", "last_successful_message_at"]
+)
+async def test_used_account_identity_cannot_be_corrected(account_correction, blocker):
+    service, config, user, payload = account_correction
+    if blocker == "records":
+        service.repository.has_account_records.return_value = True
+    else:
+        setattr(config, blocker, True if blocker == "enabled" else datetime.now(UTC))
+    db = AsyncMock()
+    with pytest.raises(ConflictError):
+        await service.configure(db, user, payload)
+    assert config.business_account_id == "1001"
+    assert config.phone_number_id == "2001"
+    service.repository.catalog.assert_not_awaited()
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_same_account_can_refresh_credentials_with_history(account_correction):
+    service, config, user, payload = account_correction
+    payload.business_account_id = config.business_account_id
+    payload.phone_number_id = config.phone_number_id
+    service.repository.has_account_records.return_value = True
+    db = AsyncMock()
+    await service.configure(db, user, payload)
+    service.repository.has_account_records.assert_not_awaited()
+    assert config.phone_index_ready is True
+    db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_account_correction_commit_failure_propagates(account_correction):
+    service, _, user, payload = account_correction
+    db = AsyncMock()
+    db.commit.side_effect = RuntimeError("synthetic commit failure")
+    with pytest.raises(RuntimeError, match="synthetic commit failure"):
+        await service.configure(db, user, payload)
+    db.rollback.assert_awaited_once()
+    service.status.assert_not_awaited()
+
+
+class _ConstraintError(Exception):
+    def __init__(self, constraint_name):
+        super().__init__(constraint_name)
+        self.constraint_name = constraint_name
+
+
+@pytest.mark.asyncio
+async def test_phone_number_collision_is_reported_as_conflict(account_correction):
+    service, _, user, payload = account_correction
+    db = AsyncMock()
+    db.commit.side_effect = IntegrityError(
+        "update", {}, _ConstraintError(service.PHONE_NUMBER_UNIQUE_CONSTRAINT)
+    )
+
+    with pytest.raises(ConflictError) as exc_info:
+        await service.configure(db, user, payload)
+
+    assert exc_info.value.code == "WHATSAPP_PHONE_ALREADY_CONNECTED"
+    assert exc_info.value.status_code == 409
+    db.rollback.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_unexpected_integrity_error_is_not_hidden(account_correction):
+    service, _, user, payload = account_correction
+    db = AsyncMock()
+    failure = IntegrityError("update", {}, _ConstraintError("unexpected_constraint"))
+    db.commit.side_effect = failure
+
+    with pytest.raises(IntegrityError) as exc_info:
+        await service.configure(db, user, payload)
+
+    assert exc_info.value is failure
+    db.rollback.assert_awaited_once()
 
 
 def test_media_integrity_accepts_meta_base64_and_hex_encodings():
@@ -208,12 +361,16 @@ async def test_connection_verification_requires_current_app_waba_subscription(mo
         organization_id="org-a",
         business_account_id="1001",
         phone_number_id="2002",
+        api_version="v25.0",
         default_assignee_id="agent-a",
         ai_user_id=None,
+        catalog_integration_id="catalog-a",
+        updated_at=None,
         display_phone_number=None,
         verified_name=None,
         enabled=False,
     )
+    catalog = SimpleNamespace(access_token="enc:v1:token", updated_at=None)  # noqa: S106
     client = MagicMock()
     client.request = AsyncMock(
         side_effect=[
@@ -233,6 +390,7 @@ async def test_connection_verification_requires_current_app_waba_subscription(mo
         side_effect=[{"integrations:manage"}, {"whatsapp:read_assigned"}]
     )
     service.repository.configuration = AsyncMock(return_value=config)
+    service.repository.catalog = AsyncMock(return_value=catalog)
     service.repository.user = AsyncMock(return_value=assignee)
     service.provider = AsyncMock(return_value=client)
 
@@ -358,8 +516,18 @@ async def test_template_sync_fetches_all_pages_before_replacing_snapshot(monkeyp
     monkeypatch.setattr(settings, "WHATSAPP_ENABLED", True)
     service = WhatsAppService()
     config = SimpleNamespace(
-        id="config-a", organization_id="org-a", enabled=True, business_account_id="1001"
+        id="config-a",
+        organization_id="org-a",
+        enabled=True,
+        business_account_id="1001",
+        phone_number_id="2002",
+        api_version="v25.0",
+        default_assignee_id="agent-a",
+        ai_user_id=None,
+        catalog_integration_id="catalog-a",
+        updated_at=None,
     )
+    catalog = SimpleNamespace(access_token="enc:v1:token", updated_at=None)  # noqa: S106
     user = SimpleNamespace(id="user-a", organization_id="org-a", is_active=True)
     client = MagicMock()
     client.request = AsyncMock(
@@ -374,6 +542,7 @@ async def test_template_sync_fetches_all_pages_before_replacing_snapshot(monkeyp
     service.permissions = AsyncMock(return_value={"integrations:manage"})
     service.provider = AsyncMock(return_value=client)
     service.repository.configuration = AsyncMock(return_value=config)
+    service.repository.catalog = AsyncMock(return_value=catalog)
     service.repository.replace_templates = AsyncMock()
     service.repository.templates = AsyncMock(return_value=[])
     service.audit = MagicMock()
@@ -389,3 +558,71 @@ async def test_template_sync_fetches_all_pages_before_replacing_snapshot(monkeyp
         config,
         [{"id": "template-1"}, {"id": "template-2"}],
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["verify", "sync_templates"])
+async def test_provider_result_is_rejected_after_account_correction(monkeypatch, operation):
+    monkeypatch.setattr(settings, "WHATSAPP_ENABLED", True)
+    monkeypatch.setattr(settings, "WHATSAPP_APP_ID", "3003")
+    monkeypatch.setattr("app.services.whatsapp_service.enforce_rate_limit", AsyncMock())
+    service = WhatsAppService()
+    original = SimpleNamespace(
+        id="config-a",
+        organization_id="org-a",
+        business_account_id="1001",
+        phone_number_id="2002",
+        api_version="v25.0",
+        enabled=True,
+        default_assignee_id="agent-a",
+        ai_user_id=None,
+        catalog_integration_id="catalog-a",
+        updated_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    corrected = SimpleNamespace(**vars(original))
+    corrected.business_account_id = "corrected-account"
+    corrected.phone_number_id = "corrected-phone"
+    corrected.enabled = False
+    corrected.updated_at = datetime(2026, 1, 2, tzinfo=UTC)
+    catalog = SimpleNamespace(access_token="enc:v1:token", updated_at=None)  # noqa: S106
+    user = SimpleNamespace(id="admin-a", organization_id="org-a", is_active=True)
+    assignee = SimpleNamespace(id="agent-a", organization_id="org-a", is_active=True)
+    client = MagicMock()
+    if operation == "verify":
+        client.request = AsyncMock(
+            side_effect=[
+                {
+                    "data": [
+                        {
+                            "id": "2002",
+                            "display_phone_number": "+1 415-555-2671",
+                            "verified_name": "Old Account",
+                        }
+                    ]
+                },
+                {"data": [{"id": "3003"}]},
+            ]
+        )
+        service.repository.user = AsyncMock(return_value=assignee)
+        service.permissions = AsyncMock(
+            side_effect=[{"integrations:manage"}, {"whatsapp:read_assigned"}]
+        )
+    else:
+        client.request = AsyncMock(return_value={"data": [{"id": "old-template"}]})
+        service.permissions = AsyncMock(return_value={"integrations:manage"})
+        service.repository.templates = AsyncMock(return_value=[])
+    service.provider = AsyncMock(return_value=client)
+    service.repository.configuration = AsyncMock(side_effect=[original, corrected])
+    service.repository.catalog = AsyncMock(return_value=catalog)
+    service.repository.replace_templates = AsyncMock()
+    service.audit = MagicMock()
+    service.commit = AsyncMock()
+    db = AsyncMock()
+
+    with pytest.raises(ConflictError) as exc_info:
+        await getattr(service, operation)(db, user)
+
+    assert exc_info.value.code == "WHATSAPP_CONFIGURATION_CHANGED"
+    db.rollback.assert_awaited_once()
+    service.repository.replace_templates.assert_not_awaited()
+    service.commit.assert_not_awaited()

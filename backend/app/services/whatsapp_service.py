@@ -3,13 +3,14 @@
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.errors import APIException, ConflictError, ForbiddenError, NotFoundError
 from app.core.phone import normalize_phone
 from app.core.whatsapp_security import enforce_rate_limit, service_window_open, worker_heartbeat
-from app.models import User
+from app.models import Integration, User
 from app.models.whatsapp import (
     WhatsAppConversation,
     WhatsAppIntegration,
@@ -32,6 +33,8 @@ from app.services.whatsapp_provider_service import WhatsAppProviderService
 
 
 class WhatsAppService:
+    PHONE_NUMBER_UNIQUE_CONSTRAINT = "whatsapp_integrations_phone_number_id_key"
+
     def __init__(self) -> None:
         self.repository = WhatsAppRepository()
 
@@ -65,6 +68,54 @@ class WhatsAppService:
         if required and required not in permissions:
             raise ForbiddenError(message="You do not have permission for this operation.")
         return permissions
+
+    @staticmethod
+    def account_revision(
+        config: WhatsAppIntegration, catalog: Integration
+    ) -> tuple[object, ...]:
+        """Fields that make a provider response safe to apply to this account."""
+        return (
+            config.business_account_id,
+            config.phone_number_id,
+            config.api_version,
+            config.enabled,
+            config.default_assignee_id,
+            config.ai_user_id,
+            config.catalog_integration_id,
+            getattr(config, "updated_at", None),
+            getattr(catalog, "access_token", None),
+            getattr(catalog, "updated_at", None),
+        )
+
+    async def lock_account_revision(
+        self,
+        db: AsyncSession,
+        organization_id: str,
+        expected: tuple[object, ...],
+    ) -> tuple[WhatsAppIntegration, Integration]:
+        config = await self.repository.configuration(db, organization_id, lock=True)
+        if config is None:
+            raise ConflictError(
+                message="WhatsApp configuration changed during the operation. Try again.",
+                code="WHATSAPP_CONFIGURATION_CHANGED",
+            )
+        catalog = await self.repository.catalog(db, config, lock=True)
+        if self.account_revision(config, catalog) != expected:
+            await db.rollback()
+            raise ConflictError(
+                message="WhatsApp configuration changed during the operation. Try again.",
+                code="WHATSAPP_CONFIGURATION_CHANGED",
+            )
+        return config, catalog
+
+    @classmethod
+    def is_phone_number_collision(cls, exc: IntegrityError) -> bool:
+        orig = exc.orig
+        cause = getattr(orig, "__cause__", None)
+        constraint_name = getattr(orig, "constraint_name", None) or getattr(
+            cause, "constraint_name", None
+        )
+        return constraint_name == cls.PHONE_NUMBER_UNIQUE_CONSTRAINT
 
     def audit(
         self,
@@ -178,18 +229,52 @@ class WhatsAppService:
                 config.phone_number_id != payload.phone_number_id
                 or config.business_account_id != payload.business_account_id
             ):
-                raise ConflictError(
-                    message="Business identity cannot be changed while conversation history exists. Use the account migration procedure."
-                )
+                # The configuration row is locked above; webhook routing takes the
+                # same lock before accepting events for this business identity.
+                if (
+                    config.enabled
+                    or config.last_webhook_at is not None
+                    or config.last_successful_message_at is not None
+                    or await self.repository.has_account_records(db, config)
+                ):
+                    raise ConflictError(
+                        message="Business identity cannot be changed for an active or previously used integration. An account migration is required."
+                    )
+                config.business_account_id = payload.business_account_id
+                config.phone_number_id = payload.phone_number_id
+                config.display_phone_number = None
+                config.verified_name = None
+                config.phone_index_ready = False
+                config.phone_backfill_stage = "contacts"
+                config.phone_backfill_cursor = None
+                try:
+                    await db.flush()
+                except IntegrityError as exc:
+                    await db.rollback()
+                    if self.is_phone_number_collision(exc):
+                        raise ConflictError(
+                            message="This WhatsApp phone number is already connected to another organization.",
+                            code="WHATSAPP_PHONE_ALREADY_CONNECTED",
+                        ) from exc
+                    raise
             catalog = await self.repository.catalog(db, config)
         else:
-            catalog, config = await self.repository.create_configuration(
-                db,
-                user.organization_id,
-                payload.business_account_id,
-                payload.phone_number_id,
-                payload.api_version,
-            )
+            try:
+                catalog, config = await self.repository.create_configuration(
+                    db,
+                    user.organization_id,
+                    payload.business_account_id,
+                    payload.phone_number_id,
+                    payload.api_version,
+                )
+            except IntegrityError as exc:
+                await db.rollback()
+                if self.is_phone_number_collision(exc):
+                    raise ConflictError(
+                        message="This WhatsApp phone number is already connected to another organization.",
+                        code="WHATSAPP_PHONE_ALREADY_CONNECTED",
+                    ) from exc
+                raise
         catalog.access_token = IntegrationService._encrypt_secret(
             payload.access_token.get_secret_value()
         )
@@ -211,7 +296,15 @@ class WhatsAppService:
             config.id,
             user.id,
         )
-        await self.commit(db)
+        try:
+            await self.commit(db)
+        except IntegrityError as exc:
+            if self.is_phone_number_collision(exc):
+                raise ConflictError(
+                    message="This WhatsApp phone number is already connected to another organization.",
+                    code="WHATSAPP_PHONE_ALREADY_CONNECTED",
+                ) from exc
+            raise
         if payload.enabled:
             await self.verify(db, user)
         return await self.status(db, user)
@@ -239,6 +332,8 @@ class WhatsAppService:
         config = await self.repository.configuration(db, user.organization_id)
         if config is None:
             raise NotFoundError(message="WhatsApp integration not found.")
+        catalog = await self.repository.catalog(db, config)
+        account_revision = self.account_revision(config, catalog)
         default_assignee = await self.repository.user(
             db, user.organization_id, config.default_assignee_id
         )
@@ -306,10 +401,12 @@ class WhatsAppService:
                 message="The configured Meta app is not subscribed to this WhatsApp business account.",
                 code="WHATSAPP_WEBHOOK_NOT_SUBSCRIBED",
             )
+        config, catalog = await self.lock_account_revision(
+            db, config.organization_id, account_revision
+        )
         config.display_phone_number = normalize_phone(number.get("display_phone_number", ""))
         config.verified_name = str(number.get("verified_name", ""))[:255]
         config.enabled = True
-        catalog = await self.repository.catalog(db, config)
         catalog.status = "connected"
         catalog.is_connected = True
         self.audit(db, user.organization_id, "integration_verified", config.id, user.id)
@@ -335,6 +432,8 @@ class WhatsAppService:
         config = await self.repository.configuration(db, user.organization_id)
         if config is None or not config.enabled:
             raise ConflictError(message="Verify WhatsApp before syncing templates.")
+        catalog = await self.repository.catalog(db, config)
+        account_revision = self.account_revision(config, catalog)
         client = await self.provider(db, config)
         records: list[dict] = []
         after: str | None = None
@@ -370,6 +469,7 @@ class WhatsAppService:
                 message="WhatsApp template synchronization exceeded the safe page limit.",
                 status_code=502,
             )
+        config, _ = await self.lock_account_revision(db, config.organization_id, account_revision)
         await self.repository.replace_templates(db, config, records)
         self.audit(db, user.organization_id, "templates_synced", config.id, user.id)
         await self.commit(db)
