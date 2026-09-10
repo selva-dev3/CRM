@@ -209,6 +209,7 @@ class WebhookIngestResult(BaseModel):
     inserted_messages: int = 0
     inserted_statuses: int = 0
     duplicate_events: int = 0
+    queued_events: list[tuple[str, str]] = Field(default_factory=list, exclude=True)
 
     @property
     def inserted_events(self) -> int:

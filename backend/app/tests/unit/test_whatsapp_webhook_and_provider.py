@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
-from fastapi import Request
+from fastapi import BackgroundTasks, Request
 from sqlalchemy.exc import IntegrityError
 
 from app.api.v1.routers import whatsapp as router
@@ -246,23 +246,36 @@ async def test_webhook_signature_is_checked_before_persistence(monkeypatch):
     monkeypatch.setattr(settings, "WHATSAPP_APP_SECRET", TEST_APP_SECRET)
     rate_limit = AsyncMock()
     monkeypatch.setattr(router, "enforce_rate_limit", rate_limit)
-    ingest = AsyncMock(return_value=WebhookIngestResult(inserted_messages=1, matched_changes=1))
+    ingest = AsyncMock(
+        return_value=WebhookIngestResult(
+            inserted_messages=1,
+            matched_changes=1,
+            queued_events=[("event-a", "org-a")],
+        )
+    )
     commit = AsyncMock()
     monkeypatch.setattr(router.service.repository, "ingest", ingest)
     monkeypatch.setattr(router.service, "commit", commit)
     db = AsyncMock()
 
     with pytest.raises(ForbiddenError):
-        await router.receive_webhook(_request(body, None), db)
+        await router.receive_webhook(_request(body, None), BackgroundTasks(), db)
     ingest.assert_not_awaited()
 
     digest = hmac.new(TEST_APP_SECRET.encode(), body, hashlib.sha256).hexdigest()
-    response = await router.receive_webhook(_request(body, f"sha256={digest}"), db)
+    background_tasks = BackgroundTasks()
+    dispatch = MagicMock()
+    monkeypatch.setattr(router, "enqueue_webhook_event", dispatch)
+    response = await router.receive_webhook(
+        _request(body, f"sha256={digest}"), background_tasks, db
+    )
+    await background_tasks()
 
     assert response.status_code == 204
     rate_limit.assert_awaited_once_with("webhook", settings.WHATSAPP_WEBHOOK_RATE_PER_MINUTE)
     ingest.assert_awaited_once()
     commit.assert_awaited_once_with(db)
+    dispatch.assert_called_once_with("event-a", "org-a")
 
 
 @pytest.mark.asyncio

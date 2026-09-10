@@ -31,7 +31,9 @@ class ConnectionManager:
 
     async def broadcast(self, message: str, organization_id: str) -> None:
         disconnected: list[WebSocket] = []
-        for connection, (_, connection_org) in self.active_connections.items():
+        # Sending yields control, so disconnects may mutate the live mapping.
+        # Iterate over a snapshot to keep the Redis subscriber alive.
+        for connection, (_, connection_org) in list(self.active_connections.items()):
             if connection_org != organization_id:
                 continue
             try:
@@ -46,11 +48,22 @@ manager = ConnectionManager()
 
 
 async def _authenticate_websocket(
-    websocket: WebSocket, db: AsyncSession
+    websocket: WebSocket,
+    db: AsyncSession,
+    required_permissions: frozenset[str] = frozenset({"notifications:read"}),
 ) -> tuple[User, UserSession, str] | None:
     """Authenticate cookie/header JWT with the same session and tenant rules as HTTP."""
     raw_token = websocket.cookies.get(settings.AUTH_COOKIE_NAME)
     authorization = websocket.headers.get("Authorization", "")
+    if raw_token:
+        origin = websocket.headers.get("Origin")
+        socket_scheme = "https" if websocket.url.scheme == "wss" else "http"
+        same_origin = origin == f"{socket_scheme}://{websocket.url.netloc}"
+        if not origin or (origin not in settings.cors_origins_list and not same_origin):
+            await websocket.close(
+                code=status.WS_1008_POLICY_VIOLATION, reason="Origin denied"
+            )
+            return None
     if not raw_token and authorization.lower().startswith("bearer "):
         raw_token = authorization[7:].strip()
     if not raw_token:
@@ -99,7 +112,7 @@ async def _authenticate_websocket(
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Organization required")
         return None
     permissions = await auth_service.get_user_permissions(db, user)
-    if "notifications:read" not in permissions:
+    if not required_permissions.intersection(permissions):
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Permission denied")
         return None
     session.last_used_at = now
@@ -107,8 +120,12 @@ async def _authenticate_websocket(
     return user, session, organization_id
 
 
-async def _run_socket(websocket: WebSocket, db: AsyncSession) -> None:
-    authenticated = await _authenticate_websocket(websocket, db)
+async def _run_socket(
+    websocket: WebSocket,
+    db: AsyncSession,
+    required_permissions: frozenset[str] = frozenset({"notifications:read"}),
+) -> None:
+    authenticated = await _authenticate_websocket(websocket, db, required_permissions)
     if not authenticated:
         return
     user, session, organization_id = authenticated
@@ -143,7 +160,7 @@ async def _run_socket(websocket: WebSocket, db: AsyncSession) -> None:
                 await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Authorization revoked")
                 return
             permissions = await auth_service.get_user_permissions(db, current_user)
-            if "notifications:read" not in permissions:
+            if not required_permissions.intersection(permissions):
                 await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Permission revoked")
                 return
             # End the read transaction before waiting on the network so each
@@ -183,4 +200,8 @@ async def websocket_notifications(websocket: WebSocket, db: AsyncSession = Depen
 
 @router.websocket("/live-events")
 async def websocket_live_events(websocket: WebSocket, db: AsyncSession = Depends(get_db)) -> None:
-    await _run_socket(websocket, db)
+    await _run_socket(
+        websocket,
+        db,
+        frozenset({"notifications:read", "whatsapp:read_all", "whatsapp:read_assigned"}),
+    )

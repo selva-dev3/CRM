@@ -1,4 +1,5 @@
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -57,9 +58,22 @@ async def lifespan(app: FastAPI):
         )
         raise
 
-    yield
+    from app.api.v1.routers.websockets import manager
+    from app.core.live_events import consume_live_events
 
-    await engine.dispose()
+    live_events_stop = asyncio.Event()
+    live_events_task = asyncio.create_task(
+        consume_live_events(manager.broadcast, live_events_stop), name="live-events-subscriber"
+    )
+
+    try:
+        yield
+    finally:
+        live_events_stop.set()
+        live_events_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await live_events_task
+        await engine.dispose()
 
 
 app = FastAPI(

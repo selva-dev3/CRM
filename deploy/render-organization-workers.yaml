@@ -10,7 +10,7 @@ services:
     rootDir: backend
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    dockerCommand: celery -A app.workers.celery_app:celery_app worker --loglevel=INFO --concurrency=1 --queues=celery
+    dockerCommand: celery -A app.workers.celery_app:celery_app worker --loglevel=INFO --concurrency=1 --queues=celery,whatsapp
     numInstances: 1
     autoDeployTrigger: off
     envVars: &applicationWorkerEnvironment

@@ -24,6 +24,11 @@ class _RedisClient:
 
     async def set(self, *args, **kwargs):
         self.set_calls.append((args, kwargs))
+        return self.value
+
+    async def eval(self, *args):
+        self.eval_args = args
+        return 1
 
     async def aclose(self):
         return None
@@ -108,6 +113,22 @@ async def test_worker_heartbeat_reports_only_valid_shared_redis_state(monkeypatc
     unavailable = _RedisClient(error=RedisError("synthetic outage"))
     monkeypatch.setattr(whatsapp_security.Redis, "from_url", lambda _url: unavailable)
     assert await whatsapp_security.worker_heartbeat() == ("UNAVAILABLE", None)
+
+
+@pytest.mark.asyncio
+async def test_recovery_sweep_lock_is_owned_and_released(monkeypatch):
+    client = _RedisClient(value=True)
+    monkeypatch.setattr(whatsapp_security.Redis, "from_url", lambda _url: client)
+
+    async with whatsapp_security.whatsapp_sweep_lock() as acquired:
+        assert acquired is True
+
+    assert client.set_calls[0][0][0] == whatsapp_security.SWEEP_LOCK_KEY
+    assert client.set_calls[0][1] == {
+        "nx": True,
+        "ex": whatsapp_security.SWEEP_LOCK_TTL_SECONDS,
+    }
+    assert client.eval_args[2] == whatsapp_security.SWEEP_LOCK_KEY
 
 
 def test_webhook_schema_accepts_message_and_status_without_extra_identity_sources():
