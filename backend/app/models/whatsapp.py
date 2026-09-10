@@ -231,6 +231,7 @@ class WhatsAppMessage(Base):
     media_s3_key: Mapped[str | None] = mapped_column(String(500))
     template_payload: Mapped[dict | None] = mapped_column(JSON)
     ai_topic: Mapped[str | None] = mapped_column(String(30))
+    ai_query_plan: Mapped[dict | None] = mapped_column(JSON)
     sender_phone: Mapped[str] = mapped_column(String(50))
     recipient_phone: Mapped[str] = mapped_column(String(50))
     actor_user_id: Mapped[str | None] = mapped_column(

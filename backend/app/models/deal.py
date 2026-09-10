@@ -20,6 +20,7 @@ from app.db.base import Base
 
 class Deal(Base):
     __tablename__ = "deals"
+    __table_args__ = (Index("ix_deals_org_contact", "organization_id", "contact_id"),)
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     organization_id: Mapped[str] = mapped_column(

@@ -225,14 +225,41 @@ class CustomerAIPlan(BaseModel):
     topic: Literal[
         "greeting",
         "lead",
+        "contact",
+        "company",
         "deal",
+        "project",
         "invoice",
         "payment",
         "quote",
         "meeting",
         "task",
+        "email",
+        "call",
+        "product",
+        "combined",
         "account_owner",
         "human",
         "sensitive",
         "unknown",
     ]
+    sources: list[
+        Literal[
+            "contact",
+            "company",
+            "deal",
+            "project",
+            "invoice",
+            "payment",
+            "quote",
+            "meeting",
+            "task",
+            "email",
+            "call",
+            "product",
+            "account_owner",
+        ]
+    ] = Field(default_factory=list, max_length=4)
+    reference: str | None = Field(default=None, max_length=100)
+    time_scope: Literal["latest", "upcoming", "today", "tomorrow", "this_week", "recent"] = "latest"
+    limit: int = Field(default=3, ge=1, le=5)

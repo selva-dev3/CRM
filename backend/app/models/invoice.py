@@ -35,6 +35,7 @@ class Invoice(Base):
         ),
         UniqueConstraint("organization_id", "quote_id", name="uq_invoices_org_quote"),
         UniqueConstraint("organization_id", "invoice_number", name="uq_invoices_org_number"),
+        Index("ix_invoices_org_contact", "organization_id", "contact_id"),
         Index(
             "uq_invoices_one_per_deal",
             "deal_id",
