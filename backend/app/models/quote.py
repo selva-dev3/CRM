@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint, func
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, Numeric, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -12,6 +12,7 @@ class Quote(Base):
     __tablename__ = "quotes"
     __table_args__ = (
         UniqueConstraint("organization_id", "quote_number", name="uq_quotes_org_number"),
+        Index("ix_quotes_org_contact", "organization_id", "contact_id"),
     )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))

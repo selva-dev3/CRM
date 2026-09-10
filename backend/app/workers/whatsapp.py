@@ -365,7 +365,7 @@ async def process_message(
                     "whatsapp.ai_processing_started",
                     extra={"request_id": message.id, "conversation_id": conversation.id},
                 )
-                reply, handoff, topic = await ai_domain_service.whatsapp_customer_chat(
+                reply, handoff, topic, query_plan = await ai_domain_service.whatsapp_customer_chat(
                     db,
                     current_user=user,
                     conversation_id=conversation.id,
@@ -409,6 +409,7 @@ async def process_message(
                             message_type="text",
                             body=reply,
                             ai_topic=topic,
+                            ai_query_plan=query_plan,
                             sender_phone=config.display_phone_number or config.phone_number_id,
                             recipient_phone=identity.normalized_phone_number,
                             actor_user_id=user.id,
@@ -435,6 +436,7 @@ async def process_message(
                             message_type="text",
                             body=reply,
                             ai_topic=topic,
+                            ai_query_plan=query_plan,
                             sender_phone=config.display_phone_number or config.phone_number_id,
                             recipient_phone=identity.normalized_phone_number,
                             actor_user_id=user.id,
@@ -474,9 +476,37 @@ async def process_message(
                             message="Identity changed.", code="WHATSAPP_IDENTITY_CHANGED"
                         )
                     if message.ai_topic and message.ai_topic != "greeting":
-                        current_answer = await service.repository.customer_answer(
-                            db, config, identity, permissions, message.ai_topic
-                        )
+                        if (
+                            getattr(message, "ai_query_plan", None)
+                            and identity.state == "MATCHED_CONTACT"
+                        ):
+                            from app.schemas.whatsapp import CustomerAIPlan
+                            from app.services.customer_crm_context_service import (
+                                customer_crm_context_service,
+                            )
+
+                            try:
+                                plan = CustomerAIPlan.model_validate(message.ai_query_plan)
+                            except ValueError:
+                                try:
+                                    plan = CustomerAIPlan(topic=message.ai_topic)
+                                except ValueError as exc:
+                                    raise APIException(
+                                        message="Stored AI query plan is invalid.",
+                                        code="WHATSAPP_AI_PLAN_INVALID",
+                                    ) from exc
+
+                            current_answer = await customer_crm_context_service.answer(
+                                db,
+                                config,
+                                identity,
+                                permissions,
+                                plan,
+                            )
+                        else:
+                            current_answer = await service.repository.customer_answer(
+                                db, config, identity, permissions, message.ai_topic
+                            )
                         if current_answer is None:
                             raise APIException(
                                 message="CRM authorization or data changed before sending.",

@@ -8,8 +8,10 @@ from app.models import RolePermission, UserRole
 
 BACKEND_ROOT = Path(__file__).resolve().parents[3]
 MERGE_REVISION = "e8f9a0b1c2d3"
-HEAD_REVISION = "w7a8b9c0d1e2"
-PREVIOUS_HEAD_REVISION = "v6f7a8b9c0d1"
+HEAD_REVISION = "y9c0d1e2f3g4"
+CONTACT_CONTEXT_REVISION = "x8b9c0d1e2f3"
+PREVIOUS_HEAD_REVISION = "w7a8b9c0d1e2"
+WHATSAPP_REVISION = "v6f7a8b9c0d1"
 EXPECTED_PARENTS = {"d4e5f6a7b8c0", "d6e7f8a9b0c1"}
 
 
@@ -36,7 +38,9 @@ def test_rbac_revision_resolves_existing_database_stamp():
         for migration in script.iterate_revisions("heads", "p9e0f1a2b3c4")
     ] == [
         HEAD_REVISION,
+        CONTACT_CONTEXT_REVISION,
         PREVIOUS_HEAD_REVISION,
+        WHATSAPP_REVISION,
         "u5e6f7a8b9c0",
         "t4d5e6f7a8b9",
         "s2b3c4d5e6f7",
@@ -48,7 +52,9 @@ def test_rbac_revision_resolves_existing_database_stamp():
         migration.revision for migration in script.iterate_revisions("heads", "o8d9e0f1a2b3")
     ] == [
         HEAD_REVISION,
+        CONTACT_CONTEXT_REVISION,
         PREVIOUS_HEAD_REVISION,
+        WHATSAPP_REVISION,
         "u5e6f7a8b9c0",
         "t4d5e6f7a8b9",
         "s2b3c4d5e6f7",
@@ -64,6 +70,28 @@ def test_merge_revision_joins_ai_and_deal_custom_field_heads():
 
     assert revision is not None
     assert set(revision.down_revision) == EXPECTED_PARENTS
+
+
+def test_whatsapp_contact_context_follows_provider_migration():
+    script = _script_directory()
+    index_revision = script.get_revision(HEAD_REVISION)
+    context_revision = script.get_revision(CONTACT_CONTEXT_REVISION)
+
+    assert index_revision is not None
+    assert context_revision is not None
+    assert index_revision.down_revision == CONTACT_CONTEXT_REVISION
+    assert context_revision.down_revision == PREVIOUS_HEAD_REVISION
+
+
+def test_whatsapp_contact_indexes_are_created_concurrently():
+    source = (
+        BACKEND_ROOT
+        / "alembic/versions/y9c0d1e2f3g4_whatsapp_contact_context_indexes.py"
+    ).read_text()
+
+    assert "autocommit_block" in source
+    assert source.count("postgresql_concurrently=True") == 6
+    assert source.count("if_not_exists=True") == 3
 
 
 def test_susanoox_migration_updates_only_active_provider_configuration():

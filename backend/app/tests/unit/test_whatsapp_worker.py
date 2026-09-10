@@ -65,6 +65,7 @@ def _outbound_fixture():
         message_type="text",
         body="stale value",
         ai_topic="invoice",
+        ai_query_plan=None,
         template_payload=None,
         status="PENDING",
         work_status="PENDING",
@@ -346,6 +347,119 @@ async def test_ai_outbound_is_reauthorized_and_rerendered_before_send(
     )
     assert message.status == "ACCEPTED"
     assert message.provider_message_id == "wamid.confirmed"
+
+
+@pytest.mark.asyncio
+async def test_ai_outbound_replays_persisted_contact_context_plan(monkeypatch):
+    message, conversation, config, identity, user, claim_db, process_db = _outbound_fixture()
+    message.ai_topic = "combined"
+    message.ai_query_plan = {
+        "topic": "combined",
+        "sources": ["deal", "meeting"],
+        "reference": None,
+        "time_scope": "upcoming",
+        "limit": 3,
+    }
+    repository = worker.service.repository
+    monkeypatch.setattr(repository, "configuration", AsyncMock(return_value=config))
+    monkeypatch.setattr(repository, "identity", AsyncMock(return_value=identity))
+    monkeypatch.setattr(repository, "organization_active", AsyncMock(return_value=True))
+    monkeypatch.setattr(repository, "has_pending_inbound_events", AsyncMock(return_value=False))
+    monkeypatch.setattr(repository, "user", AsyncMock(return_value=user))
+    monkeypatch.setattr(repository, "conversation", AsyncMock(return_value=conversation))
+    monkeypatch.setattr(
+        repository,
+        "match",
+        AsyncMock(return_value=("MATCHED_CONTACT", "contact-a", None)),
+    )
+    context_answer = AsyncMock(return_value="Your deal is active.\n\nYour meeting is tomorrow.")
+    monkeypatch.setattr(
+        "app.services.customer_crm_context_service.customer_crm_context_service.answer",
+        context_answer,
+    )
+    monkeypatch.setattr(
+        worker.service,
+        "permissions",
+        AsyncMock(
+            return_value={
+                "ai:generate",
+                "whatsapp:send",
+                "whatsapp:read_all",
+                "contacts:read",
+                "deals:read",
+                "meetings:read",
+            }
+        ),
+    )
+    provider = MagicMock()
+    provider.send_text = AsyncMock(return_value="wamid.confirmed")
+    monkeypatch.setattr(worker.service, "provider", AsyncMock(return_value=provider))
+    monkeypatch.setattr(worker.service, "commit", AsyncMock())
+    monkeypatch.setattr(worker.service, "audit", MagicMock())
+    monkeypatch.setattr(worker, "enforce_rate_limit", AsyncMock())
+
+    assert await worker.process_message(_factory(claim_db, process_db)) is True
+
+    plan = context_answer.await_args.args[-1]
+    assert plan.topic == "combined"
+    assert plan.sources == ["deal", "meeting"]
+    provider.send_text.assert_awaited_once_with(
+        "2002",
+        "+14155552671",
+        "Your deal is active.\n\nYour meeting is tomorrow.",
+        "message-a",
+    )
+
+
+@pytest.mark.asyncio
+async def test_ai_outbound_falls_back_safely_when_persisted_plan_is_invalid(monkeypatch):
+    message, conversation, config, identity, user, claim_db, process_db = _outbound_fixture()
+    message.ai_query_plan = {"topic": "invoice", "limit": 999}
+    repository = worker.service.repository
+    monkeypatch.setattr(repository, "configuration", AsyncMock(return_value=config))
+    monkeypatch.setattr(repository, "identity", AsyncMock(return_value=identity))
+    monkeypatch.setattr(repository, "organization_active", AsyncMock(return_value=True))
+    monkeypatch.setattr(repository, "has_pending_inbound_events", AsyncMock(return_value=False))
+    monkeypatch.setattr(repository, "user", AsyncMock(return_value=user))
+    monkeypatch.setattr(repository, "conversation", AsyncMock(return_value=conversation))
+    monkeypatch.setattr(
+        repository,
+        "match",
+        AsyncMock(return_value=("MATCHED_CONTACT", "contact-a", None)),
+    )
+    context_answer = AsyncMock(return_value="Current invoice answer")
+    monkeypatch.setattr(
+        "app.services.customer_crm_context_service.customer_crm_context_service.answer",
+        context_answer,
+    )
+    monkeypatch.setattr(
+        worker.service,
+        "permissions",
+        AsyncMock(
+            return_value={
+                "ai:generate",
+                "whatsapp:send",
+                "whatsapp:read_all",
+                "contacts:read",
+                "invoices:read",
+            }
+        ),
+    )
+    provider = MagicMock()
+    provider.send_text = AsyncMock(return_value="wamid.confirmed")
+    monkeypatch.setattr(worker.service, "provider", AsyncMock(return_value=provider))
+    monkeypatch.setattr(worker.service, "commit", AsyncMock())
+    monkeypatch.setattr(worker.service, "audit", MagicMock())
+    monkeypatch.setattr(worker, "enforce_rate_limit", AsyncMock())
+
+    assert await worker.process_message(_factory(claim_db, process_db)) is True
+
+    fallback_plan = context_answer.await_args.args[-1]
+    assert fallback_plan.topic == "invoice"
+    assert fallback_plan.limit == 3
+    provider.send_text.assert_awaited_once_with(
+        "2002", "+14155552671", "Current invoice answer", "message-a"
+    )
 
 
 @pytest.mark.asyncio
