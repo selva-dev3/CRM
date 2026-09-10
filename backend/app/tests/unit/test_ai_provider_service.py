@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import APIException, ForbiddenError
 from app.models import AIRun, User
 from app.repositories.ai_repository import AIRepository
-from app.schemas.ai import CRMSearchPlan
+from app.schemas.ai import CRMChatPlan, CRMSearchPlan
 from app.schemas.dashboard import DashboardAiInsightsResponse
 from app.services.ai_provider_service import AIProviderGateway, AIProviderResult
 from app.services.ai_runtime_service import AIRuntimeService
@@ -180,7 +180,28 @@ async def test_susanoox_uses_ordered_fallback_for_retryable_failures(monkeypatch
     ]
 
 
-def test_susanoox_crm_search_schema_is_strict():
+def test_susanoox_schema_requires_non_nullable_fields_only():
+    schema = AIProviderGateway._strict_json_schema(CRMChatPlan)
+
+    assert set(schema["required"]) == {"operations", "needs_clarification"}
+    assert "clarification_question" not in schema["required"]
+
+    operation_schema = schema["$defs"]["CRMSearchPlan"]
+    assert set(operation_schema["required"]) == {
+        "intent",
+        "entity_type",
+        "filters",
+        "include_fields",
+        "sort_direction",
+        "limit",
+    }
+    assert "report_type" not in operation_schema["required"]
+    assert "aggregate" not in operation_schema["required"]
+    assert "group_by" not in operation_schema["required"]
+    assert "date_range" not in operation_schema["required"]
+
+
+def test_susanoox_crm_search_schema_forbids_unknown_properties():
     schema = AIProviderGateway._strict_json_schema(CRMSearchPlan)
 
     def object_schemas(value: object) -> list[dict[str, object]]:
@@ -193,7 +214,6 @@ def test_susanoox_crm_search_schema_is_strict():
 
     for object_schema in object_schemas(schema):
         assert object_schema["additionalProperties"] is False
-        assert object_schema["required"] == list(object_schema["properties"])
 
 
 @pytest.mark.asyncio
