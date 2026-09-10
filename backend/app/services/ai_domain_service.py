@@ -549,7 +549,9 @@ class AIDomainService:
             )
         entity_fields = cls._SEARCH_FIELDS[plan.entity_type]
         invalid_fields = {item.field for item in plan.filters} - entity_fields
-        invalid_fields.update(set(plan.include_fields) - entity_fields)
+        # Record IDs are already included in repository results. Providers may
+        # request them explicitly without expanding filter or sort capabilities.
+        invalid_fields.update(set(plan.include_fields) - entity_fields - {"id"})
         if plan.date_field and (
             plan.date_field not in entity_fields or plan.date_field not in cls._SEARCH_DATE_FIELDS
         ):
