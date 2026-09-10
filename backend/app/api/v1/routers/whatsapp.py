@@ -3,7 +3,7 @@
 import hmac
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, Response
 from fastapi.responses import PlainTextResponse, RedirectResponse
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.deps import require_user_session
 from app.core.config import settings
 from app.core.errors import APIException, ForbiddenError
+from app.core.live_events import publish_live_event
 from app.core.logging import get_logger
 from app.core.whatsapp_security import enforce_rate_limit, verify_signature
 from app.db.session import get_db
@@ -32,6 +33,7 @@ from app.schemas.whatsapp import (
     WhatsAppAck,
 )
 from app.services.whatsapp_service import whatsapp_service as service
+from app.workers.whatsapp_dispatch import enqueue_message, enqueue_webhook_event
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -56,7 +58,9 @@ async def verify_webhook(
 
 
 @router.post("/webhook", status_code=204)
-async def receive_webhook(request: Request, db: AsyncSession = Depends(get_db)) -> Response:
+async def receive_webhook(
+    request: Request, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)
+) -> Response:
     service.available()
     body = bytearray()
     async for chunk in request.stream():
@@ -82,6 +86,8 @@ async def receive_webhook(request: Request, db: AsyncSession = Depends(get_db)) 
         ) from exc
     result = await service.ingest_webhook(db, payload, correlation_id)
     await service.commit(db)
+    for event_id, organization_id in result.queued_events:
+        background_tasks.add_task(enqueue_webhook_event, event_id, organization_id)
     # DB inbox + existing beat sweep means queue outages cannot lose an ACKed event.
     logger.info(
         "whatsapp.webhook_received",
@@ -214,10 +220,19 @@ async def download_media(
 async def send_message(
     conversation_id: str,
     payload: MessageWrite,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_user_session),
 ):
-    return await service.send(db, user, conversation_id, payload)
+    message = await service.send(db, user, conversation_id, payload)
+    background_tasks.add_task(enqueue_message, message.id, message.organization_id)
+    background_tasks.add_task(
+        publish_live_event,
+        message.organization_id,
+        conversation_id=message.conversation_id,
+        message_id=message.id,
+    )
+    return message
 
 
 @router.post(
@@ -228,10 +243,19 @@ async def send_message(
 async def send_template_message(
     conversation_id: str,
     payload: TemplateMessageWrite,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_user_session),
 ):
-    return await service.send_template(db, user, conversation_id, payload)
+    message = await service.send_template(db, user, conversation_id, payload)
+    background_tasks.add_task(enqueue_message, message.id, message.organization_id)
+    background_tasks.add_task(
+        publish_live_event,
+        message.organization_id,
+        conversation_id=message.conversation_id,
+        message_id=message.id,
+    )
+    return message
 
 
 @router.post(
@@ -242,10 +266,19 @@ async def send_template_message(
 async def retry_failed_message(
     conversation_id: str,
     message_id: str,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_user_session),
 ):
-    return await service.retry_failed_message(db, user, conversation_id, message_id)
+    message = await service.retry_failed_message(db, user, conversation_id, message_id)
+    background_tasks.add_task(enqueue_message, message.id, message.organization_id)
+    background_tasks.add_task(
+        publish_live_event,
+        message.organization_id,
+        conversation_id=message.conversation_id,
+        message_id=message.id,
+    )
+    return message
 
 
 @router.patch("/conversations/{conversation_id}", response_model=ConversationRead)

@@ -3,6 +3,8 @@
 import hashlib
 import hmac
 import re
+import secrets
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 
 from redis.asyncio import Redis
@@ -16,6 +18,8 @@ logger = get_logger(__name__)
 WORKER_HEARTBEAT_KEY = "whatsapp:worker:heartbeat"
 # Longer than the Celery hard time limit (270s), plus the scheduling interval.
 WORKER_HEARTBEAT_TTL_SECONDS = 300
+SWEEP_LOCK_KEY = "whatsapp:sweep:lock"
+SWEEP_LOCK_TTL_SECONDS = 285
 
 
 def verify_signature(body: bytes, signature: str | None, secret: str | None) -> None:
@@ -71,6 +75,38 @@ async def record_worker_heartbeat(now: datetime | None = None) -> None:
         )
     except RedisError:
         logger.warning("whatsapp.worker_heartbeat_failed")
+    finally:
+        await client.aclose()
+
+
+@asynccontextmanager
+async def whatsapp_sweep_lock():
+    """Prevent overlapping recovery sweeps across workers and scheduler retries."""
+    token = secrets.token_hex(16)
+    client = Redis.from_url(settings.RATE_LIMIT_STORAGE_URI or settings.CELERY_BROKER_URL)
+    acquired = False
+    try:
+        try:
+            acquired = bool(
+                await client.set(SWEEP_LOCK_KEY, token, nx=True, ex=SWEEP_LOCK_TTL_SECONDS)
+            )
+        except RedisError:
+            logger.warning("whatsapp.sweep_lock_unavailable")
+            yield False
+            return
+        try:
+            yield acquired
+        finally:
+            if acquired:
+                try:
+                    await client.eval(
+                        "if redis.call('GET',KEYS[1])==ARGV[1] then return redis.call('DEL',KEYS[1]) else return 0 end",
+                        1,
+                        SWEEP_LOCK_KEY,
+                        token,
+                    )
+                except RedisError:
+                    logger.warning("whatsapp.sweep_lock_release_failed")
     finally:
         await client.aclose()
 

@@ -265,12 +265,14 @@ async def test_unsupported_inbound_message_is_persisted_for_handoff_without_medi
     monkeypatch.setattr(worker.service, "audit", MagicMock())
     monkeypatch.setattr(worker.service, "commit", AsyncMock())
 
-    assert await worker.process_event(db) is True
+    queued_messages = []
+    assert await worker.process_event(db, queued_messages=queued_messages) is True
 
     assert event.status == "DONE"
     assert message.work_status == "DONE"
     assert conversation.ai_enabled is False
     assert conversation.status == "HUMAN_HANDOFF"
+    assert queued_messages == [("message-location", "org-a")]
 
 
 @pytest.mark.asyncio
@@ -426,13 +428,17 @@ async def test_provider_rate_limit_uses_retry_after_without_marking_message_fail
     monkeypatch.setattr(worker.service, "audit", MagicMock())
     monkeypatch.setattr(worker, "enforce_rate_limit", AsyncMock())
     started_at = datetime.now(UTC)
+    scheduled_messages = []
 
-    assert await worker.process_message(_factory(claim_db, process_db)) is True
+    assert await worker.process_message(
+        _factory(claim_db, process_db), scheduled_messages=scheduled_messages
+    ) is True
 
     assert message.work_status == "PENDING"
     assert message.status == "PENDING"
     assert message.error_code == "WHATSAPP_PROVIDER_RATE_LIMITED"
     assert message.next_attempt_at >= started_at + worker.timedelta(seconds=90)
+    assert scheduled_messages == [("message-a", "org-a", 90)]
 
 
 @pytest.mark.asyncio
@@ -449,13 +455,17 @@ async def test_outbound_waits_without_consuming_retry_while_inbound_events_are_p
     monkeypatch.setattr(worker.service, "provider", provider)
     monkeypatch.setattr(worker.service, "commit", AsyncMock())
 
-    assert await worker.process_message(_factory(claim_db, process_db)) is True
+    scheduled_messages = []
+    assert await worker.process_message(
+        _factory(claim_db, process_db), scheduled_messages=scheduled_messages
+    ) is True
 
     provider.assert_not_awaited()
     assert message.work_status == "PENDING"
     assert message.status == "PENDING"
     assert message.attempts == 0
     assert message.claimed_at is None
+    assert scheduled_messages == [("message-a", "org-a", 30)]
 
 
 @pytest.mark.asyncio

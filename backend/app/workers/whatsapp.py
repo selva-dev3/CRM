@@ -14,11 +14,13 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.config import settings
 from app.core.errors import APIException
+from app.core.live_events import publish_live_event
 from app.core.logging import get_logger
 from app.core.whatsapp_security import (
     enforce_rate_limit,
     record_worker_heartbeat,
     service_window_open,
+    whatsapp_sweep_lock,
 )
 from app.models.whatsapp import WhatsAppConversation as Conversation
 from app.models.whatsapp import WhatsAppMessage as Message
@@ -27,6 +29,7 @@ from app.schemas.whatsapp import InboundEvent, StatusEvent
 from app.services.ai_domain_service import ai_domain_service
 from app.services.whatsapp_service import whatsapp_service as service
 from app.workers.celery_app import celery_app
+from app.workers.whatsapp_dispatch import enqueue_message
 
 logger = get_logger(__name__)
 DOWNLOADABLE_MEDIA_TYPES = frozenset({"image", "audio", "video", "document"})
@@ -43,11 +46,42 @@ def process_pending() -> None:
         asyncio.run(sweep())
 
 
-async def process_event(db) -> bool:
+@celery_app.task(
+    name="app.workers.whatsapp.process_webhook_event",
+    ignore_result=True,
+    soft_time_limit=240,
+    time_limit=270,
+)
+def process_webhook_event(event_id: str, organization_id: str) -> None:
+    if settings.WHATSAPP_ENABLED and not settings.ORGANIZATION_CLEANUP_ONLY:
+        asyncio.run(run_targeted_event(event_id, organization_id))
+
+
+@celery_app.task(
+    name="app.workers.whatsapp.process_message",
+    ignore_result=True,
+    soft_time_limit=240,
+    time_limit=270,
+)
+def process_whatsapp_message(message_id: str, organization_id: str) -> None:
+    if settings.WHATSAPP_ENABLED and not settings.ORGANIZATION_CLEANUP_ONLY:
+        asyncio.run(run_targeted_message(message_id, organization_id))
+
+
+async def process_event(
+    db,
+    *,
+    event_id: str | None = None,
+    organization_id: str | None = None,
+    queued_messages: list[tuple[str, str]] | None = None,
+) -> bool:
+    filters = [Event.status == "PENDING", Event.next_attempt_at <= datetime.now(UTC)]
+    if event_id is not None:
+        filters.extend((Event.id == event_id, Event.organization_id == organization_id))
     event = (
         await db.execute(
             select(Event)
-            .where(Event.status == "PENDING", Event.next_attempt_at <= datetime.now(UTC))
+            .where(*filters)
             .order_by(Event.created_at)
             .limit(1)
             .with_for_update(skip_locked=True)
@@ -76,6 +110,8 @@ async def process_event(db) -> bool:
                 )
                 if result:
                     conversation, message = result
+                    if queued_messages is not None:
+                        queued_messages.append((message.id, config.organization_id))
                     logger.info(
                         "whatsapp.inbound_persisted",
                         extra={
@@ -120,9 +156,10 @@ async def process_event(db) -> bool:
                             and identity.state.startswith("MATCHED")
                             and config.ai_user_id
                         ):
+                            handoff_message_id = str(uuid4())
                             db.add(
                                 Message(
-                                    id=str(uuid4()),
+                                    id=handoff_message_id,
                                     organization_id=config.organization_id,
                                     integration_id=config.id,
                                     conversation_id=conversation.id,
@@ -141,6 +178,8 @@ async def process_event(db) -> bool:
                                     work_status="PENDING",
                                 )
                             )
+                            if queued_messages is not None:
+                                queued_messages.append((handoff_message_id, config.organization_id))
                         service.audit(db, config.organization_id, "human_handoff", conversation.id)
                         await service.notify(
                             db, conversation, "A customer conversation requires human assistance."
@@ -172,14 +211,28 @@ async def process_event(db) -> bool:
     return True
 
 
-async def process_message(factory) -> bool:
+async def process_message(
+    factory,
+    *,
+    message_id: str | None = None,
+    organization_id: str | None = None,
+    queued_messages: list[tuple[str, str]] | None = None,
+    scheduled_messages: list[tuple[str, str, int]] | None = None,
+    processed_messages: list[tuple[str, str, str]] | None = None,
+) -> bool:
     async with factory() as db:
+        filters = [
+            Message.work_status == "PENDING",
+            Message.next_attempt_at <= datetime.now(UTC),
+        ]
+        if message_id is not None:
+            filters.extend(
+                (Message.id == message_id, Message.organization_id == organization_id)
+            )
         message = (
             await db.execute(
                 select(Message)
-                .where(
-                    Message.work_status == "PENDING", Message.next_attempt_at <= datetime.now(UTC)
-                )
+                .where(*filters)
                 .order_by(Message.created_at, Message.id)
                 .limit(1)
                 .with_for_update(skip_locked=True)
@@ -193,6 +246,10 @@ async def process_message(factory) -> bool:
         if message.direction == "OUTBOUND":
             message.status = "PROCESSING"
         message_id, organization_id = message.id, message.organization_id
+        if processed_messages is not None:
+            processed_messages.append(
+                (message.organization_id, message.conversation_id, message.id)
+            )
         await service.commit(db)
 
     async with factory() as db:
@@ -240,6 +297,8 @@ async def process_message(factory) -> bool:
                 message.attempts = max(0, message.attempts - 1)
                 message.next_attempt_at = datetime.now(UTC) + timedelta(seconds=30)
                 await service.commit(db)
+                if scheduled_messages is not None:
+                    scheduled_messages.append((message.id, organization_id, 30))
                 return True
             if (
                 message.direction == "OUTBOUND"
@@ -336,9 +395,10 @@ async def process_message(factory) -> bool:
                     conversation.ai_enabled = False
                     conversation.status = "HUMAN_HANDOFF"
                     await service.ensure_eligible_assignee(db, conversation, config)
+                    outbound_message_id = str(uuid4())
                     db.add(
                         Message(
-                            id=str(uuid4()),
+                            id=outbound_message_id,
                             organization_id=organization_id,
                             integration_id=config.id,
                             conversation_id=conversation.id,
@@ -361,9 +421,10 @@ async def process_message(factory) -> bool:
                     )
                     service.audit(db, organization_id, "human_handoff", conversation.id)
                 else:
+                    outbound_message_id = str(uuid4())
                     db.add(
                         Message(
-                            id=str(uuid4()),
+                            id=outbound_message_id,
                             organization_id=organization_id,
                             integration_id=config.id,
                             conversation_id=conversation.id,
@@ -381,6 +442,8 @@ async def process_message(factory) -> bool:
                             work_status="PENDING",
                         )
                     )
+                if queued_messages is not None:
+                    queued_messages.append((outbound_message_id, organization_id))
                 message.work_status = "DONE"
             else:
                 user = await service.repository.user(db, organization_id, message.actor_user_id)
@@ -514,6 +577,10 @@ async def process_message(factory) -> bool:
                 )
                 message.next_attempt_at = datetime.now(UTC) + timedelta(seconds=delay_seconds)
                 await service.commit(db)
+                if scheduled_messages is not None:
+                    scheduled_messages.append(
+                        (message.id, organization_id, max(1, delay_seconds))
+                    )
                 logger.warning(
                     "whatsapp.message_retry_scheduled",
                     extra={"request_id": message.id, "error_code": exc.code},
@@ -585,28 +652,110 @@ async def recover_interrupted(db) -> None:
     await service.commit(db)
 
 
-async def sweep() -> None:
+async def _dispatch_follow_up_messages(messages: list[tuple[str, str]]) -> None:
+    for message_id, organization_id in messages:
+        await asyncio.to_thread(enqueue_message, message_id, organization_id)
+
+
+async def _dispatch_scheduled_messages(messages: list[tuple[str, str, int]]) -> None:
+    for message_id, organization_id, delay_seconds in messages:
+        await asyncio.to_thread(
+            enqueue_message,
+            message_id,
+            organization_id,
+            delay_seconds=delay_seconds,
+        )
+
+
+async def run_targeted_event(event_id: str, organization_id: str) -> None:
     engine = create_async_engine(settings.DATABASE_URL)
     factory = async_sessionmaker(engine, expire_on_commit=False)
+    queued_messages: list[tuple[str, str]] = []
     try:
         await record_worker_heartbeat()
         async with factory() as db:
-            await recover_interrupted(db)
-        async with factory() as db:
-            if await service.repository.repair_phone_batch(db):
-                await service.commit(db)
-        async with factory() as db:
-            config = await service.repository.next_phone_backfill_configuration(db)
-            if config is not None:
-                await service.repository.backfill_phone_batch(db, config)
-                await service.commit(db)
-        for _ in range(50):
-            async with factory() as db:
-                if not await process_event(db):
-                    break
-        for _ in range(10):
-            if not await process_message(factory):
-                break
+            processed = await process_event(
+                db,
+                event_id=event_id,
+                organization_id=organization_id,
+                queued_messages=queued_messages,
+            )
+        if processed:
+            await publish_live_event(organization_id)
+            await _dispatch_follow_up_messages(queued_messages)
         await record_worker_heartbeat()
     finally:
         await engine.dispose()
+
+
+async def run_targeted_message(message_id: str, organization_id: str) -> None:
+    engine = create_async_engine(settings.DATABASE_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    queued_messages: list[tuple[str, str]] = []
+    scheduled_messages: list[tuple[str, str, int]] = []
+    processed_messages: list[tuple[str, str, str]] = []
+    try:
+        await record_worker_heartbeat()
+        processed = await process_message(
+            factory,
+            message_id=message_id,
+            organization_id=organization_id,
+            queued_messages=queued_messages,
+            scheduled_messages=scheduled_messages,
+            processed_messages=processed_messages,
+        )
+        if processed:
+            for org_id, conversation_id, processed_id in processed_messages:
+                await publish_live_event(
+                    org_id, conversation_id=conversation_id, message_id=processed_id
+                )
+            await _dispatch_follow_up_messages(queued_messages)
+            await _dispatch_scheduled_messages(scheduled_messages)
+        await record_worker_heartbeat()
+    finally:
+        await engine.dispose()
+
+
+async def sweep() -> None:
+    async with whatsapp_sweep_lock() as acquired:
+        if not acquired:
+            logger.info("whatsapp.sweep_skipped_locked")
+            return
+        engine = create_async_engine(settings.DATABASE_URL)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        queued_messages: list[tuple[str, str]] = []
+        scheduled_messages: list[tuple[str, str, int]] = []
+        processed_messages: list[tuple[str, str, str]] = []
+        try:
+            await record_worker_heartbeat()
+            async with factory() as db:
+                await recover_interrupted(db)
+            async with factory() as db:
+                if await service.repository.repair_phone_batch(db):
+                    await service.commit(db)
+            async with factory() as db:
+                config = await service.repository.next_phone_backfill_configuration(db)
+                if config is not None:
+                    await service.repository.backfill_phone_batch(db, config)
+                    await service.commit(db)
+            for _ in range(50):
+                async with factory() as db:
+                    if not await process_event(db, queued_messages=queued_messages):
+                        break
+            for _ in range(10):
+                if not await process_message(
+                    factory,
+                    queued_messages=queued_messages,
+                    scheduled_messages=scheduled_messages,
+                    processed_messages=processed_messages,
+                ):
+                    break
+            for org_id, conversation_id, processed_id in processed_messages:
+                await publish_live_event(
+                    org_id, conversation_id=conversation_id, message_id=processed_id
+                )
+            await _dispatch_follow_up_messages(queued_messages)
+            await _dispatch_scheduled_messages(scheduled_messages)
+            await record_worker_heartbeat()
+        finally:
+            await engine.dispose()

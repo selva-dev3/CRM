@@ -991,12 +991,17 @@ class WhatsAppRepository:
                             .on_conflict_do_nothing(index_elements=["integration_id", "event_key"])
                             .returning(Event.id)
                         )
-                        if insert_result.scalar_one_or_none() is None:
+                        inserted_event_id = insert_result.scalar_one_or_none()
+                        if inserted_event_id is None:
                             result_summary.duplicate_events += 1
-                        elif kind == "message":
-                            result_summary.inserted_messages += 1
                         else:
-                            result_summary.inserted_statuses += 1
+                            result_summary.queued_events.append(
+                                (inserted_event_id, config.organization_id)
+                            )
+                            if kind == "message":
+                                result_summary.inserted_messages += 1
+                            else:
+                                result_summary.inserted_statuses += 1
         return result_summary
 
     async def match(

@@ -1,5 +1,6 @@
 from celery import Celery
 from celery.schedules import crontab
+from kombu import Queue
 
 from app.core.config import settings
 
@@ -14,14 +15,23 @@ celery_app.conf.update(
     timezone="UTC",
     enable_utc=True,
     imports=("app.workers.tasks", "app.workers.whatsapp"),
+    # The ordinary worker consumes both queues when no -Q filter is supplied.
+    # Keep organization_cleanup undeclared here so it remains isolated to its
+    # explicitly configured destructive-lifecycle worker.
+    task_queues=(Queue("celery"), Queue("whatsapp")),
+    task_routes={
+        "app.workers.whatsapp.process_pending": {"queue": "whatsapp"},
+        "app.workers.whatsapp.process_webhook_event": {"queue": "whatsapp"},
+        "app.workers.whatsapp.process_message": {"queue": "whatsapp"},
+    },
 )
 
 # Hourly sweep of scheduled report deliveries (see workers/tasks.py).
 celery_app.conf.beat_schedule = {
     "process-whatsapp-inbox-outbox": {
         "task": "app.workers.whatsapp.process_pending",
-        "schedule": 10.0,
-        "options": {"expires": 10},
+        "schedule": 30.0,
+        "options": {"expires": 90, "queue": "whatsapp"},
     },
     "cleanup-expired-auth-records": {
         "task": "app.workers.tasks.cleanup_expired_auth_records",

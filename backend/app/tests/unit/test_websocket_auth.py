@@ -31,8 +31,10 @@ def _active_user(**overrides) -> User:
 def _ws(token: str | None = None, organization_id: str = "org-1") -> AsyncMock:
     ws = AsyncMock()
     ws.cookies = {"token": token} if token else {}
-    ws.headers = {}
+    ws.headers = {"Origin": "http://localhost:3000"}
     ws.query_params = {"organization_id": organization_id}
+    ws.url.scheme = "ws"
+    ws.url.netloc = "localhost:8000"
     return ws
 
 
@@ -65,6 +67,25 @@ async def test_websocket_accepts_active_cookie_session():
 
 
 @pytest.mark.asyncio
+async def test_live_websocket_accepts_whatsapp_read_permission(monkeypatch):
+    user = _active_user()
+    token = create_access_token(user.id)
+    session = UserSession(id=sha256(token.encode()).hexdigest(), user_id=user.id, is_current=True)
+    monkeypatch.setattr(
+        "app.api.v1.routers.websockets.auth_service.get_user_permissions",
+        AsyncMock(return_value=["whatsapp:read_assigned"]),
+    )
+
+    result = await _authenticate_websocket(
+        _ws(token),
+        _db(user, session, Organization(id="org-1", is_active=True, status="active")),
+        frozenset({"notifications:read", "whatsapp:read_all", "whatsapp:read_assigned"}),
+    )
+
+    assert result is not None
+
+
+@pytest.mark.asyncio
 async def test_websocket_platform_admin_uses_explicit_organization_context():
     user = _active_user(organization_id=None)
     token = create_access_token(user.id)
@@ -92,6 +113,15 @@ async def test_websocket_rejects_invalid_jwt():
     ws = _ws("invalid")
     assert await _authenticate_websocket(ws, AsyncMock()) is None
     ws.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_websocket_rejects_cross_site_cookie_session():
+    ws = _ws("unused-token")
+    ws.headers = {"Origin": "https://attacker.example"}
+
+    assert await _authenticate_websocket(ws, AsyncMock()) is None
+    ws.close.assert_awaited_once_with(code=1008, reason="Origin denied")
 
 
 @pytest.mark.asyncio
@@ -304,3 +334,19 @@ async def test_websocket_broadcast_is_tenant_isolated():
 
     org_a.send_text.assert_awaited_once_with("update")
     org_b.send_text.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_websocket_broadcast_tolerates_concurrent_disconnect():
+    manager = ConnectionManager()
+    org_a = AsyncMock()
+    org_b = AsyncMock()
+    manager.active_connections = {
+        org_a: ("user-a", "org-a"),
+        org_b: ("user-b", "org-a"),
+    }
+    org_a.send_text.side_effect = lambda _message: manager.disconnect(org_b)
+
+    await manager.broadcast("update", "org-a")
+
+    org_a.send_text.assert_awaited_once_with("update")
