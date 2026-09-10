@@ -51,6 +51,32 @@ from app.schemas.whatsapp import InboundEvent, StatusEvent, WebhookIngestResult,
 
 
 class WhatsAppRepository:
+
+    async def has_account_records(self, db: AsyncSession, config: Configuration) -> bool:
+        """Check all account-bound records, including completed events and detached identities."""
+        return bool(
+            await db.scalar(
+                select(
+                    or_(
+                        *(
+                            exists().where(
+                                model.organization_id == config.organization_id,
+                                model.integration_id == config.id,
+                            )
+                            for model in (
+                                Identity,
+                                Conversation,
+                                Message,
+                                Event,
+                                Template,
+                                ReadState,
+                            )
+                        )
+                    )
+                )
+            )
+        )
+
     async def oldest_pending_at(self, db: AsyncSession, organization_id: str) -> datetime | None:
         """Measure durable work age within the requesting tenant, including active processing."""
         event_age = select(func.min(Event.created_at)).where(
@@ -535,7 +561,7 @@ class WhatsAppRepository:
     ) -> Configuration | None:
         query = select(Configuration).where(Configuration.organization_id == organization_id)
         if lock:
-            query = query.with_for_update()
+            query = query.with_for_update().execution_options(populate_existing=True)
         return (await db.execute(query)).scalar_one_or_none()
 
     async def organization_active(self, db: AsyncSession, organization_id: str) -> bool:
@@ -668,16 +694,17 @@ class WhatsAppRepository:
                 .values(ai_enabled=False, status="HUMAN_HANDOFF")
             )
 
-    async def catalog(self, db: AsyncSession, config: Configuration) -> Integration:
-        row = (
-            await db.execute(
-                select(Integration).where(
-                    Integration.id == config.catalog_integration_id,
-                    Integration.organization_id == config.organization_id,
-                    Integration.provider == "whatsapp",
-                )
-            )
-        ).scalar_one_or_none()
+    async def catalog(
+        self, db: AsyncSession, config: Configuration, *, lock: bool = False
+    ) -> Integration:
+        query = select(Integration).where(
+            Integration.id == config.catalog_integration_id,
+            Integration.organization_id == config.organization_id,
+            Integration.provider == "whatsapp",
+        )
+        if lock:
+            query = query.with_for_update().execution_options(populate_existing=True)
+        row = (await db.execute(query)).scalar_one_or_none()
         if row is None:
             raise NotFoundError(message="WhatsApp integration not found.")
         return row
@@ -913,10 +940,12 @@ class WhatsAppRepository:
                 # Never resolve tenant from headers, sender text, or a customer identifier.
                 config = (
                     await db.execute(
-                        select(Configuration).where(
+                        select(Configuration)
+                        .where(
                             Configuration.phone_number_id == change.value.metadata.phone_number_id,
                             Configuration.business_account_id == entry.id,
                         )
+                        .with_for_update()
                     )
                 ).scalar_one_or_none()
                 if config is None:

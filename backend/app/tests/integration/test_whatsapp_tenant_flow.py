@@ -16,7 +16,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.config import settings
-from app.core.errors import APIException, NotFoundError
+from app.core.errors import APIException, ConflictError, NotFoundError
 from app.models import Contact, Integration, Lead, Organization, User
 from app.models.whatsapp import (
     WhatsAppContactIdentity,
@@ -27,9 +27,10 @@ from app.models.whatsapp import (
 )
 from app.repositories.whatsapp_repository import WhatsAppRepository
 from app.schemas.crm_schemas import ContactCreate, ContactUpdate, LeadConvertRequest, LeadUpdate
-from app.schemas.whatsapp import InboundEvent, StatusEvent
+from app.schemas.whatsapp import InboundEvent, IntegrationWrite, StatusEvent
 from app.services.contact_service import ContactService
 from app.services.lead_service import LeadService
+from app.services.whatsapp_service import WhatsAppService
 
 UNUSED_PASSWORD_HASH = "unused-test-hash"  # noqa: S105 - no authentication occurs
 
@@ -146,6 +147,159 @@ async def test_tenant_matching_idempotency_and_status_flow(monkeypatch):
                 text("UPDATE whatsapp_integrations SET phone_index_ready=true WHERE id='wa-b'")
             )
             await db.commit()
+
+        monkeypatch.setattr(settings, "WHATSAPP_ENABLED", True)
+        monkeypatch.setattr(settings, "WHATSAPP_API_VERSION", "v23.0")
+        monkeypatch.setattr(settings, "WHATSAPP_APP_ID", "meta-app")
+        monkeypatch.setattr("app.services.whatsapp_service.enforce_rate_limit", AsyncMock())
+        monkeypatch.setattr(
+            "app.services.whatsapp_service.IntegrationService._encrypt_secret",
+            lambda value: "enc:v1:synthetic",
+        )
+
+        async def configure_for(
+            organization_id: str, user_id: str, business_id: str, phone_id: str
+        ):
+            service = WhatsAppService()
+            service.permissions = AsyncMock(return_value={"integrations:manage"})
+            service.status = AsyncMock(return_value="configured")
+            payload = IntegrationWrite(
+                business_account_id=business_id,
+                phone_number_id=phone_id,
+                access_token="synthetic-integration-token",  # noqa: S106
+                api_version="v23.0",
+                default_phone_region="US",
+                default_assignee_id=user_id,
+            )
+            async with sessions() as db:
+                return await service.configure(
+                    db,
+                    type(
+                        "IntegrationUser",
+                        (),
+                        {"id": user_id, "organization_id": organization_id},
+                    )(),
+                    payload,
+                )
+
+        async with sessions() as db:
+            config_a = await repository.configuration(db, "org-a", lock=True)
+            config_b = await repository.configuration(db, "org-b", lock=True)
+            assert config_a is not None and config_b is not None
+            config_a.enabled = False
+            config_b.enabled = False
+            await db.commit()
+
+        with pytest.raises(ConflictError) as existing_collision:
+            await configure_for("org-a", "user-a", "1001", "2002")
+        assert existing_collision.value.code == "WHATSAPP_PHONE_ALREADY_CONNECTED"
+
+        concurrent_results = await asyncio.gather(
+            configure_for("org-a", "user-a", "1001", "3003"),
+            configure_for("org-b", "user-b", "1002", "3003"),
+            return_exceptions=True,
+        )
+        assert sum(result == "configured" for result in concurrent_results) == 1, (
+            concurrent_results
+        )
+        conflicts = [result for result in concurrent_results if isinstance(result, ConflictError)]
+        assert len(conflicts) == 1
+        assert conflicts[0].code == "WHATSAPP_PHONE_ALREADY_CONNECTED"
+
+        async with sessions() as db:
+            config_a = await repository.configuration(db, "org-a", lock=True)
+            config_b = await repository.configuration(db, "org-b", lock=True)
+            assert config_a is not None and config_b is not None
+            config_a.business_account_id = "1001"
+            config_a.phone_number_id = "2001"
+            config_a.enabled = True
+            config_b.business_account_id = "1002"
+            config_b.phone_number_id = "2002"
+            config_b.enabled = True
+            await db.commit()
+
+        async def assert_stale_provider_result_rejected(operation: str) -> None:
+            remote_complete = asyncio.Event()
+            correction_complete = asyncio.Event()
+            client = AsyncMock()
+
+            async def provider_request(method, path, **kwargs):
+                if operation == "verify" and path.endswith("/phone_numbers"):
+                    return {
+                        "data": [
+                            {
+                                "id": "2001",
+                                "display_phone_number": "+1 415-555-2671",
+                                "verified_name": "Old Account",
+                            }
+                        ]
+                    }
+                remote_complete.set()
+                await correction_complete.wait()
+                if operation == "verify":
+                    return {"data": [{"id": "meta-app"}]}
+                return {"data": [{"id": "old-account-template"}]}
+
+            client.request = AsyncMock(side_effect=provider_request)
+            service = WhatsAppService()
+            service.permissions = AsyncMock(
+                return_value={"integrations:manage", "whatsapp:read_assigned"}
+            )
+            service.provider = AsyncMock(return_value=client)
+            user = type(
+                "IntegrationUser",
+                (),
+                {"id": "user-a", "organization_id": "org-a", "is_active": True},
+            )()
+            async with sessions() as operation_db:
+                operation_task = asyncio.create_task(
+                    getattr(service, operation)(operation_db, user)
+                )
+                await asyncio.wait_for(remote_complete.wait(), timeout=5)
+                async with sessions() as correction_db:
+                    config = await repository.configuration(
+                        correction_db, "org-a", lock=True
+                    )
+                    assert config is not None
+                    config.business_account_id = "4004"
+                    config.phone_number_id = "5005"
+                    config.enabled = False
+                    await correction_db.commit()
+                correction_complete.set()
+                with pytest.raises(ConflictError) as stale_result:
+                    await asyncio.wait_for(operation_task, timeout=5)
+                assert stale_result.value.code == "WHATSAPP_CONFIGURATION_CHANGED"
+
+            async with sessions() as restore_db:
+                config = await repository.configuration(restore_db, "org-a", lock=True)
+                assert config is not None
+                config.business_account_id = "1001"
+                config.phone_number_id = "2001"
+                config.enabled = True
+                await restore_db.commit()
+
+        await assert_stale_provider_result_rejected("verify")
+        await assert_stale_provider_result_rejected("sync_templates")
+
+        async with sessions() as db:
+            config_a = await repository.configuration(db, "org-a", lock=True)
+            config_b = await repository.configuration(db, "org-b", lock=True)
+            assert not await repository.has_account_records(db, config_a)
+            assert not await repository.has_account_records(db, config_b)
+            db.add(
+                WhatsAppWebhookEvent(
+                    organization_id="org-b",
+                    integration_id="wa-b",
+                    event_key="completed-history-b",
+                    correlation_id=str(uuid4()),
+                    payload={},
+                    status="DONE",
+                )
+            )
+            await db.flush()
+            assert await repository.has_account_records(db, config_b)
+            assert not await repository.has_account_records(db, config_a)
+            await db.rollback()
 
         async with sessions() as db:
             db.add_all(
