@@ -276,11 +276,28 @@ class AIProviderGateway:
         """Build the strict JSON Schema used by OpenAI-compatible providers."""
         schema = output_schema.model_json_schema()
 
+        def accepts_null(value: object) -> bool:
+            if not isinstance(value, dict):
+                return False
+            value_type = value.get("type")
+            if value_type == "null":
+                return True
+            if isinstance(value_type, list) and "null" in value_type:
+                return True
+            alternatives = value.get("anyOf") or value.get("oneOf")
+            return isinstance(alternatives, list) and any(
+                accepts_null(alternative) for alternative in alternatives
+            )
+
         def normalize(value: object) -> None:
             if isinstance(value, dict):
                 if value.get("type") == "object" and isinstance(value.get("properties"), dict):
                     value["additionalProperties"] = False
-                    value["required"] = list(value["properties"])
+                    value["required"] = [
+                        name
+                        for name, property_schema in value["properties"].items()
+                        if not accepts_null(property_schema)
+                    ]
                 for child in value.values():
                     normalize(child)
             elif isinstance(value, list):
