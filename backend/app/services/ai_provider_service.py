@@ -25,8 +25,10 @@ _PLACEHOLDER_API_KEYS = {
     "your-openai-api-key",
     "your-anthropic-api-key",
     "your-gemini-api-key",
-    "your-openrouter-api-key",
+    "your-susanoox-api-key",
 }
+
+SUSANOOX_BASE_URL = "https://llm.herd.casa/v1"
 
 
 @dataclass(frozen=True)
@@ -270,8 +272,8 @@ class AIProviderGateway:
             ) from exc
 
     @staticmethod
-    def _openrouter_schema(output_schema: type[OutputT]) -> dict[str, object]:
-        """Build a strict JSON Schema for OpenRouter structured output."""
+    def _strict_json_schema(output_schema: type[OutputT]) -> dict[str, object]:
+        """Build the strict JSON Schema used by OpenAI-compatible providers."""
         schema = output_schema.model_json_schema()
 
         def normalize(value: object) -> None:
@@ -288,7 +290,7 @@ class AIProviderGateway:
         normalize(schema)
         return schema
 
-    async def _openrouter_generate(
+    async def _susanoox_generate(
         self,
         *,
         model: str,
@@ -296,15 +298,15 @@ class AIProviderGateway:
         user_prompt: str,
         output_schema: type[OutputT],
     ) -> AIProviderResult:
-        if not self.has_usable_api_key(settings.OPENROUTER_API_KEY):
+        if not self.has_usable_api_key(settings.SUSANOOX_AI_KEY):
             raise APIException(
                 status_code=503,
                 code="AI_PROVIDER_UNAVAILABLE",
-                message="OpenRouter is not configured with a usable credential.",
+                message="Susanoox is not configured with a usable credential.",
             )
         client = AsyncOpenAI(
-            api_key=settings.OPENROUTER_API_KEY,
-            base_url="https://openrouter.ai/api/v1",
+            api_key=settings.SUSANOOX_AI_KEY,
+            base_url=SUSANOOX_BASE_URL,
             timeout=settings.AI_REQUEST_TIMEOUT_SECONDS,
             max_retries=settings.AI_MAX_RETRIES,
         )
@@ -322,10 +324,9 @@ class AIProviderGateway:
                     "json_schema": {
                         "name": output_schema.__name__.lower(),
                         "strict": True,
-                        "schema": self._openrouter_schema(output_schema),
+                        "schema": self._strict_json_schema(output_schema),
                     },
                 },
-                extra_body={"provider": {"require_parameters": True}},
             )
         finally:
             await client.close()
@@ -335,7 +336,7 @@ class AIProviderGateway:
         raw_text = getattr(message, "content", None) if message else None
         if refusal:
             logger.warning(
-                "OpenRouter structured response refused model=%s finish_reason=%s",
+                "Susanoox structured response refused model=%s finish_reason=%s",
                 self._safe_log_value(model),
                 self._safe_log_value(getattr(choice, "finish_reason", None)),
             )
@@ -346,7 +347,7 @@ class AIProviderGateway:
             )
         if not isinstance(raw_text, str) or not raw_text.strip():
             logger.warning(
-                "OpenRouter structured response empty model=%s finish_reason=%s content_type=%s",
+                "Susanoox structured response empty model=%s finish_reason=%s content_type=%s",
                 self._safe_log_value(model),
                 self._safe_log_value(getattr(choice, "finish_reason", None)),
                 self._safe_log_value(type(raw_text).__name__),
@@ -359,14 +360,14 @@ class AIProviderGateway:
         usage = response.usage
         result = AIProviderResult(
             output=self._validate_output(raw_text, output_schema),
-            provider="openrouter",
+            provider="susanoox",
             model=model,
             input_tokens=int(getattr(usage, "prompt_tokens", 0) or 0),
             output_tokens=int(getattr(usage, "completion_tokens", 0) or 0),
             latency_ms=int((monotonic() - started) * 1000),
         )
         logger.info(
-            "AI provider request completed provider=openrouter model=%s latency_ms=%s",
+            "AI provider request completed provider=susanoox model=%s latency_ms=%s",
             self._safe_log_value(model),
             result.latency_ms,
         )
@@ -830,8 +831,8 @@ class AIProviderGateway:
                     user_prompt=user_prompt,
                     output_schema=output_schema,
                 )
-            if provider == "openrouter":
-                return await self._openrouter_generate(
+            if provider == "susanoox":
+                return await self._susanoox_generate(
                     model=model,
                     system_prompt=system_prompt,
                     user_prompt=user_prompt,
@@ -886,7 +887,7 @@ class AIProviderGateway:
         ):
             return "openai", settings.AI_OPENAI_FALLBACK_MODEL
         if (
-            primary_provider not in {"gemini", "openrouter"}
+            primary_provider not in {"gemini", "susanoox"}
             and AIProviderGateway.has_usable_api_key(settings.GEMINI_API_KEY)
             and settings.AI_GEMINI_FALLBACK_MODEL
         ):
@@ -950,9 +951,9 @@ class AIProviderGateway:
                     model=selected_model,
                     exc=exc,
                 ) from exc
-        if selected_provider == "openrouter":
-            ordered_models = list(dict.fromkeys([selected_model, *settings.openrouter_model_pool]))
-            candidates = [("openrouter", item) for item in ordered_models]
+        if selected_provider == "susanoox":
+            ordered_models = list(dict.fromkeys([selected_model, *settings.susanoox_model_pool]))
+            candidates = [("susanoox", item) for item in ordered_models]
         else:
             candidates = [(selected_provider, selected_model)]
             fallback = self._fallback_candidate(selected_provider)

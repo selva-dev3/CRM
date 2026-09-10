@@ -473,8 +473,8 @@ async def test_connection_verification_accepts_meta_test_display_number(monkeypa
 @pytest.mark.asyncio
 async def test_status_reports_runtime_readiness_without_exposing_full_phone(monkeypatch):
     now = datetime.now(UTC)
-    monkeypatch.setattr(settings, "AI_PROVIDER", "openrouter")
-    monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "synthetic-provider-key")
+    monkeypatch.setattr(settings, "AI_PROVIDER", "susanoox")
+    monkeypatch.setattr(settings, "SUSANOOX_AI_KEY", "synthetic-provider-key")
     monkeypatch.setattr(
         "app.services.whatsapp_service.worker_heartbeat",
         AsyncMock(return_value=("HEALTHY", now)),

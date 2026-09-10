@@ -56,7 +56,7 @@ describe('AIIntelligencePage', () => {
           follow_up_questions: [],
           metadata: {
             model: 'model-b',
-            provider: 'openrouter',
+            provider: 'susanoox',
             fallback_used: true,
             attempted_model_count: 2,
             generated_at: '2026-09-04T00:00:00Z',

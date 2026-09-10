@@ -8,8 +8,8 @@ from app.models import RolePermission, UserRole
 
 BACKEND_ROOT = Path(__file__).resolve().parents[3]
 MERGE_REVISION = "e8f9a0b1c2d3"
-HEAD_REVISION = "v6f7a8b9c0d1"
-PREVIOUS_HEAD_REVISION = "u5e6f7a8b9c0"
+HEAD_REVISION = "w7a8b9c0d1e2"
+PREVIOUS_HEAD_REVISION = "v6f7a8b9c0d1"
 EXPECTED_PARENTS = {"d4e5f6a7b8c0", "d6e7f8a9b0c1"}
 
 
@@ -37,6 +37,7 @@ def test_rbac_revision_resolves_existing_database_stamp():
     ] == [
         HEAD_REVISION,
         PREVIOUS_HEAD_REVISION,
+        "u5e6f7a8b9c0",
         "t4d5e6f7a8b9",
         "s2b3c4d5e6f7",
         "s3c4d5e6f7a8",
@@ -48,6 +49,7 @@ def test_rbac_revision_resolves_existing_database_stamp():
     ] == [
         HEAD_REVISION,
         PREVIOUS_HEAD_REVISION,
+        "u5e6f7a8b9c0",
         "t4d5e6f7a8b9",
         "s2b3c4d5e6f7",
         "s3c4d5e6f7a8",
@@ -62,6 +64,17 @@ def test_merge_revision_joins_ai_and_deal_custom_field_heads():
 
     assert revision is not None
     assert set(revision.down_revision) == EXPECTED_PARENTS
+
+
+def test_susanoox_migration_updates_only_active_provider_configuration():
+    source = (
+        BACKEND_ROOT / "alembic/versions/w7a8b9c0d1e2_migrate_openrouter_to_susanoox.py"
+    ).read_text()
+
+    assert "UPDATE ai_organization_configs" in source
+    assert "provider = 'susanoox'" in source
+    assert "model_name = 'susanoox-fast'" in source
+    assert "ai_runs" not in source
 
 
 def test_rbac_migration_normalizes_catalog_and_remaps_all_legacy_role_references():
