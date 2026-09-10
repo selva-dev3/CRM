@@ -50,11 +50,13 @@ services:
         sync: false
       - key: GEMINI_API_KEY
         sync: false
-      - key: OPENROUTER_API_KEY
+      - key: SUSANOOX_AI_KEY
         sync: false
       - key: AI_PROVIDER
         sync: false
       - key: AI_MODEL
+        sync: false
+      - key: SUSANOOX_MODEL_POOL
         sync: false
       - key: AWS_ENDPOINT_URL
         sync: false

@@ -2074,11 +2074,11 @@ class AIDomainService:
             if gemini_model:
                 models.append(("gemini", gemini_model))
         if (
-            ai_provider_gateway.has_usable_api_key(settings.OPENROUTER_API_KEY)
-            and settings.AI_PROVIDER == "openrouter"
+            ai_provider_gateway.has_usable_api_key(settings.SUSANOOX_AI_KEY)
+            and settings.AI_PROVIDER == "susanoox"
             and settings.AI_MODEL
         ):
-            models.append(("openrouter", settings.AI_MODEL))
+            models.append(("susanoox", settings.AI_MODEL))
         return models
 
     async def list_ai_models(self, db: AsyncSession, current_user: User) -> list[dict]:

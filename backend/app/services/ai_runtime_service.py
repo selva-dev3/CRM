@@ -62,7 +62,7 @@ class AIRuntimeService:
             "openai": settings.OPENAI_API_KEY,
             "anthropic": settings.ANTHROPIC_API_KEY,
             "gemini": settings.GEMINI_API_KEY,
-            "openrouter": settings.OPENROUTER_API_KEY,
+            "susanoox": settings.SUSANOOX_AI_KEY,
         }.get(provider)
         if not model.strip() or not self.provider_gateway.has_usable_api_key(credential):
             return "PROVIDER_UNAVAILABLE"

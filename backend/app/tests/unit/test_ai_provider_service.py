@@ -28,7 +28,7 @@ class ResearchOutput(BaseModel):
 
 
 @pytest.mark.asyncio
-async def test_openrouter_generation_uses_strict_schema_and_validates_output(monkeypatch):
+async def test_susanoox_generation_uses_strict_schema_and_validates_output(monkeypatch):
     response = SimpleNamespace(
         choices=[SimpleNamespace(message=SimpleNamespace(content='{"score":82}'))],
         usage=SimpleNamespace(prompt_tokens=12, completion_tokens=4),
@@ -37,34 +37,49 @@ async def test_openrouter_generation_uses_strict_schema_and_validates_output(mon
         chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=response))),
         close=AsyncMock(),
     )
-    monkeypatch.setattr("app.services.ai_provider_service.settings.OPENROUTER_API_KEY", "set")
+    client_options = {}
+
+    def client_factory(**kwargs):
+        client_options.update(kwargs)
+        return client
+
+    monkeypatch.setattr("app.services.ai_provider_service.settings.SUSANOOX_AI_KEY", "set")
     monkeypatch.setattr(
         "app.services.ai_provider_service.AsyncOpenAI",
-        lambda **kwargs: client,
+        client_factory,
     )
 
     result = await AIProviderGateway().generate_structured(
-        provider="openrouter",
-        model="openrouter/free",
+        provider="susanoox",
+        model="susanoox-fast",
         system_prompt="system",
         user_prompt="user",
         output_schema=ScoreOutput,
     )
 
     assert result.output == ScoreOutput(score=82)
-    assert result.provider == "openrouter"
+    assert result.provider == "susanoox"
     assert result.total_tokens == 16
     request = client.chat.completions.create.await_args.kwargs
-    assert request["model"] == "openrouter/free"
+    assert request["model"] == "susanoox-fast"
+    assert request["messages"] == [
+        {"role": "system", "content": "system"},
+        {"role": "user", "content": "user"},
+    ]
+    assert request["temperature"] == 0.2
     assert request["response_format"]["type"] == "json_schema"
     assert request["response_format"]["json_schema"]["strict"] is True
     assert request["response_format"]["json_schema"]["schema"]["required"] == ["score"]
-    assert request["extra_body"] == {"provider": {"require_parameters": True}}
+    assert "extra_body" not in request
+    assert client_options["api_key"] == "set"
+    assert str(client_options["base_url"]) == "https://llm.herd.casa/v1"
+    assert client_options["timeout"] == 30.0
+    assert client_options["max_retries"] == 0
     client.close.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_openrouter_generation_rejects_invalid_structured_output(monkeypatch):
+async def test_susanoox_generation_rejects_invalid_structured_output(monkeypatch):
     response = SimpleNamespace(
         choices=[SimpleNamespace(message=SimpleNamespace(content='{"score":120}'))],
         usage=None,
@@ -73,13 +88,13 @@ async def test_openrouter_generation_rejects_invalid_structured_output(monkeypat
         chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=response))),
         close=AsyncMock(),
     )
-    monkeypatch.setattr("app.services.ai_provider_service.settings.OPENROUTER_API_KEY", "set")
+    monkeypatch.setattr("app.services.ai_provider_service.settings.SUSANOOX_AI_KEY", "set")
     monkeypatch.setattr("app.services.ai_provider_service.AsyncOpenAI", lambda **kwargs: client)
 
     with pytest.raises(APIException) as exc_info:
         await AIProviderGateway().generate_structured(
-            provider="openrouter",
-            model="openrouter/free",
+            provider="susanoox",
+            model="susanoox-fast",
             system_prompt="system",
             user_prompt="user",
             output_schema=ScoreOutput,
@@ -96,7 +111,7 @@ async def test_openrouter_generation_rejects_invalid_structured_output(monkeypat
         SimpleNamespace(content="", refusal=None),
     ],
 )
-async def test_openrouter_rejects_refusal_or_empty_content(monkeypatch, message):
+async def test_susanoox_rejects_refusal_or_empty_content(monkeypatch, message):
     response = SimpleNamespace(
         choices=[SimpleNamespace(message=message, finish_reason="stop")],
         usage=None,
@@ -105,14 +120,14 @@ async def test_openrouter_rejects_refusal_or_empty_content(monkeypatch, message)
         chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=response))),
         close=AsyncMock(),
     )
-    monkeypatch.setattr("app.services.ai_provider_service.settings.OPENROUTER_API_KEY", "set")
-    monkeypatch.setattr("app.services.ai_provider_service.settings.OPENROUTER_MODEL_POOL", "")
+    monkeypatch.setattr("app.services.ai_provider_service.settings.SUSANOOX_AI_KEY", "set")
+    monkeypatch.setattr("app.services.ai_provider_service.settings.SUSANOOX_MODEL_POOL", "")
     monkeypatch.setattr("app.services.ai_provider_service.AsyncOpenAI", lambda **kwargs: client)
 
     with pytest.raises(APIException) as exc_info:
         await AIProviderGateway().generate_structured(
-            provider="openrouter",
-            model="openrouter/free",
+            provider="susanoox",
+            model="susanoox-fast",
             system_prompt="system",
             user_prompt="user",
             output_schema=ScoreOutput,
@@ -123,11 +138,11 @@ async def test_openrouter_rejects_refusal_or_empty_content(monkeypatch, message)
 
 
 @pytest.mark.asyncio
-async def test_openrouter_uses_ordered_fallback_for_retryable_failures(monkeypatch):
+async def test_susanoox_uses_ordered_fallback_for_retryable_failures(monkeypatch):
     gateway = AIProviderGateway()
     successful = AIProviderResult(
         output=ScoreOutput(score=80),
-        provider="openrouter",
+        provider="susanoox",
         model="model-b",
         input_tokens=10,
         output_tokens=5,
@@ -144,12 +159,12 @@ async def test_openrouter_uses_ordered_fallback_for_retryable_failures(monkeypat
         ]
     )
     monkeypatch.setattr(
-        "app.services.ai_provider_service.settings.OPENROUTER_MODEL_POOL",
+        "app.services.ai_provider_service.settings.SUSANOOX_MODEL_POOL",
         "model-a,model-b,model-c",
     )
 
     result = await gateway.generate_structured(
-        provider="openrouter",
+        provider="susanoox",
         model="model-a",
         system_prompt="system",
         user_prompt="user",
@@ -165,8 +180,8 @@ async def test_openrouter_uses_ordered_fallback_for_retryable_failures(monkeypat
     ]
 
 
-def test_openrouter_crm_search_schema_is_strict():
-    schema = AIProviderGateway._openrouter_schema(CRMSearchPlan)
+def test_susanoox_crm_search_schema_is_strict():
+    schema = AIProviderGateway._strict_json_schema(CRMSearchPlan)
 
     def object_schemas(value: object) -> list[dict[str, object]]:
         if isinstance(value, dict):
@@ -190,23 +205,23 @@ def test_openrouter_crm_search_schema_is_strict():
         (openai.InternalServerError, 503, "AI_PROVIDER_UNAVAILABLE"),
     ],
 )
-async def test_openrouter_provider_errors_use_application_error_contract(
+async def test_susanoox_provider_errors_use_application_error_contract(
     monkeypatch, error_type, status_code, expected_code
 ):
     response = httpx.Response(
         status_code,
-        request=httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions"),
+        request=httpx.Request("POST", "https://llm.herd.casa/v1/chat/completions"),
     )
     gateway = AIProviderGateway()
-    gateway._openrouter_generate = AsyncMock(
+    gateway._susanoox_generate = AsyncMock(
         side_effect=error_type("provider error", response=response, body={})
     )
-    monkeypatch.setattr("app.services.ai_provider_service.settings.OPENROUTER_API_KEY", "set")
+    monkeypatch.setattr("app.services.ai_provider_service.settings.SUSANOOX_AI_KEY", "set")
 
     with pytest.raises(APIException) as exc_info:
         await gateway.generate_structured(
-            provider="openrouter",
-            model="openrouter/free",
+            provider="susanoox",
+            model="susanoox-fast",
             system_prompt="system",
             user_prompt="user",
             output_schema=ScoreOutput,
@@ -216,15 +231,15 @@ async def test_openrouter_provider_errors_use_application_error_contract(
 
 
 @pytest.mark.asyncio
-async def test_openrouter_timeout_uses_application_error_contract(monkeypatch):
+async def test_susanoox_timeout_uses_application_error_contract(monkeypatch):
     gateway = AIProviderGateway()
-    gateway._openrouter_generate = AsyncMock(side_effect=TimeoutError())
-    monkeypatch.setattr("app.services.ai_provider_service.settings.OPENROUTER_API_KEY", "set")
+    gateway._susanoox_generate = AsyncMock(side_effect=TimeoutError())
+    monkeypatch.setattr("app.services.ai_provider_service.settings.SUSANOOX_AI_KEY", "set")
 
     with pytest.raises(APIException) as exc_info:
         await gateway.generate_structured(
-            provider="openrouter",
-            model="openrouter/free",
+            provider="susanoox",
+            model="susanoox-fast",
             system_prompt="system",
             user_prompt="user",
             output_schema=ScoreOutput,
@@ -803,8 +818,8 @@ async def test_readiness_resolves_org_provider_and_disabled_flags(monkeypatch):
     repository = _repository()
     config = SimpleNamespace(enabled=True, provider="gemini", model_name="tenant-model")
     repository.get_organization_config.return_value = config
-    monkeypatch.setattr("app.services.ai_runtime_service.settings.AI_PROVIDER", "openrouter")
-    monkeypatch.setattr("app.services.ai_runtime_service.settings.OPENROUTER_API_KEY", "synthetic-key")
+    monkeypatch.setattr("app.services.ai_runtime_service.settings.AI_PROVIDER", "susanoox")
+    monkeypatch.setattr("app.services.ai_runtime_service.settings.SUSANOOX_AI_KEY", "synthetic-key")
     monkeypatch.setattr("app.services.ai_runtime_service.settings.GEMINI_API_KEY", None)
     service = AIRuntimeService(repository=repository, provider_gateway=AIProviderGateway())
     db = AsyncMock(spec=AsyncSession)
@@ -826,7 +841,7 @@ async def test_runtime_overrides_stale_gemini_org_config_for_crm_search(monkeypa
         model_name="old-gemini-model",
         monthly_cost_limit_usd=None,
     )
-    monkeypatch.setattr("app.services.ai_runtime_service.settings.AI_MODEL", "openrouter/free")
+    monkeypatch.setattr("app.services.ai_runtime_service.settings.AI_MODEL", "susanoox-fast")
     service = AIRuntimeService(repository=repository, provider_gateway=AsyncMock())
 
     await service._prepare_run(
@@ -836,12 +851,12 @@ async def test_runtime_overrides_stale_gemini_org_config_for_crm_search(monkeypa
         entity_type=None,
         entity_id=None,
         prompt_version="v1",
-        provider_override="openrouter",
+        provider_override="susanoox",
     )
 
     kwargs = repository.create_run.await_args.kwargs
-    assert kwargs["provider"] == "openrouter"
-    assert kwargs["model_name"] == "openrouter/free"
+    assert kwargs["provider"] == "susanoox"
+    assert kwargs["model_name"] == "susanoox-fast"
 
 
 @pytest.mark.asyncio

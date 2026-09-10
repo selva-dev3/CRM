@@ -148,23 +148,10 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str | None = None
     ANTHROPIC_API_KEY: str | None = None
     GEMINI_API_KEY: str | None = None
-    OPENROUTER_API_KEY: str | None = None
-    AI_PROVIDER: Literal["openai", "anthropic", "gemini", "openrouter"] = "openrouter"
-    AI_MODEL: str = "minimax/minimax-m3:free"
-    OPENROUTER_MODEL_POOL: str = (
-        "minimax/minimax-m3:free,"
-        "nvidia/nemotron-3-ultra-550b-a55b:free,"
-        "poolside/laguna-s-2.1:free,"
-        "nvidia/nemotron-3.5-lightning:free,"
-        "inclusionai/ling-3.0-flash-fin:free,"
-        "minimax/minimax-m2.7:free,"
-        "nvidia/nemotron-3-super-120b-a12b:free,"
-        "thinkingmachines/inkling:free,"
-        "dots-studio/dots-3-note-preview:free,"
-        "cohere/north-mini-code:free,"
-        "poolside/laguna-xs-2.1:free,"
-        "z-ai/glm-5.2:free"
-    )
+    SUSANOOX_AI_KEY: str | None = None
+    AI_PROVIDER: Literal["openai", "anthropic", "gemini", "susanoox"] = "susanoox"
+    AI_MODEL: str = "susanoox-fast"
+    SUSANOOX_MODEL_POOL: str = "susanoox-fast,susanoox-large"
     AI_WEB_SEARCH_MODEL: str = "gpt-4.1-mini"
     AI_GEMINI_WEB_SEARCH_MODEL: str | None = None
     AI_OPENAI_FALLBACK_MODEL: str | None = None
@@ -199,11 +186,11 @@ class Settings(BaseSettings):
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
     @property
-    def openrouter_model_pool(self) -> list[str]:
-        """Return the configured OpenRouter fallback order without duplicates."""
+    def susanoox_model_pool(self) -> list[str]:
+        """Return the configured Susanoox fallback order without duplicates."""
         return list(
             dict.fromkeys(
-                model.strip() for model in self.OPENROUTER_MODEL_POOL.split(",") if model.strip()
+                model.strip() for model in self.SUSANOOX_MODEL_POOL.split(",") if model.strip()
             )
         )
 
