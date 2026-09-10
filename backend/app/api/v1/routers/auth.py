@@ -9,7 +9,7 @@ from app.core.auth_cookies import (
     set_refresh_cookie,
 )
 from app.core.config import settings
-from app.core.errors import APIException
+from app.core.errors import APIException, api_exception_response
 from app.core.rate_limiter import (
     AUTH_LOGIN_RATE_LIMIT,
     AUTH_LOGOUT_RATE_LIMIT,
@@ -61,7 +61,18 @@ def _set_token_cookies(response: Response, result: dict, *, persistent_access: b
     return public_result
 
 
-@router.post("/login", response_model=Token, summary="Authenticate user & return JWT token")
+def _clear_failed_refresh(exc: APIException):
+    response = api_exception_response(exc)
+    clear_auth_cookie(response)
+    clear_refresh_cookie(response)
+    return response
+
+
+@router.post(
+    "/login",
+    response_model=Token,
+    summary="Authenticate user and issue HttpOnly session cookies",
+)
 @limiter.limit(AUTH_LOGIN_RATE_LIMIT)
 async def login(
     request: Request,
@@ -91,24 +102,33 @@ async def register(request: Request, payload: RegisterRequest, db: AsyncSession 
     return await auth_service.register(db, payload)
 
 
-@router.post("/refresh-token", response_model=Token, summary="Refresh JWT access token")
+@router.post(
+    "/refresh-token",
+    response_model=Token,
+    summary="Rotate session credentials in HttpOnly cookies",
+)
 @limiter.limit(AUTH_REFRESH_RATE_LIMIT)
 async def refresh_token(
     request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
-    refresh_token_value = request.cookies.get(settings.AUTH_REFRESH_COOKIE_NAME)
-    if not refresh_token_value:
-        raise APIException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            message="Refresh token missing",
-        )
-    access_token_value = request.cookies.get(settings.AUTH_COOKIE_NAME)
-    if access_token_value:
-        result = await auth_service.refresh_token(db, refresh_token_value, access_token_value)
-    else:
-        result = await auth_service.refresh_token(db, refresh_token_value)
+    try:
+        refresh_token_value = request.cookies.get(settings.AUTH_REFRESH_COOKIE_NAME)
+        if not refresh_token_value:
+            raise APIException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                message="Refresh token missing",
+            )
+        access_token_value = request.cookies.get(settings.AUTH_COOKIE_NAME)
+        if access_token_value:
+            result = await auth_service.refresh_token(db, refresh_token_value, access_token_value)
+        else:
+            result = await auth_service.refresh_token(db, refresh_token_value)
+    except APIException as exc:
+        if exc.status_code == status.HTTP_401_UNAUTHORIZED:
+            return _clear_failed_refresh(exc)
+        raise
     return _set_token_cookies(
         response,
         result,

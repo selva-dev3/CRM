@@ -118,12 +118,12 @@ async def test_get_current_user_accepts_valid_auth_cookie():
     db.execute = AsyncMock(return_value=result)
     db.get = AsyncMock(
         side_effect=[
-            Organization(id="org-1", name="Acme", status="active", is_active=True),
             UserSession(
                 id=sha256(token.encode("utf-8")).hexdigest(),
                 user_id=user.id,
                 is_current=True,
             ),
+            Organization(id="org-1", name="Acme", status="active", is_active=True),
         ]
     )
 
@@ -162,7 +162,6 @@ async def test_get_current_user_rejects_revoked_access_session():
     db.execute = AsyncMock(return_value=result)
     db.get = AsyncMock(
         side_effect=[
-            Organization(id="org-1", name="Acme", status="active", is_active=True),
             UserSession(id="session-1", user_id=user.id, is_current=False),
         ]
     )
@@ -199,7 +198,6 @@ async def test_get_current_user_rejects_jwt_without_active_session():
     db.execute = AsyncMock(return_value=result)
     db.get = AsyncMock(
         side_effect=[
-            Organization(id="org-1", name="Acme", status="active", is_active=True),
             None,
         ]
     )
@@ -208,6 +206,46 @@ async def test_get_current_user_rejects_jwt_without_active_session():
         await get_current_user(request=request, credentials=None, db=db)
 
     assert exc_info.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_revoked_session_is_rejected_before_organization_context():
+    user = User(
+        id="user-1",
+        name="Alex",
+        email="alex@crm.com",
+        hashed_password="hash",  # noqa: S106 - synthetic test fixture
+        role="Admin",
+        organization_id="org-1",
+        is_active=True,
+    )
+    token = create_access_token(user.id)
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/api/v1/auth/me",
+            "headers": [
+                (b"cookie", f"{settings.AUTH_COOKIE_NAME}={token}".encode()),
+                (b"x-organization-id", b"other-org"),
+            ],
+        }
+    )
+    result = Mock()
+    result.scalars.return_value.first.return_value = user
+    db = AsyncMock(spec=AsyncSession)
+    db.execute = AsyncMock(return_value=result)
+    db.get = AsyncMock(
+        return_value=UserSession(id="session-1", user_id=user.id, is_current=False)
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await get_current_user(request=request, credentials=None, db=db)
+
+    assert exc_info.value.status_code == 401
+    db.get.assert_awaited_once_with(
+        UserSession, sha256(token.encode("utf-8")).hexdigest()
+    )
 
 
 @pytest.mark.asyncio
