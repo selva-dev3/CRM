@@ -55,13 +55,18 @@ def _error_payload(code: str, message: str, fields: dict[str, Any] | None = None
     return {"code": code, "message": message, "fields": fields}
 
 
-async def _api_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    if not isinstance(exc, APIException):
-        raise TypeError("API exception handler received an unexpected exception type")
+def api_exception_response(exc: APIException) -> JSONResponse:
+    """Build the standardized HTTP response for a domain exception."""
     return JSONResponse(
         status_code=exc.status_code,
         content=_error_payload(exc.code, exc.message, exc.fields),
     )
+
+
+async def _api_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    if not isinstance(exc, APIException):
+        raise TypeError("API exception handler received an unexpected exception type")
+    return api_exception_response(exc)
 
 
 async def _http_exception_handler(request: Request, exc: Exception) -> JSONResponse:

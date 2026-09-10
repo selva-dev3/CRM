@@ -127,7 +127,6 @@ async def get_current_user(
         )
 
     now = datetime.now(UTC)
-    await apply_organization_context(db, user, request.headers.get("X-Organization-ID"))
     access_session = await db.get(UserSession, sha256(token.encode("utf-8")).hexdigest())
     if (
         access_session is None
@@ -142,6 +141,7 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     access_session.last_used_at = now
+    await apply_organization_context(db, user, request.headers.get("X-Organization-ID"))
     return user
 
 

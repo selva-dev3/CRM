@@ -90,11 +90,37 @@ async def test_refresh_rejects_missing_cookie(monkeypatch):
     refresh_mock = AsyncMock()
     monkeypatch.setattr(auth_router.auth_service, "refresh_token", refresh_mock)
 
-    with pytest.raises(APIException) as exc_info:
-        await auth_router.refresh_token(_request(), Response(), AsyncMock(spec=AsyncSession))
+    response = await auth_router.refresh_token(
+        _request(), Response(), AsyncMock(spec=AsyncSession)
+    )
 
-    assert exc_info.value.status_code == 401
+    assert response.status_code == 401
+    assert response.body == (
+        b'{"code":"API_ERROR","message":"Refresh token missing","fields":null}'
+    )
+    cookies = response.headers.getlist("set-cookie")
+    assert len(cookies) == 2
+    assert all("Max-Age=0" in cookie for cookie in cookies)
     refresh_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_refresh_clears_cookies_when_token_is_invalid(monkeypatch):
+    refresh_mock = AsyncMock(
+        side_effect=APIException(status_code=401, message="Invalid or expired refresh token")
+    )
+    monkeypatch.setattr(auth_router.auth_service, "refresh_token", refresh_mock)
+
+    response = await auth_router.refresh_token(
+        _request(refresh_token=TEST_REFRESH_VALUE),
+        Response(),
+        AsyncMock(spec=AsyncSession),
+    )
+
+    assert response.status_code == 401
+    cookies = response.headers.getlist("set-cookie")
+    assert len(cookies) == 2
+    assert all("Max-Age=0" in cookie for cookie in cookies)
 
 
 @pytest.mark.asyncio
