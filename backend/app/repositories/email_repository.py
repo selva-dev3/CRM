@@ -1,10 +1,10 @@
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Email, EmailTemplate
+from app.models import Contact, Email, EmailTemplate
 
 
 class EmailRepository:
@@ -48,6 +48,100 @@ class EmailRepository:
             .order_by(Email.sent_at.desc())
         )
         return result.scalars().all()
+
+    @staticmethod
+    def _for_contact_query(
+        *, organization_id: str, contact_id: str, recipient_email: str
+    ):
+        """Match explicit relationships plus unlinked legacy recipient rows.
+
+        An email explicitly linked to a different contact is never reassigned by
+        address matching. The recipient fallback exists for historical delivery
+        records that predate ``emails.contact_id``.
+        """
+        normalized_recipient = func.lower(func.trim(recipient_email))
+        matching_contact_count = (
+            select(func.count(Contact.id))
+            .where(
+                Contact.organization_id == organization_id,
+                func.lower(func.trim(Contact.email)) == normalized_recipient,
+            )
+            .scalar_subquery()
+        )
+        return select(Email).where(
+            Email.organization_id == organization_id,
+            or_(
+                Email.contact_id == contact_id,
+                and_(
+                    Email.contact_id.is_(None),
+                    func.lower(func.trim(Email.to_email)) == normalized_recipient,
+                    matching_contact_count == 1,
+                ),
+            ),
+        )
+
+    async def list_for_contact(
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        contact_id: str,
+        recipient_email: str,
+        limit: int | None = None,
+        offset: int = 0,
+        statuses: Sequence[str] | None = None,
+        search: str | None = None,
+    ) -> Sequence[Email]:
+        stmt = self._for_contact_query(
+            organization_id=organization_id,
+            contact_id=contact_id,
+            recipient_email=recipient_email,
+        )
+        if statuses:
+            stmt = stmt.where(Email.status.in_(statuses))
+        if search and search.strip():
+            term = f"%{search.strip()}%"
+            stmt = stmt.where(
+                or_(
+                    Email.subject.ilike(term),
+                    Email.from_email.ilike(term),
+                    Email.to_email.ilike(term),
+                )
+            )
+        stmt = stmt.order_by(
+            func.coalesce(Email.sent_at, Email.created_at).desc(), Email.id.desc()
+        ).offset(max(0, offset))
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        return (await db.execute(stmt)).scalars().all()
+
+    async def count_for_contact(
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        contact_id: str,
+        recipient_email: str,
+        statuses: Sequence[str] | None = None,
+        search: str | None = None,
+    ) -> int:
+        base = self._for_contact_query(
+            organization_id=organization_id,
+            contact_id=contact_id,
+            recipient_email=recipient_email,
+        )
+        if statuses:
+            base = base.where(Email.status.in_(statuses))
+        if search and search.strip():
+            term = f"%{search.strip()}%"
+            base = base.where(
+                or_(
+                    Email.subject.ilike(term),
+                    Email.from_email.ilike(term),
+                    Email.to_email.ilike(term),
+                )
+            )
+        return int(await db.scalar(select(func.count()).select_from(base.subquery())) or 0)
 
     async def create_email(self, db: AsyncSession, *, data: dict) -> Email:
         email = Email(**data)

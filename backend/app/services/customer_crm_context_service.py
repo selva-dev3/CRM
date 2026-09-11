@@ -9,19 +9,16 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
-    CallLog,
     Company,
     CompanyContact,
     Contact,
     Deal,
-    Email,
     Invoice,
     InvoiceItem,
-    Meeting,
     Payment,
     Project,
     Quote,
@@ -30,6 +27,9 @@ from app.models import (
     User,
 )
 from app.models.whatsapp import WhatsAppContactIdentity, WhatsAppIntegration
+from app.repositories.call_repository import CallRepository
+from app.repositories.email_repository import EmailRepository
+from app.repositories.meeting_repository import MeetingRepository
 from app.repositories.whatsapp_repository import WhatsAppRepository
 from app.schemas.whatsapp import CustomerAIPlan
 
@@ -68,8 +68,17 @@ class CustomerCRMContextService:
         "account_owner": ("deals:read",),
     }
 
-    def __init__(self, whatsapp_repository: WhatsAppRepository | None = None) -> None:
+    def __init__(
+        self,
+        whatsapp_repository: WhatsAppRepository | None = None,
+        email_repository: EmailRepository | None = None,
+        call_repository: CallRepository | None = None,
+        meeting_repository: MeetingRepository | None = None,
+    ) -> None:
         self.whatsapp_repository = whatsapp_repository or WhatsAppRepository()
+        self.email_repository = email_repository or EmailRepository()
+        self.call_repository = call_repository or CallRepository()
+        self.meeting_repository = meeting_repository or MeetingRepository()
 
     async def answer(
         self,
@@ -102,12 +111,24 @@ class CustomerCRMContextService:
         ):
             return None
 
+        contact_email: str | None = None
+        if {"email", "meeting"} & set(sources):
+            contact_email = await db.scalar(
+                select(Contact.email).where(
+                    Contact.organization_id == config.organization_id,
+                    Contact.id == contact_id,
+                )
+            )
+            if not contact_email:
+                return None
+
         sections: list[str] = []
         for source in sources:
             rendered = await self._render_source(
                 db,
                 organization_id=config.organization_id,
                 contact_id=contact_id,
+                contact_email=contact_email,
                 source=source,
                 plan=plan,
             )
@@ -126,6 +147,7 @@ class CustomerCRMContextService:
         contact_id: str,
         source: str,
         plan: CustomerAIPlan,
+        contact_email: str | None = None,
     ) -> str | None:
         limit = plan.limit
         reference = (plan.reference or "").strip()
@@ -299,18 +321,29 @@ class CustomerCRMContextService:
 
         if source == "meeting":
             start, end = self._time_window(plan.time_scope)
-            stmt = select(Meeting).where(
-                Meeting.organization_id == organization_id,
-                Meeting.contact_id == contact_id,
-                Meeting.status == "Scheduled",
-                Meeting.start_time >= start,
+            if not contact_email:
+                contact_email = await db.scalar(
+                    select(Contact.email).where(
+                        Contact.organization_id == organization_id, Contact.id == contact_id
+                    )
+                )
+            if not contact_email:
+                return None
+            statuses = None if plan.time_scope == "recent" else ["Scheduled"]
+            rows = await self.meeting_repository.list_for_contact(
+                db,
+                organization_id=organization_id,
+                contact_id=contact_id,
+                contact_email=contact_email,
+                limit=limit,
+                search=reference or None,
+                statuses=statuses,
+                start=start,
+                end=end,
+                newest_first=plan.time_scope == "recent",
             )
-            if end:
-                stmt = stmt.where(Meeting.start_time < end)
-            if reference:
-                stmt = stmt.where(Meeting.title.ilike(f"%{reference}%"))
-            order = Meeting.start_time.desc() if plan.time_scope == "recent" else Meeting.start_time
-            rows = list((await db.scalars(stmt.order_by(order).limit(limit))).all())
+            if not rows:
+                return "I couldn't find any matching meetings in your CRM."
             return self._bullets(
                 "Your meetings:",
                 [
@@ -337,43 +370,69 @@ class CustomerCRMContextService:
             )
 
         if source == "email":
-            stmt = (
-                select(Email)
-                .join(
-                    Contact,
-                    and_(
-                        Contact.id == Email.contact_id,
-                        Contact.organization_id == Email.organization_id,
-                    ),
+            if not contact_email:
+                contact_email = await db.scalar(
+                    select(Contact.email).where(
+                        Contact.organization_id == organization_id, Contact.id == contact_id
+                    )
                 )
-                .where(
-                    Email.organization_id == organization_id,
-                    Email.contact_id == contact_id,
-                    Email.status == "Sent",
-                    func.lower(func.trim(Email.to_email)) == func.lower(func.trim(Contact.email)),
-                )
+            if not contact_email:
+                return None
+            rows = await self.email_repository.list_for_contact(
+                db,
+                organization_id=organization_id,
+                contact_id=contact_id,
+                recipient_email=contact_email,
+                limit=limit,
+                statuses=["Sent"],
+                search=reference or None,
             )
-            if reference:
-                stmt = stmt.where(Email.subject.ilike(f"%{reference}%"))
-            rows = list((await db.scalars(stmt.order_by(Email.sent_at.desc()).limit(limit))).all())
+            total = await self.email_repository.count_for_contact(
+                db,
+                organization_id=organization_id,
+                contact_id=contact_id,
+                recipient_email=contact_email,
+                statuses=["Sent"],
+                search=reference or None,
+            )
+            if not rows:
+                return "I couldn't find any matching emails in your CRM history."
+            title = (
+                f"You have {total} matching CRM email{'s' if total != 1 else ''}."
+                if reference
+                else f"You have {total} CRM email{'s' if total != 1 else ''} sent to you."
+            )
+            if total > len(rows):
+                title += f" Here are the {len(rows)} most recent:"
             return self._bullets(
-                "Recent CRM emails sent to you:",
-                [f"{row.subject} — {self._datetime(row.sent_at)}" for row in rows],
+                title,
+                [
+                    f"{row.subject} — {self._datetime(row.sent_at or row.created_at)}; "
+                    f"from {row.from_email} to {row.to_email}"
+                    for row in rows
+                ],
             )
 
         if source == "call":
-            stmt = select(CallLog).where(
-                CallLog.organization_id == organization_id, CallLog.contact_id == contact_id
+            call_start: datetime | None = None
+            call_end: datetime | None = None
+            if plan.time_scope not in {"latest", "upcoming"}:
+                call_start, call_end = self._time_window(plan.time_scope)
+            rows = await self.call_repository.list_by_contact(
+                db,
+                organization_id=organization_id,
+                contact_id=contact_id,
+                limit=limit,
+                search=reference or None,
+                start=call_start,
+                end=call_end,
             )
-            if reference:
-                stmt = stmt.where(CallLog.subject.ilike(f"%{reference}%"))
-            rows = list(
-                (await db.scalars(stmt.order_by(CallLog.timestamp.desc()).limit(limit))).all()
-            )
+            if not rows:
+                return "I couldn't find any matching calls in your CRM history."
             return self._bullets(
                 "Your recent calls:",
                 [
-                    f"{row.call_type} call — {self._datetime(row.timestamp)}, "
+                    f"{row.subject or row.call_type + ' call'} — {self._datetime(row.timestamp)}, "
                     f"{row.disposition or 'status unavailable'}, {row.duration_seconds // 60} min"
                     for row in rows
                 ],

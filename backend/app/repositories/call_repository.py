@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import builtins
+from datetime import datetime
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -83,16 +84,30 @@ class CallRepository:
         return list(result.scalars().all())
 
     async def list_by_contact(
-        self, db: AsyncSession, *, contact_id: str, organization_id: str
+        self,
+        db: AsyncSession,
+        *,
+        contact_id: str,
+        organization_id: str,
+        limit: int | None = None,
+        search: str | None = None,
+        start: datetime | None = None,
+        end: datetime | None = None,
     ) -> builtins.list[CallLog]:
-        result = await db.execute(
-            select(CallLog)
-            .where(
-                CallLog.contact_id == contact_id,
-                CallLog.organization_id == organization_id,
-            )
-            .order_by(CallLog.timestamp.desc())
+        stmt = select(CallLog).where(
+            CallLog.contact_id == contact_id,
+            CallLog.organization_id == organization_id,
         )
+        if search and search.strip():
+            stmt = stmt.where(CallLog.subject.ilike(f"%{search.strip()}%"))
+        if start is not None:
+            stmt = stmt.where(CallLog.timestamp >= start)
+        if end is not None:
+            stmt = stmt.where(CallLog.timestamp < end)
+        stmt = stmt.order_by(CallLog.timestamp.desc())
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        result = await db.execute(stmt)
         return list(result.scalars().all())
 
     async def create(self, db: AsyncSession, *, data: dict) -> CallLog:

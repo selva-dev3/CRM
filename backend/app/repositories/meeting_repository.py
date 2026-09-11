@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import builtins
+from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Meeting, MeetingAttendee
+from app.models import Contact, Meeting, MeetingAttendee
 
 
 class MeetingRepository:
@@ -51,6 +52,59 @@ class MeetingRepository:
             .order_by(Meeting.start_time.asc())
             .limit(limit)
         )
+        return list(result.scalars().all())
+
+    async def list_for_contact(
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        contact_id: str,
+        contact_email: str,
+        limit: int,
+        search: str | None = None,
+        statuses: builtins.list[str] | None = None,
+        start: datetime | None = None,
+        end: datetime | None = None,
+        newest_first: bool = False,
+    ) -> builtins.list[Meeting]:
+        """Return explicitly linked meetings and safe legacy attendee matches."""
+        normalized_email = func.lower(func.trim(contact_email))
+        matching_contact_count = (
+            select(func.count(Contact.id))
+            .where(
+                Contact.organization_id == organization_id,
+                func.lower(func.trim(Contact.email)) == normalized_email,
+            )
+            .scalar_subquery()
+        )
+        stmt = (
+            select(Meeting)
+            .outerjoin(MeetingAttendee, MeetingAttendee.meeting_id == Meeting.id)
+            .where(
+                Meeting.organization_id == organization_id,
+                or_(
+                    Meeting.contact_id == contact_id,
+                    and_(
+                        Meeting.contact_id.is_(None),
+                        func.lower(func.trim(MeetingAttendee.email))
+                        == normalized_email,
+                        matching_contact_count == 1,
+                    ),
+                ),
+            )
+            .distinct()
+        )
+        if search and search.strip():
+            stmt = stmt.where(Meeting.title.ilike(f"%{search.strip()}%"))
+        if statuses:
+            stmt = stmt.where(Meeting.status.in_(statuses))
+        if start is not None:
+            stmt = stmt.where(Meeting.start_time >= start)
+        if end is not None:
+            stmt = stmt.where(Meeting.start_time < end)
+        order = Meeting.start_time.desc() if newest_first else Meeting.start_time.asc()
+        result = await db.execute(stmt.order_by(order).limit(limit))
         return list(result.scalars().all())
 
     async def get_by_id(

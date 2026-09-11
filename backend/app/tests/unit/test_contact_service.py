@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.errors import NotFoundError
+from app.core.errors import APIException, NotFoundError
 from app.models import User
 from app.models.contact import Contact, ContactAddress
 from app.models.deal import Deal
@@ -216,7 +216,7 @@ async def test_list_contact_emails_matches_contact_recipient():
     repo: Any = ContactRepository()
     repo.get_by_id_scoped = AsyncMock(return_value=_make_contact())
     service = _service_with(repo)
-    service.email_repository.list_by_recipient = AsyncMock(
+    service.email_repository.list_for_contact = AsyncMock(
         return_value=[
             SimpleNamespace(
                 id="email-1",
@@ -234,9 +234,33 @@ async def test_list_contact_emails_matches_contact_recipient():
 
     assert result[0].subject == "Follow-up"
     assert result[0].body == "Checking in"
-    service.email_repository.list_by_recipient.assert_awaited_once_with(
-        db, organization_id="org-1", recipient_email="jane@acme.com"
+    service.email_repository.list_for_contact.assert_awaited_once_with(
+        db,
+        organization_id="org-1",
+        contact_id="cnt-1",
+        recipient_email="jane@acme.com",
+        limit=None,
+        offset=0,
     )
+
+
+@pytest.mark.asyncio
+async def test_list_contact_emails_requires_limit_for_later_pages():
+    repo: Any = ContactRepository()
+    repo.get_by_id_scoped = AsyncMock(return_value=_make_contact())
+    service = _service_with(repo)
+    service.email_repository.list_for_contact = AsyncMock()
+
+    with pytest.raises(APIException) as exc:
+        await service.list_contact_emails(
+            AsyncMock(spec=AsyncSession),
+            "cnt-1",
+            organization_id="org-1",
+            page=2,
+        )
+
+    assert exc.value.status_code == 422
+    service.email_repository.list_for_contact.assert_not_awaited()
 
 
 @pytest.mark.asyncio
