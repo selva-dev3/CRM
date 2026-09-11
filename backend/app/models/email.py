@@ -5,6 +5,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -24,6 +25,7 @@ class Email(Base):
             name="ck_emails_delivery_status",
         ),
         UniqueConstraint("organization_id", "idempotency_key", name="uq_emails_org_idempotency"),
+        Index("ix_emails_org_contact_sent_at", "organization_id", "contact_id", "sent_at"),
     )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))

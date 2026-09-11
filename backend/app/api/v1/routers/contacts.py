@@ -369,12 +369,18 @@ async def add_contact_note(
 )
 async def get_contact_emails(
     contact_id: str,
+    page: int = Query(1, ge=1),
+    limit: int | None = Query(None, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     return await contact_service.list_contact_emails(
-        db, contact_id, organization_id=organization_id
+        db,
+        contact_id,
+        organization_id=organization_id,
+        page=page,
+        limit=limit,
     )
 
 

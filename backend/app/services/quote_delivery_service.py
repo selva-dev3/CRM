@@ -340,6 +340,9 @@ class QuoteDeliveryService:
                     db.add(
                         Email(
                             organization_id=org_id,
+                            contact_id=quote.contact_id,
+                            company_id=quote.company_id,
+                            deal_id=quote.deal_id,
                             from_email=settings.EMAILS_FROM_EMAIL,
                             to_email=recipient,
                             subject=email_subject,

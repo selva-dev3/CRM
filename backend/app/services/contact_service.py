@@ -250,11 +250,27 @@ class ContactService:
         return activities
 
     async def list_contact_emails(
-        self, db: AsyncSession, contact_id: str, *, organization_id: str
+        self,
+        db: AsyncSession,
+        contact_id: str,
+        *,
+        organization_id: str,
+        page: int = 1,
+        limit: int | None = None,
     ) -> list[ContactEmailResponse]:
+        if page > 1 and limit is None:
+            raise APIException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                message="limit is required when page is greater than 1",
+            )
         contact = await self.require_contact(db, contact_id, organization_id=organization_id)
-        emails = await self.email_repository.list_by_recipient(
-            db, organization_id=organization_id, recipient_email=contact.email
+        emails = await self.email_repository.list_for_contact(
+            db,
+            organization_id=organization_id,
+            contact_id=contact.id,
+            recipient_email=contact.email,
+            limit=limit,
+            offset=(page - 1) * limit if limit is not None else 0,
         )
         return [
             ContactEmailResponse(

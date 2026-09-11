@@ -30,6 +30,8 @@ from app.models import (
     Invoice,
     InvoiceItem,
     Lead,
+    Meeting,
+    MeetingAttendee,
     Organization,
     Product,
     Quote,
@@ -37,6 +39,8 @@ from app.models import (
     User,
 )
 from app.models.payment import Payment
+from app.repositories.email_repository import EmailRepository
+from app.repositories.meeting_repository import MeetingRepository
 from app.schemas.crm_schemas import LeadConvertRequest
 from app.services.deal_service import DealService
 from app.services.email_service import EmailDeliveryUnknownError
@@ -225,6 +229,86 @@ async def sales_database():
                 )
             await db.commit()
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_legacy_email_and_meeting_fallback_rejects_ambiguous_contact_email(
+    sales_database,
+):
+    sessions, org, _, _, contact, _, _ = sales_database
+    now = datetime.now(UTC)
+    async with sessions() as db:
+        duplicate_contact = Contact(
+            id=str(uuid4()),
+            organization_id=org.id,
+            name="Another buyer",
+            email=f"  {contact.email.upper()}  ",
+        )
+        explicit_email = Email(
+            id=str(uuid4()),
+            organization_id=org.id,
+            contact_id=contact.id,
+            from_email="sales@example.com",
+            to_email=contact.email,
+            subject="Explicit contact email",
+            status="Sent",
+            sent_at=now,
+        )
+        legacy_email = Email(
+            id=str(uuid4()),
+            organization_id=org.id,
+            from_email="sales@example.com",
+            to_email=contact.email,
+            subject="Ambiguous legacy email",
+            status="Sent",
+            sent_at=now,
+        )
+        explicit_meeting = Meeting(
+            id=str(uuid4()),
+            organization_id=org.id,
+            contact_id=contact.id,
+            title="Explicit contact meeting",
+            start_time=now + timedelta(days=1),
+            end_time=now + timedelta(days=1, minutes=30),
+        )
+        legacy_meeting = Meeting(
+            id=str(uuid4()),
+            organization_id=org.id,
+            title="Ambiguous attendee meeting",
+            start_time=now + timedelta(days=2),
+            end_time=now + timedelta(days=2, minutes=30),
+        )
+        db.add_all(
+            [duplicate_contact, explicit_email, legacy_email, explicit_meeting, legacy_meeting]
+        )
+        await db.flush()
+        db.add(
+            MeetingAttendee(
+                id=str(uuid4()),
+                meeting_id=legacy_meeting.id,
+                email=contact.email,
+            )
+        )
+        await db.commit()
+
+        emails = await EmailRepository().list_for_contact(
+            db,
+            organization_id=org.id,
+            contact_id=contact.id,
+            recipient_email=contact.email,
+        )
+        meetings = await MeetingRepository().list_for_contact(
+            db,
+            organization_id=org.id,
+            contact_id=contact.id,
+            contact_email=contact.email,
+            limit=10,
+        )
+
+    assert explicit_email.id in {email.id for email in emails}
+    assert legacy_email.id not in {email.id for email in emails}
+    assert explicit_meeting.id in {meeting.id for meeting in meetings}
+    assert legacy_meeting.id not in {meeting.id for meeting in meetings}
 
 
 @pytest.mark.asyncio
@@ -465,6 +549,9 @@ async def test_durable_quote_delivery_and_customer_acceptance(sales_database, mo
                 )
             )
             assert email and email.status == "Sent"
+            assert email.contact_id == contact.id
+            assert email.company_id == quote.company_id
+            assert email.deal_id == quote.deal_id
             token = acceptance_token(quote.id, quote.delivery_id)
             response = await QuoteService().public_quote(db, token=token)
             assert response["status"] == "Sent"

@@ -8,7 +8,8 @@ from app.models import RolePermission, UserRole
 
 BACKEND_ROOT = Path(__file__).resolve().parents[3]
 MERGE_REVISION = "e8f9a0b1c2d3"
-HEAD_REVISION = "y9c0d1e2f3g4"
+HEAD_REVISION = "z0d1e2f3g4h5"
+CONTACT_EMAIL_HISTORY_INDEX_REVISION = "y9c0d1e2f3g4"
 CONTACT_CONTEXT_REVISION = "x8b9c0d1e2f3"
 PREVIOUS_HEAD_REVISION = "w7a8b9c0d1e2"
 WHATSAPP_REVISION = "v6f7a8b9c0d1"
@@ -38,6 +39,7 @@ def test_rbac_revision_resolves_existing_database_stamp():
         for migration in script.iterate_revisions("heads", "p9e0f1a2b3c4")
     ] == [
         HEAD_REVISION,
+        CONTACT_EMAIL_HISTORY_INDEX_REVISION,
         CONTACT_CONTEXT_REVISION,
         PREVIOUS_HEAD_REVISION,
         WHATSAPP_REVISION,
@@ -52,6 +54,7 @@ def test_rbac_revision_resolves_existing_database_stamp():
         migration.revision for migration in script.iterate_revisions("heads", "o8d9e0f1a2b3")
     ] == [
         HEAD_REVISION,
+        CONTACT_EMAIL_HISTORY_INDEX_REVISION,
         CONTACT_CONTEXT_REVISION,
         PREVIOUS_HEAD_REVISION,
         WHATSAPP_REVISION,
@@ -74,11 +77,14 @@ def test_merge_revision_joins_ai_and_deal_custom_field_heads():
 
 def test_whatsapp_contact_context_follows_provider_migration():
     script = _script_directory()
-    index_revision = script.get_revision(HEAD_REVISION)
+    email_history_revision = script.get_revision(HEAD_REVISION)
+    index_revision = script.get_revision(CONTACT_EMAIL_HISTORY_INDEX_REVISION)
     context_revision = script.get_revision(CONTACT_CONTEXT_REVISION)
 
+    assert email_history_revision is not None
     assert index_revision is not None
     assert context_revision is not None
+    assert email_history_revision.down_revision == CONTACT_EMAIL_HISTORY_INDEX_REVISION
     assert index_revision.down_revision == CONTACT_CONTEXT_REVISION
     assert context_revision.down_revision == PREVIOUS_HEAD_REVISION
 
@@ -92,6 +98,18 @@ def test_whatsapp_contact_indexes_are_created_concurrently():
     assert "autocommit_block" in source
     assert source.count("postgresql_concurrently=True") == 6
     assert source.count("if_not_exists=True") == 3
+
+
+def test_contact_email_history_indexes_are_non_blocking_without_bulk_backfill():
+    source = (
+        BACKEND_ROOT
+        / "alembic/versions/z0d1e2f3g4h5_contact_email_history.py"
+    ).read_text()
+
+    assert "autocommit_block" in source
+    assert source.count("CONCURRENTLY") == 4
+    assert source.count("postgresql_concurrently=True") == 2
+    assert "UPDATE emails" not in source
 
 
 def test_susanoox_migration_updates_only_active_provider_configuration():
