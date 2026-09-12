@@ -134,14 +134,34 @@ async def invite_users(
     dependencies=[Depends(require_permission("users:read"))],
 )
 async def list_user_invitations(
+    response: Response,
     token: str | None = Query(None),
     status_filter: str | None = Query(None, alias="status"),
+    search: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(15, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await user_service.list_user_invitations(
-        db, token=token, status_filter=status_filter, current_user=current_user
+    invitations = await user_service.list_user_invitations(
+        db,
+        token=token,
+        status_filter=status_filter,
+        search=search,
+        current_user=current_user,
+        page=page,
+        limit=limit,
     )
+    response.headers["X-Total-Count"] = str(
+        await user_service.count_user_invitations(
+            db,
+            token=token,
+            status_filter=status_filter,
+            search=search,
+            current_user=current_user,
+        )
+    )
+    return invitations
 
 
 @router.get(
@@ -151,14 +171,34 @@ async def list_user_invitations(
     dependencies=[Depends(require_permission("users:read"))],
 )
 async def list_user_invitations_all(
+    response: Response,
     token: str | None = Query(None),
     status_filter: str | None = Query(None, alias="status"),
+    search: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(15, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await user_service.list_user_invitations(
-        db, token=token, status_filter=status_filter, current_user=current_user
+    invitations = await user_service.list_user_invitations(
+        db,
+        token=token,
+        status_filter=status_filter,
+        search=search,
+        current_user=current_user,
+        page=page,
+        limit=limit,
     )
+    response.headers["X-Total-Count"] = str(
+        await user_service.count_user_invitations(
+            db,
+            token=token,
+            status_filter=status_filter,
+            search=search,
+            current_user=current_user,
+        )
+    )
+    return invitations
 
 
 @router.get(

@@ -23,31 +23,35 @@ class EmailRepository:
         if search and search.strip():
             term = f"%{search.strip()}%"
             stmt = stmt.where((Email.subject.ilike(term)) | (Email.to_email.ilike(term)))
-        stmt = stmt.order_by(Email.created_at.desc()).offset((page - 1) * limit).limit(limit)
+        stmt = (
+            stmt.order_by(Email.created_at.desc(), Email.id.desc())
+            .offset((page - 1) * limit)
+            .limit(limit)
+        )
         res = await db.execute(stmt)
         return res.scalars().all()
+
+    async def count_emails(
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        search: str | None = None,
+    ) -> int:
+        stmt = (
+            select(func.count()).select_from(Email).where(Email.organization_id == organization_id)
+        )
+        if search and search.strip():
+            term = f"%{search.strip()}%"
+            stmt = stmt.where((Email.subject.ilike(term)) | (Email.to_email.ilike(term)))
+        return int((await db.execute(stmt)).scalar_one())
 
     async def list_by_ids(
         self, db: AsyncSession, ids: list[str], organization_id: str
     ) -> Sequence[Email]:
-        stmt = select(Email).where(
-            Email.id.in_(ids), Email.organization_id == organization_id
-        )
+        stmt = select(Email).where(Email.id.in_(ids), Email.organization_id == organization_id)
         res = await db.execute(stmt)
         return res.scalars().all()
-
-    async def list_by_recipient(
-        self, db: AsyncSession, *, organization_id: str, recipient_email: str
-    ) -> Sequence[Email]:
-        result = await db.execute(
-            select(Email)
-            .where(
-                Email.organization_id == organization_id,
-                func.lower(Email.to_email) == recipient_email.strip().lower(),
-            )
-            .order_by(Email.sent_at.desc())
-        )
-        return result.scalars().all()
 
     @staticmethod
     def _for_contact_query(
@@ -170,9 +174,7 @@ class EmailRepository:
         )
         return result.scalars().first()
 
-    async def list_drafts(
-        self, db: AsyncSession, *, organization_id: str
-    ) -> Sequence[Email]:
+    async def list_drafts(self, db: AsyncSession, *, organization_id: str) -> Sequence[Email]:
         result = await db.execute(
             select(Email)
             .where(Email.organization_id == organization_id, Email.status == "Draft")
@@ -253,9 +255,9 @@ class EmailRepository:
     async def list_templates(
         self, db: AsyncSession, organization_id: str
     ) -> Sequence[EmailTemplate]:
-        stmt = select(EmailTemplate).where(
-            EmailTemplate.organization_id == organization_id
-        ).limit(20)
+        stmt = (
+            select(EmailTemplate).where(EmailTemplate.organization_id == organization_id).limit(20)
+        )
         res = await db.execute(stmt)
         return res.scalars().all()
 

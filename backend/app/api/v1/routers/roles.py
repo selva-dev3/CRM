@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import (
@@ -42,6 +42,9 @@ def _current_organization_id(current_user: User) -> str:
     dependencies=[Depends(require_permission("roles:read"))],
 )
 async def list_roles(
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     search: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -49,7 +52,10 @@ async def list_roles(
     # Roles are derived from the authenticated user's current organization —
     # a client-supplied organization_id is never accepted for role search.
     org_id = _current_organization_id(current_user)
-    return await role_service.list_roles(db, search, org_id=org_id)
+    roles = await role_service.list_roles(db, search, org_id=org_id, page=page, limit=limit)
+    total = await role_service.count_roles(db, search, org_id=org_id)
+    response.headers["X-Total-Count"] = str(total)
+    return roles
 
 
 @router.post(
@@ -164,10 +170,17 @@ async def get_default_role(
     dependencies=[Depends(require_permission("roles:read"))],
 )
 async def role_audit_logs(
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await role_service.role_audit_logs(db, current_user)
+    logs = await role_service.role_audit_logs(db, current_user, page=page, limit=limit)
+    response.headers["X-Total-Count"] = str(
+        await role_service.count_role_audit_logs(db, current_user)
+    )
+    return logs
 
 
 @router.get(
@@ -355,10 +368,17 @@ async def remove_permission(
 )
 async def get_role_users(
     role_id: str,
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(15, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await role_service.get_role_users(db, role_id, current_user)
+    users = await role_service.get_role_users(db, role_id, current_user, page=page, limit=limit)
+    response.headers["X-Total-Count"] = str(
+        await role_service.count_role_users(db, role_id, current_user)
+    )
+    return users
 
 
 @router.post(

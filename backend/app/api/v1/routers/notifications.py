@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
@@ -22,15 +22,21 @@ router = APIRouter()
     dependencies=[Depends(require_permission("notifications:read"))],
 )
 async def list_notifications(
-    page: int = 1,
-    limit: int = 20,
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     unread_only: bool = False,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await notification_service.list_notifications(
+    notifications = await notification_service.list_notifications(
         db, user_id=current_user.id, page=page, limit=limit, unread_only=unread_only
     )
+    total = await notification_service.count_notifications(
+        db, user_id=current_user.id, unread_only=unread_only
+    )
+    response.headers["X-Total-Count"] = str(total)
+    return notifications
 
 
 @router.get(

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Body, Depends, Query
+from fastapi import APIRouter, Body, Depends, Query, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -73,14 +73,19 @@ async def update_system_settings(
     dependencies=[Depends(require_permission("settings:security"))],
 )
 async def get_audit_logs(
-    page: int = 1,
-    limit: int = 20,
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await settings_service.list_audit_logs(
+    logs = await settings_service.list_audit_logs(
         db, page=page, limit=limit, current_user=current_user
     )
+    response.headers["X-Total-Count"] = str(
+        await settings_service.count_audit_logs(db, current_user)
+    )
+    return logs
 
 
 @router.get(

@@ -63,15 +63,39 @@ class ContactRepository:
         return list(result.scalars().all())
 
     async def list_by_company(
-        self, db: AsyncSession, company_id: str, *, organization_id: str
+        self,
+        db: AsyncSession,
+        company_id: str,
+        *,
+        organization_id: str,
+        page: int | None = None,
+        limit: int | None = None,
     ) -> list[Contact]:
-        result = await db.execute(
-            select(Contact).where(
+        stmt = (
+            select(Contact)
+            .where(
+                Contact.company_id == company_id,
+                Contact.organization_id == organization_id,
+            )
+            .order_by(Contact.created_at.desc(), Contact.id.desc())
+        )
+        if page is not None and limit is not None:
+            stmt = stmt.offset((page - 1) * limit).limit(limit)
+        result = await db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def count_by_company(
+        self, db: AsyncSession, company_id: str, *, organization_id: str
+    ) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(Contact)
+            .where(
                 Contact.company_id == company_id,
                 Contact.organization_id == organization_id,
             )
         )
-        return list(result.scalars().all())
+        return int((await db.execute(stmt)).scalar_one())
 
     async def get_by_id(self, db: AsyncSession, contact_id: str) -> Contact | None:
         result = await db.execute(select(Contact).where(Contact.id == contact_id))

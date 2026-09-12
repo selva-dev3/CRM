@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Project, User
@@ -23,11 +23,27 @@ class ProjectRepository:
         result = await db.execute(
             select(Project)
             .where(*conditions)
-            .order_by(Project.created_at.desc())
+            .order_by(Project.created_at.desc(), Project.id.desc())
             .offset(max(page - 1, 0) * limit)
             .limit(min(limit, 100))
         )
         return list(result.scalars().all())
+
+    async def count(
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        status: str | None = None,
+        priority: str | None = None,
+    ) -> int:
+        conditions = [Project.organization_id == organization_id]
+        if status:
+            conditions.append(Project.status == status)
+        if priority:
+            conditions.append(Project.priority == priority)
+        result = await db.execute(select(func.count()).select_from(Project).where(*conditions))
+        return int(result.scalar_one())
 
     async def get(
         self, db: AsyncSession, *, project_id: str, organization_id: str

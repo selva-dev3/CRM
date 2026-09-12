@@ -140,10 +140,12 @@ class UserRepository:
 
     async def lock_active_by_org(self, db: AsyncSession, org_id: str) -> builtins.list[User]:
         result = await db.execute(
-            select(User).where(
+            select(User)
+            .where(
                 User.organization_id == org_id,
                 User.is_active.is_(True),
-            ).with_for_update()
+            )
+            .with_for_update()
         )
         return list(result.scalars().all())
 
@@ -196,9 +198,7 @@ class UserRepository:
             .all()
         )
         by_value = {
-            value: role.name
-            for role in roles
-            for value in (role.id, role.name.strip().lower())
+            value: role.name for role in roles for value in (role.id, role.name.strip().lower())
         }
         for user in fallback_users:
             raw_role = user.role.strip()
@@ -211,7 +211,10 @@ class UserRepository:
         *,
         token: str | None = None,
         status_filter: str | None = None,
+        search: str | None = None,
         organization_id: str | None = None,
+        page: int | None = None,
+        limit: int | None = None,
     ) -> builtins.list[UserInvitation]:
         stmt = select(UserInvitation)
         if organization_id:
@@ -220,9 +223,33 @@ class UserRepository:
             stmt = stmt.where(UserInvitation.token == token.strip())
         elif status_filter and status_filter.strip():
             stmt = stmt.where(UserInvitation.status == status_filter.strip())
-        stmt = stmt.order_by(UserInvitation.created_at.desc())
+        if search and search.strip():
+            stmt = stmt.where(UserInvitation.email.ilike(f"%{search.strip()}%"))
+        stmt = stmt.order_by(UserInvitation.created_at.desc(), UserInvitation.id.desc())
+        if page is not None and limit is not None:
+            stmt = stmt.offset((page - 1) * limit).limit(limit)
         result = await db.execute(stmt)
         return list(result.scalars().all())
+
+    async def count_invitations(
+        self,
+        db: AsyncSession,
+        *,
+        token: str | None = None,
+        status_filter: str | None = None,
+        search: str | None = None,
+        organization_id: str | None = None,
+    ) -> int:
+        stmt = select(func.count()).select_from(UserInvitation)
+        if organization_id:
+            stmt = stmt.where(UserInvitation.organization_id == organization_id)
+        if token and token.strip():
+            stmt = stmt.where(UserInvitation.token == token.strip())
+        elif status_filter and status_filter.strip():
+            stmt = stmt.where(UserInvitation.status == status_filter.strip())
+        if search and search.strip():
+            stmt = stmt.where(UserInvitation.email.ilike(f"%{search.strip()}%"))
+        return int((await db.execute(stmt)).scalar_one())
 
     async def get_invitation_by_token(self, db: AsyncSession, token: str) -> UserInvitation | None:
         result = await db.execute(

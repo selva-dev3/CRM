@@ -33,7 +33,7 @@ describe('AIIntelligencePage', () => {
     vi.clearAllMocks();
     mocks.canRead = true;
     mocks.canGenerate = true;
-    mocks.listConversations.mockResolvedValue([]);
+    mocks.listConversations.mockResolvedValue({ items: [], total: 0 });
     mocks.streamChatAssistant.mockImplementation(
       async (_question: string, _conversationId: string | undefined, handlers: { onDelta: (text: string) => void }) => {
         handlers.onDelta('There are 4 ');
@@ -86,13 +86,13 @@ describe('AIIntelligencePage', () => {
   });
 
   it('loads a tenant-scoped persisted conversation', async () => {
-    mocks.listConversations.mockResolvedValue([{
+    mocks.listConversations.mockResolvedValue({ items: [{
       id: 'conversation-1',
       title: 'Pipeline review',
       model_name: 'model-a',
       created_at: '2026-09-04T00:00:00Z',
       updated_at: '2026-09-04T00:00:00Z',
-    }]);
+    }], total: 1 });
     mocks.getConversation.mockResolvedValue({
       id: 'conversation-1',
       title: 'Pipeline review',

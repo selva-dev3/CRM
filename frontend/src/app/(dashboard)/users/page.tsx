@@ -63,6 +63,7 @@ export default function UsersPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [page, setPage] = useState(1);
+  const [invitationPage, setInvitationPage] = useState(1);
   const limit = 15;
 
   // Debounce search input to prevent focus loss & flickering
@@ -70,6 +71,7 @@ export default function UsersPage() {
     const handler = setTimeout(() => {
       setDebouncedSearchTerm(searchTerm);
       setPage(1);
+      setInvitationPage(1);
     }, 250);
     return () => clearTimeout(handler);
   }, [searchTerm]);
@@ -88,12 +90,13 @@ export default function UsersPage() {
 
   // Lazy Invitation Query - ONLY executes when activeTab === 'invites'
   const {
-    data: invitations = [],
+    data: invitationPageData,
     isLoading: isInvitationsLoading,
     refetch: refetchInvitations,
-  } = useUserInvitationsQuery(undefined, {
+  } = useUserInvitationsQuery(undefined, invitationPage, limit, debouncedSearchTerm, {
     enabled: activeTab === 'invites',
   });
+  const invitations = invitationPageData?.items ?? [];
 
   const { data: currentOrganization } = useCurrentOrganizationQuery();
 
@@ -538,7 +541,7 @@ export default function UsersPage() {
         variant="default"
         tabs={[
           { value: 'all', icon: <User className="size-4" />, label: <>All Users <span className="rounded-full bg-[#E5E7EB] px-2 py-0.5 text-badge text-[#374151]">{users.length}</span></> },
-          { value: 'invites', icon: <Mail className="size-4" />, label: <>Pending Invites {invitations.length > 0 && <span className="rounded-full bg-[#F59E0B]/20 px-2 py-0.5 text-badge text-[#D97706]">{invitations.length}</span>}</> },
+          { value: 'invites', icon: <Mail className="size-4" />, label: <>Pending Invites {(invitationPageData?.total ?? 0) > 0 && <span className="rounded-full bg-[#F59E0B]/20 px-2 py-0.5 text-badge text-[#D97706]">{invitationPageData?.total}</span>}</> },
         ]}
         listClassName="border-b border-[#E5E7EB] bg-transparent pb-3"
         triggerClassName="text-button data-[state=active]:bg-[#2563EB]/10 data-[state=active]:text-[#2563EB]"
@@ -636,7 +639,7 @@ export default function UsersPage() {
       ) : (
         <DataTable
           columns={inviteColumns}
-          data={invitations.filter(inv => !searchTerm || inv.email.toLowerCase().includes(searchTerm.toLowerCase()))}
+          data={invitations}
           getRowKey={(item) => item.id}
           emptyTitle="No sent invitations found"
           emptyDescription="Send your first team invitation using the '+ Invite User' button above."
@@ -644,7 +647,7 @@ export default function UsersPage() {
           onSearchChange={setSearchTerm}
           searchPlaceholder="Search invited email..."
           isLoading={isInvitationsLoading}
-          pagination={{ pageSize: 15 }}
+          pagination={{ pageIndex: invitationPage - 1, pageCount: Math.max(1, Math.ceil((invitationPageData?.total ?? 0) / limit)), onPageChange: (nextPage) => setInvitationPage(nextPage + 1), totalRecords: invitationPageData?.total ?? 0 }}
           toolbarActions={
             <Button
               type="button"

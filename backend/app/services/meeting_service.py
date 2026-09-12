@@ -99,6 +99,27 @@ class MeetingService:
         )
         return [meeting_to_dict(m) for m in meetings]
 
+    async def count_meetings(
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        search: str | None = None,
+        lead_id: str | None = None,
+        contact_id: str | None = None,
+        company_id: str | None = None,
+        deal_id: str | None = None,
+    ) -> int:
+        return await self.repository.count(
+            db,
+            organization_id=organization_id,
+            search=search,
+            lead_id=lead_id,
+            contact_id=contact_id,
+            company_id=company_id,
+            deal_id=deal_id,
+        )
+
     async def get_meeting(self, db: AsyncSession, meeting_id: str, organization_id: str) -> dict:
         meeting = await self.repository.get_by_id(
             db, meeting_id=meeting_id, organization_id=organization_id

@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock
 
 import pytest
+from fastapi import Response
 from fastapi.routing import APIRoute
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,12 +30,15 @@ async def test_project_routes_delegate_with_current_user(monkeypatch) -> None:
     list_projects = AsyncMock(return_value=[])
     create_project = AsyncMock(return_value={"id": "project-1"})
     monkeypatch.setattr(project_service, "list_projects", list_projects)
+    monkeypatch.setattr(project_service, "count_projects", AsyncMock(return_value=11))
     monkeypatch.setattr(project_service, "create_project", create_project)
 
-    await projects.list_projects(db=db, current_user=user, page=2, limit=10)
+    response = Response()
+    await projects.list_projects(response=response, db=db, current_user=user, page=2, limit=10)
     await projects.create_project(ProjectCreate(name="X"), db=db, current_user=user)
 
     list_projects.assert_awaited_once_with(db, user, page=2, limit=10, status=None, priority=None)
+    assert response.headers["X-Total-Count"] == "11"
     create_project.assert_awaited_once_with(db, user, ProjectCreate(name="X"))
 
 

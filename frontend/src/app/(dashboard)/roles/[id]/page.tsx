@@ -54,14 +54,17 @@ export default function RoleDetailPage() {
   const { hasPermission } = useHasPermission();
   const canReadUsers = hasPermission('users:read');
   const canAssignPermissions = hasPermission('roles:assign');
+  const [usersPage, setUsersPage] = useState(1);
+  const usersPageSize = 15;
 
   // Queries
   const { data: role, isLoading, isError } = useRoleQuery(roleId);
   const { data: defaultRole } = useDefaultRoleQuery();
   const { data: permissionMatrix = [] } = usePermissionMatrixQuery();
-  const { data: assignedUsers = [] } = useRoleUsersQuery(roleId, {
+  const { data: assignedUsersPage } = useRoleUsersQuery(roleId, {
     enabled: !!roleId && canReadUsers,
-  });
+  }, usersPage, usersPageSize);
+  const assignedUsers = assignedUsersPage?.items ?? [];
 
   // System roles (e.g. super_admin) are immutable — enforced server-side; UI reflects this.
   const isSystemRole = role?.is_system_role === true;
@@ -492,6 +495,7 @@ export default function RoleDetailPage() {
                   </div>
                 ))
               )}
+              {(assignedUsersPage?.total ?? 0) > usersPageSize && <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3"><Button type="button" size="sm" variant="outline" disabled={usersPage === 1} onClick={() => setUsersPage((page) => page - 1)}>Previous</Button><span className="text-xs text-slate-500">Page {usersPage} of {Math.ceil((assignedUsersPage?.total ?? 0) / usersPageSize)}</span><Button type="button" size="sm" variant="outline" disabled={usersPage * usersPageSize >= (assignedUsersPage?.total ?? 0)} onClick={() => setUsersPage((page) => page + 1)}>Next</Button></div>}
             </div>
           </div>
           </PermissionGate>

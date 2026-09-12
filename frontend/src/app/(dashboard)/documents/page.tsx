@@ -69,11 +69,13 @@ export default function DocumentsPage() {
   }, [searchTerm]);
 
   // Queries
-  const { data: documents = [], isLoading: isDocsLoading } = useDocumentsQuery({
+  const { data: documentsPage, isLoading: isDocsLoading } = useDocumentsQuery({
     page,
     limit,
     search: debouncedSearchTerm || undefined,
   });
+  const documents = documentsPage?.items ?? [];
+  const totalDocuments = documentsPage?.total ?? 0;
 
   // Mutations
   const uploadMutation = useUploadDocumentMutation();
@@ -297,9 +299,9 @@ export default function DocumentsPage() {
         isLoading={isDocsLoading}
         pagination={{
           pageIndex: page - 1,
-          pageCount: documents.length >= limit ? page + 1 : page,
+          pageCount: Math.max(1, Math.ceil(totalDocuments / limit)),
           onPageChange: (p) => setPage(p + 1),
-          totalRecords: (page - 1) * limit + documents.length,
+          totalRecords: totalDocuments,
         }}
       />
 

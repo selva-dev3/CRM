@@ -3,7 +3,7 @@ from __future__ import annotations
 import builtins
 from datetime import datetime
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import CallLog
@@ -40,9 +40,45 @@ class CallRepository:
         ):
             if value:
                 stmt = stmt.where(column == value)
-        stmt = stmt.order_by(CallLog.timestamp.desc()).offset((page - 1) * limit).limit(limit)
+        stmt = (
+            stmt.order_by(CallLog.timestamp.desc(), CallLog.id.desc())
+            .offset((page - 1) * limit)
+            .limit(limit)
+        )
         result = await db.execute(stmt)
         return list(result.scalars().all())
+
+    async def count(
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        search: str | None = None,
+        call_type: str | None = None,
+        lead_id: str | None = None,
+        contact_id: str | None = None,
+        company_id: str | None = None,
+        deal_id: str | None = None,
+    ) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(CallLog)
+            .where(CallLog.organization_id == organization_id)
+        )
+        if search and search.strip():
+            term = f"%{search.strip()}%"
+            stmt = stmt.where(or_(CallLog.subject.ilike(term), CallLog.notes.ilike(term)))
+        if call_type and call_type.strip():
+            stmt = stmt.where(CallLog.call_type == call_type.strip())
+        for column, value in (
+            (CallLog.lead_id, lead_id),
+            (CallLog.contact_id, contact_id),
+            (CallLog.company_id, company_id),
+            (CallLog.deal_id, deal_id),
+        ):
+            if value:
+                stmt = stmt.where(column == value)
+        return int((await db.execute(stmt)).scalar_one())
 
     async def get_by_id(
         self, db: AsyncSession, call_id: str, organization_id: str
@@ -89,6 +125,7 @@ class CallRepository:
         *,
         contact_id: str,
         organization_id: str,
+        page: int | None = None,
         limit: int | None = None,
         search: str | None = None,
         start: datetime | None = None,
@@ -104,11 +141,26 @@ class CallRepository:
             stmt = stmt.where(CallLog.timestamp >= start)
         if end is not None:
             stmt = stmt.where(CallLog.timestamp < end)
-        stmt = stmt.order_by(CallLog.timestamp.desc())
-        if limit is not None:
+        stmt = stmt.order_by(CallLog.timestamp.desc(), CallLog.id.desc())
+        if page is not None and limit is not None:
+            stmt = stmt.offset((page - 1) * limit).limit(limit)
+        elif limit is not None:
             stmt = stmt.limit(limit)
         result = await db.execute(stmt)
         return list(result.scalars().all())
+
+    async def count_by_contact(
+        self, db: AsyncSession, *, contact_id: str, organization_id: str
+    ) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(CallLog)
+            .where(
+                CallLog.contact_id == contact_id,
+                CallLog.organization_id == organization_id,
+            )
+        )
+        return int((await db.execute(stmt)).scalar_one())
 
     async def create(self, db: AsyncSession, *, data: dict) -> CallLog:
         call = CallLog(**data)

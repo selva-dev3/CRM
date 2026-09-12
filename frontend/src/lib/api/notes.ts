@@ -1,5 +1,6 @@
 ﻿import { useQuery, useMutation, useQueryClient, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import { fetchPaginated, type PaginatedResult } from '@/lib/api/pagination';
 
 export interface NoteItem {
   id: string;
@@ -31,14 +32,14 @@ export interface MessageResponse {
 // API Client Functions
 // ---------------------------------------------------------------------------
 
-export async function fetchNotesApi(params?: { page?: number; limit?: number; entity_type?: string; search?: string }): Promise<NoteItem[]> {
+export async function fetchNotesApi(params?: { page?: number; limit?: number; entity_type?: string; search?: string }): Promise<PaginatedResult<NoteItem>> {
   const query = new URLSearchParams();
   if (params?.page) query.append('page', String(params.page));
   if (params?.limit) query.append('limit', String(params.limit));
   if (params?.entity_type) query.append('entity_type', params.entity_type);
   if (params?.search) query.append('search', params.search);
   const endpoint = `/notes${query.toString() ? `?${query.toString()}` : ''}`;
-  return apiClient.get<NoteItem[]>(endpoint);
+  return fetchPaginated<NoteItem>(endpoint);
 }
 
 export async function createNoteApi(payload: NoteCreatePayload): Promise<NoteItem> {
@@ -81,8 +82,8 @@ export async function unpinNoteApi(noteId: string): Promise<MessageResponse> {
 // TanStack Query Hooks
 // ---------------------------------------------------------------------------
 
-export function useNotesQuery(params?: { page?: number; limit?: number; entity_type?: string; search?: string }, options?: Omit<UseQueryOptions<NoteItem[]>, 'queryKey' | 'queryFn'>) {
-  return useQuery<NoteItem[]>({
+export function useNotesQuery(params?: { page?: number; limit?: number; entity_type?: string; search?: string }, options?: Omit<UseQueryOptions<PaginatedResult<NoteItem>>, 'queryKey' | 'queryFn'>) {
+  return useQuery<PaginatedResult<NoteItem>>({
     queryKey: ['notes', params],
     queryFn: () => fetchNotesApi(params),
     staleTime: 1000 * 60 * 2,

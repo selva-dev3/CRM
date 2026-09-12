@@ -3,7 +3,7 @@
 import { Input } from "@/components/ui/input";
 
 import { getErrorMessage } from '@/lib/utils';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   BarChart3,
   TrendingUp,
@@ -71,6 +71,7 @@ import type {
 export default function ReportsPage() {
   const [activeCategory, setActiveCategory] = useState<ReportCategory>('performance');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
 
   // Modals
   const [isCustomModalOpen, setIsCustomModalOpen] = useState(false);
@@ -87,6 +88,17 @@ export default function ReportsPage() {
   // Notifications
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [customPage, setCustomPage] = useState(1);
+  const [scheduledPage, setScheduledPage] = useState(1);
+  const reportListPageSize = 10;
+  useEffect(() => {
+    const handler = window.setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery.trim());
+      setCustomPage(1);
+      setScheduledPage(1);
+    }, 250);
+    return () => window.clearTimeout(handler);
+  }, [searchQuery]);
   const { data: currentOrganization } = useCurrentOrganizationQuery();
   const organizationCurrency = currentOrganization?.currency || 'USD';
 
@@ -103,8 +115,8 @@ export default function ReportsPage() {
   const quotaQuery = useQuotaAttainmentReportQuery({ enabled: activeCategory === 'quota' });
   const financialQuery = useFinancialOverviewReportQuery({ enabled: activeCategory === 'financial' });
   const quoteConversionQuery = useQuoteConversionReportQuery({ enabled: activeCategory === 'quote-conversion' });
-  const customQuery = useCustomReportsQuery({ enabled: activeCategory === 'custom' });
-  const scheduledQuery = useScheduledReportsQuery({ enabled: activeCategory === 'scheduled' });
+  const customQuery = useCustomReportsQuery(customPage, reportListPageSize, debouncedSearchQuery, { enabled: activeCategory === 'custom' });
+  const scheduledQuery = useScheduledReportsQuery(scheduledPage, reportListPageSize, debouncedSearchQuery, { enabled: activeCategory === 'scheduled' });
 
   const { data: salesData, isLoading: isSalesLoading } = salesQuery;
   const { data: velocityData, isLoading: isVelocityLoading } = velocityQuery;
@@ -118,8 +130,10 @@ export default function ReportsPage() {
   const { data: quotaData, isLoading: isQuotaLoading } = quotaQuery;
   const { data: financialData, isLoading: isFinancialLoading } = financialQuery;
   const { data: quoteConversionData, isLoading: isQuoteConversionLoading } = quoteConversionQuery;
-  const { data: customReports = [], isLoading: isCustomLoading } = customQuery;
-  const { data: scheduledReports = [], isLoading: isScheduledLoading } = scheduledQuery;
+  const { data: customPageData, isLoading: isCustomLoading } = customQuery;
+  const { data: scheduledPageData, isLoading: isScheduledLoading } = scheduledQuery;
+  const customReports = customPageData?.items ?? [];
+  const scheduledReports = scheduledPageData?.items ?? [];
 
   const activeReportQuery = {
     performance: salesQuery,
@@ -899,7 +913,7 @@ export default function ReportsPage() {
           <div className="space-y-6">
             <DataTable
               columns={customColumns}
-              data={filterRows(customReports, ['name', 'filters'])}
+              data={customReports}
               getRowKey={(item) => item.id}
               isLoading={isCustomLoading}
               emptyTitle="No Custom Reports"
@@ -907,7 +921,7 @@ export default function ReportsPage() {
               searchValue={searchQuery}
               onSearchChange={setSearchQuery}
               searchPlaceholder="Search custom report name..."
-              pagination={{ pageSize: 10 }}
+              pagination={{ pageIndex: customPage - 1, pageCount: Math.max(1, Math.ceil((customPageData?.total ?? 0) / reportListPageSize)), onPageChange: (page) => setCustomPage(page + 1), totalRecords: customPageData?.total ?? 0 }}
             />
           </div>
         )}
@@ -917,7 +931,7 @@ export default function ReportsPage() {
           <div className="space-y-6">
             <DataTable
               columns={scheduledColumns}
-              data={filterRows(scheduledReports, ['report_type', 'email', 'frequency'])}
+              data={scheduledReports}
               getRowKey={(item) => item.id}
               isLoading={isScheduledLoading}
               emptyTitle="No Scheduled Jobs"
@@ -925,7 +939,7 @@ export default function ReportsPage() {
               searchValue={searchQuery}
               onSearchChange={setSearchQuery}
               searchPlaceholder="Search scheduled email..."
-              pagination={{ pageSize: 10 }}
+              pagination={{ pageIndex: scheduledPage - 1, pageCount: Math.max(1, Math.ceil((scheduledPageData?.total ?? 0) / reportListPageSize)), onPageChange: (page) => setScheduledPage(page + 1), totalRecords: scheduledPageData?.total ?? 0 }}
             />
           </div>
         )}

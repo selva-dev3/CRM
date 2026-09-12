@@ -101,6 +101,12 @@ export default function ContactDetailsPage() {
   const contactId = params?.id as string;
 
   const [activeTab, setActiveTab] = useState<'overview' | 'deals' | 'notes' | 'emails' | 'calls'>('overview');
+  const relationshipLimit = 15;
+  const [activitiesPageNumber, setActivitiesPageNumber] = useState(1);
+  const [dealsPageNumber, setDealsPageNumber] = useState(1);
+  const [notesPageNumber, setNotesPageNumber] = useState(1);
+  const [emailsPageNumber, setEmailsPageNumber] = useState(1);
+  const [callsPageNumber, setCallsPageNumber] = useState(1);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -143,35 +149,40 @@ export default function ContactDetailsPage() {
   } = useEntityCustomFieldsQuery('Contact');
 
   // Sub-resource queries
-  const { data: deals = [], isError: isDealsError } = useQuery({
-    queryKey: ['contact-deals', contactId],
-    queryFn: () => getContactDealsApi(contactId),
+  const { data: dealsPage, isError: isDealsError } = useQuery({
+    queryKey: ['contact-deals', contactId, dealsPageNumber, relationshipLimit],
+    queryFn: () => getContactDealsApi(contactId, dealsPageNumber, relationshipLimit),
     enabled: !!contactId,
   });
 
-  const { data: activities = [], isError: isActivitiesError } = useQuery({
-    queryKey: ['contact-activities', contactId],
-    queryFn: () => getContactActivitiesApi(contactId),
+  const { data: activitiesPage, isError: isActivitiesError } = useQuery({
+    queryKey: ['contact-activities', contactId, activitiesPageNumber, relationshipLimit],
+    queryFn: () => getContactActivitiesApi(contactId, activitiesPageNumber, relationshipLimit),
     enabled: !!contactId,
   });
 
-  const { data: notes = [], isError: isNotesError, refetch: refetchNotes } = useQuery({
-    queryKey: ['contact-notes', contactId],
-    queryFn: () => getContactNotesApi(contactId),
+  const { data: notesPage, isError: isNotesError, refetch: refetchNotes } = useQuery({
+    queryKey: ['contact-notes', contactId, notesPageNumber, relationshipLimit],
+    queryFn: () => getContactNotesApi(contactId, notesPageNumber, relationshipLimit),
     enabled: !!contactId,
   });
 
-  const { data: emails = [], isError: isEmailsError } = useQuery({
-    queryKey: ['contact-emails', contactId],
-    queryFn: () => getContactEmailsApi(contactId),
+  const { data: emailsPage, isError: isEmailsError } = useQuery({
+    queryKey: ['contact-emails', contactId, emailsPageNumber, relationshipLimit],
+    queryFn: () => getContactEmailsApi(contactId, emailsPageNumber, relationshipLimit),
     enabled: !!contactId,
   });
 
-  const { data: calls = [], isError: isCallsError } = useQuery({
-    queryKey: ['contact-calls', contactId],
-    queryFn: () => getContactCallsApi(contactId),
+  const { data: callsPage, isError: isCallsError } = useQuery({
+    queryKey: ['contact-calls', contactId, callsPageNumber, relationshipLimit],
+    queryFn: () => getContactCallsApi(contactId, callsPageNumber, relationshipLimit),
     enabled: !!contactId,
   });
+  const deals = dealsPage?.items ?? [];
+  const activities = activitiesPage?.items ?? [];
+  const notes = notesPage?.items ?? [];
+  const emails = emailsPage?.items ?? [];
+  const calls = callsPage?.items ?? [];
 
   // Mutations
   const updateContactMutation = useUpdateContactMutation();
@@ -185,6 +196,7 @@ export default function ContactDetailsPage() {
     onSuccess: () => {
       setSuccessMessage('Note added successfully.');
       setNewNoteContent('');
+      setNotesPageNumber(1);
       refetchNotes();
       queryClient.invalidateQueries({ queryKey: ['contact-notes', contactId] });
     },
@@ -444,11 +456,11 @@ export default function ContactDetailsPage() {
         value={activeTab}
         onValueChange={setActiveTab}
         tabs={[
-          { value: 'overview', icon: <Activity className="size-4" />, label: `Overview & Timeline (${activities.length})` },
-          { value: 'deals', icon: <Briefcase className="size-4" />, label: `Deals (${deals.length})` },
-          { value: 'notes', icon: <FileText className="size-4" />, label: `Notes (${notes.length})` },
-          { value: 'emails', icon: <MessageSquare className="size-4" />, label: `Emails (${emails.length})` },
-          { value: 'calls', icon: <PhoneCall className="size-4" />, label: `Call Logs (${calls.length})` },
+          { value: 'overview', icon: <Activity className="size-4" />, label: `Overview & Timeline (${activitiesPage?.total ?? 0})` },
+          { value: 'deals', icon: <Briefcase className="size-4" />, label: `Deals (${dealsPage?.total ?? 0})` },
+          { value: 'notes', icon: <FileText className="size-4" />, label: `Notes (${notesPage?.total ?? 0})` },
+          { value: 'emails', icon: <MessageSquare className="size-4" />, label: `Emails (${emailsPage?.total ?? 0})` },
+          { value: 'calls', icon: <PhoneCall className="size-4" />, label: `Call Logs (${callsPage?.total ?? 0})` },
         ]}
         listClassName="border-b border-slate-200"
       />
@@ -469,6 +481,12 @@ export default function ContactDetailsPage() {
             getRowKey={(activity) => activity.id}
             emptyTitle="No recent activity"
             emptyDescription="No recent activity recorded for this contact."
+            pagination={{
+              pageIndex: activitiesPageNumber - 1,
+              pageCount: Math.max(1, Math.ceil((activitiesPage?.total ?? 0) / relationshipLimit)),
+              onPageChange: (nextPage) => setActivitiesPageNumber(nextPage + 1),
+              totalRecords: activitiesPage?.total ?? 0,
+            }}
           />
         </div>
       )}
@@ -483,6 +501,12 @@ export default function ContactDetailsPage() {
             getRowKey={(deal) => deal.id}
             emptyTitle="No linked deals"
             emptyDescription="No active sales pipeline deals are associated with this contact."
+            pagination={{
+              pageIndex: dealsPageNumber - 1,
+              pageCount: Math.max(1, Math.ceil((dealsPage?.total ?? 0) / relationshipLimit)),
+              onPageChange: (nextPage) => setDealsPageNumber(nextPage + 1),
+              totalRecords: dealsPage?.total ?? 0,
+            }}
           />
         </div>
       )}
@@ -519,6 +543,12 @@ export default function ContactDetailsPage() {
             getRowKey={(note) => note.id}
             emptyTitle="No saved notes"
             emptyDescription="No notes logged yet. Add your first note above."
+            pagination={{
+              pageIndex: notesPageNumber - 1,
+              pageCount: Math.max(1, Math.ceil((notesPage?.total ?? 0) / relationshipLimit)),
+              onPageChange: (nextPage) => setNotesPageNumber(nextPage + 1),
+              totalRecords: notesPage?.total ?? 0,
+            }}
           />
         </div>
       )}
@@ -534,6 +564,12 @@ export default function ContactDetailsPage() {
             emptyTitle="No email messages"
             emptyDescription="No email messages have been sent to this contact."
             expandableRow={(email) => <EmailBodyPreview body={getEmailBody(email)} />}
+            pagination={{
+              pageIndex: emailsPageNumber - 1,
+              pageCount: Math.max(1, Math.ceil((emailsPage?.total ?? 0) / relationshipLimit)),
+              onPageChange: (nextPage) => setEmailsPageNumber(nextPage + 1),
+              totalRecords: emailsPage?.total ?? 0,
+            }}
           />
         </div>
       )}
@@ -548,6 +584,12 @@ export default function ContactDetailsPage() {
             getRowKey={(call) => call.id}
             emptyTitle="No call logs"
             emptyDescription="No call logs have been recorded for this contact."
+            pagination={{
+              pageIndex: callsPageNumber - 1,
+              pageCount: Math.max(1, Math.ceil((callsPage?.total ?? 0) / relationshipLimit)),
+              onPageChange: (nextPage) => setCallsPageNumber(nextPage + 1),
+              totalRecords: callsPage?.total ?? 0,
+            }}
           />
         </div>
       )}

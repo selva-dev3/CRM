@@ -63,44 +63,110 @@ class DealRepository:
         return list(result.scalars().all())
 
     async def list_by_contact(
-        self, db: AsyncSession, *, contact_id: str, organization_id: str
+        self,
+        db: AsyncSession,
+        *,
+        contact_id: str,
+        organization_id: str,
+        page: int | None = None,
+        limit: int | None = None,
     ) -> builtins.list[Deal]:
-        result = await db.execute(
+        stmt = (
             select(Deal)
             .where(
                 Deal.contact_id == contact_id,
                 Deal.organization_id == organization_id,
             )
-            .order_by(Deal.created_at.desc())
+            .order_by(Deal.created_at.desc(), Deal.id.desc())
         )
+        if page is not None and limit is not None:
+            stmt = stmt.offset((page - 1) * limit).limit(limit)
+        result = await db.execute(stmt)
         return list(result.scalars().all())
 
-    async def list_activities_by_contact(
+    async def count_by_contact(
         self, db: AsyncSession, *, contact_id: str, organization_id: str
+    ) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(Deal)
+            .where(
+                Deal.contact_id == contact_id,
+                Deal.organization_id == organization_id,
+            )
+        )
+        return int((await db.execute(stmt)).scalar_one())
+
+    async def list_activities_by_contact(
+        self,
+        db: AsyncSession,
+        *,
+        contact_id: str,
+        organization_id: str,
+        limit: int | None = None,
     ) -> builtins.list[DealActivity]:
-        result = await db.execute(
+        stmt = (
             select(DealActivity)
             .join(Deal, Deal.id == DealActivity.deal_id)
             .where(
                 Deal.contact_id == contact_id,
                 Deal.organization_id == organization_id,
             )
-            .order_by(DealActivity.timestamp.desc())
+            .order_by(DealActivity.timestamp.desc(), DealActivity.id.desc())
         )
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        result = await db.execute(stmt)
         return list(result.scalars().all())
 
+    async def count_activities_by_contact(
+        self, db: AsyncSession, *, contact_id: str, organization_id: str
+    ) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(DealActivity)
+            .join(Deal, Deal.id == DealActivity.deal_id)
+            .where(
+                Deal.contact_id == contact_id,
+                Deal.organization_id == organization_id,
+            )
+        )
+        return int((await db.execute(stmt)).scalar_one())
+
     async def list_by_company(
-        self, db: AsyncSession, *, company_id: str, organization_id: str
+        self,
+        db: AsyncSession,
+        *,
+        company_id: str,
+        organization_id: str,
+        page: int | None = None,
+        limit: int | None = None,
     ) -> builtins.list[Deal]:
-        result = await db.execute(
+        stmt = (
             select(Deal)
             .where(
                 Deal.company_id == company_id,
                 Deal.organization_id == organization_id,
             )
-            .order_by(Deal.created_at.desc())
+            .order_by(Deal.created_at.desc(), Deal.id.desc())
         )
+        if page is not None and limit is not None:
+            stmt = stmt.offset((page - 1) * limit).limit(limit)
+        result = await db.execute(stmt)
         return list(result.scalars().all())
+
+    async def count_by_company(
+        self, db: AsyncSession, *, company_id: str, organization_id: str
+    ) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(Deal)
+            .where(
+                Deal.company_id == company_id,
+                Deal.organization_id == organization_id,
+            )
+        )
+        return int((await db.execute(stmt)).scalar_one())
 
     async def get_by_id_scoped(
         self, db: AsyncSession, *, deal_id: str, organization_id: str, lock: bool = False
@@ -178,18 +244,38 @@ class DealRepository:
         return activity
 
     async def list_activities(
-        self, db: AsyncSession, *, deal_id: str, organization_id: str
+        self,
+        db: AsyncSession,
+        *,
+        deal_id: str,
+        organization_id: str,
+        page: int | None = None,
+        limit: int | None = None,
     ) -> builtins.list[DealActivity]:
-        result = await db.execute(
+        stmt = (
             select(DealActivity)
             .join(Deal, Deal.id == DealActivity.deal_id)
             .where(
                 DealActivity.deal_id == deal_id,
                 Deal.organization_id == organization_id,
             )
-            .order_by(DealActivity.timestamp.desc())
+            .order_by(DealActivity.timestamp.desc(), DealActivity.id.desc())
         )
+        if page is not None and limit is not None:
+            stmt = stmt.offset((page - 1) * limit).limit(limit)
+        result = await db.execute(stmt)
         return list(result.scalars().all())
+
+    async def count_activities(
+        self, db: AsyncSession, *, deal_id: str, organization_id: str
+    ) -> int:
+        result = await db.execute(
+            select(func.count())
+            .select_from(DealActivity)
+            .join(Deal, Deal.id == DealActivity.deal_id)
+            .where(DealActivity.deal_id == deal_id, Deal.organization_id == organization_id)
+        )
+        return int(result.scalar_one())
 
     async def get_sales_customer(
         self,
@@ -330,17 +416,38 @@ class DealRepository:
         return result.scalars().first()
 
     async def list_deal_products(
-        self, db: AsyncSession, deal_id: str, *, organization_id: str
+        self,
+        db: AsyncSession,
+        deal_id: str,
+        *,
+        organization_id: str,
+        page: int | None = None,
+        limit: int | None = None,
     ) -> builtins.list[DealProduct]:
-        result = await db.execute(
+        stmt = (
             select(DealProduct)
             .join(Deal, Deal.id == DealProduct.deal_id)
             .where(
                 DealProduct.deal_id == deal_id,
                 Deal.organization_id == organization_id,
             )
+            .order_by(DealProduct.id.asc())
         )
+        if page is not None and limit is not None:
+            stmt = stmt.offset((page - 1) * limit).limit(limit)
+        result = await db.execute(stmt)
         return list(result.scalars().all())
+
+    async def count_deal_products(
+        self, db: AsyncSession, deal_id: str, *, organization_id: str
+    ) -> int:
+        result = await db.execute(
+            select(func.count())
+            .select_from(DealProduct)
+            .join(Deal, Deal.id == DealProduct.deal_id)
+            .where(DealProduct.deal_id == deal_id, Deal.organization_id == organization_id)
+        )
+        return int(result.scalar_one())
 
     async def create_deal_product(
         self, db: AsyncSession, *, deal_id: str, product_id: str, quantity: int, unit_price: float

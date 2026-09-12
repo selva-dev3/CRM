@@ -169,10 +169,15 @@ async def test_list_contact_activities_combines_existing_related_records(monkeyp
     assert [item.type for item in result] == ["Note", "Deal Activity"]
     assert result[0].description == "Followed up"
     service.note_repository.list_by_entity.assert_awaited_once_with(
-        db, entity_type="contact", entity_id="cnt-1", organization_id="org-1"
+        db,
+        entity_type="contact",
+        entity_id="cnt-1",
+        organization_id="org-1",
+        page=1,
+        limit=15,
     )
     service.call_repository.list_by_contact.assert_awaited_once_with(
-        db, contact_id="cnt-1", organization_id="org-1"
+        db, contact_id="cnt-1", organization_id="org-1", page=1, limit=15
     )
 
 
@@ -239,7 +244,7 @@ async def test_list_contact_emails_matches_contact_recipient():
         organization_id="org-1",
         contact_id="cnt-1",
         recipient_email="jane@acme.com",
-        limit=None,
+        limit=15,
         offset=0,
     )
 
@@ -257,6 +262,7 @@ async def test_list_contact_emails_requires_limit_for_later_pages():
             "cnt-1",
             organization_id="org-1",
             page=2,
+            limit=None,
         )
 
     assert exc.value.status_code == 422
@@ -277,7 +283,7 @@ async def test_list_contact_deals_is_scoped_and_serialized():
 
     assert result[0]["id"] == "deal-1"
     service.deal_repository.list_by_contact.assert_awaited_once_with(
-        db, contact_id="cnt-1", organization_id="org-1"
+        db, contact_id="cnt-1", organization_id="org-1", page=1, limit=15
     )
 
 

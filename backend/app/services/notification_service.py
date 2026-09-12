@@ -288,6 +288,13 @@ class NotificationService:
         )
         return [notification_to_dict(n) for n in notifications]
 
+    async def count_notifications(
+        self, db: AsyncSession, *, user_id: str, unread_only: bool = False
+    ) -> int:
+        return await self.repository.count_notifications(
+            db, user_id=user_id, unread_only=unread_only
+        )
+
     async def get_unread_count(self, db: AsyncSession, *, user_id: str) -> dict:
         count = await self.repository.count_unread(db, user_id=user_id)
         return {"unread_count": count}

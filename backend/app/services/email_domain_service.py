@@ -106,6 +106,16 @@ class EmailDomainService:
         )
         return [email_to_dict(e) for e in emails]
 
+    async def count_inbox(
+        self,
+        db: AsyncSession,
+        *,
+        search: str | None = None,
+        current_user: User,
+    ) -> int:
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        return await self.repository.count_emails(db, organization_id=org_id, search=search)
+
     async def send_email(
         self,
         db: AsyncSession,

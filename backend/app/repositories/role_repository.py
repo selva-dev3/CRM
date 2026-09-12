@@ -55,6 +55,8 @@ class RoleRepository:
         db: AsyncSession,
         search: str | None = None,
         org_id: str | None = None,
+        page: int = 1,
+        limit: int = 50,
     ) -> Sequence[Role]:
         """List roles restricted to one organization when a scope is supplied."""
         stmt = select(Role)
@@ -64,8 +66,25 @@ class RoleRepository:
             stmt = stmt.where(Role.name.ilike(pattern) | Role.description.ilike(pattern))
         if org_id:
             stmt = stmt.where(Role.organization_id == org_id)
-        res = await db.execute(stmt.limit(50))
+        res = await db.execute(
+            stmt.order_by(Role.name, Role.id).offset((page - 1) * limit).limit(limit)
+        )
         return res.scalars().all()
+
+    async def count_roles(
+        self,
+        db: AsyncSession,
+        search: str | None = None,
+        org_id: str | None = None,
+    ) -> int:
+        stmt = select(func.count()).select_from(Role)
+        cleaned = search.strip() if search and isinstance(search, str) and search.strip() else None
+        if cleaned:
+            pattern = f"%{cleaned}%"
+            stmt = stmt.where(Role.name.ilike(pattern) | Role.description.ilike(pattern))
+        if org_id:
+            stmt = stmt.where(Role.organization_id == org_id)
+        return int((await db.execute(stmt)).scalar_one())
 
     async def get_role(self, db: AsyncSession, role_id: str) -> Role | None:
         res = await db.execute(select(Role).where(Role.id == role_id))
@@ -425,9 +444,11 @@ class RoleRepository:
         role_id: str,
         role_name: str,
         organization_id: str,
+        page: int | None = None,
+        limit: int | None = None,
     ) -> Sequence[User]:
         """List users whose authoritative mapping, or unmapped legacy value, matches."""
-        result = await db.execute(
+        stmt = (
             select(User)
             .outerjoin(UserRole, UserRole.user_id == User.id)
             .where(
@@ -443,39 +464,74 @@ class RoleRepository:
                     ),
                 ),
             )
+            .order_by(User.created_at.desc(), User.id.desc())
         )
+        if page is not None and limit is not None:
+            stmt = stmt.offset((page - 1) * limit).limit(limit)
+        result = await db.execute(stmt)
         return result.scalars().all()
+
+    async def count_effective_users_by_role(
+        self,
+        db: AsyncSession,
+        *,
+        role_id: str,
+        role_name: str,
+        organization_id: str,
+    ) -> int:
+        result = await db.execute(
+            select(func.count(func.distinct(User.id)))
+            .select_from(User)
+            .outerjoin(UserRole, UserRole.user_id == User.id)
+            .where(
+                User.organization_id == organization_id,
+                or_(
+                    UserRole.role_id == role_id,
+                    (
+                        UserRole.id.is_(None)
+                        & or_(
+                            User.role == role_id,
+                            func.lower(func.btrim(User.role)) == role_name.strip().lower(),
+                        )
+                    ),
+                ),
+            )
+        )
+        return int(result.scalar_one())
 
     async def get_role_reference_kinds(self, db: AsyncSession, role: Role) -> list[str]:
         """Return durable references that make a custom role unsafe to delete."""
         references: list[str] = []
         if await db.scalar(
-            select(User.id).where(
+            select(User.id)
+            .where(
                 User.organization_id == role.organization_id,
                 or_(
                     func.btrim(User.role) == role.id,
                     func.lower(func.btrim(User.role)) == role.name.strip().lower(),
                 ),
-            ).limit(1)
+            )
+            .limit(1)
         ):
             references.append("users")
-        if await db.scalar(
-            select(UserRole.id).where(UserRole.role_id == role.id).limit(1)
-        ):
+        if await db.scalar(select(UserRole.id).where(UserRole.role_id == role.id).limit(1)):
             references.append("user role mappings")
         if await db.scalar(
-            select(UserInvitation.id).where(
+            select(UserInvitation.id)
+            .where(
                 UserInvitation.organization_id == role.organization_id,
                 func.lower(UserInvitation.status) == "pending",
                 or_(
                     func.btrim(UserInvitation.role) == role.id,
                     func.lower(func.btrim(UserInvitation.role)) == role.name.strip().lower(),
                 ),
-            ).limit(1)
+            )
+            .limit(1)
         ):
             references.append("user invitations")
         if await db.scalar(
-            select(OrganizationInvitation.id).where(
+            select(OrganizationInvitation.id)
+            .where(
                 OrganizationInvitation.organization_id == role.organization_id,
                 func.lower(OrganizationInvitation.status) == "pending",
                 or_(
@@ -483,7 +539,8 @@ class RoleRepository:
                     func.lower(func.btrim(OrganizationInvitation.role_id))
                     == role.name.strip().lower(),
                 ),
-            ).limit(1)
+            )
+            .limit(1)
         ):
             references.append("organization invitations")
         setting_keys = (

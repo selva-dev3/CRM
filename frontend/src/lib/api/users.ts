@@ -126,10 +126,13 @@ export async function getUserByIdApi(id: string): Promise<UserItem> {
   return apiClient<UserItem>(`/users/${id}`);
 }
 
-export async function fetchUserInvitationsApi(statusFilter?: string): Promise<UserInvitationItem[]> {
+export async function fetchUserInvitationsApi(statusFilter?: string, page = 1, limit = 15, search?: string): Promise<PaginatedResult<UserInvitationItem>> {
   const query = new URLSearchParams();
   if (statusFilter) query.append('status', statusFilter);
-  return apiClient<UserInvitationItem[]>(`/users/invitations?${query.toString()}`);
+  if (search) query.append('search', search);
+  query.append('page', String(page));
+  query.append('limit', String(limit));
+  return fetchPaginated<UserInvitationItem>(`/users/invitations?${query.toString()}`);
 }
 
 export async function createUserApi(payload: UserCreatePayload): Promise<UserItem> {
@@ -290,10 +293,10 @@ export function useUserTeamsQuery(id: string) {
   });
 }
 
-export function useUserInvitationsQuery(statusFilter?: string, options?: Omit<UseQueryOptions<UserInvitationItem[], Error>, 'queryKey' | 'queryFn'>) {
-  return useQuery<UserInvitationItem[], Error>({
-    queryKey: ['user-invitations', statusFilter],
-    queryFn: () => fetchUserInvitationsApi(statusFilter),
+export function useUserInvitationsQuery(statusFilter?: string, page = 1, limit = 15, search?: string, options?: Omit<UseQueryOptions<PaginatedResult<UserInvitationItem>, Error>, 'queryKey' | 'queryFn'>) {
+  return useQuery<PaginatedResult<UserInvitationItem>, Error>({
+    queryKey: ['user-invitations', statusFilter, page, limit, search],
+    queryFn: () => fetchUserInvitationsApi(statusFilter, page, limit, search),
     ...options,
   });
 }

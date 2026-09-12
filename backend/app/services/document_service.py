@@ -258,6 +258,34 @@ class DocumentService:
             out.append(document_to_dict(doc, download_url=download_url))
         return out
 
+    async def count_documents(
+        self,
+        db: AsyncSession,
+        *,
+        search: str | None = None,
+        current_user: User | None = None,
+        lead_id: str | None = None,
+        contact_id: str | None = None,
+        company_id: str | None = None,
+        deal_id: str | None = None,
+        quote_id: str | None = None,
+        invoice_id: str | None = None,
+        payment_id: str | None = None,
+    ) -> int:
+        org_id, _ = self._resolve_auth(current_user)
+        return await self.repository.count_documents(
+            db,
+            org_id=org_id,
+            search=search,
+            lead_id=lead_id,
+            contact_id=contact_id,
+            company_id=company_id,
+            deal_id=deal_id,
+            quote_id=quote_id,
+            invoice_id=invoice_id,
+            payment_id=payment_id,
+        )
+
     async def upload_document(
         self,
         db: AsyncSession,

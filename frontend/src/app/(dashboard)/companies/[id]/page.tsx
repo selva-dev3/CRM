@@ -69,6 +69,12 @@ export default function CompanyDetailsPage() {
   >('contacts');
 
   const [newNoteContent, setNewNoteContent] = useState('');
+  const relationshipLimit = 15;
+  const [contactsPage, setContactsPage] = useState(1);
+  const [dealsPage, setDealsPage] = useState(1);
+  const [notesPage, setNotesPage] = useState(1);
+  const [quotesPage, setQuotesPage] = useState(1);
+  const [invoicesPage, setInvoicesPage] = useState(1);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -97,19 +103,19 @@ export default function CompanyDetailsPage() {
 
   // Relationship data is loaded only when its tab is active. A failure in one
   // relationship must not put every other tab into an error state.
-  const contactsQuery = useCompanyContactsQuery(companyId, activeTab === 'contacts');
-  const dealsQuery = useCompanyDealsQuery(companyId, activeTab === 'deals');
-  const notesQuery = useCompanyNotesQuery(companyId, activeTab === 'notes');
-  const quotesQuery = useCompanyQuotesQuery(companyId, activeTab === 'quotes');
-  const invoicesQuery = useCompanyInvoicesQuery(companyId, activeTab === 'invoices');
+  const contactsQuery = useCompanyContactsQuery(companyId, activeTab === 'contacts', contactsPage, relationshipLimit);
+  const dealsQuery = useCompanyDealsQuery(companyId, activeTab === 'deals', dealsPage, relationshipLimit);
+  const notesQuery = useCompanyNotesQuery(companyId, activeTab === 'notes', notesPage, relationshipLimit);
+  const quotesQuery = useCompanyQuotesQuery(companyId, activeTab === 'quotes', quotesPage, relationshipLimit);
+  const invoicesQuery = useCompanyInvoicesQuery(companyId, activeTab === 'invoices', invoicesPage, relationshipLimit);
   const documentsQuery = useCompanyDocumentsQuery(companyId, activeTab === 'documents');
   const hierarchyQuery = useCompanyHierarchyQuery(companyId, activeTab === 'hierarchy');
 
-  const contacts = contactsQuery.data ?? [];
-  const deals = dealsQuery.data ?? [];
-  const notes = notesQuery.data ?? [];
-  const quotes = quotesQuery.data ?? [];
-  const invoices = invoicesQuery.data ?? [];
+  const contacts = contactsQuery.data?.items ?? [];
+  const deals = dealsQuery.data?.items ?? [];
+  const notes = notesQuery.data?.items ?? [];
+  const quotes = quotesQuery.data?.items ?? [];
+  const invoices = invoicesQuery.data?.items ?? [];
   const documents = documentsQuery.data ?? [];
   const hierarchy = hierarchyQuery.data;
 
@@ -127,6 +133,7 @@ export default function CompanyDetailsPage() {
       onSuccess: () => {
         setSuccessMessage('Company note added successfully.');
         setNewNoteContent('');
+        setNotesPage(1);
       },
       onError: () => {
         setErrorMessage('Failed to add company note.');
@@ -314,11 +321,11 @@ export default function CompanyDetailsPage() {
         value={activeTab}
         onValueChange={setActiveTab}
         tabs={[
-          { value: 'contacts', icon: <User className="size-4" />, label: contactsQuery.data ? `Contacts (${contacts.length})` : 'Contacts' },
-          { value: 'deals', icon: <Briefcase className="size-4" />, label: dealsQuery.data ? `Deals (${deals.length})` : 'Deals' },
-          { value: 'notes', icon: <FileText className="size-4" />, label: notesQuery.data ? `Notes (${notes.length})` : 'Notes' },
-          { value: 'quotes', icon: <DollarSign className="size-4" />, label: quotesQuery.data ? `Quotes (${quotes.length})` : 'Quotes' },
-          { value: 'invoices', icon: <FileSpreadsheet className="size-4" />, label: invoicesQuery.data ? `Invoices (${invoices.length})` : 'Invoices' },
+          { value: 'contacts', icon: <User className="size-4" />, label: contactsQuery.data ? `Contacts (${contactsQuery.data.total})` : 'Contacts' },
+          { value: 'deals', icon: <Briefcase className="size-4" />, label: dealsQuery.data ? `Deals (${dealsQuery.data.total})` : 'Deals' },
+          { value: 'notes', icon: <FileText className="size-4" />, label: notesQuery.data ? `Notes (${notesQuery.data.total})` : 'Notes' },
+          { value: 'quotes', icon: <DollarSign className="size-4" />, label: quotesQuery.data ? `Quotes (${quotesQuery.data.total})` : 'Quotes' },
+          { value: 'invoices', icon: <FileSpreadsheet className="size-4" />, label: invoicesQuery.data ? `Invoices (${invoicesQuery.data.total})` : 'Invoices' },
           { value: 'documents', icon: <Folder className="size-4" />, label: documentsQuery.data ? `Documents (${documents.length})` : 'Documents' },
           { value: 'hierarchy', icon: <Network className="size-4" />, label: 'Corporate Hierarchy' },
         ]}
@@ -339,6 +346,7 @@ export default function CompanyDetailsPage() {
               data={contacts}
               isLoading={contactsQuery.isLoading}
               onRowClick={(contact) => router.push(`/contacts/${contact.id}`)}
+              pagination={{ pageIndex: contactsPage - 1, pageCount: Math.max(1, Math.ceil((contactsQuery.data?.total ?? 0) / relationshipLimit)), totalRecords: contactsQuery.data?.total ?? 0, onPageChange: (value) => setContactsPage(value + 1) }}
             />
           )}
         </div>
@@ -358,6 +366,7 @@ export default function CompanyDetailsPage() {
               data={deals}
               isLoading={dealsQuery.isLoading}
               onRowClick={(deal) => router.push(`/deals/${deal.id}`)}
+              pagination={{ pageIndex: dealsPage - 1, pageCount: Math.max(1, Math.ceil((dealsQuery.data?.total ?? 0) / relationshipLimit)), totalRecords: dealsQuery.data?.total ?? 0, onPageChange: (value) => setDealsPage(value + 1) }}
             />
           )}
         </div>
@@ -395,7 +404,7 @@ export default function CompanyDetailsPage() {
               onRetry={() => void notesQuery.refetch()}
             />
           ) : (
-            <CompanyNotesTable data={notes} isLoading={notesQuery.isLoading} />
+            <CompanyNotesTable data={notes} isLoading={notesQuery.isLoading} pagination={{ pageIndex: notesPage - 1, pageCount: Math.max(1, Math.ceil((notesQuery.data?.total ?? 0) / relationshipLimit)), totalRecords: notesQuery.data?.total ?? 0, onPageChange: (value) => setNotesPage(value + 1) }} />
           )}
         </div>
       )}
@@ -414,6 +423,7 @@ export default function CompanyDetailsPage() {
               data={quotes}
               isLoading={quotesQuery.isLoading}
               onRowClick={(quote) => router.push(`/quotes/${quote.id}`)}
+              pagination={{ pageIndex: quotesPage - 1, pageCount: Math.max(1, Math.ceil((quotesQuery.data?.total ?? 0) / relationshipLimit)), totalRecords: quotesQuery.data?.total ?? 0, onPageChange: (value) => setQuotesPage(value + 1) }}
             />
           )}
         </div>
@@ -433,6 +443,7 @@ export default function CompanyDetailsPage() {
               data={invoices}
               isLoading={invoicesQuery.isLoading}
               onRowClick={(invoice) => router.push(`/invoices/${invoice.id}`)}
+              pagination={{ pageIndex: invoicesPage - 1, pageCount: Math.max(1, Math.ceil((invoicesQuery.data?.total ?? 0) / relationshipLimit)), totalRecords: invoicesQuery.data?.total ?? 0, onPageChange: (value) => setInvoicesPage(value + 1) }}
             />
           )}
         </div>

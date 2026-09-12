@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import builtins
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.note import Note
@@ -26,9 +26,28 @@ class NoteRepository:
             stmt = stmt.where(Note.entity_type == entity_type.strip())
         if search and search.strip():
             stmt = stmt.where(Note.content.ilike(f"%{search.strip()}%"))
-        stmt = stmt.order_by(Note.created_at.desc()).offset((page - 1) * limit).limit(limit)
+        stmt = (
+            stmt.order_by(Note.created_at.desc(), Note.id.desc())
+            .offset((page - 1) * limit)
+            .limit(limit)
+        )
         result = await db.execute(stmt)
         return list(result.scalars().all())
+
+    async def count(
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        entity_type: str | None = None,
+        search: str | None = None,
+    ) -> int:
+        stmt = select(func.count()).select_from(Note).where(Note.organization_id == organization_id)
+        if entity_type and entity_type.strip():
+            stmt = stmt.where(Note.entity_type == entity_type.strip())
+        if search and search.strip():
+            stmt = stmt.where(Note.content.ilike(f"%{search.strip()}%"))
+        return int((await db.execute(stmt)).scalar_one())
 
     async def list_by_entity(
         self,
@@ -37,17 +56,41 @@ class NoteRepository:
         entity_type: str,
         entity_id: str,
         organization_id: str,
+        page: int | None = None,
+        limit: int | None = None,
     ) -> builtins.list[Note]:
-        result = await db.execute(
+        stmt = (
             select(Note)
             .where(
                 Note.entity_type == entity_type,
                 Note.entity_id == entity_id,
                 Note.organization_id == organization_id,
             )
-            .order_by(Note.created_at.desc())
+            .order_by(Note.created_at.desc(), Note.id.desc())
         )
+        if page is not None and limit is not None:
+            stmt = stmt.offset((page - 1) * limit).limit(limit)
+        result = await db.execute(stmt)
         return list(result.scalars().all())
+
+    async def count_by_entity(
+        self,
+        db: AsyncSession,
+        *,
+        entity_type: str,
+        entity_id: str,
+        organization_id: str,
+    ) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(Note)
+            .where(
+                Note.entity_type == entity_type,
+                Note.entity_id == entity_id,
+                Note.organization_id == organization_id,
+            )
+        )
+        return int((await db.execute(stmt)).scalar_one())
 
     async def list_pinned(self, db: AsyncSession, organization_id: str) -> builtins.list[Note]:
         result = await db.execute(

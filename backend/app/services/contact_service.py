@@ -178,13 +178,18 @@ class ContactService:
         *,
         organization_id: str,
         current_user: User,
+        page: int = 1,
+        limit: int = 15,
     ) -> list[ContactActivityResponse]:
         contact = await self.require_contact(db, contact_id, organization_id=organization_id)
+        source_limit = page * limit
         notes = await self.note_repository.list_by_entity(
             db,
             entity_type="contact",
             entity_id=contact.id,
             organization_id=organization_id,
+            page=1,
+            limit=source_limit,
         )
         permissions = await auth_service.get_user_permissions(db, current_user)
         can_read_calls = "calls:read" in permissions and api_key_scope_allows(
@@ -192,13 +197,20 @@ class ContactService:
         )
         calls = (
             await self.call_repository.list_by_contact(
-                db, contact_id=contact.id, organization_id=organization_id
+                db,
+                contact_id=contact.id,
+                organization_id=organization_id,
+                page=1,
+                limit=source_limit,
             )
             if can_read_calls
             else []
         )
         deal_activities = await self.deal_repository.list_activities_by_contact(
-            db, contact_id=contact.id, organization_id=organization_id
+            db,
+            contact_id=contact.id,
+            organization_id=organization_id,
+            limit=source_limit,
         )
         activities = [
             ContactActivityResponse(
@@ -236,7 +248,7 @@ class ContactService:
             from app.repositories.whatsapp_repository import WhatsAppRepository
 
             for message in await WhatsAppRepository().timeline_messages(
-                db, current_user, whatsapp_permissions, contact_id=contact.id
+                db, current_user, whatsapp_permissions, contact_id=contact.id, limit=source_limit
             ):
                 activities.append(
                     ContactActivityResponse(
@@ -247,7 +259,45 @@ class ContactService:
                     )
                 )
         activities.sort(key=lambda activity: activity.created_at, reverse=True)
-        return activities
+        offset = (page - 1) * limit
+        return activities[offset : offset + limit]
+
+    async def count_contact_activities(
+        self,
+        db: AsyncSession,
+        contact_id: str,
+        *,
+        organization_id: str,
+        current_user: User,
+    ) -> int:
+        contact = await self.require_contact(db, contact_id, organization_id=organization_id)
+        permissions = await auth_service.get_user_permissions(db, current_user)
+        total = await self.note_repository.count_by_entity(
+            db,
+            entity_type="contact",
+            entity_id=contact.id,
+            organization_id=organization_id,
+        )
+        if "calls:read" in permissions and api_key_scope_allows(current_user, "calls:read"):
+            total += await self.call_repository.count_by_contact(
+                db, contact_id=contact.id, organization_id=organization_id
+            )
+        total += await self.deal_repository.count_activities_by_contact(
+            db, contact_id=contact.id, organization_id=organization_id
+        )
+        whatsapp_permissions = {
+            permission
+            for permission in permissions
+            if permission.startswith("whatsapp:") and api_key_scope_allows(current_user, permission)
+        }
+        if {"whatsapp:read_assigned", "whatsapp:read_all"} & whatsapp_permissions:
+            total += await self.whatsapp_repository.count_timeline_messages(
+                db,
+                current_user,
+                whatsapp_permissions,
+                contact_id=contact.id,
+            )
+        return total
 
     async def list_contact_emails(
         self,
@@ -256,7 +306,7 @@ class ContactService:
         *,
         organization_id: str,
         page: int = 1,
-        limit: int | None = None,
+        limit: int = 15,
     ) -> list[ContactEmailResponse]:
         if page > 1 and limit is None:
             raise APIException(
@@ -270,7 +320,7 @@ class ContactService:
             contact_id=contact.id,
             recipient_email=contact.email,
             limit=limit,
-            offset=(page - 1) * limit if limit is not None else 0,
+            offset=(page - 1) * limit,
         )
         return [
             ContactEmailResponse(
@@ -283,6 +333,17 @@ class ContactService:
             )
             for email in emails
         ]
+
+    async def count_contact_emails(
+        self, db: AsyncSession, contact_id: str, *, organization_id: str
+    ) -> int:
+        contact = await self.require_contact(db, contact_id, organization_id=organization_id)
+        return await self.email_repository.count_for_contact(
+            db,
+            organization_id=organization_id,
+            contact_id=contact.id,
+            recipient_email=contact.email,
+        )
 
     async def _build_name_parts(
         self,
@@ -526,34 +587,87 @@ class ContactService:
         }
 
     async def list_company_contacts(
-        self, db: AsyncSession, company_id: str, *, organization_id: str
+        self,
+        db: AsyncSession,
+        company_id: str,
+        *,
+        organization_id: str,
+        page: int = 1,
+        limit: int = 15,
     ) -> list[dict]:
         contacts = await self.repository.list_by_company(
-            db, company_id, organization_id=organization_id
+            db,
+            company_id,
+            organization_id=organization_id,
+            page=page,
+            limit=limit,
         )
         return [contact_to_dict(c) for c in contacts]
 
+    async def count_company_contacts(
+        self, db: AsyncSession, company_id: str, *, organization_id: str
+    ) -> int:
+        return await self.repository.count_by_company(
+            db, company_id, organization_id=organization_id
+        )
+
     async def list_contact_deals(
-        self, db: AsyncSession, contact_id: str, *, organization_id: str
+        self,
+        db: AsyncSession,
+        contact_id: str,
+        *,
+        organization_id: str,
+        page: int = 1,
+        limit: int = 15,
     ) -> list[dict]:
         await self.require_contact(db, contact_id, organization_id=organization_id)
         from app.services.deal_service import deal_to_dict
 
         deals = await self.deal_repository.list_by_contact(
-            db, contact_id=contact_id, organization_id=organization_id
+            db,
+            contact_id=contact_id,
+            organization_id=organization_id,
+            page=page,
+            limit=limit,
         )
         return [deal_to_dict(deal) for deal in deals]
 
-    async def list_contact_calls(
+    async def count_contact_deals(
         self, db: AsyncSession, contact_id: str, *, organization_id: str
+    ) -> int:
+        await self.require_contact(db, contact_id, organization_id=organization_id)
+        return await self.deal_repository.count_by_contact(
+            db, contact_id=contact_id, organization_id=organization_id
+        )
+
+    async def list_contact_calls(
+        self,
+        db: AsyncSession,
+        contact_id: str,
+        *,
+        organization_id: str,
+        page: int = 1,
+        limit: int = 15,
     ) -> list[dict]:
         await self.require_contact(db, contact_id, organization_id=organization_id)
         from app.services.call_service import call_to_dict
 
         calls = await self.call_repository.list_by_contact(
-            db, contact_id=contact_id, organization_id=organization_id
+            db,
+            contact_id=contact_id,
+            organization_id=organization_id,
+            page=page,
+            limit=limit,
         )
         return [call_to_dict(call) for call in calls]
+
+    async def count_contact_calls(
+        self, db: AsyncSession, contact_id: str, *, organization_id: str
+    ) -> int:
+        await self.require_contact(db, contact_id, organization_id=organization_id)
+        return await self.call_repository.count_by_contact(
+            db, contact_id=contact_id, organization_id=organization_id
+        )
 
 
 contact_service = ContactService()

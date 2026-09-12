@@ -65,6 +65,12 @@ interface LeadCallLogSectionProps {
   error?: unknown;
   onRetry: () => void;
   timeZone: string;
+  pagination?: {
+    pageIndex: number;
+    pageCount: number;
+    onPageChange: (pageIndex: number) => void;
+    totalRecords: number;
+  };
 }
 
 function currentLocalDateTime(): string {
@@ -106,6 +112,7 @@ export function LeadCallLogSection({
   error,
   onRetry,
   timeZone,
+  pagination,
 }: LeadCallLogSectionProps): React.JSX.Element {
   const queryClient = useQueryClient();
   const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
@@ -286,7 +293,7 @@ export function LeadCallLogSection({
           className="shadow-none"
           actionVariant="inline"
           actionColumnClassName="w-[180px]"
-          pagination={{ pageSize: 15 }}
+          pagination={pagination ?? { pageSize: 15 }}
           actions={(call) => [
             { id: 'edit', label: 'Edit', ariaLabel: `Edit ${call.subject || 'call log'}`, icon: <Pencil className="size-3.5" />, permission: PERMISSIONS.CALLS.UPDATE, onClick: openEdit },
             { id: 'delete', label: 'Delete', ariaLabel: `Delete ${call.subject || 'call log'}`, icon: <Trash2 className="size-3.5" />, permission: PERMISSIONS.CALLS.DELETE, variant: 'destructive', onClick: openDelete },

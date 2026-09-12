@@ -17,10 +17,17 @@ class OrganizationRepository:
 
     async def lock_storage_writer(self, db: AsyncSession, organization_id: str) -> bool:
         # KEY SHARE conflicts with lifecycle FOR UPDATE, but permits concurrent uploads.
-        return bool(await db.scalar(select(Organization.id).where(
-            Organization.id == organization_id,
-            Organization.is_active.is_(True), Organization.status == "active",
-        ).with_for_update(read=True, key_share=True)))
+        return bool(
+            await db.scalar(
+                select(Organization.id)
+                .where(
+                    Organization.id == organization_id,
+                    Organization.is_active.is_(True),
+                    Organization.status == "active",
+                )
+                .with_for_update(read=True, key_share=True)
+            )
+        )
 
     async def get_by_id(self, db: AsyncSession, org_id: str) -> Organization | None:
         result = await db.execute(select(Organization).where(Organization.id == org_id))
@@ -55,9 +62,14 @@ class OrganizationRepository:
             .outerjoin(User, User.organization_id == Organization.id)
             .group_by(Organization.id)
             .order_by(Organization.name, Organization.id)
-            .limit(limit).offset(offset)
+            .limit(limit)
+            .offset(offset)
         )
         return [(organization, count) for organization, count in result.all()]
+
+    async def count_organizations(self, db: AsyncSession) -> int:
+        result = await db.execute(select(func.count()).select_from(Organization))
+        return int(result.scalar_one())
 
     async def create(self, db: AsyncSession, *, data: dict) -> Organization:
         org = Organization(**data)
@@ -114,8 +126,16 @@ class OrganizationRepository:
         count = result.scalar() or 0
         return count
 
-    async def list_members(self, db: AsyncSession, org_id: str) -> list[User]:
-        result = await db.execute(select(User).where(User.organization_id == org_id))
+    async def list_members(
+        self, db: AsyncSession, org_id: str, *, page: int = 1, limit: int = 15
+    ) -> list[User]:
+        result = await db.execute(
+            select(User)
+            .where(User.organization_id == org_id)
+            .order_by(User.created_at.desc(), User.id.desc())
+            .offset((page - 1) * limit)
+            .limit(limit)
+        )
         return list(result.scalars().all())
 
     async def get_user_by_id(
@@ -231,12 +251,19 @@ class OrganizationRepository:
         return log
 
     async def list_audit_logs(
-        self, db: AsyncSession, org_id: str, *, limit: int = 20
+        self, db: AsyncSession, org_id: str, *, page: int = 1, limit: int = 20
     ) -> list[AuditLog]:
         result = await db.execute(
             select(AuditLog)
             .where(AuditLog.organization_id == org_id)
-            .order_by(AuditLog.created_at.desc())
+            .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+            .offset((page - 1) * limit)
             .limit(limit)
         )
         return list(result.scalars().all())
+
+    async def count_audit_logs(self, db: AsyncSession, org_id: str) -> int:
+        result = await db.execute(
+            select(func.count()).select_from(AuditLog).where(AuditLog.organization_id == org_id)
+        )
+        return int(result.scalar_one())

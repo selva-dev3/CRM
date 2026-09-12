@@ -182,13 +182,21 @@ async def delete_company(
 )
 async def get_company_contacts(
     company_id: str,
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(15, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await company_service.get_company_contacts(
+    items = await company_service.get_company_contacts(
+        db, company_id, organization_id=organization_id, page=page, limit=limit
+    )
+    total = await company_service.count_company_contacts(
         db, company_id, organization_id=organization_id
     )
+    response.headers["X-Total-Count"] = str(total)
+    return items
 
 
 @router.get(
@@ -202,11 +210,21 @@ async def get_company_contacts(
 )
 async def get_company_deals(
     company_id: str,
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(15, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await company_service.get_company_deals(db, company_id, organization_id=organization_id)
+    items = await company_service.get_company_deals(
+        db, company_id, organization_id=organization_id, page=page, limit=limit
+    )
+    total = await company_service.count_company_deals(
+        db, company_id, organization_id=organization_id
+    )
+    response.headers["X-Total-Count"] = str(total)
+    return items
 
 
 @router.get(
@@ -257,11 +275,21 @@ async def set_parent_company(
 )
 async def get_company_quotes(
     company_id: str,
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(15, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await company_service.get_company_quotes(db, company_id, organization_id=organization_id)
+    items = await company_service.get_company_quotes(
+        db, company_id, organization_id=organization_id, page=page, limit=limit
+    )
+    total = await company_service.count_company_quotes(
+        db, company_id, organization_id=organization_id
+    )
+    response.headers["X-Total-Count"] = str(total)
+    return items
 
 
 @router.get(
@@ -275,13 +303,21 @@ async def get_company_quotes(
 )
 async def get_company_invoices(
     company_id: str,
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(15, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await company_service.get_company_invoices(
+    items = await company_service.get_company_invoices(
+        db, company_id, organization_id=organization_id, page=page, limit=limit
+    )
+    total = await company_service.count_company_invoices(
         db, company_id, organization_id=organization_id
     )
+    response.headers["X-Total-Count"] = str(total)
+    return items
 
 
 @router.get(
@@ -295,14 +331,27 @@ async def get_company_invoices(
 )
 async def get_company_notes(
     company_id: str,
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(15, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     await company_service.get_company(db, company_id, organization_id=organization_id)
-    return await note_service.list_for_entity(
+    items = await note_service.list_for_entity(
+        db,
+        entity_type="company",
+        entity_id=company_id,
+        page=page,
+        limit=limit,
+        current_user=current_user,
+    )
+    total = await note_service.count_for_entity(
         db, entity_type="company", entity_id=company_id, current_user=current_user
     )
+    response.headers["X-Total-Count"] = str(total)
+    return items
 
 
 @router.post(

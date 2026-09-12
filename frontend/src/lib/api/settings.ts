@@ -1,6 +1,7 @@
 ﻿import { useQuery, useMutation, useQueryClient, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
 import { customFieldKeys } from '@/lib/api/custom-fields';
+import { fetchPaginated, type PaginatedResult } from '@/lib/api/pagination';
 
 export interface SystemSettings {
   organization_name: string;
@@ -58,8 +59,8 @@ export async function updateSystemSettingsApi(payload: SystemSettings): Promise<
   return apiClient.put<SystemSettings>('/settings', payload);
 }
 
-export async function fetchAuditLogsApi(page = 1, limit = 20): Promise<AuditLogItem[]> {
-  return apiClient.get<AuditLogItem[]>(`/settings/audit-logs?page=${page}&limit=${limit}`);
+export async function fetchAuditLogsApi(page = 1, limit = 20): Promise<PaginatedResult<AuditLogItem>> {
+  return fetchPaginated<AuditLogItem>(`/settings/audit-logs?page=${page}&limit=${limit}`);
 }
 
 export async function exportAuditLogsCsvApi(): Promise<{ download_url: string }> {

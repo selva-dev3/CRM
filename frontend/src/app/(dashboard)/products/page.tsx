@@ -28,7 +28,7 @@ import { ModalShell } from '@/components/common/modal-shell';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
 import {
-  useProductsQuery,
+  useProductsPageQuery,
   useProductCategoriesQuery,
   useCreateProductMutation,
   useUpdateProductMutation,
@@ -83,12 +83,14 @@ export default function ProductsPage() {
   }, [searchTerm]);
 
   // Queries
-  const { data: products = [], isLoading: isProductsLoading } = useProductsQuery({
+  const { data: productsPage, isLoading: isProductsLoading } = useProductsPageQuery({
     page,
     limit,
     category: categoryFilter || undefined,
     search: debouncedSearchTerm || undefined,
   });
+  const products = productsPage?.items ?? [];
+  const totalProducts = productsPage?.total ?? 0;
 
   const { data: categories = [] } = useProductCategoriesQuery();
 
@@ -368,9 +370,9 @@ export default function ProductsPage() {
         isLoading={isProductsLoading}
         pagination={{
           pageIndex: page - 1,
-          pageCount: products.length >= limit ? page + 1 : page,
+          pageCount: Math.max(1, Math.ceil(totalProducts / limit)),
           onPageChange: (p) => setPage(p + 1),
-          totalRecords: (page - 1) * limit + products.length,
+          totalRecords: totalProducts,
         }}
       />
 

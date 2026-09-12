@@ -401,7 +401,8 @@ class AIRepository:
         *,
         organization_id: str,
         user_id: str,
-        limit: int = 50,
+        page: int = 1,
+        limit: int = 25,
     ) -> list[tuple[AIConversation, datetime]]:
         last_message = (
             select(
@@ -422,11 +423,26 @@ class AIRepository:
                 AIConversation.user_id == user_id,
             )
             .order_by(
-                func.coalesce(last_message.c.last_message_at, AIConversation.created_at).desc()
+                func.coalesce(last_message.c.last_message_at, AIConversation.created_at).desc(),
+                AIConversation.id.desc(),
             )
+            .offset((page - 1) * limit)
             .limit(limit)
         )
         return [(conversation, updated_at) for conversation, updated_at in result.all()]
+
+    async def count_conversations(
+        self, db: AsyncSession, *, organization_id: str, user_id: str
+    ) -> int:
+        result = await db.execute(
+            select(func.count())
+            .select_from(AIConversation)
+            .where(
+                AIConversation.organization_id == organization_id,
+                AIConversation.user_id == user_id,
+            )
+        )
+        return int(result.scalar_one())
 
     async def delete_conversation(
         self,

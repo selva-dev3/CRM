@@ -58,6 +58,22 @@ class NoteService:
         )
         return [note_to_dict(n) for n in notes]
 
+    async def count_notes(
+        self,
+        db: AsyncSession,
+        *,
+        entity_type: str | None = None,
+        search: str | None = None,
+        current_user: User,
+    ) -> int:
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        return await self.repository.count(
+            db,
+            organization_id=org_id,
+            entity_type=entity_type,
+            search=search,
+        )
+
     async def create_note(
         self,
         db: AsyncSession,
@@ -101,10 +117,17 @@ class NoteService:
         entity_type: str,
         entity_id: str,
         current_user: User,
+        page: int | None = None,
+        limit: int | None = None,
     ) -> list[dict]:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
         notes = await self.repository.list_by_entity(
-            db, entity_type=entity_type, entity_id=entity_id, organization_id=org_id
+            db,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            organization_id=org_id,
+            page=page,
+            limit=limit,
         )
         return [note_to_dict(n) for n in notes]
 
@@ -165,11 +188,18 @@ class NoteService:
         entity_type: str,
         entity_id: str,
         created_by_default: str | None = None,
+        page: int | None = None,
+        limit: int | None = None,
         current_user: User,
     ) -> list[dict]:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
         notes = await self.repository.list_by_entity(
-            db, entity_type=entity_type, entity_id=entity_id, organization_id=org_id
+            db,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            organization_id=org_id,
+            page=page,
+            limit=limit,
         )
         return [
             {
@@ -182,6 +212,22 @@ class NoteService:
             }
             for n in notes
         ]
+
+    async def count_for_entity(
+        self,
+        db: AsyncSession,
+        *,
+        entity_type: str,
+        entity_id: str,
+        current_user: User,
+    ) -> int:
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        return await self.repository.count_by_entity(
+            db,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            organization_id=org_id,
+        )
 
     async def add_for_entity(
         self,

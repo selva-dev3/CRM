@@ -744,10 +744,11 @@ class ReportService:
         *,
         limit: int = 20,
         offset: int = 0,
+        search: str | None = None,
     ) -> list[dict]:
         target_org = await self._resolve_org_id(db, org_id, current_user)
         reports = await self.repository.list_custom_reports(
-            db, target_org, limit=limit, offset=offset
+            db, target_org, limit=limit, offset=offset, search=search
         )
         return [
             {
@@ -759,6 +760,17 @@ class ReportService:
             }
             for r in reports
         ]
+
+    async def count_custom_reports(
+        self,
+        db: AsyncSession,
+        org_id: str | None = None,
+        current_user: User | None = None,
+        *,
+        search: str | None = None,
+    ) -> int:
+        target_org = await self._resolve_org_id(db, org_id, current_user)
+        return await self.repository.count_custom_reports(db, target_org, search=search)
 
     async def create_custom_report(
         self,
@@ -1202,10 +1214,11 @@ class ReportService:
         *,
         limit: int = 20,
         offset: int = 0,
+        search: str | None = None,
     ) -> list[dict]:
         target_org = await self._resolve_org_id(db, org_id, current_user)
         items = await self.repository.list_scheduled_reports(
-            db, target_org, limit=limit, offset=offset
+            db, target_org, limit=limit, offset=offset, search=search
         )
         now = datetime.now(UTC)
         return [
@@ -1223,6 +1236,17 @@ class ReportService:
             }
             for s in items
         ]
+
+    async def count_scheduled_reports(
+        self,
+        db: AsyncSession,
+        org_id: str | None = None,
+        current_user: User | None = None,
+        *,
+        search: str | None = None,
+    ) -> int:
+        target_org = await self._resolve_org_id(db, org_id, current_user)
+        return await self.repository.count_scheduled_reports(db, target_org, search=search)
 
     async def delete_scheduled_report(
         self,

@@ -31,7 +31,10 @@ export function PlatformOrganizations() {
   const [opening, setOpening] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
-  const { data: organizations = [], isPending, isError, refetch } = usePlatformOrganizationsQuery(page);
+  const { data: organizationsPage, isPending, isError, refetch } = usePlatformOrganizationsQuery(page);
+  const organizations = organizationsPage?.items ?? [];
+  const totalOrganizations = organizationsPage?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(totalOrganizations / 20));
   const busy = opening !== null || deleteMutation.isPending;
 
   const confirmDelete = async () => {
@@ -123,8 +126,8 @@ export function PlatformOrganizations() {
       )}
       <div className="flex items-center gap-3">
         <Button variant="outline" disabled={page === 1 || opening !== null || isPending} onClick={() => setPage(page - 1)}>Previous</Button>
-        <span className="text-sm">Page {page}</span>
-        <Button variant="outline" disabled={organizations.length < 20 || opening !== null || isPending || isError} onClick={() => setPage(page + 1)}>Next</Button>
+        <span className="text-sm">Page {page} of {pageCount} · {totalOrganizations} total</span>
+        <Button variant="outline" disabled={page >= pageCount || opening !== null || isPending || isError} onClick={() => setPage(page + 1)}>Next</Button>
       </div>
       {creating && user?.is_platform_admin && <CreateOrganizationDialog onClose={() => setCreating(false)} onCreated={(result) => {
         setCreating(false);

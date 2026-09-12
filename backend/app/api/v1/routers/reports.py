@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
@@ -210,14 +210,22 @@ async def get_quote_conversion_report(
     dependencies=[Depends(require_permission("reports:read"))],
 )
 async def list_custom_reports(
+    response: Response,
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    search: str | None = Query(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await report_service.list_custom_reports(
-        db, current_user=current_user, limit=limit, offset=offset
+    reports = await report_service.list_custom_reports(
+        db, current_user=current_user, limit=limit, offset=offset, search=search
     )
+    response.headers["X-Total-Count"] = str(
+        await report_service.count_custom_reports(
+            db, current_user=current_user, search=search
+        )
+    )
+    return reports
 
 
 @router.post(
@@ -348,14 +356,22 @@ async def schedule_report_email(
     dependencies=[Depends(require_permission("reports:read"))],
 )
 async def list_scheduled_reports(
+    response: Response,
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    search: str | None = Query(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await report_service.list_scheduled_reports(
-        db, current_user=current_user, limit=limit, offset=offset
+    reports = await report_service.list_scheduled_reports(
+        db, current_user=current_user, limit=limit, offset=offset, search=search
     )
+    response.headers["X-Total-Count"] = str(
+        await report_service.count_scheduled_reports(
+            db, current_user=current_user, search=search
+        )
+    )
+    return reports
 
 
 @router.delete(

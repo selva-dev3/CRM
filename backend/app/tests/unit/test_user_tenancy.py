@@ -252,10 +252,12 @@ async def test_list_invitations_is_org_scoped():
         AsyncMock(spec=AsyncSession),
         token=None,
         status_filter=None,
+        search="a@crm",
         current_user=_admin(),
     )
 
     assert seen["organization_id"] == "org-1"
+    assert seen["search"] == "a@crm"
     emails = [inv["email"] for inv in result]
     assert emails == ["a@crm.com"]
     assert not any("other.com" in e for e in emails)

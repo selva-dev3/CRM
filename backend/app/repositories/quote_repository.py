@@ -366,30 +366,69 @@ class QuoteRepository:
         return result.scalars().first()
 
     async def list_by_deal(
-        self, db: AsyncSession, *, deal_id: str, organization_id: str
+        self,
+        db: AsyncSession,
+        *,
+        deal_id: str,
+        organization_id: str,
+        page: int | None = None,
+        limit: int | None = None,
     ) -> list[Quote]:
-        result = await db.execute(
+        stmt = (
             select(Quote)
             .where(
                 Quote.deal_id == deal_id,
                 Quote.organization_id == organization_id,
             )
-            .order_by(Quote.created_at.desc())
+            .order_by(Quote.created_at.desc(), Quote.id.desc())
         )
+        if page is not None and limit is not None:
+            stmt = stmt.offset((page - 1) * limit).limit(limit)
+        result = await db.execute(stmt)
         return list(result.scalars().all())
 
-    async def list_by_company(
-        self, db: AsyncSession, *, company_id: str, organization_id: str
-    ) -> list[Quote]:
+    async def count_by_deal(self, db: AsyncSession, *, deal_id: str, organization_id: str) -> int:
         result = await db.execute(
+            select(func.count())
+            .select_from(Quote)
+            .where(Quote.deal_id == deal_id, Quote.organization_id == organization_id)
+        )
+        return int(result.scalar_one())
+
+    async def list_by_company(
+        self,
+        db: AsyncSession,
+        *,
+        company_id: str,
+        organization_id: str,
+        page: int | None = None,
+        limit: int | None = None,
+    ) -> list[Quote]:
+        stmt = (
             select(Quote)
             .where(
                 Quote.company_id == company_id,
                 Quote.organization_id == organization_id,
             )
-            .order_by(Quote.created_at.desc())
+            .order_by(Quote.created_at.desc(), Quote.id.desc())
         )
+        if page is not None and limit is not None:
+            stmt = stmt.offset((page - 1) * limit).limit(limit)
+        result = await db.execute(stmt)
         return list(result.scalars().all())
+
+    async def count_by_company(
+        self, db: AsyncSession, *, company_id: str, organization_id: str
+    ) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(Quote)
+            .where(
+                Quote.company_id == company_id,
+                Quote.organization_id == organization_id,
+            )
+        )
+        return int((await db.execute(stmt)).scalar_one())
 
     async def create(self, db: AsyncSession, *, data: dict) -> Quote:
         quote = Quote(**data)

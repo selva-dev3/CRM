@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Document
@@ -39,9 +39,43 @@ class DocumentRepository:
         ):
             if value:
                 stmt = stmt.where(column == value)
-        stmt = stmt.order_by(Document.uploaded_at.desc()).offset((page - 1) * limit).limit(limit)
+        stmt = (
+            stmt.order_by(Document.uploaded_at.desc(), Document.id.desc())
+            .offset((page - 1) * limit)
+            .limit(limit)
+        )
         res = await db.execute(stmt)
         return res.scalars().all()
+
+    async def count_documents(
+        self,
+        db: AsyncSession,
+        *,
+        org_id: str,
+        search: str | None = None,
+        lead_id: str | None = None,
+        contact_id: str | None = None,
+        company_id: str | None = None,
+        deal_id: str | None = None,
+        quote_id: str | None = None,
+        invoice_id: str | None = None,
+        payment_id: str | None = None,
+    ) -> int:
+        stmt = select(func.count()).select_from(Document).where(Document.organization_id == org_id)
+        if search and search.strip():
+            stmt = stmt.where(Document.filename.ilike(f"%{search.strip()}%"))
+        for column, value in (
+            (Document.lead_id, lead_id),
+            (Document.contact_id, contact_id),
+            (Document.company_id, company_id),
+            (Document.deal_id, deal_id),
+            (Document.quote_id, quote_id),
+            (Document.invoice_id, invoice_id),
+            (Document.payment_id, payment_id),
+        ):
+            if value:
+                stmt = stmt.where(column == value)
+        return int((await db.execute(stmt)).scalar_one())
 
     async def list_by_ids(
         self, db: AsyncSession, ids: list[str], org_id: str

@@ -92,11 +92,13 @@ export default function CallsPage() {
   }, [searchTerm]);
 
   // Queries
-  const { data: calls = [], isLoading } = useCallsQuery({
+  const { data: callsPage, isLoading } = useCallsQuery({
     page,
     limit,
     search: debouncedSearchTerm || undefined,
   });
+  const calls = callsPage?.items ?? [];
+  const totalCalls = callsPage?.total ?? 0;
 
   const { data: dispositions = [] } = useCallDispositionsQuery();
 
@@ -379,9 +381,9 @@ export default function CallsPage() {
         isLoading={isLoading}
         pagination={{
           pageIndex: page - 1,
-          pageCount: calls.length >= limit ? page + 1 : page,
+          pageCount: Math.max(1, Math.ceil(totalCalls / limit)),
           onPageChange: (p) => setPage(p + 1),
-          totalRecords: (page - 1) * limit + calls.length,
+          totalRecords: totalCalls,
         }}
       />
 

@@ -117,7 +117,9 @@ class UserService:
         Assignment is independent of role mutability: ``is_system_role`` protects
         built-in roles from editing/deletion, but does not make them unassignable.
         """
-        role = await self.role_repository.get_role_by_id_or_name(db, role_value, organization_id=org_id)
+        role = await self.role_repository.get_role_by_id_or_name(
+            db, role_value, organization_id=org_id
+        )
         if not role:
             raise APIException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -229,16 +231,27 @@ class UserService:
         email = payload.email.strip().lower()
         await lifecycle.lock_invitation_email(db, email)
         organization = await lifecycle.lock_invitation_organization(db, org_id)
-        if not organization or not organization.is_active or organization.status.strip().lower() != "active":
+        if (
+            not organization
+            or not organization.is_active
+            or organization.status.strip().lower() != "active"
+        ):
             raise APIException(status_code=403, message="Organization is unavailable")
         if await lifecycle.email_in_use(db, email):
             raise APIException(status_code=409, message="This email already belongs to an account")
         member_count = await lifecycle.tenant_member_count(db, org_id)
         if member_count >= organization.max_users:
-            raise APIException(status_code=409, code="ORGANIZATION_MEMBER_LIMIT", message="The organization has reached its member limit")
+            raise APIException(
+                status_code=409,
+                code="ORGANIZATION_MEMBER_LIMIT",
+                message="The organization has reached its member limit",
+            )
         subscription = await lifecycle.subscription_for_membership(db, org_id)
         if subscription is None:
-            raise APIException(status_code=409, message="The organization subscription requires administrator reconciliation")
+            raise APIException(
+                status_code=409,
+                message="The organization subscription requires administrator reconciliation",
+            )
 
         role = await self._resolve_assignable_role(
             db, org_id, payload.role, current_user=current_user
@@ -335,38 +348,70 @@ class UserService:
             for email in sorted(targets):
                 await lifecycle.lock_invitation_email(db, email)
             organization = await lifecycle.lock_invitation_organization(db, org_id)
-            if not organization or not organization.is_active or organization.status.strip().lower() != "active":
+            if (
+                not organization
+                or not organization.is_active
+                or organization.status.strip().lower() != "active"
+            ):
                 raise APIException(status_code=403, message="Organization is unavailable")
             member_count = await lifecycle.tenant_member_count(db, org_id)
             if member_count + len(targets) > organization.max_users:
-                raise APIException(status_code=409, code="ORGANIZATION_MEMBER_LIMIT", message="The organization has reached its member limit")
+                raise APIException(
+                    status_code=409,
+                    code="ORGANIZATION_MEMBER_LIMIT",
+                    message="The organization has reached its member limit",
+                )
             role = await self._resolve_assignable_role(
                 db, org_id, payload.role, current_user=current_user
             )
             for email, name in targets.items():
                 if await lifecycle.email_in_use(db, email):
-                    raise APIException(status_code=409, message="This email already belongs to an account")
-                if await lifecycle.pending_invitation_exists(db, email) or await lifecycle.pending_legacy_invitation_exists(db, email):
-                    raise APIException(status_code=409, message="This email already has a pending invitation")
+                    raise APIException(
+                        status_code=409, message="This email already belongs to an account"
+                    )
+                if await lifecycle.pending_invitation_exists(
+                    db, email
+                ) or await lifecycle.pending_legacy_invitation_exists(db, email):
+                    raise APIException(
+                        status_code=409, message="This email already has a pending invitation"
+                    )
                 token = generate_random_code(14)
-                invitation = await self.repository.create_invitation(db, data={
-                    "email": email, "token": token, "role": role.id,
-                    "organization_id": org_id, "status": "pending",
-                })
+                invitation = await self.repository.create_invitation(
+                    db,
+                    data={
+                        "email": email,
+                        "token": token,
+                        "role": role.id,
+                        "organization_id": org_id,
+                        "status": "pending",
+                    },
+                )
                 await db.flush()
-                db.add(AuditLog(
-                    organization_id=org_id, user_id=current_user.id,
-                    action="INVITATION_CREATED",
-                    details=json.dumps({
-                        "target_type": "invitation", "target_id": invitation.id,
-                        "after": {"role_id": role.id},
-                    }, sort_keys=True),
-                ))
+                db.add(
+                    AuditLog(
+                        organization_id=org_id,
+                        user_id=current_user.id,
+                        action="INVITATION_CREATED",
+                        details=json.dumps(
+                            {
+                                "target_type": "invitation",
+                                "target_id": invitation.id,
+                                "after": {"role_id": role.id},
+                            },
+                            sort_keys=True,
+                        ),
+                    )
+                )
                 deliveries.append((email, token))
-                invitation_responses.append({
-                    "name": name, "email": email, "role": role.id,
-                    "role_name": role.name, "status": "pending",
-                })
+                invitation_responses.append(
+                    {
+                        "name": name,
+                        "email": email,
+                        "role": role.id,
+                        "role_name": role.name,
+                        "status": "pending",
+                    }
+                )
             await db.commit()
         except APIException:
             await db.rollback()
@@ -378,23 +423,42 @@ class UserService:
         for email, token in deliveries:
             try:
                 send_user_invite_email(
-                    email_to=email, role=role.name,
+                    email_to=email,
+                    role=role.name,
                     invite_url=f"{settings.FRONTEND_URL}/accept-invite?token={token}",
                 )
             except Exception as exc:
                 logger.exception("Invitation delivery failed")
-                raise APIException(status_code=503, message="Invitations were saved, but email delivery failed. Contact an administrator.") from exc
+                raise APIException(
+                    status_code=503,
+                    message="Invitations were saved, but email delivery failed. Contact an administrator.",
+                ) from exc
         return {
             "message": f"Invites sent to {len(invitation_responses)} users",
-            "invitations": invitation_responses, "status": "success",
+            "invitations": invitation_responses,
+            "status": "success",
         }
 
     async def list_user_invitations(
-        self, db: AsyncSession, *, token: str | None, status_filter: str | None, current_user: User
+        self,
+        db: AsyncSession,
+        *,
+        token: str | None,
+        status_filter: str | None,
+        search: str | None = None,
+        current_user: User,
+        page: int = 1,
+        limit: int = 15,
     ) -> list[dict]:
         org_id = await self._resolve_current_org(db, current_user)
         invitations = await self.repository.list_invitations(
-            db, token=token, status_filter=status_filter, organization_id=org_id
+            db,
+            token=token,
+            status_filter=status_filter,
+            search=search,
+            organization_id=org_id,
+            page=page,
+            limit=limit,
         )
         role_map = await self.repository.role_name_map(
             db, {inv.role for inv in invitations if inv.role}
@@ -410,6 +474,24 @@ class UserService:
             }
             for inv in invitations
         ]
+
+    async def count_user_invitations(
+        self,
+        db: AsyncSession,
+        *,
+        token: str | None,
+        status_filter: str | None,
+        search: str | None = None,
+        current_user: User,
+    ) -> int:
+        org_id = await self._resolve_current_org(db, current_user)
+        return await self.repository.count_invitations(
+            db,
+            token=token,
+            status_filter=status_filter,
+            search=search,
+            organization_id=org_id,
+        )
 
     async def get_invitation_details(self, db: AsyncSession, token: str) -> dict:
         inv = await self.repository.get_invitation_by_token(db, token)
@@ -452,14 +534,10 @@ class UserService:
             role = await self._resolve_assignable_role(
                 db, user.organization_id, payload.role, current_user=current_user
             )
-            await self._ensure_not_last_admin(
-                db, user, replacement_role_name=role.name
-            )
+            await self._ensure_not_last_admin(db, user, replacement_role_name=role.name)
             previous_mapping = await self.role_repository.get_user_role_mapping(db, user.id)
             previous_role = (
-                previous_mapping.role_id
-                if previous_mapping
-                else (user.role or "").strip() or None
+                previous_mapping.role_id if previous_mapping else (user.role or "").strip() or None
             )
             user.role = role.id
             await self.role_repository.replace_user_role(db, user.id, role.id)
@@ -600,9 +678,7 @@ class UserService:
             and getattr(item, "is_platform_admin", False) is not True
             and item.id != current_user.id
         ]
-        active_users = await self.repository.lock_active_by_org(
-            db, organization_id
-        )
+        active_users = await self.repository.lock_active_by_org(db, organization_id)
         effective_roles = await self.repository.effective_role_names_for_users(
             db, active_users, organization_id
         )
@@ -664,7 +740,10 @@ class UserService:
         the existence of users in other organizations.
         """
         user = await self.require_user(db, user_id)
-        if not user.organization_id or effective_organization_id(current_user) != user.organization_id:
+        if (
+            not user.organization_id
+            or effective_organization_id(current_user) != user.organization_id
+        ):
             raise NotFoundError(message=f"User '{user_id}' not found")
         return user
 

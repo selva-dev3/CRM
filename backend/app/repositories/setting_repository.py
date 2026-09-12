@@ -1,4 +1,4 @@
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AuditLog, CustomField, SLAPolicy, SystemSetting, User, Webhook
@@ -27,10 +27,19 @@ class SettingRepository:
             select(AuditLog, User.name, User.email)
             .outerjoin(User, AuditLog.user_id == User.id)
             .where(AuditLog.organization_id == organization_id)
+            .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
             .offset((page - 1) * limit)
             .limit(limit)
         )
         return [row._tuple() for row in result.all()]
+
+    async def count_audit_logs(self, db: AsyncSession, *, organization_id: str) -> int:
+        result = await db.execute(
+            select(func.count())
+            .select_from(AuditLog)
+            .where(AuditLog.organization_id == organization_id)
+        )
+        return int(result.scalar_one())
 
     async def list_audit_logs_export(
         self, db: AsyncSession, *, organization_id: str, limit: int = 500

@@ -153,6 +153,9 @@ export default function AIIntelligencePage() {
   const canRead = hasPermission(PERMISSIONS.AI.READ);
   const canGenerate = hasPermission(PERMISSIONS.AI.GENERATE);
   const [conversations, setConversations] = useState<AIConversationSummary[]>([]);
+  const [conversationPage, setConversationPage] = useState(1);
+  const [conversationTotal, setConversationTotal] = useState(0);
+  const conversationPageSize = 25;
   const [conversationId, setConversationId] = useState<string>();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -168,7 +171,11 @@ export default function AIIntelligencePage() {
 
   const loadConversations = async () => {
     if (!canRead) return;
-    try { setConversations(await aiService.listConversations()); }
+    try {
+      const result = await aiService.listConversations(conversationPage, conversationPageSize);
+      setConversations(result.items);
+      setConversationTotal(result.total);
+    }
     catch (requestError) { setError(getErrorMessage(requestError, 'Chat history could not be loaded.')); }
     finally { setIsHistoryLoading(false); }
   };
@@ -176,14 +183,19 @@ export default function AIIntelligencePage() {
   useEffect(() => {
     if (!canRead) return;
     let active = true;
-    aiService.listConversations()
-      .then((items) => { if (active) setConversations(items); })
+    aiService.listConversations(conversationPage, conversationPageSize)
+      .then((result) => {
+        if (active) {
+          setConversations(result.items);
+          setConversationTotal(result.total);
+        }
+      })
       .catch((requestError) => {
         if (active) setError(getErrorMessage(requestError, 'Chat history could not be loaded.'));
       })
       .finally(() => { if (active) setIsHistoryLoading(false); });
     return () => { active = false; };
-  }, [canRead]);
+  }, [canRead, conversationPage]);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, status]);
 
   const newChat = () => {
@@ -314,6 +326,13 @@ export default function AIIntelligencePage() {
               <button type="button" aria-label={`Delete ${conversation.title}`} onClick={() => void deleteConversation(conversation.id)} className="mr-2 rounded p-1.5 text-slate-400 opacity-0 hover:bg-white hover:text-red-600 group-hover:opacity-100 focus:opacity-100"><Trash2 className="h-3.5 w-3.5" /></button>
             </div>
           ))}
+          {conversationTotal > conversationPageSize && (
+            <div className="flex items-center justify-between gap-2 px-2 pt-3">
+              <Button type="button" size="sm" variant="outline" disabled={conversationPage === 1} onClick={() => setConversationPage((page) => page - 1)}>Previous</Button>
+              <span className="text-[11px] text-slate-400">{conversationPage} / {Math.ceil(conversationTotal / conversationPageSize)}</span>
+              <Button type="button" size="sm" variant="outline" disabled={conversationPage * conversationPageSize >= conversationTotal} onClick={() => setConversationPage((page) => page + 1)}>Next</Button>
+            </div>
+          )}
         </div>
         <div className="border-t border-slate-200 px-4 py-3 text-[11px] leading-4 text-slate-400">Answers use only CRM records your role can access.</div>
       </aside>

@@ -79,13 +79,19 @@ class WhatsAppRepository:
 
     async def oldest_pending_at(self, db: AsyncSession, organization_id: str) -> datetime | None:
         """Measure durable work age within the requesting tenant, including active processing."""
-        event_age = select(func.min(Event.created_at)).where(
-            Event.organization_id == organization_id, Event.status == "PENDING"
-        ).scalar_subquery()
-        message_age = select(func.min(Message.created_at)).where(
-            Message.organization_id == organization_id,
-            Message.work_status.in_(["PENDING", "PROCESSING"]),
-        ).scalar_subquery()
+        event_age = (
+            select(func.min(Event.created_at))
+            .where(Event.organization_id == organization_id, Event.status == "PENDING")
+            .scalar_subquery()
+        )
+        message_age = (
+            select(func.min(Message.created_at))
+            .where(
+                Message.organization_id == organization_id,
+                Message.work_status.in_(["PENDING", "PROCESSING"]),
+            )
+            .scalar_subquery()
+        )
         row = (await db.execute(select(event_age, message_age))).one()
         return min((value for value in row if value is not None), default=None)
 
@@ -887,6 +893,30 @@ class WhatsAppRepository:
         ).all()
         return [self.conversation_dict(c, i, n) for c, i, n in rows]
 
+    async def count_conversations(
+        self,
+        db: AsyncSession,
+        organization_id: str,
+        user_id: str,
+        permissions: set[str],
+        search: str,
+    ) -> int:
+        query = (
+            select(func.count())
+            .select_from(Conversation)
+            .join(
+                Identity,
+                and_(
+                    Identity.id == Conversation.identity_id,
+                    Identity.organization_id == organization_id,
+                ),
+            )
+            .where(self.access_clause(organization_id, user_id, permissions))
+        )
+        if search:
+            query = query.where(Identity.normalized_phone_number.contains(search, autoescape=True))
+        return int((await db.execute(query)).scalar_one())
+
     @staticmethod
     def conversation_dict(c: Conversation, identity: Identity, unread: int = 0) -> dict:
         return {
@@ -930,6 +960,17 @@ class WhatsAppRepository:
             .all()
         )
         return list(reversed(rows))
+
+    async def count_messages(self, db: AsyncSession, conversation: Conversation) -> int:
+        result = await db.execute(
+            select(func.count())
+            .select_from(Message)
+            .where(
+                Message.organization_id == conversation.organization_id,
+                Message.conversation_id == conversation.id,
+            )
+        )
+        return int(result.scalar_one())
 
     async def ingest(
         self, db: AsyncSession, payload: WebhookPayload, correlation_id: str
@@ -1205,6 +1246,7 @@ class WhatsAppRepository:
         *,
         contact_id: str | None = None,
         lead_id: str | None = None,
+        limit: int = 100,
     ) -> list[Message]:
         query = (
             select(Message)
@@ -1233,10 +1275,55 @@ class WhatsAppRepository:
             else query.where(Identity.lead_id == lead_id)
         )
         return list(
-            (await db.execute(query.order_by(Message.created_at.desc(), Message.id).limit(100)))
+            (
+                await db.execute(
+                    query.order_by(
+                        func.coalesce(Message.provider_timestamp, Message.created_at).desc(),
+                        Message.id.desc(),
+                    ).limit(limit)
+                )
+            )
             .scalars()
             .all()
         )
+
+    async def count_timeline_messages(
+        self,
+        db: AsyncSession,
+        user: User,
+        permissions: set[str],
+        *,
+        contact_id: str | None = None,
+        lead_id: str | None = None,
+    ) -> int:
+        query = (
+            select(func.count())
+            .select_from(Message)
+            .join(
+                Conversation,
+                and_(
+                    Message.conversation_id == Conversation.id,
+                    Message.organization_id == Conversation.organization_id,
+                ),
+            )
+            .join(
+                Identity,
+                and_(
+                    Identity.id == Conversation.identity_id,
+                    Identity.organization_id == Conversation.organization_id,
+                ),
+            )
+            .where(
+                Message.organization_id == user.organization_id,
+                self.access_clause(user.organization_id, user.id, permissions),
+            )
+        )
+        query = (
+            query.where(Identity.contact_id == contact_id)
+            if contact_id
+            else query.where(Identity.lead_id == lead_id)
+        )
+        return int((await db.execute(query)).scalar_one())
 
     async def persist_inbound(
         self, db: AsyncSession, config: Configuration, event: InboundEvent

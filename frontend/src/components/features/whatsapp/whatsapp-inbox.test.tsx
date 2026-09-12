@@ -31,6 +31,7 @@ vi.mock('@/hooks/use-has-permission', () => ({
 }));
 
 vi.mock('@/lib/api/whatsapp', () => ({
+  useWhatsAppLiveUpdates: () => false,
   useWhatsAppConversations: (...args: unknown[]) => mocks.list(...args),
   useWhatsAppConversation: (...args: unknown[]) => mocks.detail(...args),
   useWhatsAppMessages: (...args: unknown[]) => mocks.messages(...args),
@@ -63,13 +64,15 @@ const conversation = {
   unread_count: 2,
 };
 
+const paginated = <T,>(items: T[], total = items.length) => ({ items, total });
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.permissions.clear();
   mocks.params = new URLSearchParams();
-  mocks.list.mockReturnValue({ data: [], isLoading: false, isError: false });
+  mocks.list.mockReturnValue({ data: paginated([]), isLoading: false, isError: false });
   mocks.detail.mockReturnValue({ data: undefined, isLoading: false, isError: false });
-  mocks.messages.mockReturnValue({ data: [], isLoading: false, isError: false });
+  mocks.messages.mockReturnValue({ data: paginated([]), isLoading: false, isError: false });
   mocks.templates.mockReturnValue({ data: [], isLoading: false, isError: false });
   mocks.assignees.mockReturnValue({ data: [], isLoading: false, isError: false });
   mocks.action.mockResolvedValue({});
@@ -85,11 +88,11 @@ describe('WhatsAppInbox', () => {
     mocks.permissions.add(PERMISSIONS.WHATSAPP.SEND);
     mocks.params = new URLSearchParams('conversation=conversation-a');
     mocks.detail.mockReturnValue({ data: conversation, isLoading: false, isError: false });
-    mocks.messages.mockReturnValue({ data: [{
+    mocks.messages.mockReturnValue({ data: paginated([{
       id: 'pending-message', direction: 'OUTBOUND', source: 'HUMAN', message_type: 'text',
       body: 'Waiting for automatic retry', status: 'PENDING', retryable: false,
       error_code: 'WHATSAPP_PROVIDER_RATE_LIMITED', error_message: null, media_available: false,
-    }], isLoading: false, isError: false });
+    }]), isLoading: false, isError: false });
     render(<WhatsAppInbox />);
     expect(screen.getByText('Waiting for automatic retry')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Retry safely' })).not.toBeInTheDocument();
@@ -98,7 +101,7 @@ describe('WhatsAppInbox', () => {
     render(<WhatsAppInbox />);
 
     expect(screen.getByText('You do not have access to WhatsApp conversations.')).toBeInTheDocument();
-    expect(mocks.list).toHaveBeenCalledWith('', 0, false);
+    expect(mocks.list).toHaveBeenCalledWith('', 0, false, false);
   });
 
   it('shows loading, error, and empty conversation states', () => {
@@ -122,15 +125,15 @@ describe('WhatsAppInbox', () => {
     mocks.permissions.add(PERMISSIONS.WHATSAPP.MANAGE_AI);
     mocks.permissions.add(PERMISSIONS.WHATSAPP.TAKEOVER);
     mocks.params = new URLSearchParams('conversation=conversation-a');
-    mocks.list.mockReturnValue({ data: [conversation], isLoading: false, isError: false });
+    mocks.list.mockReturnValue({ data: paginated([conversation]), isLoading: false, isError: false });
     mocks.detail.mockReturnValue({ data: conversation, isLoading: false, isError: false });
     mocks.messages.mockReturnValue({
-      data: [{
+      data: paginated([{
         id: 'message-a', direction: 'OUTBOUND', source: 'AI', message_type: 'text', body: 'Hello',
         status: 'FAILED', retryable: true, error_code: 'WHATSAPP_PROVIDER_RATE_LIMITED', error_message: 'WhatsApp temporarily rate limited the request.',
         media_available: false, created_at: new Date().toISOString(), provider_timestamp: null,
         sent_at: null, delivered_at: null, read_at: null,
-      }],
+      }]),
       isLoading: false,
       isError: false,
     });
@@ -268,10 +271,10 @@ describe('WhatsAppInbox', () => {
     mocks.params = new URLSearchParams('conversation=conversation-a');
     mocks.detail.mockReturnValue({ data: conversation, isLoading: false, isError: false });
     mocks.messages.mockReturnValue({
-      data: [
+      data: paginated([
         { id: 'inbound-1', direction: 'INBOUND', source: 'CUSTOMER', message_type: 'text', body: 'One', status: 'RECEIVED', error_code: null, error_message: null, media_available: false, created_at: new Date().toISOString(), provider_timestamp: null, sent_at: null, delivered_at: null, read_at: null },
         { id: 'inbound-2', direction: 'INBOUND', source: 'CUSTOMER', message_type: 'text', body: 'Two', status: 'RECEIVED', error_code: null, error_message: null, media_available: false, created_at: new Date().toISOString(), provider_timestamp: null, sent_at: null, delivered_at: null, read_at: null },
-      ],
+      ]),
       isLoading: false,
       isError: false,
     });
@@ -284,12 +287,12 @@ describe('WhatsAppInbox', () => {
   it('paginates beyond the first conversation page', async () => {
     mocks.permissions.add(PERMISSIONS.WHATSAPP.READ_ALL);
     mocks.list.mockReturnValue({
-      data: Array.from({ length: 50 }, (_, index) => ({
+      data: paginated(Array.from({ length: 50 }, (_, index) => ({
         ...conversation,
         id: `conversation-${index}`,
         identity_id: `identity-${index}`,
         customer_phone: `+1415555${String(index).padStart(4, '0')}`,
-      })),
+      })), 51),
       isLoading: false,
       isError: false,
     });
@@ -298,10 +301,10 @@ describe('WhatsAppInbox', () => {
 
     await user.click(screen.getByRole('button', { name: 'Next' }));
 
-    await waitFor(() => expect(mocks.list).toHaveBeenCalledWith('', 50, true));
+    await waitFor(() => expect(mocks.list).toHaveBeenCalledWith('', 50, true, false));
   });
 
-  it('can return from an empty message page at an exact page boundary', async () => {
+  it('does not request an empty message page at an exact page boundary', async () => {
     mocks.permissions.add(PERMISSIONS.WHATSAPP.READ_ALL);
     mocks.params = new URLSearchParams('conversation=conversation-a');
     mocks.detail.mockReturnValue({ data: conversation, isLoading: false, isError: false });
@@ -321,19 +324,15 @@ describe('WhatsAppInbox', () => {
       delivered_at: null,
       read_at: null,
     }));
-    mocks.messages.mockImplementation((_id: string, offset: number) => ({
-      data: offset === 0 ? page : [],
+    mocks.messages.mockImplementation(() => ({
+      data: paginated(page, 100),
       isLoading: false,
       isError: false,
     }));
-    const user = userEvent.setup();
     render(<WhatsAppInbox />);
 
-    await user.click(screen.getByRole('button', { name: 'Older' }));
-    await waitFor(() => expect(screen.getByText('No messages yet.')).toBeInTheDocument());
-    expect(screen.getByRole('button', { name: 'Newer' })).toBeEnabled();
-    await user.click(screen.getByRole('button', { name: 'Newer' }));
-
-    await waitFor(() => expect(mocks.messages).toHaveBeenLastCalledWith('conversation-a', 0, true));
+    expect(screen.queryByRole('button', { name: 'Older' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Newer' })).not.toBeInTheDocument();
+    expect(mocks.messages).toHaveBeenLastCalledWith('conversation-a', 0, true, false);
   });
 });

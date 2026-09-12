@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, BASE_URL } from '@/lib/api/client';
+import { fetchPaginated, type PaginatedResult } from '@/lib/api/pagination';
 import { getOrganizationContext } from '@/lib/organization-context';
 import { useAuth } from '@/providers/auth-provider';
 import { whatsappAssigneeSchema, whatsappConversationSchema, whatsappIntegrationSchema, whatsappMessageSchema, whatsappTemplateSchema, type WhatsAppConfigForm, type WhatsAppMessageDto } from '@/lib/types/whatsapp';
@@ -95,7 +96,10 @@ export function useWhatsAppStatus(enabled = true) {
 export function useWhatsAppConversations(search: string, offset: number, enabled: boolean, realtime = false) {
   const scope = useWhatsAppScope();
   return useQuery({ queryKey: whatsappKeys.list(scope, search, offset), enabled,
-    queryFn: async ({ signal }) => whatsappConversationSchema.array().parse(await apiClient.get(`/whatsapp/conversations?search=${encodeURIComponent(search)}&offset=${offset}&limit=50`, { signal })),
+    queryFn: async ({ signal }): Promise<PaginatedResult<ReturnType<typeof whatsappConversationSchema.parse>>> => {
+      const result = await fetchPaginated<unknown>(`/whatsapp/conversations?search=${encodeURIComponent(search)}&offset=${offset}&limit=50`, { signal });
+      return { items: whatsappConversationSchema.array().parse(result.items), total: result.total };
+    },
     refetchInterval: realtime ? 30000 : 15000, refetchIntervalInBackground: false });
 }
 
@@ -109,17 +113,23 @@ export function useWhatsAppConversation(id: string, enabled: boolean, realtime =
 export function useWhatsAppMessages(id: string, offset: number, enabled: boolean, realtime = false) {
   const scope = useWhatsAppScope();
   return useQuery({ queryKey: whatsappKeys.messages(scope, id, offset), enabled: enabled && !!id,
-    queryFn: async ({ signal }) => whatsappMessageSchema.array().parse(await apiClient.get(`/whatsapp/conversations/${encodeURIComponent(id)}/messages?offset=${offset}&limit=100`, { signal })),
+    queryFn: async ({ signal }): Promise<PaginatedResult<ReturnType<typeof whatsappMessageSchema.parse>>> => {
+      const result = await fetchPaginated<unknown>(`/whatsapp/conversations/${encodeURIComponent(id)}/messages?offset=${offset}&limit=100`, { signal });
+      return { items: whatsappMessageSchema.array().parse(result.items), total: result.total };
+    },
     refetchInterval: offset === 0 ? (realtime ? 30000 : 5000) : false, refetchIntervalInBackground: false });
 }
 
 function addPendingMessage(
   client: ReturnType<typeof useQueryClient>, scope: string, conversationId: string, message: WhatsAppMessageDto,
 ) {
-  client.setQueryData<WhatsAppMessageDto[]>(whatsappKeys.messages(scope, conversationId, 0), (current) => {
-    if (!current || current.some((item) => item.id === message.id)) return current;
-    return [...current, message];
-  });
+  client.setQueryData<PaginatedResult<WhatsAppMessageDto>>(
+    whatsappKeys.messages(scope, conversationId, 0),
+    (current) => {
+      if (!current || current.items.some((item) => item.id === message.id)) return current;
+      return { items: [...current.items, message], total: current.total + 1 };
+    },
+  );
   void client.invalidateQueries({ queryKey: whatsappKeys.conversations(scope) });
   void client.invalidateQueries({ queryKey: whatsappKeys.detail(scope, conversationId) });
 }

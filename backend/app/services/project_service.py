@@ -64,6 +64,21 @@ class ProjectService:
         )
         return [project_to_dict(project) for project in projects]
 
+    async def count_projects(
+        self,
+        db: AsyncSession,
+        current_user: User,
+        *,
+        status: str | None = None,
+        priority: str | None = None,
+    ) -> int:
+        return await self.repository.count(
+            db,
+            organization_id=current_user.organization_id,
+            status=status,
+            priority=priority,
+        )
+
     async def get_project(self, db: AsyncSession, current_user: User, project_id: str) -> dict:
         project = await self.repository.get(
             db, project_id=project_id, organization_id=current_user.organization_id

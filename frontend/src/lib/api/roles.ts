@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import { fetchPaginated, type PaginatedResult } from '@/lib/api/pagination';
 import { notifyPermissionsInvalidated } from '@/lib/auth-session';
 
 export interface RoleItem {
@@ -52,9 +53,12 @@ export interface MessageResponse {
 // API Client Functions
 // ---------------------------------------------------------------------------
 
-export async function fetchRolesApi(search?: string): Promise<RoleItem[]> {
-  const query = search ? `?search=${encodeURIComponent(search)}` : '';
-  return apiClient.get<RoleItem[]>(`/roles${query}`);
+export async function fetchRolesApi(params?: { page?: number; limit?: number; search?: string }): Promise<PaginatedResult<RoleItem>> {
+  const query = new URLSearchParams();
+  if (params?.page) query.set('page', String(params.page));
+  if (params?.limit) query.set('limit', String(params.limit));
+  if (params?.search) query.set('search', params.search);
+  return fetchPaginated<RoleItem>(`/roles${query.size ? `?${query}` : ''}`);
 }
 
 export async function fetchAssignableRolesApi(search?: string): Promise<RoleItem[]> {
@@ -118,8 +122,8 @@ export async function assignRoleToUserApi(userId: string, roleId: string): Promi
   return apiClient.put<MessageResponse>(`/roles/users/${userId}/role?role_id=${encodeURIComponent(roleId)}`);
 }
 
-export async function fetchRoleUsersApi(roleId: string): Promise<UserRoleAssignment[]> {
-  return apiClient.get<UserRoleAssignment[]>(`/roles/${roleId}/users`);
+export async function fetchRoleUsersApi(roleId: string, page = 1, limit = 15): Promise<PaginatedResult<UserRoleAssignment>> {
+  return fetchPaginated<UserRoleAssignment>(`/roles/${roleId}/users?page=${page}&limit=${limit}`);
 }
 
 export async function checkPermissionApi(userId: string, permission: string): Promise<{ user_id: string; permission: string; allowed: boolean }> {
@@ -130,8 +134,8 @@ export async function bulkDeleteRolesApi(ids: string[]): Promise<BulkActionRespo
   return apiClient.post<BulkActionResponse>('/roles/bulk-delete', { ids });
 }
 
-export async function fetchRoleAuditLogsApi(): Promise<RoleAuditLog[]> {
-  return apiClient.get<RoleAuditLog[]>('/roles/audit-logs');
+export async function fetchRoleAuditLogsApi(page = 1, limit = 20): Promise<PaginatedResult<RoleAuditLog>> {
+  return fetchPaginated<RoleAuditLog>(`/roles/audit-logs?page=${page}&limit=${limit}`);
 }
 
 export async function exportRolesApi(): Promise<{ download_url: string }> {
@@ -150,10 +154,10 @@ export async function setDefaultRoleApi(roleId: string): Promise<MessageResponse
 // TanStack Query Hooks
 // ---------------------------------------------------------------------------
 
-export function useRolesQuery(search?: string, options?: Omit<UseQueryOptions<RoleItem[]>, 'queryKey' | 'queryFn'>) {
-  return useQuery<RoleItem[]>({
-    queryKey: ['roles', search],
-    queryFn: () => fetchRolesApi(search),
+export function useRolesQuery(params?: { page?: number; limit?: number; search?: string }, options?: Omit<UseQueryOptions<PaginatedResult<RoleItem>>, 'queryKey' | 'queryFn'>) {
+  return useQuery<PaginatedResult<RoleItem>>({
+    queryKey: ['roles', params],
+    queryFn: () => fetchRolesApi(params),
     staleTime: 1000 * 60 * 5,
     ...options,
   });
@@ -226,19 +230,19 @@ export function useDefaultRoleQuery(options?: Omit<UseQueryOptions<RoleItem>, 'q
   });
 }
 
-export function useRoleAuditLogsQuery(options?: Omit<UseQueryOptions<RoleAuditLog[]>, 'queryKey' | 'queryFn'>) {
-  return useQuery<RoleAuditLog[]>({
-    queryKey: ['roles', 'audit-logs'],
-    queryFn: fetchRoleAuditLogsApi,
+export function useRoleAuditLogsQuery(page = 1, limit = 20, options?: Omit<UseQueryOptions<PaginatedResult<RoleAuditLog>>, 'queryKey' | 'queryFn'>) {
+  return useQuery<PaginatedResult<RoleAuditLog>>({
+    queryKey: ['roles', 'audit-logs', page, limit],
+    queryFn: () => fetchRoleAuditLogsApi(page, limit),
     staleTime: 1000 * 60 * 2,
     ...options,
   });
 }
 
-export function useRoleUsersQuery(roleId: string, options?: Omit<UseQueryOptions<UserRoleAssignment[]>, 'queryKey' | 'queryFn'>) {
-  return useQuery<UserRoleAssignment[]>({
-    queryKey: ['roles', roleId, 'users'],
-    queryFn: () => fetchRoleUsersApi(roleId),
+export function useRoleUsersQuery(roleId: string, options?: Omit<UseQueryOptions<PaginatedResult<UserRoleAssignment>>, 'queryKey' | 'queryFn'>, page = 1, limit = 15) {
+  return useQuery<PaginatedResult<UserRoleAssignment>>({
+    queryKey: ['roles', roleId, 'users', page, limit],
+    queryFn: () => fetchRoleUsersApi(roleId, page, limit),
     enabled: !!roleId,
     ...options,
   });

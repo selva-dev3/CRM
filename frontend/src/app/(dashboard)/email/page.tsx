@@ -98,12 +98,14 @@ export default function EmailPage() {
   }, [searchTerm]);
 
   // Queries
-  const { data: inboxMessages = [], isLoading: isInboxLoading } = useInboxQuery({
+  const { data: inboxPage, isLoading: isInboxLoading } = useInboxQuery({
     page,
     limit,
     folder: activeFolder,
     search: debouncedSearchTerm || undefined,
   });
+  const inboxMessages = inboxPage?.items ?? [];
+  const totalInboxMessages = inboxPage?.total ?? 0;
 
   const { data: drafts = [] } = useDraftsQuery();
   const { data: templates = [] } = useEmailTemplatesQuery();
@@ -438,9 +440,9 @@ export default function EmailPage() {
           isLoading={isInboxLoading}
           pagination={{
             pageIndex: page - 1,
-            pageCount: inboxMessages.length >= limit ? page + 1 : page,
+            pageCount: Math.max(1, Math.ceil(totalInboxMessages / limit)),
             onPageChange: (p) => setPage(p + 1),
-            totalRecords: (page - 1) * limit + inboxMessages.length,
+            totalRecords: totalInboxMessages,
           }}
         />
       )}

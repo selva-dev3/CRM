@@ -1,5 +1,6 @@
 ﻿import { useQuery, useMutation, useQueryClient, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import { fetchPaginated, type PaginatedResult } from '@/lib/api/pagination';
 
 export interface CallLogItem {
   id: string;
@@ -99,7 +100,7 @@ export interface FetchCallsParams {
   deal_id?: string;
 }
 
-export async function fetchCallsApi(params?: FetchCallsParams): Promise<CallLogItem[]> {
+export async function fetchCallsApi(params?: FetchCallsParams): Promise<PaginatedResult<CallLogItem>> {
   const query = new URLSearchParams();
   if (params?.page) query.append('page', String(params.page));
   if (params?.limit) query.append('limit', String(params.limit));
@@ -110,7 +111,7 @@ export async function fetchCallsApi(params?: FetchCallsParams): Promise<CallLogI
   if (params?.company_id) query.append('company_id', params.company_id);
   if (params?.deal_id) query.append('deal_id', params.deal_id);
   const endpoint = `/calls${query.toString() ? `?${query.toString()}` : ''}`;
-  return apiClient.get<CallLogItem[]>(endpoint);
+  return fetchPaginated<CallLogItem>(endpoint);
 }
 
 export async function logCallApi(
@@ -173,8 +174,8 @@ export async function fetchCallSentimentApi(callId: string): Promise<SentimentRe
 // TanStack Query Hooks
 // ---------------------------------------------------------------------------
 
-export function useCallsQuery(params?: FetchCallsParams, options?: Omit<UseQueryOptions<CallLogItem[]>, 'queryKey' | 'queryFn'>) {
-  return useQuery<CallLogItem[]>({
+export function useCallsQuery(params?: FetchCallsParams, options?: Omit<UseQueryOptions<PaginatedResult<CallLogItem>>, 'queryKey' | 'queryFn'>) {
+  return useQuery<PaginatedResult<CallLogItem>>({
     queryKey: ['calls', params],
     queryFn: () => fetchCallsApi(params),
     staleTime: 1000 * 60 * 2,

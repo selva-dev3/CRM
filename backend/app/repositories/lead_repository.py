@@ -93,6 +93,7 @@ class LeadRepository:
                     performed_by=actor_id,
                 )
             )
+
     async def record_activity(
         self,
         db: AsyncSession,
@@ -121,13 +122,33 @@ class LeadRepository:
                 )
             )
 
-    async def list_activities(self, db: AsyncSession, lead_id: str) -> list[LeadActivity]:
-        result = await db.execute(
+    async def list_activities(
+        self, db: AsyncSession, lead_id: str, *, limit: int | None = None
+    ) -> list[LeadActivity]:
+        stmt = (
             select(LeadActivity)
             .where(LeadActivity.lead_id == lead_id)
             .order_by(LeadActivity.timestamp.desc(), LeadActivity.id.desc())
         )
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        result = await db.execute(stmt)
         return list(result.scalars().all())
+
+    async def count_activities(self, db: AsyncSession, lead_id: str) -> int:
+        result = await db.execute(
+            select(func.count()).select_from(LeadActivity).where(LeadActivity.lead_id == lead_id)
+        )
+        return int(result.scalar_one())
+
+    async def has_activity(self, db: AsyncSession, lead_id: str, *, action: str) -> bool:
+        result = await db.execute(
+            select(LeadActivity.id).where(
+                LeadActivity.lead_id == lead_id,
+                LeadActivity.action == action,
+            ).limit(1)
+        )
+        return result.scalar_one_or_none() is not None
 
     async def link_conversion_contact(
         self, db: AsyncSession, contact: Contact, company_id: str
@@ -238,9 +259,31 @@ class LeadRepository:
     async def delete(self, db: AsyncSession, lead: Lead) -> None:
         await db.delete(lead)
 
-    async def list_notes(self, db: AsyncSession, lead_id: str) -> list[LeadNote]:
-        result = await db.execute(select(LeadNote).where(LeadNote.lead_id == lead_id))
+    async def list_notes(
+        self,
+        db: AsyncSession,
+        lead_id: str,
+        *,
+        page: int | None = None,
+        limit: int | None = None,
+    ) -> list[LeadNote]:
+        stmt = (
+            select(LeadNote)
+            .where(LeadNote.lead_id == lead_id)
+            .order_by(LeadNote.created_at.desc(), LeadNote.id.desc())
+        )
+        if page is not None and limit is not None:
+            stmt = stmt.offset((page - 1) * limit).limit(limit)
+        elif limit is not None:
+            stmt = stmt.limit(limit)
+        result = await db.execute(stmt)
         return list(result.scalars().all())
+
+    async def count_notes(self, db: AsyncSession, lead_id: str) -> int:
+        result = await db.execute(
+            select(func.count()).select_from(LeadNote).where(LeadNote.lead_id == lead_id)
+        )
+        return int(result.scalar_one())
 
     async def create_note(
         self, db: AsyncSession, *, lead_id: str, content: str, created_by: str
@@ -249,9 +292,33 @@ class LeadRepository:
         db.add(note)
         return note
 
-    async def list_attachments(self, db: AsyncSession, lead_id: str) -> list[LeadAttachment]:
-        result = await db.execute(select(LeadAttachment).where(LeadAttachment.lead_id == lead_id))
+    async def list_attachments(
+        self,
+        db: AsyncSession,
+        lead_id: str,
+        *,
+        page: int | None = None,
+        limit: int | None = None,
+    ) -> list[LeadAttachment]:
+        stmt = (
+            select(LeadAttachment)
+            .where(LeadAttachment.lead_id == lead_id)
+            .order_by(LeadAttachment.uploaded_at.desc(), LeadAttachment.id.desc())
+        )
+        if page is not None and limit is not None:
+            stmt = stmt.offset((page - 1) * limit).limit(limit)
+        elif limit is not None:
+            stmt = stmt.limit(limit)
+        result = await db.execute(stmt)
         return list(result.scalars().all())
+
+    async def count_attachments(self, db: AsyncSession, lead_id: str) -> int:
+        result = await db.execute(
+            select(func.count())
+            .select_from(LeadAttachment)
+            .where(LeadAttachment.lead_id == lead_id)
+        )
+        return int(result.scalar_one())
 
     async def get_attachment(self, db: AsyncSession, attachment_id: str) -> LeadAttachment | None:
         result = await db.execute(select(LeadAttachment).where(LeadAttachment.id == attachment_id))
@@ -289,15 +356,36 @@ class LeadRepository:
         return attachment
 
     async def list_tasks(
-        self, db: AsyncSession, *, organization_id: str, lead_tag: str
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        lead_tag: str,
+        page: int | None = None,
+        limit: int | None = None,
     ) -> list[Task]:
-        result = await db.execute(
-            select(Task).where(
+        stmt = (
+            select(Task)
+            .where(
                 Task.organization_id == organization_id,
                 Task.description.contains(lead_tag),
             )
+            .order_by(Task.created_at.desc(), Task.id.desc())
         )
+        if page is not None and limit is not None:
+            stmt = stmt.offset((page - 1) * limit).limit(limit)
+        elif limit is not None:
+            stmt = stmt.limit(limit)
+        result = await db.execute(stmt)
         return list(result.scalars().all())
+
+    async def count_tasks(self, db: AsyncSession, *, organization_id: str, lead_tag: str) -> int:
+        result = await db.execute(
+            select(func.count())
+            .select_from(Task)
+            .where(Task.organization_id == organization_id, Task.description.contains(lead_tag))
+        )
+        return int(result.scalar_one())
 
     async def create_task(
         self,
@@ -324,10 +412,46 @@ class LeadRepository:
         return task
 
     async def list_emails(
-        self, db: AsyncSession, *, organization_id: str, lead_id: str, lead_tag: str
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        lead_id: str,
+        lead_tag: str,
+        page: int | None = None,
+        limit: int | None = None,
     ) -> list[Email]:
+        filters = (
+            Email.organization_id == organization_id,
+            or_(
+                Email.lead_id == lead_id,
+                and_(Email.lead_id.is_(None), Email.body_text.contains(lead_tag)),
+            ),
+        )
+        stmt = (
+            select(Email)
+            .where(
+                *filters,
+            )
+            .order_by(
+                func.coalesce(Email.sent_at, Email.created_at).desc(),
+                Email.id.desc(),
+            )
+        )
+        if page is not None and limit is not None:
+            stmt = stmt.offset((page - 1) * limit).limit(limit)
+        elif limit is not None:
+            stmt = stmt.limit(limit)
+        result = await db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def count_emails(
+        self, db: AsyncSession, *, organization_id: str, lead_id: str, lead_tag: str
+    ) -> int:
         result = await db.execute(
-            select(Email).where(
+            select(func.count())
+            .select_from(Email)
+            .where(
                 Email.organization_id == organization_id,
                 or_(
                     Email.lead_id == lead_id,
@@ -335,7 +459,7 @@ class LeadRepository:
                 ),
             )
         )
-        return list(result.scalars().all())
+        return int(result.scalar_one())
 
     async def create_email(
         self,
@@ -360,9 +484,16 @@ class LeadRepository:
         return email
 
     async def list_calls(
-        self, db: AsyncSession, *, organization_id: str, lead_id: str, lead_tag: str
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        lead_id: str,
+        lead_tag: str,
+        page: int | None = None,
+        limit: int | None = None,
     ) -> list[CallLog]:
-        result = await db.execute(
+        stmt = (
             select(CallLog)
             .where(
                 CallLog.organization_id == organization_id,
@@ -371,9 +502,30 @@ class LeadRepository:
                     and_(CallLog.lead_id.is_(None), CallLog.notes.contains(lead_tag)),
                 ),
             )
-            .order_by(CallLog.timestamp.desc())
+            .order_by(CallLog.timestamp.desc(), CallLog.id.desc())
         )
+        if page is not None and limit is not None:
+            stmt = stmt.offset((page - 1) * limit).limit(limit)
+        elif limit is not None:
+            stmt = stmt.limit(limit)
+        result = await db.execute(stmt)
         return list(result.scalars().all())
+
+    async def count_calls(
+        self, db: AsyncSession, *, organization_id: str, lead_id: str, lead_tag: str
+    ) -> int:
+        result = await db.execute(
+            select(func.count())
+            .select_from(CallLog)
+            .where(
+                CallLog.organization_id == organization_id,
+                or_(
+                    CallLog.lead_id == lead_id,
+                    and_(CallLog.lead_id.is_(None), CallLog.notes.contains(lead_tag)),
+                ),
+            )
+        )
+        return int(result.scalar_one())
 
     async def get_organization(self, db: AsyncSession, org_id: str) -> Organization | None:
         result = await db.execute(select(Organization).where(Organization.id == org_id))

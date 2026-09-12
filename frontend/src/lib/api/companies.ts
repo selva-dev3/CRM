@@ -7,6 +7,7 @@ import type { DocumentItem } from '@/lib/api/documents';
 import type { InvoiceItem } from '@/lib/api/invoices';
 import type { NoteItem } from '@/lib/api/notes';
 import type { QuoteItem } from '@/lib/api/quotes';
+import { fetchPaginated, type PaginatedResult } from '@/lib/api/pagination';
 
 export interface CompanyItem {
   id: string;
@@ -63,11 +64,11 @@ export const companyKeys = {
   page: (page: number, limit: number, search?: string) =>
     ['companies-page', page, limit, search] as const,
   detail: (id: string) => ['company', id] as const,
-  contacts: (id: string) => ['company-contacts', id] as const,
-  deals: (id: string) => ['company-deals', id] as const,
-  notes: (id: string) => ['company-notes', id] as const,
-  quotes: (id: string) => ['company-quotes', id] as const,
-  invoices: (id: string) => ['company-invoices', id] as const,
+  contacts: (id: string, page?: number, limit?: number) => ['company-contacts', id, page, limit] as const,
+  deals: (id: string, page?: number, limit?: number) => ['company-deals', id, page, limit] as const,
+  notes: (id: string, page?: number, limit?: number) => ['company-notes', id, page, limit] as const,
+  quotes: (id: string, page?: number, limit?: number) => ['company-quotes', id, page, limit] as const,
+  invoices: (id: string, page?: number, limit?: number) => ['company-invoices', id, page, limit] as const,
   documents: (id: string) => ['company-documents', id] as const,
   hierarchy: (id: string) => ['company-hierarchy', id] as const,
 };
@@ -144,16 +145,16 @@ export async function getCompanyApi(id: string): Promise<CompanyItem> {
   return apiClient.get<CompanyItem>(`/companies/${id}`);
 }
 
-export async function getCompanyContactsApi(id: string): Promise<CompanyContactItem[]> {
-  return apiClient.get<CompanyContactItem[]>(`/companies/${id}/contacts`);
+export async function getCompanyContactsApi(id: string, page = 1, limit = 15): Promise<PaginatedResult<CompanyContactItem>> {
+  return fetchPaginated<CompanyContactItem>(`/companies/${id}/contacts?page=${page}&limit=${limit}`);
 }
 
-export async function getCompanyDealsApi(id: string): Promise<DealItem[]> {
-  return apiClient.get<DealItem[]>(`/companies/${id}/deals`);
+export async function getCompanyDealsApi(id: string, page = 1, limit = 15): Promise<PaginatedResult<DealItem>> {
+  return fetchPaginated<DealItem>(`/companies/${id}/deals?page=${page}&limit=${limit}`);
 }
 
-export async function getCompanyNotesApi(id: string): Promise<NoteItem[]> {
-  return apiClient.get<NoteItem[]>(`/companies/${id}/notes`);
+export async function getCompanyNotesApi(id: string, page = 1, limit = 15): Promise<PaginatedResult<NoteItem>> {
+  return fetchPaginated<NoteItem>(`/companies/${id}/notes?page=${page}&limit=${limit}`);
 }
 
 export async function addCompanyNoteApi(payload: { id: string; content: string }): Promise<NoteItem> {
@@ -162,12 +163,12 @@ export async function addCompanyNoteApi(payload: { id: string; content: string }
   });
 }
 
-export async function getCompanyQuotesApi(id: string): Promise<QuoteItem[]> {
-  return apiClient.get<QuoteItem[]>(`/companies/${id}/quotes`);
+export async function getCompanyQuotesApi(id: string, page = 1, limit = 15): Promise<PaginatedResult<QuoteItem>> {
+  return fetchPaginated<QuoteItem>(`/companies/${id}/quotes?page=${page}&limit=${limit}`);
 }
 
-export async function getCompanyInvoicesApi(id: string): Promise<InvoiceItem[]> {
-  return apiClient.get<InvoiceItem[]>(`/companies/${id}/invoices`);
+export async function getCompanyInvoicesApi(id: string, page = 1, limit = 15): Promise<PaginatedResult<InvoiceItem>> {
+  return fetchPaginated<InvoiceItem>(`/companies/${id}/invoices?page=${page}&limit=${limit}`);
 }
 
 export async function getCompanyDocumentsApi(id: string): Promise<DocumentItem[]> {
@@ -203,42 +204,42 @@ export function useCompanyQuery(id: string) {
   });
 }
 
-export function useCompanyContactsQuery(id: string, enabled = true) {
+export function useCompanyContactsQuery(id: string, enabled = true, page = 1, limit = 15) {
   return useQuery({
-    queryKey: companyKeys.contacts(id),
-    queryFn: () => getCompanyContactsApi(id),
+    queryKey: companyKeys.contacts(id, page, limit),
+    queryFn: () => getCompanyContactsApi(id, page, limit),
     enabled: Boolean(id) && enabled,
   });
 }
 
-export function useCompanyDealsQuery(id: string, enabled = true) {
+export function useCompanyDealsQuery(id: string, enabled = true, page = 1, limit = 15) {
   return useQuery({
-    queryKey: companyKeys.deals(id),
-    queryFn: () => getCompanyDealsApi(id),
+    queryKey: companyKeys.deals(id, page, limit),
+    queryFn: () => getCompanyDealsApi(id, page, limit),
     enabled: Boolean(id) && enabled,
   });
 }
 
-export function useCompanyNotesQuery(id: string, enabled = true) {
+export function useCompanyNotesQuery(id: string, enabled = true, page = 1, limit = 15) {
   return useQuery({
-    queryKey: companyKeys.notes(id),
-    queryFn: () => getCompanyNotesApi(id),
+    queryKey: companyKeys.notes(id, page, limit),
+    queryFn: () => getCompanyNotesApi(id, page, limit),
     enabled: Boolean(id) && enabled,
   });
 }
 
-export function useCompanyQuotesQuery(id: string, enabled = true) {
+export function useCompanyQuotesQuery(id: string, enabled = true, page = 1, limit = 15) {
   return useQuery({
-    queryKey: companyKeys.quotes(id),
-    queryFn: () => getCompanyQuotesApi(id),
+    queryKey: companyKeys.quotes(id, page, limit),
+    queryFn: () => getCompanyQuotesApi(id, page, limit),
     enabled: Boolean(id) && enabled,
   });
 }
 
-export function useCompanyInvoicesQuery(id: string, enabled = true) {
+export function useCompanyInvoicesQuery(id: string, enabled = true, page = 1, limit = 15) {
   return useQuery({
-    queryKey: companyKeys.invoices(id),
-    queryFn: () => getCompanyInvoicesApi(id),
+    queryKey: companyKeys.invoices(id, page, limit),
+    queryFn: () => getCompanyInvoicesApi(id, page, limit),
     enabled: Boolean(id) && enabled,
   });
 }
@@ -264,10 +265,8 @@ export function useAddCompanyNoteMutation(id: string) {
   return useMutation({
     mutationFn: (content: string) => addCompanyNoteApi({ id, content }),
     onSuccess: (note) => {
-      queryClient.setQueryData<NoteItem[]>(companyKeys.notes(id), (current = []) => [
-        note,
-        ...current,
-      ]);
+      void note;
+      queryClient.invalidateQueries({ queryKey: ['company-notes', id] });
     },
   });
 }

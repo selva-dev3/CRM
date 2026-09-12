@@ -11,7 +11,9 @@ vi.mock('@/lib/api/invoices', () => ({
   useInvoicePdfQuery: () => ({}), useSendInvoiceEmailMutation: () => ({ mutateAsync: mocks.send }),
   useSendPaymentReminderMutation: () => ({}), useDeleteInvoiceMutation: () => ({}),
 }));
-vi.mock('@/lib/api/payments', () => ({ usePaymentsQuery: () => ({ data: [] }) }));
+vi.mock('@/lib/api/payments', () => ({
+  usePaymentsPageQuery: () => ({ data: { items: [], total: 0 } }),
+}));
 beforeEach(() => { vi.clearAllMocks(); mocks.status = 'Finalized'; mocks.send.mockResolvedValue({ status: 'Pending' }); });
 it('uses server totals and invoice currency and shows acceptance wait', () => {
   render(<Page />);

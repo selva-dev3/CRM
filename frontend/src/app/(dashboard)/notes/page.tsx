@@ -72,12 +72,14 @@ export default function NotesPage() {
   }, [searchTerm]);
 
   // Queries
-  const { data: notes = [], isLoading: isNotesLoading } = useNotesQuery({
+  const { data: notesPage, isLoading: isNotesLoading } = useNotesQuery({
     page,
     limit,
     entity_type: entityTypeFilter || undefined,
     search: debouncedSearchTerm || undefined,
   });
+  const notes = notesPage?.items ?? [];
+  const totalNotes = notesPage?.total ?? 0;
 
   const { data: pinnedNotes = [] } = usePinnedNotesQuery();
 
@@ -355,9 +357,9 @@ export default function NotesPage() {
         isLoading={isNotesLoading}
         pagination={{
           pageIndex: page - 1,
-          pageCount: notes.length >= limit ? page + 1 : page,
+          pageCount: Math.max(1, Math.ceil(totalNotes / limit)),
           onPageChange: (p) => setPage(p + 1),
-          totalRecords: (page - 1) * limit + notes.length,
+          totalRecords: totalNotes,
         }}
       />
 
