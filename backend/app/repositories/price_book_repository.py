@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 

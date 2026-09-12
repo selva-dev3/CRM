@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
