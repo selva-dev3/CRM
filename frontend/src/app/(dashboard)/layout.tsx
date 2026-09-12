@@ -46,6 +46,8 @@ import {
   Layers,
   Sparkles,
   MessageCircle,
+  FolderKanban,
+  Plug,
   ChevronDown,
   ChevronRight
 } from 'lucide-react';
@@ -76,6 +78,8 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Layers,
   Sparkles,
   MessageCircle,
+  FolderKanban,
+  Plug,
 };
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -263,7 +267,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               {isOpen && (
                 <div className={hasTitle ? 'pl-2 space-y-0.5 border-l-2 border-slate-100 ml-2.5' : 'space-y-0.5'}>
                   {section.items.map((item) => {
-                    const isActive = pathname === item.href || (item.href === '/email' && pathname === '/emails');
+                    const isActive = pathname === item.href
+                      || pathname.startsWith(`${item.href}/`)
+                      || (item.href === '/email' && (pathname === '/emails' || pathname.startsWith('/emails/')));
                     const IconComponent = ICON_MAP[item.icon] || LayoutDashboard;
 
                     return (
@@ -295,7 +301,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         })}
       </nav>
 
-      <Link
+      {hasPermission(PERMISSIONS.SETTINGS.READ) && <Link
         href="/settings"
         onClick={closeMobileMenu}
         title="Organization & User Settings"
@@ -315,7 +321,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </div>
         <Settings className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition shrink-0" />
-      </Link>
+      </Link>}
     </>
   );
 
