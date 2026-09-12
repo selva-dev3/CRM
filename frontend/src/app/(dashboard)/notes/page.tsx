@@ -1,7 +1,5 @@
 ﻿'use client';
 
-import { Input } from "@/components/ui/input";
-
 import { ResponsiveSelect } from '@/components/common/responsive-select';
 
 import { ActionMenu } from '@/components/common/action-menu';
@@ -23,6 +21,12 @@ import {
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
+import {
+  ENTITY_REFERENCE_TYPES,
+  EntityReferenceSelect,
+  type EntityReferenceType,
+} from '@/components/common/entity-reference-select';
+import { useHasPermission } from '@/hooks/use-has-permission';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
 import {
@@ -39,6 +43,11 @@ import {
 } from '@/lib/api/notes';
 
 export default function NotesPage() {
+  const { hasPermission } = useHasPermission();
+  const readableEntityTypes = ENTITY_REFERENCE_TYPES.filter(({ readPermission }) =>
+    hasPermission(readPermission),
+  );
+  const canReferenceEntity = readableEntityTypes.length > 0;
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [entityTypeFilter, setEntityTypeFilter] = useState<string>('');
@@ -54,8 +63,9 @@ export default function NotesPage() {
   const [noteToDelete, setNoteToDelete] = useState<NoteItem | null>(null);
 
   // Form states
-  const [entityType, setEntityType] = useState('Lead');
-  const [entityId, setEntityId] = useState('entity-101');
+  const [entityType, setEntityType] = useState<EntityReferenceType>('Lead');
+  const [entityId, setEntityId] = useState('');
+  const [entityLabel, setEntityLabel] = useState('');
   const [content, setContent] = useState('');
 
   // Toast / Alert notifications
@@ -72,12 +82,14 @@ export default function NotesPage() {
   }, [searchTerm]);
 
   // Queries
-  const { data: notes = [], isLoading: isNotesLoading } = useNotesQuery({
+  const { data: notesPage, isLoading: isNotesLoading } = useNotesQuery({
     page,
     limit,
     entity_type: entityTypeFilter || undefined,
     search: debouncedSearchTerm || undefined,
   });
+  const notes = notesPage?.items ?? [];
+  const totalNotes = notesPage?.total ?? 0;
 
   const { data: pinnedNotes = [] } = usePinnedNotesQuery();
 
@@ -90,8 +102,9 @@ export default function NotesPage() {
   const unpinNoteMutation = useUnpinNoteMutation();
 
   const resetForm = () => {
-    setEntityType('Lead');
-    setEntityId('entity-101');
+    setEntityType(readableEntityTypes[0]?.value ?? 'Lead');
+    setEntityId('');
+    setEntityLabel('');
     setContent('');
     setEditingNote(null);
   };
@@ -103,16 +116,26 @@ export default function NotesPage() {
 
   const handleOpenEditModal = (n: NoteItem) => {
     setEditingNote(n);
-    setEntityType(n.entity_type || 'Lead');
-    setEntityId(n.entity_id || 'entity-101');
+    setEntityType((n.entity_type || 'Lead') as EntityReferenceType);
+    setEntityId(n.entity_id || '');
     setContent(n.content || '');
     setIsNoteModalOpen(true);
   };
 
   const handleSaveNoteSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMessage(null);
+    setSuccessMessage(null);
     if (!content.trim()) {
       setErrorMessage('Note content cannot be empty.');
+      return;
+    }
+    if (!editingNote && !entityId) {
+      setErrorMessage(`Select a ${entityType.toLowerCase()} before creating the note.`);
+      return;
+    }
+    if (!editingNote && !readableEntityTypes.some(({ value }) => value === entityType)) {
+      setErrorMessage(`You do not have permission to view ${entityType.toLowerCase()}s.`);
       return;
     }
 
@@ -123,7 +146,7 @@ export default function NotesPage() {
       } else {
         const payload: NoteCreatePayload = {
           entity_type: entityType,
-          entity_id: entityId.trim() || 'entity-101',
+          entity_id: entityId,
           content: content.trim(),
         };
         await createNoteMutation.mutateAsync(payload);
@@ -291,7 +314,7 @@ export default function NotesPage() {
             <option value="Company">Companies</option>
           </ResponsiveSelect>
 
-          <PermissionGate permission={PERMISSIONS.NOTES.CREATE}>
+          {canReferenceEntity && <PermissionGate permission={PERMISSIONS.NOTES.CREATE}>
             <button
               onClick={handleOpenCreateModal}
               className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors shadow-sm cursor-pointer"
@@ -299,7 +322,7 @@ export default function NotesPage() {
               <Plus className="w-4 h-4" />
               Add Note
             </button>
-          </PermissionGate>
+          </PermissionGate>}
         </div>
       </div>
 
@@ -355,9 +378,9 @@ export default function NotesPage() {
         isLoading={isNotesLoading}
         pagination={{
           pageIndex: page - 1,
-          pageCount: notes.length >= limit ? page + 1 : page,
+          pageCount: Math.max(1, Math.ceil(totalNotes / limit)),
           onPageChange: (p) => setPage(p + 1),
-          totalRecords: (page - 1) * limit + notes.length,
+          totalRecords: totalNotes,
         }}
       />
 
@@ -382,26 +405,31 @@ export default function NotesPage() {
                 </label>
                 <ResponsiveSelect
                   value={entityType}
-                  onValueChange={setEntityType}
+                  onValueChange={(value) => {
+                    setEntityType(value as EntityReferenceType);
+                    setEntityId('');
+                    setEntityLabel('');
+                  }}
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
                 >
-                  <option value="Lead">Lead</option>
-                  <option value="Contact">Contact</option>
-                  <option value="Deal">Deal</option>
-                  <option value="Company">Company</option>
+                  {readableEntityTypes.map(({ value }) => (
+                    <option key={value} value={value}>{value}</option>
+                  ))}
                 </ResponsiveSelect>
               </div>
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                  Entity ID / Reference
+                  Entity Reference
                 </label>
-                <Input
-                  type="text"
+                <EntityReferenceSelect
+                  entityType={entityType}
                   value={entityId}
-                  onChange={(e) => setEntityId(e.target.value)}
-                  placeholder="e.g. lead-101"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+                  selectedLabel={entityLabel}
+                  onChange={(id, label) => {
+                    setEntityId(id);
+                    setEntityLabel(label);
+                  }}
                 />
               </div>
             </div>

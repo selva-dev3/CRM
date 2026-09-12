@@ -70,9 +70,7 @@ class WhatsAppService:
         return permissions
 
     @staticmethod
-    def account_revision(
-        config: WhatsAppIntegration, catalog: Integration
-    ) -> tuple[object, ...]:
+    def account_revision(config: WhatsAppIntegration, catalog: Integration) -> tuple[object, ...]:
         """Fields that make a provider response safe to apply to this account."""
         return (
             config.business_account_id,
@@ -139,7 +137,8 @@ class WhatsAppService:
         oldest_pending_at = await self.repository.oldest_pending_at(db, user.organization_id)
         backlog_age_seconds = (
             max(0, int((datetime.now(UTC) - oldest_pending_at).total_seconds()))
-            if oldest_pending_at else 0
+            if oldest_pending_at
+            else 0
         )
         if config.last_webhook_at is None:
             webhook_status = "NOT_OBSERVED"
@@ -154,7 +153,9 @@ class WhatsAppService:
                 ai_status = "USER_INVALID"
             else:
                 ai_permissions = set(await auth_service.get_user_permissions(db, ai_user))
-                if not {"ai:generate", "whatsapp:send", "whatsapp:read_all"}.issubset(ai_permissions):
+                if not {"ai:generate", "whatsapp:send", "whatsapp:read_all"}.issubset(
+                    ai_permissions
+                ):
                     ai_status = "PERMISSION_MISSING"
                 else:
                     from app.services.ai_runtime_service import ai_runtime_service
@@ -164,7 +165,9 @@ class WhatsAppService:
                     )
         masked_phone_number = None
         if config.display_phone_number:
-            digits = "".join(character for character in config.display_phone_number if character.isdigit())
+            digits = "".join(
+                character for character in config.display_phone_number if character.isdigit()
+            )
             masked_phone_number = "••••" + digits[-4:] if len(digits) >= 4 else "••••"
         ready = bool(
             config.enabled
@@ -390,8 +393,7 @@ class WhatsAppService:
                 item.get("id") == settings.WHATSAPP_APP_ID
                 or (
                     isinstance(item.get("whatsapp_business_api_data"), dict)
-                    and item["whatsapp_business_api_data"].get("id")
-                    == settings.WHATSAPP_APP_ID
+                    and item["whatsapp_business_api_data"].get("id") == settings.WHATSAPP_APP_ID
                 )
             )
             for item in subscribed_apps
@@ -535,6 +537,14 @@ class WhatsAppService:
             db, user.organization_id, user.id, permissions, search, offset, limit
         )
 
+    async def count_conversations(self, db: AsyncSession, user: User, search: str) -> int:
+        permissions = await self.permissions(db, user)
+        if not {"whatsapp:read_all", "whatsapp:read_assigned"} & permissions:
+            raise ForbiddenError(message="Conversation access is not permitted.")
+        return await self.repository.count_conversations(
+            db, user.organization_id, user.id, permissions, search
+        )
+
     async def conversation_payload(
         self, db: AsyncSession, user: User, conversation_id: str
     ) -> dict:
@@ -552,6 +562,12 @@ class WhatsAppService:
     ) -> list[WhatsAppMessage]:
         conversation = await self.conversation(db, user, conversation_id)
         return await self.repository.messages(db, conversation, offset, limit)
+
+    async def count_message_history(
+        self, db: AsyncSession, user: User, conversation_id: str
+    ) -> int:
+        conversation = await self.conversation(db, user, conversation_id)
+        return await self.repository.count_messages(db, conversation)
 
     async def conversation(
         self,

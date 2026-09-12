@@ -28,10 +28,11 @@ import { ModalShell } from '@/components/common/modal-shell';
 import { PageTabs } from '@/components/common/page-tabs';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { PERMISSIONS } from '@/lib/permissions';
 import {
-  useNotificationsQuery,
+  useNotificationsPageQuery,
   useUnreadCountQuery,
   useNotificationPreferencesQuery,
   useMarkAllReadMutation,
@@ -46,7 +47,7 @@ import {
 
 export default function NotificationsPage() {
   const [activeTab, setActiveTab] = useState<'all' | 'unread'>('all');
-  const [page, ] = useState(1);
+  const [page, setPage] = useState(1);
   const limit = 20;
 
   // Selected for bulk delete
@@ -72,11 +73,14 @@ export default function NotificationsPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Queries
-  const { data: notifications = [], isLoading: isNotificationsLoading } = useNotificationsQuery({
+  const { data: notificationsPage, isLoading: isNotificationsLoading } = useNotificationsPageQuery({
     page,
     limit,
     unread_only: activeTab === 'unread',
   });
+  const notifications = notificationsPage?.items ?? [];
+  const totalNotifications = notificationsPage?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(totalNotifications / limit));
 
   const { data: unreadData } = useUnreadCountQuery();
   const { data: preferences } = useNotificationPreferencesQuery();
@@ -276,11 +280,15 @@ export default function NotificationsPage() {
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-slate-100">
           <PageTabs
             value={activeTab}
-            onValueChange={setActiveTab}
+            onValueChange={(value) => {
+              setActiveTab(value);
+              setPage(1);
+              setSelectedIds(new Set());
+            }}
             variant="default"
             className="w-auto"
             tabs={[
-              { value: 'all', label: `All Notifications (${notifications.length})` },
+              { value: 'all', label: `All Notifications (${activeTab === 'all' ? totalNotifications : 'All'})` },
               { value: 'unread', label: `Unread Only (${unreadData?.unread_count ?? notifications.filter((notification) => !notification.is_read).length})` },
             ]}
             listClassName="bg-slate-100"
@@ -376,6 +384,23 @@ export default function NotificationsPage() {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {totalNotifications > 0 && (
+          <div className="flex flex-col gap-3 border-t border-slate-100 pt-4 text-xs text-slate-600 sm:flex-row sm:items-center sm:justify-between">
+            <span>
+              Showing {(page - 1) * limit + 1}–{Math.min(page * limit, totalNotifications)} of {totalNotifications}
+            </span>
+            <div className="flex items-center gap-2">
+              <Button type="button" size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>
+                Previous
+              </Button>
+              <span>Page {page} of {pageCount}</span>
+              <Button type="button" size="sm" variant="outline" disabled={page >= pageCount} onClick={() => setPage((value) => value + 1)}>
+                Next
+              </Button>
+            </div>
           </div>
         )}
       </div>

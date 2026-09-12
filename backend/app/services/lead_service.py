@@ -806,10 +806,17 @@ class LeadService:
         *,
         organization_id: str,
         current_user: User,
+        page: int = 1,
+        limit: int = 15,
     ) -> list[dict]:
         lead = await self.require_lead(db, lead_id, organization_id=organization_id)
 
-        activities = await self.repository.list_activities(db, lead_id)
+        source_limit = page * limit
+
+        activities = await self.repository.list_activities(db, lead_id, limit=source_limit)
+        has_creation_activity = await self.repository.has_activity(
+            db, lead_id, action="Lead created"
+        )
         timeline = [
             {
                 "id": f"activity-{activity.id}",
@@ -820,7 +827,7 @@ class LeadService:
             }
             for activity in activities
         ]
-        if not any(activity.action == "Lead created" for activity in activities):
+        if not has_creation_activity:
             timeline.append(
                 {
                     "id": f"created-{lead.id}",
@@ -831,7 +838,7 @@ class LeadService:
                 }
             )
 
-        for note in await self.repository.list_notes(db, lead_id):
+        for note in await self.repository.list_notes(db, lead_id, limit=source_limit):
             timeline.append(
                 {
                     "id": f"note-{note.id}",
@@ -842,7 +849,7 @@ class LeadService:
                 }
             )
 
-        for attachment in await self.repository.list_attachments(db, lead_id):
+        for attachment in await self.repository.list_attachments(db, lead_id, limit=source_limit):
             timeline.append(
                 {
                     "id": f"doc-{attachment.id}",
@@ -857,7 +864,7 @@ class LeadService:
 
         lead_tag = f"[Lead:{lead_id}]"
         for task in await self.repository.list_tasks(
-            db, organization_id=lead.organization_id, lead_tag=lead_tag
+            db, organization_id=lead.organization_id, lead_tag=lead_tag, limit=source_limit
         ):
             clean_desc = (
                 (task.description or "").replace(f"\n{lead_tag}", "").replace(lead_tag, "").strip()
@@ -881,6 +888,7 @@ class LeadService:
             organization_id=lead.organization_id,
             lead_id=lead.id,
             lead_tag=lead_tag,
+            limit=source_limit,
         ):
             timeline.append(
                 {
@@ -888,7 +896,7 @@ class LeadService:
                     "event_type": "email_sent",
                     "title": f"Email Sent: {email.subject}",
                     "description": f"Sent to {email.to_email}",
-                    "timestamp": str(email.sent_at),
+                    "timestamp": str(email.sent_at or email.created_at),
                 }
             )
 
@@ -898,7 +906,11 @@ class LeadService:
         )
         calls = (
             await self.repository.list_calls(
-                db, organization_id=lead.organization_id, lead_id=lead.id, lead_tag=lead_tag
+                db,
+                organization_id=lead.organization_id,
+                lead_id=lead.id,
+                lead_tag=lead_tag,
+                limit=source_limit,
             )
             if can_read_calls
             else []
@@ -934,7 +946,7 @@ class LeadService:
             from app.repositories.whatsapp_repository import WhatsAppRepository
 
             for message in await WhatsAppRepository().timeline_messages(
-                db, current_user, whatsapp_permissions, lead_id=lead.id
+                db, current_user, whatsapp_permissions, lead_id=lead.id, limit=source_limit
             ):
                 timeline.append(
                     {
@@ -945,14 +957,74 @@ class LeadService:
                         "timestamp": str(message.provider_timestamp or message.created_at),
                     }
                 )
-        timeline.sort(key=lambda item: item.get("timestamp", ""), reverse=True)
-        return timeline
+        timeline.sort(
+            key=lambda item: (item.get("timestamp", ""), item.get("id", "")),
+            reverse=True,
+        )
+        start = (page - 1) * limit
+        return timeline[start : start + limit]
+
+    async def count_timeline(
+        self,
+        db: AsyncSession,
+        lead_id: str,
+        *,
+        organization_id: str,
+        current_user: User,
+    ) -> int:
+        lead = await self.require_lead(db, lead_id, organization_id=organization_id)
+        lead_tag = f"[Lead:{lead_id}]"
+        activity_count = await self.repository.count_activities(db, lead_id)
+        has_creation_activity = await self.repository.has_activity(
+            db, lead_id, action="Lead created"
+        )
+        total = (
+            activity_count
+            + (0 if has_creation_activity else 1)
+            + await self.repository.count_notes(db, lead_id)
+            + await self.repository.count_attachments(db, lead_id)
+            + await self.repository.count_tasks(
+                db, organization_id=lead.organization_id, lead_tag=lead_tag
+            )
+            + await self.repository.count_emails(
+                db,
+                organization_id=lead.organization_id,
+                lead_id=lead.id,
+                lead_tag=lead_tag,
+            )
+        )
+        permissions = await auth_service.get_user_permissions(db, current_user)
+        if "calls:read" in permissions and api_key_scope_allows(current_user, "calls:read"):
+            total += await self.repository.count_calls(
+                db,
+                organization_id=lead.organization_id,
+                lead_id=lead.id,
+                lead_tag=lead_tag,
+            )
+        whatsapp_permissions = {
+            permission
+            for permission in permissions
+            if permission.startswith("whatsapp:") and api_key_scope_allows(current_user, permission)
+        }
+        if {"whatsapp:read_assigned", "whatsapp:read_all"} & whatsapp_permissions:
+            from app.repositories.whatsapp_repository import WhatsAppRepository
+
+            total += await WhatsAppRepository().count_timeline_messages(
+                db, current_user, whatsapp_permissions, lead_id=lead.id
+            )
+        return total
 
     async def get_notes(
-        self, db: AsyncSession, lead_id: str, *, organization_id: str
+        self,
+        db: AsyncSession,
+        lead_id: str,
+        *,
+        organization_id: str,
+        page: int = 1,
+        limit: int = 15,
     ) -> list[dict]:
         await self.require_lead(db, lead_id, organization_id=organization_id)
-        notes = await self.repository.list_notes(db, lead_id)
+        notes = await self.repository.list_notes(db, lead_id, page=page, limit=limit)
         users_map = {}
         for user in await self.repository.list_users(db, organization_id=organization_id):
             name = (user.name or "").strip()
@@ -968,6 +1040,10 @@ class LeadService:
             }
             for note in notes
         ]
+
+    async def count_notes(self, db: AsyncSession, lead_id: str, *, organization_id: str) -> int:
+        await self.require_lead(db, lead_id, organization_id=organization_id)
+        return await self.repository.count_notes(db, lead_id)
 
     async def add_note(
         self,
@@ -993,12 +1069,22 @@ class LeadService:
         }
 
     async def get_tasks(
-        self, db: AsyncSession, lead_id: str, *, organization_id: str
+        self,
+        db: AsyncSession,
+        lead_id: str,
+        *,
+        organization_id: str,
+        page: int = 1,
+        limit: int = 15,
     ) -> list[dict]:
         lead = await self.require_lead(db, lead_id, organization_id=organization_id)
         lead_tag = f"[Lead:{lead_id}]"
         tasks = await self.repository.list_tasks(
-            db, organization_id=lead.organization_id, lead_tag=lead_tag
+            db,
+            organization_id=lead.organization_id,
+            lead_tag=lead_tag,
+            page=page,
+            limit=limit,
         )
         output = []
         for task in tasks:
@@ -1018,6 +1104,12 @@ class LeadService:
                 }
             )
         return output
+
+    async def count_tasks(self, db: AsyncSession, lead_id: str, *, organization_id: str) -> int:
+        lead = await self.require_lead(db, lead_id, organization_id=organization_id)
+        return await self.repository.count_tasks(
+            db, organization_id=lead.organization_id, lead_tag=f"[Lead:{lead_id}]"
+        )
 
     async def create_task(
         self,
@@ -1096,7 +1188,13 @@ class LeadService:
         }
 
     async def get_emails(
-        self, db: AsyncSession, lead_id: str, *, organization_id: str
+        self,
+        db: AsyncSession,
+        lead_id: str,
+        *,
+        organization_id: str,
+        page: int = 1,
+        limit: int = 15,
     ) -> list[dict]:
         lead = await self.require_lead(db, lead_id, organization_id=organization_id)
         lead_tag = f"[Lead:{lead_id}]"
@@ -1105,6 +1203,8 @@ class LeadService:
             organization_id=lead.organization_id,
             lead_id=lead.id,
             lead_tag=lead_tag,
+            page=page,
+            limit=limit,
         )
         return [
             {
@@ -1121,6 +1221,15 @@ class LeadService:
             }
             for email in emails
         ]
+
+    async def count_emails(self, db: AsyncSession, lead_id: str, *, organization_id: str) -> int:
+        lead = await self.require_lead(db, lead_id, organization_id=organization_id)
+        return await self.repository.count_emails(
+            db,
+            organization_id=lead.organization_id,
+            lead_id=lead.id,
+            lead_tag=f"[Lead:{lead_id}]",
+        )
 
     async def send_email(
         self,
@@ -1162,12 +1271,23 @@ class LeadService:
         )
 
     async def get_calls(
-        self, db: AsyncSession, lead_id: str, *, organization_id: str
+        self,
+        db: AsyncSession,
+        lead_id: str,
+        *,
+        organization_id: str,
+        page: int = 1,
+        limit: int = 15,
     ) -> list[dict]:
         lead = await self.require_lead(db, lead_id, organization_id=organization_id)
         lead_tag = f"[Lead:{lead_id}]"
         calls = await self.repository.list_calls(
-            db, organization_id=lead.organization_id, lead_id=lead_id, lead_tag=lead_tag
+            db,
+            organization_id=lead.organization_id,
+            lead_id=lead_id,
+            lead_tag=lead_tag,
+            page=page,
+            limit=limit,
         )
         from app.services.call_service import call_to_dict
 
@@ -1182,11 +1302,26 @@ class LeadService:
             output.append(item)
         return output
 
+    async def count_calls(self, db: AsyncSession, lead_id: str, *, organization_id: str) -> int:
+        lead = await self.require_lead(db, lead_id, organization_id=organization_id)
+        return await self.repository.count_calls(
+            db,
+            organization_id=lead.organization_id,
+            lead_id=lead.id,
+            lead_tag=f"[Lead:{lead_id}]",
+        )
+
     async def get_documents(
-        self, db: AsyncSession, lead_id: str, *, organization_id: str
+        self,
+        db: AsyncSession,
+        lead_id: str,
+        *,
+        organization_id: str,
+        page: int = 1,
+        limit: int = 15,
     ) -> list[dict]:
         await self.require_lead(db, lead_id, organization_id=organization_id)
-        attachments = await self.repository.list_attachments(db, lead_id)
+        attachments = await self.repository.list_attachments(db, lead_id, page=page, limit=limit)
         output = []
         for attachment in attachments:
             download_proxy = f"/api/v1/leads/{lead_id}/documents/{attachment.id}/download"
@@ -1203,6 +1338,10 @@ class LeadService:
                 }
             )
         return output
+
+    async def count_documents(self, db: AsyncSession, lead_id: str, *, organization_id: str) -> int:
+        await self.require_lead(db, lead_id, organization_id=organization_id)
+        return await self.repository.count_attachments(db, lead_id)
 
     async def download_document(
         self, db: AsyncSession, lead_id: str, document_id: str, current_user: User

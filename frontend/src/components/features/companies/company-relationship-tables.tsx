@@ -17,6 +17,12 @@ interface RelationshipTableProps<TItem> {
   readonly data: readonly TItem[];
   readonly isLoading: boolean;
   readonly onRowClick?: (item: TItem) => void;
+  readonly pagination?: {
+    pageIndex: number;
+    pageCount: number;
+    totalRecords: number;
+    onPageChange: (pageIndex: number) => void;
+  };
 }
 
 interface RelationshipErrorProps {
@@ -178,6 +184,7 @@ export function CompanyContactsTable({
   data,
   isLoading,
   onRowClick,
+  pagination,
 }: RelationshipTableProps<CompanyContactItem>) {
   return (
     <DataTable
@@ -188,12 +195,12 @@ export function CompanyContactsTable({
       emptyDescription="No contacts are associated with this company profile yet."
       isLoading={isLoading}
       onRowClick={onRowClick}
-      pagination={{ pageSize: 15 }}
+      pagination={pagination}
     />
   );
 }
 
-export function CompanyDealsTable({ data, isLoading, onRowClick }: RelationshipTableProps<DealItem>) {
+export function CompanyDealsTable({ data, isLoading, onRowClick, pagination }: RelationshipTableProps<DealItem>) {
   return (
     <DataTable
       columns={dealColumns}
@@ -203,12 +210,12 @@ export function CompanyDealsTable({ data, isLoading, onRowClick }: RelationshipT
       emptyDescription="No sales pipeline deals are linked to this company profile yet."
       isLoading={isLoading}
       onRowClick={onRowClick}
-      pagination={{ pageSize: 15 }}
+      pagination={pagination}
     />
   );
 }
 
-export function CompanyNotesTable({ data, isLoading }: RelationshipTableProps<NoteItem>) {
+export function CompanyNotesTable({ data, isLoading, pagination }: RelationshipTableProps<NoteItem>) {
   return (
     <DataTable
       columns={noteColumns}
@@ -217,7 +224,7 @@ export function CompanyNotesTable({ data, isLoading }: RelationshipTableProps<No
       emptyTitle="No company notes"
       emptyDescription="No notes have been logged for this company yet."
       isLoading={isLoading}
-      pagination={{ pageSize: 15 }}
+      pagination={pagination}
     />
   );
 }
@@ -226,6 +233,7 @@ export function CompanyQuotesTable({
   data,
   isLoading,
   onRowClick,
+  pagination,
 }: RelationshipTableProps<QuoteItem>) {
   return (
     <DataTable
@@ -236,7 +244,7 @@ export function CompanyQuotesTable({
       emptyDescription="No quotes have been generated for this company yet."
       isLoading={isLoading}
       onRowClick={onRowClick}
-      pagination={{ pageSize: 15 }}
+      pagination={pagination}
     />
   );
 }
@@ -245,6 +253,7 @@ export function CompanyInvoicesTable({
   data,
   isLoading,
   onRowClick,
+  pagination,
 }: RelationshipTableProps<InvoiceItem>) {
   return (
     <DataTable
@@ -255,7 +264,7 @@ export function CompanyInvoicesTable({
       emptyDescription="No invoices have been generated for this company yet."
       isLoading={isLoading}
       onRowClick={onRowClick}
-      pagination={{ pageSize: 15 }}
+      pagination={pagination}
     />
   );
 }

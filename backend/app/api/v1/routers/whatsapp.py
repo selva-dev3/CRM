@@ -166,13 +166,16 @@ async def sync_templates(
 
 @router.get("/conversations", response_model=list[ConversationRead])
 async def list_conversations(
+    response: Response,
     search: str = Query(default="", max_length=64),
     offset: int = Query(default=0, ge=0, le=10000),
     limit: int = Query(default=50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_user_session),
 ):
-    return await service.conversations(db, user, search, offset, limit)
+    conversations = await service.conversations(db, user, search, offset, limit)
+    response.headers["X-Total-Count"] = str(await service.count_conversations(db, user, search))
+    return conversations
 
 
 @router.get("/assignees", response_model=list[AssigneeRead])
@@ -194,12 +197,17 @@ async def conversation_detail(
 @router.get("/conversations/{conversation_id}/messages", response_model=list[MessageRead])
 async def message_history(
     conversation_id: str,
+    response: Response,
     offset: int = Query(default=0, ge=0, le=100000),
     limit: int = Query(default=100, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_user_session),
 ):
-    return await service.message_history(db, user, conversation_id, offset, limit)
+    messages = await service.message_history(db, user, conversation_id, offset, limit)
+    response.headers["X-Total-Count"] = str(
+        await service.count_message_history(db, user, conversation_id)
+    )
+    return messages
 
 
 @router.get("/conversations/{conversation_id}/messages/{message_id}/media")

@@ -243,6 +243,7 @@ async def test_get_timeline_passes_lead_id_to_email_and_call_repositories(with_c
     repo: Any = LeadRepository()
     repo.get_by_id_for_org = AsyncMock(return_value=lead)
     repo.list_activities = AsyncMock(return_value=[])
+    repo.has_activity = AsyncMock(return_value=False)
     repo.list_notes = AsyncMock(return_value=[])
     repo.list_attachments = AsyncMock(return_value=[])
     repo.list_tasks = AsyncMock(return_value=[])
@@ -270,12 +271,14 @@ async def test_get_timeline_passes_lead_id_to_email_and_call_repositories(with_c
         organization_id=lead.organization_id,
         lead_id=lead.id,
         lead_tag=f"[Lead:{lead.id}]",
+        limit=15,
     )
     repo.list_calls.assert_awaited_once_with(
         db,
         organization_id=lead.organization_id,
         lead_id=lead.id,
         lead_tag=f"[Lead:{lead.id}]",
+        limit=15,
     )
     if with_calls:
         assert [event["id"] for event in result] == ["call-call-2", "call-call-1", "created-lead-1"]
@@ -289,6 +292,74 @@ async def test_get_timeline_passes_lead_id_to_email_and_call_repositories(with_c
         assert result[1]["description"] == "Discussed proposal · Direction: Outbound"
     else:
         assert [event["event_type"] for event in result] == ["lead_created"]
+
+
+@pytest.mark.asyncio
+async def test_get_timeline_uses_global_creation_activity_existence(monkeypatch):
+    lead = _make_lead(created_at=datetime(2026, 9, 1))
+    activity = SimpleNamespace(
+        id="update-z",
+        action="Lead updated",
+        details="Status changed",
+        timestamp=datetime(2026, 9, 2),
+    )
+    repo: Any = LeadRepository()
+    repo.get_by_id_for_org = AsyncMock(return_value=lead)
+    repo.list_activities = AsyncMock(return_value=[activity])
+    repo.has_activity = AsyncMock(return_value=True)
+    repo.list_notes = AsyncMock(return_value=[])
+    repo.list_attachments = AsyncMock(return_value=[])
+    repo.list_tasks = AsyncMock(return_value=[])
+    repo.list_emails = AsyncMock(return_value=[])
+    repo.list_calls = AsyncMock(return_value=[])
+    monkeypatch.setattr(
+        "app.services.lead_service.auth_service.get_user_permissions",
+        AsyncMock(return_value=[]),
+    )
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await _service_with(repo).get_timeline(
+        db,
+        lead.id,
+        organization_id=lead.organization_id,
+        current_user=_make_user(),
+        page=1,
+        limit=1,
+    )
+
+    assert [event["id"] for event in result] == ["activity-update-z"]
+    repo.has_activity.assert_awaited_once_with(db, lead.id, action="Lead created")
+
+
+@pytest.mark.asyncio
+async def test_count_timeline_includes_missing_legacy_creation_activity(monkeypatch):
+    lead = _make_lead(created_at=datetime(2026, 9, 1))
+    repo: Any = LeadRepository()
+    repo.get_by_id_for_org = AsyncMock(return_value=lead)
+    repo.count_activities = AsyncMock(return_value=1)
+    repo.has_activity = AsyncMock(return_value=False)
+    repo.count_notes = AsyncMock(return_value=0)
+    repo.count_attachments = AsyncMock(return_value=0)
+    repo.count_tasks = AsyncMock(return_value=0)
+    repo.count_emails = AsyncMock(return_value=0)
+    repo.count_calls = AsyncMock(return_value=0)
+    monkeypatch.setattr(
+        "app.services.lead_service.auth_service.get_user_permissions",
+        AsyncMock(return_value=[]),
+    )
+
+    db = AsyncMock(spec=AsyncSession)
+    total = await _service_with(repo).count_timeline(
+        db,
+        lead.id,
+        organization_id=lead.organization_id,
+        current_user=_make_user(),
+    )
+
+    assert total == 2
+    repo.has_activity.assert_awaited_once_with(
+        db, lead.id, action="Lead created"
+    )
 
 
 @pytest.mark.asyncio
@@ -306,6 +377,7 @@ async def test_timeline_does_not_expose_calls_without_effective_calls_read(
     repo: Any = LeadRepository()
     repo.get_by_id_for_org = AsyncMock(return_value=lead)
     repo.list_activities = AsyncMock(return_value=[])
+    repo.has_activity = AsyncMock(return_value=False)
     repo.list_notes = AsyncMock(return_value=[])
     repo.list_attachments = AsyncMock(return_value=[])
     repo.list_tasks = AsyncMock(return_value=[])

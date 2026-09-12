@@ -13,7 +13,7 @@ vi.mock('next/navigation', () => ({
 }));
 
 const emptyQuery = {
-  data: [],
+  data: { items: [], total: 0 },
   isLoading: false,
   isError: false,
   error: null,
@@ -37,14 +37,14 @@ vi.mock('@/lib/api/companies', () => ({
   useCompanyContactsQuery: vi.fn((_id: string, enabled: boolean) => ({
     ...emptyQuery,
     data: enabled
-      ? [
+      ? { items: [
           {
             id: 'contact-1',
             name: 'Jane Buyer',
             email: 'jane@example.test',
             position: 'CTO',
           },
-        ]
+        ], total: 1 }
       : undefined,
   })),
   useCompanyDealsQuery: vi.fn(() => emptyQuery),
@@ -52,7 +52,7 @@ vi.mock('@/lib/api/companies', () => ({
   useCompanyQuotesQuery: vi.fn((_id: string, enabled: boolean) => ({
     ...emptyQuery,
     data: enabled
-      ? [
+      ? { items: [
           {
             id: 'quote-internal-id',
             quote_number: 'QUO-2026-000010',
@@ -61,7 +61,7 @@ vi.mock('@/lib/api/companies', () => ({
             status: 'Accepted',
             created_at: '2026-09-06T10:00:00Z',
           },
-        ]
+        ], total: 1 }
       : undefined,
   })),
   useCompanyInvoicesQuery: vi.fn(() => emptyQuery),

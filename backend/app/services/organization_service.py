@@ -66,7 +66,11 @@ class OrganizationDomainService:
         except IntegrityError as e:
             await db.rollback()
             if "uq_organizations_normalized_name" in str(e.orig):
-                raise ConflictError(message="An organization with this name already exists", code="ORGANIZATION_NAME_CONFLICT", fields={"name": "An organization with this name already exists"}) from e
+                raise ConflictError(
+                    message="An organization with this name already exists",
+                    code="ORGANIZATION_NAME_CONFLICT",
+                    fields={"name": "An organization with this name already exists"},
+                ) from e
             raise ConflictError(message=error_message) from e
         except Exception as e:
             await db.rollback()
@@ -100,7 +104,17 @@ class OrganizationDomainService:
     ) -> list[dict]:
         if getattr(current_user, "is_platform_admin", False) is not True:
             raise ForbiddenError(message="Platform Super Admin access is required")
-        return [org_to_dict(org, count) for org, count in await self.repository.list_with_member_counts(db, limit=limit, offset=offset)]
+        return [
+            org_to_dict(org, count)
+            for org, count in await self.repository.list_with_member_counts(
+                db, limit=limit, offset=offset
+            )
+        ]
+
+    async def count_platform_organizations(self, db: AsyncSession, current_user: User) -> int:
+        if getattr(current_user, "is_platform_admin", False) is not True:
+            raise ForbiddenError(message="Platform Super Admin access is required")
+        return await self.repository.count_organizations(db)
 
     async def get_or_create_default_org(
         self, db: AsyncSession, current_user: User | None = None
@@ -186,11 +200,11 @@ class OrganizationDomainService:
         members_count = await self.repository.count_members(db, org.id)
         return org_to_dict(org, members_count=members_count)
 
-    async def list_members(self, db: AsyncSession, current_user: User) -> list[dict]:
+    async def list_members(
+        self, db: AsyncSession, current_user: User, *, page: int = 1, limit: int = 15
+    ) -> list[dict]:
         org = await self._require_current_org(db, current_user)
-        users = await self.repository.list_members(db, org.id)
-        if not users:
-            raise NotFoundError(message="No members found in the organization")
+        users = await self.repository.list_members(db, org.id, page=page, limit=limit)
         role_names = await self.user_repository.effective_role_names_for_users(
             db, list(users), org.id
         )
@@ -402,9 +416,11 @@ class OrganizationDomainService:
             ]
         return []
 
-    async def get_organization_audit_logs(self, db: AsyncSession, current_user: User) -> list[dict]:
+    async def get_organization_audit_logs(
+        self, db: AsyncSession, current_user: User, *, page: int = 1, limit: int = 20
+    ) -> list[dict]:
         org = await self._require_current_org(db, current_user)
-        logs = await self.repository.list_audit_logs(db, org.id, limit=20)
+        logs = await self.repository.list_audit_logs(db, org.id, page=page, limit=limit)
         return [
             {
                 "id": log.id,
@@ -415,6 +431,10 @@ class OrganizationDomainService:
             }
             for log in logs
         ]
+
+    async def count_organization_audit_logs(self, db: AsyncSession, current_user: User) -> int:
+        org = await self._require_current_org(db, current_user)
+        return await self.repository.count_audit_logs(db, org.id)
 
     async def transfer_organization_ownership(
         self, db: AsyncSession, new_owner_user_id: str, current_user: User
@@ -510,7 +530,6 @@ class OrganizationDomainService:
         from app.services.organization_lifecycle_service import organization_lifecycle_service
 
         return await organization_lifecycle_service.delete(db, org_id, current_user)
-
 
 
 organization_domain_service = OrganizationDomainService()

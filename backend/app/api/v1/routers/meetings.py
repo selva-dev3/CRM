@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
@@ -26,8 +26,9 @@ router = APIRouter()
     dependencies=[Depends(require_permission("meetings:read"))],
 )
 async def list_meetings(
-    page: int = 1,
-    limit: int = 20,
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     search: str | None = Query(None),
     lead_id: str | None = Query(None),
     contact_id: str | None = Query(None),
@@ -47,7 +48,7 @@ async def list_meetings(
         }.items()
         if isinstance(value, str) and value
     }
-    return await meeting_service.list_meetings(
+    meetings = await meeting_service.list_meetings(
         db,
         page=page,
         limit=limit,
@@ -55,6 +56,14 @@ async def list_meetings(
         search=search,
         **relationship_filters,
     )
+    total = await meeting_service.count_meetings(
+        db,
+        organization_id=organization_id,
+        search=search,
+        **relationship_filters,
+    )
+    response.headers["X-Total-Count"] = str(total)
+    return meetings
 
 
 @router.post(

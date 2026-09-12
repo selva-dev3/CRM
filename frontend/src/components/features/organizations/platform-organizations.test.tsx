@@ -25,7 +25,7 @@ describe('platform organization selection', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.auth.mockReturnValue({ user: { is_platform_admin: true } });
-    mocks.query.mockReturnValue({ data: [], isPending: false, isError: false, refetch: vi.fn() });
+    mocks.query.mockReturnValue({ data: { items: [], total: 0 }, isPending: false, isError: false, refetch: vi.fn() });
   });
   afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
@@ -38,7 +38,7 @@ describe('platform organization selection', () => {
     view.rerender(<PlatformOrganizations />);
     fireEvent.click(screen.getByText('Try again'));
     expect(refetch).toHaveBeenCalledOnce();
-    mocks.query.mockReturnValue({ data: [] });
+    mocks.query.mockReturnValue({ data: { items: [], total: 0 } });
     view.rerender(<PlatformOrganizations />);
     expect(screen.getByText('No organizations found.')).toBeInTheDocument();
   });
@@ -46,7 +46,7 @@ describe('platform organization selection', () => {
   it('validates access, cancels old requests and clears caches before switching', async () => {
     const assign = vi.fn();
     vi.stubGlobal('window', { location: { assign } });
-    mocks.query.mockReturnValue({ data: [{ id: 'org-b', name: 'B', status: 'active' }] });
+    mocks.query.mockReturnValue({ data: { items: [{ id: 'org-b', name: 'B', status: 'active' }], total: 1 } });
     mocks.get.mockResolvedValue({ id: 'org-b', status: 'active' });
     mocks.cancel.mockResolvedValue(undefined);
     render(<PlatformOrganizations />);
@@ -60,7 +60,7 @@ describe('platform organization selection', () => {
   });
 
   it('keeps the current context when access validation fails', async () => {
-    mocks.query.mockReturnValue({ data: [{ id: 'org-b', name: 'B', status: 'active' }] });
+    mocks.query.mockReturnValue({ data: { items: [{ id: 'org-b', name: 'B', status: 'active' }], total: 1 } });
     mocks.get.mockRejectedValue(new Error('Access denied'));
     render(<PlatformOrganizations />);
     fireEvent.click(screen.getByRole('button', { name: 'Open B' }));
@@ -71,14 +71,14 @@ describe('platform organization selection', () => {
 
   it('hides platform mutations from tenant users', () => {
     mocks.auth.mockReturnValue({ user: { is_platform_admin: false } });
-    mocks.query.mockReturnValue({ data: [{ id: 'a', name: 'A', status: 'active' }] });
+    mocks.query.mockReturnValue({ data: { items: [{ id: 'a', name: 'A', status: 'active' }], total: 1 } });
     render(<PlatformOrganizations />);
     expect(screen.queryByRole('button', { name: '+ Create Organization' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Delete A' })).not.toBeInTheDocument();
   });
 
   it('requires deletion confirmation and supports cancel', async () => {
-    mocks.query.mockReturnValue({ data: [{ id: 'a', name: 'A', status: 'active' }], refetch: vi.fn() });
+    mocks.query.mockReturnValue({ data: { items: [{ id: 'a', name: 'A', status: 'active' }], total: 1 }, refetch: vi.fn() });
     mocks.remove.mockResolvedValue({ operation_id: 'op', cleanup_status: 'complete' });
     render(<PlatformOrganizations />);
     fireEvent.click(screen.getByRole('button', { name: 'Delete A' }));

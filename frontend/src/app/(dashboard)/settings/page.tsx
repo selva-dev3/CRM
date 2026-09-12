@@ -62,6 +62,8 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<'general' | 'fields' | 'webhooks' | 'sla' | 'backups' | 'audit'>('general');
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [auditPage, setAuditPage] = useState(1);
+  const auditPageSize = 20;
 
   // Queries
   const {
@@ -89,7 +91,8 @@ export default function SettingsPage() {
     isError: isBackupsError,
     refetch: refetchBackups,
   } = useBackupsQuery();
-  const { data: auditLogs = [], isError: isAuditError } = useAuditLogsQuery();
+  const { data: auditPageData, isError: isAuditError } = useAuditLogsQuery(auditPage, auditPageSize);
+  const auditLogs = auditPageData?.items ?? [];
 
   const activeQueryFailed =
     (activeTab === 'general' && isSettingsError) ||
@@ -790,6 +793,13 @@ export default function SettingsPage() {
               </div>
             ))}
           </div>
+          {(auditPageData?.total ?? 0) > auditPageSize && (
+            <div className="flex items-center justify-between border-t border-slate-100 pt-4">
+              <Button type="button" size="sm" variant="outline" disabled={auditPage === 1} onClick={() => setAuditPage((page) => page - 1)}>Previous</Button>
+              <span className="text-xs text-slate-500">Page {auditPage} of {Math.ceil((auditPageData?.total ?? 0) / auditPageSize)}</span>
+              <Button type="button" size="sm" variant="outline" disabled={auditPage * auditPageSize >= (auditPageData?.total ?? 0)} onClick={() => setAuditPage((page) => page + 1)}>Next</Button>
+            </div>
+          )}
         </Card>
       )}
 

@@ -1,5 +1,6 @@
 ﻿import { useQuery, useMutation, useQueryClient, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import { fetchPaginated, type PaginatedResult } from '@/lib/api/pagination';
 
 export interface MeetingItem {
   id: string;
@@ -91,7 +92,7 @@ export interface FetchMeetingsParams {
   deal_id?: string;
 }
 
-export async function fetchMeetingsApi(params?: FetchMeetingsParams): Promise<MeetingItem[]> {
+export async function fetchMeetingsApi(params?: FetchMeetingsParams): Promise<PaginatedResult<MeetingItem>> {
   const query = new URLSearchParams();
   if (params?.page) query.append('page', String(params.page));
   if (params?.limit) query.append('limit', String(params.limit));
@@ -101,7 +102,7 @@ export async function fetchMeetingsApi(params?: FetchMeetingsParams): Promise<Me
   if (params?.company_id) query.append('company_id', params.company_id);
   if (params?.deal_id) query.append('deal_id', params.deal_id);
   const endpoint = `/meetings${query.toString() ? `?${query.toString()}` : ''}`;
-  return apiClient.get<MeetingItem[]>(endpoint);
+  return fetchPaginated<MeetingItem>(endpoint);
 }
 
 export async function createMeetingApi(payload: MeetingCreatePayload): Promise<MeetingItem> {
@@ -166,8 +167,8 @@ export async function fetchMeetingActionItemsApi(meetingId: string): Promise<Act
 // TanStack Query Hooks
 // ---------------------------------------------------------------------------
 
-export function useMeetingsQuery(params?: FetchMeetingsParams, options?: Omit<UseQueryOptions<MeetingItem[]>, 'queryKey' | 'queryFn'>) {
-  return useQuery<MeetingItem[]>({
+export function useMeetingsQuery(params?: FetchMeetingsParams, options?: Omit<UseQueryOptions<PaginatedResult<MeetingItem>>, 'queryKey' | 'queryFn'>) {
+  return useQuery<PaginatedResult<MeetingItem>>({
     queryKey: ['meetings', params],
     queryFn: () => fetchMeetingsApi(params),
     staleTime: 1000 * 60 * 2,

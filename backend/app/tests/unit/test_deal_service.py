@@ -101,7 +101,9 @@ async def test_deal_timeline_reads_only_scoped_activities():
     result = await service.get_deal_timeline(db, "deal-1", organization_id="org-1")
 
     assert result[0]["action"] == "Deal won; quote QUO-1 created"
-    repo.list_activities.assert_awaited_once_with(db, deal_id="deal-1", organization_id="org-1")
+    repo.list_activities.assert_awaited_once_with(
+        db, deal_id="deal-1", organization_id="org-1", page=1, limit=15
+    )
 
 
 @pytest.mark.asyncio
@@ -351,7 +353,12 @@ async def test_list_deal_stages_is_scoped_to_current_organization(monkeypatch):
 
     stages = await service.get_deal_stages(db, _user())
     assert [stage["name"] for stage in stages] == [
-        "Prospecting", "Qualification", "Proposal", "Negotiation", "Closed Won", "Closed Lost"
+        "Prospecting",
+        "Qualification",
+        "Proposal",
+        "Negotiation",
+        "Closed Won",
+        "Closed Lost",
     ]
     repo.list_stages.assert_awaited_once_with(db, organization_id="org-2")
 
@@ -858,7 +865,7 @@ async def test_get_deal_quotes_uses_scoped_deal_and_quote_service():
     assert result == [{"id": "quote-1"}]
     repo.get_by_id_scoped.assert_awaited_once_with(db, deal_id="deal-1", organization_id="org-1")
     quotes.list_quotes_for_deal.assert_awaited_once_with(
-        db, deal_id="deal-1", organization_id="org-1"
+        db, deal_id="deal-1", organization_id="org-1", page=1, limit=15
     )
 
 

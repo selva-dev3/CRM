@@ -1,4 +1,5 @@
 import { apiClient, openApiStream } from '@/lib/api/client';
+import { fetchPaginated, type PaginatedResult } from '@/lib/api/pagination';
 
 export interface AIEvidence {
   entity_type: string;
@@ -237,8 +238,11 @@ export const aiService = {
     return completed;
   },
 
-  listConversations: (): Promise<AIConversationSummary[]> =>
-    apiClient.get<AIConversationSummary[]>('/ai/sales-assistant/conversations'),
+  listConversations: async (page = 1, limit = 25): Promise<PaginatedResult<AIConversationSummary>> => {
+    return fetchPaginated<AIConversationSummary>(
+      `/ai/sales-assistant/conversations?page=${page}&limit=${limit}`,
+    );
+  },
 
   getConversation: (conversationId: string): Promise<AIConversationDetail> =>
     apiClient.get<AIConversationDetail>(

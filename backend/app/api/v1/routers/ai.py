@@ -1,6 +1,6 @@
 import json
 
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -189,10 +189,19 @@ async def sales_assistant_chat(
     dependencies=[Depends(require_permission("ai:read"))],
 )
 async def list_sales_assistant_conversations(
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await ai_domain_service.list_conversations(db, current_user)
+    conversations = await ai_domain_service.list_conversations(
+        db, current_user, page=page, limit=limit
+    )
+    response.headers["X-Total-Count"] = str(
+        await ai_domain_service.count_conversations(db, current_user)
+    )
+    return conversations
 
 
 @router.get(

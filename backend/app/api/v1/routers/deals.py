@@ -325,11 +325,20 @@ async def assign_deal(
 )
 async def get_deal_products(
     deal_id: str,
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(15, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await deal_service.get_deal_products(db, deal_id, organization_id=organization_id)
+    products = await deal_service.get_deal_products(
+        db, deal_id, organization_id=organization_id, page=page, limit=limit
+    )
+    response.headers["X-Total-Count"] = str(
+        await deal_service.count_deal_products(db, deal_id, organization_id=organization_id)
+    )
+    return products
 
 
 @router.post(
@@ -394,11 +403,20 @@ async def remove_deal_product(
 )
 async def get_deal_timeline(
     deal_id: str,
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(15, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await deal_service.get_deal_timeline(db, deal_id, organization_id=organization_id)
+    timeline = await deal_service.get_deal_timeline(
+        db, deal_id, organization_id=organization_id, page=page, limit=limit
+    )
+    response.headers["X-Total-Count"] = str(
+        await deal_service.count_deal_timeline(db, deal_id, organization_id=organization_id)
+    )
+    return timeline
 
 
 @router.get(
@@ -412,10 +430,17 @@ async def get_deal_timeline(
 )
 async def get_deal_notes(
     deal_id: str,
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(15, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await deal_service.get_deal_notes(db, deal_id, current_user)
+    notes = await deal_service.get_deal_notes(db, deal_id, current_user, page=page, limit=limit)
+    response.headers["X-Total-Count"] = str(
+        await deal_service.count_deal_notes(db, deal_id, current_user)
+    )
+    return notes
 
 
 @router.post(
@@ -453,11 +478,20 @@ async def add_deal_note(
 )
 async def get_deal_quotes(
     deal_id: str,
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(15, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await deal_service.get_deal_quotes(db, deal_id, organization_id)
+    quotes = await deal_service.get_deal_quotes(
+        db, deal_id, organization_id, page=page, limit=limit
+    )
+    response.headers["X-Total-Count"] = str(
+        await deal_service.count_deal_quotes(db, deal_id, organization_id)
+    )
+    return quotes
 
 
 @router.post(

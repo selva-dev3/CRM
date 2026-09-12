@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, File, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
@@ -22,6 +22,7 @@ router = APIRouter()
     dependencies=[Depends(require_permission("documents:read"))],
 )
 async def list_documents(
+    response: Response,
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     folder_id: str | None = None,
@@ -49,7 +50,7 @@ async def list_documents(
         }.items()
         if isinstance(value, str) and value
     }
-    return await document_service.list_documents(
+    documents = await document_service.list_documents(
         db,
         page=page,
         limit=limit,
@@ -57,6 +58,14 @@ async def list_documents(
         current_user=current_user,
         **relationship_filters,
     )
+    total = await document_service.count_documents(
+        db,
+        search=search,
+        current_user=current_user,
+        **relationship_filters,
+    )
+    response.headers["X-Total-Count"] = str(total)
+    return documents
 
 
 @router.post(

@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import { fetchPaginated, type PaginatedResult } from '@/lib/api/pagination';
 
 export interface DocumentItem {
   id: string;
@@ -54,7 +55,7 @@ export interface MessageResponse {
 // API Client Functions
 // ---------------------------------------------------------------------------
 
-export async function fetchDocumentsApi(params?: FetchDocumentsParams): Promise<DocumentItem[]> {
+export async function fetchDocumentsApi(params?: FetchDocumentsParams): Promise<PaginatedResult<DocumentItem>> {
   const query = new URLSearchParams();
   if (params?.page) query.append('page', String(params.page));
   if (params?.limit) query.append('limit', String(params.limit));
@@ -64,7 +65,7 @@ export async function fetchDocumentsApi(params?: FetchDocumentsParams): Promise<
     if (params?.[field]) query.append(field, params[field]);
   }
   const endpoint = `/documents${query.toString() ? `?${query.toString()}` : ''}`;
-  return apiClient.get<DocumentItem[]>(endpoint);
+  return fetchPaginated<DocumentItem>(endpoint);
 }
 
 export async function uploadDocumentApi(file: File, relations: DocumentRelations = {}): Promise<DocumentItem> {
@@ -101,8 +102,8 @@ export async function bulkDeleteDocumentsApi(ids: string[]): Promise<BulkActionR
 // TanStack Query Hooks
 // ---------------------------------------------------------------------------
 
-export function useDocumentsQuery(params?: FetchDocumentsParams, options?: Omit<UseQueryOptions<DocumentItem[]>, 'queryKey' | 'queryFn'>) {
-  return useQuery<DocumentItem[]>({
+export function useDocumentsQuery(params?: FetchDocumentsParams, options?: Omit<UseQueryOptions<PaginatedResult<DocumentItem>>, 'queryKey' | 'queryFn'>) {
+  return useQuery<PaginatedResult<DocumentItem>>({
     queryKey: ['documents', params],
     queryFn: () => fetchDocumentsApi(params),
     staleTime: 1000 * 60 * 2,

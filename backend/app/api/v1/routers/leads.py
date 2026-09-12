@@ -397,16 +397,27 @@ async def recalculate_lead_score(
 )
 async def get_lead_timeline(
     lead_id: str,
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(15, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await lead_service.get_timeline(
+    timeline = await lead_service.get_timeline(
         db,
         lead_id,
         organization_id=organization_id,
         current_user=current_user,
+        page=page,
+        limit=limit,
     )
+    response.headers["X-Total-Count"] = str(
+        await lead_service.count_timeline(
+            db, lead_id, organization_id=organization_id, current_user=current_user
+        )
+    )
+    return timeline
 
 
 @router.get(
@@ -420,11 +431,20 @@ async def get_lead_timeline(
 )
 async def get_lead_notes(
     lead_id: str,
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(15, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await lead_service.get_notes(db, lead_id, organization_id=organization_id)
+    notes = await lead_service.get_notes(
+        db, lead_id, organization_id=organization_id, page=page, limit=limit
+    )
+    response.headers["X-Total-Count"] = str(
+        await lead_service.count_notes(db, lead_id, organization_id=organization_id)
+    )
+    return notes
 
 
 @router.post(
@@ -463,11 +483,20 @@ async def add_lead_note(
 )
 async def get_lead_tasks(
     lead_id: str,
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(15, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await lead_service.get_tasks(db, lead_id, organization_id=organization_id)
+    tasks = await lead_service.get_tasks(
+        db, lead_id, organization_id=organization_id, page=page, limit=limit
+    )
+    response.headers["X-Total-Count"] = str(
+        await lead_service.count_tasks(db, lead_id, organization_id=organization_id)
+    )
+    return tasks
 
 
 @router.post(
@@ -506,11 +535,20 @@ async def create_lead_task(
 )
 async def get_lead_emails(
     lead_id: str,
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(15, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await lead_service.get_emails(db, lead_id, organization_id=organization_id)
+    emails = await lead_service.get_emails(
+        db, lead_id, organization_id=organization_id, page=page, limit=limit
+    )
+    response.headers["X-Total-Count"] = str(
+        await lead_service.count_emails(db, lead_id, organization_id=organization_id)
+    )
+    return emails
 
 
 @router.post(
@@ -551,11 +589,20 @@ async def send_lead_email(
 )
 async def get_lead_calls(
     lead_id: str,
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(15, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await lead_service.get_calls(db, lead_id, organization_id=organization_id)
+    calls = await lead_service.get_calls(
+        db, lead_id, organization_id=organization_id, page=page, limit=limit
+    )
+    response.headers["X-Total-Count"] = str(
+        await lead_service.count_calls(db, lead_id, organization_id=organization_id)
+    )
+    return calls
 
 
 @router.post(
@@ -597,11 +644,20 @@ async def log_lead_call(
 )
 async def get_lead_documents(
     lead_id: str,
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(15, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await lead_service.get_documents(db, lead_id, organization_id=organization_id)
+    documents = await lead_service.get_documents(
+        db, lead_id, organization_id=organization_id, page=page, limit=limit
+    )
+    response.headers["X-Total-Count"] = str(
+        await lead_service.count_documents(db, lead_id, organization_id=organization_id)
+    )
+    return documents
 
 
 @router.get(

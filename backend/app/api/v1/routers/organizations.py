@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, Header, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, Query, Request, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission, require_platform_admin
@@ -29,8 +29,12 @@ router = APIRouter()
 subscription_billing_service = SubscriptionBillingService()
 
 
-@router.post("", response_model=OrganizationCreateResponse, status_code=201,
-             summary="Provision an organization as Global Super Admin")
+@router.post(
+    "",
+    response_model=OrganizationCreateResponse,
+    status_code=201,
+    summary="Provision an organization as Global Super Admin",
+)
 async def create_organization(
     payload: PlatformOrganizationCreate,
     db: AsyncSession = Depends(get_db),
@@ -41,7 +45,8 @@ async def create_organization(
 
 @router.get("/deletions/{operation_id}", response_model=OrganizationDeletionStatus)
 async def organization_deletion_status(
-    operation_id: str, db: AsyncSession = Depends(get_db),
+    operation_id: str,
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_platform_admin),
 ):
     return await organization_lifecycle_service.deletion_status(db, operation_id, current_user)
@@ -49,21 +54,32 @@ async def organization_deletion_status(
 
 @router.post("/deletions/{operation_id}/retry", response_model=OrganizationDeletionStatus)
 async def retry_organization_cleanup(
-    operation_id: str, db: AsyncSession = Depends(get_db),
+    operation_id: str,
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_platform_admin),
 ):
     return await organization_lifecycle_service.retry_cleanup(db, operation_id, current_user)
 
 
-@router.get("/all", response_model=list[OrganizationResponse], summary="List platform organizations",
-            dependencies=[Depends(require_permission("organization:read"))])
+@router.get(
+    "/all",
+    response_model=list[OrganizationResponse],
+    summary="List platform organizations",
+    dependencies=[Depends(require_permission("organization:read"))],
+)
 async def list_platform_organizations(
+    response: Response,
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_platform_admin),
 ):
-    return await organization_domain_service.list_platform_organizations(db, current_user, limit=limit, offset=offset)
+    organizations = await organization_domain_service.list_platform_organizations(
+        db, current_user, limit=limit, offset=offset
+    )
+    total = await organization_domain_service.count_platform_organizations(db, current_user)
+    response.headers["X-Total-Count"] = str(total)
+    return organizations
 
 
 @router.get(
@@ -98,10 +114,18 @@ async def get_current_organization(
     dependencies=[Depends(require_permission("organization:members"))],
 )
 async def list_members(
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(15, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await organization_domain_service.list_members(db, current_user)
+    members = await organization_domain_service.list_members(
+        db, current_user, page=page, limit=limit
+    )
+    organization = await organization_domain_service.get_current_organization(db, current_user)
+    response.headers["X-Total-Count"] = str(organization["members_count"])
+    return members
 
 
 @router.delete(
@@ -301,10 +325,19 @@ async def list_organization_domains(
     dependencies=[Depends(require_permission("organization:audit"))],
 )
 async def get_organization_audit_logs(
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await organization_domain_service.get_organization_audit_logs(db, current_user)
+    logs = await organization_domain_service.get_organization_audit_logs(
+        db, current_user, page=page, limit=limit
+    )
+    response.headers["X-Total-Count"] = str(
+        await organization_domain_service.count_organization_audit_logs(db, current_user)
+    )
+    return logs
 
 
 @router.post(

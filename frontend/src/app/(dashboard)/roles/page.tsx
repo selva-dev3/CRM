@@ -114,15 +114,24 @@ export default function RolesPage() {
   // Toast / Alert notifications
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [auditPage, setAuditPage] = useState(1);
+  const auditPageSize = 20;
 
   // Queries - live GET /api/v1/roles?search=... API call on typing search input!
-  const { data: roles = [], isLoading: isRolesLoading } = useRolesQuery(debouncedSearch.trim() || undefined);
+  const { data: rolesPage, isLoading: isRolesLoading } = useRolesQuery({
+    page,
+    limit,
+    search: debouncedSearch.trim() || undefined,
+  });
+  const roles = rolesPage?.items ?? [];
+  const totalRoles = rolesPage?.total ?? 0;
   const { data: assignableRoles = [] } = useAssignableRolesQuery();
   const { data: defaultRole } = useDefaultRoleQuery();
   const { data: permissionMatrix = [] } = usePermissionMatrixQuery({
     enabled: canAssignRolePermissions,
   });
-  const { data: auditLogs = [] } = useRoleAuditLogsQuery();
+  const { data: auditPageData } = useRoleAuditLogsQuery(auditPage, auditPageSize);
+  const auditLogs = auditPageData?.items ?? [];
 
   // Mutations
   const createRoleMutation = useCreateRoleMutation();
@@ -660,9 +669,9 @@ export default function RolesPage() {
         isLoading={isRolesLoading}
         pagination={{
           pageIndex: page - 1,
-          pageCount: roles.length >= limit ? page + 1 : page,
+          pageCount: Math.max(1, Math.ceil(totalRoles / limit)),
           onPageChange: (p) => setPage(p + 1),
-          totalRecords: (page - 1) * limit + roles.length,
+          totalRecords: totalRoles,
         }}
       />
 
@@ -927,6 +936,7 @@ export default function RolesPage() {
             </div>
           ))}
         </div>
+        {(auditPageData?.total ?? 0) > auditPageSize && <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3"><Button type="button" size="sm" variant="outline" disabled={auditPage === 1} onClick={() => setAuditPage((page) => page - 1)}>Previous</Button><span className="text-xs text-slate-500">Page {auditPage} of {Math.ceil((auditPageData?.total ?? 0) / auditPageSize)}</span><Button type="button" size="sm" variant="outline" disabled={auditPage * auditPageSize >= (auditPageData?.total ?? 0)} onClick={() => setAuditPage((page) => page + 1)}>Next</Button></div>}
       </ModalShell>
 
       {/* Create New Permission Modal */}

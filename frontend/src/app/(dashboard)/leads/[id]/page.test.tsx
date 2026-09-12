@@ -19,7 +19,7 @@ const refetchUsersMock = vi.fn();
 const customFieldsQueryMock = vi.fn();
 
 const emptyQuery = {
-  data: [],
+  data: { items: [], total: 0 },
   isLoading: false,
   refetch: vi.fn(),
 };
@@ -66,13 +66,13 @@ vi.mock('@/lib/api/client', () => ({ BASE_URL: 'http://localhost:3000/api/v1' })
 
 vi.mock('@/lib/api/leads', () => ({
   useLeadQuery: (...args: unknown[]) => useLeadQueryMock(...args),
-  useLeadTimelineQuery: () => useLeadTimelineQueryMock(),
+  useLeadTimelineQuery: (...args: unknown[]) => useLeadTimelineQueryMock(...args),
   useCreateLeadMutation: () => ({ mutateAsync: vi.fn() }),
   useUpdateLeadMutation: () => ({ mutateAsync: updateLeadMutateAsync }),
   useDeleteLeadMutation: () => ({ mutateAsync: vi.fn() }),
   useLeadNotesQuery: () => emptyQuery,
   useLeadTasksQuery: () => emptyQuery,
-  useLeadEmailsQuery: () => useLeadEmailsQueryMock(),
+  useLeadEmailsQuery: (...args: unknown[]) => useLeadEmailsQueryMock(...args),
   useLeadCallsQuery: (...args: unknown[]) => useLeadCallsQueryMock(...args),
   useLeadDocumentsQuery: () => emptyQuery,
   addLeadNoteApi: vi.fn(),
@@ -192,7 +192,7 @@ describe('LeadDetailPage call permissions', () => {
     render(<LeadDetailPage />);
 
     expect(screen.queryByRole('tab', { name: /Calls/ })).not.toBeInTheDocument();
-    expect(useLeadCallsQueryMock).toHaveBeenCalledWith('lead-1', false);
+    expect(useLeadCallsQueryMock).toHaveBeenCalledWith('lead-1', false, 1, 15);
   });
 });
 
@@ -222,7 +222,7 @@ describe('LeadDetailPage email workflow', () => {
   it('renders expandable email history with the message body', async () => {
     const user = userEvent.setup();
     useLeadEmailsQueryMock.mockReturnValue({
-      data: [{
+      data: { items: [{
         id: 'email-1',
         from_email: 'rep@crm.test',
         to: [lead.email],
@@ -230,7 +230,7 @@ describe('LeadDetailPage email workflow', () => {
         body: '<p>Hello Jane,</p><p>Please review the proposal.</p>',
         status: 'Sent',
         sent_at: '2026-09-07T17:00:00Z',
-      }],
+      }], total: 1 },
       isLoading: false,
       refetch: vi.fn(),
     });
@@ -440,13 +440,13 @@ describe('LeadDetailPage lifecycle', () => {
 
   it('renders the unified activity timeline', async () => {
     useLeadTimelineQueryMock.mockReturnValue({
-      data: [{
+      data: { items: [{
         id: 'activity-1',
         event_type: 'lead_qualified',
         title: 'Lead qualified',
         description: 'Budget confirmed',
         timestamp: '2026-09-06T10:00:00Z',
-      }],
+      }], total: 1 },
       isLoading: false,
       refetch: vi.fn(),
     });

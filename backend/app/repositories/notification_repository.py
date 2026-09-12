@@ -10,8 +10,13 @@ class NotificationRepository:
     """Query layer for the Notification domain — no business logic."""
 
     async def create_for_scoped_user(self, db: AsyncSession, *, data: dict) -> bool:
-        recipient = await db.scalar(select(User.id).where(User.id == data["user_id"],
-            User.organization_id == data["organization_id"], User.is_active.is_(True)))
+        recipient = await db.scalar(
+            select(User.id).where(
+                User.id == data["user_id"],
+                User.organization_id == data["organization_id"],
+                User.is_active.is_(True),
+            )
+        )
         if recipient is None:
             return False
         await self.create_notification(db, data=data)
@@ -29,9 +34,21 @@ class NotificationRepository:
         stmt = select(Notification).where(Notification.user_id == user_id)
         if unread_only:
             stmt = stmt.where(Notification.is_read == False)  # noqa: E712
-        stmt = stmt.order_by(Notification.created_at.desc()).offset((page - 1) * limit).limit(limit)
+        stmt = (
+            stmt.order_by(Notification.created_at.desc(), Notification.id.desc())
+            .offset((page - 1) * limit)
+            .limit(limit)
+        )
         res = await db.execute(stmt)
         return res.scalars().all()
+
+    async def count_notifications(
+        self, db: AsyncSession, *, user_id: str, unread_only: bool = False
+    ) -> int:
+        stmt = select(func.count()).select_from(Notification).where(Notification.user_id == user_id)
+        if unread_only:
+            stmt = stmt.where(Notification.is_read == False)  # noqa: E712
+        return int((await db.execute(stmt)).scalar_one())
 
     async def list_unread(self, db: AsyncSession, *, user_id: str) -> Sequence[Notification]:
         stmt = select(Notification).where(

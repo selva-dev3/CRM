@@ -38,7 +38,9 @@ def quote_to_dict(quote: Quote) -> dict:
         "items": [],
         "total_amount": quote.total_amount or 0.0,
         "status": quote.status or "Draft",
-        "review_submitted_at": quote.review_submitted_at.isoformat() if quote.review_submitted_at else None,
+        "review_submitted_at": (
+            quote.review_submitted_at.isoformat() if quote.review_submitted_at else None
+        ),
         "review_submitted_by": quote.review_submitted_by,
         "approved_at": quote.approved_at.isoformat() if quote.approved_at else None,
         "approved_by": quote.approved_by,
@@ -434,12 +436,29 @@ class QuoteService:
         )
 
     async def list_quotes_for_deal(
-        self, db: AsyncSession, *, deal_id: str, organization_id: str
+        self,
+        db: AsyncSession,
+        *,
+        deal_id: str,
+        organization_id: str,
+        page: int = 1,
+        limit: int = 15,
     ) -> list[dict]:
         quotes = await self.repository.list_by_deal(
-            db, deal_id=deal_id, organization_id=organization_id
+            db,
+            deal_id=deal_id,
+            organization_id=organization_id,
+            page=page,
+            limit=limit,
         )
         return [quote_to_dict(quote) for quote in quotes]
+
+    async def count_quotes_for_deal(
+        self, db: AsyncSession, *, deal_id: str, organization_id: str
+    ) -> int:
+        return await self.repository.count_by_deal(
+            db, deal_id=deal_id, organization_id=organization_id
+        )
 
     async def get_quote(self, db: AsyncSession, *, quote_id: str, organization_id: str) -> dict:
         quote = await self._require_quote(db, quote_id=quote_id, organization_id=organization_id)
@@ -528,8 +547,12 @@ class QuoteService:
             try:
                 parsed_due_date = datetime.fromisoformat(payload.due_date.replace("Z", "+00:00"))
             except ValueError as exc:
-                raise APIException(message="Invalid quote due date", code="INVALID_DUE_DATE") from exc
-            quote.due_date = parsed_due_date if parsed_due_date.tzinfo else parsed_due_date.replace(tzinfo=UTC)
+                raise APIException(
+                    message="Invalid quote due date", code="INVALID_DUE_DATE"
+                ) from exc
+            quote.due_date = (
+                parsed_due_date if parsed_due_date.tzinfo else parsed_due_date.replace(tzinfo=UTC)
+            )
         await self._commit(db, "Failed to update quote")
         await db.refresh(quote)
         return quote_to_dict(quote)

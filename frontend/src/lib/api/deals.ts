@@ -161,11 +161,11 @@ export async function assignDealApi(payload: { id: string; user_id: string }): P
   return apiClient.post<ActionResponse>(`/deals/${payload.id}/assign?user_id=${encodeURIComponent(payload.user_id)}`);
 }
 
-export async function getDealProductsApi(id: string): Promise<DealProductItem[]> {
+export async function getDealProductsApi(id: string, page = 1, limit = 15): Promise<PaginatedResult<DealProductItem>> {
   try {
-    return await apiClient.get<DealProductItem[]>(`/deals/${id}/products`);
+    return await fetchPaginated<DealProductItem>(`/deals/${id}/products?page=${page}&limit=${limit}`);
   } catch {
-    return [];
+    return { items: [], total: 0 };
   }
 }
 
@@ -183,19 +183,19 @@ export async function removeDealProductApi(payload: { id: string; product_id: st
   return apiClient.delete<ActionResponse>(`/deals/${payload.id}/products/${payload.product_id}`);
 }
 
-export async function getDealTimelineApi(id: string): Promise<RelatedRecord[]> {
+export async function getDealTimelineApi(id: string, page = 1, limit = 15): Promise<PaginatedResult<RelatedRecord>> {
   try {
-    return await apiClient.get<RelatedRecord[]>(`/deals/${id}/timeline`);
+    return await fetchPaginated<RelatedRecord>(`/deals/${id}/timeline?page=${page}&limit=${limit}`);
   } catch {
-    return [];
+    return { items: [], total: 0 };
   }
 }
 
-export async function getDealNotesApi(id: string): Promise<RelatedRecord[]> {
+export async function getDealNotesApi(id: string, page = 1, limit = 15): Promise<PaginatedResult<RelatedRecord>> {
   try {
-    return await apiClient.get<RelatedRecord[]>(`/deals/${id}/notes`);
+    return await fetchPaginated<RelatedRecord>(`/deals/${id}/notes?page=${page}&limit=${limit}`);
   } catch {
-    return [];
+    return { items: [], total: 0 };
   }
 }
 
@@ -205,11 +205,11 @@ export async function addDealNoteApi(payload: { id: string; content: string }): 
   });
 }
 
-export async function getDealQuotesApi(id: string): Promise<RelatedRecord[]> {
+export async function getDealQuotesApi(id: string, page = 1, limit = 15): Promise<PaginatedResult<RelatedRecord>> {
   try {
-    return await apiClient.get<RelatedRecord[]>(`/deals/${id}/quotes`);
+    return await fetchPaginated<RelatedRecord>(`/deals/${id}/quotes?page=${page}&limit=${limit}`);
   } catch {
-    return [];
+    return { items: [], total: 0 };
   }
 }
 

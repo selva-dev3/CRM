@@ -238,13 +238,21 @@ async def delete_contact(
 )
 async def get_contact_deals(
     contact_id: str,
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(15, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await contact_service.list_contact_deals(
+    deals = await contact_service.list_contact_deals(
+        db, contact_id, organization_id=organization_id, page=page, limit=limit
+    )
+    total = await contact_service.count_contact_deals(
         db, contact_id, organization_id=organization_id
     )
+    response.headers["X-Total-Count"] = str(total)
+    return deals
 
 
 @router.get(
@@ -258,13 +266,29 @@ async def get_contact_deals(
 )
 async def get_contact_activities(
     contact_id: str,
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(15, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await contact_service.list_contact_activities(
-        db, contact_id, organization_id=organization_id, current_user=current_user
+    activities = await contact_service.list_contact_activities(
+        db,
+        contact_id,
+        organization_id=organization_id,
+        current_user=current_user,
+        page=page,
+        limit=limit,
     )
+    total = await contact_service.count_contact_activities(
+        db,
+        contact_id,
+        organization_id=organization_id,
+        current_user=current_user,
+    )
+    response.headers["X-Total-Count"] = str(total)
+    return activities
 
 
 @router.post(
@@ -312,18 +336,28 @@ async def unstar_contact(
 )
 async def get_contact_notes(
     contact_id: str,
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(15, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     await contact_service.get_contact(db, contact_id, organization_id=organization_id)
-    return await note_service.list_for_entity(
+    notes = await note_service.list_for_entity(
         db,
         entity_type="contact",
         entity_id=contact_id,
         created_by_default=current_user.id,
+        page=page,
+        limit=limit,
         current_user=current_user,
     )
+    total = await note_service.count_for_entity(
+        db, entity_type="contact", entity_id=contact_id, current_user=current_user
+    )
+    response.headers["X-Total-Count"] = str(total)
+    return notes
 
 
 @router.post(
@@ -369,19 +403,21 @@ async def add_contact_note(
 )
 async def get_contact_emails(
     contact_id: str,
+    response: Response,
     page: int = Query(1, ge=1),
-    limit: int | None = Query(None, ge=1, le=100),
+    limit: int = Query(15, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await contact_service.list_contact_emails(
-        db,
-        contact_id,
-        organization_id=organization_id,
-        page=page,
-        limit=limit,
+    emails = await contact_service.list_contact_emails(
+        db, contact_id, organization_id=organization_id, page=page, limit=limit
     )
+    total = await contact_service.count_contact_emails(
+        db, contact_id, organization_id=organization_id
+    )
+    response.headers["X-Total-Count"] = str(total)
+    return emails
 
 
 @router.get(
@@ -395,10 +431,18 @@ async def get_contact_emails(
 )
 async def get_contact_calls(
     contact_id: str,
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(15, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await contact_service.list_contact_calls(
+    calls = await contact_service.list_contact_calls(
+        db, contact_id, organization_id=organization_id, page=page, limit=limit
+    )
+    total = await contact_service.count_contact_calls(
         db, contact_id, organization_id=organization_id
     )
+    response.headers["X-Total-Count"] = str(total)
+    return calls

@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -517,17 +517,38 @@ class ReportRepository:
 
     # --- Custom Reports ---
     async def list_custom_reports(
-        self, db: AsyncSession, org_id: str, *, limit: int = 20, offset: int = 0
+        self,
+        db: AsyncSession,
+        org_id: str,
+        *,
+        limit: int = 20,
+        offset: int = 0,
+        search: str | None = None,
     ) -> Sequence[CustomReport]:
+        stmt = select(CustomReport).where(CustomReport.organization_id == org_id)
+        if search and search.strip():
+            term = f"%{search.strip()}%"
+            stmt = stmt.where(or_(CustomReport.name.ilike(term), CustomReport.filters.ilike(term)))
         stmt = (
-            select(CustomReport)
-            .where(CustomReport.organization_id == org_id)
-            .order_by(CustomReport.created_at.desc())
+            stmt
+            .order_by(CustomReport.created_at.desc(), CustomReport.id.desc())
             .offset(offset)
             .limit(limit)
         )
         res = await db.execute(stmt)
         return res.scalars().all()
+
+    async def count_custom_reports(
+        self, db: AsyncSession, org_id: str, *, search: str | None = None
+    ) -> int:
+        stmt = select(func.count()).select_from(CustomReport).where(
+            CustomReport.organization_id == org_id
+        )
+        if search and search.strip():
+            term = f"%{search.strip()}%"
+            stmt = stmt.where(or_(CustomReport.name.ilike(term), CustomReport.filters.ilike(term)))
+        result = await db.execute(stmt)
+        return int(result.scalar_one())
 
     async def get_custom_report(
         self, db: AsyncSession, report_id: str, org_id: str
@@ -569,17 +590,50 @@ class ReportRepository:
         return report
 
     async def list_scheduled_reports(
-        self, db: AsyncSession, org_id: str, *, limit: int = 20, offset: int = 0
+        self,
+        db: AsyncSession,
+        org_id: str,
+        *,
+        limit: int = 20,
+        offset: int = 0,
+        search: str | None = None,
     ) -> Sequence[ScheduledReport]:
+        stmt = select(ScheduledReport).where(ScheduledReport.organization_id == org_id)
+        if search and search.strip():
+            term = f"%{search.strip()}%"
+            stmt = stmt.where(
+                or_(
+                    ScheduledReport.report_type.ilike(term),
+                    ScheduledReport.email.ilike(term),
+                    ScheduledReport.frequency.ilike(term),
+                )
+            )
         stmt = (
-            select(ScheduledReport)
-            .where(ScheduledReport.organization_id == org_id)
-            .order_by(ScheduledReport.created_at.desc())
+            stmt
+            .order_by(ScheduledReport.created_at.desc(), ScheduledReport.id.desc())
             .offset(offset)
             .limit(limit)
         )
         res = await db.execute(stmt)
         return res.scalars().all()
+
+    async def count_scheduled_reports(
+        self, db: AsyncSession, org_id: str, *, search: str | None = None
+    ) -> int:
+        stmt = select(func.count()).select_from(ScheduledReport).where(
+            ScheduledReport.organization_id == org_id
+        )
+        if search and search.strip():
+            term = f"%{search.strip()}%"
+            stmt = stmt.where(
+                or_(
+                    ScheduledReport.report_type.ilike(term),
+                    ScheduledReport.email.ilike(term),
+                    ScheduledReport.frequency.ilike(term),
+                )
+            )
+        result = await db.execute(stmt)
+        return int(result.scalar_one())
 
     async def get_scheduled_report(
         self, db: AsyncSession, schedule_id: str, org_id: str

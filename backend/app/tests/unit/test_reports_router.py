@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock
 
 import pytest
+from fastapi import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.routers.reports import (
@@ -187,10 +188,20 @@ async def test_list_custom_reports_with_pagination(monkeypatch):
     db = AsyncMock(spec=AsyncSession)
     mock_list = AsyncMock(return_value=[])
     monkeypatch.setattr(report_service, "list_custom_reports", mock_list)
+    monkeypatch.setattr(report_service, "count_custom_reports", AsyncMock(return_value=12))
 
-    res = await list_custom_reports(limit=50, offset=10, current_user=user, db=db)
+    response = Response()
+    res = await list_custom_reports(
+        response=response, limit=50, offset=10, search="pipeline", current_user=user, db=db
+    )
     assert res == []
-    mock_list.assert_awaited_once_with(db, current_user=user, limit=50, offset=10)
+    assert response.headers["X-Total-Count"] == "12"
+    mock_list.assert_awaited_once_with(
+        db, current_user=user, limit=50, offset=10, search="pipeline"
+    )
+    report_service.count_custom_reports.assert_awaited_once_with(
+        db, current_user=user, search="pipeline"
+    )
 
 
 @pytest.mark.asyncio
@@ -199,7 +210,17 @@ async def test_list_scheduled_reports_with_pagination(monkeypatch):
     db = AsyncMock(spec=AsyncSession)
     mock_list = AsyncMock(return_value=[])
     monkeypatch.setattr(report_service, "list_scheduled_reports", mock_list)
+    monkeypatch.setattr(report_service, "count_scheduled_reports", AsyncMock(return_value=8))
 
-    res = await list_scheduled_reports(limit=30, offset=5, current_user=user, db=db)
+    response = Response()
+    res = await list_scheduled_reports(
+        response=response, limit=30, offset=5, search="weekly", current_user=user, db=db
+    )
     assert res == []
-    mock_list.assert_awaited_once_with(db, current_user=user, limit=30, offset=5)
+    assert response.headers["X-Total-Count"] == "8"
+    mock_list.assert_awaited_once_with(
+        db, current_user=user, limit=30, offset=5, search="weekly"
+    )
+    report_service.count_scheduled_reports.assert_awaited_once_with(
+        db, current_user=user, search="weekly"
+    )

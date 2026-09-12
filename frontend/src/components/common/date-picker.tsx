@@ -105,7 +105,8 @@ export function DatePicker({
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="z-[70] w-auto max-w-[calc(100vw-1rem)] p-0"
+        collisionPadding={8}
+        className="z-[70] max-h-[calc(100dvh-1rem)] w-auto max-w-[calc(100vw-1rem)] overflow-y-auto overscroll-contain p-0"
       >
         <Calendar
           mode="single"
@@ -187,7 +188,8 @@ export function DateTimePicker({
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="z-[70] w-auto max-w-[calc(100vw-1rem)] p-0"
+        collisionPadding={8}
+        className="z-[70] max-h-[calc(100dvh-1rem)] w-auto max-w-[calc(100vw-1rem)] overflow-y-auto overscroll-contain p-0"
       >
         <Calendar
           mode="single"

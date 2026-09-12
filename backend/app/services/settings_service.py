@@ -169,12 +169,14 @@ class SettingsService:
             )
         return result
 
+    async def count_audit_logs(self, db: AsyncSession, current_user: User) -> int:
+        org_id = await self._resolve_org_id(db, current_user)
+        return await self.repository.count_audit_logs(db, organization_id=org_id)
+
     async def export_audit_logs_csv(self, db: AsyncSession, current_user: User) -> dict:
         try:
             org_id = await self._resolve_org_id(db, current_user)
-            rows = await self.repository.list_audit_logs_export(
-                db, organization_id=org_id
-            )
+            rows = await self.repository.list_audit_logs_export(db, organization_id=org_id)
             output = io.StringIO()
             writer = csv.writer(output)
             writer.writerow(["ID", "Username", "Action", "IP Address", "Timestamp"])
@@ -305,9 +307,7 @@ class SettingsService:
             message="Outgoing webhook delivery is not implemented",
         )
 
-    async def delete_webhook(
-        self, db: AsyncSession, webhook_id: str, current_user: User
-    ) -> dict:
+    async def delete_webhook(self, db: AsyncSession, webhook_id: str, current_user: User) -> dict:
         org_id = await self._resolve_org_id(db, current_user)
         webhook = await self.repository.get_webhook(db, webhook_id, organization_id=org_id)
         if not webhook:

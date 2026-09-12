@@ -117,20 +117,12 @@ class DealService:
                 code="INVALID_DEAL_STAGE",
             )
 
-    async def _ordered_open_stages(
-        self, db: AsyncSession, organization_id: str
-    ) -> list[str]:
+    async def _ordered_open_stages(self, db: AsyncSession, organization_id: str) -> list[str]:
         configured = await self.repository.list_stages(db, organization_id=organization_id)
-        custom = [
-            stage.name
-            for stage in configured
-            if stage.name not in CANONICAL_DEAL_STAGES
-        ]
+        custom = [stage.name for stage in configured if stage.name not in CANONICAL_DEAL_STAGES]
         return [*CANONICAL_OPEN_DEAL_STAGES, *dict.fromkeys(custom)]
 
-    async def _assert_stage_transition(
-        self, db: AsyncSession, deal: Deal, target: str
-    ) -> None:
+    async def _assert_stage_transition(self, db: AsyncSession, deal: Deal, target: str) -> None:
         current = deal.stage or CANONICAL_OPEN_DEAL_STAGES[0]
         if target == current:
             return
@@ -363,9 +355,7 @@ class DealService:
             for index, (name, probability) in enumerate(defaults.items())
         ]
         result[4:4] = [
-            configured[name]
-            for name in [stage.name for stage in stages]
-            if name not in defaults
+            configured[name] for name in [stage.name for stage in stages] if name not in defaults
         ]
         return result
 
@@ -390,9 +380,11 @@ class DealService:
         existing = await self.repository.list_stages(db, organization_id=organization_id)
         if normalized_name.casefold() in {stage.name.casefold() for stage in existing}:
             raise ConflictError(message="Pipeline stage already exists", code="DEAL_STAGE_EXISTS")
-        resolved_order = order_index if order_index is not None else max(
-            (stage.order_index for stage in existing), default=399
-        ) + 1
+        resolved_order = (
+            order_index
+            if order_index is not None
+            else max((stage.order_index for stage in existing), default=399) + 1
+        )
         await self.repository.create_stage(
             db,
             organization_id=organization_id,
@@ -750,11 +742,17 @@ class DealService:
         return {"message": f"Deal {deal_id} assigned to user {user_id}", "status": "success"}
 
     async def get_deal_products(
-        self, db: AsyncSession, deal_id: str, *, organization_id: str
+        self,
+        db: AsyncSession,
+        deal_id: str,
+        *,
+        organization_id: str,
+        page: int = 1,
+        limit: int = 15,
     ) -> list[dict]:
         await self.require_deal(db, deal_id, organization_id=organization_id)
         deal_prods = await self.repository.list_deal_products(
-            db, deal_id, organization_id=organization_id
+            db, deal_id, organization_id=organization_id, page=page, limit=limit
         )
         result = []
         for dp in deal_prods:
@@ -779,6 +777,14 @@ class DealService:
                 }
             )
         return result
+
+    async def count_deal_products(
+        self, db: AsyncSession, deal_id: str, *, organization_id: str
+    ) -> int:
+        await self.require_deal(db, deal_id, organization_id=organization_id)
+        return await self.repository.count_deal_products(
+            db, deal_id, organization_id=organization_id
+        )
 
     async def _recalculate_deal_amount(
         self, db: AsyncSession, deal_id: str, *, organization_id: str, force: bool
@@ -921,11 +927,21 @@ class DealService:
             raise
 
     async def get_deal_timeline(
-        self, db: AsyncSession, deal_id: str, *, organization_id: str
+        self,
+        db: AsyncSession,
+        deal_id: str,
+        *,
+        organization_id: str,
+        page: int = 1,
+        limit: int = 15,
     ) -> list:
         await self.require_deal(db, deal_id, organization_id=organization_id)
         activities = await self.repository.list_activities(
-            db, deal_id=deal_id, organization_id=organization_id
+            db,
+            deal_id=deal_id,
+            organization_id=organization_id,
+            page=page,
+            limit=limit,
         )
         return [
             {
@@ -937,10 +953,34 @@ class DealService:
             for activity in activities
         ]
 
+    async def count_deal_timeline(
+        self, db: AsyncSession, deal_id: str, *, organization_id: str
+    ) -> int:
+        await self.require_deal(db, deal_id, organization_id=organization_id)
+        return await self.repository.count_activities(
+            db, deal_id=deal_id, organization_id=organization_id
+        )
+
     async def get_deal_notes(
-        self, db: AsyncSession, deal_id: str, current_user: User
+        self,
+        db: AsyncSession,
+        deal_id: str,
+        current_user: User,
+        *,
+        page: int = 1,
+        limit: int = 15,
     ) -> list[dict]:
         return await note_service.get_notes_by_entity(
+            db,
+            entity_type="deal",
+            entity_id=deal_id,
+            current_user=current_user,
+            page=page,
+            limit=limit,
+        )
+
+    async def count_deal_notes(self, db: AsyncSession, deal_id: str, current_user: User) -> int:
+        return await note_service.count_for_entity(
             db, entity_type="deal", entity_id=deal_id, current_user=current_user
         )
 
@@ -956,7 +996,13 @@ class DealService:
         )
 
     async def get_deal_quotes(
-        self, db: AsyncSession, deal_id: str, organization_id: str
+        self,
+        db: AsyncSession,
+        deal_id: str,
+        organization_id: str,
+        *,
+        page: int = 1,
+        limit: int = 15,
     ) -> list[dict]:
         deal = await self.repository.get_by_id_scoped(
             db, deal_id=deal_id, organization_id=organization_id
@@ -964,6 +1010,16 @@ class DealService:
         if not deal:
             raise NotFoundError(message=f"Deal '{deal_id}' not found")
         return await self.quote_service.list_quotes_for_deal(
+            db,
+            deal_id=deal_id,
+            organization_id=organization_id,
+            page=page,
+            limit=limit,
+        )
+
+    async def count_deal_quotes(self, db: AsyncSession, deal_id: str, organization_id: str) -> int:
+        await self.require_deal(db, deal_id, organization_id=organization_id)
+        return await self.quote_service.count_quotes_for_deal(
             db, deal_id=deal_id, organization_id=organization_id
         )
 

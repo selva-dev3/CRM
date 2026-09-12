@@ -1,5 +1,6 @@
 ﻿import { useQuery, useMutation, useQueryClient, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import { fetchPaginated, type PaginatedResult } from '@/lib/api/pagination';
 
 export interface ProductItem {
   id: string;
@@ -51,14 +52,18 @@ export interface MessageResponse {
 // API Client Functions
 // ---------------------------------------------------------------------------
 
-export async function fetchProductsApi(params?: { page?: number; limit?: number; category?: string; search?: string }): Promise<ProductItem[]> {
+export async function fetchProductsPageApi(params?: { page?: number; limit?: number; category?: string; search?: string }): Promise<PaginatedResult<ProductItem>> {
   const query = new URLSearchParams();
   if (params?.page) query.append('page', String(params.page));
   if (params?.limit) query.append('limit', String(params.limit));
   if (params?.category) query.append('category', params.category);
   if (params?.search) query.append('search', params.search);
   const endpoint = `/products${query.toString() ? `?${query.toString()}` : ''}`;
-  return apiClient.get<ProductItem[]>(endpoint);
+  return fetchPaginated<ProductItem>(endpoint);
+}
+
+export async function fetchProductsApi(params?: { page?: number; limit?: number; category?: string; search?: string }): Promise<ProductItem[]> {
+  return (await fetchProductsPageApi(params)).items;
 }
 
 export async function createProductApi(payload: ProductCreatePayload): Promise<ProductItem> {
@@ -125,6 +130,15 @@ export function useProductsQuery(params?: { page?: number; limit?: number; categ
   return useQuery<ProductItem[]>({
     queryKey: ['products', params],
     queryFn: () => fetchProductsApi(params),
+    staleTime: 1000 * 60 * 2,
+    ...options,
+  });
+}
+
+export function useProductsPageQuery(params?: { page?: number; limit?: number; category?: string; search?: string }, options?: Omit<UseQueryOptions<PaginatedResult<ProductItem>>, 'queryKey' | 'queryFn'>) {
+  return useQuery<PaginatedResult<ProductItem>>({
+    queryKey: ['products', 'page', params],
+    queryFn: () => fetchProductsPageApi(params),
     staleTime: 1000 * 60 * 2,
     ...options,
   });

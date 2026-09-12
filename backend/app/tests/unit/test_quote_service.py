@@ -597,4 +597,6 @@ async def test_list_quotes_for_deal_is_tenant_scoped():
     result = await service.list_quotes_for_deal(db, deal_id="deal-1", organization_id="org-1")
 
     assert result[0]["deal_id"] == "deal-1"
-    repository.list_by_deal.assert_awaited_once_with(db, deal_id="deal-1", organization_id="org-1")
+    repository.list_by_deal.assert_awaited_once_with(
+        db, deal_id="deal-1", organization_id="org-1", page=1, limit=15
+    )

@@ -102,6 +102,30 @@ class CallService:
         )
         return [call_to_dict(c) for c in calls]
 
+    async def count_calls(
+        self,
+        db: AsyncSession,
+        *,
+        search: str | None = None,
+        call_type: str | None = None,
+        lead_id: str | None = None,
+        contact_id: str | None = None,
+        company_id: str | None = None,
+        deal_id: str | None = None,
+        current_user: User,
+    ) -> int:
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        return await self.repository.count(
+            db,
+            organization_id=org_id,
+            search=search,
+            call_type=call_type,
+            lead_id=lead_id,
+            contact_id=contact_id,
+            company_id=company_id,
+            deal_id=deal_id,
+        )
+
     async def get_call(self, db: AsyncSession, call_id: str, current_user: User) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
         call = await self.repository.get_by_id(db, call_id, org_id)

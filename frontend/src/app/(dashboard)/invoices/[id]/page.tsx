@@ -39,19 +39,21 @@ import {
 } from '@/lib/api/invoices';
 import { InvoiceWorkflowActions } from '@/components/features/invoices/InvoiceWorkflowActions';
 import { InvoiceSummary } from '@/components/features/invoices/InvoiceSummary';
-import { usePaymentsQuery, type PaymentItem } from '@/lib/api/payments';
+import { usePaymentsPageQuery, type PaymentItem } from '@/lib/api/payments';
 
 export default function InvoiceDetailPage() {
   const { hasPermission } = useHasPermission();
   const params = useParams();
   const router = useRouter();
   const invoiceId = (params?.id as string) || '';
+  const [paymentsPage, setPaymentsPage] = useState(1);
+  const paymentsPageSize = 15;
 
   // Queries
   const { data: invoice, isLoading, isError, isFetching, refetch } = useInvoiceQuery(invoiceId, {
     refetchInterval: (query) => query.state.data?.delivery_status === 'Pending' ? 5000 : false,
   });
-  const paymentsQuery = usePaymentsQuery({ invoice_id: invoiceId }, { enabled: Boolean(invoiceId) });
+  const paymentsQuery = usePaymentsPageQuery({ invoice_id: invoiceId, page: paymentsPage, limit: paymentsPageSize }, { enabled: Boolean(invoiceId) });
   const { data: pdfData } = useInvoicePdfQuery(invoiceId, {
     enabled: Boolean(invoice?.pdf_available),
   });
@@ -296,14 +298,14 @@ export default function InvoiceDetailPage() {
         </div>
         {paymentsQuery.isError ? <div className="flex items-center justify-between gap-3 text-sm text-rose-700"><span>Payment records could not be loaded.</span><button type="button" className="font-semibold underline" onClick={() => void paymentsQuery.refetch()}>Retry</button></div> : <DataTable
           columns={paymentColumns}
-          data={paymentsQuery.data ?? []}
+          data={paymentsQuery.data?.items ?? []}
           getRowKey={(payment) => payment.id}
           emptyTitle="No payments recorded"
           emptyDescription="No payments have been recorded for this invoice."
           isLoading={paymentsQuery.isLoading}
           tableClassName="min-w-[680px]"
           className="shadow-none"
-          pagination={{ pageSize: 15 }}
+          pagination={{ pageIndex: paymentsPage - 1, pageCount: Math.max(1, Math.ceil((paymentsQuery.data?.total ?? 0) / paymentsPageSize)), onPageChange: (page) => setPaymentsPage(page + 1), totalRecords: paymentsQuery.data?.total ?? 0 }}
         />}
       </section>
 

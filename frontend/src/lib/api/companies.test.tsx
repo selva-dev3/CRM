@@ -4,12 +4,13 @@ import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getMock = vi.fn();
+const getWithMetadataMock = vi.fn();
 const postMock = vi.fn();
 
 vi.mock('@/lib/api/client', () => ({
   apiClient: {
     get: (...args: unknown[]) => getMock(...args),
-    getWithMetadata: vi.fn(),
+    getWithMetadata: (...args: unknown[]) => getWithMetadataMock(...args),
     post: (...args: unknown[]) => postMock(...args),
     put: vi.fn(),
     delete: vi.fn(),
@@ -63,6 +64,11 @@ function RelationshipQueries({ activeTab }: { activeTab: RelationshipTab }) {
 describe('company relationship query hooks', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    getWithMetadataMock.mockResolvedValue({
+      data: [],
+      headers: new Headers({ 'X-Total-Count': '0' }),
+      status: 200,
+    });
     getMock.mockImplementation(async (endpoint: string) =>
       endpoint.endsWith('/hierarchy') ? { parent_company: null, subsidiaries: [] } : [],
     );
@@ -76,20 +82,24 @@ describe('company relationship query hooks', () => {
     );
 
     await waitFor(() => {
-      expect(getMock).toHaveBeenCalledWith('/companies/company-1/contacts');
+      expect(getWithMetadataMock).toHaveBeenCalledWith(
+        '/companies/company-1/contacts?page=1&limit=15',
+      );
     });
-    expect(getMock).toHaveBeenCalledTimes(1);
+    expect(getWithMetadataMock).toHaveBeenCalledTimes(1);
 
     rerender(<RelationshipQueries activeTab="deals" />);
 
     await waitFor(() => {
-      expect(getMock).toHaveBeenCalledWith('/companies/company-1/deals');
+      expect(getWithMetadataMock).toHaveBeenCalledWith(
+        '/companies/company-1/deals?page=1&limit=15',
+      );
     });
-    expect(getMock).toHaveBeenCalledTimes(2);
+    expect(getWithMetadataMock).toHaveBeenCalledTimes(2);
     expect(getMock).not.toHaveBeenCalledWith('/companies/company-1/documents');
   });
 
-  it('writes a newly created note to the scoped company cache', async () => {
+  it('invalidates the paginated company-note cache after creating a note', async () => {
     const note = {
       id: 'note-1',
       entity_type: 'company',
@@ -100,6 +110,10 @@ describe('company relationship query hooks', () => {
     };
     postMock.mockResolvedValue(note);
     const { client, wrapper } = createWrapper();
+    client.setQueryData(companyKeys.notes('company-1', 1, 15), {
+      items: [],
+      total: 0,
+    });
     const { result } = renderHook(() => useAddCompanyNoteMutation('company-1'), {
       wrapper,
     });
@@ -110,6 +124,6 @@ describe('company relationship query hooks', () => {
       '/companies/company-1/notes?content=Discuss%20renewal',
       { content: 'Discuss renewal' },
     );
-    expect(client.getQueryData(companyKeys.notes('company-1'))).toEqual([note]);
+    expect(client.getQueryState(companyKeys.notes('company-1', 1, 15))?.isInvalidated).toBe(true);
   });
 });

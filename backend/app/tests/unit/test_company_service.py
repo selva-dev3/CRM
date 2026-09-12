@@ -106,7 +106,7 @@ async def test_get_company_deals_is_scoped_and_serialized():
 
     assert result[0]["id"] == "deal-1"
     service.deal_repository.list_by_company.assert_awaited_once_with(
-        db, company_id="cmp-1", organization_id="org-1"
+        db, company_id="cmp-1", organization_id="org-1", page=1, limit=15
     )
 
 
@@ -122,9 +122,7 @@ async def test_set_parent_company_rejects_self_reference():
     from app.core.errors import APIException
 
     with pytest.raises(APIException):
-        await service.set_parent_company(
-            db, "cmp-1", "cmp-1", organization_id="org-1"
-        )
+        await service.set_parent_company(db, "cmp-1", "cmp-1", organization_id="org-1")
 
     repo.set_parent.assert_not_called()
 
@@ -142,9 +140,7 @@ async def test_set_parent_company_rejects_hierarchy_cycle():
     from app.core.errors import APIException
 
     with pytest.raises(APIException):
-        await service.set_parent_company(
-            db, "cmp-1", "cmp-2", organization_id="org-1"
-        )
+        await service.set_parent_company(db, "cmp-1", "cmp-2", organization_id="org-1")
 
     repo.set_parent.assert_not_called()
 

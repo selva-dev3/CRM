@@ -92,6 +92,11 @@ export default function DealDetailsPage() {
   const [productSearchQuery, setProductSearchQuery] = useState('');
   const [productQuantity, setProductQuantity] = useState(1);
   const [productUnitPrice, setProductUnitPrice] = useState<number | ''>(0);
+  const relationPageSize = 15;
+  const [productsPage, setProductsPage] = useState(1);
+  const [timelinePage, setTimelinePage] = useState(1);
+  const [notesPage, setNotesPage] = useState(1);
+  const [quotesPage, setQuotesPage] = useState(1);
 
   // Edit Form State
   const [formTitle, setFormTitle] = useState('');
@@ -119,29 +124,45 @@ export default function DealDetailsPage() {
   const companyContacts = contacts.filter((contact) => contact.company_id === formCompanyId);
 
   // Sub-resource queries
-  const { data: products = [], refetch: refetchProducts } = useQuery({
-    queryKey: ['deal-products', dealId],
-    queryFn: () => getDealProductsApi(dealId),
+  const { data: productsPageData, refetch: refetchProducts } = useQuery({
+    queryKey: ['deal-products', dealId, productsPage, relationPageSize],
+    queryFn: () => getDealProductsApi(dealId, productsPage, relationPageSize),
     enabled: !!dealId,
   });
 
-  const { data: timeline = [] } = useQuery({
-    queryKey: ['deal-timeline', dealId],
-    queryFn: () => getDealTimelineApi(dealId),
+  const { data: timelinePageData } = useQuery({
+    queryKey: ['deal-timeline', dealId, timelinePage, relationPageSize],
+    queryFn: () => getDealTimelineApi(dealId, timelinePage, relationPageSize),
     enabled: !!dealId,
   });
 
-  const { data: notes = [], refetch: refetchNotes } = useQuery({
-    queryKey: ['deal-notes', dealId],
-    queryFn: () => getDealNotesApi(dealId),
+  const { data: notesPageData, refetch: refetchNotes } = useQuery({
+    queryKey: ['deal-notes', dealId, notesPage, relationPageSize],
+    queryFn: () => getDealNotesApi(dealId, notesPage, relationPageSize),
     enabled: !!dealId,
   });
 
-  const { data: quotes = [] } = useQuery({
-    queryKey: ['deal-quotes', dealId],
-    queryFn: () => getDealQuotesApi(dealId),
+  const { data: quotesPageData } = useQuery({
+    queryKey: ['deal-quotes', dealId, quotesPage, relationPageSize],
+    queryFn: () => getDealQuotesApi(dealId, quotesPage, relationPageSize),
     enabled: !!dealId,
   });
+  const products = productsPageData?.items ?? [];
+  const timeline = timelinePageData?.items ?? [];
+  const notes = notesPageData?.items ?? [];
+  const quotes = quotesPageData?.items ?? [];
+
+  const paginationControls = (
+    total: number,
+    page: number,
+    setPage: React.Dispatch<React.SetStateAction<number>>,
+  ) => total > relationPageSize ? (
+    <div className="flex items-center justify-between border-t border-slate-100 pt-3">
+      <Button type="button" variant="outline" size="sm" disabled={page === 1} onClick={() => setPage((current) => current - 1)}>Previous</Button>
+      <span className="text-xs font-semibold text-slate-500">Page {page} of {Math.ceil(total / relationPageSize)}</span>
+      <Button type="button" variant="outline" size="sm" disabled={page * relationPageSize >= total} onClick={() => setPage((current) => current + 1)}>Next</Button>
+    </div>
+  ) : null;
 
   const { data: commission } = useQuery({
     queryKey: ['deal-commission', dealId],
@@ -176,9 +197,14 @@ export default function DealDetailsPage() {
 
   const removeProductMutation = useMutation({
     mutationFn: (product_id: string) => removeDealProductApi({ id: dealId, product_id }),
-    onSuccess: () => {
+    onSuccess: async () => {
       setSuccessMessage('Product item removed from deal.');
-      refetchProducts();
+      await queryClient.invalidateQueries({ queryKey: ['deal-products', dealId] });
+      if (productsPage > 1 && products.length === 1) {
+        setProductsPage((page) => page - 1);
+      } else {
+        refetchProducts();
+      }
       refetch();
     },
     onError: () => {
@@ -512,10 +538,10 @@ export default function DealDetailsPage() {
         value={activeTab}
         onValueChange={setActiveTab}
         tabs={[
-          { value: 'products', icon: <Package className="size-4" />, label: `Products (${products.length})` },
-          { value: 'timeline', icon: <History className="size-4" />, label: 'Stage History' },
-          { value: 'notes', icon: <FileText className="size-4" />, label: `Notes (${notes.length})` },
-          { value: 'quotes', icon: <DollarSign className="size-4" />, label: `Quotes (${quotes.length})` },
+          { value: 'products', icon: <Package className="size-4" />, label: `Products (${productsPageData?.total ?? 0})` },
+          { value: 'timeline', icon: <History className="size-4" />, label: `Stage History (${timelinePageData?.total ?? 0})` },
+          { value: 'notes', icon: <FileText className="size-4" />, label: `Notes (${notesPageData?.total ?? 0})` },
+          { value: 'quotes', icon: <DollarSign className="size-4" />, label: `Quotes (${quotesPageData?.total ?? 0})` },
           { value: 'commission', icon: <Calculator className="size-4" />, label: 'Rep Commission Split' },
         ]}
         listClassName="border-b border-slate-200"
@@ -604,6 +630,7 @@ export default function DealDetailsPage() {
               ))}
             </div>
           )}
+          {paginationControls(productsPageData?.total ?? 0, productsPage, setProductsPage)}
         </div>
       )}
 
@@ -628,6 +655,7 @@ export default function DealDetailsPage() {
               ))}
             </div>
           )}
+          {paginationControls(timelinePageData?.total ?? 0, timelinePage, setTimelinePage)}
         </div>
       )}
 
@@ -671,6 +699,7 @@ export default function DealDetailsPage() {
               ))}
             </div>
           )}
+          {paginationControls(notesPageData?.total ?? 0, notesPage, setNotesPage)}
         </div>
       )}
 
@@ -697,6 +726,7 @@ export default function DealDetailsPage() {
               ))}
             </div>
           )}
+          {paginationControls(quotesPageData?.total ?? 0, quotesPage, setQuotesPage)}
         </div>
       )}
 

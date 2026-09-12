@@ -267,45 +267,101 @@ class CompanyService:
         return company
 
     async def get_company_contacts(
-        self, db: AsyncSession, company_id: str, *, organization_id: str
+        self,
+        db: AsyncSession,
+        company_id: str,
+        *,
+        organization_id: str,
+        page: int = 1,
+        limit: int = 15,
     ) -> list[dict]:
         await self.require_company(db, company_id, organization_id=organization_id)
         return await contact_service.list_company_contacts(
+            db, company_id, organization_id=organization_id, page=page, limit=limit
+        )
+
+    async def count_company_contacts(
+        self, db: AsyncSession, company_id: str, *, organization_id: str
+    ) -> int:
+        await self.require_company(db, company_id, organization_id=organization_id)
+        return await contact_service.count_company_contacts(
             db, company_id, organization_id=organization_id
         )
 
     async def get_company_deals(
-        self, db: AsyncSession, company_id: str, *, organization_id: str
+        self,
+        db: AsyncSession,
+        company_id: str,
+        *,
+        organization_id: str,
+        page: int = 1,
+        limit: int = 15,
     ) -> list:
         await self.require_company(db, company_id, organization_id=organization_id)
         from app.services.deal_service import deal_to_dict
 
         deals = await self.deal_repository.list_by_company(
-            db, company_id=company_id, organization_id=organization_id
+            db, company_id=company_id, organization_id=organization_id, page=page, limit=limit
         )
         return [deal_to_dict(deal) for deal in deals]
 
-    async def get_company_quotes(
+    async def count_company_deals(
         self, db: AsyncSession, company_id: str, *, organization_id: str
+    ) -> int:
+        await self.require_company(db, company_id, organization_id=organization_id)
+        return await self.deal_repository.count_by_company(
+            db, company_id=company_id, organization_id=organization_id
+        )
+
+    async def get_company_quotes(
+        self,
+        db: AsyncSession,
+        company_id: str,
+        *,
+        organization_id: str,
+        page: int = 1,
+        limit: int = 15,
     ) -> list:
         await self.require_company(db, company_id, organization_id=organization_id)
         from app.services.quote_service import quote_to_dict
 
         quotes = await quote_repository.list_by_company(
-            db, company_id=company_id, organization_id=organization_id
+            db, company_id=company_id, organization_id=organization_id, page=page, limit=limit
         )
         return [quote_to_dict(quote) for quote in quotes]
 
-    async def get_company_invoices(
+    async def count_company_quotes(
         self, db: AsyncSession, company_id: str, *, organization_id: str
+    ) -> int:
+        await self.require_company(db, company_id, organization_id=organization_id)
+        return await quote_repository.count_by_company(
+            db, company_id=company_id, organization_id=organization_id
+        )
+
+    async def get_company_invoices(
+        self,
+        db: AsyncSession,
+        company_id: str,
+        *,
+        organization_id: str,
+        page: int = 1,
+        limit: int = 15,
     ) -> list:
         await self.require_company(db, company_id, organization_id=organization_id)
         from app.services.invoice_service import invoice_to_dict
 
         invoices = await invoice_repository.list_by_company(
-            db, company_id=company_id, organization_id=organization_id
+            db, company_id=company_id, organization_id=organization_id, page=page, limit=limit
         )
         return [invoice_to_dict(invoice) for invoice in invoices]
+
+    async def count_company_invoices(
+        self, db: AsyncSession, company_id: str, *, organization_id: str
+    ) -> int:
+        await self.require_company(db, company_id, organization_id=organization_id)
+        return await invoice_repository.count_by_company(
+            db, company_id=company_id, organization_id=organization_id
+        )
 
     async def get_company_documents(
         self, db: AsyncSession, company_id: str, *, organization_id: str

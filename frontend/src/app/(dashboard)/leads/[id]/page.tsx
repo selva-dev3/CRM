@@ -131,13 +131,20 @@ export default function LeadDetailPage() {
   const { hasPermission } = useHasPermission();
   const leadId = (params?.id as string) || '';
   const canReadCalls = hasPermission(PERMISSIONS.CALLS.READ);
+  const relationPageSize = 15;
+  const [timelinePage, setTimelinePage] = useState(1);
+  const [notesPage, setNotesPage] = useState(1);
+  const [tasksPage, setTasksPage] = useState(1);
+  const [emailsPage, setEmailsPage] = useState(1);
+  const [callsPage, setCallsPage] = useState(1);
+  const [documentsPage, setDocumentsPage] = useState(1);
 
   // Active Tab State
   const [activeTab, setActiveTab] = useState<'overview' | 'timeline' | 'notes' | 'tasks' | 'emails' | 'calls' | 'documents' | 'actions'>('overview');
 
   // Queries
   const { data: lead, isLoading, isError, error, refetch } = useLeadQuery(leadId);
-  const { data: timeline = [], isLoading: isTimelineLoading, refetch: refetchTimeline } = useLeadTimelineQuery(leadId);
+  const { data: timelinePageData, isLoading: isTimelineLoading, refetch: refetchTimeline } = useLeadTimelineQuery(leadId, timelinePage, relationPageSize);
   const {
     data: customFields = [],
     isLoading: isCustomFieldsLoading,
@@ -158,17 +165,23 @@ export default function LeadDetailPage() {
   } = useUsersQuery(1, 100);
 
   // Sub-resource Queries
-  const { data: notes = [], refetch: refetchNotes, isLoading: isNotesLoading } = useLeadNotesQuery(leadId);
-  const { data: tasks = [], refetch: refetchTasks, isLoading: isTasksLoading } = useLeadTasksQuery(leadId);
-  const { data: emails = [], refetch: refetchEmails, isLoading: isEmailsLoading } = useLeadEmailsQuery(leadId);
+  const { data: notesPageData, refetch: refetchNotes, isLoading: isNotesLoading } = useLeadNotesQuery(leadId, notesPage, relationPageSize);
+  const { data: tasksPageData, refetch: refetchTasks, isLoading: isTasksLoading } = useLeadTasksQuery(leadId, tasksPage, relationPageSize);
+  const { data: emailsPageData, refetch: refetchEmails, isLoading: isEmailsLoading } = useLeadEmailsQuery(leadId, emailsPage, relationPageSize);
   const {
-    data: calls = [],
+    data: callsPageData,
     isLoading: isCallsLoading,
     isError: isCallsError,
     error: callsError,
     refetch: refetchCalls,
-  } = useLeadCallsQuery(leadId, canReadCalls);
-  const { data: documents = [], refetch: refetchDocuments, isLoading: isDocsLoading } = useLeadDocumentsQuery(leadId);
+  } = useLeadCallsQuery(leadId, canReadCalls, callsPage, relationPageSize);
+  const { data: documentsPageData, refetch: refetchDocuments, isLoading: isDocsLoading } = useLeadDocumentsQuery(leadId, documentsPage, relationPageSize);
+  const timeline = timelinePageData?.items ?? [];
+  const notes = notesPageData?.items ?? [];
+  const tasks = tasksPageData?.items ?? [];
+  const emails = emailsPageData?.items ?? [];
+  const calls = callsPageData?.items ?? [];
+  const documents = documentsPageData?.items ?? [];
 
   // Lead Mutations
   const createLeadMutation = useCreateLeadMutation();
@@ -852,14 +865,14 @@ export default function LeadDetailPage() {
         className="sticky top-0 z-20 -mx-1 border-b border-[#E5E7EB] bg-slate-50/95 px-1 pt-2 backdrop-blur-sm sm:-mx-2 sm:px-2"
         tabs={[
           { value: 'overview', icon: <Briefcase className="size-4" />, label: 'Overview & Details' },
-          { value: 'timeline', icon: <History className="size-4" />, label: `Timeline (${timeline.length})` },
-          { value: 'notes', icon: <FileText className="size-4" />, label: `Notes (${notes.length})` },
-          { value: 'tasks', icon: <CheckSquare className="size-4" />, label: `Tasks (${tasks.length})` },
-          { value: 'emails', icon: <Send className="size-4" />, label: `Emails (${emails.length})` },
+          { value: 'timeline', icon: <History className="size-4" />, label: `Timeline (${timelinePageData?.total ?? 0})` },
+          { value: 'notes', icon: <FileText className="size-4" />, label: `Notes (${notesPageData?.total ?? 0})` },
+          { value: 'tasks', icon: <CheckSquare className="size-4" />, label: `Tasks (${tasksPageData?.total ?? 0})` },
+          { value: 'emails', icon: <Send className="size-4" />, label: `Emails (${emailsPageData?.total ?? 0})` },
           ...(canReadCalls
-            ? [{ value: 'calls' as const, icon: <PhoneCall className="size-4" />, label: `Calls (${calls.length})` }]
+            ? [{ value: 'calls' as const, icon: <PhoneCall className="size-4" />, label: `Calls (${callsPageData?.total ?? 0})` }]
             : []),
-          { value: 'documents', icon: <Paperclip className="size-4" />, label: `Documents (${documents.length})` },
+          { value: 'documents', icon: <Paperclip className="size-4" />, label: `Documents (${documentsPageData?.total ?? 0})` },
           { value: 'actions', icon: <Zap className="size-4" />, label: 'Actions & Convert' },
         ]}
         listClassName="bg-transparent pb-1"
@@ -1138,6 +1151,13 @@ export default function LeadDetailPage() {
               ))}
             </ol>
           )}
+          {(timelinePageData?.total ?? 0) > relationPageSize && (
+            <div className="flex items-center justify-between border-t border-slate-100 pt-4">
+              <Button type="button" variant="outline" disabled={timelinePage === 1} onClick={() => setTimelinePage((page) => page - 1)}>Previous</Button>
+              <span className="text-xs font-semibold text-slate-500">Page {timelinePage} of {Math.ceil((timelinePageData?.total ?? 0) / relationPageSize)}</span>
+              <Button type="button" variant="outline" disabled={timelinePage * relationPageSize >= (timelinePageData?.total ?? 0)} onClick={() => setTimelinePage((page) => page + 1)}>Next</Button>
+            </div>
+          )}
         </Card>
       )}
 
@@ -1147,7 +1167,7 @@ export default function LeadDetailPage() {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-100 pb-4">
             <div>
               <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
-                <FileText className="w-4 h-4 text-indigo-600" /> Lead Notes ({notes.length})
+                <FileText className="w-4 h-4 text-indigo-600" /> Lead Notes ({notesPageData?.total ?? 0})
               </h3>
               <p className="text-xs font-bold text-slate-500 mt-0.5">Notes attached to lead {lead.contact_name}</p>
             </div>
@@ -1169,7 +1189,7 @@ export default function LeadDetailPage() {
             isLoading={isNotesLoading}
             tableClassName="min-w-[560px]"
             className="shadow-none"
-            pagination={{ pageSize: 15 }}
+            pagination={{ pageIndex: notesPage - 1, pageCount: Math.max(1, Math.ceil((notesPageData?.total ?? 0) / relationPageSize)), onPageChange: (page) => setNotesPage(page + 1), totalRecords: notesPageData?.total ?? 0 }}
           />
         </Card>
       )}
@@ -1180,7 +1200,7 @@ export default function LeadDetailPage() {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-100 pb-4">
             <div>
               <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
-                <CheckSquare className="w-4 h-4 text-indigo-600" /> Assigned Lead Tasks ({tasks.length})
+                <CheckSquare className="w-4 h-4 text-indigo-600" /> Assigned Lead Tasks ({tasksPageData?.total ?? 0})
               </h3>
               <p className="text-xs font-bold text-slate-500 mt-0.5">Tasks created for lead {lead.contact_name}</p>
             </div>
@@ -1205,7 +1225,7 @@ export default function LeadDetailPage() {
             isLoading={isTasksLoading}
             tableClassName="min-w-[560px]"
             className="shadow-none"
-            pagination={{ pageSize: 15 }}
+            pagination={{ pageIndex: tasksPage - 1, pageCount: Math.max(1, Math.ceil((tasksPageData?.total ?? 0) / relationPageSize)), onPageChange: (page) => setTasksPage(page + 1), totalRecords: tasksPageData?.total ?? 0 }}
           />
         </Card>
       )}
@@ -1216,7 +1236,7 @@ export default function LeadDetailPage() {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-100 pb-4">
             <div>
               <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
-                <Send className="w-4 h-4 text-indigo-600" /> Email History ({emails.length})
+                <Send className="w-4 h-4 text-indigo-600" /> Email History ({emailsPageData?.total ?? 0})
               </h3>
               <p className="text-xs font-bold text-slate-500 mt-0.5">Emails sent to lead {lead.contact_name}</p>
             </div>
@@ -1255,6 +1275,7 @@ export default function LeadDetailPage() {
                 )}
               </div>
             )}
+            pagination={{ pageIndex: emailsPage - 1, pageCount: Math.max(1, Math.ceil((emailsPageData?.total ?? 0) / relationPageSize)), onPageChange: (page) => setEmailsPage(page + 1), totalRecords: emailsPageData?.total ?? 0 }}
           />
         </Card>
       )}
@@ -1273,6 +1294,7 @@ export default function LeadDetailPage() {
           error={callsError}
           onRetry={() => void refetchCalls()}
           timeZone={leadTimeZone}
+          pagination={{ pageIndex: callsPage - 1, pageCount: Math.max(1, Math.ceil((callsPageData?.total ?? 0) / relationPageSize)), onPageChange: (page) => setCallsPage(page + 1), totalRecords: callsPageData?.total ?? 0 }}
         />
       )}
 
@@ -1282,7 +1304,7 @@ export default function LeadDetailPage() {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-100 pb-4">
             <div>
               <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
-                <Paperclip className="w-4 h-4 text-indigo-600" /> Attached Documents ({documents.length})
+                <Paperclip className="w-4 h-4 text-indigo-600" /> Attached Documents ({documentsPageData?.total ?? 0})
               </h3>
               <p className="text-xs font-bold text-slate-500 mt-0.5">Files uploaded to S3 storage for lead {lead.contact_name}</p>
             </div>
@@ -1304,7 +1326,7 @@ export default function LeadDetailPage() {
             isLoading={isDocsLoading}
             tableClassName="min-w-[560px]"
             className="shadow-none"
-            pagination={{ pageSize: 15 }}
+            pagination={{ pageIndex: documentsPage - 1, pageCount: Math.max(1, Math.ceil((documentsPageData?.total ?? 0) / relationPageSize)), onPageChange: (page) => setDocumentsPage(page + 1), totalRecords: documentsPageData?.total ?? 0 }}
           />
         </Card>
       )}

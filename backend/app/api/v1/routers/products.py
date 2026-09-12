@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
@@ -23,8 +23,9 @@ router = APIRouter()
     dependencies=[Depends(require_permission("products:read"))],
 )
 async def list_products(
-    page: int = 1,
-    limit: int = 20,
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     category: str | None = Query(None),
     search: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
@@ -32,25 +33,34 @@ async def list_products(
 ):
     try:
         organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-        stmt = select(Product).where(Product.organization_id == organization_id)
+        filters = [Product.organization_id == organization_id]
         if search and search.strip():
-            stmt = stmt.where(
-                (Product.name.ilike(f"%{search.strip()}%"))
-                | (Product.sku.ilike(f"%{search.strip()}%"))
+            search_filter = (Product.name.ilike(f"%{search.strip()}%")) | (
+                Product.sku.ilike(f"%{search.strip()}%")
             )
-        stmt = stmt.offset((page - 1) * limit).limit(limit)
-        res = await db.execute(stmt)
-        products = res.scalars().all()
+            filters.append(search_filter)
+
+        count_result = await db.execute(select(func.count()).select_from(Product).where(*filters))
+        response.headers["X-Total-Count"] = str(count_result.scalar_one())
+
+        result = await db.execute(
+            select(Product)
+            .where(*filters)
+            .order_by(Product.name, Product.id)
+            .offset((page - 1) * limit)
+            .limit(limit)
+        )
+        products = result.scalars().all()
         return [
             {
-                "id": p.id,
-                "name": p.name,
-                "sku": p.sku or f"SKU-{p.id[:6]}",
-                "price": p.price or 0.0,
+                "id": product.id,
+                "name": product.name,
+                "sku": product.sku or f"SKU-{product.id[:6]}",
+                "price": product.price or 0.0,
                 "category": category or "Software",
-                "in_stock_quantity": getattr(p, "in_stock_quantity", 100) or 100,
+                "in_stock_quantity": getattr(product, "in_stock_quantity", 100) or 100,
             }
-            for p in products
+            for product in products
         ]
     except Exception as exc:
         raise HTTPException(

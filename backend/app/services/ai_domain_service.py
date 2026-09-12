@@ -160,12 +160,14 @@ class AIDomainService:
         return parsed if isinstance(parsed, list) else []
 
     async def list_conversations(
-        self, db: AsyncSession, current_user: User
+        self, db: AsyncSession, current_user: User, *, page: int = 1, limit: int = 25
     ) -> list[dict[str, Any]]:
         rows = await self.repository.list_conversations(
             db,
             organization_id=current_user.organization_id or "",
             user_id=current_user.id,
+            page=page,
+            limit=limit,
         )
         return [
             AIConversationSummary(
@@ -177,6 +179,13 @@ class AIDomainService:
             ).model_dump()
             for conversation, updated_at in rows
         ]
+
+    async def count_conversations(self, db: AsyncSession, current_user: User) -> int:
+        return await self.repository.count_conversations(
+            db,
+            organization_id=current_user.organization_id or "",
+            user_id=current_user.id,
+        )
 
     async def get_conversation_history(
         self, db: AsyncSession, conversation_id: str, current_user: User
@@ -843,7 +852,9 @@ class AIDomainService:
             },
             instructions=(
                 "Evaluate lead quality, conversion probability, qualification, temperature, "
-                "confidence, and concise evidence-based reasons. Recommend only an owner ID "
+                "confidence, and concise evidence-based reasons. Return conversion_probability "
+                "as percentage points from 0 to 100 (for example, return 70 for 70%, not 0.7). "
+                "Return confidence as a fraction from 0 to 1. Recommend only an owner ID "
                 "present in authorized_assignment_candidates. If that list is empty or the "
                 "evidence is insufficient, use null for the owner recommendation."
             ),

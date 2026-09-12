@@ -1,5 +1,6 @@
 ﻿import { useQuery, useMutation, useQueryClient, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import { fetchPaginated, type PaginatedResult } from '@/lib/api/pagination';
 
 export interface NotificationItem {
   id: string;
@@ -41,13 +42,17 @@ export interface MessageResponse {
 // API Client Functions
 // ---------------------------------------------------------------------------
 
-export async function fetchNotificationsApi(params?: { page?: number; limit?: number; unread_only?: boolean }): Promise<NotificationItem[]> {
+export async function fetchNotificationsPageApi(params?: { page?: number; limit?: number; unread_only?: boolean }): Promise<PaginatedResult<NotificationItem>> {
   const query = new URLSearchParams();
   if (params?.page) query.append('page', String(params.page));
   if (params?.limit) query.append('limit', String(params.limit));
   if (params?.unread_only) query.append('unread_only', String(params.unread_only));
   const endpoint = `/notifications${query.toString() ? `?${query.toString()}` : ''}`;
-  return apiClient.get<NotificationItem[]>(endpoint);
+  return fetchPaginated<NotificationItem>(endpoint);
+}
+
+export async function fetchNotificationsApi(params?: { page?: number; limit?: number; unread_only?: boolean }): Promise<NotificationItem[]> {
+  return (await fetchNotificationsPageApi(params)).items;
 }
 
 export async function fetchUnreadCountApi(): Promise<UnreadCountResponse> {
@@ -101,6 +106,15 @@ export function useNotificationsQuery(params?: { page?: number; limit?: number; 
     queryKey: ['notifications', params],
     queryFn: () => fetchNotificationsApi(params),
     staleTime: 1000 * 30,
+    ...options,
+  });
+}
+
+export function useNotificationsPageQuery(params?: { page?: number; limit?: number; unread_only?: boolean }, options?: Omit<UseQueryOptions<PaginatedResult<NotificationItem>>, 'queryKey' | 'queryFn'>) {
+  return useQuery<PaginatedResult<NotificationItem>>({
+    queryKey: ['notifications', 'page', params],
+    queryFn: () => fetchNotificationsPageApi(params),
+    staleTime: 1000 * 60,
     ...options,
   });
 }

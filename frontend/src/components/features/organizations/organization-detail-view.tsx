@@ -70,6 +70,10 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [renewalAction, setRenewalAction] = useState<'cancel' | 'resume' | null>(null);
+  const [membersPage, setMembersPage] = useState(1);
+  const [auditPage, setAuditPage] = useState(1);
+  const membersPageSize = 15;
+  const auditPageSize = 20;
 
   // Queries
   const {
@@ -90,11 +94,19 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
   const isOrgLoading = isCurrentOrgView ? isCurrentLoading : isOrgByIdLoading;
   const isOrgError = isCurrentOrgView ? isCurrentError : isOrgByIdError;
   const refetchOrg = isCurrentOrgView ? refetchCurrent : refetchById;
-  const { data: members = [], refetch: refetchMembers } = useOrganizationMembersQuery(canManageMembers);
+  const memberQueryArgs: [boolean, number?, number?] = canManageMembers
+    ? [true, membersPage, membersPageSize]
+    : [false];
+  const auditQueryArgs: [boolean, number?, number?] = canReadAudit
+    ? [true, auditPage, auditPageSize]
+    : [false];
+  const { data: membersPageData, refetch: refetchMembers } = useOrganizationMembersQuery(...memberQueryArgs);
   const { data: subscription, isLoading: isSubscriptionLoading, isError: isSubscriptionError } = useOrganizationSubscriptionQuery(canManageBilling);
   const { data: usage } = useOrganizationUsageQuery(canManageBilling);
   const { refetch: refetchDomains } = useOrganizationDomainsQuery(canManageDomains);
-  const { data: auditLogs = [] } = useOrganizationAuditLogsQuery(canReadAudit);
+  const { data: auditPageData } = useOrganizationAuditLogsQuery(...auditQueryArgs);
+  const members = membersPageData?.items ?? [];
+  const auditLogs = auditPageData?.items ?? [];
 
   // Mutations
   const updateOrgMutation = useUpdateOrganizationMutation();
@@ -237,7 +249,11 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
       setErrorMessage(null);
       const res = await removeMemberMutation.mutateAsync(userId);
       setSuccessMessage(res.message || 'Member removed from organization.');
-      refetchMembers();
+      if (membersPage > 1 && members.length === 1) {
+        setMembersPage((page) => page - 1);
+      } else {
+        refetchMembers();
+      }
       setTimeout(() => setSuccessMessage(null), 4000);
     } catch {
       setErrorMessage('Failed to remove member.');
@@ -599,7 +615,7 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
               <span>Organization Members</span>
             </h3>
             <Badge variant="outline" className="bg-[#F9FAFB] text-[#374151] border-[#E5E7EB]">
-              {members.length} Total Members
+              {membersPageData?.total ?? 0} Total Members
             </Badge>
           </div>
 
@@ -629,6 +645,7 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
               </div>
             )}
           </div>
+          {(membersPageData?.total ?? 0) > membersPageSize && <div className="flex items-center justify-between border-t border-[#E5E7EB] pt-3"><Button type="button" size="sm" variant="outline" disabled={membersPage === 1} onClick={() => setMembersPage((page) => page - 1)}>Previous</Button><span className="text-caption text-[#6B7280]">Page {membersPage} of {Math.ceil((membersPageData?.total ?? 0) / membersPageSize)}</span><Button type="button" size="sm" variant="outline" disabled={membersPage * membersPageSize >= (membersPageData?.total ?? 0)} onClick={() => setMembersPage((page) => page + 1)}>Next</Button></div>}
         </Card>
       )}
 
@@ -849,6 +866,7 @@ export function OrganizationDetailView({ isCurrentOrgView = false }: { isCurrent
                 </div>
               )}
             </div>
+            {(auditPageData?.total ?? 0) > auditPageSize && <div className="flex items-center justify-between border-t border-[#E5E7EB] pt-3"><Button type="button" size="sm" variant="outline" disabled={auditPage === 1} onClick={() => setAuditPage((page) => page - 1)}>Previous</Button><span className="text-caption text-[#6B7280]">Page {auditPage} of {Math.ceil((auditPageData?.total ?? 0) / auditPageSize)}</span><Button type="button" size="sm" variant="outline" disabled={auditPage * auditPageSize >= (auditPageData?.total ?? 0)} onClick={() => setAuditPage((page) => page + 1)}>Next</Button></div>}
           </Card>}
         </div>
       )}

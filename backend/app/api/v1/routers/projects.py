@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
@@ -17,6 +17,7 @@ router = APIRouter()
     dependencies=[Depends(require_permission("projects:read"))],
 )
 async def list_projects(
+    response: Response,
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     status: str | None = None,
@@ -24,9 +25,12 @@ async def list_projects(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await project_service.list_projects(
+    projects = await project_service.list_projects(
         db, current_user, page=page, limit=limit, status=status, priority=priority
     )
+    total = await project_service.count_projects(db, current_user, status=status, priority=priority)
+    response.headers["X-Total-Count"] = str(total)
+    return projects
 
 
 @router.post(

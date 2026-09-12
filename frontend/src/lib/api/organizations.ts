@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import { fetchPaginated, type PaginatedResult } from '@/lib/api/pagination';
 import { notifyAuthUserChanged } from '@/hooks/use-has-permission';
 import { persistSessionUser } from '@/lib/auth-session';
 import type { CurrentUserResponse } from '@/lib/api/auth';
@@ -66,9 +67,9 @@ export function useRetryOrganizationCleanupMutation() {
 }
 
 export function usePlatformOrganizationsQuery(page: number, limit = 20) {
-  return useQuery<OrganizationItem[]>({
+  return useQuery<PaginatedResult<OrganizationItem>>({
     queryKey: platformOrganizationKeys.page(page, limit),
-    queryFn: ({ signal }) => apiClient.get(`/organizations/all?limit=${limit}&offset=${(page - 1) * limit}`, { signal }),
+    queryFn: () => fetchPaginated<OrganizationItem>(`/organizations/all?limit=${limit}&offset=${(page - 1) * limit}`),
   });
 }
 
@@ -321,8 +322,8 @@ export async function deleteOrganizationApi(id: string): Promise<OrganizationDel
 }
 
 // 4. GET /api/v1/organizations/members (List members)
-export async function getOrganizationMembersApi(): Promise<OrganizationMember[]> {
-  return apiClient.get<OrganizationMember[]>('/organizations/members');
+export async function getOrganizationMembersApi(page = 1, limit = 15): Promise<PaginatedResult<OrganizationMember>> {
+  return fetchPaginated<OrganizationMember>(`/organizations/members?page=${page}&limit=${limit}`);
 }
 
 // 5. DELETE /api/v1/organizations/members/{user_id} (Remove member)
@@ -366,8 +367,8 @@ export async function getOrganizationDomainsApi(): Promise<OrganizationDomain[]>
 }
 
 // 13. GET /api/v1/organizations/audit-logs (Get audit logs)
-export async function getOrganizationAuditLogsApi(): Promise<OrganizationAuditLog[]> {
-  return apiClient.get<OrganizationAuditLog[]>('/organizations/audit-logs');
+export async function getOrganizationAuditLogsApi(page = 1, limit = 20): Promise<PaginatedResult<OrganizationAuditLog>> {
+  return fetchPaginated<OrganizationAuditLog>(`/organizations/audit-logs?page=${page}&limit=${limit}`);
 }
 
 // 14. POST /api/v1/organizations/transfer-ownership (Transfer ownership)
@@ -404,10 +405,10 @@ export function useUpdateOrganizationMutation() {
   });
 }
 
-export function useOrganizationMembersQuery(enabled = true) {
+export function useOrganizationMembersQuery(enabled = true, page = 1, limit = 15) {
   return useQuery({
-    queryKey: ['organization-members'],
-    queryFn: getOrganizationMembersApi,
+    queryKey: ['organization-members', page, limit],
+    queryFn: () => getOrganizationMembersApi(page, limit),
     enabled,
   });
 }
@@ -486,10 +487,10 @@ export function useOrganizationDomainsQuery(enabled = true) {
   });
 }
 
-export function useOrganizationAuditLogsQuery(enabled = true) {
+export function useOrganizationAuditLogsQuery(enabled = true, page = 1, limit = 20) {
   return useQuery({
-    queryKey: ['organization-audit-logs'],
-    queryFn: getOrganizationAuditLogsApi,
+    queryKey: ['organization-audit-logs', page, limit],
+    queryFn: () => getOrganizationAuditLogsApi(page, limit),
     enabled,
   });
 }

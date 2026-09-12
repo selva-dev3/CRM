@@ -1,5 +1,6 @@
 ﻿import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import { fetchPaginated, type PaginatedResult } from '@/lib/api/pagination';
 import type { RelatedRecord } from '@/lib/types';
 import type { CustomFieldValue } from '@/lib/api/custom-fields';
 
@@ -148,16 +149,16 @@ export async function unstarContactApi(id: string): Promise<{ message: string; s
   return apiClient.post<{ message: string; status: string }>(`/contacts/${id}/unstar`);
 }
 
-export async function getContactDealsApi(id: string): Promise<RelatedRecord[]> {
-  return apiClient.get<RelatedRecord[]>(`/contacts/${id}/deals`);
+export async function getContactDealsApi(id: string, page = 1, limit = 15): Promise<PaginatedResult<RelatedRecord>> {
+  return fetchPaginated<RelatedRecord>(`/contacts/${id}/deals?page=${page}&limit=${limit}`);
 }
 
-export async function getContactActivitiesApi(id: string): Promise<RelatedRecord[]> {
-  return apiClient.get<RelatedRecord[]>(`/contacts/${id}/activities`);
+export async function getContactActivitiesApi(id: string, page = 1, limit = 15): Promise<PaginatedResult<RelatedRecord>> {
+  return fetchPaginated<RelatedRecord>(`/contacts/${id}/activities?page=${page}&limit=${limit}`);
 }
 
-export async function getContactNotesApi(id: string): Promise<RelatedRecord[]> {
-  return apiClient.get<RelatedRecord[]>(`/contacts/${id}/notes`);
+export async function getContactNotesApi(id: string, page = 1, limit = 15): Promise<PaginatedResult<RelatedRecord>> {
+  return fetchPaginated<RelatedRecord>(`/contacts/${id}/notes?page=${page}&limit=${limit}`);
 }
 
 export async function addContactNoteApi(payload: { id: string; content: string }): Promise<RelatedRecord> {
@@ -166,12 +167,12 @@ export async function addContactNoteApi(payload: { id: string; content: string }
   });
 }
 
-export async function getContactEmailsApi(id: string): Promise<RelatedRecord[]> {
-  return apiClient.get<RelatedRecord[]>(`/contacts/${id}/emails`);
+export async function getContactEmailsApi(id: string, page = 1, limit = 15): Promise<PaginatedResult<RelatedRecord>> {
+  return fetchPaginated<RelatedRecord>(`/contacts/${id}/emails?page=${page}&limit=${limit}`);
 }
 
-export async function getContactCallsApi(id: string): Promise<RelatedRecord[]> {
-  return apiClient.get<RelatedRecord[]>(`/contacts/${id}/calls`);
+export async function getContactCallsApi(id: string, page = 1, limit = 15): Promise<PaginatedResult<RelatedRecord>> {
+  return fetchPaginated<RelatedRecord>(`/contacts/${id}/calls?page=${page}&limit=${limit}`);
 }
 
 // TanStack Query & Mutation Hooks

@@ -92,11 +92,13 @@ export default function MeetingsPage() {
   }, [searchTerm]);
 
   // Queries
-  const { data: meetings = [], isLoading, refetch } = useMeetingsQuery({
+  const { data: meetingsPage, isLoading, refetch } = useMeetingsQuery({
     page,
     limit,
     search: debouncedSearchTerm || undefined,
   });
+  const meetings = meetingsPage?.items ?? [];
+  const totalMeetings = meetingsPage?.total ?? 0;
 
   useUpcomingMeetingsQuery();
 
@@ -407,9 +409,9 @@ export default function MeetingsPage() {
         isLoading={isLoading}
         pagination={{
           pageIndex: page - 1,
-          pageCount: meetings.length >= limit ? page + 1 : page,
+          pageCount: Math.max(1, Math.ceil(totalMeetings / limit)),
           onPageChange: (p) => setPage(p + 1),
-          totalRecords: (page - 1) * limit + meetings.length,
+          totalRecords: totalMeetings,
         }}
       />
 

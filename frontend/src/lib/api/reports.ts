@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import { fetchPaginated, type PaginatedResult } from '@/lib/api/pagination';
 
 export const REPORT_TYPES = [
   'sales-performance',
@@ -262,8 +263,10 @@ export async function fetchQuoteConversionReportApi(): Promise<ReportData> {
   return apiClient.get<ReportData>('/reports/quote-conversion');
 }
 
-export async function fetchCustomReportsApi(): Promise<CustomReportItem[]> {
-  return apiClient.get<CustomReportItem[]>('/reports/custom-reports');
+export async function fetchCustomReportsApi(page = 1, limit = 10, search = ''): Promise<PaginatedResult<CustomReportItem>> {
+  const query = new URLSearchParams({ offset: String((page - 1) * limit), limit: String(limit) });
+  if (search) query.set('search', search);
+  return fetchPaginated<CustomReportItem>(`/reports/custom-reports?${query.toString()}`);
 }
 
 export async function createCustomReportApi(name: string, filters?: string): Promise<MessageResponse> {
@@ -290,8 +293,10 @@ export async function scheduleReportEmailApi(report_type: ReportType, email: str
   return apiClient.post<MessageResponse>('/reports/schedule', { report_type, email, frequency });
 }
 
-export async function fetchScheduledReportsApi(): Promise<ScheduledReportItem[]> {
-  return apiClient.get<ScheduledReportItem[]>('/reports/scheduled');
+export async function fetchScheduledReportsApi(page = 1, limit = 10, search = ''): Promise<PaginatedResult<ScheduledReportItem>> {
+  const query = new URLSearchParams({ offset: String((page - 1) * limit), limit: String(limit) });
+  if (search) query.set('search', search);
+  return fetchPaginated<ScheduledReportItem>(`/reports/scheduled?${query.toString()}`);
 }
 
 export async function deleteScheduledReportApi(scheduleId: string): Promise<MessageResponse> {
@@ -428,19 +433,19 @@ export function useQuoteConversionReportQuery(options?: Omit<UseQueryOptions<Rep
   });
 }
 
-export function useCustomReportsQuery(options?: Omit<UseQueryOptions<CustomReportItem[]>, 'queryKey' | 'queryFn'>) {
-  return useQuery<CustomReportItem[]>({
-    queryKey: ['reports', 'custom-reports'],
-    queryFn: fetchCustomReportsApi,
+export function useCustomReportsQuery(page = 1, limit = 10, search = '', options?: Omit<UseQueryOptions<PaginatedResult<CustomReportItem>>, 'queryKey' | 'queryFn'>) {
+  return useQuery<PaginatedResult<CustomReportItem>>({
+    queryKey: ['reports', 'custom-reports', page, limit, search],
+    queryFn: () => fetchCustomReportsApi(page, limit, search),
     staleTime: 1000 * 60 * 5,
     ...options,
   });
 }
 
-export function useScheduledReportsQuery(options?: Omit<UseQueryOptions<ScheduledReportItem[]>, 'queryKey' | 'queryFn'>) {
-  return useQuery<ScheduledReportItem[]>({
-    queryKey: ['reports', 'scheduled'],
-    queryFn: fetchScheduledReportsApi,
+export function useScheduledReportsQuery(page = 1, limit = 10, search = '', options?: Omit<UseQueryOptions<PaginatedResult<ScheduledReportItem>>, 'queryKey' | 'queryFn'>) {
+  return useQuery<PaginatedResult<ScheduledReportItem>>({
+    queryKey: ['reports', 'scheduled', page, limit, search],
+    queryFn: () => fetchScheduledReportsApi(page, limit, search),
     staleTime: 1000 * 60 * 5,
     ...options,
   });

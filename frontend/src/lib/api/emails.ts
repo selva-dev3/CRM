@@ -1,5 +1,6 @@
 ﻿import { useQuery, useMutation, useQueryClient, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import { fetchPaginated, type PaginatedResult } from '@/lib/api/pagination';
 
 export interface EmailMessageItem {
   id: string;
@@ -69,14 +70,14 @@ export interface MessageResponse {
 // API Client Functions
 // ---------------------------------------------------------------------------
 
-export async function fetchInboxApi(params?: { page?: number; limit?: number; folder?: string; search?: string }): Promise<EmailMessageItem[]> {
+export async function fetchInboxApi(params?: { page?: number; limit?: number; folder?: string; search?: string }): Promise<PaginatedResult<EmailMessageItem>> {
   const query = new URLSearchParams();
   if (params?.page) query.append('page', String(params.page));
   if (params?.limit) query.append('limit', String(params.limit));
   if (params?.folder) query.append('folder', params.folder);
   if (params?.search) query.append('search', params.search);
   const endpoint = `/emails/inbox${query.toString() ? `?${query.toString()}` : ''}`;
-  return apiClient.get<EmailMessageItem[]>(endpoint);
+  return fetchPaginated<EmailMessageItem>(endpoint);
 }
 
 export async function sendEmailApi(payload: EmailSendPayload): Promise<EmailMessageItem> {
@@ -153,8 +154,8 @@ export async function syncImapInboxApi(): Promise<MessageResponse> {
 // TanStack Query Hooks
 // ---------------------------------------------------------------------------
 
-export function useInboxQuery(params?: { page?: number; limit?: number; folder?: string; search?: string }, options?: Omit<UseQueryOptions<EmailMessageItem[]>, 'queryKey' | 'queryFn'>) {
-  return useQuery<EmailMessageItem[]>({
+export function useInboxQuery(params?: { page?: number; limit?: number; folder?: string; search?: string }, options?: Omit<UseQueryOptions<PaginatedResult<EmailMessageItem>>, 'queryKey' | 'queryFn'>) {
+  return useQuery<PaginatedResult<EmailMessageItem>>({
     queryKey: ['emails', 'inbox', params],
     queryFn: () => fetchInboxApi(params),
     staleTime: 1000 * 60 * 2,

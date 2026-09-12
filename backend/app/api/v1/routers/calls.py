@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Header, Query, status
+from fastapi import APIRouter, Depends, Header, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
@@ -24,8 +24,9 @@ router = APIRouter()
     dependencies=[Depends(require_permission("calls:read"))],
 )
 async def list_calls(
-    page: int = 1,
-    limit: int = 20,
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     search: str | None = Query(None),
     call_type: str | None = Query(None),
     lead_id: str | None = Query(None),
@@ -45,7 +46,7 @@ async def list_calls(
         }.items()
         if isinstance(value, str) and value
     }
-    return await call_service.list_calls(
+    calls = await call_service.list_calls(
         db,
         page=page,
         limit=limit,
@@ -54,6 +55,15 @@ async def list_calls(
         **relationship_filters,
         current_user=current_user,
     )
+    total = await call_service.count_calls(
+        db,
+        search=search,
+        call_type=call_type,
+        **relationship_filters,
+        current_user=current_user,
+    )
+    response.headers["X-Total-Count"] = str(total)
+    return calls
 
 
 @router.post(
@@ -71,9 +81,7 @@ async def log_call(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await call_service.log_call(
-        db, payload, current_user, idempotency_key=idempotency_key
-    )
+    return await call_service.log_call(db, payload, current_user, idempotency_key=idempotency_key)
 
 
 @router.post(

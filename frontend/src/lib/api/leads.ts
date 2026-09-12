@@ -1,5 +1,6 @@
 ﻿import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import { fetchPaginated, type PaginatedResult } from '@/lib/api/pagination';
 import type { CustomFieldValue } from '@/lib/api/custom-fields';
 import {
   deleteCallApi,
@@ -187,8 +188,8 @@ export async function getLeadByIdApi(id: string): Promise<Lead> {
   return apiClient.get<Lead>(`/leads/${id}`);
 }
 
-export async function fetchLeadTimelineApi(leadId: string): Promise<LeadTimelineEvent[]> {
-  return apiClient.get<LeadTimelineEvent[]>(`/leads/${leadId}/timeline`);
+export async function fetchLeadTimelineApi(leadId: string, page = 1, limit = 15): Promise<PaginatedResult<LeadTimelineEvent>> {
+  return fetchPaginated<LeadTimelineEvent>(`/leads/${leadId}/timeline?page=${page}&limit=${limit}`);
 }
 
 export async function createLeadApi(payload: CreateLeadPayload): Promise<Lead> {
@@ -204,24 +205,24 @@ export async function deleteLeadApi(id: string): Promise<{ message: string; stat
 }
 
 // Sub-resource APIs
-export async function fetchLeadNotesApi(leadId: string): Promise<LeadNoteItem[]> {
-  return apiClient.get<LeadNoteItem[]>(`/leads/${leadId}/notes`);
+export async function fetchLeadNotesApi(leadId: string, page = 1, limit = 15): Promise<PaginatedResult<LeadNoteItem>> {
+  return fetchPaginated<LeadNoteItem>(`/leads/${leadId}/notes?page=${page}&limit=${limit}`);
 }
 
 export async function addLeadNoteApi(leadId: string, content: string): Promise<LeadNoteItem> {
   return apiClient.post<LeadNoteItem>(`/leads/${leadId}/notes?content=${encodeURIComponent(content)}`);
 }
 
-export async function fetchLeadTasksApi(leadId: string): Promise<LeadTaskItem[]> {
-  return apiClient.get<LeadTaskItem[]>(`/leads/${leadId}/tasks`);
+export async function fetchLeadTasksApi(leadId: string, page = 1, limit = 15): Promise<PaginatedResult<LeadTaskItem>> {
+  return fetchPaginated<LeadTaskItem>(`/leads/${leadId}/tasks?page=${page}&limit=${limit}`);
 }
 
 export async function createLeadTaskApi(leadId: string, payload: { title: string; description?: string; priority?: string; due_date?: string; status?: string }): Promise<LeadTaskItem> {
   return apiClient.post<LeadTaskItem>(`/leads/${leadId}/tasks`, payload);
 }
 
-export async function fetchLeadEmailsApi(leadId: string): Promise<LeadEmailItem[]> {
-  return apiClient.get<LeadEmailItem[]>(`/leads/${leadId}/emails`);
+export async function fetchLeadEmailsApi(leadId: string, page = 1, limit = 15): Promise<PaginatedResult<LeadEmailItem>> {
+  return fetchPaginated<LeadEmailItem>(`/leads/${leadId}/emails?page=${page}&limit=${limit}`);
 }
 
 export async function sendLeadEmailApi(
@@ -234,8 +235,8 @@ export async function sendLeadEmailApi(
   });
 }
 
-export async function fetchLeadCallsApi(leadId: string): Promise<LeadCallLogItem[]> {
-  return apiClient.get<LeadCallLogItem[]>(`/leads/${leadId}/calls`);
+export async function fetchLeadCallsApi(leadId: string, page = 1, limit = 15): Promise<PaginatedResult<LeadCallLogItem>> {
+  return fetchPaginated<LeadCallLogItem>(`/leads/${leadId}/calls?page=${page}&limit=${limit}`);
 }
 
 export async function logLeadCallApi(
@@ -261,8 +262,8 @@ export async function deleteLeadCallApi(
   return deleteCallApi(callId);
 }
 
-export async function fetchLeadDocumentsApi(leadId: string): Promise<LeadDocumentItem[]> {
-  return apiClient.get<LeadDocumentItem[]>(`/leads/${leadId}/documents`);
+export async function fetchLeadDocumentsApi(leadId: string, page = 1, limit = 15): Promise<PaginatedResult<LeadDocumentItem>> {
+  return fetchPaginated<LeadDocumentItem>(`/leads/${leadId}/documents?page=${page}&limit=${limit}`);
 }
 
 export async function uploadLeadDocumentApi(leadId: string, file: File): Promise<LeadDocumentItem> {
@@ -344,37 +345,37 @@ export function useLeadQuery(id: string) {
   });
 }
 
-export function useLeadTimelineQuery(leadId: string) {
+export function useLeadTimelineQuery(leadId: string, page = 1, limit = 15) {
   return useQuery({
-    queryKey: ['lead-timeline', leadId],
-    queryFn: () => fetchLeadTimelineApi(leadId),
+    queryKey: ['lead-timeline', leadId, page, limit],
+    queryFn: () => fetchLeadTimelineApi(leadId, page, limit),
     enabled: !!leadId,
   });
 }
 
-export function useLeadNotesQuery(leadId: string) {
+export function useLeadNotesQuery(leadId: string, page = 1, limit = 15) {
   return useQuery({
-    queryKey: ['lead-notes', leadId],
-    queryFn: () => fetchLeadNotesApi(leadId),
+    queryKey: ['lead-notes', leadId, page, limit],
+    queryFn: () => fetchLeadNotesApi(leadId, page, limit),
     enabled: !!leadId,
   });
 }
 
-export function useLeadTasksQuery(leadId: string) {
+export function useLeadTasksQuery(leadId: string, page = 1, limit = 15) {
   return useQuery({
-    queryKey: ['lead-tasks', leadId],
-    queryFn: () => fetchLeadTasksApi(leadId),
+    queryKey: ['lead-tasks', leadId, page, limit],
+    queryFn: () => fetchLeadTasksApi(leadId, page, limit),
     enabled: !!leadId,
   });
 }
 
-export function useLeadEmailsQuery(leadId: string) {
+export function useLeadEmailsQuery(leadId: string, page = 1, limit = 15) {
   return useQuery({
-    queryKey: ['lead-emails', leadId],
-    queryFn: () => fetchLeadEmailsApi(leadId),
+    queryKey: ['lead-emails', leadId, page, limit],
+    queryFn: () => fetchLeadEmailsApi(leadId, page, limit),
     enabled: !!leadId,
     refetchInterval: (query) => {
-      const emails = query.state.data ?? [];
+      const emails = query.state.data?.items ?? [];
       return emails.some((email) => email.status === 'Pending' || email.status === 'Processing')
         ? 5000
         : false;
@@ -382,18 +383,18 @@ export function useLeadEmailsQuery(leadId: string) {
   });
 }
 
-export function useLeadCallsQuery(leadId: string, enabled = true) {
+export function useLeadCallsQuery(leadId: string, enabled = true, page = 1, limit = 15) {
   return useQuery({
-    queryKey: ['lead-calls', leadId],
-    queryFn: () => fetchLeadCallsApi(leadId),
+    queryKey: ['lead-calls', leadId, page, limit],
+    queryFn: () => fetchLeadCallsApi(leadId, page, limit),
     enabled: !!leadId && enabled,
   });
 }
 
-export function useLeadDocumentsQuery(leadId: string) {
+export function useLeadDocumentsQuery(leadId: string, page = 1, limit = 15) {
   return useQuery({
-    queryKey: ['lead-documents', leadId],
-    queryFn: () => fetchLeadDocumentsApi(leadId),
+    queryKey: ['lead-documents', leadId, page, limit],
+    queryFn: () => fetchLeadDocumentsApi(leadId, page, limit),
     enabled: !!leadId,
   });
 }
