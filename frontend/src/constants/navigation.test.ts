@@ -73,6 +73,8 @@ describe('getRoutePermission', () => {
       PERMISSIONS.WHATSAPP.READ_ALL,
     ]);
     expect(getRoutePermission('/projects')).toBe(PERMISSIONS.PROJECTS.READ);
+    expect(getRoutePermission('/pipelines')).toBe(PERMISSIONS.DEALS.READ);
+    expect(getRoutePermission('/activities')).toBe(PERMISSIONS.ACTIVITIES.READ);
   });
 
   it('groups working modules into the professional product sections', () => {
@@ -81,6 +83,8 @@ describe('getRoutePermission', () => {
     );
 
     expect(byTitle.CRM).toContain('Calendar');
+    expect(byTitle.CRM).toContain('Pipelines');
+    expect(byTitle.CRM).toContain('Activities');
     expect(byTitle.CRM).not.toContain('Products');
     expect(byTitle.Sales).toEqual(['Products', 'Quotes', 'Invoices', 'Payments']);
     expect(byTitle.Projects).toEqual(['Projects']);

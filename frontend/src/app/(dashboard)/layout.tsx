@@ -47,6 +47,8 @@ import {
   Sparkles,
   MessageCircle,
   FolderKanban,
+  GitBranch,
+  Activity,
   Plug,
   ChevronDown,
   ChevronRight
@@ -79,6 +81,8 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Sparkles,
   MessageCircle,
   FolderKanban,
+  GitBranch,
+  Activity,
   Plug,
 };
 

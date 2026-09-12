@@ -89,16 +89,12 @@ export async function getDealStagesApi(): Promise<DealStageItem[]> {
   return apiClient.get<DealStageItem[]>('/deals/stages');
 }
 
-export async function createDealStageApi(payload: { name: string; probability: number }): Promise<DealStageItem> {
-  return apiClient.post<DealStageItem>(`/deals/stages?name=${encodeURIComponent(payload.name)}&probability=${payload.probability}`);
+export async function createDealStageApi(payload: { name: string; probability: number }): Promise<ActionResponse> {
+  return apiClient.post<ActionResponse>(`/deals/stages?name=${encodeURIComponent(payload.name)}&probability=${payload.probability}`);
 }
 
 export async function getKanbanBoardApi(): Promise<Record<string, DealItem[]>> {
-  try {
-    return await apiClient.get<Record<string, DealItem[]>>('/deals/kanban');
-  } catch {
-    return {};
-  }
+  return apiClient.get<Record<string, DealItem[]>>('/deals/kanban');
 }
 
 export async function getWinLossAnalyticsApi(): Promise<DealWinLossAnalytics> {
@@ -291,6 +287,17 @@ export function useCreateDealMutation() {
   return useMutation({
     mutationFn: createDealApi,
     onSuccess: () => invalidateDealReports(queryClient),
+  });
+}
+
+export function useCreateDealStageMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: createDealStageApi,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['deal-stages'] });
+      queryClient.invalidateQueries({ queryKey: ['kanban-board'] });
+    },
   });
 }
 
