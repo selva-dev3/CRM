@@ -46,6 +46,9 @@ class SalesOrder(Base):
     contact_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("contacts.id", ondelete="SET NULL"), index=True
     )
+    created_by: Mapped[str | None] = mapped_column(
+        String, ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
     order_number: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(30), default="Confirmed", server_default="Confirmed")
     currency: Mapped[str] = mapped_column(String(3), nullable=False)

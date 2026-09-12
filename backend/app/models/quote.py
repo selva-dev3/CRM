@@ -32,6 +32,9 @@ class Quote(Base):
     contact_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("contacts.id", ondelete="RESTRICT")
     )
+    created_by: Mapped[str | None] = mapped_column(
+        String, ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
     quote_number: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
     total_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
     status: Mapped[str] = mapped_column(String(50), default="Draft", index=True)

@@ -531,6 +531,10 @@ async def test_clone_role_copies_permissions():
     repo.get_role_for_update = AsyncMock(return_value=role)
     repo.create_role = AsyncMock(return_value=_make_role(id="role-2", name="Cloned"))
     repo.get_role_permissions = AsyncMock(return_value=orig_perms)
+    repo.record_scopes = AsyncMock(
+        return_value=[type("Scope", (), {"module": "leads", "scope": "team"})()]
+    )
+    repo.replace_record_scopes = AsyncMock()
     repo.add_role_permission = AsyncMock()
     service = RoleService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -540,6 +544,8 @@ async def test_clone_role_copies_permissions():
     assert result["name"] == "Cloned"
     assert result["permissions"] == ["leads:read"]
     repo.add_role_permission.assert_awaited_once()
+    scopes = repo.replace_record_scopes.await_args.args[2]
+    assert {item["module"]: item["scope"] for item in scopes}["leads"] == "team"
     repo.get_role_for_update.assert_awaited_once_with(ANY, "role-1", "org-1")
 
 

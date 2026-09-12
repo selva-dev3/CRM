@@ -26,6 +26,18 @@ def test_sales_child_tables_have_explicit_tenant_ownership():
     assert INDIRECT_OWNERS["price_book_entries"] == ("price_book_id", "price_books")
 
 
+def test_crm_foundation_child_tables_have_explicit_tenant_ownership():
+    assert {
+        "role_record_scopes": ("role_id", "roles"),
+        "team_memberships": ("team_id", "teams"),
+        "project_stakeholders": ("project_id", "projects"),
+        "ticket_comments": ("ticket_id", "tickets"),
+        "ticket_status_history": ("ticket_id", "tickets"),
+        "ticket_knowledge_articles": ("ticket_id", "tickets"),
+        "workflow_runs": ("event_id", "workflow_events"),
+    }.items() <= INDIRECT_OWNERS.items()
+
+
 @pytest.mark.asyncio
 async def test_legacy_invitation_acceptance_locks_email_then_tenant_then_invitation(monkeypatch):
     from types import SimpleNamespace

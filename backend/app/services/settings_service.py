@@ -287,7 +287,7 @@ class SettingsService:
                 "id": w.id,
                 "target_url": w.target_url,
                 "events": w.events.split(",") if w.events else [],
-                "is_active": False,
+                "is_active": w.is_active,
             }
             for w in webhooks
         ]
@@ -300,12 +300,34 @@ class SettingsService:
         events: list[str],
         current_user: User | None = None,
     ) -> dict:
-        await self._resolve_org_id(db, current_user)
-        raise APIException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            code="WEBHOOK_DELIVERY_UNAVAILABLE",
-            message="Outgoing webhook delivery is not implemented",
+        import secrets
+        from urllib.parse import urlparse
+
+        org_id = await self._resolve_org_id(db, current_user)
+        parsed = urlparse((target_url or "").strip())
+        if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+            raise APIException(status_code=422, message="Webhook URL must be a public HTTPS URL")
+        allowed_events = {
+            "record.created",
+            "record.updated",
+            "record.status_changed",
+            "workflow.test",
+        }
+        normalized_events = sorted(set(events))
+        if not normalized_events or set(normalized_events) - allowed_events:
+            raise APIException(
+                status_code=422, message="Select one or more supported webhook events"
+            )
+        webhook = await self.repository.create_webhook(
+            db,
+            organization_id=org_id,
+            name=f"Webhook for {parsed.hostname}",
+            target_url=parsed.geturl(),
+            events=",".join(normalized_events),
         )
+        webhook.secret = secrets.token_urlsafe(32)
+        await self._commit(db, "Failed to create webhook")
+        return {"message": "Webhook subscription created", "status": "success"}
 
     async def delete_webhook(self, db: AsyncSession, webhook_id: str, current_user: User) -> dict:
         org_id = await self._resolve_org_id(db, current_user)
@@ -320,11 +342,81 @@ class SettingsService:
             raise APIException(status_code=status.HTTP_400_BAD_REQUEST, message=str(e)) from e
         return {"message": f"Webhook {webhook_id} deleted", "status": "success"}
 
-    async def test_webhook(self, webhook_id: str, current_user: User) -> dict:
-        raise APIException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            message="Webhook delivery testing is not implemented.",
-        )
+    async def test_webhook(self, db: AsyncSession, webhook_id: str, current_user: User) -> dict:
+        import asyncio
+        import hashlib
+        import hmac
+        import ipaddress
+        import json
+        import socket
+        from datetime import UTC, datetime
+        from urllib.parse import urlparse
+
+        import httpx
+
+        org_id = await self._resolve_org_id(db, current_user)
+        webhook = await self.repository.get_webhook(db, webhook_id, organization_id=org_id)
+        if not webhook:
+            raise NotFoundError(message="Webhook not found")
+        parsed = urlparse(webhook.target_url)
+        try:
+            port = parsed.port or 443
+            addresses = await asyncio.to_thread(
+                socket.getaddrinfo, parsed.hostname, port, type=socket.SOCK_STREAM
+            )
+            ips = {ipaddress.ip_address(item[4][0]) for item in addresses}
+        except (OSError, ValueError) as exc:
+            raise APIException(
+                status_code=422, message="Webhook host could not be resolved"
+            ) from exc
+        if not ips or any(
+            ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast
+            for ip in ips
+        ):
+            raise APIException(
+                status_code=422, message="Webhook URL must resolve to a public address"
+            )
+        payload = {
+            "event": "workflow.test",
+            "webhook_id": webhook.id,
+            "sent_at": datetime.now(UTC).isoformat(),
+        }
+        body = json.dumps(payload, separators=(",", ":")).encode()
+        signature = hmac.new((webhook.secret or "").encode(), body, hashlib.sha256).hexdigest()
+        # Connect to the address that was validated above. Keeping the original
+        # Host header and SNI hostname preserves virtual-host routing and TLS
+        # certificate verification without performing a second DNS lookup.
+        pinned_ip = sorted(ips, key=lambda item: (item.version, str(item)))[0]
+        pinned_url = httpx.URL(webhook.target_url).copy_with(host=str(pinned_ip))
+        try:
+            async with httpx.AsyncClient(
+                timeout=min(webhook.timeout_seconds, 15), follow_redirects=False
+            ) as client:
+                response = await client.post(
+                    pinned_url,
+                    content=body,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Host": parsed.netloc,
+                        "X-CRM-Signature": f"sha256={signature}",
+                    },
+                    extensions={"sni_hostname": parsed.hostname},
+                )
+            webhook.last_status_code = response.status_code
+            webhook.last_response = response.text[:1000]
+            webhook.last_triggered_at = datetime.now(UTC)
+            if response.is_error:
+                webhook.failure_count += 1
+                await db.commit()
+                raise APIException(
+                    status_code=502, message=f"Webhook returned HTTP {response.status_code}"
+                )
+            await db.commit()
+        except httpx.HTTPError as exc:
+            webhook.failure_count += 1
+            await db.commit()
+            raise APIException(status_code=502, message="Webhook delivery failed") from exc
+        return {"message": "Test webhook delivered", "status": "success"}
 
     async def list_sla_policies(
         self, db: AsyncSession, current_user: User | None = None

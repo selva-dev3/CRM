@@ -40,6 +40,10 @@ ai read generate configure
 api_keys read create revoke
 projects read create update delete assign
 orders read create update
+tickets read create update delete assign export
+knowledge_base read create update delete publish
+teams read create update delete manage_members
+workflows read create update delete
 """)
 
 SYSTEM_ROLE_PERMISSIONS = {
@@ -119,6 +123,8 @@ calendar read write
 activities read create
 ai read
 orders read
+tickets read create update
+knowledge_base read
 """),
     "Read Only": _keys("""
 dashboard read
@@ -141,6 +147,54 @@ activities read
 ai read
 projects read
 orders read
+"""),
+    "Project Manager": _keys("""
+dashboard read
+projects read create update delete assign
+tasks read create update delete assign complete export import
+documents read upload delete share
+contacts read
+companies read
+deals read
+calendar read write
+reports read
+"""),
+    "Project Member": _keys("""
+dashboard read
+projects read update
+tasks read create update complete
+documents read upload share
+contacts read
+companies read
+deals read
+calendar read write
+"""),
+    "Support Manager": _keys("""
+dashboard read
+tickets read create update delete assign export
+knowledge_base read create update delete publish
+contacts read update
+companies read update
+tasks read create update assign complete
+calls read create update
+emails read send
+notes read create update
+documents read upload share
+calendar read write
+activities read create
+reports read export
+"""),
+    "Finance/Accounts": _keys("""
+dashboard read
+contacts read
+companies read
+deals read
+products read
+quotes read
+orders read update
+invoices read create update send payment export import
+reports read export
+documents read upload share
 """),
 }
 

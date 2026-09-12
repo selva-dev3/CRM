@@ -20,6 +20,18 @@ class Project(Base):
     owner_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("users.id", ondelete="SET NULL"), index=True
     )
+    company_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("companies.id", ondelete="SET NULL"), index=True
+    )
+    contact_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("contacts.id", ondelete="SET NULL"), index=True
+    )
+    originating_deal_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("deals.id", ondelete="SET NULL"), unique=True, index=True
+    )
+    created_by: Mapped[str | None] = mapped_column(
+        String, ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
     start_date: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
     due_date: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), index=True)
     budget: Mapped[float | None] = mapped_column(Numeric(14, 2))
@@ -54,4 +66,22 @@ class ProjectMilestone(Base):
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), onupdate=func.now(), server_default=func.now()
+    )
+
+
+class ProjectStakeholder(Base):
+    __tablename__ = "project_stakeholders"
+    __table_args__ = (
+        CheckConstraint("length(role) <= 100", name="ck_project_stakeholders_role_length"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id: Mapped[str] = mapped_column(
+        String, ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
+    contact_id: Mapped[str] = mapped_column(
+        String, ForeignKey("contacts.id", ondelete="CASCADE"), index=True
+    )
+    role: Mapped[str] = mapped_column(
+        String(100), default="Stakeholder", server_default="Stakeholder"
     )

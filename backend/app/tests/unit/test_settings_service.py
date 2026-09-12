@@ -415,28 +415,27 @@ def test_resolve_username_prefers_existing_user():
 
 
 @pytest.mark.asyncio
-async def test_webhook_registration_does_not_persist_without_delivery_engine():
+async def test_webhook_registration_persists_for_delivery_engine():
     repo: Any = SettingRepository()
     repo.create_webhook = AsyncMock()
     service = _service_with(repo)
     service._resolve_org_id = AsyncMock(return_value="org-1")
     db = AsyncMock(spec=AsyncSession)
 
-    with pytest.raises(APIException) as exc_info:
-        await service.create_webhook(
-            db,
-            target_url="https://example.test/events",
-            events=["lead.created"],
-            current_user=_current_user(),
-        )
+    result = await service.create_webhook(
+        db,
+        target_url="https://example.test/events",
+        events=["record.created"],
+        current_user=_current_user(),
+    )
 
-    assert exc_info.value.code == "WEBHOOK_DELIVERY_UNAVAILABLE"
-    repo.create_webhook.assert_not_awaited()
-    db.commit.assert_not_awaited()
+    assert result["status"] == "success"
+    repo.create_webhook.assert_awaited_once()
+    db.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_existing_undeliverable_webhook_is_not_reported_active():
+async def test_existing_webhook_reports_persisted_active_state():
     repo: Any = SettingRepository()
     repo.list_webhooks = AsyncMock(
         return_value=[
@@ -455,4 +454,60 @@ async def test_existing_undeliverable_webhook_is_not_reported_active():
         AsyncMock(spec=AsyncSession), _current_user()
     )
 
-    assert result[0]["is_active"] is False
+    assert result[0]["is_active"] is True
+
+
+@pytest.mark.asyncio
+async def test_webhook_test_connects_to_validated_ip_with_original_sni(monkeypatch):
+    import asyncio
+    import socket
+
+    import httpx
+
+    webhook = SimpleNamespace(
+        id="webhook-1",
+        target_url="https://hooks.example.test/events",
+        timeout_seconds=5,
+        secret=TEST_HASH,
+        last_status_code=None,
+        last_response=None,
+        last_triggered_at=None,
+        failure_count=0,
+    )
+    repo: Any = SettingRepository()
+    repo.get_webhook = AsyncMock(return_value=webhook)
+    service = _service_with(repo)
+    service._resolve_org_id = AsyncMock(return_value="org-1")
+    captured = {}
+
+    monkeypatch.setattr(
+        asyncio,
+        "to_thread",
+        AsyncMock(
+            return_value=[
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", 443))
+            ]
+        ),
+    )
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def post(self, url, **kwargs):
+            captured["url"] = url
+            captured.update(kwargs)
+            return SimpleNamespace(status_code=204, text="", is_error=False)
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **_kwargs: FakeClient())
+    result = await service.test_webhook(
+        AsyncMock(spec=AsyncSession), "webhook-1", _current_user()
+    )
+
+    assert result["status"] == "success"
+    assert captured["url"].host == "8.8.8.8"
+    assert captured["headers"]["Host"] == "hooks.example.test"
+    assert captured["extensions"]["sni_hostname"] == "hooks.example.test"

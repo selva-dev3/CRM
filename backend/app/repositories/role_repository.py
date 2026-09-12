@@ -17,6 +17,7 @@ from app.models import (
     Permission,
     Role,
     RolePermission,
+    RoleRecordScope,
     SystemSetting,
     User,
     UserInvitation,
@@ -176,6 +177,21 @@ class RoleRepository:
 
     async def delete_role(self, db: AsyncSession, role: Role) -> None:
         await db.delete(role)
+
+    async def record_scopes(self, db: AsyncSession, role_id: str) -> Sequence[RoleRecordScope]:
+        return (
+            await db.scalars(
+                select(RoleRecordScope)
+                .where(RoleRecordScope.role_id == role_id)
+                .order_by(RoleRecordScope.module)
+            )
+        ).all()
+
+    async def replace_record_scopes(
+        self, db: AsyncSession, role_id: str, scopes: list[dict]
+    ) -> None:
+        await db.execute(delete(RoleRecordScope).where(RoleRecordScope.role_id == role_id))
+        db.add_all([RoleRecordScope(role_id=role_id, **scope) for scope in scopes])
 
     # --- Permission ---
     async def get_permission_keys(self, db: AsyncSession) -> list[str]:

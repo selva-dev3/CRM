@@ -66,6 +66,10 @@ celery_app.conf.beat_schedule = {
         "task": "app.workers.tasks.deliver_pending_integration_events",
         "schedule": 30.0,
     },
+    "process-workflow-events": {
+        "task": "app.workers.tasks.process_workflow_events",
+        "schedule": 15.0,
+    },
     "send-due-invoice-reminders": {
         "task": "app.workers.tasks.send_due_invoice_reminders",
         "schedule": crontab(minute=15),
@@ -83,5 +87,7 @@ celery_app.conf.beat_schedule = {
 # Dedicated cleanup deployments must not schedule unrelated delivery backlog.
 if settings.ORGANIZATION_CLEANUP_ONLY:
     celery_app.conf.beat_schedule = {
-        "cleanup-deleted-organization-files": celery_app.conf.beat_schedule["cleanup-deleted-organization-files"]
+        "cleanup-deleted-organization-files": celery_app.conf.beat_schedule[
+            "cleanup-deleted-organization-files"
+        ]
     }

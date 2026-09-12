@@ -85,6 +85,21 @@ export const PERMISSIONS = {
     DELETE: 'projects:delete',
     ASSIGN: 'projects:assign',
   },
+  TICKETS: {
+    READ: 'tickets:read', CREATE: 'tickets:create', UPDATE: 'tickets:update',
+    DELETE: 'tickets:delete', ASSIGN: 'tickets:assign', EXPORT: 'tickets:export',
+  },
+  KNOWLEDGE_BASE: {
+    READ: 'knowledge_base:read', CREATE: 'knowledge_base:create', UPDATE: 'knowledge_base:update',
+    DELETE: 'knowledge_base:delete', PUBLISH: 'knowledge_base:publish',
+  },
+  TEAMS: {
+    READ: 'teams:read', CREATE: 'teams:create', UPDATE: 'teams:update',
+    DELETE: 'teams:delete', MANAGE_MEMBERS: 'teams:manage_members',
+  },
+  WORKFLOWS: {
+    READ: 'workflows:read', CREATE: 'workflows:create', UPDATE: 'workflows:update', DELETE: 'workflows:delete',
+  },
   MEETINGS: {
     READ: 'meetings:read',
     CREATE: 'meetings:create',

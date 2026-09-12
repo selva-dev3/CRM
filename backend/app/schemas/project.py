@@ -7,6 +7,9 @@ class ProjectBase(BaseModel):
     status: str = Field(default="Planning", max_length=50)
     priority: str = Field(default="Medium", max_length=50)
     owner_id: str | None = None
+    company_id: str | None = None
+    contact_id: str | None = None
+    originating_deal_id: str | None = None
     start_date: str | None = None
     due_date: str | None = None
     budget: float | None = Field(default=None, ge=0)
@@ -23,6 +26,9 @@ class ProjectUpdate(BaseModel):
     status: str | None = Field(default=None, max_length=50)
     priority: str | None = Field(default=None, max_length=50)
     owner_id: str | None = None
+    company_id: str | None = None
+    contact_id: str | None = None
+    originating_deal_id: str | None = None
     start_date: str | None = None
     due_date: str | None = None
     budget: float | None = Field(default=None, ge=0)
@@ -34,3 +40,13 @@ class ProjectResponse(ProjectBase):
     organization_id: str
     created_at: str | None = None
     updated_at: str | None = None
+
+
+class ProjectStakeholderCreate(BaseModel):
+    contact_id: str
+    role: str = Field(default="Stakeholder", min_length=1, max_length=100)
+
+
+class ProjectStakeholderResponse(ProjectStakeholderCreate):
+    id: str
+    project_id: str

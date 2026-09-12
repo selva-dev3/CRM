@@ -22,6 +22,7 @@ from app.schemas.crm_schemas import QuoteBase
 from app.services.invoice_service import InvoiceService
 from app.services.org_service import organization_service
 from app.services.quote_state import assert_quote_transition
+from app.services.record_access_service import record_access_service
 from app.services.sales_totals import calculate_line, decimal_value
 
 EDITABLE_QUOTE_STATUSES = {"Draft"}
@@ -350,6 +351,7 @@ class QuoteService:
                 "automatic_deal_id": deal.id,
                 "company_id": company.id,
                 "contact_id": contact.id,
+                "created_by": actor_id,
                 "currency": organization.currency.upper(),
                 "quote_number": f"{organization.quote_prefix}-{now.year}-{sequence:06d}",
                 "status": "Draft",
@@ -387,10 +389,23 @@ class QuoteService:
             raise APIException(message=message) from exc
 
     async def _require_quote(
-        self, db: AsyncSession, *, quote_id: str, organization_id: str
+        self,
+        db: AsyncSession,
+        *,
+        quote_id: str,
+        organization_id: str,
+        current_user: User | None = None,
     ) -> Quote:
+        access = (
+            await record_access_service.resolve(db, current_user, "quotes")
+            if current_user
+            else None
+        )
         quote = await self.repository.get_scoped(
-            db, quote_id=quote_id, organization_id=organization_id
+            db,
+            quote_id=quote_id,
+            organization_id=organization_id,
+            **({"access": access} if access is not None else {}),
         )
         if not quote:
             raise NotFoundError(message=f"Quote '{quote_id}' not found")
@@ -413,7 +428,13 @@ class QuoteService:
         limit: int,
         status: str | None,
         search: str | None,
+        current_user: User | None = None,
     ) -> list[dict]:
+        access = (
+            await record_access_service.resolve(db, current_user, "quotes")
+            if current_user
+            else None
+        )
         quotes = await self.repository.list_scoped(
             db,
             organization_id=organization_id,
@@ -421,6 +442,7 @@ class QuoteService:
             limit=limit,
             status=status,
             search=search,
+            **({"access": access} if access is not None else {}),
         )
         return [quote_to_dict(quote) for quote in quotes]
 
@@ -431,9 +453,19 @@ class QuoteService:
         organization_id: str,
         status: str | None,
         search: str | None,
+        current_user: User | None = None,
     ) -> int:
+        access = (
+            await record_access_service.resolve(db, current_user, "quotes")
+            if current_user
+            else None
+        )
         return await self.repository.count_scoped(
-            db, organization_id=organization_id, status=status, search=search
+            db,
+            organization_id=organization_id,
+            status=status,
+            search=search,
+            **({"access": access} if access is not None else {}),
         )
 
     async def list_quotes_for_deal(
@@ -444,25 +476,51 @@ class QuoteService:
         organization_id: str,
         page: int = 1,
         limit: int = 15,
+        current_user: User | None = None,
     ) -> list[dict]:
+        access = (
+            await record_access_service.resolve(db, current_user, "quotes")
+            if current_user
+            else None
+        )
         quotes = await self.repository.list_by_deal(
             db,
             deal_id=deal_id,
             organization_id=organization_id,
             page=page,
             limit=limit,
+            **({"access": access} if access is not None else {}),
         )
         return [quote_to_dict(quote) for quote in quotes]
 
     async def count_quotes_for_deal(
-        self, db: AsyncSession, *, deal_id: str, organization_id: str
+        self, db: AsyncSession, *, deal_id: str, organization_id: str,
+        current_user: User | None = None,
     ) -> int:
+        access = (
+            await record_access_service.resolve(db, current_user, "quotes")
+            if current_user
+            else None
+        )
         return await self.repository.count_by_deal(
-            db, deal_id=deal_id, organization_id=organization_id
+            db, deal_id=deal_id, organization_id=organization_id,
+            **({"access": access} if access is not None else {}),
         )
 
-    async def get_quote(self, db: AsyncSession, *, quote_id: str, organization_id: str) -> dict:
-        quote = await self._require_quote(db, quote_id=quote_id, organization_id=organization_id)
+    async def get_quote(
+        self,
+        db: AsyncSession,
+        *,
+        quote_id: str,
+        organization_id: str,
+        current_user: User | None = None,
+    ) -> dict:
+        quote = await self._require_quote(
+            db,
+            quote_id=quote_id,
+            organization_id=organization_id,
+            current_user=current_user,
+        )
         result = quote_to_dict(quote)
         items = await self.repository.list_items(
             db, quote_id=quote_id, organization_id=organization_id
@@ -521,8 +579,14 @@ class QuoteService:
         quote_id: str,
         payload: QuoteBase,
         organization_id: str,
+        current_user: User | None = None,
     ) -> dict:
-        quote = await self._require_quote(db, quote_id=quote_id, organization_id=organization_id)
+        quote = await self._require_quote(
+            db,
+            quote_id=quote_id,
+            organization_id=organization_id,
+            current_user=current_user,
+        )
         if quote.automatic_deal_id:
             raise APIException(
                 message="Generated quote totals and customer links cannot be overwritten",
@@ -559,9 +623,24 @@ class QuoteService:
         await db.refresh(quote)
         return quote_to_dict(quote)
 
-    async def delete_quote(self, db: AsyncSession, *, quote_id: str, organization_id: str) -> None:
+    async def delete_quote(
+        self,
+        db: AsyncSession,
+        *,
+        quote_id: str,
+        organization_id: str,
+        current_user: User | None = None,
+    ) -> None:
+        access = (
+            await record_access_service.resolve(db, current_user, "quotes")
+            if current_user
+            else None
+        )
         quote = await self.repository.lock_scoped(
-            db, quote_id=quote_id, organization_id=organization_id
+            db,
+            quote_id=quote_id,
+            organization_id=organization_id,
+            **({"access": access} if access is not None else {}),
         )
         if not quote:
             raise NotFoundError(message=f"Quote '{quote_id}' not found")
@@ -581,17 +660,33 @@ class QuoteService:
                 status_code=status.HTTP_409_CONFLICT,
             )
         deleted = await self.repository.delete_scoped(
-            db, quote_id=quote_id, organization_id=organization_id
+            db,
+            quote_id=quote_id,
+            organization_id=organization_id,
+            **({"access": access} if access is not None else {}),
         )
         if not deleted:
             raise NotFoundError(message=f"Quote '{quote_id}' not found")
         await self._commit(db, "Failed to delete quote")
 
     async def bulk_delete_quotes(
-        self, db: AsyncSession, *, quote_ids: list[str], organization_id: str
+        self,
+        db: AsyncSession,
+        *,
+        quote_ids: list[str],
+        organization_id: str,
+        current_user: User | None = None,
     ) -> dict:
+        access = (
+            await record_access_service.resolve(db, current_user, "quotes")
+            if current_user
+            else None
+        )
         affected_count = await self.repository.bulk_delete_scoped(
-            db, quote_ids=quote_ids, organization_id=organization_id
+            db,
+            quote_ids=quote_ids,
+            organization_id=organization_id,
+            **({"access": access} if access is not None else {}),
         )
         await self._commit(db, "Failed to bulk delete quotes")
         return {

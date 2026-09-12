@@ -50,6 +50,9 @@ class Lead(Base):
     assigned_to: Mapped[str | None] = mapped_column(
         String, ForeignKey("users.id", ondelete="SET NULL"), index=True
     )
+    created_by: Mapped[str | None] = mapped_column(
+        String, ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False)
     custom_fields: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     converted_company_id: Mapped[str | None] = mapped_column(

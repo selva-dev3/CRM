@@ -68,10 +68,9 @@ describe('getRoutePermission', () => {
     expect(getRoutePermission('/users')).toBe(PERMISSIONS.USERS.READ);
     expect(getRoutePermission('/roles')).toBe(PERMISSIONS.ROLES.READ);
     expect(getRoutePermission('/ai')).toBe(PERMISSIONS.AI.READ);
-    expect(getRoutePermission('/whatsapp')).toEqual([
-      PERMISSIONS.WHATSAPP.READ_ASSIGNED,
-      PERMISSIONS.WHATSAPP.READ_ALL,
-    ]);
+    expect(getRoutePermission('/whatsapp')).toEqual({
+      anyOf: [PERMISSIONS.WHATSAPP.READ_ASSIGNED, PERMISSIONS.WHATSAPP.READ_ALL],
+    });
     expect(getRoutePermission('/projects')).toBe(PERMISSIONS.PROJECTS.READ);
     expect(getRoutePermission('/pipelines')).toBe(PERMISSIONS.DEALS.READ);
     expect(getRoutePermission('/activities')).toBe(PERMISSIONS.ACTIVITIES.READ);
@@ -91,7 +90,10 @@ describe('getRoutePermission', () => {
     expect(byTitle.Analytics).not.toContain('Calendar');
     expect(byTitle.Administration).toEqual([
       'User Management',
+      'Teams',
       'Roles & Permissions',
+      'Custom Fields',
+      'Workflows / Automation',
       'Integrations',
       'Settings',
     ]);

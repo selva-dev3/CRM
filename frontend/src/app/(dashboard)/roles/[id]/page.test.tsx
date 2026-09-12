@@ -26,12 +26,14 @@ vi.mock('@/lib/api/roles', () => {
       { id: 'permission-1', key: 'leads:read', name: 'Read leads', category: 'Leads' },
     ] }),
     useRoleUsersQuery: () => ({ data: [] }),
+    useRoleRecordScopesQuery: () => ({ data: [] }),
     useCloneRoleMutation: mutation,
     useAssignPermissionsMutation: mutation,
     useRemovePermissionMutation: mutation,
     useAssignRoleToUserMutation: mutation,
     useSetDefaultRoleMutation: mutation,
     useDeleteRoleMutation: mutation,
+    useUpdateRoleRecordScopesMutation: mutation,
     checkPermissionApi: vi.fn(),
   };
 });

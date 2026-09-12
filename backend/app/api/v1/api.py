@@ -9,13 +9,16 @@ from app.api.v1.routers import (
     calls,
     companies,
     contacts,
+    customers,
     dashboard,
+    dashboard_layouts,
     deals,
     documents,
     emails,
     integrations,
     invitations,
     invoices,
+    knowledge_base,
     leads,
     meetings,
     milestones,
@@ -28,6 +31,7 @@ from app.api.v1.routers import (
     products,
     projects,
     public_invoices,
+    public_knowledge_base,
     public_quotes,
     quote_webhooks,
     quotes,
@@ -35,12 +39,30 @@ from app.api.v1.routers import (
     roles,
     settings,
     tasks,
+    teams,
+    tickets,
     users,
     websockets,
     whatsapp,
+    workflows,
 )
 
 api_router = APIRouter()
+api_router.include_router(
+    dashboard_layouts.router,
+    prefix="/dashboards",
+    tags=["Saved Dashboards"],
+    dependencies=[Depends(get_current_user)],
+)
+api_router.include_router(
+    workflows.router,
+    prefix="/workflows",
+    tags=["Workflow Automation"],
+    dependencies=[Depends(get_current_user)],
+)
+api_router.include_router(
+    public_knowledge_base.router, prefix="/public/knowledge-base", tags=["Public Knowledge Base"]
+)
 api_router.include_router(
     activities.router,
     prefix="/activities",
@@ -73,6 +95,27 @@ api_router.include_router(
     users.router,
     prefix="/users",
     tags=["2. User Management"],
+    dependencies=[Depends(get_current_user)],
+)
+api_router.include_router(
+    teams.router, prefix="/teams", tags=["Teams"], dependencies=[Depends(get_current_user)]
+)
+api_router.include_router(
+    tickets.router,
+    prefix="/tickets",
+    tags=["Support Tickets"],
+    dependencies=[Depends(get_current_user)],
+)
+api_router.include_router(
+    customers.router,
+    prefix="/customers",
+    tags=["Customers"],
+    dependencies=[Depends(get_current_user)],
+)
+api_router.include_router(
+    knowledge_base.router,
+    prefix="/knowledge-base",
+    tags=["Knowledge Base"],
     dependencies=[Depends(get_current_user)],
 )
 api_router.include_router(

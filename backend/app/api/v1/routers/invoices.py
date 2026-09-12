@@ -25,6 +25,20 @@ from app.services.payment_service import payment_service
 router = APIRouter()
 
 
+async def require_invoice_record_access(
+    invoice_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    organization_id = await invoice_service.resolve_organization_id(db, current_user)
+    await invoice_service.require_invoice(
+        db,
+        invoice_id=invoice_id,
+        organization_id=organization_id,
+        current_user=current_user,
+    )
+
+
 def _parse_due_date(raw: str | None) -> datetime | None:
     if not raw or not raw.strip():
         return None
@@ -61,12 +75,14 @@ async def list_invoices(
         limit=limit,
         status=status_filter,
         search=search,
+        current_user=current_user,
     )
     total = await invoice_service.count_invoices(
         db,
         organization_id=organization_id,
         status=status_filter,
         search=search,
+        current_user=current_user,
     )
     response.headers["X-Total-Count"] = str(total)
     return invoices
@@ -103,7 +119,12 @@ async def get_overdue_invoices(
 ):
     organization_id = await invoice_service.resolve_organization_id(db, current_user)
     return await invoice_service.list_invoices(
-        db, organization_id=organization_id, page=1, limit=100, status="Overdue"
+        db,
+        organization_id=organization_id,
+        page=1,
+        limit=100,
+        status="Overdue",
+        current_user=current_user,
     )
 
 
@@ -174,7 +195,10 @@ async def bulk_delete_invoices(
     for invoice_id in payload.ids:
         try:
             await invoice_service.delete_invoice(
-                db, invoice_id=invoice_id, organization_id=organization_id
+                db,
+                invoice_id=invoice_id,
+                organization_id=organization_id,
+                current_user=current_user,
             )
             deleted += 1
         except NotFoundError:
@@ -197,6 +221,12 @@ async def bulk_remind_invoices(
     reminded = 0
     for invoice_id in payload.ids:
         try:
+            await invoice_service.require_invoice(
+                db,
+                invoice_id=invoice_id,
+                organization_id=organization_id,
+                current_user=current_user,
+            )
             await invoice_delivery_service.send_reminder(
                 db, invoice_id=invoice_id, organization_id=organization_id
             )
@@ -218,7 +248,10 @@ async def get_invoice(
 ):
     organization_id = await invoice_service.resolve_organization_id(db, current_user)
     return await invoice_service.get_invoice(
-        db, invoice_id=invoice_id, organization_id=organization_id
+        db,
+        invoice_id=invoice_id,
+        organization_id=organization_id,
+        current_user=current_user,
     )
 
 
@@ -243,6 +276,7 @@ async def update_invoice(
         status=payload.status,
         due_date=payload.due_date,
         billing_snapshot=payload.billing_snapshot,
+        current_user=current_user,
     )
 
 
@@ -258,7 +292,12 @@ async def delete_invoice(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await invoice_service.resolve_organization_id(db, current_user)
-    await invoice_service.delete_invoice(db, invoice_id=invoice_id, organization_id=organization_id)
+    await invoice_service.delete_invoice(
+        db,
+        invoice_id=invoice_id,
+        organization_id=organization_id,
+        current_user=current_user,
+    )
     return {"message": f"Invoice {invoice_id} deleted successfully", "status": "success"}
 
 
@@ -266,7 +305,10 @@ async def delete_invoice(
     "/{invoice_id}/send",
     response_model=MessageResponse,
     summary="Queue finalized invoice PDF and secure review link for the customer",
-    dependencies=[Depends(require_permission("invoices:send"))],
+    dependencies=[
+        Depends(require_permission("invoices:send")),
+        Depends(require_invoice_record_access),
+    ],
 )
 async def send_invoice_email(
     invoice_id: str,
@@ -289,7 +331,10 @@ async def send_invoice_email(
     response_model=PaymentResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Record a manual invoice payment",
-    dependencies=[Depends(require_permission("invoices:payment"))],
+    dependencies=[
+        Depends(require_permission("invoices:payment")),
+        Depends(require_invoice_record_access),
+    ],
 )
 async def record_invoice_payment(
     invoice_id: str,
@@ -312,7 +357,10 @@ async def record_invoice_payment(
 @router.post(
     "/{invoice_id}/submit-for-review",
     response_model=InvoiceResponse,
-    dependencies=[Depends(require_permission("invoices:update"))],
+    dependencies=[
+        Depends(require_permission("invoices:update")),
+        Depends(require_invoice_record_access),
+    ],
 )
 async def submit_invoice_for_review(
     invoice_id: str,
@@ -328,7 +376,10 @@ async def submit_invoice_for_review(
 @router.post(
     "/{invoice_id}/finalize",
     response_model=InvoiceResponse,
-    dependencies=[Depends(require_permission("invoices:update"))],
+    dependencies=[
+        Depends(require_permission("invoices:update")),
+        Depends(require_invoice_record_access),
+    ],
 )
 async def finalize_invoice(
     invoice_id: str,
@@ -344,7 +395,10 @@ async def finalize_invoice(
 @router.post(
     "/{invoice_id}/return-to-draft",
     response_model=InvoiceResponse,
-    dependencies=[Depends(require_permission("invoices:update"))],
+    dependencies=[
+        Depends(require_permission("invoices:update")),
+        Depends(require_invoice_record_access),
+    ],
 )
 async def return_invoice_to_draft(
     invoice_id: str,
@@ -366,7 +420,10 @@ async def return_invoice_to_draft(
     "/{invoice_id}/mark-paid",
     response_model=MessageResponse,
     summary="Use the manual payments endpoint to record payment",
-    dependencies=[Depends(require_permission("invoices:payment"))],
+    dependencies=[
+        Depends(require_permission("invoices:payment")),
+        Depends(require_invoice_record_access),
+    ],
 )
 async def mark_invoice_paid(
     invoice_id: str,
@@ -382,7 +439,10 @@ async def mark_invoice_paid(
     "/{invoice_id}/remind",
     response_model=MessageResponse,
     summary="Send payment reminder email for invoice",
-    dependencies=[Depends(require_permission("invoices:send"))],
+    dependencies=[
+        Depends(require_permission("invoices:send")),
+        Depends(require_invoice_record_access),
+    ],
 )
 async def send_payment_reminder(
     invoice_id: str,
@@ -398,7 +458,10 @@ async def send_payment_reminder(
 @router.get(
     "/{invoice_id}/pdf",
     summary="Get PDF URL for invoice",
-    dependencies=[Depends(require_permission("invoices:read"))],
+    dependencies=[
+        Depends(require_permission("invoices:read")),
+        Depends(require_invoice_record_access),
+    ],
 )
 async def get_invoice_pdf(
     invoice_id: str,
@@ -416,7 +479,10 @@ async def get_invoice_pdf(
     "/{invoice_id}/credit-memo",
     response_model=MessageResponse,
     summary="Issue a credit memo adjustment against invoice",
-    dependencies=[Depends(require_permission("invoices:payment"))],
+    dependencies=[
+        Depends(require_permission("invoices:payment")),
+        Depends(require_invoice_record_access),
+    ],
 )
 async def issue_credit_memo(
     invoice_id: str,

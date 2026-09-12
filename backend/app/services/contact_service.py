@@ -87,8 +87,16 @@ class ContactService:
         current_user: User,
     ) -> list[dict]:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        from app.services.record_access_service import record_access_service
+
+        access = await record_access_service.resolve(db, current_user, "contacts")
         contacts = await self.repository.list_by_org(
-            db, organization_id=org_id, page=page, limit=limit, search=search
+            db,
+            organization_id=org_id,
+            page=page,
+            limit=limit,
+            search=search,
+            access=access,
         )
         return [contact_to_dict(c) for c in contacts]
 
@@ -100,12 +108,22 @@ class ContactService:
         current_user: User,
     ) -> int:
         organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+        from app.services.record_access_service import record_access_service
+
+        access = await record_access_service.resolve(db, current_user, "contacts")
         return await self.repository.count_by_org(
-            db, organization_id=organization_id, search=search
+            db, organization_id=organization_id, search=search, access=access
         )
 
-    async def get_starred_contacts(self, db: AsyncSession, *, organization_id: str) -> list[dict]:
-        contacts = await self.repository.list_starred(db, organization_id=organization_id)
+    async def get_starred_contacts(
+        self, db: AsyncSession, *, organization_id: str, current_user: User
+    ) -> list[dict]:
+        from app.services.record_access_service import record_access_service
+
+        access = await record_access_service.resolve(db, current_user, "contacts")
+        contacts = await self.repository.list_starred(
+            db, organization_id=organization_id, access=access
+        )
         return [contact_to_dict(c) for c in contacts]
 
     async def list_custom_fields(
@@ -123,19 +141,35 @@ class ContactService:
         *,
         organization_id: str,
         populate_existing: bool = False,
+        current_user: User | None = None,
     ) -> Contact:
+        access = None
+        if current_user:
+            from app.services.record_access_service import record_access_service
+
+            access = await record_access_service.resolve(db, current_user, "contacts")
         contact = await self.repository.get_by_id_scoped(
             db,
             contact_id=contact_id,
             organization_id=organization_id,
             populate_existing=populate_existing,
+            access=access,
         )
         if not contact:
             raise NotFoundError(message=f"Contact '{contact_id}' not found")
         return contact
 
-    async def get_contact(self, db: AsyncSession, contact_id: str, *, organization_id: str) -> dict:
-        contact = await self.require_contact(db, contact_id, organization_id=organization_id)
+    async def get_contact(
+        self,
+        db: AsyncSession,
+        contact_id: str,
+        *,
+        organization_id: str,
+        current_user: User | None = None,
+    ) -> dict:
+        contact = await self.require_contact(
+            db, contact_id, organization_id=organization_id, current_user=current_user
+        )
         return contact_to_dict(contact)
 
     async def get_billing_address(
@@ -414,6 +448,8 @@ class ContactService:
             "phone": getattr(payload, "phone", None),
             "position": position,
             "company_id": getattr(payload, "company_id", None),
+            "owner_id": current_user.id,
+            "created_by": current_user.id,
             "custom_fields": custom_fields,
         }
         contact = await self.repository.create(db, data=data)
@@ -445,6 +481,7 @@ class ContactService:
         payload: ContactUpdate,
         *,
         organization_id: str,
+        current_user: User | None = None,
     ) -> dict:
         phone_change_requested = payload.phone is not None
         if settings.WHATSAPP_ENABLED and phone_change_requested:
@@ -456,6 +493,7 @@ class ContactService:
             contact_id,
             organization_id=organization_id,
             populate_existing=phone_change_requested,
+            current_user=current_user,
         )
 
         candidate_email = payload.email if payload.email is not None else contact.email
@@ -528,9 +566,16 @@ class ContactService:
         return contact_to_dict(contact)
 
     async def delete_contact(
-        self, db: AsyncSession, contact_id: str, *, organization_id: str
+        self,
+        db: AsyncSession,
+        contact_id: str,
+        *,
+        organization_id: str,
+        current_user: User | None = None,
     ) -> dict:
-        contact = await self.require_contact(db, contact_id, organization_id=organization_id)
+        contact = await self.require_contact(
+            db, contact_id, organization_id=organization_id, current_user=current_user
+        )
         await self.whatsapp_repository.detach_crm_identities(
             db, organization_id, contact_ids={contact.id}
         )
@@ -560,8 +605,22 @@ class ContactService:
             status_code=501,
         )
 
-    async def bulk_delete(self, db: AsyncSession, ids: list[str], *, organization_id: str) -> dict:
-        contacts = await self.repository.list_by_ids(db, ids, organization_id=organization_id)
+    async def bulk_delete(
+        self,
+        db: AsyncSession,
+        ids: list[str],
+        *,
+        organization_id: str,
+        current_user: User | None = None,
+    ) -> dict:
+        access = None
+        if current_user:
+            from app.services.record_access_service import record_access_service
+
+            access = await record_access_service.resolve(db, current_user, "contacts")
+        contacts = await self.repository.list_by_ids(
+            db, ids, organization_id=organization_id, access=access
+        )
         await self.whatsapp_repository.detach_crm_identities(
             db, organization_id, contact_ids={contact.id for contact in contacts}
         )
@@ -594,21 +653,39 @@ class ContactService:
         organization_id: str,
         page: int = 1,
         limit: int = 15,
+        current_user: User | None = None,
     ) -> list[dict]:
+        from app.services.record_access_service import record_access_service
+
+        access = (
+            await record_access_service.resolve(db, current_user, "contacts")
+            if current_user
+            else None
+        )
         contacts = await self.repository.list_by_company(
             db,
             company_id,
             organization_id=organization_id,
             page=page,
             limit=limit,
+            **({"access": access} if access is not None else {}),
         )
         return [contact_to_dict(c) for c in contacts]
 
     async def count_company_contacts(
-        self, db: AsyncSession, company_id: str, *, organization_id: str
+        self, db: AsyncSession, company_id: str, *, organization_id: str,
+        current_user: User | None = None,
     ) -> int:
+        from app.services.record_access_service import record_access_service
+
+        access = (
+            await record_access_service.resolve(db, current_user, "contacts")
+            if current_user
+            else None
+        )
         return await self.repository.count_by_company(
-            db, company_id, organization_id=organization_id
+            db, company_id, organization_id=organization_id,
+            **({"access": access} if access is not None else {}),
         )
 
     async def list_contact_deals(
@@ -619,25 +696,46 @@ class ContactService:
         organization_id: str,
         page: int = 1,
         limit: int = 15,
+        current_user: User | None = None,
     ) -> list[dict]:
-        await self.require_contact(db, contact_id, organization_id=organization_id)
+        await self.require_contact(
+            db, contact_id, organization_id=organization_id, current_user=current_user
+        )
         from app.services.deal_service import deal_to_dict
+        from app.services.record_access_service import record_access_service
 
+        access = (
+            await record_access_service.resolve(db, current_user, "deals")
+            if current_user
+            else None
+        )
         deals = await self.deal_repository.list_by_contact(
             db,
             contact_id=contact_id,
             organization_id=organization_id,
             page=page,
             limit=limit,
+            **({"access": access} if access is not None else {}),
         )
         return [deal_to_dict(deal) for deal in deals]
 
     async def count_contact_deals(
-        self, db: AsyncSession, contact_id: str, *, organization_id: str
+        self, db: AsyncSession, contact_id: str, *, organization_id: str,
+        current_user: User | None = None,
     ) -> int:
-        await self.require_contact(db, contact_id, organization_id=organization_id)
+        await self.require_contact(
+            db, contact_id, organization_id=organization_id, current_user=current_user
+        )
+        from app.services.record_access_service import record_access_service
+
+        access = (
+            await record_access_service.resolve(db, current_user, "deals")
+            if current_user
+            else None
+        )
         return await self.deal_repository.count_by_contact(
-            db, contact_id=contact_id, organization_id=organization_id
+            db, contact_id=contact_id, organization_id=organization_id,
+            **({"access": access} if access is not None else {}),
         )
 
     async def list_contact_calls(

@@ -36,6 +36,9 @@ class Deal(Base):
     assigned_to: Mapped[str] = mapped_column(
         String, ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
+    created_by: Mapped[str | None] = mapped_column(
+        String, ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
     contact_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("contacts.id", ondelete="SET NULL")
     )

@@ -4,6 +4,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
+from app.core.record_access import record_access_filter
 from app.models import (
     CallLog,
     Contact,
@@ -185,13 +186,20 @@ class LeadRepository:
         organization_id: str,
         search: str | None = None,
         status: str | None = None,
+        access=None,
     ) -> list[Lead]:
+        filters = self._list_filters(search=search, status=status)
+        access_filter = record_access_filter(
+            access, assigned_column=Lead.assigned_to, created_column=Lead.created_by
+        )
+        if access_filter is not None:
+            filters.append(access_filter)
         stmt = (
             select(Lead)
             .where(
                 Lead.organization_id == organization_id,
                 Lead.is_archived.is_(False),
-                *self._list_filters(search=search, status=status),
+                *filters,
             )
             .order_by(Lead.created_at.desc(), Lead.id.desc())
             .offset((page - 1) * limit)
@@ -207,14 +215,21 @@ class LeadRepository:
         organization_id: str,
         search: str | None = None,
         status: str | None = None,
+        access=None,
     ) -> int:
+        filters = self._list_filters(search=search, status=status)
+        access_filter = record_access_filter(
+            access, assigned_column=Lead.assigned_to, created_column=Lead.created_by
+        )
+        if access_filter is not None:
+            filters.append(access_filter)
         stmt = (
             select(func.count())
             .select_from(Lead)
             .where(
                 Lead.organization_id == organization_id,
                 Lead.is_archived.is_(False),
-                *self._list_filters(search=search, status=status),
+                *filters,
             )
         )
         result = await db.execute(stmt)
@@ -225,22 +240,27 @@ class LeadRepository:
         return result.scalars().first()
 
     async def get_by_id_for_org(
-        self, db: AsyncSession, lead_id: str, organization_id: str
+        self, db: AsyncSession, lead_id: str, organization_id: str, access=None
     ) -> Lead | None:
-        result = await db.execute(
-            select(Lead).where(
-                Lead.id == lead_id,
-                Lead.organization_id == organization_id,
-            )
+        filters = [Lead.id == lead_id, Lead.organization_id == organization_id]
+        access_filter = record_access_filter(
+            access, assigned_column=Lead.assigned_to, created_column=Lead.created_by
         )
+        if access_filter is not None:
+            filters.append(access_filter)
+        result = await db.execute(select(Lead).where(*filters))
         return result.scalars().first()
 
     async def list_by_ids(
-        self, db: AsyncSession, ids: list[str], *, organization_id: str
+        self, db: AsyncSession, ids: list[str], *, organization_id: str, access=None
     ) -> list[Lead]:
-        result = await db.execute(
-            select(Lead).where(Lead.id.in_(ids), Lead.organization_id == organization_id)
+        filters = [Lead.id.in_(ids), Lead.organization_id == organization_id]
+        access_filter = record_access_filter(
+            access, assigned_column=Lead.assigned_to, created_column=Lead.created_by
         )
+        if access_filter is not None:
+            filters.append(access_filter)
+        result = await db.execute(select(Lead).where(*filters))
         return list(result.scalars().all())
 
     async def get_by_email(

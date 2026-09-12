@@ -37,6 +37,7 @@ from app.services.document_service import (
 from app.services.notification_service import notification_service
 from app.services.org_service import organization_service
 from app.services.organization_storage_service import lock_organization_storage
+from app.services.record_access_service import record_access_service
 from app.services.s3_service import s3_service
 
 LEAD_SOURCES = ["Website", "LinkedIn", "Referral", "Cold Call", "Event", "Partner"]
@@ -149,7 +150,13 @@ class LeadService:
         limit: int,
         search: str | None = None,
         lead_status: str | None = None,
+        current_user: User | None = None,
     ) -> list[dict]:
+        access = None
+        if current_user:
+            from app.services.record_access_service import record_access_service
+
+            access = await record_access_service.resolve(db, current_user, "leads")
         leads = await self.repository.list_leads(
             db,
             page=page,
@@ -157,6 +164,7 @@ class LeadService:
             organization_id=organization_id,
             search=search,
             status=lead_status,
+            **({"access": access} if access is not None else {}),
         )
         return [lead_to_dict(lead) for lead in leads]
 
@@ -167,12 +175,19 @@ class LeadService:
         organization_id: str,
         search: str | None = None,
         lead_status: str | None = None,
+        current_user: User | None = None,
     ) -> int:
+        access = None
+        if current_user:
+            from app.services.record_access_service import record_access_service
+
+            access = await record_access_service.resolve(db, current_user, "leads")
         return await self.repository.count_leads(
             db,
             organization_id=organization_id,
             search=search,
             status=lead_status,
+            **({"access": access} if access is not None else {}),
         )
 
     async def list_custom_fields(
@@ -183,14 +198,40 @@ class LeadService:
             db, organization_id=organization_id, entity_type="Lead"
         )
 
-    async def require_lead(self, db: AsyncSession, lead_id: str, *, organization_id: str) -> Lead:
-        lead = await self.repository.get_by_id_for_org(db, lead_id, organization_id)
+    async def require_lead(
+        self,
+        db: AsyncSession,
+        lead_id: str,
+        *,
+        organization_id: str,
+        current_user: User | None = None,
+    ) -> Lead:
+        access = None
+        if current_user:
+            from app.services.record_access_service import record_access_service
+
+            access = await record_access_service.resolve(db, current_user, "leads")
+        lead = await self.repository.get_by_id_for_org(
+            db,
+            lead_id,
+            organization_id,
+            **({"access": access} if access is not None else {}),
+        )
         if not lead:
             raise NotFoundError(message=f"Lead '{lead_id}' not found")
         return lead
 
-    async def get_lead(self, db: AsyncSession, lead_id: str, *, organization_id: str) -> dict:
-        lead = await self.require_lead(db, lead_id, organization_id=organization_id)
+    async def get_lead(
+        self,
+        db: AsyncSession,
+        lead_id: str,
+        *,
+        organization_id: str,
+        current_user: User | None = None,
+    ) -> dict:
+        lead = await self.require_lead(
+            db, lead_id, organization_id=organization_id, current_user=current_user
+        )
         return lead_to_dict(lead)
 
     async def _resolve_organization_id(
@@ -264,6 +305,7 @@ class LeadService:
             "source": payload.source,
             "score": payload.score if payload.score is not None else 50.0,
             "assigned_to": assigned_to,
+            "created_by": current_user.id if current_user else None,
             "is_archived": False,
             "custom_fields": custom_fields,
             "next_follow_up_at": payload.next_follow_up_at,
@@ -278,6 +320,17 @@ class LeadService:
             actor_id=current_user.id if current_user else None,
             details=f"Created from {lead.source}",
             audit_action="lead.created",
+        )
+        from app.services.workflow_service import workflow_service
+
+        await workflow_service.emit(
+            db,
+            organization_id=lead.organization_id,
+            module="leads",
+            trigger="record.created",
+            entity_id=lead.id,
+            actor_id=current_user.id if current_user else None,
+            payload={"status": lead.status, "score": lead.score},
         )
         await self._commit(db, "Failed to create lead")
         await db.refresh(lead)
@@ -303,7 +356,13 @@ class LeadService:
         return lead_to_dict(lead)
 
     async def update_lead(
-        self, db: AsyncSession, lead_id: str, payload: LeadUpdate, current_user: User
+        self,
+        db: AsyncSession,
+        lead_id: str,
+        payload: LeadUpdate,
+        current_user: User,
+        *,
+        emit_workflow: bool = True,
     ) -> dict:
         organization_id = getattr(current_user, "organization_id", None)
         if not organization_id:
@@ -314,7 +373,12 @@ class LeadService:
             # Serialize before reading the Lead so a concurrent conversion cannot
             # leave this request validating and mutating a stale pre-conversion row.
             await self.whatsapp_repository.lock_phone_guard(db, organization_id)
-        lead = await self.repository.get_by_id_for_org(db, lead_id, organization_id)
+        from app.services.record_access_service import record_access_service
+
+        access = await record_access_service.resolve(db, current_user, "leads")
+        lead = await self.repository.get_by_id_for_org(
+            db, lead_id, organization_id, access=access
+        )
         if not lead:
             raise NotFoundError(message=f"Lead '{lead_id}' not found")
 
@@ -391,6 +455,27 @@ class LeadService:
                 ),
                 audit_action="lead.follow_up_updated",
             )
+        if emit_workflow:
+            from app.services.workflow_service import workflow_service
+
+            await workflow_service.emit(
+                db,
+                organization_id=lead.organization_id,
+                module="leads",
+                trigger=(
+                    "record.status_changed"
+                    if previous_status != lead.status
+                    else "record.updated"
+                ),
+                entity_id=lead.id,
+                actor_id=current_user.id,
+                payload={
+                    "status": lead.status,
+                    "score": lead.score,
+                    "old_status": previous_status,
+                    "changed_fields": list(updates),
+                },
+            )
         await self._commit(db, "Failed to update lead")
         await notification_service.notify(
             db,
@@ -408,8 +493,17 @@ class LeadService:
         )
         return lead_to_dict(lead)
 
-    async def delete_lead(self, db: AsyncSession, lead_id: str, *, organization_id: str) -> dict:
-        lead = await self.require_lead(db, lead_id, organization_id=organization_id)
+    async def delete_lead(
+        self,
+        db: AsyncSession,
+        lead_id: str,
+        *,
+        organization_id: str,
+        current_user: User | None = None,
+    ) -> dict:
+        lead = await self.require_lead(
+            db, lead_id, organization_id=organization_id, current_user=current_user
+        )
         await self.whatsapp_repository.detach_crm_identities(
             db, organization_id, lead_ids={lead.id}
         )
@@ -417,10 +511,27 @@ class LeadService:
         await self._commit(db, "Failed to delete lead")
         return {"message": f"Lead {lead_id} deleted successfully", "status": "success"}
 
-    async def bulk_delete(self, db: AsyncSession, ids: list[str], *, organization_id: str) -> dict:
+    async def bulk_delete(
+        self,
+        db: AsyncSession,
+        ids: list[str],
+        *,
+        organization_id: str,
+        current_user: User | None = None,
+    ) -> dict:
         if not ids:
             return {"affected_count": 0, "message": "No lead IDs provided"}
-        leads = await self.repository.list_by_ids(db, ids, organization_id=organization_id)
+        access = None
+        if current_user:
+            from app.services.record_access_service import record_access_service
+
+            access = await record_access_service.resolve(db, current_user, "leads")
+        leads = await self.repository.list_by_ids(
+            db,
+            ids,
+            organization_id=organization_id,
+            **({"access": access} if access is not None else {}),
+        )
         await self.whatsapp_repository.detach_crm_identities(
             db, organization_id, lead_ids={lead.id for lead in leads}
         )
@@ -439,10 +550,21 @@ class LeadService:
         *,
         organization_id: str,
         actor_id: str,
+        current_user: User | None = None,
     ) -> dict:
         if not ids:
             return {"affected_count": 0, "message": "No lead IDs provided"}
-        leads = await self.repository.list_by_ids(db, ids, organization_id=organization_id)
+        access = (
+            await record_access_service.resolve(db, current_user, "leads")
+            if current_user
+            else None
+        )
+        leads = await self.repository.list_by_ids(
+            db,
+            ids,
+            organization_id=organization_id,
+            **({"access": access} if access is not None else {}),
+        )
         for lead in leads:
             lead.is_archived = True
             lead.archived_at = self._now()
@@ -468,6 +590,7 @@ class LeadService:
         *,
         organization_id: str,
         actor_id: str,
+        current_user: User | None = None,
     ) -> dict:
         if not ids:
             return {"affected_count": 0, "message": "No lead IDs provided"}
@@ -485,7 +608,17 @@ class LeadService:
                 message="Bulk updates can only mark New leads as Contacted; use lifecycle actions for other statuses.",
             )
 
-        leads = await self.repository.list_by_ids(db, ids, organization_id=organization_id)
+        access = (
+            await record_access_service.resolve(db, current_user, "leads")
+            if current_user
+            else None
+        )
+        leads = await self.repository.list_by_ids(
+            db,
+            ids,
+            organization_id=organization_id,
+            **({"access": access} if access is not None else {}),
+        )
         invalid = [lead.id for lead in leads if lead.is_archived or lead.status != "New"]
         if invalid:
             raise APIException(

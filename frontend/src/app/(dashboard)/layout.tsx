@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { navigationSections, filterNavigationSections, getRoutePermission } from '@/constants/navigation';
+import { navigationSections, filterNavigationSections, getRoutePermission, requirementSatisfied } from '@/constants/navigation';
 import { AIChatAssistant } from '@/components/features/ai/ai-chat-assistant';
 import { GlobalSearchModal } from '@/components/common/global-search-modal';
 import { NotificationBell } from '@/components/features/notifications/notification-bell';
@@ -55,6 +55,13 @@ import {
   ListTodo,
   Flag,
   FolderOpen,
+  LifeBuoy,
+  HeartHandshake,
+  BookOpenCheck,
+  PanelsTopLeft,
+  UsersRound,
+  ListPlus,
+  Workflow,
   ChevronDown,
   ChevronRight
 } from 'lucide-react';
@@ -94,6 +101,13 @@ const ICON_MAP: Record<string, React.ElementType> = {
   ListTodo,
   Flag,
   FolderOpen,
+  LifeBuoy,
+  HeartHandshake,
+  BookOpenCheck,
+  PanelsTopLeft,
+  UsersRound,
+  ListPlus,
+  Workflow,
 };
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -109,7 +123,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [authError, setAuthError] = useState<string | null>(null);
   const [verificationAttempt, setVerificationAttempt] = useState(0);
   const { data: currentOrg } = useCurrentOrganizationQuery(authStatus === 'authenticated' && Boolean(userProfile?.organization_id));
-  const { permissions, hasPermission, hasAnyPermission } = useHasPermission();
+  const { permissions, hasPermission } = useHasPermission();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     CRM: true,
@@ -154,11 +168,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   );
 
   const requiredPermission = React.useMemo(() => getRoutePermission(pathname), [pathname]);
-  const isForbidden = Boolean(requiredPermission) && (
-    Array.isArray(requiredPermission)
-      ? !hasAnyPermission(requiredPermission)
-      : !hasPermission(requiredPermission as Parameters<typeof hasPermission>[0])
-  );
+  const isForbidden = Boolean(requiredPermission) && !requirementSatisfied(permissions, requiredPermission);
 
   useEffect(() => {
     if (authStatus === 'authenticated' && isForbidden && pathname !== '/forbidden') {
@@ -250,6 +260,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return null;
   }
 
+  const accountSummary = (
+    <div className="flex items-center space-x-2 text-xs font-bold min-w-0">
+      <div className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold shrink-0 shadow-xs">
+        {(userProfile.name || userProfile.email).charAt(0).toUpperCase()}
+      </div>
+      <div className="flex flex-col min-w-0 text-left">
+        <span className="truncate group-hover:text-blue-600 transition font-bold text-xs text-slate-900 leading-tight">
+          {currentOrg?.name || (userProfile.is_platform_admin ? 'Global administration' : 'Organization')}
+        </span>
+        <span className="text-[10px] font-semibold text-blue-600 leading-tight truncate">
+          Role: {userProfile.role}
+        </span>
+      </div>
+    </div>
+  );
+
   const sidebarBody = (
     <>
       <nav className="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-thin">
@@ -317,27 +343,24 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         })}
       </nav>
 
-      {hasPermission(PERMISSIONS.SETTINGS.READ) && <Link
-        href="/settings"
-        onClick={closeMobileMenu}
-        title="Organization & User Settings"
-        className="p-3 border-t border-[#E5E7EB] bg-[#F9FAFB] hover:bg-slate-100 text-[#374151] shrink-0 transition flex items-center justify-between group"
-      >
-        <div className="flex items-center space-x-2 text-xs font-bold min-w-0">
-          <div className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold shrink-0 shadow-xs">
-            {(userProfile.name || userProfile.email).charAt(0).toUpperCase()}
-          </div>
-          <div className="flex flex-col min-w-0 text-left">
-            <span className="truncate group-hover:text-blue-600 transition font-bold text-xs text-slate-900 leading-tight">
-              {currentOrg?.name || (userProfile.is_platform_admin ? 'Global administration' : 'Organization')}
-            </span>
-            <span className="text-[10px] font-semibold text-blue-600 leading-tight truncate">
-              Role: {userProfile.role}
-            </span>
-          </div>
+      {hasPermission(PERMISSIONS.SETTINGS.READ) ? (
+        <Link
+          href="/settings"
+          onClick={closeMobileMenu}
+          title="Organization & User Settings"
+          className="p-3 border-t border-[#E5E7EB] bg-[#F9FAFB] hover:bg-slate-100 text-[#374151] shrink-0 transition flex items-center justify-between group"
+        >
+          {accountSummary}
+          <Settings className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition shrink-0" />
+        </Link>
+      ) : (
+        <div
+          aria-label="Current organization and role"
+          className="p-3 border-t border-[#E5E7EB] bg-[#F9FAFB] text-[#374151] shrink-0 flex items-center justify-between"
+        >
+          {accountSummary}
         </div>
-        <Settings className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition shrink-0" />
-      </Link>}
+      )}
     </>
   );
 

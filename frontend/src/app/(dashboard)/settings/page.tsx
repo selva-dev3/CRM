@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
   Settings as SettingsIcon,
   Globe,
@@ -59,7 +60,12 @@ import {
 } from '@/lib/api/settings';
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<'general' | 'fields' | 'webhooks' | 'sla' | 'backups' | 'audit'>('general');
+  const searchParams = useSearchParams();
+  const requestedTab = searchParams?.get('tab') ?? null;
+  const initialTab = ['general', 'fields', 'webhooks', 'sla', 'backups', 'audit'].includes(requestedTab ?? '')
+    ? requestedTab as 'general' | 'fields' | 'webhooks' | 'sla' | 'backups' | 'audit'
+    : 'general';
+  const [activeTab, setActiveTab] = useState<'general' | 'fields' | 'webhooks' | 'sla' | 'backups' | 'audit'>(initialTab);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [auditPage, setAuditPage] = useState(1);

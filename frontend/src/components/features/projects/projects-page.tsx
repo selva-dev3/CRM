@@ -8,6 +8,7 @@ import { ActionMenu } from '@/components/common/action-menu';
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { DatePicker } from '@/components/common/date-picker';
+import { EntityReferenceSelect } from '@/components/common/entity-reference-select';
 import { ModalShell } from '@/components/common/modal-shell';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { ResponsiveSelect } from '@/components/common/responsive-select';
@@ -36,6 +37,9 @@ const EMPTY_FORM: ProjectPayload = {
   status: 'Planning',
   priority: 'Medium',
   owner_id: null,
+  company_id: null,
+  contact_id: null,
+  originating_deal_id: null,
   start_date: null,
   due_date: null,
   budget: null,
@@ -99,6 +103,9 @@ export default function ProjectsPage(): React.JSX.Element {
       status: project.status,
       priority: project.priority,
       owner_id: project.owner_id ?? null,
+      company_id: project.company_id ?? null,
+      contact_id: project.contact_id ?? null,
+      originating_deal_id: project.originating_deal_id ?? null,
       start_date: project.start_date?.slice(0, 10) ?? null,
       due_date: project.due_date?.slice(0, 10) ?? null,
       budget: project.budget ?? null,
@@ -205,6 +212,11 @@ export default function ProjectsPage(): React.JSX.Element {
           <div><label htmlFor="project-progress" className="mb-1 block text-xs font-semibold">Completion percentage</label><Input id="project-progress" type="number" min="0" max="100" value={form.completion_percentage ?? 0} onChange={(event) => setForm((current) => ({ ...current, completion_percentage: Number(event.target.value) }))} /></div>
         </div>
         {canSelectOwner && <div><label className="mb-1 block text-xs font-semibold">Owner</label><UserSelect value={form.owner_id ?? ''} onChange={(value) => setForm((current) => ({ ...current, owner_id: value || null }))} /></div>}
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div><label className="mb-1 block text-xs font-semibold">Company / customer</label><EntityReferenceSelect entityType="Company" value={form.company_id ?? ''} onChange={(value) => setForm((current) => ({ ...current, company_id: value || null }))} /></div>
+          <div><label className="mb-1 block text-xs font-semibold">Primary contact</label><EntityReferenceSelect entityType="Contact" value={form.contact_id ?? ''} onChange={(value) => setForm((current) => ({ ...current, contact_id: value || null }))} /></div>
+          <div><label className="mb-1 block text-xs font-semibold">Originating deal</label><EntityReferenceSelect entityType="Deal" value={form.originating_deal_id ?? ''} onChange={(value) => setForm((current) => ({ ...current, originating_deal_id: value || null }))} /></div>
+        </div>
         <div className="flex flex-col-reverse justify-end gap-2 border-t pt-4 sm:flex-row"><Button type="button" variant="outline" onClick={closeForm}>Cancel</Button><Button type="submit" disabled={createProject.isPending || updateProject.isPending}>{editingProject ? 'Save Changes' : 'Create Project'}</Button></div>
       </form>
     </ModalShell>

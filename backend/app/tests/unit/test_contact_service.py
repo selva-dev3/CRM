@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import ANY, AsyncMock
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -74,7 +74,9 @@ async def test_count_contacts_is_scoped_to_current_organization(monkeypatch):
     result = await service.count_contacts(db, search="Jane", current_user=_make_user())
 
     assert result == 19
-    repo.count_by_org.assert_awaited_once_with(db, organization_id="org-1", search="Jane")
+    repo.count_by_org.assert_awaited_once_with(
+        db, organization_id="org-1", search="Jane", access=ANY
+    )
 
 
 @pytest.mark.asyncio
@@ -327,7 +329,9 @@ async def test_create_contact_validates_and_persists_custom_fields(monkeypatch):
         repository=repo,
         custom_field_service_instance=custom_fields,
         whatsapp_repository=SimpleNamespace(
-            prepare_crm_phone=AsyncMock(), detach_crm_identities=AsyncMock()
+            lock_phone_guard=AsyncMock(),
+            prepare_crm_phone=AsyncMock(),
+            detach_crm_identities=AsyncMock(),
         ),
     )
     monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())

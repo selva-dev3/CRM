@@ -36,6 +36,7 @@ async def list_tasks(
     company_id: str | None = Query(None),
     deal_id: str | None = Query(None),
     project_id: str | None = Query(None),
+    ticket_id: str | None = Query(None),
     project_linked: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -49,6 +50,7 @@ async def list_tasks(
             "company_id": company_id,
             "deal_id": deal_id,
             "project_id": project_id,
+            "ticket_id": ticket_id,
         }.items()
         if isinstance(value, str) and value
     }
@@ -62,6 +64,7 @@ async def list_tasks(
         search=search,
         **relationship_filters,
         project_linked=project_linked,
+        current_user=current_user,
     )
     total = await task_service.count_tasks(
         db,
@@ -71,6 +74,7 @@ async def list_tasks(
         search=search,
         **relationship_filters,
         project_linked=project_linked,
+        current_user=current_user,
     )
     response.headers["X-Total-Count"] = str(total)
     return tasks
@@ -101,7 +105,7 @@ async def get_overdue_tasks(
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await task_service.get_overdue_tasks(db, organization_id)
+    return await task_service.get_overdue_tasks(db, organization_id, current_user)
 
 
 @router.get(
@@ -114,7 +118,7 @@ async def get_today_tasks(
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await task_service.get_today_tasks(db, organization_id)
+    return await task_service.get_today_tasks(db, organization_id, current_user)
 
 
 @router.get(
@@ -126,7 +130,7 @@ async def get_tasks_board_view(
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await task_service.get_board_view(db, organization_id)
+    return await task_service.get_board_view(db, organization_id, current_user)
 
 
 @router.get(
@@ -160,7 +164,7 @@ async def bulk_delete_tasks(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await task_service.bulk_delete(db, payload.ids, organization_id)
+    return await task_service.bulk_delete(db, payload.ids, organization_id, current_user)
 
 
 @router.post(
@@ -175,7 +179,7 @@ async def bulk_complete_tasks(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await task_service.bulk_complete(db, payload.ids, organization_id)
+    return await task_service.bulk_complete(db, payload.ids, organization_id, current_user)
 
 
 @router.get(
@@ -190,7 +194,7 @@ async def get_task(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await task_service.get_task(db, task_id, organization_id)
+    return await task_service.get_task(db, task_id, organization_id, current_user)
 
 
 @router.put(
@@ -206,7 +210,14 @@ async def update_task(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await task_service.update_task(db, task_id, payload, organization_id)
+    return await task_service.update_task(
+        db,
+        task_id,
+        payload,
+        organization_id,
+        actor_id=current_user.id,
+        current_user=current_user,
+    )
 
 
 @router.delete(
@@ -221,7 +232,7 @@ async def delete_task(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await task_service.delete_task(db, task_id, organization_id)
+    return await task_service.delete_task(db, task_id, organization_id, current_user)
 
 
 @router.post(
@@ -236,7 +247,7 @@ async def complete_task(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await task_service.complete_task(db, task_id, organization_id)
+    return await task_service.complete_task(db, task_id, organization_id, current_user)
 
 
 @router.post(
@@ -251,7 +262,7 @@ async def reopen_task(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await task_service.reopen_task(db, task_id, organization_id)
+    return await task_service.reopen_task(db, task_id, organization_id, current_user)
 
 
 @router.get(
@@ -265,7 +276,7 @@ async def get_subtasks(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    await task_service.require_task(db, task_id, organization_id)
+    await task_service.require_task(db, task_id, organization_id, current_user)
     return await task_service.list_subtasks()
 
 
@@ -282,7 +293,7 @@ async def add_subtask(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    await task_service.require_task(db, task_id, organization_id)
+    await task_service.require_task(db, task_id, organization_id, current_user)
     return await task_service.add_subtask(task_id, title)
 
 
@@ -299,7 +310,7 @@ async def assign_task(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await task_service.assign_task(db, task_id, user_id, organization_id)
+    return await task_service.assign_task(db, task_id, user_id, organization_id, current_user)
 
 
 @router.post(
@@ -315,5 +326,5 @@ async def set_task_reminder(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    await task_service.require_task(db, task_id, organization_id)
+    await task_service.require_task(db, task_id, organization_id, current_user)
     return await task_service.set_reminder(task_id, reminder_time)

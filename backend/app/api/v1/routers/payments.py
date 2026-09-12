@@ -39,9 +39,14 @@ async def list_invoice_payment_summaries(
         limit=limit,
         status=status_filter,
         search=search,
+        current_user=current_user,
     )
     total = await payment_service.count_invoice_summaries(
-        db, organization_id=organization_id, status=status_filter, search=search
+        db,
+        organization_id=organization_id,
+        status=status_filter,
+        search=search,
+        current_user=current_user,
     )
     response.headers["X-Total-Count"] = str(total)
     return summaries
@@ -72,6 +77,7 @@ async def list_payments(
         status=status_filter,
         search=search,
         invoice_id=invoice_id,
+        current_user=current_user,
     )
     total = await payment_service.count_payments(
         db,
@@ -79,6 +85,7 @@ async def list_payments(
         status=status_filter,
         search=search,
         invoice_id=invoice_id,
+        current_user=current_user,
     )
     response.headers["X-Total-Count"] = str(total)
     return payments
@@ -98,7 +105,11 @@ async def list_eligible_payment_invoices(
 ):
     organization_id = await invoice_service.resolve_organization_id(db, current_user)
     return await payment_service.list_eligible_invoices(
-        db, organization_id=organization_id, page=page, limit=limit
+        db,
+        organization_id=organization_id,
+        page=page,
+        limit=limit,
+        current_user=current_user,
     )
 
 
@@ -115,7 +126,10 @@ async def get_payment(
 ):
     organization_id = await invoice_service.resolve_organization_id(db, current_user)
     payment = await payment_service.get_payment(
-        db, payment_id=payment_id, organization_id=organization_id
+        db,
+        payment_id=payment_id,
+        organization_id=organization_id,
+        current_user=current_user,
     )
     if not payment:
         raise NotFoundError(message="Payment not found")

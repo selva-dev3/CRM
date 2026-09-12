@@ -25,6 +25,7 @@ from app.core.rbac_matrix import (
 from app.models import AuditLog, Role, User
 from app.repositories.role_repository import RoleRepository
 from app.schemas.crm_schemas import PermissionCreate, RoleCreate, RoleUpdate
+from app.schemas.record_access import RECORD_SCOPE_MODULES, RoleRecordScopeUpdate
 from app.services.auth_service import AuthService
 
 logger = get_logger(__name__)
@@ -1087,6 +1088,11 @@ class RoleService:
                 organization_id=org_id,
             )
             await db.flush()
+            await self.repository.replace_record_scopes(
+                db,
+                role.id,
+                [{"module": module, "scope": "all"} for module in RECORD_SCOPE_MODULES],
+            )
             for permission in permissions:
                 await self.repository.add_role_permission(db, role.id, permission.id)
             self._audit(
@@ -1118,6 +1124,54 @@ class RoleService:
         return role_to_dict(
             role, permission_keys, str(getattr(role, "created_at", datetime.now().isoformat()))
         ) | {"type": "custom"}
+
+    async def get_record_scopes(
+        self, db: AsyncSession, role_id: str, current_user: User
+    ) -> list[dict[str, str]]:
+        role = await self.repository.get_role(db, role_id)
+        if not role:
+            raise NotFoundError(message="Role not found")
+        self._ensure_assignable_role_ownership(role, current_user)
+        by_module = {
+            row.module: row.scope for row in await self.repository.record_scopes(db, role_id)
+        }
+        return [
+            {"module": module, "scope": by_module.get(module, "all")}
+            for module in RECORD_SCOPE_MODULES
+        ]
+
+    async def update_record_scopes(
+        self,
+        db: AsyncSession,
+        role_id: str,
+        payload: RoleRecordScopeUpdate,
+        current_user: User,
+    ) -> list[dict[str, str]]:
+        role = await self.repository.get_role(db, role_id)
+        if not role:
+            raise NotFoundError(message="Role not found")
+        self._ensure_mutable_role_ownership(role, current_user)
+        before = await self.get_record_scopes(db, role_id, current_user)
+        updates = {item.module: item.scope for item in payload.scopes}
+        final = [
+            {
+                "module": item["module"],
+                "scope": updates.get(item["module"], item["scope"]),
+            }
+            for item in before
+        ]
+        await self.repository.replace_record_scopes(db, role_id, final)
+        self._audit(
+            db,
+            current_user=current_user,
+            action="ROLE_RECORD_SCOPES_UPDATED",
+            target_type="role",
+            target_id=role_id,
+            before={"scopes": before},
+            after={"scopes": final},
+        )
+        await self._commit(db, "Failed to update record access")
+        return final
 
     # --- Get permission matrix ---
     async def get_permission_matrix(self, db: AsyncSession) -> list[dict]:
@@ -1681,6 +1735,9 @@ class RoleService:
         approved_permissions = [
             permission for permission in orig_perms if permission.key in ADMIN_PERMISSIONS
         ]
+        source_scopes = {
+            row.module: row.scope for row in await self.repository.record_scopes(db, orig.id)
+        }
         try:
             r = await self.repository.create_role(
                 db,
@@ -1689,6 +1746,14 @@ class RoleService:
                 organization_id=organization_id,
             )
             await db.flush()
+            await self.repository.replace_record_scopes(
+                db,
+                r.id,
+                [
+                    {"module": module, "scope": source_scopes.get(module, "all")}
+                    for module in RECORD_SCOPE_MODULES
+                ],
+            )
             for permission in approved_permissions:
                 await self.repository.add_role_permission(db, r.id, permission.id)
             self._audit(

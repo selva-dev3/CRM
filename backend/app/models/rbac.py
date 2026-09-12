@@ -40,8 +40,13 @@ class Role(Base):
             unique=True,
             postgresql_where=text("lower(replace(btrim(name), '_', ' ')) = 'super admin'"),
         ),
-        Index("uq_roles_scope_normalized_name", organization_id, func.lower(func.btrim(name)),
-              unique=True, postgresql_nulls_not_distinct=True),
+        Index(
+            "uq_roles_scope_normalized_name",
+            organization_id,
+            func.lower(func.btrim(name)),
+            unique=True,
+            postgresql_nulls_not_distinct=True,
+        ),
     )
 
 
@@ -90,4 +95,26 @@ class UserRole(Base):
     )
     role_id: Mapped[str] = mapped_column(
         String, ForeignKey("roles.id", ondelete="RESTRICT"), index=True
+    )
+
+
+class RoleRecordScope(Base):
+    __tablename__ = "role_record_scopes"
+    __table_args__ = (
+        CheckConstraint(
+            "scope IN ('all','team','assigned','own','none')",
+            name="ck_role_record_scopes_scope",
+        ),
+        Index("uq_role_record_scopes_role_module", "role_id", "module", unique=True),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    role_id: Mapped[str] = mapped_column(
+        String, ForeignKey("roles.id", ondelete="CASCADE"), index=True
+    )
+    module: Mapped[str] = mapped_column(String(50), nullable=False)
+    scope: Mapped[str] = mapped_column(String(20), nullable=False, default="all")
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True), onupdate=func.now(), server_default=func.now()
     )

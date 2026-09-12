@@ -5,6 +5,7 @@ import builtins
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.record_access import record_access_filter
 from app.models.company import Company
 from app.models.organization import Organization
 
@@ -20,8 +21,14 @@ class CompanyRepository:
         page: int,
         limit: int,
         search: str | None = None,
+        access=None,
     ) -> builtins.list[Company]:
         stmt = select(Company).where(Company.organization_id == organization_id)
+        access_filter = record_access_filter(
+            access, assigned_column=Company.owner_id, created_column=Company.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         if search:
             stmt = stmt.where(Company.name.ilike(f"%{search}%"))
         stmt = stmt.offset((page - 1) * limit).limit(limit)
@@ -34,12 +41,18 @@ class CompanyRepository:
         *,
         organization_id: str,
         search: str | None = None,
+        access=None,
     ) -> int:
         stmt = (
             select(func.count())
             .select_from(Company)
             .where(Company.organization_id == organization_id)
         )
+        access_filter = record_access_filter(
+            access, assigned_column=Company.owner_id, created_column=Company.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         if search:
             stmt = stmt.where(Company.name.ilike(f"%{search}%"))
         result = await db.execute(stmt)
@@ -50,14 +63,15 @@ class CompanyRepository:
         return result.scalars().first()
 
     async def get_by_id_scoped(
-        self, db: AsyncSession, *, company_id: str, organization_id: str
+        self, db: AsyncSession, *, company_id: str, organization_id: str, access=None
     ) -> Company | None:
-        result = await db.execute(
-            select(Company).where(
-                Company.id == company_id,
-                Company.organization_id == organization_id,
-            )
+        filters = [Company.id == company_id, Company.organization_id == organization_id]
+        access_filter = record_access_filter(
+            access, assigned_column=Company.owner_id, created_column=Company.created_by
         )
+        if access_filter is not None:
+            filters.append(access_filter)
+        result = await db.execute(select(Company).where(*filters))
         return result.scalars().first()
 
     async def list_by_ids(
@@ -66,10 +80,15 @@ class CompanyRepository:
         ids: builtins.list[str],
         *,
         organization_id: str,
+        access=None,
     ) -> builtins.list[Company]:
-        result = await db.execute(
-            select(Company).where(Company.id.in_(ids), Company.organization_id == organization_id)
+        filters = [Company.id.in_(ids), Company.organization_id == organization_id]
+        access_filter = record_access_filter(
+            access, assigned_column=Company.owner_id, created_column=Company.created_by
         )
+        if access_filter is not None:
+            filters.append(access_filter)
+        result = await db.execute(select(Company).where(*filters))
         return list(result.scalars().all())
 
     async def list_subsidiaries(

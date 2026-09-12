@@ -7,6 +7,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.record_access import record_access_filter
 from app.models import Company, Contact, User
 from app.models.deal import Deal, DealActivity, DealProduct, DealStage, DealStageHistory
 from app.models.product import Product
@@ -24,8 +25,14 @@ class DealRepository:
         limit: int,
         search: str | None = None,
         stage: str | None = None,
+        access=None,
     ) -> builtins.list[Deal]:
         stmt = select(Deal).where(Deal.organization_id == organization_id)
+        access_filter = record_access_filter(
+            access, assigned_column=Deal.assigned_to, created_column=Deal.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         if search and search.strip():
             stmt = stmt.where(Deal.title.ilike(f"%{search.strip()}%"))
         if stage:
@@ -45,8 +52,14 @@ class DealRepository:
         organization_id: str,
         search: str | None = None,
         stage: str | None = None,
+        access=None,
     ) -> int:
         stmt = select(func.count()).select_from(Deal).where(Deal.organization_id == organization_id)
+        access_filter = record_access_filter(
+            access, assigned_column=Deal.assigned_to, created_column=Deal.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         if search and search.strip():
             stmt = stmt.where(Deal.title.ilike(f"%{search.strip()}%"))
         if stage:
@@ -54,12 +67,16 @@ class DealRepository:
         result = await db.execute(stmt)
         return int(result.scalar_one())
 
-    async def list_all(self, db: AsyncSession, *, organization_id: str) -> builtins.list[Deal]:
-        result = await db.execute(
-            select(Deal)
-            .where(Deal.organization_id == organization_id)
-            .order_by(Deal.created_at.desc())
+    async def list_all(
+        self, db: AsyncSession, *, organization_id: str, access=None
+    ) -> builtins.list[Deal]:
+        stmt = select(Deal).where(Deal.organization_id == organization_id)
+        access_filter = record_access_filter(
+            access, assigned_column=Deal.assigned_to, created_column=Deal.created_by
         )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
+        result = await db.execute(stmt.order_by(Deal.created_at.desc()))
         return list(result.scalars().all())
 
     async def list_by_contact(
@@ -70,6 +87,7 @@ class DealRepository:
         organization_id: str,
         page: int | None = None,
         limit: int | None = None,
+        access=None,
     ) -> builtins.list[Deal]:
         stmt = (
             select(Deal)
@@ -79,13 +97,18 @@ class DealRepository:
             )
             .order_by(Deal.created_at.desc(), Deal.id.desc())
         )
+        access_filter = record_access_filter(
+            access, assigned_column=Deal.assigned_to, created_column=Deal.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         if page is not None and limit is not None:
             stmt = stmt.offset((page - 1) * limit).limit(limit)
         result = await db.execute(stmt)
         return list(result.scalars().all())
 
     async def count_by_contact(
-        self, db: AsyncSession, *, contact_id: str, organization_id: str
+        self, db: AsyncSession, *, contact_id: str, organization_id: str, access=None
     ) -> int:
         stmt = (
             select(func.count())
@@ -95,6 +118,11 @@ class DealRepository:
                 Deal.organization_id == organization_id,
             )
         )
+        access_filter = record_access_filter(
+            access, assigned_column=Deal.assigned_to, created_column=Deal.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         return int((await db.execute(stmt)).scalar_one())
 
     async def list_activities_by_contact(
@@ -141,6 +169,7 @@ class DealRepository:
         organization_id: str,
         page: int | None = None,
         limit: int | None = None,
+        access=None,
     ) -> builtins.list[Deal]:
         stmt = (
             select(Deal)
@@ -150,13 +179,18 @@ class DealRepository:
             )
             .order_by(Deal.created_at.desc(), Deal.id.desc())
         )
+        access_filter = record_access_filter(
+            access, assigned_column=Deal.assigned_to, created_column=Deal.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         if page is not None and limit is not None:
             stmt = stmt.offset((page - 1) * limit).limit(limit)
         result = await db.execute(stmt)
         return list(result.scalars().all())
 
     async def count_by_company(
-        self, db: AsyncSession, *, company_id: str, organization_id: str
+        self, db: AsyncSession, *, company_id: str, organization_id: str, access=None
     ) -> int:
         stmt = (
             select(func.count())
@@ -166,15 +200,31 @@ class DealRepository:
                 Deal.organization_id == organization_id,
             )
         )
+        access_filter = record_access_filter(
+            access, assigned_column=Deal.assigned_to, created_column=Deal.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         return int((await db.execute(stmt)).scalar_one())
 
     async def get_by_id_scoped(
-        self, db: AsyncSession, *, deal_id: str, organization_id: str, lock: bool = False
+        self,
+        db: AsyncSession,
+        *,
+        deal_id: str,
+        organization_id: str,
+        lock: bool = False,
+        access=None,
     ) -> Deal | None:
         stmt = select(Deal).where(
             Deal.id == deal_id,
             Deal.organization_id == organization_id,
         )
+        access_filter = record_access_filter(
+            access, assigned_column=Deal.assigned_to, created_column=Deal.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         if lock:
             stmt = stmt.with_for_update().execution_options(populate_existing=True)
         result = await db.execute(stmt)
@@ -300,11 +350,15 @@ class DealRepository:
         return company.scalar_one_or_none(), contact.scalar_one_or_none()
 
     async def list_by_ids(
-        self, db: AsyncSession, ids: builtins.list[str], *, organization_id: str
+        self, db: AsyncSession, ids: builtins.list[str], *, organization_id: str, access=None
     ) -> builtins.list[Deal]:
-        result = await db.execute(
-            select(Deal).where(Deal.id.in_(ids), Deal.organization_id == organization_id)
+        stmt = select(Deal).where(Deal.id.in_(ids), Deal.organization_id == organization_id)
+        access_filter = record_access_filter(
+            access, assigned_column=Deal.assigned_to, created_column=Deal.created_by
         )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
+        result = await db.execute(stmt)
         return list(result.scalars().all())
 
     async def create(self, db: AsyncSession, *, data: dict) -> Deal:

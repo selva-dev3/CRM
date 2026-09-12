@@ -3,6 +3,7 @@ from collections.abc import Sequence
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.record_access import record_access_filter
 from app.models import Document
 
 
@@ -26,8 +27,16 @@ class DocumentRepository:
         payment_id: str | None = None,
         project_id: str | None = None,
         project_linked: bool = False,
+        access=None,
     ) -> Sequence[Document]:
         stmt = select(Document).where(Document.organization_id == org_id)
+        access_filter = record_access_filter(
+            access,
+            assigned_column=Document.uploaded_by,
+            created_column=Document.uploaded_by,
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         if search and search.strip():
             stmt = stmt.where(Document.filename.ilike(f"%{search.strip()}%"))
         for column, value in (
@@ -67,8 +76,16 @@ class DocumentRepository:
         payment_id: str | None = None,
         project_id: str | None = None,
         project_linked: bool = False,
+        access=None,
     ) -> int:
         stmt = select(func.count()).select_from(Document).where(Document.organization_id == org_id)
+        access_filter = record_access_filter(
+            access,
+            assigned_column=Document.uploaded_by,
+            created_column=Document.uploaded_by,
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         if search and search.strip():
             stmt = stmt.where(Document.filename.ilike(f"%{search.strip()}%"))
         for column, value in (
@@ -88,18 +105,32 @@ class DocumentRepository:
         return int((await db.execute(stmt)).scalar_one())
 
     async def list_by_ids(
-        self, db: AsyncSession, ids: list[str], org_id: str
+        self, db: AsyncSession, ids: list[str], org_id: str, access=None
     ) -> Sequence[Document]:
         stmt = select(Document).where(Document.id.in_(ids), Document.organization_id == org_id)
+        access_filter = record_access_filter(
+            access,
+            assigned_column=Document.uploaded_by,
+            created_column=Document.uploaded_by,
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         res = await db.execute(stmt)
         return res.scalars().all()
 
     async def get_document(
-        self, db: AsyncSession, document_id: str, org_id: str
+        self, db: AsyncSession, document_id: str, org_id: str, access=None
     ) -> Document | None:
         stmt = select(Document).where(
             Document.id == document_id, Document.organization_id == org_id
         )
+        access_filter = record_access_filter(
+            access,
+            assigned_column=Document.uploaded_by,
+            created_column=Document.uploaded_by,
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         res = await db.execute(stmt)
         return res.scalars().first()
 

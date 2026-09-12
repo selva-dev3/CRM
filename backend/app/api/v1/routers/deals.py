@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
@@ -21,7 +21,25 @@ from app.services.deal_service import deal_service
 from app.services.invoice_service import invoice_service
 from app.services.org_service import organization_service
 
-router = APIRouter()
+
+async def require_deal_record_access(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    deal_id = request.path_params.get("deal_id")
+    if not deal_id:
+        return
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    await deal_service.require_deal(
+        db,
+        deal_id,
+        organization_id=organization_id,
+        current_user=current_user,
+    )
+
+
+router = APIRouter(dependencies=[Depends(require_deal_record_access)])
 
 
 @router.get(
@@ -41,10 +59,20 @@ async def list_deals(
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     deals = await deal_service.list_deals(
-        db, organization_id=organization_id, page=page, limit=limit, search=search, stage=stage
+        db,
+        organization_id=organization_id,
+        page=page,
+        limit=limit,
+        search=search,
+        stage=stage,
+        current_user=current_user,
     )
     total = await deal_service.count_deals(
-        db, organization_id=organization_id, search=search, stage=stage
+        db,
+        organization_id=organization_id,
+        search=search,
+        stage=stage,
+        current_user=current_user,
     )
     response.headers["X-Total-Count"] = str(total)
     return deals
@@ -122,7 +150,9 @@ async def get_kanban_board(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await deal_service.get_kanban_board(db, organization_id=organization_id)
+    return await deal_service.get_kanban_board(
+        db, organization_id=organization_id, current_user=current_user
+    )
 
 
 @router.get(
@@ -135,7 +165,9 @@ async def get_win_loss_analytics(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await deal_service.get_win_loss_analytics(db, organization_id=organization_id)
+    return await deal_service.get_win_loss_analytics(
+        db, organization_id=organization_id, current_user=current_user
+    )
 
 
 @router.get(
@@ -169,7 +201,9 @@ async def bulk_delete_deals(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await deal_service.bulk_delete(db, payload.ids, organization_id=organization_id)
+    return await deal_service.bulk_delete(
+        db, payload.ids, organization_id=organization_id, current_user=current_user
+    )
 
 
 @router.post(
@@ -186,7 +220,8 @@ async def bulk_update_deal_stage(
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     return await deal_service.bulk_update_stage(
-        db, payload.ids, stage, organization_id=organization_id, actor_id=current_user.id
+        db, payload.ids, stage, organization_id=organization_id, actor_id=current_user.id,
+        current_user=current_user,
     )
 
 
@@ -202,7 +237,9 @@ async def get_deal(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await deal_service.get_deal(db, deal_id, organization_id=organization_id)
+    return await deal_service.get_deal(
+        db, deal_id, organization_id=organization_id, current_user=current_user
+    )
 
 
 @router.put(
@@ -219,7 +256,12 @@ async def update_deal(
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     return await deal_service.update_deal(
-        db, deal_id, payload, organization_id=organization_id, actor_id=current_user.id
+        db,
+        deal_id,
+        payload,
+        organization_id=organization_id,
+        actor_id=current_user.id,
+        current_user=current_user,
     )
 
 
@@ -486,10 +528,12 @@ async def get_deal_quotes(
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     quotes = await deal_service.get_deal_quotes(
-        db, deal_id, organization_id, page=page, limit=limit
+        db, deal_id, organization_id, page=page, limit=limit, current_user=current_user
     )
     response.headers["X-Total-Count"] = str(
-        await deal_service.count_deal_quotes(db, deal_id, organization_id)
+        await deal_service.count_deal_quotes(
+            db, deal_id, organization_id, current_user=current_user
+        )
     )
     return quotes
 
@@ -586,5 +630,5 @@ async def get_deal_invoices(
 ):
     organization_id = await invoice_service.resolve_organization_id(db, current_user)
     return await invoice_service.list_invoices_for_deal(
-        db, deal_id=deal_id, organization_id=organization_id
+        db, deal_id=deal_id, organization_id=organization_id, current_user=current_user
     )

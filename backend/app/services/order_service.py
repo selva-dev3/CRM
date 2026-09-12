@@ -11,6 +11,7 @@ from app.models.quote import Quote
 from app.repositories.order_repository import OrderRepository, order_repository
 from app.repositories.quote_repository import QuoteRepository
 from app.repositories.quote_repository import quote_repository as default_quote_repository
+from app.services.record_access_service import record_access_service
 
 
 def order_to_dict(order: SalesOrder, items: list[SalesOrderItem] | None = None) -> dict:
@@ -95,6 +96,7 @@ class OrderService:
             deal_id=quote.deal_id,
             company_id=quote.company_id,
             contact_id=quote.contact_id,
+            created_by=quote.created_by,
             order_number=f"{organization.order_prefix}-{now.year}-{organization.order_sequence:06d}",
             status="Confirmed",
             currency=quote.currency,
@@ -128,6 +130,7 @@ class OrderService:
 
     async def create_from_quote(self, db: AsyncSession, current_user: User, quote_id: str) -> dict:
         organization_id = self.organization_id(current_user)
+        access = await record_access_service.resolve(db, current_user, "orders")
         try:
             quote = await self.repository.get_quote(
                 db, quote_id=quote_id, organization_id=organization_id, lock=True
@@ -135,6 +138,10 @@ class OrderService:
             if not quote:
                 raise NotFoundError(message="Quote not found")
             order = await self.ensure_from_accepted_quote(db, quote)
+            if not record_access_service.allows(
+                access, assigned_to=order.created_by, created_by=order.created_by
+            ):
+                raise NotFoundError(message="Quote not found")
             invoice = await self.repository.get_invoice_for_quote(
                 db, quote_id=quote.id, organization_id=organization_id
             )
@@ -151,19 +158,24 @@ class OrderService:
             raise
 
     async def list(self, db: AsyncSession, current_user: User, **filters) -> list[dict]:
+        access = await record_access_service.resolve(db, current_user, "orders")
         orders = await self.repository.list(
-            db, organization_id=self.organization_id(current_user), **filters
+            db, organization_id=self.organization_id(current_user), access=access, **filters
         )
         return [order_to_dict(order) for order in orders]
 
     async def count(self, db: AsyncSession, current_user: User, **filters) -> int:
+        access = await record_access_service.resolve(db, current_user, "orders")
         return await self.repository.count(
-            db, organization_id=self.organization_id(current_user), **filters
+            db, organization_id=self.organization_id(current_user), access=access, **filters
         )
 
     async def get(self, db: AsyncSession, current_user: User, order_id: str) -> dict:
         organization_id = self.organization_id(current_user)
-        order = await self.repository.get(db, order_id=order_id, organization_id=organization_id)
+        access = await record_access_service.resolve(db, current_user, "orders")
+        order = await self.repository.get(
+            db, order_id=order_id, organization_id=organization_id, access=access
+        )
         if not order:
             raise NotFoundError(message="Order not found")
         items = await self.repository.list_items(
@@ -175,8 +187,13 @@ class OrderService:
         self, db: AsyncSession, current_user: User, order_id: str, status: str
     ) -> dict:
         organization_id = self.organization_id(current_user)
+        access = await record_access_service.resolve(db, current_user, "orders")
         order = await self.repository.get(
-            db, order_id=order_id, organization_id=organization_id, lock=True
+            db,
+            order_id=order_id,
+            organization_id=organization_id,
+            lock=True,
+            access=access,
         )
         if not order:
             raise NotFoundError(message="Order not found")

@@ -24,6 +24,7 @@ from app.models.calendar import CalendarEventModel
 from app.models.call import CallLog
 from app.models.company import Company, CompanyContact
 from app.models.contact import Contact, ContactAddress, ContactTag
+from app.models.dashboard_layout import DashboardLayout
 from app.models.deal import Deal, DealActivity, DealProduct, DealStage, DealStageHistory
 from app.models.document import Document, DocumentVersion
 from app.models.email import Email, EmailLog, EmailTemplate
@@ -54,11 +55,18 @@ from app.models.organization import (
 from app.models.organization_deletion import OrganizationDeletion, OrganizationFileCleanup
 from app.models.payment import Payment
 from app.models.product import PriceBook, PriceBookEntry, Product, ProductCategory
-from app.models.project import Project, ProjectMilestone
+from app.models.project import Project, ProjectMilestone, ProjectStakeholder
 from app.models.quote import Quote, QuoteItem
 from app.models.quote_delivery import QuoteDeliveryAttempt
-from app.models.rbac import Permission, Role, RolePermission, UserRole
+from app.models.rbac import Permission, Role, RolePermission, RoleRecordScope, UserRole
 from app.models.report import CustomReport, ReportExport, ScheduledReport
+from app.models.support import (
+    KnowledgeArticle,
+    Ticket,
+    TicketComment,
+    TicketKnowledgeArticle,
+    TicketStatusHistory,
+)
 from app.models.system import (
     City,
     Country,
@@ -72,6 +80,7 @@ from app.models.system import (
     Timezone,
 )
 from app.models.task import Task, TaskAttachment, TaskComment
+from app.models.team import Team, TeamMembership
 from app.models.user import User, UserInvitation
 from app.models.user_quota import UserQuota
 from app.models.whatsapp import (
@@ -84,6 +93,7 @@ from app.models.whatsapp import (
     WhatsAppTemplate,
     WhatsAppWebhookEvent,
 )
+from app.models.workflow import Workflow, WorkflowEvent, WorkflowRun
 
 __all__ = [
     "WhatsAppContactIdentity",
@@ -119,6 +129,18 @@ __all__ = [
     "Permission",
     "RolePermission",
     "UserRole",
+    "RoleRecordScope",
+    "Team",
+    "TeamMembership",
+    "Ticket",
+    "TicketComment",
+    "TicketStatusHistory",
+    "KnowledgeArticle",
+    "TicketKnowledgeArticle",
+    "DashboardLayout",
+    "Workflow",
+    "WorkflowEvent",
+    "WorkflowRun",
     "Lead",
     "LeadSource",
     "LeadStatus",
@@ -191,4 +213,5 @@ __all__ = [
     "Timezone",
     "Project",
     "ProjectMilestone",
+    "ProjectStakeholder",
 ]

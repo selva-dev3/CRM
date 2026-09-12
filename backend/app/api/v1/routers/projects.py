@@ -5,7 +5,13 @@ from app.api.v1.deps import get_current_user, require_permission
 from app.db.session import get_db
 from app.models import User
 from app.schemas.crm_schemas import MessageResponse
-from app.schemas.project import ProjectCreate, ProjectResponse, ProjectUpdate
+from app.schemas.project import (
+    ProjectCreate,
+    ProjectResponse,
+    ProjectStakeholderCreate,
+    ProjectStakeholderResponse,
+    ProjectUpdate,
+)
 from app.services.project_service import project_service
 
 router = APIRouter()
@@ -88,3 +94,54 @@ async def delete_project(
     current_user: User = Depends(get_current_user),
 ):
     return await project_service.delete_project(db, current_user, project_id)
+
+
+@router.get(
+    "/{project_id}/stakeholders",
+    response_model=list[ProjectStakeholderResponse],
+    dependencies=[
+        Depends(require_permission("projects:read")),
+        Depends(require_permission("contacts:read")),
+    ],
+)
+async def list_stakeholders(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await project_service.list_stakeholders(db, current_user, project_id)
+
+
+@router.post(
+    "/{project_id}/stakeholders",
+    response_model=ProjectStakeholderResponse,
+    status_code=201,
+    dependencies=[
+        Depends(require_permission("projects:update")),
+        Depends(require_permission("contacts:read")),
+    ],
+)
+async def add_stakeholder(
+    project_id: str,
+    payload: ProjectStakeholderCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await project_service.add_stakeholder(
+        db, current_user, project_id, payload.contact_id, payload.role
+    )
+
+
+@router.delete(
+    "/{project_id}/stakeholders/{stakeholder_id}",
+    status_code=204,
+    dependencies=[Depends(require_permission("projects:update"))],
+)
+async def remove_stakeholder(
+    project_id: str,
+    stakeholder_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await project_service.remove_stakeholder(db, current_user, project_id, stakeholder_id)
+    return Response(status_code=204)

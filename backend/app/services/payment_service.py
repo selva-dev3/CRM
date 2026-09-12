@@ -12,6 +12,7 @@ from app.core.errors import APIException, ConflictError, NotFoundError
 from app.core.logging import get_logger
 from app.repositories.payment_repository import InvoicePaymentSummaryRow, PaymentRepository
 from app.schemas.crm_schemas import ManualPaymentCreate
+from app.services.record_access_service import record_access_service
 from app.services.sales_totals import decimal_value
 
 logger = get_logger(__name__)
@@ -234,7 +235,13 @@ class PaymentService:
         status: str | None = None,
         search: str | None = None,
         invoice_id: str | None = None,
+        current_user=None,
     ) -> list[dict[str, object]]:
+        access = (
+            await record_access_service.resolve(db, current_user, "payments")
+            if current_user
+            else None
+        )
         rows = await self.repository.list_scoped(
             db,
             organization_id=organization_id,
@@ -243,6 +250,7 @@ class PaymentService:
             status=status,
             search=search,
             invoice_id=invoice_id,
+            access=access,
         )
         return [payment_to_dict(row) for row in rows]
 
@@ -254,13 +262,20 @@ class PaymentService:
         status: str | None = None,
         search: str | None = None,
         invoice_id: str | None = None,
+        current_user=None,
     ) -> int:
+        access = (
+            await record_access_service.resolve(db, current_user, "payments")
+            if current_user
+            else None
+        )
         return await self.repository.count_scoped(
             db,
             organization_id=organization_id,
             status=status,
             search=search,
             invoice_id=invoice_id,
+            access=access,
         )
 
     async def list_invoice_summaries(
@@ -272,7 +287,13 @@ class PaymentService:
         limit: int,
         status: str | None = None,
         search: str | None = None,
+        current_user=None,
     ) -> list[dict[str, object]]:
+        access = (
+            await record_access_service.resolve(db, current_user, "payments")
+            if current_user
+            else None
+        )
         rows = await self.repository.list_invoice_summaries(
             db,
             organization_id=organization_id,
@@ -280,6 +301,7 @@ class PaymentService:
             limit=limit,
             status=status,
             search=search,
+            access=access,
         )
         return [invoice_payment_summary_to_dict(row) for row in rows]
 
@@ -290,24 +312,46 @@ class PaymentService:
         organization_id: str,
         status: str | None = None,
         search: str | None = None,
+        current_user=None,
     ) -> int:
+        access = (
+            await record_access_service.resolve(db, current_user, "payments")
+            if current_user
+            else None
+        )
         return await self.repository.count_invoice_summaries(
-            db, organization_id=organization_id, status=status, search=search
+            db, organization_id=organization_id, status=status, search=search, access=access
         )
 
     async def list_eligible_invoices(
-        self, db: AsyncSession, *, organization_id: str, page: int = 1, limit: int = 100
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        page: int = 1,
+        limit: int = 100,
+        current_user=None,
     ) -> list[dict[str, object]]:
+        access = (
+            await record_access_service.resolve(db, current_user, "payments")
+            if current_user
+            else None
+        )
         rows = await self.repository.list_eligible_invoices(
-            db, organization_id=organization_id, page=page, limit=limit
+            db, organization_id=organization_id, page=page, limit=limit, access=access
         )
         return [eligible_invoice_to_dict(row) for row in rows]
 
     async def get_payment(
-        self, db, *, payment_id: str, organization_id: str
+        self, db, *, payment_id: str, organization_id: str, current_user=None
     ) -> dict[str, object] | None:
+        access = (
+            await record_access_service.resolve(db, current_user, "payments")
+            if current_user
+            else None
+        )
         row = await self.repository.get_scoped_detail(
-            db, payment_id=payment_id, organization_id=organization_id
+            db, payment_id=payment_id, organization_id=organization_id, access=access
         )
         return payment_detail_to_dict(row) if row else None
 
