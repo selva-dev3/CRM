@@ -19,11 +19,11 @@ def parse_datetime(val: str | None) -> datetime | None:
     val_str = str(val).strip()
     try:
         return datetime.fromisoformat(val_str.replace("Z", "+00:00"))
-    except Exception:
+    except ValueError:
         try:
             d = date.fromisoformat(val_str)
             return datetime(d.year, d.month, d.day)
-        except Exception:
+        except ValueError:
             return None
 
 
@@ -209,6 +209,12 @@ class TaskService:
                 status_code=status.HTTP_401_UNAUTHORIZED, message="Authentication required"
             )
         due_dt = parse_datetime(payload.due_date)
+        if payload.due_date and due_dt is None:
+            raise APIException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                message="Invalid due_date. Use an ISO date or datetime.",
+                fields={"due_date": "Must be a valid ISO date or datetime."},
+            )
         assigned_user = await self._resolve_user_id(
             db,
             assigned_input=payload.assigned_to,
