@@ -216,7 +216,7 @@ async def test_webhook(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await settings_service.test_webhook(webhook_id, current_user)
+    return await settings_service.test_webhook(db, webhook_id, current_user)
 
 
 @router.get(

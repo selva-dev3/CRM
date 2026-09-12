@@ -6,6 +6,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.selectable import Subquery
 
+from app.core.record_access import record_access_filter
 from app.models import (
     AuditLog,
     Company,
@@ -89,6 +90,7 @@ class PaymentRepository:
         limit: int,
         status: str | None = None,
         search: str | None = None,
+        access=None,
     ) -> list[InvoicePaymentSummaryRow]:
         paid, latest = self._summary_subqueries()
         stmt = (
@@ -125,6 +127,11 @@ class PaymentRepository:
                 Invoice.accepted_at.is_not(None),
             )
         )
+        access_filter = record_access_filter(
+            access, assigned_column=Invoice.created_by, created_column=Invoice.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         if status and status.strip():
             condition = self._payment_status_condition(
                 status, func.coalesce(paid.c.paid_amount, 0), Invoice.amount
@@ -155,6 +162,7 @@ class PaymentRepository:
         organization_id: str,
         status: str | None = None,
         search: str | None = None,
+        access=None,
     ) -> int:
         paid, latest = self._summary_subqueries()
         stmt = (
@@ -180,6 +188,11 @@ class PaymentRepository:
                 Invoice.accepted_at.is_not(None),
             )
         )
+        access_filter = record_access_filter(
+            access, assigned_column=Invoice.created_by, created_column=Invoice.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         if status and status.strip():
             condition = self._payment_status_condition(
                 status, func.coalesce(paid.c.paid_amount, 0), Invoice.amount
@@ -199,10 +212,16 @@ class PaymentRepository:
         return int((await db.execute(stmt)).scalar_one())
 
     async def list_eligible_invoices(
-        self, db: AsyncSession, *, organization_id: str, page: int = 1, limit: int = 100
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        page: int = 1,
+        limit: int = 100,
+        access=None,
     ) -> list[tuple[Invoice, str | None, str | None, str | None, Decimal]]:
         paid, _latest = self._summary_subqueries()
-        result = await db.execute(
+        stmt = (
             select(
                 Invoice,
                 Company.name,
@@ -228,6 +247,12 @@ class PaymentRepository:
             .offset((page - 1) * limit)
             .limit(limit)
         )
+        access_filter = record_access_filter(
+            access, assigned_column=Invoice.created_by, created_column=Invoice.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
+        result = await db.execute(stmt)
         return [tuple(row) for row in result.all()]
 
     async def list_invoice_ids_for_reconciliation(
@@ -283,6 +308,7 @@ class PaymentRepository:
         status: str | None = None,
         search: str | None = None,
         invoice_id: str | None = None,
+        access=None,
     ) -> list[tuple[Payment, str, str | None, str | None, str | None]]:
         stmt = (
             select(Payment, Invoice.invoice_number, Company.name, Contact.name, Contact.email)
@@ -294,6 +320,11 @@ class PaymentRepository:
                 Invoice.organization_id == organization_id,
             )
         )
+        access_filter = record_access_filter(
+            access, assigned_column=Invoice.created_by, created_column=Invoice.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         if status and status.strip():
             stmt = stmt.where(Payment.status == status.strip())
         if invoice_id:
@@ -326,6 +357,7 @@ class PaymentRepository:
         status: str | None = None,
         search: str | None = None,
         invoice_id: str | None = None,
+        access=None,
     ) -> int:
         stmt = (
             select(func.count())
@@ -338,6 +370,11 @@ class PaymentRepository:
                 Invoice.organization_id == organization_id,
             )
         )
+        access_filter = record_access_filter(
+            access, assigned_column=Invoice.created_by, created_column=Invoice.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         if status and status.strip():
             stmt = stmt.where(Payment.status == status.strip())
         if invoice_id:
@@ -388,9 +425,9 @@ class PaymentRepository:
         return tuple(row) if row is not None else None
 
     async def get_scoped_detail(
-        self, db: AsyncSession, *, payment_id: str, organization_id: str
+        self, db: AsyncSession, *, payment_id: str, organization_id: str, access=None
     ) -> tuple | None:
-        result = await db.execute(
+        stmt = (
             select(
                 Payment,
                 Invoice.invoice_number,
@@ -411,6 +448,12 @@ class PaymentRepository:
                 Invoice.organization_id == organization_id,
             )
         )
+        access_filter = record_access_filter(
+            access, assigned_column=Invoice.created_by, created_column=Invoice.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
+        result = await db.execute(stmt)
         row = result.first()
         return tuple(row) if row is not None else None
 

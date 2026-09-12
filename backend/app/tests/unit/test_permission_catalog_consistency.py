@@ -61,10 +61,19 @@ def test_rbac_migration_catalog_matches_runtime_catalog() -> None:
     )
     whatsapp_migration = REPOSITORY_ROOT / "backend" / "alembic" / "versions" / "v6f7a8b9c0d1_whatsapp_channel.py"
     sales_migration = REPOSITORY_ROOT / "backend" / "alembic" / "versions" / "p1r2o3j4s5f6_projects_sales_flow.py"
+    crm_migration = (
+        REPOSITORY_ROOT
+        / "backend"
+        / "alembic"
+        / "versions"
+        / "c9d8e7f6a5b4_complete_crm_foundation.py"
+    )
     migration_keys = set(PERMISSION_PATTERN.findall(migration.read_text(encoding="utf-8"))) | set(
         PERMISSION_PATTERN.findall(whatsapp_migration.read_text(encoding="utf-8"))
     ) | set(
         PERMISSION_PATTERN.findall(sales_migration.read_text(encoding="utf-8"))
+    ) | set(
+        PERMISSION_PATTERN.findall(crm_migration.read_text(encoding="utf-8"))
     )
 
     assert migration_keys == set(APPROVED_PERMISSION_KEYS)

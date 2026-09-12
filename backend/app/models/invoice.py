@@ -64,6 +64,9 @@ class Invoice(Base):
     contact_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("contacts.id", ondelete="SET NULL")
     )
+    created_by: Mapped[str | None] = mapped_column(
+        String, ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
     invoice_number: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
     currency: Mapped[str] = mapped_column(String(10), default="USD")
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)

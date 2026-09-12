@@ -33,10 +33,26 @@ async def _cleanup_expired_auth_records() -> dict[str, int]:
         async with factory() as db:
             counts = {}
             for name, model, predicate in (
-                ("refresh_tokens", RefreshToken, (RefreshToken.expires_at <= now) | RefreshToken.is_revoked.is_(True)),
-                ("sessions", UserSession, (UserSession.expires_at <= now) | UserSession.is_current.is_(False)),
-                ("magic_links", MagicLinkToken, (MagicLinkToken.expires_at <= now) | MagicLinkToken.is_used.is_(True)),
-                ("password_resets", PasswordReset, (PasswordReset.expires_at <= now) | PasswordReset.is_used.is_(True)),
+                (
+                    "refresh_tokens",
+                    RefreshToken,
+                    (RefreshToken.expires_at <= now) | RefreshToken.is_revoked.is_(True),
+                ),
+                (
+                    "sessions",
+                    UserSession,
+                    (UserSession.expires_at <= now) | UserSession.is_current.is_(False),
+                ),
+                (
+                    "magic_links",
+                    MagicLinkToken,
+                    (MagicLinkToken.expires_at <= now) | MagicLinkToken.is_used.is_(True),
+                ),
+                (
+                    "password_resets",
+                    PasswordReset,
+                    (PasswordReset.expires_at <= now) | PasswordReset.is_used.is_(True),
+                ),
             ):
                 result = await db.execute(model.__table__.delete().where(predicate))
                 counts[name] = result.rowcount or 0
@@ -46,7 +62,11 @@ async def _cleanup_expired_auth_records() -> dict[str, int]:
         await engine.dispose()
 
 
-@celery_app.task(name="app.workers.tasks.cleanup_deleted_organization_files", ignore_result=True, queue="organization_cleanup")
+@celery_app.task(
+    name="app.workers.tasks.cleanup_deleted_organization_files",
+    ignore_result=True,
+    queue="organization_cleanup",
+)
 def cleanup_deleted_organization_files():
     return asyncio.run(_cleanup_deleted_organization_files())
 
@@ -299,9 +319,7 @@ async def _reconcile_provider_subscriptions():
         await engine.dispose()
 
 
-@celery_app.task(
-    name="app.workers.tasks.reconcile_invoice_payment_aggregates", ignore_result=True
-)
+@celery_app.task(name="app.workers.tasks.reconcile_invoice_payment_aggregates", ignore_result=True)
 def reconcile_invoice_payment_aggregates():
     return asyncio.run(_reconcile_invoice_payment_aggregates())
 
@@ -798,3 +816,37 @@ def _delete_object_quietly(s3_key: str) -> None:
     from app.services.s3_service import s3_service
 
     s3_service.delete_file(s3_key)
+
+
+@celery_app.task(name="app.workers.tasks.process_workflow_events", ignore_result=True)
+def process_workflow_events():
+    return asyncio.run(_process_workflow_events())
+
+
+async def _process_workflow_events() -> dict[str, int]:
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.core.config import settings
+    from app.repositories.workflow_repository import workflow_repository
+    from app.services.workflow_service import workflow_service
+
+    engine = create_async_engine(settings.DATABASE_URL, pool_pre_ping=True)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    processed = 0
+    try:
+        async with factory() as db:
+            event_ids = [item.id for item in await workflow_repository.pending_events(db)]
+        for event_id in event_ids:
+            async with factory() as db:
+                event = await workflow_repository.claim_event(db, event_id)
+                if not event:
+                    continue
+                try:
+                    await workflow_service.process_event(db, event)
+                    processed += 1
+                except Exception as exc:
+                    await db.rollback()
+                    await workflow_repository.retry_event(db, event_id, type(exc).__name__)
+        return {"processed": processed}
+    finally:
+        await engine.dispose()

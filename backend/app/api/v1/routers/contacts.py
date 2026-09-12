@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
@@ -25,7 +25,25 @@ from app.services.contact_service import contact_service
 from app.services.note_service import note_service
 from app.services.org_service import organization_service
 
-router = APIRouter()
+
+async def require_contact_record_access(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    contact_id = request.path_params.get("contact_id")
+    if not contact_id:
+        return
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    await contact_service.require_contact(
+        db,
+        contact_id,
+        organization_id=organization_id,
+        current_user=current_user,
+    )
+
+
+router = APIRouter(dependencies=[Depends(require_contact_record_access)])
 
 
 @router.get(
@@ -89,7 +107,9 @@ async def get_starred_contacts(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await contact_service.get_starred_contacts(db, organization_id=organization_id)
+    return await contact_service.get_starred_contacts(
+        db, organization_id=organization_id, current_user=current_user
+    )
 
 
 @router.post(
@@ -141,7 +161,9 @@ async def bulk_delete_contacts(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await contact_service.bulk_delete(db, payload.ids, organization_id=organization_id)
+    return await contact_service.bulk_delete(
+        db, payload.ids, organization_id=organization_id, current_user=current_user
+    )
 
 
 @router.get(
@@ -156,7 +178,9 @@ async def get_contact(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await contact_service.get_contact(db, contact_id, organization_id=organization_id)
+    return await contact_service.get_contact(
+        db, contact_id, organization_id=organization_id, current_user=current_user
+    )
 
 
 @router.get(
@@ -190,7 +214,11 @@ async def update_contact_billing_address(
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     return await contact_service.update_billing_address(
-        db, contact_id, payload, organization_id=organization_id
+        db,
+        contact_id,
+        payload,
+        organization_id=organization_id,
+        current_user=current_user,
     )
 
 
@@ -224,7 +252,9 @@ async def delete_contact(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await contact_service.delete_contact(db, contact_id, organization_id=organization_id)
+    return await contact_service.delete_contact(
+        db, contact_id, organization_id=organization_id, current_user=current_user
+    )
 
 
 @router.get(
@@ -246,10 +276,11 @@ async def get_contact_deals(
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     deals = await contact_service.list_contact_deals(
-        db, contact_id, organization_id=organization_id, page=page, limit=limit
+        db, contact_id, organization_id=organization_id, page=page, limit=limit,
+        current_user=current_user,
     )
     total = await contact_service.count_contact_deals(
-        db, contact_id, organization_id=organization_id
+        db, contact_id, organization_id=organization_id, current_user=current_user
     )
     response.headers["X-Total-Count"] = str(total)
     return deals

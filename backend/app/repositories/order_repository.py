@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.record_access import record_access_filter
 from app.models import Invoice, Organization, Quote, SalesOrder, SalesOrderItem
 
 
@@ -16,8 +17,16 @@ class OrderRepository:
         limit: int,
         status: str | None = None,
         search: str | None = None,
+        access=None,
     ) -> list[SalesOrder]:
         conditions = [SalesOrder.organization_id == organization_id]
+        access_filter = record_access_filter(
+            access,
+            assigned_column=SalesOrder.created_by,
+            created_column=SalesOrder.created_by,
+        )
+        if access_filter is not None:
+            conditions.append(access_filter)
         if status:
             conditions.append(SalesOrder.status == status)
         if search and search.strip():
@@ -33,9 +42,16 @@ class OrderRepository:
         return list(result.scalars().all())
 
     async def count(
-        self, db: AsyncSession, *, organization_id: str, status=None, search=None
+        self, db: AsyncSession, *, organization_id: str, status=None, search=None, access=None
     ) -> int:
         conditions = [SalesOrder.organization_id == organization_id]
+        access_filter = record_access_filter(
+            access,
+            assigned_column=SalesOrder.created_by,
+            created_column=SalesOrder.created_by,
+        )
+        if access_filter is not None:
+            conditions.append(access_filter)
         if status:
             conditions.append(SalesOrder.status == status)
         if search and search.strip():
@@ -47,12 +63,26 @@ class OrderRepository:
         )
 
     async def get(
-        self, db: AsyncSession, *, order_id: str, organization_id: str, lock: bool = False
+        self,
+        db: AsyncSession,
+        *,
+        order_id: str,
+        organization_id: str,
+        lock: bool = False,
+        access=None,
     ) -> SalesOrder | None:
-        query = select(SalesOrder).where(
+        conditions = [
             SalesOrder.id == order_id,
             SalesOrder.organization_id == organization_id,
+        ]
+        access_filter = record_access_filter(
+            access,
+            assigned_column=SalesOrder.created_by,
+            created_column=SalesOrder.created_by,
         )
+        if access_filter is not None:
+            conditions.append(access_filter)
+        query = select(SalesOrder).where(*conditions)
         if lock:
             query = query.with_for_update().execution_options(populate_existing=True)
         return await db.scalar(query)

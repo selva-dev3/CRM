@@ -8,6 +8,7 @@ from app.core.permissions import effective_organization_id
 from app.models import ProjectMilestone, User
 from app.repositories.milestone_repository import MilestoneRepository, milestone_repository
 from app.schemas.milestone import MilestoneCreate, MilestoneUpdate
+from app.services.record_access_service import record_access_service
 from app.services.task_service import parse_datetime
 
 
@@ -44,20 +45,23 @@ class MilestoneService:
             raise APIException(message="Failed to save milestone", status_code=400) from error
 
     async def list(self, db: AsyncSession, current_user: User, **filters) -> list[dict]:
+        access = await record_access_service.resolve(db, current_user, "projects")
         rows = await self.repository.list(
-            db, organization_id=self.organization_id(current_user), **filters
+            db, organization_id=self.organization_id(current_user), access=access, **filters
         )
         return [milestone_to_dict(row) for row in rows]
 
     async def count(self, db: AsyncSession, current_user: User, **filters) -> int:
+        access = await record_access_service.resolve(db, current_user, "projects")
         return await self.repository.count(
-            db, organization_id=self.organization_id(current_user), **filters
+            db, organization_id=self.organization_id(current_user), access=access, **filters
         )
 
     async def create(self, db: AsyncSession, current_user: User, payload: MilestoneCreate) -> dict:
         organization_id = self.organization_id(current_user)
+        access = await record_access_service.resolve(db, current_user, "projects")
         if not await self.repository.get_project(
-            db, project_id=payload.project_id, organization_id=organization_id
+            db, project_id=payload.project_id, organization_id=organization_id, access=access
         ):
             raise NotFoundError(message="Related project not found")
         milestone = ProjectMilestone(
@@ -81,10 +85,12 @@ class MilestoneService:
         milestone_id: str,
         payload: MilestoneUpdate,
     ) -> dict:
+        access = await record_access_service.resolve(db, current_user, "projects")
         milestone = await self.repository.get(
             db,
             milestone_id=milestone_id,
             organization_id=self.organization_id(current_user),
+            access=access,
         )
         if not milestone:
             raise NotFoundError(message="Milestone not found")
@@ -106,10 +112,12 @@ class MilestoneService:
         return milestone_to_dict(milestone)
 
     async def delete(self, db: AsyncSession, current_user: User, milestone_id: str) -> dict:
+        access = await record_access_service.resolve(db, current_user, "projects")
         milestone = await self.repository.get(
             db,
             milestone_id=milestone_id,
             organization_id=self.organization_id(current_user),
+            access=access,
         )
         if not milestone:
             raise NotFoundError(message="Milestone not found")

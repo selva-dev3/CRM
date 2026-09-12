@@ -96,4 +96,5 @@ async def test_bulk_delete_route_is_scoped_and_preserves_response(monkeypatch):
         db,
         quote_ids=["quote-1", "foreign-quote"],
         organization_id="org-1",
+        current_user=user,
     )

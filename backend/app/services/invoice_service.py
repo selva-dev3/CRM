@@ -21,6 +21,7 @@ from app.repositories.quote_repository import QuoteRepository
 from app.services.invoice_state import assert_invoice_transition
 from app.services.notification_service import notification_service
 from app.services.org_service import organization_service
+from app.services.record_access_service import record_access_service
 from app.services.sales_totals import calculate_line, decimal_value
 
 logger = get_logger(__name__)
@@ -188,6 +189,7 @@ class InvoiceService:
                 "deal_id": quote.deal_id,
                 "company_id": company.id,
                 "contact_id": contact.id,
+                "created_by": quote.created_by,
                 "currency": quote.currency,
                 "invoice_number": f"{organization.invoice_prefix}-{now.year}-{sequence:06d}",
                 "amount": total,
@@ -248,10 +250,23 @@ class InvoiceService:
         return invoice
 
     async def require_invoice(
-        self, db: AsyncSession, *, invoice_id: str, organization_id: str
+        self,
+        db: AsyncSession,
+        *,
+        invoice_id: str,
+        organization_id: str,
+        current_user: User | None = None,
     ) -> Invoice:
+        access = (
+            await record_access_service.resolve(db, current_user, "invoices")
+            if current_user
+            else None
+        )
         invoice = await self.repository.get_scoped(
-            db, invoice_id=invoice_id, organization_id=organization_id
+            db,
+            invoice_id=invoice_id,
+            organization_id=organization_id,
+            **({"access": access} if access is not None else {}),
         )
         if not invoice:
             raise NotFoundError(message=f"Invoice '{invoice_id}' not found")
@@ -269,7 +284,13 @@ class InvoiceService:
         limit: int,
         status: str | None = None,
         search: str | None = None,
+        current_user: User | None = None,
     ) -> list[dict]:
+        access = (
+            await record_access_service.resolve(db, current_user, "invoices")
+            if current_user
+            else None
+        )
         invoices = await self.repository.list_scoped(
             db,
             organization_id=organization_id,
@@ -277,6 +298,7 @@ class InvoiceService:
             limit=limit,
             status=status,
             search=search,
+            **({"access": access} if access is not None else {}),
         )
         return [invoice_to_dict(inv) for inv in invoices]
 
@@ -287,14 +309,34 @@ class InvoiceService:
         organization_id: str,
         status: str | None = None,
         search: str | None = None,
+        current_user: User | None = None,
     ) -> int:
+        access = (
+            await record_access_service.resolve(db, current_user, "invoices")
+            if current_user
+            else None
+        )
         return await self.repository.count_scoped(
-            db, organization_id=organization_id, status=status, search=search
+            db,
+            organization_id=organization_id,
+            status=status,
+            search=search,
+            **({"access": access} if access is not None else {}),
         )
 
-    async def get_invoice(self, db: AsyncSession, *, invoice_id: str, organization_id: str) -> dict:
+    async def get_invoice(
+        self,
+        db: AsyncSession,
+        *,
+        invoice_id: str,
+        organization_id: str,
+        current_user: User | None = None,
+    ) -> dict:
         invoice = await self.require_invoice(
-            db, invoice_id=invoice_id, organization_id=organization_id
+            db,
+            invoice_id=invoice_id,
+            organization_id=organization_id,
+            current_user=current_user,
         )
         items = await self.repository.list_items(
             db, invoice_id=invoice.id, organization_id=organization_id
@@ -435,6 +477,7 @@ class InvoiceService:
                 "deal_id": deal.id,
                 "company_id": deal.company_id,
                 "contact_id": deal.contact_id,
+                "created_by": current_user.id if current_user else None,
                 "invoice_number": (f"{organization.invoice_prefix}-{now.year}-{sequence:06d}"),
                 "currency": organization.currency,
                 "amount": total,
@@ -519,15 +562,22 @@ class InvoiceService:
         return invoice_to_dict(invoice, items)
 
     async def list_invoices_for_deal(
-        self, db: AsyncSession, *, deal_id: str, organization_id: str
+        self, db: AsyncSession, *, deal_id: str, organization_id: str,
+        current_user: User | None = None,
     ) -> list[dict]:
         deal = await self.repository.get_deal_scoped(
             db, deal_id=deal_id, organization_id=organization_id
         )
         if not deal:
             raise NotFoundError(message=f"Deal '{deal_id}' not found")
+        access = (
+            await record_access_service.resolve(db, current_user, "invoices")
+            if current_user
+            else None
+        )
         invoice = await self.repository.get_by_deal_scoped(
-            db, deal_id=deal_id, organization_id=organization_id
+            db, deal_id=deal_id, organization_id=organization_id,
+            **({"access": access} if access is not None else {}),
         )
         if invoice is None:
             return []
@@ -711,10 +761,19 @@ class InvoiceService:
         status: str | None,
         due_date: datetime | None,
         billing_snapshot: dict | None = None,
+        current_user: User | None = None,
     ) -> dict:
+        access = (
+            await record_access_service.resolve(db, current_user, "invoices")
+            if current_user
+            else None
+        )
         try:
             invoice = await self.repository.lock_scoped(
-                db, invoice_id=invoice_id, organization_id=organization_id
+                db,
+                invoice_id=invoice_id,
+                organization_id=organization_id,
+                **({"access": access} if access is not None else {}),
             )
             if not invoice:
                 raise NotFoundError(message="Invoice not found")
@@ -756,10 +815,23 @@ class InvoiceService:
             raise
 
     async def delete_invoice(
-        self, db: AsyncSession, *, invoice_id: str, organization_id: str
+        self,
+        db: AsyncSession,
+        *,
+        invoice_id: str,
+        organization_id: str,
+        current_user: User | None = None,
     ) -> Invoice:
+        access = (
+            await record_access_service.resolve(db, current_user, "invoices")
+            if current_user
+            else None
+        )
         invoice = await self.repository.lock_scoped(
-            db, invoice_id=invoice_id, organization_id=organization_id
+            db,
+            invoice_id=invoice_id,
+            organization_id=organization_id,
+            **({"access": access} if access is not None else {}),
         )
         if not invoice:
             raise NotFoundError(message="Invoice not found")

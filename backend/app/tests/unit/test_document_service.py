@@ -1,7 +1,7 @@
 import io
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import ANY, AsyncMock
 
 import pytest
 from fastapi import UploadFile
@@ -12,6 +12,16 @@ from app.core.errors import APIException, ForbiddenError, NotFoundError
 from app.models import Document, User
 from app.repositories.document_repository import DocumentRepository
 from app.services.document_service import DocumentService, document_to_dict
+
+
+@pytest.fixture(autouse=True)
+def run_document_blocking_calls_inline(monkeypatch):
+    """Keep unit tests deterministic without creating executor threads."""
+
+    async def run_inline(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr("app.services.document_service.asyncio.to_thread", run_inline)
 
 
 def _make_user(**overrides) -> User:
@@ -48,7 +58,13 @@ def _upload_file(
     content: bytes, filename: str = "1.png", content_type: str = "image/png", size: int = 0
 ) -> UploadFile:
     headers = Headers({"content-type": content_type})
-    f = UploadFile(filename=filename, file=io.BytesIO(content), size=size or None, headers=headers)
+    stream = io.BytesIO(content)
+    f = UploadFile(filename=filename, file=stream, size=size or None, headers=headers)
+
+    async def read_inline(read_size: int = -1) -> bytes:
+        return stream.read(read_size)
+
+    f.read = read_inline  # type: ignore[method-assign]
     return f
 
 
@@ -70,8 +86,14 @@ async def test_list_documents_generates_fresh_presigned_url(monkeypatch):
     )
 
     repo.list_documents.assert_awaited_once_with(
-        db, org_id="org-test", page=1, limit=20, search="proposal"
-    )
+            db,
+            org_id="org-test",
+            page=1,
+            limit=20,
+            search="proposal",
+            project_linked=False,
+            access=ANY,
+        )
     assert result[0]["filename"] == "proposal.pdf"
     assert result[0]["mime_type"] == "application/pdf"
     assert result[0]["download_url"].startswith("https://s3.example/documents/org-test/abcdef.pdf")

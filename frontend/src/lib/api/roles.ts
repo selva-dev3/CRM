@@ -384,3 +384,13 @@ export function useImportRolesMutation(options?: UseMutationOptions<MessageRespo
     ...options,
   });
 }
+
+export type RecordScope = 'all' | 'team' | 'assigned' | 'own' | 'none';
+export interface RoleRecordScope { module: string; scope: RecordScope }
+export function useRoleRecordScopesQuery(roleId: string) {
+  return useQuery<RoleRecordScope[]>({ queryKey: ['roles','record-scopes',roleId], queryFn: () => apiClient.get<RoleRecordScope[]>(`/roles/${roleId}/record-scopes`), enabled: Boolean(roleId) });
+}
+export function useUpdateRoleRecordScopesMutation() {
+  const queryClient=useQueryClient();
+  return useMutation<RoleRecordScope[],Error,{roleId:string;scopes:RoleRecordScope[]}>({mutationFn:({roleId,scopes})=>apiClient.put<RoleRecordScope[]>(`/roles/${roleId}/record-scopes`,{scopes}),onSuccess:(_,variables)=>queryClient.invalidateQueries({queryKey:['roles','record-scopes',variables.roleId]})});
+}

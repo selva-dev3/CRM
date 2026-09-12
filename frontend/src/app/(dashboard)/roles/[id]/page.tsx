@@ -1,6 +1,6 @@
 'use client';
 
-import { Input } from "@/components/ui/input";
+import { Input } from '@/components/ui/input';
 
 import { getErrorMessage } from '@/lib/utils';
 import React, { useState } from 'react';
@@ -42,10 +42,28 @@ import {
   useSetDefaultRoleMutation,
   useDeleteRoleMutation,
   checkPermissionApi,
-  PermissionItem
+  PermissionItem,
+  useRoleRecordScopesQuery,
+  useUpdateRoleRecordScopesMutation,
+  type RecordScope,
 } from '@/lib/api/roles';
 import { UserSelect } from '@/components/common/user-select';
 import { useHasPermission } from '@/hooks/use-has-permission';
+
+const RECORD_SCOPE_MODULES = [
+  'leads',
+  'contacts',
+  'companies',
+  'deals',
+  'tasks',
+  'projects',
+  'tickets',
+  'documents',
+  'quotes',
+  'orders',
+  'invoices',
+  'payments',
+] as const;
 
 export default function RoleDetailPage() {
   const params = useParams();
@@ -65,6 +83,17 @@ export default function RoleDetailPage() {
     enabled: !!roleId && canReadUsers,
   }, usersPage, usersPageSize);
   const assignedUsers = assignedUsersPage?.items ?? [];
+  const recordScopesQuery = useRoleRecordScopesQuery(roleId);
+  const updateRecordScopes = useUpdateRoleRecordScopesMutation();
+  const [scopeDraft, setScopeDraft] = useState<Record<string, RecordScope>>({});
+  const effectiveScopes = Object.keys(scopeDraft).length
+    ? scopeDraft
+    : Object.fromEntries(
+        RECORD_SCOPE_MODULES.map((module) => [
+          module,
+          recordScopesQuery.data?.find((item) => item.module === module)?.scope ?? 'all',
+        ]),
+      );
 
   // System roles (e.g. super_admin) are immutable — enforced server-side; UI reflects this.
   const isSystemRole = role?.is_system_role === true;
@@ -395,6 +424,70 @@ export default function RoleDetailPage() {
           </button>
         </div>
       )}
+
+      <section className="rounded-xl border bg-white p-4 sm:p-6">
+        <div className="mb-4">
+          <h2 className="font-bold text-slate-900">Record access</h2>
+          <p className="text-xs text-slate-500">
+            Limit which records this role can access after its action permission is granted.
+          </p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {RECORD_SCOPE_MODULES.map((module) => (
+            <label
+              key={module}
+              className="flex items-center justify-between gap-3 rounded-lg border p-3 text-sm"
+            >
+              <span className="capitalize font-medium">{module}</span>
+              <select
+                aria-label={`${module} record scope`}
+                className="rounded-md border px-2 py-1"
+                value={effectiveScopes[module] ?? 'all'}
+                disabled={
+                  isSystemRole ||
+                  !hasPermission('roles:update') ||
+                  updateRecordScopes.isPending
+                }
+                onChange={(event) =>
+                  setScopeDraft({
+                    ...effectiveScopes,
+                    [module]: event.target.value as RecordScope,
+                  })
+                }
+              >
+                <option value="all">All</option>
+                <option value="team">Team</option>
+                <option value="assigned">Assigned</option>
+                <option value="own">Own</option>
+                <option value="none">None</option>
+              </select>
+            </label>
+          ))}
+        </div>
+        {!isSystemRole && hasPermission('roles:update') && (
+          <Button
+            className="mt-4"
+            disabled={updateRecordScopes.isPending}
+            onClick={async () => {
+              try {
+                await updateRecordScopes.mutateAsync({
+                  roleId,
+                  scopes: RECORD_SCOPE_MODULES.map((module) => ({
+                    module,
+                    scope: effectiveScopes[module] ?? 'all',
+                  })),
+                });
+                setScopeDraft({});
+                setSuccessMessage('Record access updated.');
+              } catch (reason) {
+                setErrorMessage(getErrorMessage(reason, 'Failed to update record access.'));
+              }
+            }}
+          >
+            Save record access
+          </Button>
+        )}
+      </section>
 
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

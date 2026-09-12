@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, File, Header, Query, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, Header, Query, Request, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,7 +36,25 @@ from app.services.lead_service import (
 )
 from app.services.org_service import organization_service
 
-router = APIRouter()
+
+async def require_lead_record_access(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    lead_id = request.path_params.get("lead_id")
+    if not lead_id:
+        return
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    await lead_service.require_lead(
+        db,
+        lead_id,
+        organization_id=organization_id,
+        current_user=current_user,
+    )
+
+
+router = APIRouter(dependencies=[Depends(require_lead_record_access)])
 
 
 @router.get(
@@ -62,12 +80,14 @@ async def list_leads(
         organization_id=organization_id,
         search=search,
         lead_status=lead_status,
+        current_user=current_user,
     )
     total = await lead_service.count_leads(
         db,
         organization_id=organization_id,
         search=search,
         lead_status=lead_status,
+        current_user=current_user,
     )
     response.headers["X-Total-Count"] = str(total)
     return leads
@@ -85,7 +105,9 @@ async def bulk_delete_leads(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await lead_service.bulk_delete(db, payload.ids, organization_id=organization_id)
+    return await lead_service.bulk_delete(
+        db, payload.ids, organization_id=organization_id, current_user=current_user
+    )
 
 
 @router.post(
@@ -101,7 +123,8 @@ async def bulk_archive_leads(
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     return await lead_service.bulk_archive(
-        db, payload.ids, organization_id=organization_id, actor_id=current_user.id
+        db, payload.ids, organization_id=organization_id, actor_id=current_user.id,
+        current_user=current_user,
     )
 
 
@@ -245,6 +268,7 @@ async def bulk_update_lead_status(
         status_value,
         organization_id=organization_id,
         actor_id=current_user.id,
+        current_user=current_user,
     )
 
 
@@ -260,7 +284,9 @@ async def get_lead(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await lead_service.get_lead(db, lead_id, organization_id=organization_id)
+    return await lead_service.get_lead(
+        db, lead_id, organization_id=organization_id, current_user=current_user
+    )
 
 
 @router.put(
@@ -290,7 +316,9 @@ async def delete_lead(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await lead_service.delete_lead(db, lead_id, organization_id=organization_id)
+    return await lead_service.delete_lead(
+        db, lead_id, organization_id=organization_id, current_user=current_user
+    )
 
 
 @router.post(

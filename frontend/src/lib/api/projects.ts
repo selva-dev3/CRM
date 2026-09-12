@@ -11,6 +11,9 @@ export interface ProjectItem {
   status: string;
   priority: string;
   owner_id?: string | null;
+  company_id?: string | null;
+  contact_id?: string | null;
+  originating_deal_id?: string | null;
   start_date?: string | null;
   due_date?: string | null;
   budget?: number | null;
@@ -25,10 +28,20 @@ export interface ProjectPayload {
   status?: string;
   priority?: string;
   owner_id?: string | null;
+  company_id?: string | null;
+  contact_id?: string | null;
+  originating_deal_id?: string | null;
   start_date?: string | null;
   due_date?: string | null;
   budget?: number | null;
   completion_percentage?: number;
+}
+
+export interface ProjectStakeholder {
+  id: string;
+  project_id: string;
+  contact_id: string;
+  role: string;
 }
 
 export interface FetchProjectsParams {
@@ -84,6 +97,14 @@ export function useProjectQuery(id: string) {
   });
 }
 
+export function useProjectStakeholdersQuery(id: string, enabled = true) {
+  return useQuery({
+    queryKey: ['project', id, 'stakeholders'],
+    queryFn: () => apiClient.get<ProjectStakeholder[]>(`/projects/${encodeURIComponent(id)}/stakeholders`),
+    enabled: Boolean(id) && enabled,
+  });
+}
+
 function useInvalidateProjects() {
   const queryClient = useQueryClient();
   return () => {
@@ -111,4 +132,22 @@ export function useUpdateProjectMutation() {
 export function useDeleteProjectMutation() {
   const invalidate = useInvalidateProjects();
   return useMutation({ mutationFn: deleteProjectApi, onSuccess: invalidate });
+}
+
+export function useAddProjectStakeholderMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, contactId, role }: { projectId: string; contactId: string; role: string }) =>
+      apiClient.post<ProjectStakeholder>(`/projects/${encodeURIComponent(projectId)}/stakeholders`, { contact_id: contactId, role }),
+    onSuccess: (_item, variables) => queryClient.invalidateQueries({ queryKey: ['project', variables.projectId, 'stakeholders'] }),
+  });
+}
+
+export function useRemoveProjectStakeholderMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, stakeholderId }: { projectId: string; stakeholderId: string }) =>
+      apiClient.delete<void>(`/projects/${encodeURIComponent(projectId)}/stakeholders/${encodeURIComponent(stakeholderId)}`),
+    onSuccess: (_item, variables) => queryClient.invalidateQueries({ queryKey: ['project', variables.projectId, 'stakeholders'] }),
+  });
 }

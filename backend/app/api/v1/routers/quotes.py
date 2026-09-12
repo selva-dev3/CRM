@@ -19,10 +19,27 @@ from app.services.quote_service import quote_service
 router = APIRouter()
 
 
+async def require_quote_record_access(
+    quote_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    organization_id = await quote_service.resolve_organization_id(db, current_user)
+    await quote_service._require_quote(
+        db,
+        quote_id=quote_id,
+        organization_id=organization_id,
+        current_user=current_user,
+    )
+
+
 @router.post(
     "/{quote_id}/approve",
     response_model=QuoteResponse,
-    dependencies=[Depends(require_permission("quotes:approve"))],
+    dependencies=[
+        Depends(require_permission("quotes:approve")),
+        Depends(require_quote_record_access),
+    ],
 )
 async def approve_quote(
     quote_id: str,
@@ -38,7 +55,10 @@ async def approve_quote(
 @router.post(
     "/{quote_id}/submit-for-review",
     response_model=QuoteResponse,
-    dependencies=[Depends(require_permission("quotes:update"))],
+    dependencies=[
+        Depends(require_permission("quotes:update")),
+        Depends(require_quote_record_access),
+    ],
 )
 async def submit_quote_for_review(
     quote_id: str,
@@ -54,7 +74,10 @@ async def submit_quote_for_review(
 @router.post(
     "/{quote_id}/return-to-draft",
     response_model=QuoteResponse,
-    dependencies=[Depends(require_permission("quotes:approve"))],
+    dependencies=[
+        Depends(require_permission("quotes:approve")),
+        Depends(require_quote_record_access),
+    ],
 )
 async def return_quote_to_draft(
     quote_id: str,
@@ -94,12 +117,14 @@ async def list_quotes(
         limit=limit,
         status=status_filter,
         search=search,
+        current_user=current_user,
     )
     total = await quote_service.count_quotes(
         db,
         organization_id=organization_id,
         status=status_filter,
         search=search,
+        current_user=current_user,
     )
     response.headers["X-Total-Count"] = str(total)
     return quotes
@@ -152,7 +177,10 @@ async def bulk_delete_quotes(
 ):
     organization_id = await quote_service.resolve_organization_id(db, current_user)
     return await quote_service.bulk_delete_quotes(
-        db, quote_ids=payload.ids, organization_id=organization_id
+        db,
+        quote_ids=payload.ids,
+        organization_id=organization_id,
+        current_user=current_user,
     )
 
 
@@ -168,14 +196,22 @@ async def get_quote(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await quote_service.resolve_organization_id(db, current_user)
-    return await quote_service.get_quote(db, quote_id=quote_id, organization_id=organization_id)
+    return await quote_service.get_quote(
+        db,
+        quote_id=quote_id,
+        organization_id=organization_id,
+        current_user=current_user,
+    )
 
 
 @router.put(
     "/{quote_id}",
     response_model=QuoteResponse,
     summary="Update quote details",
-    dependencies=[Depends(require_permission("quotes:update"))],
+    dependencies=[
+        Depends(require_permission("quotes:update")),
+        Depends(require_quote_record_access),
+    ],
 )
 async def update_quote(
     quote_id: str,
@@ -185,7 +221,11 @@ async def update_quote(
 ):
     organization_id = await quote_service.resolve_organization_id(db, current_user)
     return await quote_service.update_quote(
-        db, quote_id=quote_id, payload=payload, organization_id=organization_id
+        db,
+        quote_id=quote_id,
+        payload=payload,
+        organization_id=organization_id,
+        current_user=current_user,
     )
 
 
@@ -193,7 +233,10 @@ async def update_quote(
     "/{quote_id}",
     response_model=MessageResponse,
     summary="Delete quote by ID",
-    dependencies=[Depends(require_permission("quotes:delete"))],
+    dependencies=[
+        Depends(require_permission("quotes:delete")),
+        Depends(require_quote_record_access),
+    ],
 )
 async def delete_quote(
     quote_id: str,
@@ -201,7 +244,12 @@ async def delete_quote(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await quote_service.resolve_organization_id(db, current_user)
-    await quote_service.delete_quote(db, quote_id=quote_id, organization_id=organization_id)
+    await quote_service.delete_quote(
+        db,
+        quote_id=quote_id,
+        organization_id=organization_id,
+        current_user=current_user,
+    )
     return {"message": f"Quote {quote_id} deleted successfully", "status": "success"}
 
 
@@ -210,7 +258,10 @@ async def delete_quote(
     status_code=202,
     response_model=MessageResponse,
     summary="Send quote proposal email to client",
-    dependencies=[Depends(require_permission("quotes:send"))],
+    dependencies=[
+        Depends(require_permission("quotes:send")),
+        Depends(require_quote_record_access),
+    ],
 )
 async def send_quote_email(
     quote_id: str,
@@ -231,7 +282,10 @@ async def send_quote_email(
     "/{quote_id}/accept",
     response_model=MessageResponse,
     summary="Mark quote as Accepted by client",
-    dependencies=[Depends(require_permission("quotes:approve"))],
+    dependencies=[
+        Depends(require_permission("quotes:approve")),
+        Depends(require_quote_record_access),
+    ],
 )
 async def accept_quote(
     quote_id: str,
@@ -246,7 +300,10 @@ async def accept_quote(
     "/{quote_id}/reject",
     response_model=MessageResponse,
     summary="Reject a legacy manually-created quote",
-    dependencies=[Depends(require_permission("quotes:update"))],
+    dependencies=[
+        Depends(require_permission("quotes:update")),
+        Depends(require_quote_record_access),
+    ],
 )
 async def reject_quote(
     quote_id: str,
@@ -266,7 +323,10 @@ async def reject_quote(
 @router.get(
     "/{quote_id}/pdf",
     summary="Generate downloadable PDF file URL for quote",
-    dependencies=[Depends(require_permission("quotes:read"))],
+    dependencies=[
+        Depends(require_permission("quotes:read")),
+        Depends(require_quote_record_access),
+    ],
 )
 async def get_quote_pdf(
     quote_id: str,
@@ -284,6 +344,7 @@ async def get_quote_pdf(
     dependencies=[
         Depends(require_permission("quotes:read")),
         Depends(require_permission("invoices:create")),
+        Depends(require_quote_record_access),
     ],
 )
 async def convert_quote_to_invoice(
@@ -300,7 +361,10 @@ async def convert_quote_to_invoice(
 @router.post(
     "/{quote_id}/revisions",
     summary="Create a new revision copy of quote (v2)",
-    dependencies=[Depends(require_permission("quotes:create"))],
+    dependencies=[
+        Depends(require_permission("quotes:create")),
+        Depends(require_quote_record_access),
+    ],
 )
 async def create_quote_revision(
     quote_id: str,
@@ -316,7 +380,10 @@ async def create_quote_revision(
 @router.get(
     "/{quote_id}/revisions",
     summary="List all historical revisions of quote",
-    dependencies=[Depends(require_permission("quotes:read"))],
+    dependencies=[
+        Depends(require_permission("quotes:read")),
+        Depends(require_quote_record_access),
+    ],
 )
 async def get_quote_revisions(
     quote_id: str,

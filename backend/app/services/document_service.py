@@ -145,7 +145,7 @@ async def _read_upload_with_limit(file: UploadFile, max_size: int) -> bytes:
 async def _generate_fresh_url(s3_key: str) -> str:
     """Generate a fresh presigned URL or raise a sanitized 502 error."""
     try:
-        return await asyncio.to_thread(s3_service.generate_presigned_url, s3_key)
+        return s3_service.generate_presigned_url(s3_key)
     except Exception as exc:
         logger.exception("Failed to generate presigned URL for s3_key=%s", s3_key)
         raise APIException(
@@ -209,6 +209,14 @@ class DocumentService:
             )
         return org_id, user_id
 
+    @staticmethod
+    async def _access(db: AsyncSession, current_user: User | None):
+        if not current_user:
+            return None
+        from app.services.record_access_service import record_access_service
+
+        return await record_access_service.resolve(db, current_user, "documents")
+
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
         try:
             await db.commit()
@@ -260,6 +268,7 @@ class DocumentService:
             search=search,
             **relationship_filters,
             project_linked=project_linked,
+            access=await self._access(db, current_user),
         )
         out: list[dict] = []
         for doc in documents:
@@ -298,6 +307,7 @@ class DocumentService:
             payment_id=payment_id,
             project_id=project_id,
             project_linked=project_linked,
+            access=await self._access(db, current_user),
         )
 
     async def upload_document(
@@ -370,7 +380,7 @@ class DocumentService:
                 object_name=object_key,
                 content_type=_normalize_mime_type(file.content_type),
             )
-            download_url = await asyncio.to_thread(s3_service.generate_presigned_url, stored_key)
+            download_url = s3_service.generate_presigned_url(stored_key)
         except Exception as e:
             logger.exception(
                 "S3 upload failed for document %s (org=%s)",
@@ -403,7 +413,9 @@ class DocumentService:
         self, db: AsyncSession, document_id: str, current_user: User | None = None
     ) -> dict:
         org_id, _ = self._resolve_auth(current_user)
-        document = await self.repository.get_document(db, document_id, org_id)
+        document = await self.repository.get_document(
+            db, document_id, org_id, access=await self._access(db, current_user)
+        )
         if not document:
             raise NotFoundError(message=f"Document '{document_id}' not found")
         s3_key = getattr(document, "s3_key", None)
@@ -414,7 +426,9 @@ class DocumentService:
         self, db: AsyncSession, document_id: str, current_user: User | None = None
     ) -> dict:
         org_id, _ = self._resolve_auth(current_user)
-        document = await self.repository.get_document(db, document_id, org_id)
+        document = await self.repository.get_document(
+            db, document_id, org_id, access=await self._access(db, current_user)
+        )
         if not document:
             raise NotFoundError(message=f"Document '{document_id}' not found")
 
@@ -436,7 +450,9 @@ class DocumentService:
         self, db: AsyncSession, document_id: str, current_user: User | None = None
     ) -> dict:
         org_id, _ = self._resolve_auth(current_user)
-        document = await self.repository.get_document(db, document_id, org_id)
+        document = await self.repository.get_document(
+            db, document_id, org_id, access=await self._access(db, current_user)
+        )
         if not document:
             raise NotFoundError(message=f"Document '{document_id}' not found")
 
@@ -462,7 +478,9 @@ class DocumentService:
         self, db: AsyncSession, ids: list[str], current_user: User | None = None
     ) -> dict:
         org_id, _ = self._resolve_auth(current_user)
-        documents = await self.repository.list_by_ids(db, ids, org_id)
+        documents = await self.repository.list_by_ids(
+            db, ids, org_id, access=await self._access(db, current_user)
+        )
         s3_keys_to_cleanup: list[tuple[str, str]] = []
         try:
             for document in documents:

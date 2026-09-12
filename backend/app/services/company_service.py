@@ -15,6 +15,7 @@ from app.services.contact_service import contact_service
 from app.services.custom_field_service import CustomFieldService, custom_field_service
 from app.services.notification_service import notification_service
 from app.services.org_service import organization_service
+from app.services.record_access_service import record_access_service
 
 
 def company_to_dict(company: Company) -> dict:
@@ -81,12 +82,16 @@ class CompanyService:
         current_user: User,
     ) -> list[dict]:
         organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+        from app.services.record_access_service import record_access_service
+
+        access = await record_access_service.resolve(db, current_user, "companies")
         companies = await self.repository.list_by_org(
             db,
             organization_id=organization_id,
             page=page,
             limit=limit,
             search=search,
+            access=access,
         )
         return [company_to_dict(c) for c in companies]
 
@@ -98,13 +103,28 @@ class CompanyService:
         current_user: User,
     ) -> int:
         organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+        from app.services.record_access_service import record_access_service
+
+        access = await record_access_service.resolve(db, current_user, "companies")
         return await self.repository.count_by_org(
-            db, organization_id=organization_id, search=search
+            db, organization_id=organization_id, search=search, access=access
         )
 
-    async def get_company(self, db: AsyncSession, company_id: str, *, organization_id: str) -> dict:
+    async def get_company(
+        self,
+        db: AsyncSession,
+        company_id: str,
+        *,
+        organization_id: str,
+        current_user: User | None = None,
+    ) -> dict:
+        access = None
+        if current_user:
+            from app.services.record_access_service import record_access_service
+
+            access = await record_access_service.resolve(db, current_user, "companies")
         company = await self.repository.get_by_id_scoped(
-            db, company_id=company_id, organization_id=organization_id
+            db, company_id=company_id, organization_id=organization_id, access=access
         )
         if not company:
             raise NotFoundError(message=f"Company '{company_id}' not found")
@@ -152,6 +172,8 @@ class CompanyService:
             "industry": getattr(payload, "industry", None),
             "website": website,
             "employee_count": self._parse_employee_count(emp_raw),
+            "owner_id": current_user.id if current_user else None,
+            "created_by": current_user.id if current_user else None,
             "custom_fields": custom_fields,
         }
         company = await self.repository.create(db, data=data)
@@ -181,9 +203,15 @@ class CompanyService:
         payload: CompanyUpdate,
         *,
         organization_id: str,
+        current_user: User | None = None,
     ) -> dict:
+        access = None
+        if current_user:
+            from app.services.record_access_service import record_access_service
+
+            access = await record_access_service.resolve(db, current_user, "companies")
         company = await self.repository.get_by_id_scoped(
-            db, company_id=company_id, organization_id=organization_id
+            db, company_id=company_id, organization_id=organization_id, access=access
         )
         if not company:
             raise NotFoundError(message=f"Company '{company_id}' not found")
@@ -238,10 +266,20 @@ class CompanyService:
         return company_to_dict(company)
 
     async def delete_company(
-        self, db: AsyncSession, company_id: str, *, organization_id: str
+        self,
+        db: AsyncSession,
+        company_id: str,
+        *,
+        organization_id: str,
+        current_user: User | None = None,
     ) -> dict:
+        access = None
+        if current_user:
+            from app.services.record_access_service import record_access_service
+
+            access = await record_access_service.resolve(db, current_user, "companies")
         company = await self.repository.get_by_id_scoped(
-            db, company_id=company_id, organization_id=organization_id
+            db, company_id=company_id, organization_id=organization_id, access=access
         )
         if not company:
             raise NotFoundError(message=f"Company '{company_id}' not found")
@@ -249,18 +287,45 @@ class CompanyService:
         await self._commit(db, "Failed to delete company")
         return {"message": f"Company {company_id} deleted successfully", "status": "success"}
 
-    async def bulk_delete(self, db: AsyncSession, ids: list[str], *, organization_id: str) -> dict:
-        companies = await self.repository.list_by_ids(db, ids, organization_id=organization_id)
+    async def bulk_delete(
+        self,
+        db: AsyncSession,
+        ids: list[str],
+        *,
+        organization_id: str,
+        current_user: User | None = None,
+    ) -> dict:
+        access = None
+        if current_user:
+            from app.services.record_access_service import record_access_service
+
+            access = await record_access_service.resolve(db, current_user, "companies")
+        companies = await self.repository.list_by_ids(
+            db, ids, organization_id=organization_id, access=access
+        )
         for company in companies:
             await self.repository.delete(db, company)
         await self._commit(db, "Failed to bulk delete companies")
         return {"affected_count": len(companies), "message": "Companies deleted successfully"}
 
     async def require_company(
-        self, db: AsyncSession, company_id: str, *, organization_id: str
+        self,
+        db: AsyncSession,
+        company_id: str,
+        *,
+        organization_id: str,
+        current_user: User | None = None,
     ) -> Company:
+        access = (
+            await record_access_service.resolve(db, current_user, "companies")
+            if current_user
+            else None
+        )
         company = await self.repository.get_by_id_scoped(
-            db, company_id=company_id, organization_id=organization_id
+            db,
+            company_id=company_id,
+            organization_id=organization_id,
+            **({"access": access} if access is not None else {}),
         )
         if not company:
             raise NotFoundError(message=f"Company '{company_id}' not found")
@@ -274,18 +339,25 @@ class CompanyService:
         organization_id: str,
         page: int = 1,
         limit: int = 15,
+        current_user: User | None = None,
     ) -> list[dict]:
-        await self.require_company(db, company_id, organization_id=organization_id)
+        await self.require_company(
+            db, company_id, organization_id=organization_id, current_user=current_user
+        )
         return await contact_service.list_company_contacts(
-            db, company_id, organization_id=organization_id, page=page, limit=limit
+            db, company_id, organization_id=organization_id, page=page, limit=limit,
+            current_user=current_user,
         )
 
     async def count_company_contacts(
-        self, db: AsyncSession, company_id: str, *, organization_id: str
+        self, db: AsyncSession, company_id: str, *, organization_id: str,
+        current_user: User | None = None,
     ) -> int:
-        await self.require_company(db, company_id, organization_id=organization_id)
+        await self.require_company(
+            db, company_id, organization_id=organization_id, current_user=current_user
+        )
         return await contact_service.count_company_contacts(
-            db, company_id, organization_id=organization_id
+            db, company_id, organization_id=organization_id, current_user=current_user
         )
 
     async def get_company_deals(
@@ -296,21 +368,39 @@ class CompanyService:
         organization_id: str,
         page: int = 1,
         limit: int = 15,
+        current_user: User | None = None,
     ) -> list:
-        await self.require_company(db, company_id, organization_id=organization_id)
+        await self.require_company(
+            db, company_id, organization_id=organization_id, current_user=current_user
+        )
         from app.services.deal_service import deal_to_dict
 
+        access = (
+            await record_access_service.resolve(db, current_user, "deals")
+            if current_user
+            else None
+        )
         deals = await self.deal_repository.list_by_company(
-            db, company_id=company_id, organization_id=organization_id, page=page, limit=limit
+            db, company_id=company_id, organization_id=organization_id, page=page, limit=limit,
+            **({"access": access} if access is not None else {}),
         )
         return [deal_to_dict(deal) for deal in deals]
 
     async def count_company_deals(
-        self, db: AsyncSession, company_id: str, *, organization_id: str
+        self, db: AsyncSession, company_id: str, *, organization_id: str,
+        current_user: User | None = None,
     ) -> int:
-        await self.require_company(db, company_id, organization_id=organization_id)
+        await self.require_company(
+            db, company_id, organization_id=organization_id, current_user=current_user
+        )
+        access = (
+            await record_access_service.resolve(db, current_user, "deals")
+            if current_user
+            else None
+        )
         return await self.deal_repository.count_by_company(
-            db, company_id=company_id, organization_id=organization_id
+            db, company_id=company_id, organization_id=organization_id,
+            **({"access": access} if access is not None else {}),
         )
 
     async def get_company_quotes(
@@ -321,21 +411,39 @@ class CompanyService:
         organization_id: str,
         page: int = 1,
         limit: int = 15,
+        current_user: User | None = None,
     ) -> list:
-        await self.require_company(db, company_id, organization_id=organization_id)
+        await self.require_company(
+            db, company_id, organization_id=organization_id, current_user=current_user
+        )
         from app.services.quote_service import quote_to_dict
 
+        access = (
+            await record_access_service.resolve(db, current_user, "quotes")
+            if current_user
+            else None
+        )
         quotes = await quote_repository.list_by_company(
-            db, company_id=company_id, organization_id=organization_id, page=page, limit=limit
+            db, company_id=company_id, organization_id=organization_id, page=page, limit=limit,
+            **({"access": access} if access is not None else {}),
         )
         return [quote_to_dict(quote) for quote in quotes]
 
     async def count_company_quotes(
-        self, db: AsyncSession, company_id: str, *, organization_id: str
+        self, db: AsyncSession, company_id: str, *, organization_id: str,
+        current_user: User | None = None,
     ) -> int:
-        await self.require_company(db, company_id, organization_id=organization_id)
+        await self.require_company(
+            db, company_id, organization_id=organization_id, current_user=current_user
+        )
+        access = (
+            await record_access_service.resolve(db, current_user, "quotes")
+            if current_user
+            else None
+        )
         return await quote_repository.count_by_company(
-            db, company_id=company_id, organization_id=organization_id
+            db, company_id=company_id, organization_id=organization_id,
+            **({"access": access} if access is not None else {}),
         )
 
     async def get_company_invoices(
@@ -346,21 +454,39 @@ class CompanyService:
         organization_id: str,
         page: int = 1,
         limit: int = 15,
+        current_user: User | None = None,
     ) -> list:
-        await self.require_company(db, company_id, organization_id=organization_id)
+        await self.require_company(
+            db, company_id, organization_id=organization_id, current_user=current_user
+        )
         from app.services.invoice_service import invoice_to_dict
 
+        access = (
+            await record_access_service.resolve(db, current_user, "invoices")
+            if current_user
+            else None
+        )
         invoices = await invoice_repository.list_by_company(
-            db, company_id=company_id, organization_id=organization_id, page=page, limit=limit
+            db, company_id=company_id, organization_id=organization_id, page=page, limit=limit,
+            **({"access": access} if access is not None else {}),
         )
         return [invoice_to_dict(invoice) for invoice in invoices]
 
     async def count_company_invoices(
-        self, db: AsyncSession, company_id: str, *, organization_id: str
+        self, db: AsyncSession, company_id: str, *, organization_id: str,
+        current_user: User | None = None,
     ) -> int:
-        await self.require_company(db, company_id, organization_id=organization_id)
+        await self.require_company(
+            db, company_id, organization_id=organization_id, current_user=current_user
+        )
+        access = (
+            await record_access_service.resolve(db, current_user, "invoices")
+            if current_user
+            else None
+        )
         return await invoice_repository.count_by_company(
-            db, company_id=company_id, organization_id=organization_id
+            db, company_id=company_id, organization_id=organization_id,
+            **({"access": access} if access is not None else {}),
         )
 
     async def get_company_documents(

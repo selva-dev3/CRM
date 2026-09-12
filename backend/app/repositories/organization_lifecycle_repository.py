@@ -40,6 +40,8 @@ INDIRECT_OWNERS = {
         ("user_id", "users"),
     ),
     "role_permissions": ("role_id", "roles"),
+    "role_record_scopes": ("role_id", "roles"),
+    "team_memberships": ("team_id", "teams"),
     "company_contacts": ("company_id", "companies"),
     "contact_addresses": ("contact_id", "contacts"),
     "contact_tags": ("contact_id", "contacts"),
@@ -58,6 +60,11 @@ INDIRECT_OWNERS = {
     "sales_order_items": ("order_id", "sales_orders"),
     "task_comments": ("task_id", "tasks"),
     "task_attachments": ("task_id", "tasks"),
+    "project_stakeholders": ("project_id", "projects"),
+    "ticket_comments": ("ticket_id", "tickets"),
+    "ticket_status_history": ("ticket_id", "tickets"),
+    "ticket_knowledge_articles": ("ticket_id", "tickets"),
+    "workflow_runs": ("event_id", "workflow_events"),
 }
 PLATFORM_TABLES = {"organization_deletions", "organization_file_cleanups"}
 STORAGE_COLUMNS = {

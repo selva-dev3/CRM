@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
@@ -23,7 +23,25 @@ from app.services.company_service import company_service
 from app.services.note_service import note_service
 from app.services.org_service import organization_service
 
-router = APIRouter()
+
+async def require_company_record_access(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    company_id = request.path_params.get("company_id")
+    if not company_id:
+        return
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    await company_service.require_company(
+        db,
+        company_id,
+        organization_id=organization_id,
+        current_user=current_user,
+    )
+
+
+router = APIRouter(dependencies=[Depends(require_company_record_access)])
 
 
 @router.get(
@@ -120,7 +138,9 @@ async def bulk_delete_companies(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await company_service.bulk_delete(db, payload.ids, organization_id=organization_id)
+    return await company_service.bulk_delete(
+        db, payload.ids, organization_id=organization_id, current_user=current_user
+    )
 
 
 @router.get(
@@ -135,7 +155,9 @@ async def get_company(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await company_service.get_company(db, company_id, organization_id=organization_id)
+    return await company_service.get_company(
+        db, company_id, organization_id=organization_id, current_user=current_user
+    )
 
 
 @router.put(
@@ -152,7 +174,11 @@ async def update_company(
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     return await company_service.update_company(
-        db, company_id, payload, organization_id=organization_id
+        db,
+        company_id,
+        payload,
+        organization_id=organization_id,
+        current_user=current_user,
     )
 
 
@@ -168,7 +194,9 @@ async def delete_company(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await company_service.delete_company(db, company_id, organization_id=organization_id)
+    return await company_service.delete_company(
+        db, company_id, organization_id=organization_id, current_user=current_user
+    )
 
 
 @router.get(
@@ -190,10 +218,11 @@ async def get_company_contacts(
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     items = await company_service.get_company_contacts(
-        db, company_id, organization_id=organization_id, page=page, limit=limit
+        db, company_id, organization_id=organization_id, page=page, limit=limit,
+        current_user=current_user,
     )
     total = await company_service.count_company_contacts(
-        db, company_id, organization_id=organization_id
+        db, company_id, organization_id=organization_id, current_user=current_user
     )
     response.headers["X-Total-Count"] = str(total)
     return items
@@ -218,10 +247,11 @@ async def get_company_deals(
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     items = await company_service.get_company_deals(
-        db, company_id, organization_id=organization_id, page=page, limit=limit
+        db, company_id, organization_id=organization_id, page=page, limit=limit,
+        current_user=current_user,
     )
     total = await company_service.count_company_deals(
-        db, company_id, organization_id=organization_id
+        db, company_id, organization_id=organization_id, current_user=current_user
     )
     response.headers["X-Total-Count"] = str(total)
     return items
@@ -283,10 +313,11 @@ async def get_company_quotes(
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     items = await company_service.get_company_quotes(
-        db, company_id, organization_id=organization_id, page=page, limit=limit
+        db, company_id, organization_id=organization_id, page=page, limit=limit,
+        current_user=current_user,
     )
     total = await company_service.count_company_quotes(
-        db, company_id, organization_id=organization_id
+        db, company_id, organization_id=organization_id, current_user=current_user
     )
     response.headers["X-Total-Count"] = str(total)
     return items
@@ -311,10 +342,15 @@ async def get_company_invoices(
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     items = await company_service.get_company_invoices(
-        db, company_id, organization_id=organization_id, page=page, limit=limit
+        db,
+        company_id,
+        organization_id=organization_id,
+        page=page,
+        limit=limit,
+        current_user=current_user,
     )
     total = await company_service.count_company_invoices(
-        db, company_id, organization_id=organization_id
+        db, company_id, organization_id=organization_id, current_user=current_user
     )
     response.headers["X-Total-Count"] = str(total)
     return items

@@ -3,7 +3,7 @@ import io
 from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, create_autospec
+from unittest.mock import ANY, AsyncMock, MagicMock, create_autospec
 
 import pytest
 from fastapi import UploadFile
@@ -502,7 +502,9 @@ async def test_update_lead_only_applies_provided_fields(monkeypatch):
     assert result["status"] == "Contacted"
     assert lead.status == "Contacted"
     assert lead.title == "Acme Corp"
-    repo.get_by_id_for_org.assert_awaited_once_with(db, "lead-1", "org-1")
+    repo.get_by_id_for_org.assert_awaited_once_with(
+        db, "lead-1", "org-1", access=ANY
+    )
     repo.record_activity.assert_awaited_once()
 
 
@@ -512,7 +514,7 @@ async def test_phone_update_takes_guard_before_reading_lead(monkeypatch):
     lead = _make_lead(phone="+14155552671")
     repo: Any = LeadRepository()
 
-    async def read_lead(*_args):
+    async def read_lead(*_args, **_kwargs):
         calls.append("read")
         return lead
 
@@ -573,6 +575,30 @@ async def test_update_lead_fires_lead_updated_event(monkeypatch):
     assert kwargs["event_name"] == "lead.updated"
     assert kwargs["org_id"] == "org-1"
     assert kwargs["data"]["status"] == "Contacted"
+
+
+@pytest.mark.asyncio
+async def test_workflow_driven_update_does_not_emit_another_workflow_event(monkeypatch):
+    lead = _make_lead()
+    repo: Any = LeadRepository()
+    repo.get_by_id_for_org = AsyncMock(return_value=lead)
+    repo.record_activity = AsyncMock()
+    service = _service_with(repo)
+    emit = AsyncMock()
+    monkeypatch.setattr("app.services.workflow_service.workflow_service.emit", emit)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.schemas.crm_schemas import LeadUpdate
+
+    await service.update_lead(
+        db,
+        "lead-1",
+        LeadUpdate(status="Contacted"),
+        _make_user(),
+        emit_workflow=False,
+    )
+
+    emit.assert_not_awaited()
 
 
 @pytest.mark.asyncio

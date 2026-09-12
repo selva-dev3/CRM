@@ -7,6 +7,7 @@ from sqlalchemy import delete, exists, func, select
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.record_access import record_access_filter
 from app.models import Invoice, Quote
 from app.models.audit import AuditLog
 from app.models.deal import DealActivity
@@ -92,14 +93,17 @@ class QuoteRepository:
         )
 
     async def lock_scoped(
-        self, db: AsyncSession, *, quote_id: str, organization_id: str
+        self, db: AsyncSession, *, quote_id: str, organization_id: str, access=None
     ) -> Quote | None:
+        conditions = [Quote.id == quote_id, Quote.organization_id == organization_id]
+        access_filter = record_access_filter(
+            access, assigned_column=Quote.created_by, created_column=Quote.created_by
+        )
+        if access_filter is not None:
+            conditions.append(access_filter)
         result = await db.execute(
             select(Quote)
-            .where(
-                Quote.id == quote_id,
-                Quote.organization_id == organization_id,
-            )
+            .where(*conditions)
             .with_for_update()
             .execution_options(populate_existing=True)
         )
@@ -322,8 +326,14 @@ class QuoteRepository:
         limit: int,
         status: str | None = None,
         search: str | None = None,
+        access=None,
     ) -> list[Quote]:
         stmt = select(Quote).where(Quote.organization_id == organization_id)
+        access_filter = record_access_filter(
+            access, assigned_column=Quote.created_by, created_column=Quote.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         if status and status.strip():
             stmt = stmt.where(Quote.status == status.strip())
         if search and search.strip():
@@ -343,10 +353,16 @@ class QuoteRepository:
         organization_id: str,
         status: str | None = None,
         search: str | None = None,
+        access=None,
     ) -> int:
         stmt = (
             select(func.count()).select_from(Quote).where(Quote.organization_id == organization_id)
         )
+        access_filter = record_access_filter(
+            access, assigned_column=Quote.created_by, created_column=Quote.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         if status and status.strip():
             stmt = stmt.where(Quote.status == status.strip())
         if search and search.strip():
@@ -355,14 +371,15 @@ class QuoteRepository:
         return int(result.scalar_one())
 
     async def get_scoped(
-        self, db: AsyncSession, *, quote_id: str, organization_id: str
+        self, db: AsyncSession, *, quote_id: str, organization_id: str, access=None
     ) -> Quote | None:
-        result = await db.execute(
-            select(Quote).where(
-                Quote.id == quote_id,
-                Quote.organization_id == organization_id,
-            )
+        filters = [Quote.id == quote_id, Quote.organization_id == organization_id]
+        access_filter = record_access_filter(
+            access, assigned_column=Quote.created_by, created_column=Quote.created_by
         )
+        if access_filter is not None:
+            filters.append(access_filter)
+        result = await db.execute(select(Quote).where(*filters))
         return result.scalars().first()
 
     async def list_by_deal(
@@ -373,6 +390,7 @@ class QuoteRepository:
         organization_id: str,
         page: int | None = None,
         limit: int | None = None,
+        access=None,
     ) -> list[Quote]:
         stmt = (
             select(Quote)
@@ -382,17 +400,30 @@ class QuoteRepository:
             )
             .order_by(Quote.created_at.desc(), Quote.id.desc())
         )
+        access_filter = record_access_filter(
+            access, assigned_column=Quote.created_by, created_column=Quote.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         if page is not None and limit is not None:
             stmt = stmt.offset((page - 1) * limit).limit(limit)
         result = await db.execute(stmt)
         return list(result.scalars().all())
 
-    async def count_by_deal(self, db: AsyncSession, *, deal_id: str, organization_id: str) -> int:
-        result = await db.execute(
+    async def count_by_deal(
+        self, db: AsyncSession, *, deal_id: str, organization_id: str, access=None
+    ) -> int:
+        stmt = (
             select(func.count())
             .select_from(Quote)
             .where(Quote.deal_id == deal_id, Quote.organization_id == organization_id)
         )
+        access_filter = record_access_filter(
+            access, assigned_column=Quote.created_by, created_column=Quote.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
+        result = await db.execute(stmt)
         return int(result.scalar_one())
 
     async def list_by_company(
@@ -403,6 +434,7 @@ class QuoteRepository:
         organization_id: str,
         page: int | None = None,
         limit: int | None = None,
+        access=None,
     ) -> list[Quote]:
         stmt = (
             select(Quote)
@@ -412,13 +444,18 @@ class QuoteRepository:
             )
             .order_by(Quote.created_at.desc(), Quote.id.desc())
         )
+        access_filter = record_access_filter(
+            access, assigned_column=Quote.created_by, created_column=Quote.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         if page is not None and limit is not None:
             stmt = stmt.offset((page - 1) * limit).limit(limit)
         result = await db.execute(stmt)
         return list(result.scalars().all())
 
     async def count_by_company(
-        self, db: AsyncSession, *, company_id: str, organization_id: str
+        self, db: AsyncSession, *, company_id: str, organization_id: str, access=None
     ) -> int:
         stmt = (
             select(func.count())
@@ -428,6 +465,11 @@ class QuoteRepository:
                 Quote.organization_id == organization_id,
             )
         )
+        access_filter = record_access_filter(
+            access, assigned_column=Quote.created_by, created_column=Quote.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         return int((await db.execute(stmt)).scalar_one())
 
     async def create(self, db: AsyncSession, *, data: dict) -> Quote:
@@ -435,37 +477,52 @@ class QuoteRepository:
         db.add(quote)
         return quote
 
-    async def delete_scoped(self, db: AsyncSession, *, quote_id: str, organization_id: str) -> bool:
+    async def delete_scoped(
+        self, db: AsyncSession, *, quote_id: str, organization_id: str, access=None
+    ) -> bool:
+        access_filter = record_access_filter(
+            access, assigned_column=Quote.created_by, created_column=Quote.created_by
+        )
+        conditions = [
+            Quote.id == quote_id,
+            Quote.organization_id == organization_id,
+            Quote.automatic_deal_id.is_(None),
+            Quote.status == "Draft",
+            ~exists(select(Invoice.id).where(Invoice.quote_id == Quote.id)),
+        ]
+        if access_filter is not None:
+            conditions.append(access_filter)
         result = cast(
             CursorResult[Any],
-            await db.execute(
-                delete(Quote).where(
-                    Quote.id == quote_id,
-                    Quote.organization_id == organization_id,
-                    Quote.automatic_deal_id.is_(None),
-                    Quote.status == "Draft",
-                    ~exists(select(Invoice.id).where(Invoice.quote_id == Quote.id)),
-                )
-            ),
+            await db.execute(delete(Quote).where(*conditions)),
         )
         return bool(result.rowcount)
 
     async def bulk_delete_scoped(
-        self, db: AsyncSession, *, quote_ids: list[str], organization_id: str
+        self,
+        db: AsyncSession,
+        *,
+        quote_ids: list[str],
+        organization_id: str,
+        access=None,
     ) -> int:
         if not quote_ids:
             return 0
+        access_filter = record_access_filter(
+            access, assigned_column=Quote.created_by, created_column=Quote.created_by
+        )
+        conditions = [
+            Quote.id.in_(quote_ids),
+            Quote.organization_id == organization_id,
+            Quote.automatic_deal_id.is_(None),
+            Quote.status == "Draft",
+            ~exists(select(Invoice.id).where(Invoice.quote_id == Quote.id)),
+        ]
+        if access_filter is not None:
+            conditions.append(access_filter)
         result = cast(
             CursorResult[Any],
-            await db.execute(
-                delete(Quote).where(
-                    Quote.id.in_(quote_ids),
-                    Quote.organization_id == organization_id,
-                    Quote.automatic_deal_id.is_(None),
-                    Quote.status == "Draft",
-                    ~exists(select(Invoice.id).where(Invoice.quote_id == Quote.id)),
-                )
-            ),
+            await db.execute(delete(Quote).where(*conditions)),
         )
         return int(result.rowcount or 0)
 

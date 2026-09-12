@@ -23,6 +23,7 @@ from app.services.note_service import note_service
 from app.services.notification_service import notification_service
 from app.services.org_service import organization_service
 from app.services.quote_service import QuoteService, quote_service
+from app.services.record_access_service import record_access_service
 from app.services.sales_totals import calculate_line, decimal_value, rounded_value
 
 # Canonical pipeline stages (mirrors dashboard_service and the frontend STAGES constant).
@@ -97,10 +98,25 @@ class DealService:
             ) from e
 
     async def require_deal(
-        self, db: AsyncSession, deal_id: str, *, organization_id: str, lock: bool = False
+        self,
+        db: AsyncSession,
+        deal_id: str,
+        *,
+        organization_id: str,
+        lock: bool = False,
+        current_user: User | None = None,
     ) -> Deal:
+        access = None
+        if current_user:
+            from app.services.record_access_service import record_access_service
+
+            access = await record_access_service.resolve(db, current_user, "deals")
         deal = await self.repository.get_by_id_scoped(
-            db, deal_id=deal_id, organization_id=organization_id, lock=lock
+            db,
+            deal_id=deal_id,
+            organization_id=organization_id,
+            lock=lock,
+            access=access,
         )
         if not deal:
             raise NotFoundError(message=f"Deal '{deal_id}' not found")
@@ -233,7 +249,13 @@ class DealService:
         limit: int = 20,
         search: str | None = None,
         stage: str | None = None,
+        current_user: User | None = None,
     ) -> list[dict]:
+        access = None
+        if current_user:
+            from app.services.record_access_service import record_access_service
+
+            access = await record_access_service.resolve(db, current_user, "deals")
         deals = await self.repository.list(
             db,
             organization_id=organization_id or "",
@@ -241,6 +263,7 @@ class DealService:
             limit=limit,
             search=search,
             stage=stage,
+            access=access,
         )
         return [deal_to_dict(d) for d in deals]
 
@@ -251,9 +274,19 @@ class DealService:
         organization_id: str,
         search: str | None = None,
         stage: str | None = None,
+        current_user: User | None = None,
     ) -> int:
+        access = None
+        if current_user:
+            from app.services.record_access_service import record_access_service
+
+            access = await record_access_service.resolve(db, current_user, "deals")
         return await self.repository.count(
-            db, organization_id=organization_id, search=search, stage=stage
+            db,
+            organization_id=organization_id,
+            search=search,
+            stage=stage,
+            access=access,
         )
 
     async def create_deal(self, db: AsyncSession, payload: DealCreate, current_user: User) -> dict:
@@ -290,6 +323,7 @@ class DealService:
                 "stage": payload.stage or "Qualification",
                 "probability": payload.probability if payload.probability is not None else 20.0,
                 "assigned_to": assigned_user_id,
+                "created_by": current_user.id,
                 "company_id": comp_id,
                 "contact_id": cont_id,
                 "project_id": project_id,
@@ -300,6 +334,17 @@ class DealService:
         await self.repository.create_initial_stage_history(db, deal=deal, actor_id=current_user.id)
         await self.repository.add_activity(
             db, deal_id=deal.id, action="Deal created", actor_id=current_user.id
+        )
+        from app.services.workflow_service import workflow_service
+
+        await workflow_service.emit(
+            db,
+            organization_id=deal.organization_id,
+            module="deals",
+            trigger="record.created",
+            entity_id=deal.id,
+            actor_id=current_user.id,
+            payload={"stage": deal.stage, "probability": deal.probability},
         )
         await self._commit(db, "Failed to create deal")
         await db.refresh(deal)
@@ -395,15 +440,37 @@ class DealService:
         await self._commit(db, "Failed to create pipeline stage")
         return {"message": f"Pipeline stage {normalized_name} created", "status": "success"}
 
-    async def get_kanban_board(self, db: AsyncSession, *, organization_id: str) -> dict:
-        deals = await self.repository.list_all(db, organization_id=organization_id)
+    async def get_kanban_board(
+        self, db: AsyncSession, *, organization_id: str, current_user: User | None = None
+    ) -> dict:
+        access = (
+            await record_access_service.resolve(db, current_user, "deals")
+            if current_user
+            else None
+        )
+        deals = await self.repository.list_all(
+            db,
+            organization_id=organization_id,
+            **({"access": access} if access is not None else {}),
+        )
         board: dict = {}
         for d in deals:
             board.setdefault(d.stage, []).append({"id": d.id, "title": d.title, "amount": d.amount})
         return board
 
-    async def get_win_loss_analytics(self, db: AsyncSession, *, organization_id: str) -> dict:
-        deals = await self.repository.list_all(db, organization_id=organization_id)
+    async def get_win_loss_analytics(
+        self, db: AsyncSession, *, organization_id: str, current_user: User | None = None
+    ) -> dict:
+        access = (
+            await record_access_service.resolve(db, current_user, "deals")
+            if current_user
+            else None
+        )
+        deals = await self.repository.list_all(
+            db,
+            organization_id=organization_id,
+            **({"access": access} if access is not None else {}),
+        )
         won = [deal for deal in deals if deal.stage == DEAL_STAGE_CLOSED_WON]
         lost = [deal for deal in deals if deal.stage == DEAL_STAGE_CLOSED_LOST]
         decided = len(won) + len(lost)
@@ -435,24 +502,48 @@ class DealService:
             status_code=501,
         )
 
-    async def bulk_delete(self, db: AsyncSession, ids: list[str], *, organization_id: str) -> dict:
-        deals = await self.repository.list_by_ids(db, ids, organization_id=organization_id)
+    async def bulk_delete(
+        self,
+        db: AsyncSession,
+        ids: list[str],
+        *,
+        organization_id: str,
+        current_user: User | None = None,
+    ) -> dict:
+        access = (
+            await record_access_service.resolve(db, current_user, "deals")
+            if current_user
+            else None
+        )
+        deals = await self.repository.list_by_ids(
+            db,
+            ids,
+            organization_id=organization_id,
+            **({"access": access} if access is not None else {}),
+        )
         for deal in deals:
             await self.repository.delete(db, deal)
         await self._commit(db, "Failed to bulk delete deals")
         return {"affected_count": len(deals), "message": "Deals deleted successfully"}
 
     async def bulk_update_stage(
-        self, db: AsyncSession, ids: list[str], stage: str, *, organization_id: str, actor_id: str
+        self, db: AsyncSession, ids: list[str], stage: str, *, organization_id: str, actor_id: str,
+        current_user: User | None = None,
     ) -> dict:
         try:
             await self._validate_stage(db, stage, organization_id)
+            access = (
+                await record_access_service.resolve(db, current_user, "deals")
+                if current_user
+                else None
+            )
             for deal_id in sorted(set(ids)):
                 deal = await self.repository.get_by_id_scoped(
                     db,
                     deal_id=deal_id,
                     organization_id=organization_id,
                     lock=True,
+                    **({"access": access} if access is not None else {}),
                 )
                 if not deal:
                     raise NotFoundError(message="Deal not found")
@@ -470,8 +561,22 @@ class DealService:
             await db.rollback()
             raise
 
-    async def get_deal(self, db: AsyncSession, deal_id: str, *, organization_id: str) -> dict:
-        return deal_to_dict(await self.require_deal(db, deal_id, organization_id=organization_id))
+    async def get_deal(
+        self,
+        db: AsyncSession,
+        deal_id: str,
+        *,
+        organization_id: str,
+        current_user: User | None = None,
+    ) -> dict:
+        return deal_to_dict(
+            await self.require_deal(
+                db,
+                deal_id,
+                organization_id=organization_id,
+                current_user=current_user,
+            )
+        )
 
     async def update_deal(
         self,
@@ -481,14 +586,21 @@ class DealService:
         *,
         organization_id: str | None = None,
         actor_id: str | None = None,
+        current_user: User | None = None,
     ) -> dict:
         if not organization_id:
             raise APIException(message="Organization is required", status_code=403)
+        access = None
+        if current_user:
+            from app.services.record_access_service import record_access_service
+
+            access = await record_access_service.resolve(db, current_user, "deals")
         d = await self.repository.get_by_id_scoped(
             db,
             deal_id=deal_id,
             organization_id=organization_id,
             lock=True,
+            access=access,
         )
         if not d:
             raise NotFoundError(message="Deal not found")
@@ -508,6 +620,7 @@ class DealService:
 
         prev_amount = d.amount
         prev_probability = d.probability
+        prev_stage = d.stage
 
         if payload.stage is not None:
             await self._validate_stage(db, payload.stage, d.organization_id)
@@ -560,6 +673,23 @@ class DealService:
             d.custom_fields = await self._validate_custom_fields(
                 db, d.organization_id, payload.custom_fields
             )
+
+        from app.services.workflow_service import workflow_service
+
+        await workflow_service.emit(
+            db,
+            organization_id=d.organization_id,
+            module="deals",
+            trigger="record.status_changed" if prev_stage != d.stage else "record.updated",
+            entity_id=d.id,
+            actor_id=actor_id,
+            payload={
+                "stage": d.stage,
+                "probability": d.probability,
+                "old_stage": prev_stage,
+                "changed_fields": list(payload.model_fields_set),
+            },
+        )
 
         await self._commit(db, "Failed to update deal")
         await db.refresh(d)
@@ -1003,11 +1133,15 @@ class DealService:
         *,
         page: int = 1,
         limit: int = 15,
+        current_user: User | None = None,
     ) -> list[dict]:
-        deal = await self.repository.get_by_id_scoped(
+        if current_user:
+            await self.require_deal(
+                db, deal_id, organization_id=organization_id, current_user=current_user
+            )
+        elif not await self.repository.get_by_id_scoped(
             db, deal_id=deal_id, organization_id=organization_id
-        )
-        if not deal:
+        ):
             raise NotFoundError(message=f"Deal '{deal_id}' not found")
         return await self.quote_service.list_quotes_for_deal(
             db,
@@ -1015,12 +1149,21 @@ class DealService:
             organization_id=organization_id,
             page=page,
             limit=limit,
+            **({"current_user": current_user} if current_user else {}),
         )
 
-    async def count_deal_quotes(self, db: AsyncSession, deal_id: str, organization_id: str) -> int:
-        await self.require_deal(db, deal_id, organization_id=organization_id)
+    async def count_deal_quotes(
+        self, db: AsyncSession, deal_id: str, organization_id: str,
+        current_user: User | None = None,
+    ) -> int:
+        await self.require_deal(
+            db, deal_id, organization_id=organization_id, current_user=current_user
+        )
         return await self.quote_service.count_quotes_for_deal(
-            db, deal_id=deal_id, organization_id=organization_id
+            db,
+            deal_id=deal_id,
+            organization_id=organization_id,
+            **({"current_user": current_user} if current_user else {}),
         )
 
     async def predict_deal_win_rate(

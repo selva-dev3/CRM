@@ -1,5 +1,5 @@
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import ANY, AsyncMock
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -58,6 +58,7 @@ async def test_list_companies_is_scoped_to_current_organization(monkeypatch):
         page=2,
         limit=15,
         search="Acme",
+        access=ANY,
     )
 
 
@@ -77,7 +78,9 @@ async def test_count_companies_is_scoped_to_current_organization(monkeypatch):
     result = await service.count_companies(db, search="Acme", current_user=AsyncMock())
 
     assert result == 23
-    repo.count_by_org.assert_awaited_once_with(db, organization_id="org-1", search="Acme")
+    repo.count_by_org.assert_awaited_once_with(
+        db, organization_id="org-1", search="Acme", access=ANY
+    )
 
 
 @pytest.mark.asyncio

@@ -5,8 +5,13 @@ export interface NavItem {
   href: string;
   icon: string;
   badge?: string;
-  permission?: PermissionKey | readonly PermissionKey[];
+  permission?: PermissionRequirement;
 }
+
+export type PermissionRequirement = PermissionKey | {
+  anyOf?: readonly PermissionKey[];
+  allOf?: readonly PermissionKey[];
+};
 
 export interface NavSection {
   title?: string;
@@ -33,7 +38,7 @@ export const navigationSections: NavSection[] = [
       { title: 'Meetings', href: '/meetings', icon: 'CalendarDays', permission: PERMISSIONS.MEETINGS.READ },
       { title: 'Calls', href: '/calls', icon: 'PhoneCall', permission: PERMISSIONS.CALLS.READ },
       { title: 'Emails', href: '/email', icon: 'Mail', permission: PERMISSIONS.EMAILS.READ },
-      { title: 'WhatsApp', href: '/whatsapp', icon: 'MessageCircle', permission: [PERMISSIONS.WHATSAPP.READ_ASSIGNED, PERMISSIONS.WHATSAPP.READ_ALL] },
+      { title: 'WhatsApp', href: '/whatsapp', icon: 'MessageCircle', permission: { anyOf: [PERMISSIONS.WHATSAPP.READ_ASSIGNED, PERMISSIONS.WHATSAPP.READ_ALL] } },
       { title: 'Notes', href: '/notes', icon: 'StickyNote', permission: PERMISSIONS.NOTES.READ },
       { title: 'Documents', href: '/documents', icon: 'FileText', permission: PERMISSIONS.DOCUMENTS.READ }
     ]
@@ -53,15 +58,24 @@ export const navigationSections: NavSection[] = [
     title: 'Projects',
     items: [
       { title: 'Projects', href: '/projects', icon: 'FolderKanban', permission: PERMISSIONS.PROJECTS.READ },
-      { title: 'Project Tasks', href: '/project-tasks', icon: 'ListTodo', permission: PERMISSIONS.PROJECTS.READ },
+      { title: 'Project Tasks', href: '/project-tasks', icon: 'ListTodo', permission: { allOf: [PERMISSIONS.PROJECTS.READ, PERMISSIONS.TASKS.READ] } },
       { title: 'Milestones', href: '/milestones', icon: 'Flag', permission: PERMISSIONS.PROJECTS.READ },
-      { title: 'Project Documents', href: '/project-documents', icon: 'FolderOpen', permission: PERMISSIONS.PROJECTS.READ }
+      { title: 'Project Documents', href: '/project-documents', icon: 'FolderOpen', permission: { allOf: [PERMISSIONS.PROJECTS.READ, PERMISSIONS.DOCUMENTS.READ] } }
+    ]
+  },
+  {
+    title: 'Support',
+    items: [
+      { title: 'Tickets', href: '/tickets', icon: 'LifeBuoy', permission: PERMISSIONS.TICKETS.READ },
+      { title: 'Customers', href: '/customers', icon: 'HeartHandshake', permission: { allOf: [PERMISSIONS.CONTACTS.READ, PERMISSIONS.COMPANIES.READ] } },
+      { title: 'Knowledge Base', href: '/knowledge-base', icon: 'BookOpenCheck', permission: PERMISSIONS.KNOWLEDGE_BASE.READ }
     ]
   },
   {
     title: 'Analytics',
     items: [
       { title: 'Reports', href: '/reports', icon: 'BarChart3', permission: PERMISSIONS.REPORTS.READ },
+      { title: 'Dashboards', href: '/dashboards', icon: 'PanelsTopLeft', permission: PERMISSIONS.DASHBOARD.READ },
       { title: 'AI Intelligence', href: '/ai', icon: 'Sparkles', permission: PERMISSIONS.AI.READ }
     ]
   },
@@ -69,7 +83,10 @@ export const navigationSections: NavSection[] = [
     title: 'Administration',
     items: [
       { title: 'User Management', href: '/users', icon: 'UserCog', permission: PERMISSIONS.USERS.READ },
+      { title: 'Teams', href: '/teams', icon: 'UsersRound', permission: PERMISSIONS.TEAMS.READ },
       { title: 'Roles & Permissions', href: '/roles', icon: 'ShieldCheck', permission: PERMISSIONS.ROLES.READ },
+      { title: 'Custom Fields', href: '/custom-fields', icon: 'ListPlus', permission: PERMISSIONS.SETTINGS.READ },
+      { title: 'Workflows / Automation', href: '/workflows', icon: 'Workflow', permission: PERMISSIONS.WORKFLOWS.READ },
       { title: 'Integrations', href: '/integrations', icon: 'Plug', permission: PERMISSIONS.INTEGRATIONS.READ },
       { title: 'Settings', href: '/settings', icon: 'Settings', permission: PERMISSIONS.SETTINGS.READ }
     ]
@@ -86,7 +103,7 @@ export const navigationConfig: NavItem[] = navigationSections.flatMap((s) => s.i
  *
  * Keys are the real backend permission keys (see `src/lib/permissions.ts`).
  */
-export const protectedRoutes: Record<string, PermissionKey | readonly PermissionKey[]> = {
+export const protectedRoutes: Record<string, PermissionRequirement> = {
   dashboard: PERMISSIONS.DASHBOARD.READ,
   leads: PERMISSIONS.LEADS.READ,
   contacts: PERMISSIONS.CONTACTS.READ,
@@ -108,9 +125,16 @@ export const protectedRoutes: Record<string, PermissionKey | readonly Permission
   invoices: PERMISSIONS.INVOICES.READ,
   payments: PERMISSIONS.INVOICES.READ,
   projects: PERMISSIONS.PROJECTS.READ,
-  'project-tasks': PERMISSIONS.PROJECTS.READ,
+  'project-tasks': { allOf: [PERMISSIONS.PROJECTS.READ, PERMISSIONS.TASKS.READ] },
   milestones: PERMISSIONS.PROJECTS.READ,
-  'project-documents': PERMISSIONS.PROJECTS.READ,
+  'project-documents': { allOf: [PERMISSIONS.PROJECTS.READ, PERMISSIONS.DOCUMENTS.READ] },
+  tickets: PERMISSIONS.TICKETS.READ,
+  customers: { allOf: [PERMISSIONS.CONTACTS.READ, PERMISSIONS.COMPANIES.READ] },
+  'knowledge-base': PERMISSIONS.KNOWLEDGE_BASE.READ,
+  dashboards: PERMISSIONS.DASHBOARD.READ,
+  teams: PERMISSIONS.TEAMS.READ,
+  'custom-fields': PERMISSIONS.SETTINGS.READ,
+  workflows: PERMISSIONS.WORKFLOWS.READ,
   reports: PERMISSIONS.REPORTS.READ,
   calendar: PERMISSIONS.CALENDAR.READ,
   users: PERMISSIONS.USERS.READ,
@@ -118,7 +142,7 @@ export const protectedRoutes: Record<string, PermissionKey | readonly Permission
   settings: PERMISSIONS.SETTINGS.READ,
   organization: PERMISSIONS.ORGANIZATION.READ,
   integrations: PERMISSIONS.INTEGRATIONS.READ,
-  whatsapp: [PERMISSIONS.WHATSAPP.READ_ASSIGNED, PERMISSIONS.WHATSAPP.READ_ALL],
+  whatsapp: { anyOf: [PERMISSIONS.WHATSAPP.READ_ASSIGNED, PERMISSIONS.WHATSAPP.READ_ALL] },
   notifications: PERMISSIONS.NOTIFICATIONS.READ,
   ai: PERMISSIONS.AI.READ,
 };
@@ -126,8 +150,8 @@ export const protectedRoutes: Record<string, PermissionKey | readonly Permission
 /** Returns the permission required to view `pathname`, or undefined when unguarded. */
 export function getRoutePermission(
   pathname: string,
-  routes: Record<string, PermissionKey | readonly PermissionKey[]> = protectedRoutes
-): PermissionKey | readonly PermissionKey[] | undefined {
+  routes: Record<string, PermissionRequirement> = protectedRoutes
+): PermissionRequirement | undefined {
   if (!pathname || pathname === '/') return undefined;
   const topSegment = pathname.split('/').filter(Boolean)[0]?.toLowerCase();
   return topSegment ? routes[topSegment] : undefined;
@@ -145,11 +169,18 @@ export function filterNavigationSections(
   return sections
     .map((section) => ({
       ...section,
-      items: section.items.filter((item) => item.permission === undefined || (
-        Array.isArray(item.permission)
-          ? item.permission.some((permission) => hasPermission(permissions, permission))
-          : hasPermission(permissions, item.permission as PermissionKey)
-      )),
+      items: section.items.filter((item) => requirementSatisfied(permissions, item.permission)),
     }))
     .filter((section) => section.items.length > 0);
+}
+
+export function requirementSatisfied(
+  permissions: readonly string[],
+  requirement?: PermissionRequirement,
+): boolean {
+  if (!requirement) return true;
+  if (typeof requirement === 'string') return hasPermission(permissions, requirement);
+  if (requirement.allOf && !requirement.allOf.every((key) => hasPermission(permissions, key))) return false;
+  if (requirement.anyOf && !requirement.anyOf.some((key) => hasPermission(permissions, key))) return false;
+  return true;
 }

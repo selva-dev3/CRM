@@ -650,6 +650,7 @@ class TaskBase(BaseModel):
     contact_id: str | None = None
     company_id: str | None = None
     deal_id: str | None = None
+    ticket_id: str | None = None
 
 
 class TaskCreate(TaskBase):
@@ -668,6 +669,7 @@ class TaskUpdate(BaseModel):
     contact_id: str | None = None
     company_id: str | None = None
     deal_id: str | None = None
+    ticket_id: str | None = None
 
 
 class TaskResponse(TaskBase):

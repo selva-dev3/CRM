@@ -23,9 +23,35 @@ from app.schemas.crm_schemas import (
     RoleUpdate,
     SetDefaultRolesRequest,
 )
+from app.schemas.record_access import RoleRecordScopeItem, RoleRecordScopeUpdate
 from app.services.role_service import role_service
 
 router = APIRouter()
+
+
+@router.get(
+    "/{role_id}/record-scopes",
+    response_model=list[RoleRecordScopeItem],
+    dependencies=[Depends(require_permission("roles:read"))],
+)
+async def get_role_record_scopes(
+    role_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    return await role_service.get_record_scopes(db, role_id, current_user)
+
+
+@router.put(
+    "/{role_id}/record-scopes",
+    response_model=list[RoleRecordScopeItem],
+    dependencies=[Depends(require_permission("roles:update"))],
+)
+async def update_role_record_scopes(
+    role_id: str,
+    payload: RoleRecordScopeUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await role_service.update_record_scopes(db, role_id, payload, current_user)
 
 
 def _current_organization_id(current_user: User) -> str:

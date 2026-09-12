@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.record_access import record_access_filter
 from app.models import Invoice, InvoiceItem
 from app.models.audit import AuditLog
 from app.models.contact import Contact, ContactAddress
@@ -18,11 +19,17 @@ class InvoiceRepository:
     """DB query layer for the Invoice domain. All queries are organization-scoped."""
 
     async def lock_scoped(
-        self, db: AsyncSession, *, invoice_id: str, organization_id: str
+        self, db: AsyncSession, *, invoice_id: str, organization_id: str, access=None
     ) -> Invoice | None:
+        conditions = [Invoice.id == invoice_id, Invoice.organization_id == organization_id]
+        access_filter = record_access_filter(
+            access, assigned_column=Invoice.created_by, created_column=Invoice.created_by
+        )
+        if access_filter is not None:
+            conditions.append(access_filter)
         result = await db.execute(
             select(Invoice)
-            .where(Invoice.id == invoice_id, Invoice.organization_id == organization_id)
+            .where(*conditions)
             .with_for_update()
             .execution_options(populate_existing=True)
         )
@@ -105,13 +112,15 @@ class InvoiceRepository:
         )
 
     async def get_scoped(
-        self, db: AsyncSession, *, invoice_id: str, organization_id: str
+        self, db: AsyncSession, *, invoice_id: str, organization_id: str, access=None
     ) -> Invoice | None:
-        result = await db.execute(
-            select(Invoice).where(
-                Invoice.id == invoice_id, Invoice.organization_id == organization_id
-            )
+        conditions = [Invoice.id == invoice_id, Invoice.organization_id == organization_id]
+        access_filter = record_access_filter(
+            access, assigned_column=Invoice.created_by, created_column=Invoice.created_by
         )
+        if access_filter is not None:
+            conditions.append(access_filter)
+        result = await db.execute(select(Invoice).where(*conditions))
         return result.scalars().first()
 
     async def list_scoped(
@@ -123,8 +132,14 @@ class InvoiceRepository:
         limit: int,
         status: str | None = None,
         search: str | None = None,
+        access=None,
     ) -> list[Invoice]:
         stmt = select(Invoice).where(Invoice.organization_id == organization_id)
+        access_filter = record_access_filter(
+            access, assigned_column=Invoice.created_by, created_column=Invoice.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         if status == "Overdue":
             stmt = stmt.where(
                 Invoice.status.in_(("Finalized", "Accepted")),
@@ -150,12 +165,18 @@ class InvoiceRepository:
         organization_id: str,
         status: str | None = None,
         search: str | None = None,
+        access=None,
     ) -> int:
         stmt = (
             select(func.count())
             .select_from(Invoice)
             .where(Invoice.organization_id == organization_id)
         )
+        access_filter = record_access_filter(
+            access, assigned_column=Invoice.created_by, created_column=Invoice.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         if status == "Overdue":
             stmt = stmt.where(
                 Invoice.status.in_(("Finalized", "Accepted")),
@@ -177,6 +198,7 @@ class InvoiceRepository:
         organization_id: str,
         page: int | None = None,
         limit: int | None = None,
+        access=None,
     ) -> list[Invoice]:
         stmt = (
             select(Invoice)
@@ -186,13 +208,18 @@ class InvoiceRepository:
             )
             .order_by(Invoice.created_at.desc(), Invoice.id.desc())
         )
+        access_filter = record_access_filter(
+            access, assigned_column=Invoice.created_by, created_column=Invoice.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         if page is not None and limit is not None:
             stmt = stmt.offset((page - 1) * limit).limit(limit)
         result = await db.execute(stmt)
         return list(result.scalars().all())
 
     async def count_by_company(
-        self, db: AsyncSession, *, company_id: str, organization_id: str
+        self, db: AsyncSession, *, company_id: str, organization_id: str, access=None
     ) -> int:
         stmt = (
             select(func.count())
@@ -202,6 +229,11 @@ class InvoiceRepository:
                 Invoice.organization_id == organization_id,
             )
         )
+        access_filter = record_access_filter(
+            access, assigned_column=Invoice.created_by, created_column=Invoice.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         return int((await db.execute(stmt)).scalar_one())
 
     async def get_by_deal(self, db: AsyncSession, deal_id: str) -> Invoice | None:
@@ -209,14 +241,18 @@ class InvoiceRepository:
         return result.scalars().first()
 
     async def get_by_deal_scoped(
-        self, db: AsyncSession, *, deal_id: str, organization_id: str
+        self, db: AsyncSession, *, deal_id: str, organization_id: str, access=None
     ) -> Invoice | None:
-        result = await db.execute(
-            select(Invoice).where(
+        conditions = [
                 Invoice.deal_id == deal_id,
                 Invoice.organization_id == organization_id,
-            )
+        ]
+        access_filter = record_access_filter(
+            access, assigned_column=Invoice.created_by, created_column=Invoice.created_by
         )
+        if access_filter is not None:
+            conditions.append(access_filter)
+        result = await db.execute(select(Invoice).where(*conditions))
         return result.scalars().first()
 
     async def create(self, db: AsyncSession, *, data: dict) -> Invoice:

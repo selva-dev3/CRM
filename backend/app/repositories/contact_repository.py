@@ -1,6 +1,7 @@
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.record_access import record_access_filter
 from app.models.company import Company
 from app.models.contact import Contact, ContactAddress
 from app.models.organization import Organization
@@ -17,8 +18,14 @@ class ContactRepository:
         page: int,
         limit: int,
         search: str | None = None,
+        access=None,
     ) -> list[Contact]:
         stmt = select(Contact).where(Contact.organization_id == organization_id)
+        access_filter = record_access_filter(
+            access, assigned_column=Contact.owner_id, created_column=Contact.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
 
         if search:
             pattern = f"%{search}%"
@@ -39,12 +46,18 @@ class ContactRepository:
         *,
         organization_id: str,
         search: str | None = None,
+        access=None,
     ) -> int:
         stmt = (
             select(func.count())
             .select_from(Contact)
             .where(Contact.organization_id == organization_id)
         )
+        access_filter = record_access_filter(
+            access, assigned_column=Contact.owner_id, created_column=Contact.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         if search:
             pattern = f"%{search}%"
             stmt = stmt.where(
@@ -56,9 +69,17 @@ class ContactRepository:
         result = await db.execute(stmt)
         return int(result.scalar_one())
 
-    async def list_starred(self, db: AsyncSession, *, organization_id: str) -> list[Contact]:
+    async def list_starred(
+        self, db: AsyncSession, *, organization_id: str, access=None
+    ) -> list[Contact]:
+        filters = [Contact.is_starred, Contact.organization_id == organization_id]
+        access_filter = record_access_filter(
+            access, assigned_column=Contact.owner_id, created_column=Contact.created_by
+        )
+        if access_filter is not None:
+            filters.append(access_filter)
         result = await db.execute(
-            select(Contact).where(Contact.is_starred, Contact.organization_id == organization_id)
+            select(Contact).where(*filters)
         )
         return list(result.scalars().all())
 
@@ -70,6 +91,7 @@ class ContactRepository:
         organization_id: str,
         page: int | None = None,
         limit: int | None = None,
+        access=None,
     ) -> list[Contact]:
         stmt = (
             select(Contact)
@@ -79,13 +101,18 @@ class ContactRepository:
             )
             .order_by(Contact.created_at.desc(), Contact.id.desc())
         )
+        access_filter = record_access_filter(
+            access, assigned_column=Contact.owner_id, created_column=Contact.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         if page is not None and limit is not None:
             stmt = stmt.offset((page - 1) * limit).limit(limit)
         result = await db.execute(stmt)
         return list(result.scalars().all())
 
     async def count_by_company(
-        self, db: AsyncSession, company_id: str, *, organization_id: str
+        self, db: AsyncSession, company_id: str, *, organization_id: str, access=None
     ) -> int:
         stmt = (
             select(func.count())
@@ -95,6 +122,11 @@ class ContactRepository:
                 Contact.organization_id == organization_id,
             )
         )
+        access_filter = record_access_filter(
+            access, assigned_column=Contact.owner_id, created_column=Contact.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         return int((await db.execute(stmt)).scalar_one())
 
     async def get_by_id(self, db: AsyncSession, contact_id: str) -> Contact | None:
@@ -108,22 +140,32 @@ class ContactRepository:
         contact_id: str,
         organization_id: str,
         populate_existing: bool = False,
+        access=None,
     ) -> Contact | None:
         query = select(Contact).where(
             Contact.id == contact_id,
             Contact.organization_id == organization_id,
         )
+        access_filter = record_access_filter(
+            access, assigned_column=Contact.owner_id, created_column=Contact.created_by
+        )
+        if access_filter is not None:
+            query = query.where(access_filter)
         if populate_existing:
             query = query.execution_options(populate_existing=True)
         result = await db.execute(query)
         return result.scalars().first()
 
     async def list_by_ids(
-        self, db: AsyncSession, ids: list[str], *, organization_id: str
+        self, db: AsyncSession, ids: list[str], *, organization_id: str, access=None
     ) -> list[Contact]:
-        result = await db.execute(
-            select(Contact).where(Contact.id.in_(ids), Contact.organization_id == organization_id)
+        filters = [Contact.id.in_(ids), Contact.organization_id == organization_id]
+        access_filter = record_access_filter(
+            access, assigned_column=Contact.owner_id, created_column=Contact.created_by
         )
+        if access_filter is not None:
+            filters.append(access_filter)
+        result = await db.execute(select(Contact).where(*filters))
         return list(result.scalars().all())
 
     async def create(self, db: AsyncSession, *, data: dict) -> Contact:

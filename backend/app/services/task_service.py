@@ -36,11 +36,13 @@ def task_to_dict(task: Task) -> dict:
         "due_date": str(task.due_date) if task.due_date else None,
         "status": task.status,
         "assigned_to": task.assigned_to,
+        "created_by": task.created_by,
         "project_id": getattr(task, "project_id", None),
         "lead_id": task.lead_id,
         "contact_id": task.contact_id,
         "company_id": task.company_id,
         "deal_id": task.deal_id,
+        "ticket_id": task.ticket_id,
         "created_at": str(task.created_at) if task.created_at else None,
     }
 
@@ -55,6 +57,19 @@ class TaskService:
     ) -> None:
         self.repository = repository or TaskRepository()
         self.project_repository = project_repository or ProjectRepository()
+
+    @staticmethod
+    async def _access(db: AsyncSession, current_user: User | None):
+        if not current_user:
+            return None
+        from app.services.record_access_service import record_access_service
+
+        return await record_access_service.resolve(db, current_user, "tasks")
+
+    @classmethod
+    async def _access_kwargs(cls, db: AsyncSession, current_user: User | None) -> dict:
+        access = await cls._access(db, current_user)
+        return {"access": access} if access is not None else {}
 
     async def _validate_project(
         self, db: AsyncSession, project_id: str | None, organization_id: str
@@ -110,8 +125,11 @@ class TaskService:
         company_id: str | None = None,
         deal_id: str | None = None,
         project_id: str | None = None,
+        ticket_id: str | None = None,
         project_linked: bool = False,
+        current_user: User | None = None,
     ) -> list[dict]:
+        access = await self._access(db, current_user)
         tasks = await self.repository.list(
             db,
             page=page,
@@ -125,7 +143,9 @@ class TaskService:
             company_id=company_id,
             deal_id=deal_id,
             project_id=project_id,
+            ticket_id=ticket_id,
             project_linked=project_linked,
+            **({"access": access} if access is not None else {}),
         )
         return [task_to_dict(t) for t in tasks]
 
@@ -142,8 +162,11 @@ class TaskService:
         company_id: str | None = None,
         deal_id: str | None = None,
         project_id: str | None = None,
+        ticket_id: str | None = None,
         project_linked: bool = False,
+        current_user: User | None = None,
     ) -> int:
+        access = await self._access(db, current_user)
         return await self.repository.count(
             db,
             organization_id=organization_id,
@@ -155,11 +178,24 @@ class TaskService:
             company_id=company_id,
             deal_id=deal_id,
             project_id=project_id,
+            ticket_id=ticket_id,
             project_linked=project_linked,
+            **({"access": access} if access is not None else {}),
         )
 
-    async def get_task(self, db: AsyncSession, task_id: str, organization_id: str) -> dict:
-        task = await self.repository.get_by_id(db, task_id=task_id, organization_id=organization_id)
+    async def get_task(
+        self,
+        db: AsyncSession,
+        task_id: str,
+        organization_id: str,
+        current_user: User | None = None,
+    ) -> dict:
+        task = await self.repository.get_by_id(
+            db,
+            task_id=task_id,
+            organization_id=organization_id,
+            **(await self._access_kwargs(db, current_user)),
+        )
         if not task:
             raise NotFoundError(message=f"Task '{task_id}' not found")
         return task_to_dict(task)
@@ -180,6 +216,7 @@ class TaskService:
             default_user_id=current_user.id,
         )
         project_id = await self._validate_project(db, payload.project_id, org_id)
+        ticket_id = await self.repository.validate_ticket(db, payload.ticket_id, org_id)
         from app.services.crm_relationship_service import validate_crm_relationships
 
         relationships = await validate_crm_relationships(
@@ -198,10 +235,24 @@ class TaskService:
             "status": payload.status or "Pending",
             "due_date": due_dt,
             "assigned_to": assigned_user,
+            "created_by": current_user.id,
             "project_id": project_id,
+            "ticket_id": ticket_id,
             **relationships,
         }
         task = await self.repository.create(db, data=data)
+        await db.flush()
+        from app.services.workflow_service import workflow_service
+
+        await workflow_service.emit(
+            db,
+            organization_id=task.organization_id,
+            module="tasks",
+            trigger="record.created",
+            entity_id=task.id,
+            actor_id=current_user.id,
+            payload={"status": task.status, "priority": task.priority},
+        )
         await self._commit(db, "Failed to create task")
         await db.refresh(task)
         await notification_service.notify(
@@ -223,18 +274,36 @@ class TaskService:
         )
         return task_to_dict(task)
 
-    async def get_overdue_tasks(self, db: AsyncSession, organization_id: str) -> list[dict]:
-        tasks = await self.repository.list_pending(db, organization_id=organization_id)
+    async def get_overdue_tasks(
+        self, db: AsyncSession, organization_id: str, current_user: User | None = None
+    ) -> list[dict]:
+        tasks = await self.repository.list_pending(
+            db,
+            organization_id=organization_id,
+            **(await self._access_kwargs(db, current_user)),
+        )
         today = datetime.now().astimezone().date()
         return [task_to_dict(t) for t in tasks if t.due_date and t.due_date.date() < today]
 
-    async def get_today_tasks(self, db: AsyncSession, organization_id: str) -> list[dict]:
-        tasks = await self.repository.list_pending(db, organization_id=organization_id)
+    async def get_today_tasks(
+        self, db: AsyncSession, organization_id: str, current_user: User | None = None
+    ) -> list[dict]:
+        tasks = await self.repository.list_pending(
+            db,
+            organization_id=organization_id,
+            **(await self._access_kwargs(db, current_user)),
+        )
         today = datetime.now().astimezone().date()
         return [task_to_dict(t) for t in tasks if t.due_date and t.due_date.date() == today]
 
-    async def get_board_view(self, db: AsyncSession, organization_id: str) -> dict:
-        tasks = await self.repository.list_all(db, organization_id=organization_id)
+    async def get_board_view(
+        self, db: AsyncSession, organization_id: str, current_user: User | None = None
+    ) -> dict:
+        tasks = await self.repository.list_all(
+            db,
+            organization_id=organization_id,
+            **(await self._access_kwargs(db, current_user)),
+        )
         board: dict[str, list[dict]] = {}
         for task in tasks:
             board.setdefault(task.status, []).append(
@@ -249,13 +318,26 @@ class TaskService:
         return board
 
     async def update_task(
-        self, db: AsyncSession, task_id: str, payload: TaskUpdate, organization_id: str
+        self,
+        db: AsyncSession,
+        task_id: str,
+        payload: TaskUpdate,
+        organization_id: str,
+        *,
+        actor_id: str | None = None,
+        current_user: User | None = None,
     ) -> dict:
-        task = await self.repository.get_by_id(db, task_id=task_id, organization_id=organization_id)
+        task = await self.repository.get_by_id(
+            db,
+            task_id=task_id,
+            organization_id=organization_id,
+            **(await self._access_kwargs(db, current_user)),
+        )
         if not task:
             raise NotFoundError(message=f"Task '{task_id}' not found")
 
         prev_priority = task.priority
+        prev_status = task.status
         updates = payload.model_dump(exclude_unset=True)
         if "title" in updates and updates["title"] is not None:
             task.title = updates["title"]
@@ -278,6 +360,10 @@ class TaskService:
             task.project_id = await self._validate_project(
                 db, updates["project_id"], task.organization_id
             )
+        if "ticket_id" in updates:
+            task.ticket_id = await self.repository.validate_ticket(
+                db, updates["ticket_id"], task.organization_id
+            )
         relationship_fields = {"lead_id", "contact_id", "company_id", "deal_id"}
         if relationship_fields & updates.keys():
             from app.services.crm_relationship_service import validate_crm_relationships
@@ -288,6 +374,23 @@ class TaskService:
             await validate_crm_relationships(db, organization_id=task.organization_id, **merged)
             for field in relationship_fields & updates.keys():
                 setattr(task, field, updates[field])
+
+        from app.services.workflow_service import workflow_service
+
+        await workflow_service.emit(
+            db,
+            organization_id=task.organization_id,
+            module="tasks",
+            trigger="record.status_changed" if prev_status != task.status else "record.updated",
+            entity_id=task.id,
+            actor_id=actor_id,
+            payload={
+                "status": task.status,
+                "priority": task.priority,
+                "old_status": prev_status,
+                "changed_fields": list(updates),
+            },
+        )
 
         await self._commit(db, "Failed to update task")
         await db.refresh(task)
@@ -308,30 +411,74 @@ class TaskService:
             )
         return task_to_dict(task)
 
-    async def delete_task(self, db: AsyncSession, task_id: str, organization_id: str) -> dict:
-        task = await self.repository.get_by_id(db, task_id=task_id, organization_id=organization_id)
+    async def delete_task(
+        self,
+        db: AsyncSession,
+        task_id: str,
+        organization_id: str,
+        current_user: User | None = None,
+    ) -> dict:
+        task = await self.repository.get_by_id(
+            db,
+            task_id=task_id,
+            organization_id=organization_id,
+            **(await self._access_kwargs(db, current_user)),
+        )
         if not task:
             raise NotFoundError(message=f"Task '{task_id}' not found")
         await self.repository.delete(db, task)
         await self._commit(db, "Failed to delete task")
         return {"message": f"Task {task_id} deleted successfully", "status": "success"}
 
-    async def bulk_delete(self, db: AsyncSession, ids: list[str], organization_id: str) -> dict:
-        tasks = await self.repository.list_by_ids(db, ids=ids, organization_id=organization_id)
+    async def bulk_delete(
+        self,
+        db: AsyncSession,
+        ids: list[str],
+        organization_id: str,
+        current_user: User | None = None,
+    ) -> dict:
+        tasks = await self.repository.list_by_ids(
+            db,
+            ids=ids,
+            organization_id=organization_id,
+            **(await self._access_kwargs(db, current_user)),
+        )
         for task in tasks:
             await self.repository.delete(db, task)
         await self._commit(db, "Failed to bulk delete tasks")
         return {"affected_count": len(tasks), "message": "Tasks deleted successfully"}
 
-    async def bulk_complete(self, db: AsyncSession, ids: list[str], organization_id: str) -> dict:
-        tasks = await self.repository.list_by_ids(db, ids=ids, organization_id=organization_id)
+    async def bulk_complete(
+        self,
+        db: AsyncSession,
+        ids: list[str],
+        organization_id: str,
+        current_user: User | None = None,
+    ) -> dict:
+        tasks = await self.repository.list_by_ids(
+            db,
+            ids=ids,
+            organization_id=organization_id,
+            **(await self._access_kwargs(db, current_user)),
+        )
         for task in tasks:
             task.status = "Completed"
         await self._commit(db, "Failed to mark tasks complete")
         return {"affected_count": len(tasks), "message": "Tasks marked complete"}
 
-    async def complete_task(self, db: AsyncSession, task_id: str, organization_id: str) -> dict:
-        task = await self.repository.get_by_id(db, task_id=task_id, organization_id=organization_id)
+    async def complete_task(
+        self,
+        db: AsyncSession,
+        task_id: str,
+        organization_id: str,
+        current_user: User | None = None,
+    ) -> dict:
+        task = await self.repository.get_by_id(
+            db,
+            task_id=task_id,
+            organization_id=organization_id,
+            **(await self._access_kwargs(db, current_user)),
+        )
         if not task:
             raise NotFoundError(message=f"Task '{task_id}' not found")
         task.status = "Completed"
@@ -347,8 +494,19 @@ class TaskService:
         )
         return {"message": f"Task {task_id} marked as Completed", "status": "success"}
 
-    async def reopen_task(self, db: AsyncSession, task_id: str, organization_id: str) -> dict:
-        task = await self.repository.get_by_id(db, task_id=task_id, organization_id=organization_id)
+    async def reopen_task(
+        self,
+        db: AsyncSession,
+        task_id: str,
+        organization_id: str,
+        current_user: User | None = None,
+    ) -> dict:
+        task = await self.repository.get_by_id(
+            db,
+            task_id=task_id,
+            organization_id=organization_id,
+            **(await self._access_kwargs(db, current_user)),
+        )
         if not task:
             raise NotFoundError(message=f"Task '{task_id}' not found")
         task.status = "Pending"
@@ -356,9 +514,19 @@ class TaskService:
         return {"message": f"Task {task_id} reopened", "status": "success"}
 
     async def assign_task(
-        self, db: AsyncSession, task_id: str, user_id: str, organization_id: str
+        self,
+        db: AsyncSession,
+        task_id: str,
+        user_id: str,
+        organization_id: str,
+        current_user: User | None = None,
     ) -> dict:
-        task = await self.repository.get_by_id(db, task_id=task_id, organization_id=organization_id)
+        task = await self.repository.get_by_id(
+            db,
+            task_id=task_id,
+            organization_id=organization_id,
+            **(await self._access_kwargs(db, current_user)),
+        )
         if not task:
             raise NotFoundError(message=f"Task '{task_id}' not found")
         task.assigned_to = await self._resolve_user_id(
@@ -379,8 +547,19 @@ class TaskService:
         )
         return {"message": f"Task {task_id} assigned to user {user_id}", "status": "success"}
 
-    async def require_task(self, db: AsyncSession, task_id: str, organization_id: str) -> None:
-        task = await self.repository.get_by_id(db, task_id=task_id, organization_id=organization_id)
+    async def require_task(
+        self,
+        db: AsyncSession,
+        task_id: str,
+        organization_id: str,
+        current_user: User | None = None,
+    ) -> None:
+        task = await self.repository.get_by_id(
+            db,
+            task_id=task_id,
+            organization_id=organization_id,
+            **(await self._access_kwargs(db, current_user)),
+        )
         if not task:
             raise NotFoundError(message=f"Task '{task_id}' not found")
 
