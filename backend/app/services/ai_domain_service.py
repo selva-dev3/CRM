@@ -852,7 +852,9 @@ class AIDomainService:
             },
             instructions=(
                 "Evaluate lead quality, conversion probability, qualification, temperature, "
-                "confidence, and concise evidence-based reasons. Recommend only an owner ID "
+                "confidence, and concise evidence-based reasons. Return conversion_probability "
+                "as percentage points from 0 to 100 (for example, return 70 for 70%, not 0.7). "
+                "Return confidence as a fraction from 0 to 1. Recommend only an owner ID "
                 "present in authorized_assignment_candidates. If that list is empty or the "
                 "evidence is insufficient, use null for the owner recommendation."
             ),

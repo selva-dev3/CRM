@@ -188,7 +188,11 @@ class AIConversationDetail(BaseModel):
 class LeadIntelligenceResponse(BaseModel):
     lead_id: str
     score: float = Field(ge=0, le=100)
-    conversion_probability: float = Field(ge=0, le=100)
+    conversion_probability: float = Field(
+        ge=0,
+        le=100,
+        description="Estimated conversion probability in percentage points from 0 to 100.",
+    )
     quality: Literal["Hot", "Warm", "Cold"]
     qualification: Literal["Qualified", "Needs Review", "Unqualified"]
     confidence: float = Field(ge=0, le=1)

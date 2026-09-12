@@ -81,10 +81,8 @@ def test_upload_file_uses_minio_put_object():
         8,
         content_type="text/plain",
     )
-    service.minio_client.bucket_exists.assert_called_once_with(service.bucket_name)
-    service.minio_client.stat_object.assert_called_once_with(
-        service.bucket_name, "documents/test.txt"
-    )
+    service.minio_client.bucket_exists.assert_not_called()
+    service.minio_client.stat_object.assert_not_called()
 
 
 def test_upload_file_preserves_default_content_type():
@@ -99,12 +97,14 @@ def test_upload_file_preserves_default_content_type():
     )
 
 
-def test_upload_file_fails_when_object_verification_fails():
+def test_upload_file_does_not_require_object_metadata_permission():
     service = _service()
     service.minio_client.stat_object.side_effect = RuntimeError("object unavailable")
 
-    with pytest.raises(RuntimeError, match="object unavailable"):
-        service.upload_file(BytesIO(b"document"), "documents/test.txt", "text/plain")
+    result = service.upload_file(BytesIO(b"document"), "documents/test.txt", "text/plain")
+
+    assert result == "documents/test.txt"
+    service.minio_client.stat_object.assert_not_called()
 
 
 @pytest.mark.parametrize(

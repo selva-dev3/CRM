@@ -163,7 +163,10 @@ async def test_evaluate_lead_score_is_tenant_scoped_and_persists_history():
     result = await service.evaluate_lead_score(db, "lead-1", _user())
 
     assert result["score"] == 88
+    assert result["conversion_probability"] == 72
     assert result["run_id"] == "run-1"
+    instructions = runtime.execute.await_args.kwargs["user_prompt"]
+    assert "return 70 for 70%, not 0.7" in instructions
     repository.get_lead.assert_awaited_once_with(db, lead_id="lead-1", organization_id="org-1")
     repository.save_lead_score.assert_awaited_once_with(
         db,

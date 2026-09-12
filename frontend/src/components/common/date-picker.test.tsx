@@ -60,4 +60,21 @@ describe('date picker value handling', () => {
 
     expect(onValueChange).toHaveBeenCalledWith('2026-09-05T14:45');
   });
+
+  it('keeps date-time controls scrollable within short viewports', () => {
+    render(
+      <DateTimePicker
+        aria-label="Meeting time"
+        value=""
+        onValueChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Meeting time' }));
+
+    const popover = document.querySelector('[data-slot="popover-content"]');
+    expect(popover).toHaveClass('max-h-[calc(100dvh-1rem)]', 'overflow-y-auto');
+    expect(screen.getByRole('button', { name: 'Clear' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Apply' })).toBeInTheDocument();
+  });
 });
