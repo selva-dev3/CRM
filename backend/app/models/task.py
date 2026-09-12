@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
@@ -17,7 +18,9 @@ class Task(Base):
     description: Mapped[str | None] = mapped_column(Text)
     priority: Mapped[str] = mapped_column(String(50), default="Medium")
     status: Mapped[str] = mapped_column(String(50), default="Pending", index=True)
-    due_date: Mapped[DateTime] = mapped_column(DateTime(timezone=True))
+    due_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     assigned_to: Mapped[str] = mapped_column(
         String, ForeignKey("users.id", ondelete="CASCADE"), index=True
     )

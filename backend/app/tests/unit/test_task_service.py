@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import NotFoundError
+from app.core.errors import APIException, NotFoundError
 from app.models import User
 from app.models.task import Task
 from app.repositories.task_repository import TaskRepository
@@ -84,6 +84,28 @@ async def test_create_task_resolves_org_and_serializes(monkeypatch):
     assert result["priority"] == "Medium"
     repo.create.assert_awaited_once()
     assert repo.create.await_args.kwargs["data"]["assigned_to"] == "usr-1"
+    assert repo.create.await_args.kwargs["data"]["due_date"] is None
+
+
+@pytest.mark.asyncio
+async def test_create_task_rejects_invalid_due_date(monkeypatch):
+    repo: Any = TaskRepository()
+    repo.create = AsyncMock()
+    repo.get_user_by_id_name_email = AsyncMock(return_value=None)
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.services.task_service import organization_service
+
+    monkeypatch.setattr(
+        organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
+    )
+
+    with pytest.raises(APIException) as exc_info:
+        await service.create_task(db, TaskCreate(title="Follow up", due_date="not-a-date"), _actor())
+
+    assert exc_info.value.status_code == 422
+    repo.create.assert_not_awaited()
 
 
 @pytest.mark.asyncio
