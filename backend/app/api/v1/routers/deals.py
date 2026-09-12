@@ -97,8 +97,8 @@ async def get_deal_stages(
     dependencies=[Depends(require_permission("deals:pipeline"))],
 )
 async def create_deal_stage(
-    name: str,
-    probability: float,
+    name: str = Query(..., min_length=1, max_length=100),
+    probability: float = Query(..., ge=0, le=100),
     order_index: int | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),

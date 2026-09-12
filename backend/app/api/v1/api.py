@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 
 from app.api.v1.deps import get_current_user
 from app.api.v1.routers import (
+    activities,
     ai,
     auth,
     calendar,
@@ -37,6 +38,12 @@ from app.api.v1.routers import (
 )
 
 api_router = APIRouter()
+api_router.include_router(
+    activities.router,
+    prefix="/activities",
+    tags=["CRM Activities"],
+    dependencies=[Depends(get_current_user)],
+)
 api_router.include_router(whatsapp.router, prefix="/whatsapp", tags=["WhatsApp"])
 api_router.include_router(public_quotes.router, prefix="/public/quotes", tags=["Customer Quotes"])
 api_router.include_router(public_invoices.router, prefix="/public/invoices", tags=["Customer Invoices"])
