@@ -27,12 +27,18 @@ export const navigationSections: NavSection[] = [
       { title: 'Companies', href: '/companies', icon: 'Building2', permission: PERMISSIONS.COMPANIES.READ },
       { title: 'Deals', href: '/deals', icon: 'Kanban', permission: PERMISSIONS.DEALS.READ },
       { title: 'Tasks', href: '/tasks', icon: 'CheckSquare', permission: PERMISSIONS.TASKS.READ },
+      { title: 'Calendar', href: '/calendar', icon: 'Calendar', permission: PERMISSIONS.CALENDAR.READ },
       { title: 'Meetings', href: '/meetings', icon: 'CalendarDays', permission: PERMISSIONS.MEETINGS.READ },
       { title: 'Calls', href: '/calls', icon: 'PhoneCall', permission: PERMISSIONS.CALLS.READ },
       { title: 'Emails', href: '/email', icon: 'Mail', permission: PERMISSIONS.EMAILS.READ },
       { title: 'WhatsApp', href: '/whatsapp', icon: 'MessageCircle', permission: [PERMISSIONS.WHATSAPP.READ_ASSIGNED, PERMISSIONS.WHATSAPP.READ_ALL] },
       { title: 'Notes', href: '/notes', icon: 'StickyNote', permission: PERMISSIONS.NOTES.READ },
-      { title: 'Documents', href: '/documents', icon: 'FileText', permission: PERMISSIONS.DOCUMENTS.READ },
+      { title: 'Documents', href: '/documents', icon: 'FileText', permission: PERMISSIONS.DOCUMENTS.READ }
+    ]
+  },
+  {
+    title: 'Sales',
+    items: [
       { title: 'Products', href: '/products', icon: 'Package', permission: PERMISSIONS.PRODUCTS.READ },
       { title: 'Quotes', href: '/quotes', icon: 'FileSpreadsheet', permission: PERMISSIONS.QUOTES.READ },
       { title: 'Invoices', href: '/invoices', icon: 'Receipt', permission: PERMISSIONS.INVOICES.READ },
@@ -40,10 +46,15 @@ export const navigationSections: NavSection[] = [
     ]
   },
   {
+    title: 'Projects',
+    items: [
+      { title: 'Projects', href: '/projects', icon: 'FolderKanban', permission: PERMISSIONS.PROJECTS.READ }
+    ]
+  },
+  {
     title: 'Analytics',
     items: [
       { title: 'Reports', href: '/reports', icon: 'BarChart3', permission: PERMISSIONS.REPORTS.READ },
-      { title: 'Calendar', href: '/calendar', icon: 'Calendar', permission: PERMISSIONS.CALENDAR.READ },
       { title: 'AI Intelligence', href: '/ai', icon: 'Sparkles', permission: PERMISSIONS.AI.READ }
     ]
   },
@@ -51,7 +62,9 @@ export const navigationSections: NavSection[] = [
     title: 'Administration',
     items: [
       { title: 'User Management', href: '/users', icon: 'UserCog', permission: PERMISSIONS.USERS.READ },
-      { title: 'Roles & Permissions', href: '/roles', icon: 'ShieldCheck', permission: PERMISSIONS.ROLES.READ }
+      { title: 'Roles & Permissions', href: '/roles', icon: 'ShieldCheck', permission: PERMISSIONS.ROLES.READ },
+      { title: 'Integrations', href: '/integrations', icon: 'Plug', permission: PERMISSIONS.INTEGRATIONS.READ },
+      { title: 'Settings', href: '/settings', icon: 'Settings', permission: PERMISSIONS.SETTINGS.READ }
     ]
   }
 ];
@@ -83,6 +96,7 @@ export const protectedRoutes: Record<string, PermissionKey | readonly Permission
   quotes: PERMISSIONS.QUOTES.READ,
   invoices: PERMISSIONS.INVOICES.READ,
   payments: PERMISSIONS.INVOICES.READ,
+  projects: PERMISSIONS.PROJECTS.READ,
   reports: PERMISSIONS.REPORTS.READ,
   calendar: PERMISSIONS.CALENDAR.READ,
   users: PERMISSIONS.USERS.READ,

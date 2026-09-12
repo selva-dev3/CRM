@@ -72,6 +72,25 @@ describe('getRoutePermission', () => {
       PERMISSIONS.WHATSAPP.READ_ASSIGNED,
       PERMISSIONS.WHATSAPP.READ_ALL,
     ]);
+    expect(getRoutePermission('/projects')).toBe(PERMISSIONS.PROJECTS.READ);
+  });
+
+  it('groups working modules into the professional product sections', () => {
+    const byTitle = Object.fromEntries(
+      navigationSections.filter((section) => section.title).map((section) => [section.title, section.items.map((item) => item.title)]),
+    );
+
+    expect(byTitle.CRM).toContain('Calendar');
+    expect(byTitle.CRM).not.toContain('Products');
+    expect(byTitle.Sales).toEqual(['Products', 'Quotes', 'Invoices', 'Payments']);
+    expect(byTitle.Projects).toEqual(['Projects']);
+    expect(byTitle.Analytics).not.toContain('Calendar');
+    expect(byTitle.Administration).toEqual([
+      'User Management',
+      'Roles & Permissions',
+      'Integrations',
+      'Settings',
+    ]);
   });
 
   it('shows WhatsApp navigation to read-all-only roles', () => {
