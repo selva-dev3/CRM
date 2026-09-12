@@ -50,6 +50,11 @@ import {
   GitBranch,
   Activity,
   Plug,
+  BookOpen,
+  ShoppingCart,
+  ListTodo,
+  Flag,
+  FolderOpen,
   ChevronDown,
   ChevronRight
 } from 'lucide-react';
@@ -84,6 +89,11 @@ const ICON_MAP: Record<string, React.ElementType> = {
   GitBranch,
   Activity,
   Plug,
+  BookOpen,
+  ShoppingCart,
+  ListTodo,
+  Flag,
+  FolderOpen,
 };
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -103,6 +113,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     CRM: true,
+    Sales: true,
+    Projects: true,
     Analytics: true,
     Administration: true
   });

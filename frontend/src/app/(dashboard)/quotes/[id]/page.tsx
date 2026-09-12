@@ -15,6 +15,7 @@ import {
   CheckCircle2,
   Download,
   Receipt,
+  ShoppingCart,
   AlertCircle,
   X,
   Loader2,
@@ -35,6 +36,7 @@ import {
   useReturnQuoteToDraftMutation,
 } from '@/lib/api/quotes';
 import { PERMISSIONS } from '@/lib/permissions';
+import { useCreateOrderFromQuote } from '@/lib/api/orders';
 
 function maskEmail(email?: string | null): string {
   if (!email) return 'Not available';
@@ -67,6 +69,7 @@ export default function QuoteDetailPage() {
   const submitReviewMutation = useSubmitQuoteForReviewMutation();
   const approveMutation = useApproveQuoteMutation();
   const returnDraftMutation = useReturnQuoteToDraftMutation();
+  const createOrderMutation = useCreateOrderFromQuote();
   const awaitingDeliverySuccessRef = useRef(false);
 
   // State
@@ -224,6 +227,28 @@ export default function QuoteDetailPage() {
             <Button asChild variant="outline"><Link href={`/invoices/${quote.invoice_id}`}>
               <Receipt className="mr-2 h-4 w-4" />View generated invoice
             </Link></Button>
+          )}
+
+          {quote.order_id && hasPermission(PERMISSIONS.ORDERS.READ) && (
+            <Button asChild variant="outline"><Link href={`/orders/${quote.order_id}`}>
+              <ShoppingCart className="mr-2 h-4 w-4" />View generated order
+            </Link></Button>
+          )}
+          {!quote.order_id && quote.status === 'Accepted' && hasPermission(PERMISSIONS.ORDERS.CREATE) && (
+            <Button
+              variant="outline"
+              disabled={createOrderMutation.isPending}
+              onClick={async () => {
+                try {
+                  const order = await createOrderMutation.mutateAsync(quote.id);
+                  router.push(`/orders/${order.id}`);
+                } catch (reason) {
+                  setErrorMessage(getErrorMessage(reason, 'Unable to create order.'));
+                }
+              }}
+            >
+              <ShoppingCart className="mr-2 h-4 w-4" />Create order
+            </Button>
           )}
 
           {pdfData?.pdf_url && (

@@ -46,6 +46,8 @@ class Organization(Base):
     payment_sequence: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
     quote_prefix: Mapped[str] = mapped_column(String(20), default="QUO", server_default="QUO")
     quote_sequence: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
+    order_prefix: Mapped[str] = mapped_column(String(20), default="ORD", server_default="ORD")
+    order_sequence: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
     language: Mapped[str | None] = mapped_column(String(10), default="en")
     logo_url: Mapped[str | None] = mapped_column(String(500))
     tax_number: Mapped[str | None] = mapped_column(String(100))

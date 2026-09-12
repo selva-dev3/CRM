@@ -35,6 +35,9 @@ class Document(Base):
     payment_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("payments.id", ondelete="SET NULL"), index=True
     )
+    project_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("projects.id", ondelete="SET NULL"), index=True
+    )
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     file_size: Mapped[int] = mapped_column(Integer, default=0)
     mime_type: Mapped[str] = mapped_column(String(100), default="application/octet-stream")

@@ -56,6 +56,8 @@ export interface FetchTasksParams {
   contact_id?: string;
   company_id?: string;
   deal_id?: string;
+  project_id?: string;
+  project_linked?: boolean;
 }
 
 export interface SubtaskItem {
@@ -89,6 +91,8 @@ export async function fetchTasksPageApi(
   if (params.contact_id) query.append('contact_id', params.contact_id);
   if (params.company_id) query.append('company_id', params.company_id);
   if (params.deal_id) query.append('deal_id', params.deal_id);
+  if (params.project_id) query.append('project_id', params.project_id);
+  if (params.project_linked) query.append('project_linked', 'true');
 
   const queryString = query.toString();
   return fetchPaginated<TaskItem>(`/tasks${queryString ? `?${queryString}` : ''}`);

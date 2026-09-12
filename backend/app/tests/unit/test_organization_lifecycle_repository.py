@@ -2,7 +2,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.repositories.organization_lifecycle_repository import OrganizationLifecycleRepository
+from app.repositories.organization_lifecycle_repository import (
+    INDIRECT_OWNERS,
+    OrganizationLifecycleRepository,
+)
 
 
 @pytest.mark.asyncio
@@ -13,6 +16,14 @@ async def test_delete_dependencies_removes_user_role_mappings_before_role_cascad
 
     statements = [str(call.args[0]) for call in db.execute.await_args_list]
     assert statements[0].startswith("DELETE FROM user_roles")
+    assert next(
+        i for i, value in enumerate(statements) if value.startswith("DELETE FROM sales_orders")
+    ) < next(i for i, value in enumerate(statements) if value.startswith("DELETE FROM quotes"))
+
+
+def test_sales_child_tables_have_explicit_tenant_ownership():
+    assert INDIRECT_OWNERS["sales_order_items"] == ("order_id", "sales_orders")
+    assert INDIRECT_OWNERS["price_book_entries"] == ("price_book_id", "price_books")
 
 
 @pytest.mark.asyncio
@@ -40,8 +51,19 @@ async def test_legacy_invitation_acceptance_locks_email_then_tenant_then_invitat
         result.scalars.return_value.first.return_value = candidate
         return result
 
-    monkeypatch.setattr(OrganizationLifecycleRepository, "lock_invitation_email", staticmethod(lock_email))
-    monkeypatch.setattr(OrganizationLifecycleRepository, "lock_invitation_organization", staticmethod(lock_org))
+    monkeypatch.setattr(
+        OrganizationLifecycleRepository, "lock_invitation_email", staticmethod(lock_email)
+    )
+    monkeypatch.setattr(
+        OrganizationLifecycleRepository, "lock_invitation_organization", staticmethod(lock_org)
+    )
     db.execute.side_effect = execute
-    assert await AuthRepository().get_invitation_by_token(db, "invitation-test", for_update=True) is candidate
-    assert events == [("email", "invited@example.com"), ("organization", "org-1"), ("invitation", True)]
+    assert (
+        await AuthRepository().get_invitation_by_token(db, "invitation-test", for_update=True)
+        is candidate
+    )
+    assert events == [
+        ("email", "invited@example.com"),
+        ("organization", "org-1"),
+        ("invitation", True),
+    ]

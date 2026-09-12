@@ -14,12 +14,15 @@ class ProjectRepository:
         limit: int = 20,
         status: str | None = None,
         priority: str | None = None,
+        search: str | None = None,
     ) -> list[Project]:
         conditions = [Project.organization_id == organization_id]
         if status:
             conditions.append(Project.status == status)
         if priority:
             conditions.append(Project.priority == priority)
+        if search and search.strip():
+            conditions.append(Project.name.ilike(f"%{search.strip()}%"))
         result = await db.execute(
             select(Project)
             .where(*conditions)
@@ -36,12 +39,15 @@ class ProjectRepository:
         organization_id: str,
         status: str | None = None,
         priority: str | None = None,
+        search: str | None = None,
     ) -> int:
         conditions = [Project.organization_id == organization_id]
         if status:
             conditions.append(Project.status == status)
         if priority:
             conditions.append(Project.priority == priority)
+        if search and search.strip():
+            conditions.append(Project.name.ilike(f"%{search.strip()}%"))
         result = await db.execute(select(func.count()).select_from(Project).where(*conditions))
         return int(result.scalar_one())
 

@@ -47,6 +47,7 @@ export interface QuoteItem {
   invoice_id?: string | null;
   invoice_number?: string | null;
   invoice_status?: string | null;
+  order_id?: string | null;
 }
 
 export function publicQuoteApi(action: 'view', token: string): Promise<QuoteItem>;

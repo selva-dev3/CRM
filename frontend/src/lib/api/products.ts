@@ -82,8 +82,8 @@ export async function fetchPriceBooksApi(): Promise<PriceBookItem[]> {
   return apiClient.get<PriceBookItem[]>('/products/price-books');
 }
 
-export async function createPriceBookApi(name: string, currency: string = 'USD'): Promise<MessageResponse> {
-  return apiClient.post<MessageResponse>(`/products/price-books?name=${encodeURIComponent(name)}&currency=${encodeURIComponent(currency)}`);
+export async function createPriceBookApi(name: string, currency: string = 'USD'): Promise<PriceBookItem> {
+  return apiClient.post<PriceBookItem>(`/products/price-books?name=${encodeURIComponent(name)}&currency=${encodeURIComponent(currency)}`);
 }
 
 export async function fetchTaxRatesApi(): Promise<TaxRateItem[]> {
@@ -245,9 +245,9 @@ export function useCreateCategoryMutation(options?: UseMutationOptions<MessageRe
   });
 }
 
-export function useCreatePriceBookMutation(options?: UseMutationOptions<MessageResponse, Error, { name: string; currency?: string }>) {
+export function useCreatePriceBookMutation(options?: UseMutationOptions<PriceBookItem, Error, { name: string; currency?: string }>) {
   const queryClient = useQueryClient();
-  return useMutation<MessageResponse, Error, { name: string; currency?: string }>({
+  return useMutation<PriceBookItem, Error, { name: string; currency?: string }>({
     mutationFn: ({ name, currency }) => createPriceBookApi(name, currency),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products', 'price-books'] });

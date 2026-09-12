@@ -52,6 +52,9 @@ class Invoice(Base):
     quote_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("quotes.id", ondelete="SET NULL")
     )
+    order_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("sales_orders.id", ondelete="SET NULL"), unique=True, index=True
+    )
     deal_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("deals.id", ondelete="SET NULL"), index=True
     )

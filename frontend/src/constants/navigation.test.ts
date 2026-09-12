@@ -86,8 +86,8 @@ describe('getRoutePermission', () => {
     expect(byTitle.CRM).toContain('Pipelines');
     expect(byTitle.CRM).toContain('Activities');
     expect(byTitle.CRM).not.toContain('Products');
-    expect(byTitle.Sales).toEqual(['Products', 'Quotes', 'Invoices', 'Payments']);
-    expect(byTitle.Projects).toEqual(['Projects']);
+    expect(byTitle.Sales).toEqual(['Products', 'Price Books', 'Quotes', 'Orders', 'Invoices', 'Payments']);
+    expect(byTitle.Projects).toEqual(['Projects', 'Project Tasks', 'Milestones', 'Project Documents']);
     expect(byTitle.Analytics).not.toContain('Calendar');
     expect(byTitle.Administration).toEqual([
       'User Management',

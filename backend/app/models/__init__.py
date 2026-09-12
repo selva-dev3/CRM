@@ -42,6 +42,7 @@ from app.models.lead import (
 from app.models.meeting import Meeting, MeetingAttendee
 from app.models.note import Note
 from app.models.notification import Notification
+from app.models.order import SalesOrder, SalesOrderItem
 from app.models.organization import (
     Organization,
     OrganizationInvitation,
@@ -52,8 +53,8 @@ from app.models.organization import (
 )
 from app.models.organization_deletion import OrganizationDeletion, OrganizationFileCleanup
 from app.models.payment import Payment
-from app.models.product import Product, ProductCategory
-from app.models.project import Project
+from app.models.product import PriceBook, PriceBookEntry, Product, ProductCategory
+from app.models.project import Project, ProjectMilestone
 from app.models.quote import Quote, QuoteItem
 from app.models.quote_delivery import QuoteDeliveryAttempt
 from app.models.rbac import Permission, Role, RolePermission, UserRole
@@ -96,6 +97,8 @@ __all__ = [
     "OrganizationDeletion",
     "OrganizationFileCleanup",
     "Payment",
+    "SalesOrder",
+    "SalesOrderItem",
     "Base",
     "Organization",
     "OrganizationSetting",
@@ -149,6 +152,8 @@ __all__ = [
     "DocumentVersion",
     "ProductCategory",
     "Product",
+    "PriceBook",
+    "PriceBookEntry",
     "Quote",
     "QuoteItem",
     "QuoteDeliveryAttempt",
@@ -185,4 +190,5 @@ __all__ = [
     "Language",
     "Timezone",
     "Project",
+    "ProjectMilestone",
 ]

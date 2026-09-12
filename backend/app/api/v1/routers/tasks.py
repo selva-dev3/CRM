@@ -35,6 +35,8 @@ async def list_tasks(
     contact_id: str | None = Query(None),
     company_id: str | None = Query(None),
     deal_id: str | None = Query(None),
+    project_id: str | None = Query(None),
+    project_linked: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -46,6 +48,7 @@ async def list_tasks(
             "contact_id": contact_id,
             "company_id": company_id,
             "deal_id": deal_id,
+            "project_id": project_id,
         }.items()
         if isinstance(value, str) and value
     }
@@ -58,6 +61,7 @@ async def list_tasks(
         priority=priority,
         search=search,
         **relationship_filters,
+        project_linked=project_linked,
     )
     total = await task_service.count_tasks(
         db,
@@ -66,6 +70,7 @@ async def list_tasks(
         priority=priority,
         search=search,
         **relationship_filters,
+        project_linked=project_linked,
     )
     response.headers["X-Total-Count"] = str(total)
     return tasks

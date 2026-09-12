@@ -26,6 +26,8 @@ class TaskRepository:
         contact_id: str | None = None,
         company_id: str | None = None,
         deal_id: str | None = None,
+        project_id: str | None = None,
+        project_linked: bool = False,
     ) -> builtins.list[Task]:
         stmt = select(Task).where(Task.organization_id == organization_id)
         if status:
@@ -37,9 +39,12 @@ class TaskRepository:
             (Task.contact_id, contact_id),
             (Task.company_id, company_id),
             (Task.deal_id, deal_id),
+            (Task.project_id, project_id),
         ):
             if value:
                 stmt = stmt.where(column == value)
+        if project_linked and not project_id:
+            stmt = stmt.where(Task.project_id.is_not(None))
         if search and search.strip():
             pattern = f"%{search.strip()}%"
             stmt = stmt.where(Task.title.ilike(pattern) | Task.description.ilike(pattern))
@@ -63,6 +68,8 @@ class TaskRepository:
         contact_id: str | None = None,
         company_id: str | None = None,
         deal_id: str | None = None,
+        project_id: str | None = None,
+        project_linked: bool = False,
     ) -> int:
         stmt = select(func.count()).select_from(Task).where(Task.organization_id == organization_id)
         if status:
@@ -74,9 +81,12 @@ class TaskRepository:
             (Task.contact_id, contact_id),
             (Task.company_id, company_id),
             (Task.deal_id, deal_id),
+            (Task.project_id, project_id),
         ):
             if value:
                 stmt = stmt.where(column == value)
+        if project_linked and not project_id:
+            stmt = stmt.where(Task.project_id.is_not(None))
         if search and search.strip():
             pattern = f"%{search.strip()}%"
             stmt = stmt.where(Task.title.ilike(pattern) | Task.description.ilike(pattern))

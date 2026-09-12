@@ -190,6 +190,7 @@ class QuoteService:
                 "invoice_id": invoice.id,
                 "invoice_number": invoice.invoice_number,
                 "invoice_status": invoice.status,
+                "order_id": getattr(invoice, "order_id", None),
             }
         except Exception:
             await db.rollback()
@@ -499,6 +500,7 @@ class QuoteService:
             invoice_id=invoice.id if invoice else None,
             invoice_number=invoice.invoice_number if invoice else None,
             invoice_status=invoice.status if invoice else None,
+            order_id=invoice.order_id if invoice else None,
         )
         return result
 

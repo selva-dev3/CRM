@@ -869,6 +869,7 @@ class DocumentResponse(BaseModel):
     quote_id: str | None = None
     invoice_id: str | None = None
     payment_id: str | None = None
+    project_id: str | None = None
 
 
 # 15. Product Catalog Schemas
@@ -951,6 +952,7 @@ class QuoteResponse(BaseModel):
     invoice_id: str | None = None
     invoice_number: str | None = None
     invoice_status: str | None = None
+    order_id: str | None = None
 
 
 class ReviewDecisionRequest(BaseModel):
@@ -990,6 +992,7 @@ class InvoiceCreate(BaseModel):
 class InvoiceResponse(BaseModel):
     id: str
     quote_id: str | None = None
+    order_id: str | None = None
     invoice_number: str
     deal_id: str | None = None
     company_id: str | None = None

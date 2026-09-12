@@ -5,6 +5,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, ForbiddenError, NotFoundError
+from app.core.permissions import effective_organization_id
 from app.models import Project, User
 from app.repositories.project_repository import ProjectRepository
 from app.schemas.project import ProjectCreate, ProjectUpdate
@@ -49,6 +50,13 @@ class ProjectService:
     def __init__(self, repository: ProjectRepository | None = None) -> None:
         self.repository = repository or ProjectRepository()
 
+    @staticmethod
+    def organization_id(current_user: User) -> str:
+        organization_id = effective_organization_id(current_user)
+        if not organization_id:
+            raise ForbiddenError(message="Authenticated organization context is required")
+        return organization_id
+
     async def _commit(self, db: AsyncSession) -> None:
         try:
             await db.commit()
@@ -60,7 +68,7 @@ class ProjectService:
         self, db: AsyncSession, current_user: User, **filters: object
     ) -> list[dict]:
         projects = await self.repository.list(
-            db, organization_id=current_user.organization_id, **filters
+            db, organization_id=self.organization_id(current_user), **filters
         )
         return [project_to_dict(project) for project in projects]
 
@@ -71,17 +79,19 @@ class ProjectService:
         *,
         status: str | None = None,
         priority: str | None = None,
+        search: str | None = None,
     ) -> int:
         return await self.repository.count(
             db,
-            organization_id=current_user.organization_id,
+            organization_id=self.organization_id(current_user),
             status=status,
             priority=priority,
+            search=search,
         )
 
     async def get_project(self, db: AsyncSession, current_user: User, project_id: str) -> dict:
         project = await self.repository.get(
-            db, project_id=project_id, organization_id=current_user.organization_id
+            db, project_id=project_id, organization_id=self.organization_id(current_user)
         )
         if not project:
             raise NotFoundError(message=f"Project '{project_id}' not found")
@@ -93,7 +103,7 @@ class ProjectService:
         data = payload.model_dump()
         await self._validate_owner(db, current_user, data.get("owner_id"))
         data.update(
-            organization_id=current_user.organization_id,
+            organization_id=self.organization_id(current_user),
             start_date=parse_project_datetime(data.pop("start_date")),
             due_date=parse_project_datetime(data.pop("due_date")),
         )
@@ -106,7 +116,7 @@ class ProjectService:
         self, db: AsyncSession, current_user: User, project_id: str, payload: ProjectUpdate
     ) -> dict:
         project = await self.repository.get(
-            db, project_id=project_id, organization_id=current_user.organization_id
+            db, project_id=project_id, organization_id=self.organization_id(current_user)
         )
         if not project:
             raise NotFoundError(message=f"Project '{project_id}' not found")
@@ -123,7 +133,7 @@ class ProjectService:
 
     async def delete_project(self, db: AsyncSession, current_user: User, project_id: str) -> dict:
         project = await self.repository.get(
-            db, project_id=project_id, organization_id=current_user.organization_id
+            db, project_id=project_id, organization_id=self.organization_id(current_user)
         )
         if not project:
             raise NotFoundError(message=f"Project '{project_id}' not found")
@@ -140,7 +150,7 @@ class ProjectService:
         if "projects:assign" not in permissions:
             raise ForbiddenError(message="Missing required permission: projects:assign")
         owner = await self.repository.get_user_in_organization(
-            db, user_id=owner_id, organization_id=current_user.organization_id
+            db, user_id=owner_id, organization_id=self.organization_id(current_user)
         )
         if not owner:
             raise APIException(

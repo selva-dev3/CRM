@@ -325,6 +325,24 @@ ALL_STANDARD_PERMISSIONS = [
         "description": "Assign projects to team members",
     },
     {
+        "key": "orders:read",
+        "name": "View Orders",
+        "category": "Orders",
+        "description": "View organization sales orders",
+    },
+    {
+        "key": "orders:create",
+        "name": "Create Orders",
+        "category": "Orders",
+        "description": "Create immutable orders from accepted quotes",
+    },
+    {
+        "key": "orders:update",
+        "name": "Update Order Status",
+        "category": "Orders",
+        "description": "Fulfill or cancel confirmed orders",
+    },
+    {
         "key": "meetings:read",
         "name": "View Meetings",
         "category": "Meetings",
