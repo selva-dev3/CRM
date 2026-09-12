@@ -48,12 +48,14 @@ INDIRECT_OWNERS = {
     "document_versions": ("document_id", "documents"),
     "email_logs": ("email_id", "emails"),
     "invoice_items": ("invoice_id", "invoices"),
+    "price_book_entries": ("price_book_id", "price_books"),
     **dict.fromkeys(
         ("lead_scores", "lead_tags", "lead_activities", "lead_notes", "lead_attachments"),
         ("lead_id", "leads"),
     ),
     "meeting_attendees": ("meeting_id", "meetings"),
     "quote_items": ("quote_id", "quotes"),
+    "sales_order_items": ("order_id", "sales_orders"),
     "task_comments": ("task_id", "tasks"),
     "task_attachments": ("task_id", "tasks"),
 }
@@ -204,16 +206,24 @@ class OrganizationLifecycleRepository:
     async def subscription_for_membership(
         self, db: AsyncSession, organization_id: str
     ) -> OrganizationSubscription | None:
-        return await db.scalar(select(OrganizationSubscription).where(
-            OrganizationSubscription.organization_id == organization_id
-        ).with_for_update())
+        return await db.scalar(
+            select(OrganizationSubscription)
+            .where(OrganizationSubscription.organization_id == organization_id)
+            .with_for_update()
+        )
 
     async def pending_legacy_invitation_exists(self, db: AsyncSession, email: str) -> bool:
-        return bool(await db.scalar(select(UserInvitation.id).where(
-            func.lower(func.btrim(UserInvitation.email)) == email,
-            func.lower(UserInvitation.status) == "pending",
-            UserInvitation.created_at > datetime.now(UTC) - timedelta(hours=24),
-        ).limit(1)))
+        return bool(
+            await db.scalar(
+                select(UserInvitation.id)
+                .where(
+                    func.lower(func.btrim(UserInvitation.email)) == email,
+                    func.lower(UserInvitation.status) == "pending",
+                    UserInvitation.created_at > datetime.now(UTC) - timedelta(hours=24),
+                )
+                .limit(1)
+            )
+        )
 
     async def set_lock_timeout(self, db: AsyncSession) -> None:
         await db.execute(text("SET LOCAL lock_timeout = '3s'"))
@@ -488,7 +498,7 @@ class OrganizationLifecycleRepository:
         # the organization cascades through users and roles.
         user_roles = Base.metadata.tables["user_roles"]
         await db.execute(delete(user_roles).where(predicates["user_roles"]))
-        for name in ("leads", "quotes", "deal_products"):
+        for name in ("leads", "sales_orders", "quotes", "deal_products"):
             await db.execute(delete(Base.metadata.tables[name]).where(predicates[name]))
         settings = Base.metadata.tables["settings"]
         await db.execute(

@@ -1,6 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ForbiddenError, NotFoundError
+from app.core.permissions import effective_organization_id
 from app.models import User
 from app.repositories.organization_repository import OrganizationRepository
 
@@ -13,7 +14,7 @@ class OrganizationService:
 
     async def resolve_valid_org_id(self, db: AsyncSession, current_user: User | None = None) -> str:
         if current_user is not None:
-            organization_id = getattr(current_user, "organization_id", None)
+            organization_id = effective_organization_id(current_user)
             if not organization_id:
                 raise ForbiddenError(message="Authenticated user has no current organization")
             org = await self.repository.get_by_id(db, organization_id)

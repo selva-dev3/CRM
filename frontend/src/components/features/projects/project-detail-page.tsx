@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, CalendarDays, CircleDollarSign, FolderKanban, Trash2, UserRound } from 'lucide-react';
+import { ArrowLeft, CalendarDays, CheckSquare, CircleDollarSign, FileText, Flag, FolderKanban, Trash2, UserRound } from 'lucide-react';
 
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { PermissionGate } from '@/components/common/permission-gate';
@@ -48,6 +48,7 @@ export default function ProjectDetailPage(): React.JSX.Element {
       <article className="rounded-xl border bg-white p-5"><p className="flex items-center gap-1 text-xs font-semibold uppercase text-slate-500"><UserRound className="size-4" />Owner</p><p className="mt-2 break-all font-semibold text-slate-900">{project.owner_id || 'Unassigned'}</p></article>
     </div>
     <section className="rounded-xl border bg-white p-6"><div className="mb-3 flex items-center justify-between"><h2 className="font-semibold text-slate-900">Delivery progress</h2><span className="text-sm font-semibold text-blue-700">{project.completion_percentage}%</span></div><div className="h-3 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-blue-600" style={{ width: `${project.completion_percentage}%` }} /></div><div className="mt-5 grid gap-4 sm:grid-cols-2"><div><p className="flex items-center gap-1 text-xs font-semibold uppercase text-slate-500"><CalendarDays className="size-4" />Start date</p><p className="mt-1 text-sm text-slate-900">{project.start_date ? new Date(project.start_date).toLocaleDateString() : 'Not set'}</p></div><div><p className="flex items-center gap-1 text-xs font-semibold uppercase text-slate-500"><CalendarDays className="size-4" />Due date</p><p className="mt-1 text-sm text-slate-900">{project.due_date ? new Date(project.due_date).toLocaleDateString() : 'Not set'}</p></div></div></section>
+    <section className="grid gap-3 sm:grid-cols-3"><Link href="/project-tasks" className="flex items-center gap-3 rounded-xl border bg-white p-4 font-semibold text-slate-800 hover:border-indigo-300"><CheckSquare className="text-indigo-600"/>Project tasks</Link><Link href="/milestones" className="flex items-center gap-3 rounded-xl border bg-white p-4 font-semibold text-slate-800 hover:border-indigo-300"><Flag className="text-indigo-600"/>Milestones</Link><Link href="/project-documents" className="flex items-center gap-3 rounded-xl border bg-white p-4 font-semibold text-slate-800 hover:border-indigo-300"><FileText className="text-indigo-600"/>Project documents</Link></section>
     <ConfirmModal isOpen={confirmingDelete} onClose={() => setConfirmingDelete(false)} onConfirm={remove} title="Delete project" message={`Delete “${project.name}”? Linked deals and tasks will retain their records but lose this association.`} confirmText="Delete Project" variant="danger" isLoading={deleteProject.isPending} />
   </div>;
 }

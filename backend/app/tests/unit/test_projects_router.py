@@ -37,7 +37,9 @@ async def test_project_routes_delegate_with_current_user(monkeypatch) -> None:
     await projects.list_projects(response=response, db=db, current_user=user, page=2, limit=10)
     await projects.create_project(ProjectCreate(name="X"), db=db, current_user=user)
 
-    list_projects.assert_awaited_once_with(db, user, page=2, limit=10, status=None, priority=None)
+    list_projects.assert_awaited_once_with(
+        db, user, page=2, limit=10, status=None, priority=None, search=None
+    )
     assert response.headers["X-Total-Count"] == "11"
     create_project.assert_awaited_once_with(db, user, ProjectCreate(name="X"))
 

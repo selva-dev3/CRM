@@ -24,6 +24,8 @@ class DocumentRepository:
         quote_id: str | None = None,
         invoice_id: str | None = None,
         payment_id: str | None = None,
+        project_id: str | None = None,
+        project_linked: bool = False,
     ) -> Sequence[Document]:
         stmt = select(Document).where(Document.organization_id == org_id)
         if search and search.strip():
@@ -36,9 +38,12 @@ class DocumentRepository:
             (Document.quote_id, quote_id),
             (Document.invoice_id, invoice_id),
             (Document.payment_id, payment_id),
+            (Document.project_id, project_id),
         ):
             if value:
                 stmt = stmt.where(column == value)
+        if project_linked and not project_id:
+            stmt = stmt.where(Document.project_id.is_not(None))
         stmt = (
             stmt.order_by(Document.uploaded_at.desc(), Document.id.desc())
             .offset((page - 1) * limit)
@@ -60,6 +65,8 @@ class DocumentRepository:
         quote_id: str | None = None,
         invoice_id: str | None = None,
         payment_id: str | None = None,
+        project_id: str | None = None,
+        project_linked: bool = False,
     ) -> int:
         stmt = select(func.count()).select_from(Document).where(Document.organization_id == org_id)
         if search and search.strip():
@@ -72,9 +79,12 @@ class DocumentRepository:
             (Document.quote_id, quote_id),
             (Document.invoice_id, invoice_id),
             (Document.payment_id, payment_id),
+            (Document.project_id, project_id),
         ):
             if value:
                 stmt = stmt.where(column == value)
+        if project_linked and not project_id:
+            stmt = stmt.where(Document.project_id.is_not(None))
         return int((await db.execute(stmt)).scalar_one())
 
     async def list_by_ids(

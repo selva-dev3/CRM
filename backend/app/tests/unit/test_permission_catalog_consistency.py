@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from fastapi.routing import APIRoute
 
-from app.api.v1.routers import invoices, meetings, quotes, reports, tasks, users
+from app.api.v1.routers import invoices, meetings, orders, quotes, reports, tasks, users
 from app.core.rbac_matrix import APPROVED_PERMISSION_KEYS
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
@@ -60,8 +60,11 @@ def test_rbac_migration_catalog_matches_runtime_catalog() -> None:
         / "u5e6f7a8b9c0_harden_rbac_integrity.py"
     )
     whatsapp_migration = REPOSITORY_ROOT / "backend" / "alembic" / "versions" / "v6f7a8b9c0d1_whatsapp_channel.py"
+    sales_migration = REPOSITORY_ROOT / "backend" / "alembic" / "versions" / "p1r2o3j4s5f6_projects_sales_flow.py"
     migration_keys = set(PERMISSION_PATTERN.findall(migration.read_text(encoding="utf-8"))) | set(
         PERMISSION_PATTERN.findall(whatsapp_migration.read_text(encoding="utf-8"))
+    ) | set(
+        PERMISSION_PATTERN.findall(sales_migration.read_text(encoding="utf-8"))
     )
 
     assert migration_keys == set(APPROVED_PERMISSION_KEYS)
@@ -93,6 +96,9 @@ def _route_permissions(router, path: str, method: str) -> set[str]:
         (quotes.router, "", "POST", "quotes:create"),
         (quotes.router, "/export/csv", "GET", "quotes:export"),
         (quotes.router, "/import/csv", "POST", "quotes:import"),
+        (orders.router, "", "GET", "orders:read"),
+        (orders.router, "/from-quote/{quote_id}", "POST", "orders:create"),
+        (orders.router, "/{order_id}/status", "PATCH", "orders:update"),
         (invoices.router, "", "GET", "invoices:read"),
         (invoices.router, "", "POST", "invoices:create"),
         (invoices.router, "/export/csv", "GET", "invoices:export"),

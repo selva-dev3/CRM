@@ -34,6 +34,8 @@ async def list_documents(
     quote_id: str | None = Query(None),
     invoice_id: str | None = Query(None),
     payment_id: str | None = Query(None),
+    project_id: str | None = Query(None),
+    project_linked: bool = Query(False),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -47,6 +49,7 @@ async def list_documents(
             "quote_id": quote_id,
             "invoice_id": invoice_id,
             "payment_id": payment_id,
+            "project_id": project_id,
         }.items()
         if isinstance(value, str) and value
     }
@@ -57,12 +60,14 @@ async def list_documents(
         search=search,
         current_user=current_user,
         **relationship_filters,
+        project_linked=project_linked,
     )
     total = await document_service.count_documents(
         db,
         search=search,
         current_user=current_user,
         **relationship_filters,
+        project_linked=project_linked,
     )
     response.headers["X-Total-Count"] = str(total)
     return documents
@@ -84,6 +89,7 @@ async def upload_document(
     quote_id: str | None = Query(None),
     invoice_id: str | None = Query(None),
     payment_id: str | None = Query(None),
+    project_id: str | None = Query(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -98,6 +104,7 @@ async def upload_document(
         quote_id=quote_id,
         invoice_id=invoice_id,
         payment_id=payment_id,
+        project_id=project_id,
     )
 
 

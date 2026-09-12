@@ -22,13 +22,16 @@ async def list_projects(
     limit: int = Query(20, ge=1, le=100),
     status: str | None = None,
     priority: str | None = None,
+    search: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     projects = await project_service.list_projects(
-        db, current_user, page=page, limit=limit, status=status, priority=priority
+        db, current_user, page=page, limit=limit, status=status, priority=priority, search=search
     )
-    total = await project_service.count_projects(db, current_user, status=status, priority=priority)
+    total = await project_service.count_projects(
+        db, current_user, status=status, priority=priority, search=search
+    )
     response.headers["X-Total-Count"] = str(total)
     return projects
 

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.errors import APIException, ForbiddenError, NotFoundError
 from app.core.logging import get_logger
+from app.core.permissions import effective_organization_id
 from app.models import Document, User
 from app.repositories.document_repository import DocumentRepository
 from app.services.organization_storage_service import lock_organization_storage
@@ -178,7 +179,16 @@ def document_to_dict(document: Document, download_url: str = "") -> dict:
         "uploaded_at": str(document.uploaded_at),
         **{
             f"{entity}_id": getattr(document, f"{entity}_id", None)
-            for entity in ("lead", "contact", "company", "deal", "quote", "invoice", "payment")
+            for entity in (
+                "lead",
+                "contact",
+                "company",
+                "deal",
+                "quote",
+                "invoice",
+                "payment",
+                "project",
+            )
         },
     }
 
@@ -190,11 +200,7 @@ class DocumentService:
         self.repository = repository or DocumentRepository()
 
     def _resolve_auth(self, current_user: User | None) -> tuple[str, str]:
-        org_id = (
-            current_user.organization_id
-            if current_user and getattr(current_user, "organization_id", None)
-            else None
-        )
+        org_id = effective_organization_id(current_user) if current_user else None
         user_id = current_user.id if current_user and getattr(current_user, "id", None) else None
 
         if not org_id or not user_id:
@@ -228,6 +234,8 @@ class DocumentService:
         quote_id: str | None = None,
         invoice_id: str | None = None,
         payment_id: str | None = None,
+        project_id: str | None = None,
+        project_linked: bool = False,
     ) -> list[dict]:
         org_id, _ = self._resolve_auth(current_user)
         relationship_filters = {
@@ -240,6 +248,7 @@ class DocumentService:
                 "quote_id": quote_id,
                 "invoice_id": invoice_id,
                 "payment_id": payment_id,
+                "project_id": project_id,
             }.items()
             if value is not None
         }
@@ -250,6 +259,7 @@ class DocumentService:
             limit=limit,
             search=search,
             **relationship_filters,
+            project_linked=project_linked,
         )
         out: list[dict] = []
         for doc in documents:
@@ -271,6 +281,8 @@ class DocumentService:
         quote_id: str | None = None,
         invoice_id: str | None = None,
         payment_id: str | None = None,
+        project_id: str | None = None,
+        project_linked: bool = False,
     ) -> int:
         org_id, _ = self._resolve_auth(current_user)
         return await self.repository.count_documents(
@@ -284,6 +296,8 @@ class DocumentService:
             quote_id=quote_id,
             invoice_id=invoice_id,
             payment_id=payment_id,
+            project_id=project_id,
+            project_linked=project_linked,
         )
 
     async def upload_document(
@@ -299,6 +313,7 @@ class DocumentService:
         quote_id: str | None = None,
         invoice_id: str | None = None,
         payment_id: str | None = None,
+        project_id: str | None = None,
     ) -> dict:
         org_id, user_id = self._resolve_auth(current_user)
         from app.services.crm_relationship_service import validate_document_relationships
@@ -313,6 +328,7 @@ class DocumentService:
             quote_id=quote_id,
             invoice_id=invoice_id,
             payment_id=payment_id,
+            project_id=project_id,
         )
 
         safe_filename = _sanitize_filename(file.filename)

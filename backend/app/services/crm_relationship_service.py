@@ -2,7 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, NotFoundError
-from app.models import Company, Contact, Deal, Invoice, Lead, Payment, Quote
+from app.models import Company, Contact, Deal, Invoice, Lead, Payment, Project, Quote
 
 CRM_ENTITY_MODELS = {
     "lead": Lead,
@@ -89,6 +89,7 @@ async def validate_document_relationships(
     quote_id: str | None = None,
     invoice_id: str | None = None,
     payment_id: str | None = None,
+    project_id: str | None = None,
     **crm_ids: str | None,
 ) -> dict[str, str | None]:
     relationships = await validate_crm_relationships(db, organization_id=organization_id, **crm_ids)
@@ -96,6 +97,7 @@ async def validate_document_relationships(
         ("quote", quote_id, Quote),
         ("invoice", invoice_id, Invoice),
         ("payment", payment_id, Payment),
+        ("project", project_id, Project),
     ):
         if entity_id and not await db.scalar(
             select(model.id).where(

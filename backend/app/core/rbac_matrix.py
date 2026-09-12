@@ -39,6 +39,7 @@ activities read create export
 ai read generate configure
 api_keys read create revoke
 projects read create update delete assign
+orders read create update
 """)
 
 SYSTEM_ROLE_PERMISSIONS = {
@@ -64,6 +65,7 @@ calendar read write sync
 activities read create export
 ai read generate
 projects read create update delete assign
+orders read create update
 """),
     "Sales Executive": _keys("""
 whatsapp read_assigned send takeover
@@ -85,6 +87,7 @@ reports read
 calendar read write
 activities read create
 ai read generate
+orders read create update
 """),
     "Marketing Executive": _keys("""
 dashboard read
@@ -115,6 +118,7 @@ invoices read
 calendar read write
 activities read create
 ai read
+orders read
 """),
     "Read Only": _keys("""
 dashboard read
@@ -136,6 +140,7 @@ calendar read
 activities read
 ai read
 projects read
+orders read
 """),
 }
 

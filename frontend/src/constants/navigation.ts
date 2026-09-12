@@ -42,7 +42,9 @@ export const navigationSections: NavSection[] = [
     title: 'Sales',
     items: [
       { title: 'Products', href: '/products', icon: 'Package', permission: PERMISSIONS.PRODUCTS.READ },
+      { title: 'Price Books', href: '/price-books', icon: 'BookOpen', permission: PERMISSIONS.PRODUCTS.READ },
       { title: 'Quotes', href: '/quotes', icon: 'FileSpreadsheet', permission: PERMISSIONS.QUOTES.READ },
+      { title: 'Orders', href: '/orders', icon: 'ShoppingCart', permission: PERMISSIONS.ORDERS.READ },
       { title: 'Invoices', href: '/invoices', icon: 'Receipt', permission: PERMISSIONS.INVOICES.READ },
       { title: 'Payments', href: '/payments', icon: 'CreditCard', permission: PERMISSIONS.INVOICES.READ }
     ]
@@ -50,7 +52,10 @@ export const navigationSections: NavSection[] = [
   {
     title: 'Projects',
     items: [
-      { title: 'Projects', href: '/projects', icon: 'FolderKanban', permission: PERMISSIONS.PROJECTS.READ }
+      { title: 'Projects', href: '/projects', icon: 'FolderKanban', permission: PERMISSIONS.PROJECTS.READ },
+      { title: 'Project Tasks', href: '/project-tasks', icon: 'ListTodo', permission: PERMISSIONS.PROJECTS.READ },
+      { title: 'Milestones', href: '/milestones', icon: 'Flag', permission: PERMISSIONS.PROJECTS.READ },
+      { title: 'Project Documents', href: '/project-documents', icon: 'FolderOpen', permission: PERMISSIONS.PROJECTS.READ }
     ]
   },
   {
@@ -97,10 +102,15 @@ export const protectedRoutes: Record<string, PermissionKey | readonly Permission
   notes: PERMISSIONS.NOTES.READ,
   documents: PERMISSIONS.DOCUMENTS.READ,
   products: PERMISSIONS.PRODUCTS.READ,
+  'price-books': PERMISSIONS.PRODUCTS.READ,
   quotes: PERMISSIONS.QUOTES.READ,
+  orders: PERMISSIONS.ORDERS.READ,
   invoices: PERMISSIONS.INVOICES.READ,
   payments: PERMISSIONS.INVOICES.READ,
   projects: PERMISSIONS.PROJECTS.READ,
+  'project-tasks': PERMISSIONS.PROJECTS.READ,
+  milestones: PERMISSIONS.PROJECTS.READ,
+  'project-documents': PERMISSIONS.PROJECTS.READ,
   reports: PERMISSIONS.REPORTS.READ,
   calendar: PERMISSIONS.CALENDAR.READ,
   users: PERMISSIONS.USERS.READ,

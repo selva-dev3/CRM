@@ -55,6 +55,7 @@ import {
 import { useDealInvoicesQuery } from '@/lib/api/invoices';
 import { useUsersQuery } from '@/lib/api/users';
 import { useProductsQuery } from '@/lib/api/products';
+import { usePriceBookContext, usePriceBookEntries, usePriceBooks } from '@/lib/api/price-books';
 import { useCompaniesQuery } from '@/lib/api/companies';
 import { useContactsQuery } from '@/lib/api/contacts';
 import type { DealPredictionResponse } from '@/lib/types';
@@ -91,7 +92,8 @@ export default function DealDetailsPage() {
   const [customProductName, setCustomProductName] = useState('');
   const [productSearchQuery, setProductSearchQuery] = useState('');
   const [productQuantity, setProductQuantity] = useState(1);
-  const [productUnitPrice, setProductUnitPrice] = useState<number | ''>(0);
+  const [productUnitPrice, setProductUnitPrice] = useState<number | '' | null>(null);
+  const [priceBookId, setPriceBookId] = useState('');
   const relationPageSize = 15;
   const [productsPage, setProductsPage] = useState(1);
   const [timelinePage, setTimelinePage] = useState(1);
@@ -119,9 +121,42 @@ export default function DealDetailsPage() {
   } = useEntityCustomFieldsQuery('Deal');
   const { data: users = [] } = useUsersQuery();
   const { data: catalogProducts = [] } = useProductsQuery();
+  const priceBooksQuery = usePriceBooks();
+  const priceBookContextQuery = usePriceBookContext();
+  const priceBooks = priceBooksQuery.data ?? [];
+  const salesCurrency = priceBookContextQuery.data?.currency?.toUpperCase();
+  const availablePriceBooks = salesCurrency
+    ? priceBooks.filter((book) => book.is_active && book.currency === salesCurrency)
+    : [];
+  const effectivePriceBookId = (
+    availablePriceBooks.some((book) => book.id === priceBookId) ? priceBookId : ''
+  ) || availablePriceBooks.find((book) => book.is_default)?.id || availablePriceBooks[0]?.id || '';
+  const priceBookEntriesQuery = usePriceBookEntries(effectivePriceBookId);
+  const priceBookEntries = priceBookEntriesQuery.data?.filter((entry) => entry.is_active) ?? [];
+  const pricingIsPending =
+    priceBooksQuery.isFetching ||
+    priceBookContextQuery.isFetching ||
+    (Boolean(effectivePriceBookId) && priceBookEntriesQuery.isFetching);
+  const pricingHasError =
+    priceBooksQuery.isError ||
+    priceBookContextQuery.isError ||
+    (Boolean(effectivePriceBookId) && priceBookEntriesQuery.isError);
   const { data: companies = [] } = useCompaniesQuery(1, 100);
   const { data: contacts = [] } = useContactsQuery(1, 100);
   const companyContacts = contacts.filter((contact) => contact.company_id === formCompanyId);
+
+  const selectCatalogProduct = (productId: string) => {
+    setSelectedProductId(productId);
+    const found = catalogProducts.find((product) => product.id === productId);
+    if (!found) return;
+    setProductUnitPrice(null);
+    setCustomProductName(found.name);
+    setProductSearchQuery(found.name);
+  };
+  const selectedCatalogProduct = catalogProducts.find((product) => product.id === selectedProductId);
+  const configuredPrice = priceBookEntries.find((entry) => entry.product_id === selectedProductId);
+  const suggestedUnitPrice = configuredPrice?.unit_price ?? selectedCatalogProduct?.price ?? 0;
+  const effectiveUnitPrice = productUnitPrice ?? suggestedUnitPrice;
 
   // Sub-resource queries
   const { data: productsPageData, refetch: refetchProducts } = useQuery({
@@ -558,7 +593,7 @@ export default function DealDetailsPage() {
                 const firstProd = catalogProducts[0];
                 setSelectedProductId(firstProd?.id || '');
                 setProductQuantity(1);
-                setProductUnitPrice(firstProd?.price || 0);
+                setProductUnitPrice(null);
                 setIsAddProductModalOpen(true);
               }}
               className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs gap-1.5 cursor-pointer"
@@ -579,7 +614,7 @@ export default function DealDetailsPage() {
                   const firstProd = catalogProducts[0];
                   setSelectedProductId(firstProd?.id || '');
                   setProductQuantity(1);
-                  setProductUnitPrice(firstProd?.price || 0);
+                  setProductUnitPrice(null);
                   setIsAddProductModalOpen(true);
                 }}
                 className="mt-1 border-blue-200 text-blue-600 font-semibold text-xs gap-1 cursor-pointer"
@@ -915,6 +950,14 @@ export default function DealDetailsPage() {
           <form
             onSubmit={(e) => {
               e.preventDefault();
+              if (pricingIsPending) {
+                setErrorMessage('Wait for product pricing to finish loading.');
+                return;
+              }
+              if (pricingHasError) {
+                setErrorMessage('Product pricing could not be loaded. Try again before adding this item.');
+                return;
+              }
               const prodName = customProductName.trim() || productSearchQuery.trim();
               if (!selectedProductId && !prodName) {
                 setErrorMessage('Please search, select, or type a product name.');
@@ -924,11 +967,28 @@ export default function DealDetailsPage() {
                 product_id: selectedProductId || `custom-${Date.now()}`,
                 custom_name: prodName,
                 quantity: Number(productQuantity) || 1,
-                unit_price: productUnitPrice !== '' ? Number(productUnitPrice) : 0,
+                unit_price: effectiveUnitPrice !== '' ? Number(effectiveUnitPrice) : 0,
               });
             }}
             className="space-y-4 text-xs"
           >
+            {pricingHasError && (
+              <div role="alert" className="flex items-center justify-between gap-3 rounded-md border border-rose-200 bg-rose-50 p-3 text-rose-700">
+                <span>Product pricing could not be loaded.</span>
+                <button
+                  type="button"
+                  className="font-semibold underline"
+                  onClick={() => {
+                    priceBooksQuery.refetch();
+                    priceBookContextQuery.refetch();
+                    if (effectivePriceBookId) priceBookEntriesQuery.refetch();
+                  }}
+                >
+                  Try again
+                </button>
+              </div>
+            )}
+            {availablePriceBooks.length > 0 && <div className="space-y-1"><Label className="font-semibold text-slate-700">Price Book ({salesCurrency})</Label><ResponsiveSelect value={effectivePriceBookId} onValueChange={(value) => { setPriceBookId(value); setProductUnitPrice(null); }} className="h-9 w-full rounded-md border border-slate-200 bg-white px-3">{availablePriceBooks.map((book) => <option key={book.id} value={book.id}>{book.name} ({book.currency})</option>)}</ResponsiveSelect>{priceBookEntriesQuery.isLoading && <p className="text-[11px] text-slate-500">Loading configured prices…</p>}</div>}
             {/* Type / Search Product Combobox */}
             <div className="space-y-1 relative">
               <Label className="font-semibold text-slate-700">Search Catalog or Type Custom Product</Label>
@@ -943,8 +1003,7 @@ export default function DealDetailsPage() {
                     setCustomProductName(val);
                     const match = catalogProducts.find((p) => p.name.toLowerCase() === val.toLowerCase());
                     if (match) {
-                      setSelectedProductId(match.id);
-                      setProductUnitPrice(match.price);
+                      selectCatalogProduct(match.id);
                     } else {
                       setSelectedProductId('');
                     }
@@ -963,10 +1022,7 @@ export default function DealDetailsPage() {
                       <div
                         key={p.id}
                         onClick={() => {
-                          setSelectedProductId(p.id);
-                          setCustomProductName(p.name);
-                          setProductSearchQuery(p.name);
-                          setProductUnitPrice(p.price);
+                          selectCatalogProduct(p.id);
                         }}
                         className={`p-2 hover:bg-blue-50 cursor-pointer flex items-center justify-between transition ${
                           selectedProductId === p.id ? 'bg-blue-50/80 font-bold text-blue-700' : 'text-slate-700'
@@ -988,15 +1044,7 @@ export default function DealDetailsPage() {
               <Label className="font-semibold text-slate-500 text-[11px]">Or select directly from full catalog</Label>
               <ResponsiveSelect
                 value={selectedProductId}
-                onValueChange={(pid) => {
-                  setSelectedProductId(pid);
-                  const found = catalogProducts.find((p) => p.id === pid);
-                  if (found) {
-                    setProductUnitPrice(found.price);
-                    setCustomProductName(found.name);
-                    setProductSearchQuery(found.name);
-                  }
-                }}
+                onValueChange={selectCatalogProduct}
                 className="w-full h-9 rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
               >
                 <option value="">-- Or Choose Catalog Product --</option>
@@ -1021,10 +1069,10 @@ export default function DealDetailsPage() {
               </div>
 
               <div className="space-y-1">
-                <Label className="font-semibold text-slate-700">Unit Price ($)</Label>
+                <Label className="font-semibold text-slate-700">Unit Price ({salesCurrency ?? '—'})</Label>
                 <Input
                   type="number"
-                  value={productUnitPrice}
+                  value={effectiveUnitPrice}
                   onChange={(e) => setProductUnitPrice(e.target.value !== '' ? Number(e.target.value) : '')}
                   className="h-9 text-xs"
                 />
@@ -1035,8 +1083,8 @@ export default function DealDetailsPage() {
               <Button type="button" variant="outline" size="sm" onClick={() => setIsAddProductModalOpen(false)} className="cursor-pointer">
                 Cancel
               </Button>
-              <Button type="submit" size="sm" disabled={addProductMutation.isPending} className="bg-blue-600 text-white font-semibold cursor-pointer">
-                {addProductMutation.isPending ? 'Adding...' : 'Add to Deal'}
+              <Button type="submit" size="sm" disabled={addProductMutation.isPending || pricingIsPending || pricingHasError} className="bg-blue-600 text-white font-semibold cursor-pointer">
+                {addProductMutation.isPending ? 'Adding...' : pricingIsPending ? 'Loading pricing...' : 'Add to Deal'}
               </Button>
             </div>
           </form>

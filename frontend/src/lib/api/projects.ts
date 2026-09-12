@@ -36,6 +36,7 @@ export interface FetchProjectsParams {
   limit?: number;
   status?: string;
   priority?: string;
+  search?: string;
 }
 
 export async function fetchProjectsPageApi(
@@ -47,6 +48,7 @@ export async function fetchProjectsPageApi(
   });
   if (params.status) query.set('status', params.status);
   if (params.priority) query.set('priority', params.priority);
+  if (params.search) query.set('search', params.search);
   return fetchPaginated<ProjectItem>(`/projects?${query.toString()}`);
 }
 

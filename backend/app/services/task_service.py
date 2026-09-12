@@ -109,6 +109,8 @@ class TaskService:
         contact_id: str | None = None,
         company_id: str | None = None,
         deal_id: str | None = None,
+        project_id: str | None = None,
+        project_linked: bool = False,
     ) -> list[dict]:
         tasks = await self.repository.list(
             db,
@@ -122,6 +124,8 @@ class TaskService:
             contact_id=contact_id,
             company_id=company_id,
             deal_id=deal_id,
+            project_id=project_id,
+            project_linked=project_linked,
         )
         return [task_to_dict(t) for t in tasks]
 
@@ -137,6 +141,8 @@ class TaskService:
         contact_id: str | None = None,
         company_id: str | None = None,
         deal_id: str | None = None,
+        project_id: str | None = None,
+        project_linked: bool = False,
     ) -> int:
         return await self.repository.count(
             db,
@@ -148,6 +154,8 @@ class TaskService:
             contact_id=contact_id,
             company_id=company_id,
             deal_id=deal_id,
+            project_id=project_id,
+            project_linked=project_linked,
         )
 
     async def get_task(self, db: AsyncSession, task_id: str, organization_id: str) -> dict:

@@ -48,6 +48,7 @@ def invoice_to_dict(
     data: dict[str, object] = {
         "id": inv.id,
         "quote_id": inv.quote_id,
+        "order_id": inv.order_id,
         "invoice_number": inv.invoice_number or f"INV-{inv.id[:6]}",
         "deal_id": inv.deal_id,
         "company_id": inv.company_id,
@@ -127,6 +128,9 @@ class InvoiceService:
         )
         if existing:
             return existing
+        from app.services.order_service import OrderService
+
+        order = await OrderService().ensure_from_accepted_quote(db, quote)
         if not quote.deal_id:
             raise ConflictError(message="Accepted quote has no deal")
         deal = await self.repository.get_deal_scoped(
@@ -180,6 +184,7 @@ class InvoiceService:
                 "id": str(uuid4()),
                 "organization_id": quote.organization_id,
                 "quote_id": quote.id,
+                "order_id": order.id,
                 "deal_id": quote.deal_id,
                 "company_id": company.id,
                 "contact_id": contact.id,

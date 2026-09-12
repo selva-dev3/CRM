@@ -12,7 +12,9 @@ from app.schemas.crm_schemas import (
     MessageResponse,
     ProductBase,
 )
+from app.schemas.price_book import PriceBookCreate, PriceBookResponse
 from app.services.org_service import organization_service
+from app.services.price_book_service import price_book_service
 
 router = APIRouter()
 
@@ -148,28 +150,33 @@ async def create_product_category(
 
 @router.get(
     "/price-books",
+    response_model=list[PriceBookResponse],
     summary="List custom price books",
     dependencies=[Depends(require_permission("products:read"))],
 )
-async def list_price_books(db: AsyncSession = Depends(get_db)):
-    raise APIException(
-        message="Price books are not implemented",
-        code="PRICE_BOOKS_UNAVAILABLE",
-        status_code=501,
-    )
+async def list_price_books(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Backward-compatible alias for the canonical /price-books endpoint."""
+    return await price_book_service.list(db, current_user)
 
 
 @router.post(
     "/price-books",
-    response_model=MessageResponse,
+    response_model=PriceBookResponse,
     summary="Create new price book",
     dependencies=[Depends(require_permission("products:create"))],
 )
-async def create_price_book(name: str, currency: str = "USD", db: AsyncSession = Depends(get_db)):
-    raise APIException(
-        message="Price books are not implemented",
-        code="PRICE_BOOKS_UNAVAILABLE",
-        status_code=501,
+async def create_price_book(
+    name: str,
+    currency: str = "USD",
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Backward-compatible alias for the canonical /price-books endpoint."""
+    return await price_book_service.create(
+        db, current_user, PriceBookCreate(name=name, currency=currency)
     )
 
 

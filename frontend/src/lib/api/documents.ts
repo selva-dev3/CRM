@@ -16,6 +16,7 @@ export interface DocumentItem {
   quote_id?: string;
   invoice_id?: string;
   payment_id?: string;
+  project_id?: string;
 }
 
 export interface DocumentRelations {
@@ -26,6 +27,7 @@ export interface DocumentRelations {
   quote_id?: string;
   invoice_id?: string;
   payment_id?: string;
+  project_id?: string;
 }
 
 export interface FetchDocumentsParams extends DocumentRelations {
@@ -33,6 +35,7 @@ export interface FetchDocumentsParams extends DocumentRelations {
   limit?: number;
   folder_id?: string;
   search?: string;
+  project_linked?: boolean;
 }
 
 export interface DocumentDownloadResponse {
@@ -61,7 +64,8 @@ export async function fetchDocumentsApi(params?: FetchDocumentsParams): Promise<
   if (params?.limit) query.append('limit', String(params.limit));
   if (params?.folder_id) query.append('folder_id', params.folder_id);
   if (params?.search) query.append('search', params.search);
-  for (const field of ['lead_id', 'contact_id', 'company_id', 'deal_id', 'quote_id', 'invoice_id', 'payment_id'] as const) {
+  if (params?.project_linked) query.append('project_linked', 'true');
+  for (const field of ['lead_id', 'contact_id', 'company_id', 'deal_id', 'quote_id', 'invoice_id', 'payment_id', 'project_id'] as const) {
     if (params?.[field]) query.append(field, params[field]);
   }
   const endpoint = `/documents${query.toString() ? `?${query.toString()}` : ''}`;
@@ -107,6 +111,7 @@ export function useDocumentsQuery(params?: FetchDocumentsParams, options?: Omit<
     queryKey: ['documents', params],
     queryFn: () => fetchDocumentsApi(params),
     staleTime: 1000 * 60 * 2,
+    placeholderData: (previousData) => previousData,
     ...options,
   });
 }
@@ -136,6 +141,17 @@ export function useUploadDocumentMutation(options?: UseMutationOptions<DocumentI
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['documents'] });
     },
+    ...options,
+  });
+}
+
+export function useUploadRelatedDocumentMutation(
+  options?: UseMutationOptions<DocumentItem, Error, { file: File; relations: DocumentRelations }>,
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ file, relations }) => uploadDocumentApi(file, relations),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['documents'] }),
     ...options,
   });
 }

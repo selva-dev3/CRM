@@ -18,10 +18,13 @@ from app.api.v1.routers import (
     invoices,
     leads,
     meetings,
+    milestones,
     notes,
     notifications,
+    orders,
     organizations,
     payments,
+    price_books,
     products,
     projects,
     public_invoices,
@@ -46,7 +49,9 @@ api_router.include_router(
 )
 api_router.include_router(whatsapp.router, prefix="/whatsapp", tags=["WhatsApp"])
 api_router.include_router(public_quotes.router, prefix="/public/quotes", tags=["Customer Quotes"])
-api_router.include_router(public_invoices.router, prefix="/public/invoices", tags=["Customer Invoices"])
+api_router.include_router(
+    public_invoices.router, prefix="/public/invoices", tags=["Customer Invoices"]
+)
 api_router.include_router(quote_webhooks.router, prefix="/quotes/webhooks", tags=["Quote Webhooks"])
 api_router.include_router(
     payments.router,
@@ -120,6 +125,12 @@ api_router.include_router(
     dependencies=[Depends(get_current_user)],
 )
 api_router.include_router(
+    milestones.router,
+    prefix="/milestones",
+    tags=["Project Milestones"],
+    dependencies=[Depends(get_current_user)],
+)
+api_router.include_router(
     meetings.router,
     prefix="/meetings",
     tags=["11. Meetings"],
@@ -159,9 +170,21 @@ api_router.include_router(
     dependencies=[Depends(get_current_user)],
 )
 api_router.include_router(
+    price_books.router,
+    prefix="/price-books",
+    tags=["Price Books"],
+    dependencies=[Depends(get_current_user)],
+)
+api_router.include_router(
     quotes.router,
     prefix="/quotes",
     tags=["18. Quotes & Proposals"],
+    dependencies=[Depends(get_current_user)],
+)
+api_router.include_router(
+    orders.router,
+    prefix="/orders",
+    tags=["Sales Orders"],
     dependencies=[Depends(get_current_user)],
 )
 api_router.include_router(

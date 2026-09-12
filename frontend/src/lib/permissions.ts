@@ -136,6 +136,11 @@ export const PERMISSIONS = {
     EXPORT: 'quotes:export',
     IMPORT: 'quotes:import',
   },
+  ORDERS: {
+    READ: 'orders:read',
+    CREATE: 'orders:create',
+    UPDATE: 'orders:update',
+  },
   INVOICES: {
     READ: 'invoices:read',
     CREATE: 'invoices:create',

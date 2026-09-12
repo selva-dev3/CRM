@@ -87,6 +87,7 @@ export interface ApiClient {
   getWithMetadata<T>(endpoint: string, options?: ApiRequestOptions): Promise<ApiResponse<T>>;
   post<T>(endpoint: string, data?: unknown, options?: ApiRequestOptions): Promise<T>;
   put<T>(endpoint: string, data?: unknown, options?: ApiRequestOptions): Promise<T>;
+  patch<T>(endpoint: string, data?: unknown, options?: ApiRequestOptions): Promise<T>;
   delete<T>(endpoint: string, options?: ApiRequestOptions): Promise<T>;
 }
 
@@ -411,6 +412,14 @@ mainClient.put = function <T>(endpoint: string, data?: unknown, options: ApiRequ
     ...options,
     method: 'PUT',
     body: isFormData ? data : data ? JSON.stringify(data) : undefined,
+  });
+};
+
+mainClient.patch = function <T>(endpoint: string, data?: unknown, options: ApiRequestOptions = {}): Promise<T> {
+  return mainClient<T>(endpoint, {
+    ...options,
+    method: 'PATCH',
+    body: data ? JSON.stringify(data) : undefined,
   });
 };
 
