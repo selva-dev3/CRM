@@ -56,6 +56,7 @@ const RECORD_SCOPE_MODULES = [
   'companies',
   'deals',
   'tasks',
+  'activities',
   'projects',
   'tickets',
   'documents',
@@ -91,7 +92,7 @@ export default function RoleDetailPage() {
     : Object.fromEntries(
         RECORD_SCOPE_MODULES.map((module) => [
           module,
-          recordScopesQuery.data?.find((item) => item.module === module)?.scope ?? 'all',
+          recordScopesQuery.data?.find((item) => item.module === module)?.scope ?? 'none',
         ]),
       );
 
@@ -442,7 +443,7 @@ export default function RoleDetailPage() {
               <select
                 aria-label={`${module} record scope`}
                 className="rounded-md border px-2 py-1"
-                value={effectiveScopes[module] ?? 'all'}
+                value={effectiveScopes[module] ?? 'none'}
                 disabled={
                   isSystemRole ||
                   !hasPermission('roles:update') ||
@@ -474,7 +475,7 @@ export default function RoleDetailPage() {
                   roleId,
                   scopes: RECORD_SCOPE_MODULES.map((module) => ({
                     module,
-                    scope: effectiveScopes[module] ?? 'all',
+                    scope: effectiveScopes[module] ?? 'none',
                   })),
                 });
                 setScopeDraft({});

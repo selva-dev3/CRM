@@ -1,5 +1,7 @@
 """Regression coverage for the approved policy and repeated initialization."""
 
+import importlib.util
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -8,7 +10,10 @@ import pytest
 from app.core.errors import APIException
 from app.core.rbac_matrix import (
     APPROVED_PERMISSION_KEYS,
+    RECORD_SCOPE_MODULES,
     SYSTEM_ROLE_PERMISSIONS,
+    SYSTEM_ROLE_RECORD_SCOPES,
+    canonical_system_role_name,
 )
 from app.repositories.role_repository import RoleRepository
 
@@ -16,37 +21,110 @@ from app.repositories.role_repository import RoleRepository
 def test_approved_counts_and_read_only_policy():
     assert {name: len(keys) for name, keys in SYSTEM_ROLE_PERMISSIONS.items()} == {
         "Admin": 178,
-        "Sales Manager": 116,
+        "Sales Manager": 111,
         "Sales Executive": 56,
         "Marketing Executive": 30,
-        "Customer Support": 40,
+        "Customer Support": 37,
         "Read Only": 20,
-        "Project Manager": 24,
-        "Project Member": 15,
-        "Support Manager": 38,
+        "Project Manager": 26,
+        "Project Member": 16,
+        "Support Manager": 43,
         "Finance/Accounts": 20,
     }
     assert all(key.endswith(":read") for key in SYSTEM_ROLE_PERMISSIONS["Read Only"])
     for name, keys in SYSTEM_ROLE_PERMISSIONS.items():
-        if name in {"Sales Manager", "Sales Executive", "Marketing Executive", "Customer Support", "Support Manager"}:
+        if name in {
+            "Sales Manager",
+            "Sales Executive",
+            "Marketing Executive",
+            "Customer Support",
+            "Support Manager",
+        }:
             assert "emails:send" in keys
     assert "leads:assign" not in SYSTEM_ROLE_PERMISSIONS["Sales Executive"]
     assert "api_keys:revoke" in SYSTEM_ROLE_PERMISSIONS["Admin"]
     assert all(
         "api_keys:revoke" not in keys
-        for name, keys in SYSTEM_ROLE_PERMISSIONS.items() if name != "Admin"
+        for name, keys in SYSTEM_ROLE_PERMISSIONS.items()
+        if name != "Admin"
     )
     assert "leads:convert" not in SYSTEM_ROLE_PERMISSIONS["Marketing Executive"]
     assert not any(
         key.startswith(("users:", "roles:", "organization:"))
         for key in SYSTEM_ROLE_PERMISSIONS["Sales Manager"]
     )
+    assert not any(key.startswith("projects:") for key in SYSTEM_ROLE_PERMISSIONS["Sales Manager"])
+    assert {
+        "whatsapp:read_all",
+        "whatsapp:assign",
+        "whatsapp:manage_ai",
+    }.isdisjoint(SYSTEM_ROLE_PERMISSIONS["Customer Support"])
+    assert "whatsapp:read_all" in SYSTEM_ROLE_PERMISSIONS["Support Manager"]
+    for role in ("Project Manager", "Project Member"):
+        assert {"activities:read", "activities:create"}.issubset(SYSTEM_ROLE_PERMISSIONS[role])
+    assert "projects:update" not in SYSTEM_ROLE_PERMISSIONS["Project Member"]
 
 
-@pytest.mark.parametrize("name", [" Admin ", "SUPER ADMIN", "super_admin", "Sales Executive"])
+def test_system_role_record_scopes_are_complete_and_least_privilege():
+    assert set(SYSTEM_ROLE_RECORD_SCOPES) == set(SYSTEM_ROLE_PERMISSIONS)
+    assert all(
+        set(scopes) == set(RECORD_SCOPE_MODULES) for scopes in SYSTEM_ROLE_RECORD_SCOPES.values()
+    )
+    assert set(SYSTEM_ROLE_RECORD_SCOPES["Admin"].values()) == {"all"}
+    assert SYSTEM_ROLE_RECORD_SCOPES["Sales Manager"]["leads"] == "team"
+    assert SYSTEM_ROLE_RECORD_SCOPES["Sales Executive"]["leads"] == "assigned"
+    assert SYSTEM_ROLE_RECORD_SCOPES["Project Member"]["projects"] == "assigned"
+    assert SYSTEM_ROLE_RECORD_SCOPES["Support Manager"]["tickets"] == "team"
+    assert SYSTEM_ROLE_RECORD_SCOPES["Finance/Accounts"]["payments"] == "all"
+    assert SYSTEM_ROLE_RECORD_SCOPES["Finance/Accounts"]["tickets"] == "none"
+
+
+def test_rbac_backfill_migration_is_a_frozen_copy_of_current_policy():
+    migration_path = (
+        Path(__file__).parents[3]
+        / "alembic"
+        / "versions"
+        / "d0e1f2a3b4c5_backfill_core_rbac_roles.py"
+    )
+    spec = importlib.util.spec_from_file_location("rbac_backfill_migration", migration_path)
+    assert spec and spec.loader
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+
+    assert migration.ROLE_PERMISSIONS == SYSTEM_ROLE_PERMISSIONS
+    assert migration.ROLE_SCOPES == SYSTEM_ROLE_RECORD_SCOPES
+    assert migration.REMOVE_ROLE_PERMISSIONS["Project Member"] == {"projects:update"}
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        " Admin ",
+        "SUPER ADMIN",
+        "super_admin",
+        "Sales Executive",
+        "Sales_Representative",
+        "Support Agent",
+        "Analyst / Viewer",
+        "Finance / Accounts",
+    ],
+)
 def test_custom_roles_cannot_recreate_system_names(name):
     with pytest.raises(APIException):
         RoleRepository.validate_custom_role_name(name)
+
+
+@pytest.mark.parametrize(
+    ("alias", "canonical"),
+    [
+        ("Sales Rep", "Sales Executive"),
+        ("Support Agent", "Customer Support"),
+        ("Viewer", "Read Only"),
+        ("Finance / Accounts", "Finance/Accounts"),
+    ],
+)
+def test_system_role_aliases_resolve_to_one_canonical_role(alias, canonical):
+    assert canonical_system_role_name(alias) == canonical
 
 
 def _result(values):

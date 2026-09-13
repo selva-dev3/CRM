@@ -13,6 +13,7 @@ from app.core.logging import get_logger
 from app.core.permissions import effective_organization_id
 from app.models import Document, User
 from app.repositories.document_repository import DocumentRepository
+from app.services.auth_service import api_key_scope_allows, auth_service
 from app.services.organization_storage_service import lock_organization_storage
 from app.services.s3_service import s3_service
 
@@ -326,7 +327,49 @@ class DocumentService:
         project_id: str | None = None,
     ) -> dict:
         org_id, user_id = self._resolve_auth(current_user)
+        if current_user is None:  # narrowed for static analysis; _resolve_auth already rejects it
+            raise ForbiddenError(message="Authentication required")
         from app.services.crm_relationship_service import validate_document_relationships
+        from app.services.record_access_service import record_access_service
+
+        requested_relationships = {
+            "leads": lead_id,
+            "contacts": contact_id,
+            "companies": company_id,
+            "deals": deal_id,
+            "quotes": quote_id,
+            "invoices": invoice_id,
+            "payments": payment_id,
+            "projects": project_id,
+        }
+        relationship_permissions = {
+            "leads": "leads:read",
+            "contacts": "contacts:read",
+            "companies": "companies:read",
+            "deals": "deals:read",
+            "quotes": "quotes:read",
+            "invoices": "invoices:read",
+            # Payments are part of the invoice authorization domain in the
+            # existing API and permission catalog; there is no duplicate
+            # payments:read permission.
+            "payments": "invoices:read",
+            "projects": "projects:read",
+        }
+        if any(requested_relationships.values()):
+            permissions = set(await auth_service.get_user_permissions(db, current_user))
+            for module, entity_id in requested_relationships.items():
+                if not entity_id:
+                    continue
+                permission = relationship_permissions[module]
+                if permission not in permissions or not api_key_scope_allows(
+                    current_user, permission
+                ):
+                    raise ForbiddenError(message=f"Missing required permission: {permission}")
+        access_by_module = {
+            module: await record_access_service.resolve(db, current_user, module)
+            for module, entity_id in requested_relationships.items()
+            if entity_id
+        }
 
         relationships = await validate_document_relationships(
             db,
@@ -339,6 +382,7 @@ class DocumentService:
             invoice_id=invoice_id,
             payment_id=payment_id,
             project_id=project_id,
+            access_by_module=access_by_module,
         )
 
         safe_filename = _sanitize_filename(file.filename)

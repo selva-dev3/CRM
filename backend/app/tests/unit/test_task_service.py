@@ -5,12 +5,14 @@ from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import APIException, NotFoundError
+from app.core.errors import APIException, ForbiddenError, NotFoundError
 from app.models import User
 from app.models.task import Task
 from app.repositories.task_repository import TaskRepository
 from app.schemas.crm_schemas import TaskCreate, TaskUpdate
+from app.services.auth_service import auth_service
 from app.services.integration_service import integration_service
+from app.services.record_access_service import record_access_service
 from app.services.task_service import TaskService, parse_datetime
 
 
@@ -123,6 +125,10 @@ async def test_create_task_rejects_project_outside_current_organization(monkeypa
     monkeypatch.setattr(
         organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
     )
+    project_access = object()
+    monkeypatch.setattr(
+        record_access_service, "resolve", AsyncMock(return_value=project_access)
+    )
 
     with pytest.raises(NotFoundError):
         await service.create_task(
@@ -130,9 +136,156 @@ async def test_create_task_rejects_project_outside_current_organization(monkeypa
         )
 
     project_repository.get.assert_awaited_once_with(
-        db, project_id="project-2", organization_id="org-1"
+        db,
+        project_id="project-2",
+        organization_id="org-1",
+        access=project_access,
     )
     repo.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_create_task_cannot_bootstrap_access_to_an_inaccessible_project(monkeypatch):
+    repo: Any = TaskRepository()
+    repo.create = AsyncMock()
+    repo.get_user_by_id_name_email = AsyncMock(return_value=None)
+    project_repository = AsyncMock()
+    project_repository.get.return_value = None
+    service = TaskService(repository=repo, project_repository=project_repository)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.services.task_service import organization_service
+
+    monkeypatch.setattr(
+        organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
+    )
+    assigned_scope = object()
+    resolve = AsyncMock(return_value=assigned_scope)
+    monkeypatch.setattr(record_access_service, "resolve", resolve)
+    actor = _actor()
+
+    with pytest.raises(NotFoundError):
+        await service.create_task(
+            db,
+            TaskCreate(title="Self-grant", project_id="private-project"),
+            actor,
+        )
+
+    resolve.assert_awaited_once_with(db, actor, "projects")
+    project_repository.get.assert_awaited_once_with(
+        db,
+        project_id="private-project",
+        organization_id="org-1",
+        access=assigned_scope,
+    )
+    repo.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_create_task_requires_assign_permission_for_another_user(monkeypatch):
+    repo: Any = TaskRepository()
+    repo.create = AsyncMock()
+    repo.get_user_by_id_name_email = AsyncMock(return_value=User(id="usr-2"))
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.services.task_service import organization_service
+
+    monkeypatch.setattr(
+        organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
+    )
+    monkeypatch.setattr(auth_service, "get_user_permissions", AsyncMock(return_value=[]))
+
+    with pytest.raises(ForbiddenError, match="tasks:assign"):
+        await service.create_task(
+            db,
+            TaskCreate(title="Assigned work", assigned_to="usr-2"),
+            _actor(),
+        )
+
+    repo.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_create_task_allows_another_user_with_assign_permission(monkeypatch):
+    task = _make_task(assigned_to="usr-2")
+    repo: Any = TaskRepository()
+    repo.create = AsyncMock(return_value=task)
+    repo.get_user_by_id_name_email = AsyncMock(return_value=User(id="usr-2"))
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.services.task_service import organization_service
+
+    monkeypatch.setattr(
+        organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
+    )
+    monkeypatch.setattr(
+        auth_service, "get_user_permissions", AsyncMock(return_value=["tasks:assign"])
+    )
+    monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())
+    monkeypatch.setattr(
+        "app.services.task_service.notification_service.notify", AsyncMock()
+    )
+
+    result = await service.create_task(
+        db,
+        TaskCreate(title="Assigned work", assigned_to="usr-2"),
+        _actor(),
+    )
+
+    assert result["assigned_to"] == "usr-2"
+    assert repo.create.await_args.kwargs["data"]["assigned_to"] == "usr-2"
+
+
+@pytest.mark.asyncio
+async def test_update_task_requires_assign_permission_when_assignee_changes(monkeypatch):
+    task = _make_task(assigned_to="usr-1")
+    repo: Any = TaskRepository()
+    repo.get_by_id = AsyncMock(return_value=task)
+    repo.get_user_by_id_name_email = AsyncMock(return_value=User(id="usr-2"))
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    monkeypatch.setattr(auth_service, "get_user_permissions", AsyncMock(return_value=[]))
+
+    with pytest.raises(ForbiddenError, match="tasks:assign"):
+        await service.update_task(
+            db,
+            "task-1",
+            TaskUpdate(assigned_to="usr-2"),
+            "org-1",
+            current_user=_actor(),
+        )
+
+    assert task.assigned_to == "usr-1"
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_update_task_allows_self_assignment_without_assign_permission(monkeypatch):
+    task = _make_task(assigned_to="usr-2")
+    actor = _actor()
+    repo: Any = TaskRepository()
+    repo.get_by_id = AsyncMock(return_value=task)
+    repo.get_user_by_id_name_email = AsyncMock(return_value=actor)
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    permissions = AsyncMock(return_value=[])
+    monkeypatch.setattr(auth_service, "get_user_permissions", permissions)
+
+    result = await service.update_task(
+        db,
+        "task-1",
+        TaskUpdate(assigned_to=actor.id),
+        "org-1",
+        actor_id=actor.id,
+        current_user=actor,
+    )
+
+    assert result["assigned_to"] == actor.id
+    assert task.assigned_to == actor.id
+    permissions.assert_not_awaited()
+    db.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio

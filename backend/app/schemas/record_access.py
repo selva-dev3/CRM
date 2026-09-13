@@ -2,21 +2,9 @@ from typing import Literal
 
 from pydantic import BaseModel, field_validator
 
+from app.core.rbac_matrix import RECORD_SCOPE_MODULES as RECORD_SCOPE_MODULES
+
 RecordScope = Literal["all", "team", "assigned", "own", "none"]
-RECORD_SCOPE_MODULES = (
-    "leads",
-    "contacts",
-    "companies",
-    "deals",
-    "tasks",
-    "projects",
-    "tickets",
-    "documents",
-    "quotes",
-    "orders",
-    "invoices",
-    "payments",
-)
 
 
 class RoleRecordScopeItem(BaseModel):
@@ -26,6 +14,7 @@ class RoleRecordScopeItem(BaseModel):
         "companies",
         "deals",
         "tasks",
+        "activities",
         "projects",
         "tickets",
         "documents",

@@ -1,8 +1,8 @@
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.record_access import record_access_filter
 from app.models import Company, Contact, Deal, Project, ProjectStakeholder, User
+from app.repositories.project_access import project_record_access_filter
 
 
 class ProjectRepository:
@@ -19,9 +19,7 @@ class ProjectRepository:
         access=None,
     ) -> list[Project]:
         conditions = [Project.organization_id == organization_id]
-        access_filter = record_access_filter(
-            access, assigned_column=Project.owner_id, created_column=Project.created_by
-        )
+        access_filter = project_record_access_filter(access)
         if access_filter is not None:
             conditions.append(access_filter)
         if status:
@@ -50,9 +48,7 @@ class ProjectRepository:
         access=None,
     ) -> int:
         conditions = [Project.organization_id == organization_id]
-        access_filter = record_access_filter(
-            access, assigned_column=Project.owner_id, created_column=Project.created_by
-        )
+        access_filter = project_record_access_filter(access)
         if access_filter is not None:
             conditions.append(access_filter)
         if status:
@@ -68,9 +64,7 @@ class ProjectRepository:
         self, db: AsyncSession, *, project_id: str, organization_id: str, access=None
     ) -> Project | None:
         conditions = [Project.id == project_id, Project.organization_id == organization_id]
-        access_filter = record_access_filter(
-            access, assigned_column=Project.owner_id, created_column=Project.created_by
-        )
+        access_filter = project_record_access_filter(access)
         if access_filter is not None:
             conditions.append(access_filter)
         result = await db.execute(select(Project).where(*conditions))

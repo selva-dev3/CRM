@@ -54,6 +54,41 @@ def test_record_access_scopes(scope, assigned_to, created_by, team_id, expected)
     )
 
 
+@pytest.mark.asyncio
+async def test_record_access_resolution_fails_closed_without_mapping(monkeypatch):
+    from app.services import record_access_service as module
+
+    monkeypatch.setattr(
+        module.record_access_repository,
+        "role_id_for_user",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        module.record_access_repository,
+        "team_ids_for_user",
+        AsyncMock(return_value=frozenset()),
+    )
+    monkeypatch.setattr(
+        module.record_access_repository,
+        "user_ids_for_teams",
+        AsyncMock(return_value=frozenset()),
+    )
+    user = SimpleNamespace(id="user-1", is_platform_admin=False)
+
+    context = await RecordAccessService().resolve(AsyncMock(), user, "leads")
+
+    assert context.scope == "none"
+
+
+@pytest.mark.asyncio
+async def test_platform_admin_record_access_bypasses_tenant_scopes():
+    user = SimpleNamespace(id="platform-1", is_platform_admin=True)
+
+    context = await RecordAccessService().resolve(AsyncMock(), user, "leads")
+
+    assert context.scope == "all"
+
+
 def test_record_scope_payload_rejects_duplicate_modules():
     with pytest.raises(ValidationError):
         RoleRecordScopeUpdate.model_validate(

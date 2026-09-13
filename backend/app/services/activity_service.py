@@ -6,6 +6,7 @@ from app.repositories.activity_repository import (
     activity_repository,
 )
 from app.services.auth_service import api_key_scope_allows, auth_service
+from app.services.record_access_service import record_access_service
 
 MODULE_PERMISSIONS = {
     "leads": "leads:read",
@@ -83,15 +84,38 @@ class ActivityService:
         modules, whatsapp_permissions = await self.allowed_modules(db, current_user)
         if module:
             modules &= {module}
-        kwargs = {
-            "organization_id": organization_id,
-            "modules": modules,
-            "user_id": current_user.id,
-            "whatsapp_permissions": whatsapp_permissions,
-            "search": search,
+        access = await record_access_service.resolve(db, current_user, "activities")
+        scoped_modules = {"leads", "contacts", "companies", "deals", "tasks"}
+        needed_scopes = modules & {"leads", "deals", "tasks"}
+        if modules & {"emails", "meetings"}:
+            needed_scopes |= {"leads", "contacts", "companies", "deals"}
+        module_access = {
+            name: await record_access_service.resolve(db, current_user, name)
+            for name in sorted(scoped_modules)
+            if name in needed_scopes
         }
-        rows = await self.repository.list(db, page=page, limit=limit, **kwargs)
-        total = await self.repository.count(db, **kwargs)
+        rows = await self.repository.list(
+            db,
+            organization_id=organization_id,
+            modules=modules,
+            user_id=current_user.id,
+            whatsapp_permissions=whatsapp_permissions,
+            access=access,
+            module_access=module_access,
+            search=search,
+            page=page,
+            limit=limit,
+        )
+        total = await self.repository.count(
+            db,
+            organization_id=organization_id,
+            modules=modules,
+            user_id=current_user.id,
+            whatsapp_permissions=whatsapp_permissions,
+            access=access,
+            module_access=module_access,
+            search=search,
+        )
         return [self.serialize(row) for row in rows], total
 
 

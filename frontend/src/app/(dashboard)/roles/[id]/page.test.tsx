@@ -66,4 +66,9 @@ describe('Role detail permission controls', () => {
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
     expect(screen.getByText('Protected')).toBeInTheDocument();
   });
+
+  it('shows activity record scope alongside the existing scoped modules', () => {
+    render(<RoleDetailPage />);
+    expect(screen.getByRole('combobox', { name: 'activities record scope' })).toHaveValue('none');
+  });
 });
