@@ -1,8 +1,8 @@
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.record_access import record_access_filter
 from app.models import Project, ProjectMilestone
+from app.repositories.project_access import project_record_access_filter
 
 
 class MilestoneRepository:
@@ -18,9 +18,7 @@ class MilestoneRepository:
         access=None,
     ) -> list[ProjectMilestone]:
         conditions = [ProjectMilestone.organization_id == organization_id]
-        access_filter = record_access_filter(
-            access, assigned_column=Project.owner_id, created_column=Project.created_by
-        )
+        access_filter = project_record_access_filter(access)
         if access_filter is not None:
             conditions.append(access_filter)
         if project_id:
@@ -46,9 +44,7 @@ class MilestoneRepository:
         access=None,
     ) -> int:
         conditions = [ProjectMilestone.organization_id == organization_id]
-        access_filter = record_access_filter(
-            access, assigned_column=Project.owner_id, created_column=Project.created_by
-        )
+        access_filter = project_record_access_filter(access)
         if access_filter is not None:
             conditions.append(access_filter)
         if project_id:
@@ -73,9 +69,7 @@ class MilestoneRepository:
                 ProjectMilestone.id == milestone_id,
                 ProjectMilestone.organization_id == organization_id,
         ]
-        access_filter = record_access_filter(
-            access, assigned_column=Project.owner_id, created_column=Project.created_by
-        )
+        access_filter = project_record_access_filter(access)
         if access_filter is not None:
             conditions.append(access_filter)
         return await db.scalar(
@@ -91,9 +85,7 @@ class MilestoneRepository:
                 Project.id == project_id,
                 Project.organization_id == organization_id,
         ]
-        access_filter = record_access_filter(
-            access, assigned_column=Project.owner_id, created_column=Project.created_by
-        )
+        access_filter = project_record_access_filter(access)
         if access_filter is not None:
             conditions.append(access_filter)
         return await db.scalar(select(Project).where(*conditions))

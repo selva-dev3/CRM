@@ -2,7 +2,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, NotFoundError
+from app.core.record_access import RecordAccessContext, record_access_filter
 from app.models import Company, Contact, Deal, Invoice, Lead, Payment, Project, Quote
+from app.repositories.project_access import project_record_access_filter
 
 CRM_ENTITY_MODELS = {
     "lead": Lead,
@@ -90,21 +92,86 @@ async def validate_document_relationships(
     invoice_id: str | None = None,
     payment_id: str | None = None,
     project_id: str | None = None,
+    access_by_module: dict[str, RecordAccessContext] | None = None,
     **crm_ids: str | None,
 ) -> dict[str, str | None]:
     relationships = await validate_crm_relationships(db, organization_id=organization_id, **crm_ids)
+    if access_by_module is not None:
+        crm_access_specs = (
+            ("lead", crm_ids.get("lead_id"), Lead, Lead.assigned_to, Lead.created_by, "leads"),
+            (
+                "contact",
+                crm_ids.get("contact_id"),
+                Contact,
+                Contact.owner_id,
+                Contact.created_by,
+                "contacts",
+            ),
+            (
+                "company",
+                crm_ids.get("company_id"),
+                Company,
+                Company.owner_id,
+                Company.created_by,
+                "companies",
+            ),
+            ("deal", crm_ids.get("deal_id"), Deal, Deal.assigned_to, Deal.created_by, "deals"),
+        )
+        for name, entity_id, model, assigned_column, created_column, module in crm_access_specs:
+            if not entity_id:
+                continue
+            access_filter = record_access_filter(
+                access_by_module[module],
+                assigned_column=assigned_column,
+                created_column=created_column,
+            )
+            query = select(model.id).where(
+                model.id == entity_id,
+                model.organization_id == organization_id,
+            )
+            if access_filter is not None:
+                query = query.where(access_filter)
+            if not await db.scalar(query):
+                raise NotFoundError(message=f"Related {name} not found")
     for name, entity_id, model in (
         ("quote", quote_id, Quote),
         ("invoice", invoice_id, Invoice),
         ("payment", payment_id, Payment),
         ("project", project_id, Project),
     ):
-        if entity_id and not await db.scalar(
-            select(model.id).where(
-                model.id == entity_id,
-                model.organization_id == organization_id,
-            )
-        ):
+        if not entity_id:
+            relationships[f"{name}_id"] = entity_id
+            continue
+        query = select(model.id).where(
+            model.id == entity_id,
+            model.organization_id == organization_id,
+        )
+        if access_by_module is not None:
+            access = access_by_module[f"{name}s"]
+            if name == "project":
+                access_filter = project_record_access_filter(access)
+            elif name == "payment":
+                query = query.join(Invoice, Invoice.id == Payment.invoice_id)
+                access_filter = record_access_filter(
+                    access,
+                    assigned_column=Invoice.created_by,
+                    created_column=Invoice.created_by,
+                )
+            elif name == "quote":
+                access_filter = record_access_filter(
+                    access,
+                    assigned_column=Quote.created_by,
+                    created_column=Quote.created_by,
+                )
+            else:
+                access_filter = record_access_filter(
+                    access,
+                    assigned_column=Invoice.created_by,
+                    created_column=Invoice.created_by,
+                )
+            if access_filter is not None:
+                query = query.where(access_filter)
+        if not await db.scalar(query):
             raise NotFoundError(message=f"Related {name} not found")
         relationships[f"{name}_id"] = entity_id
     return relationships

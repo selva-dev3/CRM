@@ -1,14 +1,32 @@
 from collections.abc import Sequence
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.record_access import record_access_filter
 from app.models import Document
+from app.repositories.project_access import project_record_access_filter
 
 
 class DocumentRepository:
     """Query layer for the Document domain — strictly tenant-isolated."""
+
+    @staticmethod
+    def _access_filter(access):
+        uploader_filter = record_access_filter(
+            access,
+            assigned_column=Document.uploaded_by,
+            created_column=Document.uploaded_by,
+        )
+        project_filter = project_record_access_filter(
+            access, project_id_column=Document.project_id, linked=True
+        )
+        if uploader_filter is None or project_filter is None:
+            return None
+        return or_(
+            and_(Document.project_id.is_(None), uploader_filter),
+            project_filter,
+        )
 
     async def list_documents(
         self,
@@ -30,11 +48,7 @@ class DocumentRepository:
         access=None,
     ) -> Sequence[Document]:
         stmt = select(Document).where(Document.organization_id == org_id)
-        access_filter = record_access_filter(
-            access,
-            assigned_column=Document.uploaded_by,
-            created_column=Document.uploaded_by,
-        )
+        access_filter = self._access_filter(access)
         if access_filter is not None:
             stmt = stmt.where(access_filter)
         if search and search.strip():
@@ -79,11 +93,7 @@ class DocumentRepository:
         access=None,
     ) -> int:
         stmt = select(func.count()).select_from(Document).where(Document.organization_id == org_id)
-        access_filter = record_access_filter(
-            access,
-            assigned_column=Document.uploaded_by,
-            created_column=Document.uploaded_by,
-        )
+        access_filter = self._access_filter(access)
         if access_filter is not None:
             stmt = stmt.where(access_filter)
         if search and search.strip():
@@ -108,11 +118,7 @@ class DocumentRepository:
         self, db: AsyncSession, ids: list[str], org_id: str, access=None
     ) -> Sequence[Document]:
         stmt = select(Document).where(Document.id.in_(ids), Document.organization_id == org_id)
-        access_filter = record_access_filter(
-            access,
-            assigned_column=Document.uploaded_by,
-            created_column=Document.uploaded_by,
-        )
+        access_filter = self._access_filter(access)
         if access_filter is not None:
             stmt = stmt.where(access_filter)
         res = await db.execute(stmt)
@@ -124,11 +130,7 @@ class DocumentRepository:
         stmt = select(Document).where(
             Document.id == document_id, Document.organization_id == org_id
         )
-        access_filter = record_access_filter(
-            access,
-            assigned_column=Document.uploaded_by,
-            created_column=Document.uploaded_by,
-        )
+        access_filter = self._access_filter(access)
         if access_filter is not None:
             stmt = stmt.where(access_filter)
         res = await db.execute(stmt)

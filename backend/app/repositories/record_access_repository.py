@@ -1,9 +1,9 @@
 from inspect import isawaitable
 
-from sqlalchemy import select
+from sqlalchemy import select, union
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import RoleRecordScope, TeamMembership, UserRole
+from app.models import RoleRecordScope, Team, TeamMembership, UserRole
 
 
 class RecordAccessRepository:
@@ -11,9 +11,7 @@ class RecordAccessRepository:
         value = await db.scalar(select(UserRole.role_id).where(UserRole.user_id == user_id))
         return value if isinstance(value, str) else None
 
-    async def scope_for_role(
-        self, db: AsyncSession, role_id: str, module: str
-    ) -> str | None:
+    async def scope_for_role(self, db: AsyncSession, role_id: str, module: str) -> str | None:
         value = await db.scalar(
             select(RoleRecordScope.scope).where(
                 RoleRecordScope.role_id == role_id,
@@ -25,7 +23,18 @@ class RecordAccessRepository:
     async def team_ids_for_user(self, db: AsyncSession, user_id: str) -> frozenset[str]:
         rows = (
             await db.scalars(
-                select(TeamMembership.team_id).where(TeamMembership.user_id == user_id)
+                union(
+                    select(TeamMembership.team_id)
+                    .join(Team, Team.id == TeamMembership.team_id)
+                    .where(
+                        TeamMembership.user_id == user_id,
+                        Team.is_active.is_(True),
+                    ),
+                    select(Team.id).where(
+                        Team.manager_id == user_id,
+                        Team.is_active.is_(True),
+                    ),
+                )
             )
         ).all()
         if isawaitable(rows):
@@ -39,7 +48,19 @@ class RecordAccessRepository:
             return frozenset()
         rows = (
             await db.scalars(
-                select(TeamMembership.user_id).where(TeamMembership.team_id.in_(team_ids))
+                union(
+                    select(TeamMembership.user_id)
+                    .join(Team, Team.id == TeamMembership.team_id)
+                    .where(
+                        TeamMembership.team_id.in_(team_ids),
+                        Team.is_active.is_(True),
+                    ),
+                    select(Team.manager_id).where(
+                        Team.id.in_(team_ids),
+                        Team.manager_id.is_not(None),
+                        Team.is_active.is_(True),
+                    ),
+                )
             )
         ).all()
         if isawaitable(rows):

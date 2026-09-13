@@ -7,10 +7,19 @@ from app.repositories.record_access_repository import record_access_repository
 
 class RecordAccessService:
     async def resolve(self, db: AsyncSession, user: User, module: str) -> RecordAccessContext:
+        if getattr(user, "is_platform_admin", False):
+            return RecordAccessContext(
+                scope="all",
+                user_id=user.id,
+                team_ids=frozenset(),
+                team_user_ids=frozenset(),
+            )
         role_id = await record_access_repository.role_id_for_user(db, user.id)
-        scope = "all"
+        # Missing role/scope data must never expand access.  Migrations and
+        # tenant provisioning create explicit rows for every canonical role.
+        scope = "none"
         if role_id:
-            scope = await record_access_repository.scope_for_role(db, role_id, module) or "all"
+            scope = await record_access_repository.scope_for_role(db, role_id, module) or "none"
         team_ids = await record_access_repository.team_ids_for_user(db, user.id)
         team_users = await record_access_repository.user_ids_for_teams(db, team_ids)
         return RecordAccessContext(

@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.record_access import RecordAccessContext
 from app.models import Document
 from app.repositories.document_repository import DocumentRepository
 
@@ -23,6 +24,15 @@ def _db_returning(value, method="scalars_first") -> AsyncMock:
         result.scalars.return_value = scalars
     db.execute = AsyncMock(return_value=result)
     return db
+
+
+def _assigned_access() -> RecordAccessContext:
+    return RecordAccessContext(
+        scope="assigned",
+        user_id="usr-1",
+        team_ids=frozenset(),
+        team_user_ids=frozenset(),
+    )
 
 
 @pytest.mark.asyncio
@@ -84,3 +94,24 @@ async def test_create_document_persists_s3_key():
     db.add.assert_called_once_with(doc)
     assert doc.s3_key == "documents/org-1/abc.pdf"
     assert doc.file_url is None
+
+
+@pytest.mark.asyncio
+async def test_project_document_inherits_access_from_assigned_project_task():
+    repo: Any = DocumentRepository()
+    db = _db_returning([], method="scalars_all")
+
+    await repo.list_documents(
+        db,
+        org_id="org-1",
+        page=1,
+        limit=20,
+        project_linked=True,
+        access=_assigned_access(),
+    )
+
+    sql = str(db.execute.await_args.args[0])
+    assert "documents.uploaded_by" in sql
+    assert "documents.project_id IS NULL" in sql
+    assert "tasks.project_id = documents.project_id" in sql
+    assert "tasks.assigned_to" in sql

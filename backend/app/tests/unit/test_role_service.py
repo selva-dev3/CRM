@@ -545,8 +545,24 @@ async def test_clone_role_copies_permissions():
     assert result["permissions"] == ["leads:read"]
     repo.add_role_permission.assert_awaited_once()
     scopes = repo.replace_record_scopes.await_args.args[2]
-    assert {item["module"]: item["scope"] for item in scopes}["leads"] == "team"
+    scopes_by_module = {item["module"]: item["scope"] for item in scopes}
+    assert scopes_by_module["leads"] == "team"
+    assert scopes_by_module["activities"] == "none"
     repo.get_role_for_update.assert_awaited_once_with(ANY, "role-1", "org-1")
+
+
+@pytest.mark.asyncio
+async def test_missing_record_scope_is_reported_as_none():
+    role = _make_role()
+    repo: Any = RoleRepository()
+    repo.get_role = AsyncMock(return_value=role)
+    repo.record_scopes = AsyncMock(return_value=[])
+    service = RoleService(repository=repo)
+
+    scopes = await service.get_record_scopes(AsyncMock(), role.id, _actor())
+
+    assert scopes
+    assert {item["scope"] for item in scopes} == {"none"}
 
 
 @pytest.mark.asyncio

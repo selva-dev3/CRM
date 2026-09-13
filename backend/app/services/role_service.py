@@ -1136,7 +1136,7 @@ class RoleService:
             row.module: row.scope for row in await self.repository.record_scopes(db, role_id)
         }
         return [
-            {"module": module, "scope": by_module.get(module, "all")}
+            {"module": module, "scope": by_module.get(module, "none")}
             for module in RECORD_SCOPE_MODULES
         ]
 
@@ -1750,7 +1750,7 @@ class RoleService:
                 db,
                 r.id,
                 [
-                    {"module": module, "scope": source_scopes.get(module, "all")}
+                    {"module": module, "scope": source_scopes.get(module, "none")}
                     for module in RECORD_SCOPE_MODULES
                 ],
             )

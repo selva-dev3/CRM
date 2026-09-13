@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.errors import APIException, ConflictError, ForbiddenError, NotFoundError
-from app.core.rbac_matrix import SYSTEM_ROLE_PERMISSIONS
+from app.core.rbac_matrix import SYSTEM_ROLE_PERMISSIONS, SYSTEM_ROLE_RECORD_SCOPES
 from app.models import Organization, OrganizationInvitation, User
 from app.repositories.organization_lifecycle_repository import OrganizationLifecycleRepository
 from app.repositories.organization_repository import OrganizationRepository
@@ -174,6 +174,14 @@ class OrganizationLifecycleService:
             )
             await db.flush()
             role_ids[name] = role.id
+            await self.roles.replace_record_scopes(
+                db,
+                role.id,
+                [
+                    {"module": module, "scope": scope}
+                    for module, scope in SYSTEM_ROLE_RECORD_SCOPES[name].items()
+                ],
+            )
             for key in sorted(permissions):
                 await self.roles.add_role_permission(db, role.id, catalog[key])
         invitation = None

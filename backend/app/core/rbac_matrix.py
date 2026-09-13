@@ -68,7 +68,6 @@ reports read create export schedule
 calendar read write sync
 activities read create export
 ai read generate
-projects read create update delete assign
 orders read create update
 """),
     "Sales Executive": _keys("""
@@ -107,7 +106,7 @@ activities read create
 ai read generate
 """),
     "Customer Support": _keys("""
-whatsapp read_assigned read_all send assign takeover manage_ai
+whatsapp read_assigned send takeover
 dashboard read
 leads read
 contacts read update
@@ -158,18 +157,21 @@ companies read
 deals read
 calendar read write
 reports read
+activities read create
 """),
     "Project Member": _keys("""
 dashboard read
-projects read update
+projects read
 tasks read create update complete
 documents read upload share
 contacts read
 companies read
 deals read
 calendar read write
+activities read create
 """),
     "Support Manager": _keys("""
+whatsapp read_assigned read_all send assign takeover
 dashboard read
 tickets read create update delete assign export
 knowledge_base read create update delete publish
@@ -199,6 +201,91 @@ documents read upload share
 }
 
 SYSTEM_ROLE_NAMES = frozenset({"Super Admin", *SYSTEM_ROLE_PERMISSIONS})
+SYSTEM_ROLE_ALIASES = {
+    "Sales Executive": frozenset(
+        {"Sales Executive", "Sales Representative", "Sales Rep", "Sales User"}
+    ),
+    "Customer Support": frozenset({"Customer Support", "Support Agent"}),
+    "Read Only": frozenset(
+        {"Read Only", "Analyst", "Viewer", "Analyst/Viewer", "Analyst / Viewer"}
+    ),
+    "Finance/Accounts": frozenset(
+        {"Finance/Accounts", "Finance / Accounts", "Finance", "Accounts"}
+    ),
+}
+
+
+def normalize_role_name(value: str) -> str:
+    return " ".join(value.strip().lower().replace("_", " ").split())
+
+
+def canonical_system_role_name(value: str) -> str | None:
+    normalized = normalize_role_name(value)
+    for canonical in SYSTEM_ROLE_NAMES:
+        aliases = SYSTEM_ROLE_ALIASES.get(canonical, frozenset({canonical}))
+        if normalized in {normalize_role_name(alias) for alias in aliases}:
+            return canonical
+    return None
+
+# Record visibility is independent from action permissions.  Keep the policy in
+# the same canonical matrix so tenant provisioning and data migrations cannot
+# silently disagree.  Modules without an action grant are deliberately scoped
+# to ``none`` as defence in depth.
+RECORD_SCOPE_MODULES = (
+    "leads",
+    "contacts",
+    "companies",
+    "deals",
+    "tasks",
+    "activities",
+    "projects",
+    "tickets",
+    "documents",
+    "quotes",
+    "orders",
+    "invoices",
+    "payments",
+)
+
+
+def _record_scopes(default: str, *, none: tuple[str, ...] = ()) -> dict[str, str]:
+    return {module: "none" if module in none else default for module in RECORD_SCOPE_MODULES}
+
+
+SYSTEM_ROLE_RECORD_SCOPES = {
+    "Admin": _record_scopes("all"),
+    "Sales Manager": _record_scopes("team", none=("tickets",)),
+    "Sales Executive": _record_scopes("assigned", none=("projects", "tickets")),
+    "Marketing Executive": _record_scopes(
+        "assigned",
+        none=(
+            "deals",
+            "projects",
+            "tickets",
+            "documents",
+            "quotes",
+            "orders",
+            "invoices",
+            "payments",
+        ),
+    ),
+    "Customer Support": _record_scopes(
+        "assigned", none=("deals", "projects", "quotes", "payments")
+    ),
+    "Read Only": _record_scopes("all"),
+    "Project Manager": _record_scopes(
+        "team", none=("leads", "tickets", "quotes", "orders", "invoices", "payments")
+    ),
+    "Project Member": _record_scopes(
+        "assigned", none=("leads", "tickets", "quotes", "orders", "invoices", "payments")
+    ),
+    "Support Manager": _record_scopes(
+        "team", none=("leads", "deals", "projects", "quotes", "orders", "invoices", "payments")
+    ),
+    "Finance/Accounts": _record_scopes(
+        "all", none=("leads", "tasks", "activities", "projects", "tickets")
+    ),
+}
 
 # This is the authoritative permission-key catalog. Display metadata may live in
 # the role service, but authorization and tenant-managed roles must only accept

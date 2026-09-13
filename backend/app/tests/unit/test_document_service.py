@@ -1,7 +1,8 @@
 import io
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any
-from unittest.mock import ANY, AsyncMock
+from unittest.mock import ANY, AsyncMock, MagicMock
 
 import pytest
 from fastapi import UploadFile
@@ -9,8 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import Headers
 
 from app.core.errors import APIException, ForbiddenError, NotFoundError
+from app.core.record_access import RecordAccessContext
 from app.models import Document, User
 from app.repositories.document_repository import DocumentRepository
+from app.services.auth_service import auth_service
 from app.services.document_service import DocumentService, document_to_dict
 
 
@@ -346,6 +349,165 @@ async def test_upload_document_stores_s3_key_not_presigned_url(monkeypatch):
     assert db.commit.await_count == 1
     assert result["filename"] == "report.png"
     assert result["download_url"].startswith("https://s3.example/")
+
+
+@pytest.mark.asyncio
+async def test_project_upload_rejects_project_outside_record_scope(monkeypatch):
+    service = DocumentService(repository=DocumentRepository())
+    db = AsyncMock(spec=AsyncSession)
+    db.scalar.return_value = None
+    no_access = RecordAccessContext(
+        scope="none",
+        user_id="usr-123",
+        team_ids=frozenset(),
+        team_user_ids=frozenset(),
+    )
+    monkeypatch.setattr(
+        "app.services.record_access_service.record_access_service.resolve",
+        AsyncMock(return_value=no_access),
+    )
+    monkeypatch.setattr(
+        auth_service, "get_user_permissions", AsyncMock(return_value=["projects:read"])
+    )
+    upload = MagicMock()
+    monkeypatch.setattr("app.services.document_service.s3_service.upload_file", upload)
+    file = _upload_file(b"x", filename="project.png", content_type="image/png")
+
+    with pytest.raises(NotFoundError, match="Related project not found"):
+        await service.upload_document(
+            db,
+            file,
+            current_user=_make_user(),
+            project_id="project-other",
+        )
+    upload.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("relationship", "entity"),
+    [
+        ("lead_id", "lead"),
+        ("contact_id", "contact"),
+        ("company_id", "company"),
+        ("deal_id", "deal"),
+        ("quote_id", "quote"),
+        ("invoice_id", "invoice"),
+        ("payment_id", "payment"),
+    ],
+)
+async def test_upload_rejects_inaccessible_relationship_before_storage(
+    monkeypatch, relationship, entity
+):
+    service = DocumentService(repository=DocumentRepository())
+    db = AsyncMock(spec=AsyncSession)
+    if relationship in {"lead_id", "contact_id", "company_id", "deal_id"}:
+        db.scalar.side_effect = [SimpleNamespace(id="private-record"), None]
+    else:
+        db.scalar.return_value = None
+    no_access = RecordAccessContext(
+        scope="none",
+        user_id="usr-123",
+        team_ids=frozenset(),
+        team_user_ids=frozenset(),
+    )
+    monkeypatch.setattr(
+        "app.services.record_access_service.record_access_service.resolve",
+        AsyncMock(return_value=no_access),
+    )
+    required_permission = "invoices:read" if relationship == "payment_id" else f"{entity}s:read"
+    if relationship == "company_id":
+        required_permission = "companies:read"
+    monkeypatch.setattr(
+        auth_service,
+        "get_user_permissions",
+        AsyncMock(return_value=[required_permission]),
+    )
+    upload = MagicMock()
+    monkeypatch.setattr("app.services.document_service.s3_service.upload_file", upload)
+
+    with pytest.raises(NotFoundError, match=f"Related {entity} not found"):
+        await service.upload_document(
+            db,
+            _upload_file(b"x", filename="record.png", content_type="image/png"),
+            current_user=_make_user(),
+            **{relationship: "private-record"},
+        )
+
+    upload.assert_not_called()
+    expected_queries = (
+        2 if relationship in {"lead_id", "contact_id", "company_id", "deal_id"} else 1
+    )
+    assert db.scalar.await_count == expected_queries
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("relationship", "permission"),
+    [
+        ("lead_id", "leads:read"),
+        ("contact_id", "contacts:read"),
+        ("company_id", "companies:read"),
+        ("deal_id", "deals:read"),
+        ("quote_id", "quotes:read"),
+        ("invoice_id", "invoices:read"),
+        ("payment_id", "invoices:read"),
+        ("project_id", "projects:read"),
+    ],
+)
+async def test_upload_requires_linked_module_read_permission_before_record_or_storage(
+    monkeypatch, relationship, permission
+):
+    service = DocumentService(repository=DocumentRepository())
+    db = AsyncMock(spec=AsyncSession)
+    monkeypatch.setattr(auth_service, "get_user_permissions", AsyncMock(return_value=[]))
+    resolve = AsyncMock()
+    monkeypatch.setattr(
+        "app.services.record_access_service.record_access_service.resolve", resolve
+    )
+    upload = MagicMock()
+    monkeypatch.setattr("app.services.document_service.s3_service.upload_file", upload)
+
+    with pytest.raises(ForbiddenError, match=permission):
+        await service.upload_document(
+            db,
+            _upload_file(b"x", filename="record.png", content_type="image/png"),
+            current_user=_make_user(),
+            **{relationship: "private-record"},
+        )
+
+    resolve.assert_not_awaited()
+    db.scalar.assert_not_awaited()
+    upload.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_upload_relationship_requires_read_scope_for_api_key(monkeypatch):
+    service = DocumentService(repository=DocumentRepository())
+    db = AsyncMock(spec=AsyncSession)
+    user = _make_user()
+    user.__dict__["_api_key_scopes"] = {"documents:upload"}
+    monkeypatch.setattr(
+        auth_service, "get_user_permissions", AsyncMock(return_value=["leads:read"])
+    )
+    resolve = AsyncMock()
+    monkeypatch.setattr(
+        "app.services.record_access_service.record_access_service.resolve", resolve
+    )
+    upload = MagicMock()
+    monkeypatch.setattr("app.services.document_service.s3_service.upload_file", upload)
+
+    with pytest.raises(ForbiddenError, match="leads:read"):
+        await service.upload_document(
+            db,
+            _upload_file(b"x", filename="record.png", content_type="image/png"),
+            current_user=user,
+            lead_id="lead-1",
+        )
+
+    resolve.assert_not_awaited()
+    db.scalar.assert_not_awaited()
+    upload.assert_not_called()
 
 
 @pytest.mark.asyncio

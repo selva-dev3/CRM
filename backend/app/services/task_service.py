@@ -3,12 +3,13 @@ from datetime import date, datetime
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import APIException, NotFoundError
+from app.core.errors import APIException, ForbiddenError, NotFoundError
 from app.models import User
 from app.models.task import Task
 from app.repositories.project_repository import ProjectRepository
 from app.repositories.task_repository import TaskRepository
 from app.schemas.crm_schemas import TaskCreate, TaskUpdate
+from app.services.auth_service import api_key_scope_allows, auth_service
 from app.services.notification_service import notification_service
 from app.services.org_service import organization_service
 
@@ -72,12 +73,26 @@ class TaskService:
         return {"access": access} if access is not None else {}
 
     async def _validate_project(
-        self, db: AsyncSession, project_id: str | None, organization_id: str
+        self,
+        db: AsyncSession,
+        project_id: str | None,
+        organization_id: str,
+        current_user: User | None,
     ) -> str | None:
         if not project_id or project_id in {"null", "None"}:
             return None
+        from app.services.record_access_service import record_access_service
+
+        project_access = (
+            await record_access_service.resolve(db, current_user, "projects")
+            if current_user
+            else None
+        )
         project = await self.project_repository.get(
-            db, project_id=project_id, organization_id=organization_id
+            db,
+            project_id=project_id,
+            organization_id=organization_id,
+            **({"access": project_access} if project_access is not None else {}),
         )
         if not project:
             raise NotFoundError(message=f"Project '{project_id}' not found")
@@ -91,6 +106,14 @@ class TaskService:
             raise APIException(
                 status_code=status.HTTP_400_BAD_REQUEST, message=error_message
             ) from e
+
+    @staticmethod
+    async def _require_permission(
+        db: AsyncSession, current_user: User, permission: str
+    ) -> None:
+        permissions = set(await auth_service.get_user_permissions(db, current_user))
+        if permission not in permissions or not api_key_scope_allows(current_user, permission):
+            raise ForbiddenError(message=f"Missing required permission: {permission}")
 
     async def _resolve_user_id(
         self,
@@ -221,7 +244,9 @@ class TaskService:
             organization_id=org_id,
             default_user_id=current_user.id,
         )
-        project_id = await self._validate_project(db, payload.project_id, org_id)
+        if payload.assigned_to and assigned_user != current_user.id:
+            await self._require_permission(db, current_user, "tasks:assign")
+        project_id = await self._validate_project(db, payload.project_id, org_id, current_user)
         ticket_id = await self.repository.validate_ticket(db, payload.ticket_id, org_id)
         from app.services.crm_relationship_service import validate_crm_relationships
 
@@ -352,19 +377,25 @@ class TaskService:
         if "due_date" in updates:
             task.due_date = parse_datetime(updates["due_date"])
         if "assigned_to" in updates:
-            task.assigned_to = await self._resolve_user_id(
+            assigned_user = await self._resolve_user_id(
                 db,
                 assigned_input=updates["assigned_to"],
                 organization_id=task.organization_id,
                 default_user_id=task.assigned_to,
             )
+            if assigned_user != task.assigned_to:
+                if current_user is None:
+                    raise ForbiddenError(message="Authentication required to reassign a task")
+                if assigned_user != current_user.id:
+                    await self._require_permission(db, current_user, "tasks:assign")
+                task.assigned_to = assigned_user
         if "status" in updates:
             task.status = updates["status"]
         if "priority" in updates:
             task.priority = updates["priority"]
         if "project_id" in updates:
             task.project_id = await self._validate_project(
-                db, updates["project_id"], task.organization_id
+                db, updates["project_id"], task.organization_id, current_user
             )
         if "ticket_id" in updates:
             task.ticket_id = await self.repository.validate_ticket(

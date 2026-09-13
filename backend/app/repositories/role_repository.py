@@ -9,8 +9,8 @@ from app.core.logging import get_logger
 from app.core.rbac_matrix import (
     ADMIN_PERMISSIONS,
     APPROVED_PERMISSION_KEYS,
-    SYSTEM_ROLE_NAMES,
     SYSTEM_ROLE_PERMISSIONS,
+    canonical_system_role_name,
 )
 from app.models import (
     OrganizationInvitation,
@@ -164,8 +164,7 @@ class RoleRepository:
 
     @staticmethod
     def validate_custom_role_name(name: str, *, is_system_role: bool = False) -> None:
-        normalized = name.strip().lower().replace("_", " ")
-        if not is_system_role and normalized in {n.lower() for n in SYSTEM_ROLE_NAMES}:
+        if not is_system_role and canonical_system_role_name(name):
             raise APIException(status_code=409, message="This name is reserved for a system role")
 
     async def create_user_role_mapping(
@@ -289,13 +288,11 @@ class RoleRepository:
             if p.key in APPROVED_PERMISSION_KEYS
         }
 
-        def normalized(value: str) -> str:
-            return value.strip().lower().replace("_", " ")
-
         scoped_super_admins = [
             role
             for role in roles
-            if normalized(role.name) == "super admin" and role.organization_id is not None
+            if canonical_system_role_name(role.name) == "Super Admin"
+            and role.organization_id is not None
         ]
         if scoped_super_admins:
             raise APIException(
@@ -304,7 +301,8 @@ class RoleRepository:
         global_super_admins = [
             role
             for role in roles
-            if normalized(role.name) == "super admin" and role.organization_id is None
+            if canonical_system_role_name(role.name) == "Super Admin"
+            and role.organization_id is None
         ]
         if not global_super_admins:
             collision = (
@@ -330,9 +328,8 @@ class RoleRepository:
             roles.extend(global_super_admins)
             await db.flush()
 
-        canonical_names = {normalized(name): name for name in SYSTEM_ROLE_NAMES}
         for role in roles:
-            canonical_name = canonical_names.get(normalized(role.name))
+            canonical_name = canonical_system_role_name(role.name)
             if not canonical_name:
                 continue
             if canonical_name == "Super Admin":

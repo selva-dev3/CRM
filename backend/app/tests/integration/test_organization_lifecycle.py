@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.api.v1.routers import auth, invitations, organizations
 from app.core.config import settings
 from app.core.errors import register_exception_handlers
-from app.core.rbac_matrix import SYSTEM_ROLE_PERMISSIONS
+from app.core.rbac_matrix import SYSTEM_ROLE_PERMISSIONS, SYSTEM_ROLE_RECORD_SCOPES
 from app.core.security import get_password_hash
 from app.db.session import get_db
 from app.models import (
@@ -35,6 +35,7 @@ from app.models import (
     RefreshToken,
     Role,
     RolePermission,
+    RoleRecordScope,
     SLAPolicy,
     User,
     UserInvitation,
@@ -142,7 +143,7 @@ async def test_create_scoped_roles_settings_subscription_and_same_session_switch
                 await db.scalars(select(Role).where(Role.organization_id == organization["id"]))
             )
             assert {role.name for role in roles} == set(SYSTEM_ROLE_PERMISSIONS)
-            assert len(roles) == 6
+            assert len(roles) == len(SYSTEM_ROLE_PERMISSIONS)
             for role in roles:
                 grants = set(
                     await db.scalars(
@@ -152,6 +153,13 @@ async def test_create_scoped_roles_settings_subscription_and_same_session_switch
                     )
                 )
                 assert grants == SYSTEM_ROLE_PERMISSIONS[role.name]
+                scopes = {
+                    row.module: row.scope
+                    for row in await db.scalars(
+                        select(RoleRecordScope).where(RoleRecordScope.role_id == role.id)
+                    )
+                }
+                assert scopes == SYSTEM_ROLE_RECORD_SCOPES[role.name]
             assert (
                 await db.scalar(
                     select(func.count())
@@ -171,6 +179,30 @@ async def test_create_scoped_roles_settings_subscription_and_same_session_switch
         assert (await db.get(User, platform_id))._organization_id is None
     listed = (await client.get("/organizations/all")).json()
     assert {first["id"], second["id"]}.issubset({item["id"] for item in listed})
+
+
+@pytest.mark.asyncio
+async def test_rbac_backfill_is_idempotent_on_disposable_postgres(lifecycle):
+    client, sessions, _, _ = lifecycle
+    await create(client, "Migration idempotency")
+
+    async def inventory():
+        async with sessions() as db:
+            return (
+                await db.scalar(select(func.count()).select_from(User)),
+                await db.scalar(select(func.count()).select_from(Role)),
+                await db.scalar(select(func.count()).select_from(Permission)),
+                await db.scalar(select(func.count()).select_from(RolePermission)),
+                await db.scalar(select(func.count()).select_from(RoleRecordScope)),
+            )
+
+    before = await inventory()
+    config = Config()
+    config.set_main_option("script_location", str(Path(__file__).resolve().parents[3] / "alembic"))
+    await asyncio.to_thread(command.downgrade, config, "c9e0f1a2b3c4")
+    await asyncio.to_thread(command.upgrade, config, "head")
+
+    assert await inventory() == before
 
 
 @pytest.mark.asyncio
