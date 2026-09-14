@@ -9,12 +9,12 @@ import { useForm, useWatch, type FieldErrors, type FieldPath } from 'react-hook-
 
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { CustomFields } from '@/components/common/custom-fields';
+import { CompanyNameSelect } from '@/components/common/company-name-select';
 import { ModalShell } from '@/components/common/modal-shell';
 import { UserSelect } from '@/components/common/user-select';
 import { Alert, AlertDescription, Button, Input, Label } from '@/components/ui';
 import { useHasPermission } from '@/hooks/use-has-permission';
 import { ApiError } from '@/lib/api/client';
-import { companyKeys, fetchCompaniesApi } from '@/lib/api/companies';
 import { useEntityCustomFieldsQuery } from '@/lib/api/custom-fields';
 import {
   checkLeadDuplicateApi,
@@ -81,8 +81,6 @@ export function LeadFormDialog({ isOpen, onClose, lead, onSaved }: LeadFormDialo
   const [step, setStep] = useState(0);
   const [serverError, setServerError] = useState<string | null>(null);
   const [showDiscardConfirmation, setShowDiscardConfirmation] = useState(false);
-  const [companySearch, setCompanySearch] = useState(lead?.company ?? '');
-  const [debouncedCompanySearch, setDebouncedCompanySearch] = useState('');
   const [debouncedEmail, setDebouncedEmail] = useState('');
   const contactNameRef = useRef<HTMLInputElement | null>(null);
   const { hasPermission } = useHasPermission();
@@ -103,26 +101,16 @@ export function LeadFormDialog({ isOpen, onClose, lead, onSaved }: LeadFormDialo
   const { formState: { errors, isDirty }, register, setError, setValue, control } = form;
   const email = useWatch({ control, name: 'email' });
   const phone = useWatch({ control, name: 'phone' });
+  const companyName = useWatch({ control, name: 'company' });
   const assignedTo = useWatch({ control, name: 'assigned_to' });
   const formCustomFields = useWatch({ control, name: 'custom_fields' }) ?? {};
   const formValues = useWatch({ control });
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setDebouncedCompanySearch(companySearch.trim()), 300);
-    return () => window.clearTimeout(timer);
-  }, [companySearch]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedEmail(email.trim().toLowerCase()), 350);
     return () => window.clearTimeout(timer);
   }, [email]);
 
-  const companies = useQuery({
-    queryKey: companyKeys.list(1, 50, debouncedCompanySearch || undefined),
-    queryFn: () => fetchCompaniesApi(1, 50, debouncedCompanySearch || undefined),
-    enabled: isOpen && canReadCompanies,
-    retry: false,
-  });
   const duplicateCheck = useQuery({
     queryKey: ['lead-duplicate-check', debouncedEmail, phone.trim()],
     queryFn: () => checkLeadDuplicateApi(debouncedEmail, optional(phone.trim())),
@@ -221,7 +209,6 @@ export function LeadFormDialog({ isOpen, onClose, lead, onSaved }: LeadFormDialo
   }, focusFirstInvalidStep);
 
   const contactRegistration = register('contact_name');
-  const companyRegistration = register('company');
   const reviewRows = useMemo(() => [
     ['Contact', formValues.contact_name || 'Not provided'],
     ['Email', formValues.email || 'Not provided'],
@@ -345,8 +332,16 @@ export function LeadFormDialog({ isOpen, onClose, lead, onSaved }: LeadFormDialo
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-1.5">
                     <Label htmlFor="lead-company">Company name *</Label>
-                    <Input id="lead-company" list="lead-company-options" autoComplete="organization" placeholder="Search or enter a company" aria-invalid={Boolean(errors.company)} aria-describedby={errors.company ? 'lead-company-error' : 'lead-company-help'} {...companyRegistration} onChange={(event) => { companyRegistration.onChange(event); setCompanySearch(event.target.value); }} className={fieldClass} />
-                    <datalist id="lead-company-options">{(companies.data ?? []).map((company) => <option key={company.id} value={company.name} />)}</datalist>
+                    <CompanyNameSelect
+                      id="lead-company"
+                      value={companyName}
+                      onChange={(value) => setValue('company', value, { shouldDirty: true, shouldValidate: true })}
+                      enabled={isOpen && canReadCompanies}
+                      disabled={isSaving}
+                      aria-invalid={Boolean(errors.company)}
+                      aria-describedby={errors.company ? 'lead-company-error' : 'lead-company-help'}
+                      className={fieldClass}
+                    />
                     <p id="lead-company-help" className="text-xs text-slate-500">The lead stores the company name; selecting a suggestion does not create a new company record.</p>
                     {fieldError('company')}
                   </div>
