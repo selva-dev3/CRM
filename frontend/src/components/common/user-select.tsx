@@ -12,7 +12,7 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { useUsersQuery, type UserItem } from '@/lib/api/users';
+import { useUserQuery, useUsersQuery, type UserItem } from '@/lib/api/users';
 import { cn } from '@/lib/utils';
 
 export interface UserSelectProps {
@@ -30,14 +30,25 @@ export function UserSelect({ value, onChange }: UserSelectProps) {
     return () => window.clearTimeout(timer);
   }, [search]);
 
-  const { data: fetchedUsers = [], isLoading } = useUsersQuery(
+  const { data: fetchedUsers = [], isLoading, isError } = useUsersQuery(
     1,
     100,
     debouncedSearch.trim() || undefined
   );
+  const {
+    data: selectedUserById,
+    isLoading: isSelectedUserLoading,
+    isError: isSelectedUserError,
+  } = useUserQuery(value, { enabled: Boolean(value) });
+  const users = useMemo(() => {
+    if (!selectedUserById || fetchedUsers.some((user) => user.id === selectedUserById.id)) {
+      return fetchedUsers;
+    }
+    return [selectedUserById, ...fetchedUsers];
+  }, [fetchedUsers, selectedUserById]);
   const selectedUser = useMemo(
-    () => fetchedUsers.find((user: UserItem) => user.id === value),
-    [fetchedUsers, value]
+    () => users.find((user: UserItem) => user.id === value),
+    [users, value]
   );
 
   const selectUser = (userId: string) => {
@@ -64,7 +75,13 @@ export function UserSelect({ value, onChange }: UserSelectProps) {
           <span className={cn('truncate', !selectedUser && 'text-slate-400')}>
             {selectedUser
               ? `${selectedUser.name} (${selectedUser.email || selectedUser.id})`
-              : '-- Select User Account --'}
+              : value && isSelectedUserLoading
+                ? 'Loading selected user...'
+                : value && isSelectedUserError
+                  ? 'Unable to load selected user'
+                  : value
+                    ? `Unknown user (${value})`
+                    : '-- Select User Account --'}
           </span>
           <ChevronsUpDown className="size-3.5 shrink-0 text-slate-400" />
         </Button>
@@ -82,13 +99,17 @@ export function UserSelect({ value, onChange }: UserSelectProps) {
                 <Loader2 className="size-3.5 animate-spin text-blue-600" />
                 Searching users via API...
               </div>
+            ) : isError ? (
+              <div className="px-2 py-3 text-xs font-medium text-red-600">
+                Unable to load users. Please try again.
+              </div>
             ) : (
               <>
                 <CommandEmpty>No matching users found</CommandEmpty>
                 <CommandItem value="clear-user-selection" onSelect={() => selectUser('')}>
                   -- None / Clear Selection --
                 </CommandItem>
-                {fetchedUsers.map((user) => (
+                {users.map((user) => (
                   <CommandItem
                     key={user.id}
                     value={user.id}
