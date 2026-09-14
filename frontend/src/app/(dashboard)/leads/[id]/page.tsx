@@ -52,6 +52,7 @@ import { EmailBodyPreview } from '@/components/common/email-body-preview';
 import { PageTabs } from '@/components/common/page-tabs';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { LeadCallLogSection } from '@/components/features/leads/lead-call-log-section';
+import { LeadFormDialog } from '@/components/features/leads/lead-form-dialog';
 import { useHasPermission } from '@/hooks/use-has-permission';
 import { PERMISSIONS } from '@/lib/permissions';
 import {
@@ -64,7 +65,6 @@ import {
 import {
   useLeadQuery,
   useLeadTimelineQuery,
-  useCreateLeadMutation,
   useUpdateLeadMutation,
   useDeleteLeadMutation,
   useLeadNotesQuery,
@@ -91,16 +91,13 @@ import {
   type LeadIntelligenceResult,
 } from '@/lib/api/leads';
 import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
-import { useCompaniesQuery } from '@/lib/api/companies';
 import { useUsersQuery } from '@/lib/api/users';
 import { useQueryClient } from '@tanstack/react-query';
 import { BASE_URL } from '@/lib/api/client';
 import { formatDate, formatDateTime } from '@/lib/formatters/date';
 import { CustomFieldValues } from '@/components/common/custom-field-values';
-import { CustomFields } from '@/components/common/custom-fields';
 import {
   useEntityCustomFieldsQuery,
-  type CustomFieldValue,
 } from '@/lib/api/custom-fields';
 
 const UNASSIGNED_VALUE = '__unassigned__';
@@ -145,17 +142,12 @@ export default function LeadDetailPage() {
   // Queries
   const { data: lead, isLoading, isError, error, refetch } = useLeadQuery(leadId);
   const { data: timelinePageData, isLoading: isTimelineLoading, refetch: refetchTimeline } = useLeadTimelineQuery(leadId, timelinePage, relationPageSize);
-  const {
-    data: customFields = [],
-    isLoading: isCustomFieldsLoading,
-    isError: isCustomFieldsError,
-  } = useEntityCustomFieldsQuery('Lead');
-  const { data: currentOrganization, isLoading: isOrgsLoading } = useCurrentOrganizationQuery();
+  const { data: customFields = [] } = useEntityCustomFieldsQuery('Lead');
+  const { data: currentOrganization } = useCurrentOrganizationQuery();
   const organizations = useMemo(
     () => (currentOrganization ? [currentOrganization] : []),
     [currentOrganization],
   );
-  const { data: companies = [] } = useCompaniesQuery();
   const {
     data: users = [],
     isLoading: isUsersLoading,
@@ -184,13 +176,11 @@ export default function LeadDetailPage() {
   const documents = documentsPageData?.items ?? [];
 
   // Lead Mutations
-  const createLeadMutation = useCreateLeadMutation();
   const updateLeadMutation = useUpdateLeadMutation();
   const deleteLeadMutation = useDeleteLeadMutation();
 
   // Banners & Modals State
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isEditMode, setIsEditMode] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -233,28 +223,6 @@ export default function LeadDetailPage() {
   const [lifecycleAction, setLifecycleAction] = useState<'qualify' | 'disqualify' | null>(null);
   const [lifecycleReason, setLifecycleReason] = useState('');
   const [isUpdatingLifecycle, setIsUpdatingLifecycle] = useState(false);
-
-  // Lead Create/Edit Form State
-  const [contactName, setContactName] = useState('');
-  const [company, setCompany] = useState('');
-  const [customCompany, setCustomCompany] = useState('');
-  const [title, setTitle] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [website, setWebsite] = useState('');
-  const [industry, setIndustry] = useState('');
-  const [companySize, setCompanySize] = useState('');
-  const [country, setCountry] = useState('');
-  const [stateName, setStateName] = useState('');
-  const [city, setCity] = useState('');
-  const [address, setAddress] = useState('');
-  const [postalCode, setPostalCode] = useState('');
-  const [source, setSource] = useState('Website');
-  const [organizationId, setOrganizationId] = useState('');
-  const [assignedTo, setAssignedTo] = useState<string>('');
-  const [formCustomFields, setFormCustomFields] = useState<
-    Record<string, CustomFieldValue>
-  >({});
 
   const orgName = useMemo(() => {
     if (!lead?.organization_id) return 'Enterprise Organization';
@@ -393,85 +361,8 @@ export default function LeadDetailPage() {
 
   const handleOpenEditModal = () => {
     if (!lead) return;
-    setIsEditMode(true);
-    setContactName(lead.contact_name || '');
-    setCompany(lead.company || '');
-    setCustomCompany('');
-    setTitle(lead.title || '');
-    setEmail(lead.email || '');
-    setPhone(lead.phone || '');
-    setWebsite(lead.website || '');
-    setIndustry(lead.industry || '');
-    setCompanySize(lead.company_size || '');
-    setCountry(lead.country || '');
-    setStateName(lead.state || '');
-    setCity(lead.city || '');
-    setAddress(lead.address || '');
-    setPostalCode(lead.postal_code || '');
-    setSource(lead.source || 'Website');
-    setOrganizationId(lead.organization_id || (organizations[0]?.id ?? 'org-1'));
-    setAssignedTo(lead.assigned_to || '');
-    setFormCustomFields(lead.custom_fields ?? {});
     setErrorMessage(null);
     setIsModalOpen(true);
-  };
-
-  const handleSubmitForm = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMessage(null);
-    setSuccessMessage(null);
-
-    const finalCompany = company === 'other' ? customCompany.trim() : company.trim();
-    if (!contactName.trim() || !email.trim()) {
-      setErrorMessage('Contact Name and Email are required.');
-      return;
-    }
-    if (!finalCompany) {
-      setErrorMessage('Company Name is required.');
-      return;
-    }
-
-    try {
-      const payload = {
-        contact_name: contactName.trim(),
-        company: finalCompany,
-        title: title.trim() || `${contactName.trim()} Opportunity`,
-        email: email.trim(),
-        phone: phone.trim() || undefined,
-        website: website.trim() || undefined,
-        industry: industry.trim() || undefined,
-        company_size: companySize || undefined,
-        country: country.trim() || undefined,
-        state: stateName.trim() || undefined,
-        city: city.trim() || undefined,
-        address: address.trim() || undefined,
-        postal_code: postalCode.trim() || undefined,
-        status: isEditMode ? undefined : 'New',
-        source,
-        assigned_to: isEditMode ? undefined : assignedTo.trim() || undefined,
-        is_archived: isEditMode ? undefined : false,
-        organization_id: organizationId || (organizations[0]?.id ?? 'org-1'),
-        custom_fields: formCustomFields,
-      };
-
-      if (isEditMode && lead) {
-        await updateLeadMutation.mutateAsync({ id: lead.id, payload });
-        await queryClient.invalidateQueries({ queryKey: ['lead', lead.id] });
-        await refetch();
-        setSuccessMessage('Lead updated successfully!');
-      } else {
-        const newLead = await createLeadMutation.mutateAsync(payload);
-        setSuccessMessage(`Lead "${newLead.contact_name}" created successfully! Redirecting...`);
-        setTimeout(() => {
-          router.push(`/leads/${newLead.id}`);
-        }, 1000);
-      }
-
-      setIsModalOpen(false);
-      setTimeout(() => setSuccessMessage(null), 4000);
-    } catch (err: unknown) {
-      setErrorMessage(getErrorMessage(err, 'Failed to save lead.'));
-    }
   };
 
   const handleConfirmDelete = async () => {
@@ -1709,324 +1600,19 @@ export default function LeadDetailPage() {
         </ModalShell>
       )}
 
-      {/* CREATE & EDIT LEAD MODAL DIALOG */}
-      {isModalOpen && (
-        <ModalShell
+      {isModalOpen && lead && (
+        <LeadFormDialog
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
-          size="3xl"
-          title={
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white shrink-0">
-                {isEditMode ? <Pencil className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-              </div>
-              <div>
-                <h3 className="text-base font-black text-black">
-                  {isEditMode ? 'Edit Sales Lead' : 'Create New Sales Lead'}
-                </h3>
-                <p className="text-xs font-bold text-slate-800">
-                  {isEditMode ? `Update details for ${lead.contact_name}` : 'Fill lead, company & location details below'}
-                </p>
-              </div>
-            </div>
-          }
-        >
-          {errorMessage && (
-            <div className="pb-4">
-              <Alert variant="destructive" className="bg-rose-50 border-rose-300 text-rose-950 font-bold">
-                <AlertCircle className="h-4 w-4 text-rose-600 mr-2" />
-                <AlertDescription className="text-rose-900 font-bold text-xs">{errorMessage}</AlertDescription>
-              </Alert>
-            </div>
-          )}
-
-          <form onSubmit={handleSubmitForm} className="space-y-6">
-            <div className="space-y-3">
-              <h4 className="text-xs font-black uppercase tracking-wider text-indigo-700 pb-1 border-b border-slate-200">
-                1. Contact Information
-              </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-black text-black">Contact Name *</Label>
-                  <Input
-                    required
-                    placeholder="e.g. John Doe"
-                    value={contactName}
-                    onChange={(e) => setContactName(e.target.value)}
-                    className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-black text-black">Email Address *</Label>
-                  <Input
-                    type="email"
-                    required
-                    placeholder="john@acme.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-black text-black">Phone Number</Label>
-                  <Input
-                    placeholder="+1 (555) 000-0000"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-black text-black">Opportunity / Lead Title</Label>
-                  <Input
-                    placeholder="e.g. Enterprise Deal"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-3 pt-2">
-              <h4 className="text-xs font-black uppercase tracking-wider text-indigo-700 pb-1 border-b border-slate-200">
-                2. Company & Industry Details
-              </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-black text-black">Select Company *</Label>
-                  <ResponsiveSelect
-                    value={company}
-                    onValueChange={setCompany}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    {companies.map((c) => (
-                      <option key={c.id} value={c.name}>
-                        {c.name}
-                      </option>
-                    ))}
-                    <option value="other">+ Enter Custom Company Name</option>
-                  </ResponsiveSelect>
-
-                  {company === 'other' && (
-                    <Input
-                      placeholder="Enter company name"
-                      value={customCompany}
-                      onChange={(e) => setCustomCompany(e.target.value)}
-                      className="bg-white border-indigo-400 text-black font-bold text-xs mt-2"
-                    />
-                  )}
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-black text-black">Website</Label>
-                  <Input
-                    placeholder="https://company.com"
-                    value={website}
-                    onChange={(e) => setWebsite(e.target.value)}
-                    className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-black text-black">Industry</Label>
-                  <Input
-                    placeholder="e.g. Software, Finance"
-                    value={industry}
-                    onChange={(e) => setIndustry(e.target.value)}
-                    className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-black text-black">Company Size</Label>
-                  <ResponsiveSelect
-                    value={companySize}
-                    onValueChange={setCompanySize}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="">Select Company Size...</option>
-                    <option value="1-10">1-10 Employees</option>
-                    <option value="11-50">11-50 Employees</option>
-                    <option value="51-200">51-200 Employees</option>
-                    <option value="201-500">201-500 Employees</option>
-                    <option value="501-1000">501-1000 Employees</option>
-                    <option value="1000+">1000+ Employees</option>
-                  </ResponsiveSelect>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-3 pt-2">
-              <h4 className="text-xs font-black uppercase tracking-wider text-indigo-700 pb-1 border-b border-slate-200">
-                3. Address & Location
-              </h4>
-              <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-black text-black">Address</Label>
-                  <Input
-                    placeholder="Street address, suite, or building"
-                    value={address}
-                    onChange={(e) => setAddress(e.target.value)}
-                    className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-black text-black">City</Label>
-                    <Input
-                      placeholder="e.g. Chennai"
-                      value={city}
-                      onChange={(e) => setCity(e.target.value)}
-                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-black text-black">State</Label>
-                    <Input
-                      placeholder="e.g. TN"
-                      value={stateName}
-                      onChange={(e) => setStateName(e.target.value)}
-                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-black text-black">Country</Label>
-                    <Input
-                      placeholder="e.g. India"
-                      value={country}
-                      onChange={(e) => setCountry(e.target.value)}
-                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-black text-black">Postal Code</Label>
-                    <Input
-                      placeholder="600096"
-                      value={postalCode}
-                      onChange={(e) => setPostalCode(e.target.value)}
-                      className="bg-slate-50 border-slate-300 text-black font-bold text-xs"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-3 pt-2">
-              <h4 className="text-xs font-black uppercase tracking-wider text-indigo-700 pb-1 border-b border-slate-200">
-                4. Status, Source, Score & Organization
-              </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-black text-black">Lead Status</Label>
-                  <div className="rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700">
-                    {isEditMode ? lead.status : 'New'}
-                  </div>
-                  <p className="text-[11px] text-slate-500">Use Lifecycle actions to change status.</p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-black text-black">Lead Source</Label>
-                  <ResponsiveSelect
-                    value={source}
-                    onValueChange={setSource}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="Website">Website</option>
-                    <option value="LinkedIn">LinkedIn</option>
-                    <option value="Referral">Referral</option>
-                    <option value="Cold Call">Cold Call</option>
-                    <option value="Event">Event</option>
-                    <option value="Partner">Partner</option>
-                  </ResponsiveSelect>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-black text-black">Organization *</Label>
-                  <ResponsiveSelect
-                    value={organizationId}
-                    onValueChange={setOrganizationId}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    {isOrgsLoading ? (
-                      <option value="">Loading...</option>
-                    ) : (
-                      organizations.map((org) => (
-                        <option key={org.id} value={org.id}>
-                          {org.name}
-                        </option>
-                      ))
-                    )}
-                  </ResponsiveSelect>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1 items-end">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-black text-black">Assigned To User</Label>
-                  <ResponsiveSelect
-                    value={assignedTo}
-                    onValueChange={setAssignedTo}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="">Unassigned (None)</option>
-                    {isUsersLoading ? (
-                      <option value="" disabled>Loading users...</option>
-                    ) : (
-                      users.map((u) => (
-                        <option key={u.id} value={u.id}>
-                          {u.name} ({u.role})
-                        </option>
-                      ))
-                    )}
-                  </ResponsiveSelect>
-                </div>
-
-                <p className="pb-2 text-xs font-semibold text-slate-500">
-                  Assignment and archival changes are managed from the Actions tab.
-                </p>
-              </div>
-            </div>
-
-            <CustomFields
-              fields={customFields}
-              values={formCustomFields}
-              onChange={(fieldName, value) => {
-                setFormCustomFields((current) => ({ ...current, [fieldName]: value }));
-              }}
-              isLoading={isCustomFieldsLoading}
-              isError={isCustomFieldsError}
-              idPrefix="lead-detail-edit"
-            />
-
-            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-4 border-t border-slate-200">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsModalOpen(false)}
-                disabled={createLeadMutation.isPending || updateLeadMutation.isPending}
-                className="border-slate-300 text-black font-bold hover:bg-slate-100 text-xs"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={createLeadMutation.isPending || updateLeadMutation.isPending}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-sm text-xs px-5 cursor-pointer"
-              >
-                {createLeadMutation.isPending || updateLeadMutation.isPending ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                    {isEditMode ? 'Saving Changes...' : 'Creating Lead...'}
-                  </>
-                ) : (
-                  isEditMode ? 'Save Changes' : 'Create Lead'
-                )}
-              </Button>
-            </div>
-          </form>
-        </ModalShell>
+          lead={lead}
+          onSaved={() => {
+            setIsModalOpen(false);
+            setSuccessMessage('Lead updated successfully!');
+            window.setTimeout(() => setSuccessMessage(null), 4000);
+            void queryClient.invalidateQueries({ queryKey: ['lead', lead.id] });
+            void refetch();
+          }}
+        />
       )}
 
       {lifecycleAction && (

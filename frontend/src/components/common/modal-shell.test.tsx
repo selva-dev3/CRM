@@ -1,3 +1,4 @@
+import { createRef } from 'react';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
@@ -83,6 +84,19 @@ describe('ModalShell', () => {
     // Focus returns to the element that opened the dialog.
     await vi.waitFor(() => {
       expect(document.activeElement).toBe(trigger);
+    });
+  });
+
+  it('focuses an explicitly requested initial control', async () => {
+    const initialFocusRef = createRef<HTMLInputElement>();
+    render(
+      <ModalShell isOpen onClose={vi.fn()} initialFocusRef={initialFocusRef} title="Create lead">
+        <input ref={initialFocusRef} aria-label="Contact name" />
+      </ModalShell>,
+    );
+
+    await vi.waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Contact name' }));
     });
   });
 

@@ -214,7 +214,12 @@ async def check_duplicate_lead(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await lead_service.check_duplicate(db, email, organization_id=organization_id)
+    return await lead_service.check_duplicate(
+        db,
+        email,
+        organization_id=organization_id,
+        current_user=current_user,
+    )
 
 
 @router.get(

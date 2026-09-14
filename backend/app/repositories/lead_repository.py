@@ -264,11 +264,15 @@ class LeadRepository:
         return list(result.scalars().all())
 
     async def get_by_email(
-        self, db: AsyncSession, email: str, *, organization_id: str
+        self, db: AsyncSession, email: str, *, organization_id: str, access=None
     ) -> Lead | None:
-        result = await db.execute(
-            select(Lead).where(Lead.email == email, Lead.organization_id == organization_id)
+        filters = [Lead.email == email, Lead.organization_id == organization_id]
+        access_filter = record_access_filter(
+            access, assigned_column=Lead.assigned_to, created_column=Lead.created_by
         )
+        if access_filter is not None:
+            filters.append(access_filter)
+        result = await db.execute(select(Lead).where(*filters))
         return result.scalars().first()
 
     async def create(self, db: AsyncSession, *, data: dict) -> Lead:

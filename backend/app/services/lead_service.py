@@ -641,8 +641,21 @@ class LeadService:
             "message": f"Status updated to {canonical_status}",
         }
 
-    async def check_duplicate(self, db: AsyncSession, email: str, *, organization_id: str) -> dict:
-        duplicate = await self.repository.get_by_email(db, email, organization_id=organization_id)
+    async def check_duplicate(
+        self,
+        db: AsyncSession,
+        email: str,
+        *,
+        organization_id: str,
+        current_user: User,
+    ) -> dict:
+        access = await record_access_service.resolve(db, current_user, "leads")
+        duplicate = await self.repository.get_by_email(
+            db,
+            email,
+            organization_id=organization_id,
+            access=access,
+        )
         return {
             "is_duplicate": bool(duplicate),
             "matched_lead_id": duplicate.id if duplicate else None,

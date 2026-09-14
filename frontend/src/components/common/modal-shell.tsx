@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, type ReactNode } from 'react';
+import { useRef, type ReactNode, type RefObject } from 'react';
 import { X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -33,6 +33,9 @@ export interface ModalShellProps {
   footer?: ReactNode;
   size?: ModalSize;
   ariaLabel?: string;
+  contentClassName?: string;
+  bodyClassName?: string;
+  initialFocusRef?: RefObject<HTMLElement | null>;
 }
 
 /**
@@ -50,6 +53,9 @@ export function ModalShell({
   footer,
   size = 'md',
   ariaLabel,
+  contentClassName,
+  bodyClassName,
+  initialFocusRef,
 }: ModalShellProps): React.JSX.Element {
   const restoreFocusRef = useRef<HTMLElement | null>(null);
   const accessibleTitle =
@@ -60,8 +66,12 @@ export function ModalShell({
       <DialogContent
         showCloseButton={false}
         aria-label={accessibleTitle}
-        onOpenAutoFocus={() => {
+        onOpenAutoFocus={(event) => {
           restoreFocusRef.current = document.activeElement as HTMLElement | null;
+          if (initialFocusRef?.current) {
+            event.preventDefault();
+            initialFocusRef.current.focus();
+          }
         }}
         onPointerDownOutside={(event) => event.preventDefault()}
         onCloseAutoFocus={(event) => {
@@ -70,7 +80,8 @@ export function ModalShell({
         }}
         className={cn(
           'max-h-[calc(100dvh-2rem)] gap-0 overflow-y-auto rounded-2xl border-slate-300 p-4 text-slate-900 shadow-2xl sm:p-6',
-          SIZE_CLASSES[size]
+          SIZE_CLASSES[size],
+          contentClassName,
         )}
       >
         <DialogTitle className="sr-only">{accessibleTitle}</DialogTitle>
@@ -104,7 +115,7 @@ export function ModalShell({
           </DialogClose>
         )}
 
-        <div className={title ? 'pt-4' : 'pt-2'}>{children}</div>
+        <div className={cn(title ? 'pt-4' : 'pt-2', bodyClassName)}>{children}</div>
 
         {footer && (
           <DialogFooter className="items-stretch gap-2 pt-2 sm:items-center sm:gap-3">

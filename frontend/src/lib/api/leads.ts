@@ -108,6 +108,11 @@ export interface LeadsPage {
   total: number;
 }
 
+export interface LeadDuplicateResult {
+  is_duplicate: boolean;
+  matched_lead_id: string | null;
+}
+
 export interface LeadNoteItem {
   id: string;
   entity_type: string;
@@ -194,6 +199,12 @@ export async function fetchLeadTimelineApi(leadId: string, page = 1, limit = 15)
 
 export async function createLeadApi(payload: CreateLeadPayload): Promise<Lead> {
   return apiClient.post<Lead>('/leads', payload);
+}
+
+export async function checkLeadDuplicateApi(email: string, phone?: string): Promise<LeadDuplicateResult> {
+  const query = new URLSearchParams({ email });
+  if (phone) query.set('phone', phone);
+  return apiClient.post<LeadDuplicateResult>(`/leads/check-duplicates?${query.toString()}`);
 }
 
 export async function updateLeadApi(id: string, payload: UpdateLeadPayload): Promise<Lead> {
