@@ -32,21 +32,26 @@
  */
 
 @theme {
-	/* ─── Modular type scale (≈1.25 ratio, enterprise — no editorial extremes) ── */
-	--text-xs: 0.75rem; /* 12px — captions, legal, labels */
+	/* ─── Compact application type scale ────────────────────────────────────────
+	 * CRM screens are information-dense, so body and control text use a 14/13px
+	 * rhythm while captions retain a 12px accessibility floor. Display sizes
+	 * follow Tailwind's familiar 16/20/24/30 progression to prevent utilities
+	 * such as text-2xl from rendering as oversized marketing headings.
+	 */
+	--text-xs: 0.75rem; /* 12px — captions, legal, compact metadata */
 	--text-xs--line-height: 1rem;
-	--text-sm: 0.875rem; /* 14px — dense UI: tables, inputs, buttons (documented exception) */
-	--text-sm--line-height: 1.25rem;
-	--text-base: 1rem; /* 16px — body copy, never smaller as default */
-	--text-base--line-height: 1.5rem;
-	--text-lg: 1.125rem; /* 18px — H3/section heads, card titles */
-	--text-lg--line-height: 1.75rem;
-	--text-xl: 1.5rem; /* 24px — H2 */
-	--text-xl--line-height: 2rem;
-	--text-2xl: 2rem; /* 32px — H1 / page titles */
-	--text-2xl--line-height: 2.5rem;
-	--text-3xl: 2.75rem; /* 44px — hero/display */
-	--text-3xl--line-height: 3.25rem;
+	--text-sm: 0.8125rem; /* 13px — tables, inputs, buttons, navigation */
+	--text-sm--line-height: 1.125rem;
+	--text-base: 0.875rem; /* 14px — application body copy */
+	--text-base--line-height: 1.25rem;
+	--text-lg: 1rem; /* 16px — H3/section heads, card titles */
+	--text-lg--line-height: 1.5rem;
+	--text-xl: 1.25rem; /* 20px — H2 */
+	--text-xl--line-height: 1.75rem;
+	--text-2xl: 1.5rem; /* 24px — H1 / page titles */
+	--text-2xl--line-height: 2rem;
+	--text-3xl: 1.875rem; /* 30px — hero/display */
+	--text-3xl--line-height: 2.25rem;
 
 	/* ─── Line heights ─────────────────────────────────────────────────────────── */
 	--leading-tight: 1.2; /* headings */
