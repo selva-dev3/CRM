@@ -52,6 +52,8 @@ import {
 } from '@/lib/api/companies';
 import { CustomFieldValues } from '@/components/common/custom-field-values';
 import { CustomFields } from '@/components/common/custom-fields';
+import { PermissionGate } from '@/components/common/permission-gate';
+import { PERMISSIONS } from '@/lib/permissions';
 import {
   useEntityCustomFieldsQuery,
   type CustomFieldValue,
@@ -68,6 +70,7 @@ export default function CompanyDetailsPage() {
   >('contacts');
 
   const [newNoteContent, setNewNoteContent] = useState('');
+  const [isAddNoteModalOpen, setIsAddNoteModalOpen] = useState(false);
   const relationshipLimit = 15;
   const [contactsPage, setContactsPage] = useState(1);
   const [dealsPage, setDealsPage] = useState(1);
@@ -131,6 +134,7 @@ export default function CompanyDetailsPage() {
         setSuccessMessage('Company note added successfully.');
         setNewNoteContent('');
         setNotesPage(1);
+        setIsAddNoteModalOpen(false);
       },
       onError: () => {
         setErrorMessage('Failed to add company note.');
@@ -372,29 +376,10 @@ export default function CompanyDetailsPage() {
       {/* TAB CONTENT: Notes */}
       {activeTab === 'notes' && (
         <div className="space-y-4">
-          <div className="p-4 bg-white rounded-2xl border border-slate-200 space-y-3">
-            <Label className="font-semibold text-slate-700 text-xs">Add New Note</Label>
-            <Input
-              type="text"
-              placeholder="Type note details for this company..."
-              value={newNoteContent}
-              onChange={(e) => setNewNoteContent(e.target.value)}
-              className="h-9 text-xs"
-            />
-            <div className="flex justify-end">
-              <Button
-                size="sm"
-                onClick={handleAddNote}
-                disabled={!newNoteContent.trim() || addNoteMutation.isPending}
-                className="bg-blue-600 text-white font-semibold text-xs gap-1 cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Add Note</span>
-              </Button>
-            </div>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-sm font-bold text-slate-900">Company Notes Log</h2>
+            <PermissionGate permission={PERMISSIONS.NOTES.CREATE}><Button size="sm" onClick={() => { setNewNoteContent(''); setIsAddNoteModalOpen(true); }} className="gap-1.5"><Plus className="size-4" />Add Note</Button></PermissionGate>
           </div>
-
-          <h2 className="text-sm font-bold text-slate-900 pt-2">Company Notes Log</h2>
           {notesQuery.isError ? (
             <CompanyRelationshipError
               resourceName="Notes"
@@ -403,6 +388,7 @@ export default function CompanyDetailsPage() {
           ) : (
             <CompanyNotesTable data={notes} isLoading={notesQuery.isLoading} pagination={{ pageIndex: notesPage - 1, pageCount: Math.max(1, Math.ceil((notesQuery.data?.total ?? 0) / relationshipLimit)), totalRecords: notesQuery.data?.total ?? 0, onPageChange: (value) => setNotesPage(value + 1) }} />
           )}
+          <ModalShell isOpen={isAddNoteModalOpen} onClose={() => !addNoteMutation.isPending && setIsAddNoteModalOpen(false)} title="Create Note" ariaLabel="Create note for company"><form onSubmit={(event) => { event.preventDefault(); if (newNoteContent.trim()) handleAddNote(); }} className="space-y-4 py-4"><div><Label htmlFor="company-note-content">Note content</Label><textarea id="company-note-content" autoFocus required maxLength={10000} value={newNoteContent} onChange={(event) => setNewNoteContent(event.target.value)} placeholder="Type note details for this company..." className="mt-1 min-h-32 w-full rounded-lg border border-slate-300 p-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500" /></div>{errorMessage && <p role="alert" className="text-sm text-rose-700">{errorMessage}</p>}<div className="flex flex-col-reverse justify-end gap-2 border-t pt-4 sm:flex-row"><Button type="button" variant="outline" disabled={addNoteMutation.isPending} onClick={() => setIsAddNoteModalOpen(false)}>Cancel</Button><Button type="submit" disabled={!newNoteContent.trim() || addNoteMutation.isPending}>{addNoteMutation.isPending ? 'Creating…' : 'Create Note'}</Button></div></form></ModalShell>
         </div>
       )}
 

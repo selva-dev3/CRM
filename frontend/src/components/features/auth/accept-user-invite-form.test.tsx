@@ -33,6 +33,8 @@ const mocks = vi.hoisted(() => ({
   useUserInvitationDetailsQuery: vi.fn(),
 }));
 
+const ACCESS_TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjIwMDAwMDAwMDB9.signature';
+
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace: mocks.replace }),
   useSearchParams: () => ({ get: () => mocks.searchToken }),
@@ -111,7 +113,7 @@ describe('AcceptUserInviteForm', () => {
     };
     mocks.acceptMutateAsync.mockResolvedValue({
       message: 'accepted',
-      access_token: 'cookie-token',
+      access_token: ACCESS_TOKEN,
       token_type: 'bearer',
       user_id: acceptedUser.id,
       email: acceptedUser.email,

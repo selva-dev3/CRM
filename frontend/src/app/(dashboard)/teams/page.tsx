@@ -30,6 +30,7 @@ export default function TeamsPage() {
   const [selectedTeamId, setSelectedTeamId] = useState('');
   const [memberId, setMemberId] = useState('');
   const [isPrimary, setIsPrimary] = useState(false);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [error, setError] = useState('');
   const query = useTeams(page, search);
   const team = useTeam(selectedTeamId);
@@ -42,7 +43,7 @@ export default function TeamsPage() {
     event.preventDefault();
     try {
       await create.mutateAsync({ name: name.trim(), description: description.trim() || undefined });
-      setName(''); setDescription(''); setError('');
+      setName(''); setDescription(''); setError(''); setIsCreateOpen(false);
     } catch (reason) {
       setError(getErrorMessage(reason, 'Could not create team.'));
     }
@@ -66,8 +67,7 @@ export default function TeamsPage() {
   ];
 
   return <div className="space-y-6 pb-12">
-    <header><h1 className="flex items-center gap-2 text-2xl font-bold"><Users className="text-indigo-600" />Teams</h1><p className="text-sm text-slate-500">Group users for assignment, routing, and record access.</p></header>
-    <PermissionGate permission={PERMISSIONS.TEAMS.CREATE}><form onSubmit={submit} className="grid gap-3 rounded-xl border bg-white p-4 sm:grid-cols-[1fr_2fr_auto]"><Input required aria-label="Team name" placeholder="Team name" value={name} onChange={(event) => setName(event.target.value)} /><Input aria-label="Team description" placeholder="Description" value={description} onChange={(event) => setDescription(event.target.value)} /><Button disabled={create.isPending}><Plus />Create team</Button></form></PermissionGate>
+    <header className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="flex items-center gap-2 text-2xl font-bold"><Users className="text-indigo-600" />Teams</h1><p className="text-sm text-slate-500">Group users for assignment, routing, and record access.</p></div><PermissionGate permission={PERMISSIONS.TEAMS.CREATE}><Button onClick={() => { setName(''); setDescription(''); setError(''); setIsCreateOpen(true); }}><Plus />Create team</Button></PermissionGate></header>
     {error && <ModuleError message={error} />}{query.isError && <ModuleError message="Teams could not be loaded." retry={() => query.refetch()} />}
     <DataTable columns={columns} data={query.data?.items ?? []} getRowKey={(item) => item.id} emptyTitle="No teams" emptyDescription="Create a team to organize users." searchValue={search} onSearchChange={(value) => { setSearch(value); setPage(1); }} isLoading={query.isLoading} pagination={{ pageIndex: page - 1, pageCount: Math.max(1, Math.ceil((query.data?.total ?? 0) / 20)), totalRecords: query.data?.total, onPageChange: (next) => setPage(next + 1) }} actions={(item) => [{ label: 'Manage members', permission: PERMISSIONS.TEAMS.MANAGE_MEMBERS, onClick: () => setSelectedTeamId(item.id) }, { label: 'Delete', variant: 'destructive', permission: PERMISSIONS.TEAMS.DELETE, onClick: () => remove.mutate(item.id) }]} />
     <ModalShell isOpen={Boolean(selectedTeamId)} onClose={() => setSelectedTeamId('')} title={`Manage ${team.data?.name ?? 'team'} members`}>
@@ -77,5 +77,6 @@ export default function TeamsPage() {
         <ul className="divide-y rounded-lg border">{team.data?.members.map((member) => <li key={member.user_id} className="flex items-center justify-between gap-3 p-3"><div className="min-w-0"><p className="truncate font-medium">{member.name}</p><p className="truncate text-xs text-slate-500">{member.email}{member.is_primary ? ' · Primary' : ''}</p></div><Button variant="ghost" size="icon" aria-label={`Remove ${member.name}`} disabled={removeMember.isPending} onClick={() => removeMember.mutate({ teamId: selectedTeamId, userId: member.user_id })}><Trash2 className="size-4 text-rose-600" /></Button></li>)}</ul>
       </div>
     </ModalShell>
+    <ModalShell isOpen={isCreateOpen} onClose={() => !create.isPending && setIsCreateOpen(false)} title="Create team" footer={<><Button type="button" variant="outline" disabled={create.isPending} onClick={() => setIsCreateOpen(false)}>Cancel</Button><Button form="create-team-form" disabled={create.isPending}>{create.isPending ? 'Creating…' : 'Create team'}</Button></>}><form id="create-team-form" onSubmit={submit} className="space-y-4 py-4"><div><label htmlFor="team-name" className="mb-1 block text-sm font-medium">Team name</label><Input id="team-name" autoFocus required value={name} onChange={(event) => setName(event.target.value)} /></div><div><label htmlFor="team-description" className="mb-1 block text-sm font-medium">Description</label><Input id="team-description" value={description} onChange={(event) => setDescription(event.target.value)} /></div>{error && <p role="alert" className="text-sm text-rose-700">{error}</p>}</form></ModalShell>
   </div>;
 }

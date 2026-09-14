@@ -178,7 +178,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   useEffect(() => {
     if (authStatus === 'unauthenticated') {
-      router.replace('/login');
+      router.push('/login');
       return;
     }
     if (authStatus !== 'unknown') return;
