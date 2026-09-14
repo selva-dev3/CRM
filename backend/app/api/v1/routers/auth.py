@@ -56,7 +56,7 @@ def _set_token_cookies(response: Response, result: dict, *, persistent_access: b
     public_result = {
         key: value
         for key, value in result.items()
-        if key not in {"access_token", "refresh_token", "persistent_access"}
+        if key not in {"refresh_token", "persistent_access"}
     }
     return public_result
 

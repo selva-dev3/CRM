@@ -9,6 +9,7 @@ import {
   AUTH_SESSION_BROADCAST_KEY,
   AUTH_SESSION_CHANGED_EVENT,
   clearStoredSession,
+  getAccessToken,
   parseAuthBroadcast,
   persistSessionUser,
   readStoredUser,
@@ -29,8 +30,12 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
-  const [user, setUser] = useState<CurrentUserResponse | null>(readStoredUser);
-  const [status, setStatus] = useState<AuthStatus>('unknown');
+  const [user, setUser] = useState<CurrentUserResponse | null>(() => (
+    getAccessToken() ? readStoredUser() : null
+  ));
+  const [status, setStatus] = useState<AuthStatus>(() => (
+    getAccessToken() ? 'unknown' : 'unauthenticated'
+  ));
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const isLoggingOutRef = useRef(false);
   const authGenerationRef = useRef(0);
@@ -54,12 +59,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setOrganizationContext(null);
     markAuthSessionActive();
     authGenerationRef.current += 1;
+    if (!getAccessToken()) {
+      setUser(null);
+      setStatus('unauthenticated');
+      return;
+    }
     persistSessionUser(nextUser, { remember });
     setUser(nextUser);
     setStatus('authenticated');
   }, [queryClient]);
 
   const verifySession = useCallback(async () => {
+    if (!getAccessToken()) {
+      setUser(null);
+      setStatus('unauthenticated');
+      throw new ApiError('Authentication session is required', 'http', 401);
+    }
     const requestGeneration = authGenerationRef.current;
     try {
       const currentUser = await getCurrentUserApi();
@@ -145,7 +160,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       if (action === 'login') {
         const storedUser = readStoredUser();
-        if (storedUser) {
+        if (storedUser && getAccessToken()) {
           setOrganizationContext(null);
           queryClient.clear();
           markAuthSessionActive();

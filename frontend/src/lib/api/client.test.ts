@@ -10,10 +10,15 @@ import {
   openApiStream,
   resolveApiBaseUrl,
 } from './client';
+import { AUTH_ACCESS_TOKEN_KEY, getAccessToken } from '@/lib/auth-session';
+
+const ACCESS_TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjIwMDAwMDAwMDB9.signature';
+const REFRESHED_ACCESS_TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjIwMDAwMDAwMDF9.signature';
 
 describe('apiClient cookie authentication', () => {
   beforeEach(() => {
     markAuthSessionActive();
+    localStorage.setItem(AUTH_ACCESS_TOKEN_KEY, ACCESS_TOKEN);
   });
 
   it('uses the same cookie session while changing organization context', async () => {
@@ -110,7 +115,7 @@ describe('apiClient cookie authentication', () => {
     );
   });
 
-  it('includes credentials without exposing an Authorization token', async () => {
+  it('includes credentials and attaches the canonical Authorization token', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: vi.fn().mockResolvedValue({ status: 'ok' }),
@@ -122,7 +127,7 @@ describe('apiClient cookie authentication', () => {
     expect(fetchMock).toHaveBeenCalledOnce();
     const options = fetchMock.mock.calls[0][1] as RequestInit;
     expect(options.credentials).toBe('include');
-    expect(new Headers(options.headers).has('Authorization')).toBe(false);
+    expect(new Headers(options.headers).get('Authorization')).toBe(`Bearer ${ACCESS_TOKEN}`);
   });
 
   it('omits CRM cookies and does not refresh authentication for public quote requests', async () => {
@@ -147,6 +152,27 @@ describe('apiClient cookie authentication', () => {
     expect(localStorage.getItem('user')).toBeNull();
   });
 
+  it('does not attach the CRM token to public requests', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: vi.fn().mockResolvedValue({}),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await apiClient.post('/public/quotes/view', { token: 'public-token' }, { credentials: 'omit' });
+
+    expect(new Headers(fetchMock.mock.calls[0][1].headers).has('Authorization')).toBe(false);
+  });
+
+  it('removes malformed stored tokens before they reach the API', () => {
+    localStorage.setItem(AUTH_ACCESS_TOKEN_KEY, 'not-a-jwt');
+
+    expect(getAccessToken()).toBeNull();
+    expect(localStorage.getItem(AUTH_ACCESS_TOKEN_KEY)).toBeNull();
+  });
+
   it('returns response metadata when requested', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -167,7 +193,7 @@ describe('apiClient cookie authentication', () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({ ok: false, status: 401, json: vi.fn().mockResolvedValue({}) })
-      .mockResolvedValueOnce({ ok: true, status: 200, json: vi.fn().mockResolvedValue({}) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: vi.fn().mockResolvedValue({ access_token: ACCESS_TOKEN }) })
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
@@ -181,6 +207,31 @@ describe('apiClient cookie authentication', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(fetchMock.mock.calls[1][0]).toBe(`${BASE_URL}/auth/refresh-token`);
     expect(fetchMock.mock.calls[2][0]).toBe(`${BASE_URL}/auth/me`);
+  });
+
+  it('replaces the expired token and retries with the refreshed token', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 401, json: vi.fn().mockResolvedValue({}) })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ access_token: REFRESHED_ACCESS_TOKEN }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        json: vi.fn().mockResolvedValue({ ok: true }),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(apiClient.get('/users')).resolves.toEqual({ ok: true });
+
+    expect(localStorage.getItem(AUTH_ACCESS_TOKEN_KEY)).toBe(REFRESHED_ACCESS_TOKEN);
+    expect(new Headers(fetchMock.mock.calls[2][1].headers).get('Authorization')).toBe(
+      `Bearer ${REFRESHED_ACCESS_TOKEN}`,
+    );
   });
 
   it('does not recursively refresh the refresh endpoint', async () => {
@@ -221,8 +272,8 @@ describe('apiClient cookie authentication', () => {
 
   it('shares one refresh request across concurrent 401 responses', async () => {
     let releaseRefresh: (() => void) | undefined;
-    const refreshResponse = new Promise<{ ok: boolean; status: number }>((resolve) => {
-      releaseRefresh = () => resolve({ ok: true, status: 200 });
+    const refreshResponse = new Promise<{ ok: boolean; status: number; json: () => Promise<object> }>((resolve) => {
+      releaseRefresh = () => resolve({ ok: true, status: 200, json: async () => ({ access_token: ACCESS_TOKEN }) });
     });
     let protectedCalls = 0;
     let refreshCalls = 0;
@@ -254,8 +305,8 @@ describe('apiClient cookie authentication', () => {
 
   it('does not retry a request when explicit logout begins during refresh', async () => {
     let releaseRefresh: (() => void) | undefined;
-    const refreshResponse = new Promise<{ ok: boolean; status: number }>((resolve) => {
-      releaseRefresh = () => resolve({ ok: true, status: 200 });
+    const refreshResponse = new Promise<{ ok: boolean; status: number; json: () => Promise<object> }>((resolve) => {
+      releaseRefresh = () => resolve({ ok: true, status: 200, json: async () => ({ access_token: ACCESS_TOKEN }) });
     });
     const fetchMock = vi
       .fn()
@@ -419,8 +470,8 @@ describe('apiClient cookie authentication', () => {
 
   it('does not retry account A request with account B after a refresh race', async () => {
     let releaseRefresh: (() => void) | undefined;
-    const refreshResponse = new Promise<{ ok: boolean; status: number }>((resolve) => {
-      releaseRefresh = () => resolve({ ok: true, status: 200 });
+    const refreshResponse = new Promise<{ ok: boolean; status: number; json: () => Promise<object> }>((resolve) => {
+      releaseRefresh = () => resolve({ ok: true, status: 200, json: async () => ({ access_token: ACCESS_TOKEN }) });
     });
     const fetchMock = vi
       .fn()
@@ -475,7 +526,7 @@ describe('apiClient cookie authentication', () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({ ok: false, status: 401, json: vi.fn().mockResolvedValue({}) })
-      .mockResolvedValueOnce({ ok: true, status: 200, json: vi.fn().mockResolvedValue({}) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: vi.fn().mockResolvedValue({ access_token: ACCESS_TOKEN }) })
       .mockResolvedValueOnce({
         ok: true,
         status: 200,

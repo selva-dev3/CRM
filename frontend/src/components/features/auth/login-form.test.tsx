@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LoginForm } from './login-form';
 import { ApiError } from '@/lib/api/client';
 
+const ACCESS_TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjIwMDAwMDAwMDB9.signature';
+
 const mocks = vi.hoisted(() => ({
   getCurrentUserApi: vi.fn(),
   mutateAsync: vi.fn(),
@@ -51,6 +53,7 @@ describe('LoginForm', () => {
   it('stores a remembered session and redirects after a valid login', async () => {
     const user = userEvent.setup();
     mocks.mutateAsync.mockResolvedValue({
+      access_token: ACCESS_TOKEN,
       token_type: 'bearer',
       user: { id: 'user-1', name: 'Alex', email: 'alex@crm.com', role: 'Admin' },
     });
@@ -81,6 +84,7 @@ describe('LoginForm', () => {
         new ApiError('Enter the authentication code', 'http', 428, 'TWO_FACTOR_REQUIRED'),
       )
       .mockResolvedValueOnce({
+        access_token: ACCESS_TOKEN,
         token_type: 'bearer',
         user: { id: 'user-1', name: 'Alex', email: 'alex@crm.com', role: 'Admin' },
       });
@@ -101,6 +105,23 @@ describe('LoginForm', () => {
       twoFactorCode: '123456',
     });
     expect(mocks.replace).toHaveBeenCalledWith('/dashboard');
+  });
+
+  it('fails safely when the backend omits the access token', async () => {
+    const user = userEvent.setup();
+    mocks.mutateAsync.mockResolvedValue({
+      token_type: 'bearer',
+      user: { id: 'user-1', name: 'Alex', email: 'alex@crm.com', role: 'Admin' },
+    });
+    render(<LoginForm />);
+
+    await user.type(screen.getByLabelText('Work email'), 'alex@crm.com');
+    await user.type(screen.getByLabelText('Password'), 'secret');
+    await user.click(screen.getByRole('button', { name: 'Sign in to CRM' }));
+
+    expect(await screen.findByText('Authentication response did not include a valid access token.')).toBeInTheDocument();
+    expect(localStorage.getItem('access_token')).toBeNull();
+    expect(mocks.replace).not.toHaveBeenCalled();
   });
 
   it('keeps entered credentials and shows a server error', async () => {

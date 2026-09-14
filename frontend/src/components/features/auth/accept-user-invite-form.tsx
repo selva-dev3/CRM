@@ -22,7 +22,8 @@ import {
   Input,
 } from '@/components/ui';
 import { notifyAuthUserChanged } from '@/hooks/use-has-permission';
-import { persistSessionUser } from '@/lib/auth-session';
+import { persistSessionUser, setAccessToken } from '@/lib/auth-session';
+import { markAuthSessionActive } from '@/lib/api/client';
 import { useAcceptInviteMutation, useUserInvitationDetailsQuery } from '@/lib/api';
 import { acceptUserInviteSchema } from '@/lib/validators';
 import { getAuthErrorMessage } from './auth-form-utils';
@@ -49,6 +50,10 @@ export function AcceptUserInviteForm() {
         name: values.name,
         password: values.password,
       });
+      if (typeof result.access_token !== 'string' || !setAccessToken(result.access_token)) {
+        throw new Error('Authentication response did not include a valid access token.');
+      }
+      markAuthSessionActive();
       persistSessionUser(result.user, { remember: false });
       notifyAuthUserChanged();
       router.replace('/dashboard');
