@@ -30,6 +30,7 @@ import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { UserSelect } from '@/components/common/user-select';
+import { AssigneeName } from '@/components/common/assignee-name';
 import { PERMISSIONS } from '@/lib/permissions';
 import {
   useTaskQuery,
@@ -84,13 +85,7 @@ export default function TaskDetailPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Lookup assignee name
-  const getAssigneeName = (userId?: string) => {
-    if (!userId) return 'Unassigned';
-    const matchedUser = users.find((u) => u.id === userId || u.email === userId || u.name === userId);
-    if (matchedUser) return matchedUser.name;
-    return userId;
-  };
+  const selectedUserValue = selectedUser || task?.assigned_to || '';
 
   const handleOpenEditModal = () => {
     if (!task) return;
@@ -399,7 +394,9 @@ export default function TaskDetailPage() {
                 <User className="w-5 h-5" />
               </div>
               <div>
-                <div className="font-semibold text-slate-900 text-sm">{getAssigneeName(task.assigned_to)}</div>
+                <div className="font-semibold text-slate-900 text-sm">
+                  <AssigneeName userId={task.assigned_to} knownUsers={users} />
+                </div>
                 <div className="text-xs text-slate-500">Representative</div>
               </div>
             </div>
@@ -407,18 +404,10 @@ export default function TaskDetailPage() {
             <PermissionGate permission={PERMISSIONS.TASKS.ASSIGN}>
             <form onSubmit={handleAssignUserSubmit} className="space-y-2 pt-2">
               <label className="block text-xs font-semibold text-slate-700">Reassign Task</label>
-              <ResponsiveSelect
-                value={selectedUser}
-                onValueChange={setSelectedUser}
-                className="w-full bg-slate-50 border border-slate-300 text-slate-800 text-xs rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
-              >
-                <option value="">Select Representative...</option>
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name} ({u.role || u.email})
-                  </option>
-                ))}
-              </ResponsiveSelect>
+              <UserSelect
+                value={selectedUserValue}
+                onChange={setSelectedUser}
+              />
               <button
                 type="submit"
                 disabled={!selectedUser || assignTaskMutation.isPending}

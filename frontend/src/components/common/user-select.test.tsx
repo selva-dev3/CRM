@@ -38,6 +38,7 @@ describe('UserSelect', () => {
     await user.click(screen.getByRole('combobox', { name: /Ada Lovelace/ }));
     await user.click(screen.getByRole('option', { name: /None \/ Clear Selection/ }));
     expect(onChange).toHaveBeenLastCalledWith('');
+    expect(useUserQueryMock).toHaveBeenCalledWith('user-1', { enabled: false });
   });
 
   it('debounces the API search term and shows loading and empty states', async () => {
@@ -70,5 +71,32 @@ describe('UserSelect', () => {
     expect(
       screen.getByRole('combobox', { name: /Selvakumar \(selva@example.com\)/ })
     ).toBeInTheDocument();
+  });
+
+  it('shows a loading state while resolving an off-list selected user', () => {
+    useUsersQueryMock.mockReturnValue({ data: [], isLoading: false, isError: false });
+    useUserQueryMock.mockReturnValue({ data: undefined, isLoading: true, isError: false });
+
+    render(<UserSelect value="user-99" onChange={vi.fn()} />);
+
+    expect(screen.getByRole('combobox', { name: 'Loading selected user...' })).toBeInTheDocument();
+  });
+
+  it('shows an error state when the selected user cannot be resolved', () => {
+    useUsersQueryMock.mockReturnValue({ data: [], isLoading: false, isError: false });
+    useUserQueryMock.mockReturnValue({ data: undefined, isLoading: false, isError: true });
+
+    render(<UserSelect value="user-99" onChange={vi.fn()} />);
+
+    expect(screen.getByRole('combobox', { name: 'Unable to load selected user' })).toBeInTheDocument();
+  });
+
+  it('shows an error state when the user list cannot be loaded', async () => {
+    useUsersQueryMock.mockReturnValue({ data: [], isLoading: false, isError: true });
+
+    render(<UserSelect value="" onChange={vi.fn()} />);
+    await userEvent.click(screen.getByRole('combobox', { name: /Select User Account/ }));
+
+    expect(screen.getByText('Unable to load users. Please try again.')).toBeInTheDocument();
   });
 });

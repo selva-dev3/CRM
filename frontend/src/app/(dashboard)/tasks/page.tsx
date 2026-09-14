@@ -33,6 +33,7 @@ import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { UserSelect } from '@/components/common/user-select';
+import { AssigneeName } from '@/components/common/assignee-name';
 import { PERMISSIONS } from '@/lib/permissions';
 import {
   useTasksPageQuery,
@@ -118,14 +119,6 @@ export default function TasksPage() {
   const totalTasks = tasksPage?.total ?? 0;
 
   const { data: users = [] } = useUsersQuery(1, 100);
-
-  // Lookup assignee name
-  const getAssigneeName = (userId?: string) => {
-    if (!userId) return 'Unassigned';
-    const matchedUser = users.find((u) => u.id === userId || u.email === userId || u.name === userId);
-    if (matchedUser) return matchedUser.name;
-    return userId;
-  };
 
   // Mutation Hooks
   const createTaskMutation = useCreateTaskMutation();
@@ -372,7 +365,9 @@ export default function TasksPage() {
       cell: (item) => (
         <div className="flex items-center gap-1.5 text-slate-700 text-xs font-medium">
           <UserCheck className="w-3.5 h-3.5 text-slate-400" />
-          <span className="truncate max-w-[160px] font-semibold">{getAssigneeName(item.assigned_to)}</span>
+          <span className="truncate max-w-[160px] font-semibold">
+            <AssigneeName userId={item.assigned_to} knownUsers={users} />
+          </span>
         </div>
       ),
     },
