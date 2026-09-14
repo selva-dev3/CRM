@@ -4,14 +4,14 @@ const mocks = vi.hoisted(() => ({
   mutation: vi.fn(), query: vi.fn(), post: vi.fn(), remove: vi.fn(), cancel: vi.fn(),
   clear: vi.fn(), invalidate: vi.fn(), selected: vi.fn(), select: vi.fn(),
   broadcast: vi.fn(), remember: vi.fn(), assign: vi.fn(),
-  persist: vi.fn(), notify: vi.fn(),
+  persist: vi.fn(), notify: vi.fn(), setAccessToken: vi.fn(() => true), markAuthSessionActive: vi.fn(),
 }));
 vi.mock('@tanstack/react-query', () => ({
   useMutation: mocks.mutation, useQuery: mocks.query,
   useQueryClient: () => ({ cancelQueries: mocks.cancel, clear: mocks.clear, removeQueries: mocks.remove, invalidateQueries: mocks.invalidate }),
 }));
-vi.mock('@/lib/api/client', () => ({ apiClient: { post: mocks.post } }));
-vi.mock('@/lib/auth-session', () => ({ persistSessionUser: mocks.persist }));
+vi.mock('@/lib/api/client', () => ({ apiClient: { post: mocks.post }, markAuthSessionActive: mocks.markAuthSessionActive }));
+vi.mock('@/lib/auth-session', () => ({ persistSessionUser: mocks.persist, setAccessToken: mocks.setAccessToken }));
 vi.mock('@/hooks/use-has-permission', () => ({ notifyAuthUserChanged: mocks.notify }));
 vi.mock('@/lib/organization-context', () => ({
   getOrganizationContext: mocks.selected, setOrganizationContext: mocks.select,
@@ -41,7 +41,7 @@ describe('platform organization cache lifecycle', () => {
     useAcceptInvitationMutation();
     const options = mocks.mutation.mock.calls[0][0];
 
-    await options.onSuccess({ token_type: 'bearer', user, message: 'Accepted' });
+    await options.onSuccess({ access_token: 'access-token', token_type: 'bearer', user, message: 'Accepted' });
 
     expect(mocks.select).toHaveBeenCalledWith(null);
     expect(mocks.clear).toHaveBeenCalled();

@@ -92,6 +92,7 @@ class UserTokenInfo(BaseModel):
 
 
 class Token(BaseModel):
+    access_token: str
     token_type: str = "bearer"  # noqa: S105 - OAuth token type, not a credential
     expires_in: int = 900
     user: UserTokenInfo | None = None

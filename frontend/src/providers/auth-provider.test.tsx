@@ -6,7 +6,9 @@ import { AuthProvider, useAuth } from './auth-provider';
 import type { CurrentUserResponse } from '@/lib/api/auth';
 import { apiClient } from '@/lib/api/client';
 import { getOrganizationContext, setOrganizationContext } from '@/lib/organization-context';
-import { AUTH_SESSION_BROADCAST_KEY } from '@/lib/auth-session';
+import { AUTH_SESSION_BROADCAST_KEY, setAccessToken } from '@/lib/auth-session';
+
+const ACCESS_TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjIwMDAwMDAwMDB9.signature';
 
 const mocks = vi.hoisted(() => ({
   getCurrentUserApi: vi.fn(),
@@ -25,7 +27,7 @@ function Consumer() {
       <span>{auth.status}</span>
       <span>{auth.user?.email ?? 'no-user'}</span>
       <span>{auth.isLoggingOut ? 'logging-out' : 'idle'}</span>
-      <button type="button" onClick={() => auth.setSession({ id: 'user-1', name: 'Alex', email: 'alex@crm.com', role: 'Admin', permissions: [] }, true)}>Set session</button>
+      <button type="button" onClick={() => { setAccessToken(ACCESS_TOKEN); auth.setSession({ id: 'user-1', name: 'Alex', email: 'alex@crm.com', role: 'Admin', permissions: [] }, true); }}>Set session</button>
       <button type="button" onClick={() => void auth.logout().catch(() => undefined)}>Logout</button>
       <button type="button" onClick={() => void auth.verifySession().catch(() => undefined)}>Verify</button>
     </div>
@@ -81,6 +83,23 @@ describe('AuthProvider', () => {
     expect(sessionStorage.getItem('user')).toBeNull();
   });
 
+  it('restores authoritative user state with a persisted access token', async () => {
+    setAccessToken(ACCESS_TOKEN);
+    mocks.getCurrentUserApi.mockResolvedValue({
+      id: 'user-1',
+      name: 'Alex',
+      email: 'alex@crm.com',
+      role: 'Admin',
+      permissions: ['contacts:read'],
+    });
+    renderProvider();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Verify' }));
+
+    expect(await screen.findByText('alex@crm.com')).toBeInTheDocument();
+    expect(screen.getByText('authenticated')).toBeInTheDocument();
+  });
+
   it('clears the previous account cache when a new session is installed', async () => {
     const queryClient = new QueryClient();
     queryClient.setQueryData(['contacts'], [{ id: 'account-a-contact' }]);
@@ -107,6 +126,7 @@ describe('AuthProvider', () => {
 
     expect(await screen.findByText('unauthenticated')).toBeInTheDocument();
     expect(screen.getByText('no-user')).toBeInTheDocument();
+    expect(localStorage.getItem('access_token')).toBeNull();
   });
 
   it('clears stale organization context on a same-tab login event', async () => {
@@ -116,6 +136,7 @@ describe('AuthProvider', () => {
       id: 'invited-user', name: 'Invitee', email: 'invitee@crm.com', role: 'Admin',
       organization_id: 'new-organization', permissions: ['users:read'],
     }));
+    setAccessToken(ACCESS_TOKEN);
 
     act(() => window.dispatchEvent(new CustomEvent('auth:session-changed', {
       detail: { action: 'login' },
@@ -135,6 +156,7 @@ describe('AuthProvider', () => {
       role: 'Read Only',
       permissions: ['contacts:read'],
     });
+    setAccessToken(ACCESS_TOKEN);
     renderProvider(queryClient);
 
     act(() => window.dispatchEvent(new CustomEvent('auth:session-changed', {

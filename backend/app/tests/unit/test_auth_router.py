@@ -42,7 +42,7 @@ def _token_result() -> dict:
 
 
 @pytest.mark.asyncio
-async def test_login_sets_access_and_refresh_cookies_without_returning_refresh_token(monkeypatch):
+async def test_login_sets_access_and_refresh_cookies_and_returns_access_token(monkeypatch):
     login_mock = AsyncMock(return_value=_token_result())
     monkeypatch.setattr(auth_router.auth_service, "login", login_mock)
     response = Response()
@@ -62,12 +62,12 @@ async def test_login_sets_access_and_refresh_cookies_without_returning_refresh_t
         cookie for cookie in cookies if cookie.startswith(f"{settings.AUTH_COOKIE_NAME}=")
     )
     assert "Max-Age=" not in access_cookie
-    assert "access_token" not in result
+    assert result["access_token"] == "access-token"
     assert "refresh_token" not in result
 
 
 @pytest.mark.asyncio
-async def test_refresh_reads_cookie_rotates_both_cookies_and_hides_token(monkeypatch):
+async def test_refresh_reads_cookie_rotates_both_cookies_and_returns_access_token(monkeypatch):
     refresh_mock = AsyncMock(return_value=_token_result())
     monkeypatch.setattr(auth_router.auth_service, "refresh_token", refresh_mock)
     response = Response()
@@ -81,7 +81,7 @@ async def test_refresh_reads_cookie_rotates_both_cookies_and_hides_token(monkeyp
     cookies = response.headers.getlist("set-cookie")
     assert any(cookie.startswith(f"{settings.AUTH_COOKIE_NAME}=") for cookie in cookies)
     assert any(cookie.startswith(f"{settings.AUTH_REFRESH_COOKIE_NAME}=") for cookie in cookies)
-    assert "access_token" not in result
+    assert result["access_token"] == "access-token"
     assert "refresh_token" not in result
 
 
@@ -171,7 +171,7 @@ async def test_accept_invitation_sets_access_and_refresh_cookies(monkeypatch):
     cookies = response.headers.getlist("set-cookie")
     assert any(cookie.startswith(f"{settings.AUTH_COOKIE_NAME}=") for cookie in cookies)
     assert any(cookie.startswith(f"{settings.AUTH_REFRESH_COOKIE_NAME}=") for cookie in cookies)
-    assert "access_token" not in response_body
+    assert response_body["access_token"] == "access-token"
     assert "refresh_token" not in response_body
     assert len(background_tasks.tasks) == 1
     task = background_tasks.tasks[0]

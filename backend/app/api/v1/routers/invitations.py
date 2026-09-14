@@ -132,7 +132,7 @@ async def accept_invitation(
     return {
         key: value
         for key, value in result.items()
-        if key not in {"access_token", "refresh_token"}
+        if key != "refresh_token"
     }
 
 

@@ -1,4 +1,5 @@
 import { getOrganizationContext } from '@/lib/organization-context';
+import { getAccessToken, setAccessToken, clearAccessToken } from '@/lib/auth-session';
 
 // Central API Client for CRM Backend Integration (FastAPI)
 const DEFAULT_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
@@ -87,11 +88,16 @@ export function markAuthSessionActive(): void {
 
 export function clearSessionToken(): void {
   if (typeof window === 'undefined') return;
-  // Remove legacy browser-readable tokens during the HttpOnly-cookie migration.
-  sessionStorage.removeItem('token');
-  localStorage.removeItem('token');
-  sessionStorage.removeItem('user');
-  localStorage.removeItem('user');
+  clearAccessToken();
+  // Remove legacy browser-readable tokens during the migration.
+  try {
+    sessionStorage.removeItem('token');
+    localStorage.removeItem('token');
+    sessionStorage.removeItem('user');
+    localStorage.removeItem('user');
+  } catch {
+    // Storage cleanup is best effort; the unauthorized redirect still applies.
+  }
 }
 
 export interface ApiRequestOptions extends RequestInit {
@@ -261,7 +267,10 @@ async function refreshSession(generation: number, signal: AbortSignal): Promise<
       credentials: 'include',
       signal,
     }, REFRESH_REQUEST_TIMEOUT_MS);
-    return response.ok && !explicitLogoutInProgress && generation === authGeneration;
+    if (!response.ok || explicitLogoutInProgress || generation !== authGeneration) return false;
+    const data = await response.json().catch(() => null) as { access_token?: unknown } | null;
+    if (typeof data?.access_token !== 'string' || !setAccessToken(data.access_token)) return false;
+    return !explicitLogoutInProgress && generation === authGeneration;
   } catch {
     return false;
   }
@@ -390,6 +399,26 @@ function handleUnauthorized(code?: string): void {
   }
 }
 
+function shouldAttachAccessToken(endpoint: string): boolean {
+  return ![
+    '/public/',
+    '/auth/login',
+    '/auth/register',
+    '/auth/forgot-password',
+    '/auth/reset-password',
+    '/auth/accept-invite',
+    '/auth/invitations/',
+    '/auth/refresh-token',
+    '/auth/oauth/',
+    '/auth/magic-link/',
+  ].some((publicEndpoint) => endpoint.startsWith(publicEndpoint));
+}
+
+function applyAccessTokenHeader(endpoint: string, headers: Record<string, string>): void {
+  const token = getAccessToken();
+  if (token && shouldAttachAccessToken(endpoint)) headers.Authorization = `Bearer ${token}`;
+}
+
 async function request<T>(
   endpoint: string,
   options: ApiRequestOptions = {},
@@ -410,6 +439,7 @@ async function request<T>(
     headers['X-Organization-ID'] = organizationId;
   }
   if (organizationId && endpoint === '/auth/me') headers['X-Organization-ID'] = organizationId;
+  applyAccessTokenHeader(endpoint, headers);
 
   if (isFormData) {
     delete headers['Content-Type'];
@@ -428,9 +458,11 @@ async function request<T>(
     const refreshed = await getRefreshRequest(requestGeneration);
     assertSessionOwnership(endpoint, requestGeneration);
     if (refreshed) {
+      const retryHeaders = { ...headers };
+      applyAccessTokenHeader(endpoint, retryHeaders);
       response = await fetchWithTimeout(`${BASE_URL}${endpoint}`, {
         ...options,
-        headers,
+        headers: retryHeaders,
         credentials: options.credentials ?? 'include',
       }, options.timeoutMs ?? API_REQUEST_TIMEOUT_MS);
       assertSessionOwnership(endpoint, requestGeneration);
@@ -473,6 +505,7 @@ export async function openApiStream(
     credentials: 'include',
     signal,
   };
+  applyAccessTokenHeader(endpoint, options.headers as Record<string, string>);
   let response = await fetchWithTimeout(
     `${BASE_URL}${endpoint}`,
     options,
@@ -485,6 +518,7 @@ export async function openApiStream(
     (await getRefreshRequest(requestGeneration))
   ) {
     assertSessionOwnership(endpoint, requestGeneration);
+    applyAccessTokenHeader(endpoint, options.headers as Record<string, string>);
     response = await fetchWithTimeout(
       `${BASE_URL}${endpoint}`,
       options,

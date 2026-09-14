@@ -2,7 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
 import { fetchPaginated, type PaginatedResult } from '@/lib/api/pagination';
 import { notifyAuthUserChanged } from '@/hooks/use-has-permission';
-import { persistSessionUser } from '@/lib/auth-session';
+import { persistSessionUser, setAccessToken } from '@/lib/auth-session';
+import { markAuthSessionActive } from '@/lib/api/client';
 import type { CurrentUserResponse } from '@/lib/api/auth';
 import { broadcastOrganizationDeleted, rememberOrganizationDeletion, getOrganizationContext, setOrganizationContext } from '@/lib/organization-context';
 
@@ -597,6 +598,7 @@ export interface AcceptInvitationPayload {
 }
 
 export interface AcceptInvitationResponse {
+  access_token?: string;
   token_type: string;
   user: CurrentUserResponse;
   organization?: {
@@ -635,12 +637,14 @@ export function useAcceptInvitationMutation() {
   return useMutation({
     mutationFn: acceptInvitationApi,
     onSuccess: (data) => {
-      if (data.user) {
-        setOrganizationContext(null);
-        queryClient.clear();
-        persistSessionUser(data.user, { remember: true });
-        notifyAuthUserChanged();
+      if (!data.user || typeof data.access_token !== 'string' || !setAccessToken(data.access_token)) {
+        throw new Error('Authentication response did not include a valid access token.');
       }
+      setOrganizationContext(null);
+      queryClient.clear();
+      markAuthSessionActive();
+      persistSessionUser(data.user, { remember: true });
+      notifyAuthUserChanged();
     },
   });
 }

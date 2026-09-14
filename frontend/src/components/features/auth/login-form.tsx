@@ -26,7 +26,7 @@ import { getCurrentUserApi, useLoginMutation } from '@/lib/api';
 import { loginSchema } from '@/lib/validators';
 import { getAuthErrorMessage } from './auth-form-utils';
 import { ApiError, markAuthSessionActive } from '@/lib/api/client';
-import { persistSessionUser } from '@/lib/auth-session';
+import { getAccessToken, persistSessionUser, setAccessToken } from '@/lib/auth-session';
 
 type LoginFormValues = z.infer<typeof loginSchema>;
 
@@ -46,6 +46,7 @@ export function LoginForm() {
   });
 
   useEffect(() => {
+    if (!getAccessToken()) return;
     let active = true;
     void getCurrentUserApi()
       .then(() => {
@@ -67,11 +68,12 @@ export function LoginForm() {
         rememberMe: values.rememberMe,
         ...(requiresTwoFactor ? { twoFactorCode } : {}),
       });
-      if (data.user) {
-        markAuthSessionActive();
-        persistSessionUser(data.user, { remember: values.rememberMe });
-        notifyAuthUserChanged();
+      if (!data.user || typeof data.access_token !== 'string' || !setAccessToken(data.access_token)) {
+        throw new Error('Authentication response did not include a valid access token.');
       }
+      markAuthSessionActive();
+      persistSessionUser(data.user, { remember: values.rememberMe });
+      notifyAuthUserChanged();
 
       router.replace('/dashboard');
     } catch (error) {

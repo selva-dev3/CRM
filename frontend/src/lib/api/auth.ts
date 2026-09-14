@@ -10,6 +10,7 @@ export interface LoginPayload {
 }
 
 export interface LoginResponse {
+  access_token?: string;
   token_type: string;
   expires_in?: number;
   user_id?: string;
@@ -70,6 +71,7 @@ export interface AcceptInvitePayload {
 }
 
 export interface AcceptInviteResponse {
+  access_token?: string;
   message: string;
   token_type: string;
   user_id: string;

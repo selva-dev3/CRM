@@ -177,6 +177,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, [authStatus, isForbidden, pathname, router]);
 
   useEffect(() => {
+    if (authStatus === 'unauthenticated') {
+      router.replace('/login');
+      return;
+    }
+    if (authStatus !== 'unknown') return;
     let active = true;
     void verifySession()
       .then((user) => {
@@ -199,7 +204,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return () => {
       active = false;
     };
-  }, [pathname, router, verificationAttempt, verifySession]);
+  }, [authStatus, pathname, router, verificationAttempt, verifySession]);
 
   const closeMobileMenu = useCallback(() => setIsMobileMenuOpen(false), []);
   const closeSearch = useCallback(() => setIsSearchOpen(false), []);
