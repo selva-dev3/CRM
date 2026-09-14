@@ -9,15 +9,19 @@ const users = [
 ];
 
 const useUsersQueryMock = vi.fn();
+const useUserQueryMock = vi.fn();
 
 vi.mock('@/lib/api/users', () => ({
   useUsersQuery: (...args: unknown[]) => useUsersQueryMock(...args),
+  useUserQuery: (...args: unknown[]) => useUserQueryMock(...args),
 }));
 
 beforeEach(() => {
   vi.useRealTimers();
   useUsersQueryMock.mockReset();
+  useUserQueryMock.mockReset();
   useUsersQueryMock.mockReturnValue({ data: users, isLoading: false });
+  useUserQueryMock.mockReturnValue({ data: undefined, isLoading: false, isError: false });
 });
 
 describe('UserSelect', () => {
@@ -51,5 +55,20 @@ describe('UserSelect', () => {
       vi.advanceTimersByTime(300);
     });
     expect(useUsersQueryMock).toHaveBeenLastCalledWith(1, 100, 'ada');
+  });
+
+  it('resolves a selected user that is outside the current list result', () => {
+    useUsersQueryMock.mockReturnValue({ data: [], isLoading: false, isError: false });
+    useUserQueryMock.mockReturnValue({
+      data: { id: 'user-99', name: 'Selvakumar', email: 'selva@example.com' },
+      isLoading: false,
+      isError: false,
+    });
+
+    render(<UserSelect value="user-99" onChange={vi.fn()} />);
+
+    expect(
+      screen.getByRole('combobox', { name: /Selvakumar \(selva@example.com\)/ })
+    ).toBeInTheDocument();
   });
 });

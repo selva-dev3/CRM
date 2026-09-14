@@ -29,6 +29,7 @@ import {
 import { ConfirmModal } from '@/components/common/confirm-modal';
 import { ModalShell } from '@/components/common/modal-shell';
 import { PermissionGate } from '@/components/common/permission-gate';
+import { UserSelect } from '@/components/common/user-select';
 import { PERMISSIONS } from '@/lib/permissions';
 import {
   useTaskQuery,
@@ -88,9 +89,6 @@ export default function TaskDetailPage() {
     if (!userId) return 'Unassigned';
     const matchedUser = users.find((u) => u.id === userId || u.email === userId || u.name === userId);
     if (matchedUser) return matchedUser.name;
-    if (userId.length > 20 && userId.includes('-')) {
-      return 'Sales Executive';
-    }
     return userId;
   };
 
@@ -540,12 +538,7 @@ export default function TaskDetailPage() {
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Assigned Representative</label>
-                <Input
-                  type="text"
-                  value={assignedTo}
-                  onChange={(e) => setAssignedTo(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
-                />
+                <UserSelect value={assignedTo} onChange={setAssignedTo} />
               </div>
             </div>
 
