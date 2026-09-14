@@ -11,6 +11,7 @@ export interface ContactItem {
   phone?: string;
   position?: string;
   company_id?: string;
+  owner_id?: string;
   is_starred?: boolean;
   status?: string;
   created_at?: string;
@@ -54,14 +55,24 @@ export interface ContactsPage {
   total: number;
 }
 
+export interface FetchContactsParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+  companyId?: string;
+  ownerId?: string;
+  isStarred?: boolean;
+}
+
 // API Functions
-export async function fetchContactsPageApi(
-  page = 1,
-  limit = 15,
-  search?: string,
-): Promise<ContactsPage> {
+export async function fetchContactsPageApi(params: FetchContactsParams = {}): Promise<ContactsPage> {
+  const page = params.page ?? 1;
+  const limit = params.limit ?? 15;
   const query = new URLSearchParams({ page: String(page), limit: String(limit) });
-  if (search) query.append('search', search);
+  if (params.search) query.append('search', params.search);
+  if (params.companyId) query.append('company_id', params.companyId);
+  if (params.ownerId) query.append('owner_id', params.ownerId);
+  if (params.isStarred !== undefined) query.append('is_starred', String(params.isStarred));
   const response = await apiClient.getWithMetadata<ContactItem[]>(
     `/contacts?${query.toString()}`,
   );
@@ -73,12 +84,21 @@ export async function fetchContactsPageApi(
   return { items: response.data, total };
 }
 
+export async function fetchContactsApi(params?: FetchContactsParams): Promise<ContactItem[]>;
 export async function fetchContactsApi(
-  page = 1,
+  page?: number,
+  limit?: number,
+  search?: string,
+): Promise<ContactItem[]>;
+export async function fetchContactsApi(
+  paramsOrPage: FetchContactsParams | number = {},
   limit = 15,
   search?: string,
 ): Promise<ContactItem[]> {
-  return (await fetchContactsPageApi(page, limit, search)).items;
+  const params = typeof paramsOrPage === 'number'
+    ? { page: paramsOrPage, limit, search }
+    : paramsOrPage;
+  return (await fetchContactsPageApi(params)).items;
 }
 
 export async function createContactApi(payload: ContactCreatePayload): Promise<ContactItem> {
@@ -179,15 +199,15 @@ export async function getContactCallsApi(id: string, page = 1, limit = 15): Prom
 export function useContactsQuery(page = 1, limit = 15, search?: string) {
   return useQuery({
     queryKey: ['contacts', page, limit, search],
-    queryFn: () => fetchContactsApi(page, limit, search),
+    queryFn: () => fetchContactsApi({ page, limit, search }),
     placeholderData: (previousData) => previousData,
   });
 }
 
-export function useContactsPageQuery(page = 1, limit = 15, search?: string) {
+export function useContactsPageQuery(params: FetchContactsParams = {}) {
   return useQuery({
-    queryKey: ['contacts-page', page, limit, search],
-    queryFn: () => fetchContactsPageApi(page, limit, search),
+    queryKey: ['contacts-page', params],
+    queryFn: () => fetchContactsPageApi(params),
     placeholderData: (previousData) => previousData,
   });
 }

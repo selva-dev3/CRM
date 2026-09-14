@@ -18,6 +18,9 @@ class ContactRepository:
         page: int,
         limit: int,
         search: str | None = None,
+        company_id: str | None = None,
+        owner_id: str | None = None,
+        is_starred: bool | None = None,
         access=None,
     ) -> list[Contact]:
         stmt = select(Contact).where(Contact.organization_id == organization_id)
@@ -27,14 +30,13 @@ class ContactRepository:
         if access_filter is not None:
             stmt = stmt.where(access_filter)
 
-        if search:
-            pattern = f"%{search}%"
-            stmt = stmt.where(
-                (Contact.name.ilike(pattern))
-                | (Contact.email.ilike(pattern))
-                | (Contact.phone.ilike(pattern))
-                | (Contact.position.ilike(pattern))
-            )
+        stmt = self._apply_filters(
+            stmt,
+            search=search,
+            company_id=company_id,
+            owner_id=owner_id,
+            is_starred=is_starred,
+        )
 
         stmt = stmt.offset((page - 1) * limit).limit(limit).order_by(Contact.created_at.desc())
         result = await db.execute(stmt)
@@ -46,6 +48,9 @@ class ContactRepository:
         *,
         organization_id: str,
         search: str | None = None,
+        company_id: str | None = None,
+        owner_id: str | None = None,
+        is_starred: bool | None = None,
         access=None,
     ) -> int:
         stmt = (
@@ -58,6 +63,25 @@ class ContactRepository:
         )
         if access_filter is not None:
             stmt = stmt.where(access_filter)
+        stmt = self._apply_filters(
+            stmt,
+            search=search,
+            company_id=company_id,
+            owner_id=owner_id,
+            is_starred=is_starred,
+        )
+        result = await db.execute(stmt)
+        return int(result.scalar_one())
+
+    @staticmethod
+    def _apply_filters(
+        stmt,
+        *,
+        search: str | None,
+        company_id: str | None,
+        owner_id: str | None,
+        is_starred: bool | None,
+    ):
         if search:
             pattern = f"%{search}%"
             stmt = stmt.where(
@@ -66,8 +90,13 @@ class ContactRepository:
                 | (Contact.phone.ilike(pattern))
                 | (Contact.position.ilike(pattern))
             )
-        result = await db.execute(stmt)
-        return int(result.scalar_one())
+        if company_id:
+            stmt = stmt.where(Contact.company_id == company_id)
+        if owner_id:
+            stmt = stmt.where(Contact.owner_id == owner_id)
+        if is_starred is not None:
+            stmt = stmt.where(Contact.is_starred.is_(is_starred))
+        return stmt
 
     async def list_starred(
         self, db: AsyncSession, *, organization_id: str, access=None

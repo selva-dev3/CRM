@@ -43,8 +43,9 @@ import {
   useBulkDeleteContactsMutation,
   useImportContactsCsvMutation,
   exportContactsCsvApi,
-  ContactItem
+  ContactItem,
 } from '@/lib/api/contacts';
+import { useUsersQuery } from '@/lib/api/users';
 import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
 import { useCompaniesQuery } from '@/lib/api/companies';
 import { SearchableCompanySelect } from '@/components/common/searchable-company-select';
@@ -59,6 +60,8 @@ export default function ContactsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [page, setPage] = useState(1);
+  const [companyFilter, setCompanyFilter] = useState('');
+  const [ownerFilter, setOwnerFilter] = useState('');
   const limit = 15;
 
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
@@ -114,9 +117,13 @@ export default function ContactsPage() {
     isError: isContactsError,
     refetch: refetchAll,
   } = useContactsPageQuery(
-    page,
-    limit,
-    debouncedSearchTerm,
+    {
+      page,
+      limit,
+      search: debouncedSearchTerm,
+      companyId: companyFilter || undefined,
+      ownerId: ownerFilter || undefined,
+    },
   );
   const allContacts = contactsPage?.items ?? [];
   const {
@@ -127,6 +134,7 @@ export default function ContactsPage() {
   const { data: currentOrganization } = useCurrentOrganizationQuery();
   const organizations = currentOrganization ? [currentOrganization] : [];
   const { data: companiesList = [] } = useCompaniesQuery(1, 100);
+  const { data: usersList = [] } = useUsersQuery(1, 100);
   const {
     data: customFields = [],
     isLoading: isCustomFieldsLoading,
@@ -506,6 +514,46 @@ export default function ContactsPage() {
         searchValue={searchTerm}
         onSearchChange={setSearchTerm}
         searchPlaceholder="Search contacts by name or email..."
+        filters={activeTab === 'all' ? [
+          {
+            label: companyFilter
+              ? `Company: ${companiesList.find((company) => company.id === companyFilter)?.name ?? 'Selected'}`
+              : 'Company',
+            value: 'company',
+            options: [
+              { label: 'All companies', value: '' },
+              ...companiesList.map((company) => ({ label: company.name, value: company.id })),
+            ],
+            onChange: (value) => {
+              setCompanyFilter(value);
+              setPage(1);
+              setSelectedIds(new Set());
+            },
+          },
+          {
+            label: ownerFilter
+              ? `Owner: ${usersList.find((user) => user.id === ownerFilter)?.name ?? 'Selected'}`
+              : 'Owner',
+            value: 'owner',
+            options: [
+              { label: 'All owners', value: '' },
+              ...usersList.map((user) => ({ label: user.name, value: user.id })),
+            ],
+            onChange: (value) => {
+              setOwnerFilter(value);
+              setPage(1);
+              setSelectedIds(new Set());
+            },
+          },
+        ] : undefined}
+        hasActiveFilters={activeTab === 'all' && Boolean(searchTerm || companyFilter || ownerFilter)}
+        onClearFilters={() => {
+          setSearchTerm('');
+          setCompanyFilter('');
+          setOwnerFilter('');
+          setPage(1);
+          setSelectedIds(new Set());
+        }}
         actionVariant="menu"
         actions={(item) => [
           {
