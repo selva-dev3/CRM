@@ -602,6 +602,7 @@ async def send_lead_email(
         lead_id,
         payload,
         organization_id=organization_id,
+        current_user=current_user,
         idempotency_key=idempotency_key,
     )
 

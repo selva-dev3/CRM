@@ -31,7 +31,9 @@ class Note(Base):
     )
     content: Mapped[str] = mapped_column(Text, nullable=False)
     is_pinned: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_by: Mapped[str] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"))
+    created_by: Mapped[str | None] = mapped_column(
+        String, ForeignKey("users.id", ondelete="SET NULL")
+    )
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), onupdate=func.now(), server_default=func.now()

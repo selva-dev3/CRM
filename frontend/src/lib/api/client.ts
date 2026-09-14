@@ -39,9 +39,15 @@ const NON_REFRESHABLE_AUTH_ENDPOINTS = [
 
 let refreshRequest: Promise<boolean> | null = null;
 let refreshController: AbortController | null = null;
+let refreshGeneration: number | null = null;
 let authGeneration = 0;
 let explicitLogoutInProgress = false;
 let refreshChannel: BroadcastChannel | null = null;
+const activeGuardedStreams = new Set<() => void>();
+
+function cancelActiveGuardedStreams(): void {
+  for (const cancel of Array.from(activeGuardedStreams)) cancel();
+}
 
 function getRefreshChannel(): BroadcastChannel | null {
   if (typeof window === 'undefined' || typeof BroadcastChannel === 'undefined') return null;
@@ -57,13 +63,24 @@ function getRefreshChannel(): BroadcastChannel | null {
  * the browser supports cancellation of the fetch response.
  */
 export function invalidateAuthSession(): void {
+  cancelActiveGuardedStreams();
+  refreshController?.abort();
+  refreshRequest = null;
+  refreshController = null;
+  refreshGeneration = null;
   authGeneration += 1;
   explicitLogoutInProgress = true;
-  refreshController?.abort();
 }
 
 /** Re-enable refresh after a new login/session has been established. */
 export function markAuthSessionActive(): void {
+  // A login or account switch supersedes any refresh started by the previous
+  // cookie session. Never let that refresh retry with the new account.
+  cancelActiveGuardedStreams();
+  refreshController?.abort();
+  refreshRequest = null;
+  refreshController = null;
+  refreshGeneration = null;
   authGeneration += 1;
   explicitLogoutInProgress = false;
 }
@@ -121,8 +138,14 @@ export class ApiError extends Error {
   }
 }
 
-async function throwResponseError(response: Response, redirectUnauthorized = true, organizationId: string | null = null): Promise<never> {
+async function throwResponseError(
+  response: Response,
+  redirectUnauthorized = true,
+  organizationId: string | null = null,
+  assertOwnership: () => void = () => undefined,
+): Promise<never> {
   const errorData = await response.json().catch(() => ({}));
+  assertOwnership();
   if (response.status === 401 && redirectUnauthorized) handleUnauthorized(errorData.code);
   if (errorData.code === 'ORGANIZATION_UNAVAILABLE' && typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('organization:unavailable', { detail: organizationId }));
@@ -134,6 +157,63 @@ async function throwResponseError(response: Response, redirectUnauthorized = tru
     typeof errorData.code === 'string' ? errorData.code : null,
     errorData.fields && typeof errorData.fields === 'object' ? errorData.fields : null,
   );
+}
+
+function guardResponseStream(
+  response: Response,
+  endpoint: string,
+  generation: number,
+): Response {
+  if (!response.body || !canRefresh(endpoint)) return response;
+  const reader = response.body.getReader();
+  let streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
+  let settled = false;
+  const finish = () => {
+    settled = true;
+    activeGuardedStreams.delete(cancelForSessionChange);
+  };
+  const cancelForSessionChange = () => {
+    if (settled) return;
+    finish();
+    const error = new DOMException(
+      'The authenticated stream belongs to a superseded session.',
+      'AbortError',
+    );
+    void reader.cancel(error).catch(() => undefined);
+    streamController?.error(error);
+  };
+  const guardedBody = new ReadableStream<Uint8Array>({
+    start(controller) {
+      streamController = controller;
+      activeGuardedStreams.add(cancelForSessionChange);
+    },
+    async pull(controller) {
+      try {
+        assertSessionOwnership(endpoint, generation);
+        const chunk = await reader.read();
+        assertSessionOwnership(endpoint, generation);
+        if (chunk.done) {
+          finish();
+          controller.close();
+        }
+        else controller.enqueue(chunk.value);
+      } catch (error) {
+        if (settled) return;
+        finish();
+        await reader.cancel(error).catch(() => undefined);
+        controller.error(error);
+      }
+    },
+    async cancel(reason) {
+      if (!settled) finish();
+      await reader.cancel(reason);
+    },
+  }, { highWaterMark: 0 });
+  return new Response(guardedBody, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
 }
 
 function canRefresh(endpoint: string): boolean {
@@ -267,17 +347,34 @@ async function coordinatedRefresh(generation: number, signal: AbortSignal): Prom
   }
 }
 
-function getRefreshRequest(): Promise<boolean> {
-  if (explicitLogoutInProgress) return Promise.resolve(false);
+function getRefreshRequest(requestGeneration: number): Promise<boolean> {
+  if (explicitLogoutInProgress || requestGeneration !== authGeneration) {
+    return Promise.resolve(false);
+  }
+  if (refreshRequest && refreshGeneration !== requestGeneration) {
+    return Promise.resolve(false);
+  }
   if (!refreshRequest) {
-    const generation = authGeneration;
-    refreshController = new AbortController();
-    refreshRequest = coordinatedRefresh(generation, refreshController.signal).finally(() => {
-      refreshRequest = null;
-      refreshController = null;
+    const controller = new AbortController();
+    refreshController = controller;
+    refreshGeneration = requestGeneration;
+    const trackedRequest = coordinatedRefresh(requestGeneration, controller.signal).finally(() => {
+      if (refreshRequest === trackedRequest) {
+        refreshRequest = null;
+        refreshController = null;
+        refreshGeneration = null;
+      }
     });
+    refreshRequest = trackedRequest;
   }
   return refreshRequest;
+}
+
+function assertSessionOwnership(endpoint: string, generation: number): void {
+  if (!canRefresh(endpoint)) return;
+  if (explicitLogoutInProgress || generation !== authGeneration) {
+    throw new DOMException('The authenticated request belongs to a superseded session.', 'AbortError');
+  }
 }
 
 function handleUnauthorized(code?: string): void {
@@ -298,6 +395,8 @@ async function request<T>(
   options: ApiRequestOptions = {},
   allowRefresh = true,
 ): Promise<ApiResponse<T>> {
+  const requestGeneration = authGeneration;
+  assertSessionOwnership(endpoint, requestGeneration);
   const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string>),
@@ -323,24 +422,34 @@ async function request<T>(
     headers,
     credentials: options.credentials ?? 'include',
   }, options.timeoutMs ?? API_REQUEST_TIMEOUT_MS);
+  assertSessionOwnership(endpoint, requestGeneration);
 
   if (response.status === 401 && allowRefresh && canRefresh(endpoint)) {
-    const refreshed = await getRefreshRequest();
-    if (refreshed && !explicitLogoutInProgress) {
+    const refreshed = await getRefreshRequest(requestGeneration);
+    assertSessionOwnership(endpoint, requestGeneration);
+    if (refreshed) {
       response = await fetchWithTimeout(`${BASE_URL}${endpoint}`, {
         ...options,
         headers,
         credentials: options.credentials ?? 'include',
       }, options.timeoutMs ?? API_REQUEST_TIMEOUT_MS);
+      assertSessionOwnership(endpoint, requestGeneration);
     }
   }
 
   if (!response.ok) {
-    return throwResponseError(response, !endpoint.startsWith('/public/'), headers['X-Organization-ID'] ?? null);
+    return throwResponseError(
+      response,
+      !endpoint.startsWith('/public/'),
+      headers['X-Organization-ID'] ?? null,
+      () => assertSessionOwnership(endpoint, requestGeneration),
+    );
   }
 
+  const responseData = await response.json();
+  assertSessionOwnership(endpoint, requestGeneration);
   return {
-    data: await response.json(),
+    data: responseData,
     headers: response.headers,
     status: response.status,
   };
@@ -351,6 +460,8 @@ export async function openApiStream(
   data: unknown,
   signal?: AbortSignal,
 ): Promise<Response> {
+  const requestGeneration = authGeneration;
+  assertSessionOwnership(endpoint, requestGeneration);
   const organizationId = getOrganizationContext();
   const options: RequestInit = {
     method: 'POST',
@@ -367,15 +478,29 @@ export async function openApiStream(
     options,
     API_REQUEST_TIMEOUT_MS,
   );
-  if (response.status === 401 && canRefresh(endpoint) && (await getRefreshRequest())) {
+  assertSessionOwnership(endpoint, requestGeneration);
+  if (
+    response.status === 401 &&
+    canRefresh(endpoint) &&
+    (await getRefreshRequest(requestGeneration))
+  ) {
+    assertSessionOwnership(endpoint, requestGeneration);
     response = await fetchWithTimeout(
       `${BASE_URL}${endpoint}`,
       options,
       API_REQUEST_TIMEOUT_MS,
     );
+    assertSessionOwnership(endpoint, requestGeneration);
   }
-  if (!response.ok) return throwResponseError(response, true, organizationId);
-  return response;
+  if (!response.ok) {
+    return throwResponseError(
+      response,
+      true,
+      organizationId,
+      () => assertSessionOwnership(endpoint, requestGeneration),
+    );
+  }
+  return guardResponseStream(response, endpoint, requestGeneration);
 }
 
 const mainClient = async function <T>(

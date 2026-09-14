@@ -50,6 +50,7 @@ import { useCompaniesQuery } from '@/lib/api/companies';
 import { useContactsQuery } from '@/lib/api/contacts';
 
 const STAGES = ['Prospecting', 'Qualification', 'Proposal', 'Negotiation', 'Closed Won', 'Closed Lost'];
+const CSV_TRANSFER_AVAILABLE = false;
 
 export default function DealsPage() {
   const router = useRouter();
@@ -381,7 +382,7 @@ export default function DealsPage() {
             </Button>
           </PermissionGate>
 
-          <ActionMenu
+          {CSV_TRANSFER_AVAILABLE && <ActionMenu
             label="More"
             className="h-8 text-xs font-semibold"
             actions={[
@@ -400,7 +401,7 @@ export default function DealsPage() {
                 onSelect: handleImportCsv,
               },
             ]}
-          />
+          />}
 
           {selectedIds.size > 0 && (
             <PermissionGate permission={PERMISSIONS.DEALS.BULK_DELETE}>

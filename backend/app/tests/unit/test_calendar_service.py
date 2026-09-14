@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import ANY, AsyncMock
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,7 +50,14 @@ async def test_get_calendar_events_maps_rows():
     assert result[0]["title"] == "Demo Meeting"
     assert result[0]["event_type"] == "Meeting"
     repo.list_events.assert_awaited_once_with(
-        db, organization_id="org-1", search="demo"
+        db,
+        organization_id="org-1",
+        search="demo",
+        page=1,
+        limit=50,
+        start=None,
+        end=None,
+        access=ANY,
     )
 
 
@@ -86,7 +93,7 @@ async def test_get_calendar_event_not_found():
 
     with pytest.raises(NotFoundError):
         await service.get_calendar_event(db, "missing", _user())
-    repo.get_event.assert_awaited_once_with(db, "missing", "org-1")
+    repo.get_event.assert_awaited_once_with(db, "missing", "org-1", access=ANY)
 
 
 @pytest.mark.asyncio

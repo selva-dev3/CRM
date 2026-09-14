@@ -1,13 +1,14 @@
 import csv
 import io
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
 from app.db.session import get_db
 from app.models import User
+from app.schemas.crm_schemas import DocumentResponse
 from app.schemas.support import (
     KnowledgeArticleResponse,
     TicketArticleLinkCreate,
@@ -15,9 +16,12 @@ from app.schemas.support import (
     TicketCommentCreate,
     TicketCommentResponse,
     TicketCreate,
+    TicketEscalationCreate,
     TicketResponse,
+    TicketStatusHistoryResponse,
     TicketUpdate,
 )
+from app.services.document_service import document_service
 from app.services.support_service import support_service
 
 router = APIRouter()
@@ -141,9 +145,50 @@ async def archive_ticket(
     dependencies=[Depends(require_permission("tickets:read"))],
 )
 async def list_comments(
-    ticket_id: str, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)
+    ticket_id: str,
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
-    return await support_service.comments(db, user, ticket_id)
+    rows, total = await support_service.comments(db, user, ticket_id, page, limit)
+    response.headers["X-Total-Count"] = str(total)
+    return rows
+
+
+@router.get(
+    "/{ticket_id}/history",
+    response_model=list[TicketStatusHistoryResponse],
+    dependencies=[Depends(require_permission("tickets:read"))],
+)
+async def ticket_history(
+    ticket_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return await support_service.history(db, user, ticket_id)
+
+
+@router.post(
+    "/{ticket_id}/escalate",
+    response_model=TicketResponse,
+    dependencies=[Depends(require_permission("tickets:assign"))],
+)
+async def escalate_ticket(
+    ticket_id: str,
+    payload: TicketEscalationCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return await support_service.escalate(
+        db,
+        user,
+        ticket_id,
+        reason=payload.reason,
+        assigned_to=payload.assigned_to,
+        team_id=payload.team_id,
+    )
 
 
 @router.post(
@@ -159,6 +204,53 @@ async def add_comment(
     user: User = Depends(get_current_user),
 ):
     return await support_service.add_comment(db, user, ticket_id, payload)
+
+
+@router.get(
+    "/{ticket_id}/attachments",
+    response_model=list[DocumentResponse],
+    dependencies=[
+        Depends(require_permission("tickets:read")),
+        Depends(require_permission("documents:read")),
+    ],
+)
+async def list_ticket_attachments(
+    ticket_id: str,
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    await support_service.ticket(db, user, ticket_id)
+    rows = await document_service.list_documents(
+        db, page=page, limit=limit, current_user=user, ticket_id=ticket_id
+    )
+    response.headers["X-Total-Count"] = str(
+        await document_service.count_documents(db, current_user=user, ticket_id=ticket_id)
+    )
+    return rows
+
+
+@router.post(
+    "/{ticket_id}/attachments",
+    response_model=DocumentResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[
+        Depends(require_permission("tickets:update")),
+        Depends(require_permission("documents:upload")),
+    ],
+)
+async def upload_ticket_attachment(
+    ticket_id: str,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    await support_service.ticket(db, user, ticket_id)
+    return await document_service.upload_document(
+        db, file, current_user=user, ticket_id=ticket_id
+    )
 
 
 @router.get(

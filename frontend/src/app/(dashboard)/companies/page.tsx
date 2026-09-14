@@ -39,6 +39,8 @@ import {
 } from '@/lib/api/companies';
 import { useEntityCustomFieldsQuery, type CustomFieldValue } from '@/lib/api/custom-fields';
 
+const CSV_TRANSFER_AVAILABLE = false;
+
 export default function CompaniesPage() {
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
@@ -321,7 +323,7 @@ export default function CompaniesPage() {
             </Button>
           </PermissionGate>
 
-          <ActionMenu
+          {CSV_TRANSFER_AVAILABLE && <ActionMenu
             label="More"
             className="h-8 text-xs font-semibold"
             actions={[
@@ -340,7 +342,7 @@ export default function CompaniesPage() {
                 onSelect: handleImportCsv,
               },
             ]}
-          />
+          />}
 
           {selectedIds.size > 0 && (
             <PermissionGate permission={PERMISSIONS.COMPANIES.BULK_DELETE}>

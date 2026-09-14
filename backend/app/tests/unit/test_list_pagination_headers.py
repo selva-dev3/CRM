@@ -1,5 +1,4 @@
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import ANY, AsyncMock
 
 import pytest
 from fastapi import Response
@@ -60,7 +59,13 @@ async def test_deal_list_exposes_filtered_total(monkeypatch):
 
     assert result == [{"id": "deal-1"}]
     assert response.headers["X-Total-Count"] == "31"
-    count.assert_awaited_once_with(db, organization_id="org-1", search="Acme", stage="Proposal")
+    count.assert_awaited_once_with(
+        db,
+        organization_id="org-1",
+        search="Acme",
+        stage="Proposal",
+        current_user=ANY,
+    )
 
 
 @pytest.mark.asyncio
@@ -105,6 +110,7 @@ async def test_task_list_exposes_filtered_total(monkeypatch):
         status="Pending",
         priority="High",
         search="renewal",
+        project_linked=False,
         db=db,
         current_user=_user(),
     )
@@ -116,6 +122,8 @@ async def test_task_list_exposes_filtered_total(monkeypatch):
         status="Pending",
         priority="High",
         search="renewal",
+        project_linked=False,
+        current_user=ANY,
     )
 
 
@@ -166,6 +174,7 @@ async def test_billing_lists_expose_filtered_total(
     }
     if module is payments:
         expected["invoice_id"] = "invoice-1"
+    expected["current_user"] = ANY
     count.assert_awaited_once_with(db, **expected)
 
 
@@ -199,7 +208,12 @@ async def test_company_relationship_list_exposes_total_and_forwards_page(monkeyp
     assert result == [{"id": "contact-1"}]
     assert response.headers["X-Total-Count"] == "23"
     list_contacts.assert_awaited_once_with(
-        db, "company-1", organization_id="org-1", page=2, limit=15
+        db,
+        "company-1",
+        organization_id="org-1",
+        page=2,
+        limit=15,
+        current_user=current_user,
     )
 
 
@@ -269,24 +283,16 @@ async def test_whatsapp_message_history_exposes_total(monkeypatch):
 async def test_product_list_exposes_filtered_total(monkeypatch):
     db = AsyncMock(spec=AsyncSession)
     response = Response()
-    monkeypatch.setattr(
-        products.organization_service,
-        "resolve_valid_org_id",
-        AsyncMock(return_value="org-1"),
-    )
-
-    count_result = MagicMock()
-    count_result.scalar_one.return_value = 27
-    product = SimpleNamespace(
-        id="product-1",
-        name="Support",
-        sku="SUP-1",
-        price=25.0,
-        in_stock_quantity=8,
-    )
-    list_result = MagicMock()
-    list_result.scalars.return_value.all.return_value = [product]
-    db.execute.side_effect = [count_result, list_result]
+    expected = [{
+        "id": "product-1",
+        "name": "Support",
+        "sku": "SUP-1",
+        "price": 25.0,
+        "category": "Service",
+        "in_stock_quantity": 8,
+    }]
+    list_products = AsyncMock(return_value=(expected, 27))
+    monkeypatch.setattr(products.product_service, "list_products", list_products)
 
     result = await products.list_products(
         response=response,
@@ -299,14 +305,12 @@ async def test_product_list_exposes_filtered_total(monkeypatch):
     )
 
     assert response.headers["X-Total-Count"] == "27"
-    assert result == [
-        {
-            "id": "product-1",
-            "name": "Support",
-            "sku": "SUP-1",
-            "price": 25.0,
-            "category": "Service",
-            "in_stock_quantity": 8,
-        }
-    ]
-    assert db.execute.await_count == 2
+    assert result == expected
+    list_products.assert_awaited_once_with(
+        db,
+        user=ANY,
+        page=2,
+        limit=10,
+        category="Service",
+        search="support",
+    )

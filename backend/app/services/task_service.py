@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,11 +19,12 @@ def parse_datetime(val: str | None) -> datetime | None:
         return None
     val_str = str(val).strip()
     try:
-        return datetime.fromisoformat(val_str.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(val_str.replace("Z", "+00:00"))
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
     except ValueError:
         try:
             d = date.fromisoformat(val_str)
-            return datetime(d.year, d.month, d.day)
+            return datetime(d.year, d.month, d.day, tzinfo=UTC)
         except ValueError:
             return None
 
@@ -106,6 +107,49 @@ class TaskService:
             raise APIException(
                 status_code=status.HTTP_400_BAD_REQUEST, message=error_message
             ) from e
+
+    async def _recalculate_project(
+        self, db: AsyncSession, project_id: str | None, organization_id: str
+    ) -> None:
+        if not project_id:
+            return
+        project = await self.project_repository.get(
+            db, project_id=project_id, organization_id=organization_id
+        )
+        if project:
+            await self.project_repository.recalculate_progress(db, project)
+
+    async def _validate_project_assignment(
+        self, db: AsyncSession, project_id: str | None, assigned_to: str
+    ) -> None:
+        if project_id and not await self.project_repository.get_member(
+            db, project_id, assigned_to
+        ):
+            raise APIException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                message="A project task can only be assigned to a project member.",
+            )
+
+    async def _validate_project_due_date(
+        self,
+        db: AsyncSession,
+        project_id: str | None,
+        organization_id: str,
+        due_date: datetime | None,
+    ) -> None:
+        if not project_id or not due_date:
+            return
+        project = await self.project_repository.get(
+            db, project_id=project_id, organization_id=organization_id
+        )
+        if project and (
+            (project.start_date and due_date < project.start_date)
+            or (project.due_date and due_date > project.due_date)
+        ):
+            raise APIException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                message="Project task due date must fall within the project date range.",
+            )
 
     @staticmethod
     async def _require_permission(
@@ -247,8 +291,13 @@ class TaskService:
         if payload.assigned_to and assigned_user != current_user.id:
             await self._require_permission(db, current_user, "tasks:assign")
         project_id = await self._validate_project(db, payload.project_id, org_id, current_user)
+        await self._validate_project_assignment(db, project_id, assigned_user)
+        await self._validate_project_due_date(db, project_id, org_id, due_dt)
         ticket_id = await self.repository.validate_ticket(db, payload.ticket_id, org_id)
-        from app.services.crm_relationship_service import validate_crm_relationships
+        from app.services.crm_relationship_service import (
+            resolve_crm_record_access,
+            validate_crm_relationships,
+        )
 
         relationships = await validate_crm_relationships(
             db,
@@ -257,6 +306,7 @@ class TaskService:
             contact_id=payload.contact_id,
             company_id=payload.company_id,
             deal_id=payload.deal_id,
+            access_by_module=await resolve_crm_record_access(db, current_user),
         )
         data = {
             "organization_id": org_id,
@@ -284,6 +334,7 @@ class TaskService:
             actor_id=current_user.id,
             payload={"status": task.status, "priority": task.priority},
         )
+        await self._recalculate_project(db, task.project_id, task.organization_id)
         await self._commit(db, "Failed to create task")
         await db.refresh(task)
         await notification_service.notify(
@@ -369,7 +420,36 @@ class TaskService:
 
         prev_priority = task.priority
         prev_status = task.status
+        previous_project_id = task.project_id
         updates = payload.model_dump(exclude_unset=True)
+        if "project_id" in updates:
+            target_project_id = await self._validate_project(
+                db, updates["project_id"], task.organization_id, current_user
+            )
+            if target_project_id != previous_project_id:
+                await self.repository.lock_dependency_projects(
+                    db,
+                    project_ids={
+                        project_id
+                        for project_id in (previous_project_id, target_project_id)
+                        if project_id
+                    },
+                    organization_id=task.organization_id,
+                )
+                await db.refresh(task)
+                if task.project_id != previous_project_id:
+                    raise APIException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        message="Task project changed concurrently. Reload and try again.",
+                    )
+                if await self.repository.has_dependencies(db, task.id):
+                    raise APIException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        message=(
+                            "Remove task dependencies before moving the task to another project."
+                        ),
+                    )
+            updates["project_id"] = target_project_id
         if "title" in updates and updates["title"] is not None:
             task.title = updates["title"]
         if "description" in updates:
@@ -394,21 +474,33 @@ class TaskService:
         if "priority" in updates:
             task.priority = updates["priority"]
         if "project_id" in updates:
-            task.project_id = await self._validate_project(
-                db, updates["project_id"], task.organization_id, current_user
-            )
+            task.project_id = updates["project_id"]
+        await self._validate_project_assignment(db, task.project_id, task.assigned_to)
+        await self._validate_project_due_date(db, task.project_id, task.organization_id, task.due_date)
         if "ticket_id" in updates:
             task.ticket_id = await self.repository.validate_ticket(
                 db, updates["ticket_id"], task.organization_id
             )
         relationship_fields = {"lead_id", "contact_id", "company_id", "deal_id"}
         if relationship_fields & updates.keys():
-            from app.services.crm_relationship_service import validate_crm_relationships
+            from app.services.crm_relationship_service import (
+                resolve_crm_record_access,
+                validate_crm_relationships,
+            )
 
             merged = {
                 field: updates.get(field, getattr(task, field)) for field in relationship_fields
             }
-            await validate_crm_relationships(db, organization_id=task.organization_id, **merged)
+            await validate_crm_relationships(
+                db,
+                organization_id=task.organization_id,
+                access_by_module=(
+                    await resolve_crm_record_access(db, current_user)
+                    if current_user
+                    else None
+                ),
+                **merged,
+            )
             for field in relationship_fields & updates.keys():
                 setattr(task, field, updates[field])
 
@@ -428,6 +520,18 @@ class TaskService:
                 "changed_fields": list(updates),
             },
         )
+
+        if task.status == "Completed":
+            incomplete = await self.repository.incomplete_dependency_ids(db, task.id)
+            if incomplete:
+                raise APIException(
+                    status_code=409,
+                    message="Complete all task dependencies before completing this task.",
+                )
+        await db.flush()
+        await self._recalculate_project(db, previous_project_id, task.organization_id)
+        if task.project_id != previous_project_id:
+            await self._recalculate_project(db, task.project_id, task.organization_id)
 
         await self._commit(db, "Failed to update task")
         await db.refresh(task)
@@ -463,7 +567,10 @@ class TaskService:
         )
         if not task:
             raise NotFoundError(message=f"Task '{task_id}' not found")
+        project_id = task.project_id
         await self.repository.delete(db, task)
+        await db.flush()
+        await self._recalculate_project(db, project_id, organization_id)
         await self._commit(db, "Failed to delete task")
         return {"message": f"Task {task_id} deleted successfully", "status": "success"}
 
@@ -480,8 +587,12 @@ class TaskService:
             organization_id=organization_id,
             **(await self._access_kwargs(db, current_user)),
         )
+        project_ids = {task.project_id for task in tasks if task.project_id}
         for task in tasks:
             await self.repository.delete(db, task)
+        await db.flush()
+        for project_id in project_ids:
+            await self._recalculate_project(db, project_id, organization_id)
         await self._commit(db, "Failed to bulk delete tasks")
         return {"affected_count": len(tasks), "message": "Tasks deleted successfully"}
 
@@ -499,7 +610,15 @@ class TaskService:
             **(await self._access_kwargs(db, current_user)),
         )
         for task in tasks:
+            if await self.repository.incomplete_dependency_ids(db, task.id):
+                raise APIException(
+                    status_code=409,
+                    message=f"Task '{task.id}' has incomplete dependencies.",
+                )
             task.status = "Completed"
+        await db.flush()
+        for project_id in {task.project_id for task in tasks if task.project_id}:
+            await self._recalculate_project(db, project_id, organization_id)
         await self._commit(db, "Failed to mark tasks complete")
         return {"affected_count": len(tasks), "message": "Tasks marked complete"}
 
@@ -518,7 +637,14 @@ class TaskService:
         )
         if not task:
             raise NotFoundError(message=f"Task '{task_id}' not found")
+        if await self.repository.incomplete_dependency_ids(db, task.id):
+            raise APIException(
+                status_code=409,
+                message="Complete all task dependencies before completing this task.",
+            )
         task.status = "Completed"
+        await db.flush()
+        await self._recalculate_project(db, task.project_id, organization_id)
         await self._commit(db, "Failed to complete task")
         await notification_service.notify(
             db,
@@ -547,6 +673,8 @@ class TaskService:
         if not task:
             raise NotFoundError(message=f"Task '{task_id}' not found")
         task.status = "Pending"
+        await db.flush()
+        await self._recalculate_project(db, task.project_id, organization_id)
         await self._commit(db, "Failed to reopen task")
         return {"message": f"Task {task_id} reopened", "status": "success"}
 
@@ -599,6 +727,100 @@ class TaskService:
         )
         if not task:
             raise NotFoundError(message=f"Task '{task_id}' not found")
+
+    async def list_dependencies(
+        self, db: AsyncSession, task_id: str, organization_id: str, current_user: User
+    ) -> list[dict]:
+        await self.require_task(db, task_id, organization_id, current_user)
+        return [
+            {"task_id": task_id, "depends_on_task_id": dependency_id}
+            for dependency_id in await self.repository.dependency_ids(db, task_id)
+        ]
+
+    async def add_dependency(
+        self,
+        db: AsyncSession,
+        task_id: str,
+        depends_on_task_id: str,
+        organization_id: str,
+        current_user: User,
+    ) -> dict:
+        access_kwargs = await self._access_kwargs(db, current_user)
+        task = await self.repository.get_by_id(
+            db, task_id=task_id, organization_id=organization_id, **access_kwargs
+        )
+        dependency_task = await self.repository.get_by_id(
+            db,
+            task_id=depends_on_task_id,
+            organization_id=organization_id,
+            **access_kwargs,
+        )
+        if not task or not dependency_task:
+            raise NotFoundError(message="Task dependency record not found")
+        if not task.project_id or task.project_id != dependency_task.project_id:
+            raise APIException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                message="Task dependencies must belong to the same project.",
+            )
+        locked_project_id = task.project_id
+        await self.repository.lock_dependency_projects(
+            db,
+            project_ids={locked_project_id},
+            organization_id=organization_id,
+        )
+        await db.refresh(task)
+        await db.refresh(dependency_task)
+        if (
+            task.organization_id != organization_id
+            or dependency_task.organization_id != organization_id
+            or task.project_id != locked_project_id
+            or dependency_task.project_id != locked_project_id
+        ):
+            raise APIException(
+                status_code=status.HTTP_409_CONFLICT,
+                message="Task projects changed concurrently. Reload and try again.",
+            )
+        existing = await self.repository.get_dependency(
+            db, task_id=task_id, depends_on_task_id=depends_on_task_id
+        )
+        if existing:
+            return {"task_id": task_id, "depends_on_task_id": depends_on_task_id}
+        pending = [depends_on_task_id]
+        visited: set[str] = set()
+        while pending:
+            candidate = pending.pop()
+            if candidate == task_id:
+                raise APIException(status_code=409, message="Task dependency would create a cycle.")
+            if candidate in visited:
+                continue
+            visited.add(candidate)
+            if len(visited) > 10000:
+                raise APIException(status_code=409, message="Task dependency graph is too large.")
+            pending.extend(await self.repository.dependency_ids(db, candidate))
+        await self.repository.create_dependency(
+            db,
+            task_id=task_id,
+            depends_on_task_id=depends_on_task_id,
+            created_by=current_user.id,
+        )
+        await self._commit(db, "Failed to add task dependency")
+        return {"task_id": task_id, "depends_on_task_id": depends_on_task_id}
+
+    async def remove_dependency(
+        self,
+        db: AsyncSession,
+        task_id: str,
+        depends_on_task_id: str,
+        organization_id: str,
+        current_user: User,
+    ) -> None:
+        await self.require_task(db, task_id, organization_id, current_user)
+        dependency = await self.repository.get_dependency(
+            db, task_id=task_id, depends_on_task_id=depends_on_task_id
+        )
+        if dependency:
+            await db.delete(dependency)
+            await self._commit(db, "Failed to remove task dependency")
 
     async def export_csv(self) -> dict:
         raise APIException(

@@ -69,7 +69,7 @@ export const companyKeys = {
   notes: (id: string, page?: number, limit?: number) => ['company-notes', id, page, limit] as const,
   quotes: (id: string, page?: number, limit?: number) => ['company-quotes', id, page, limit] as const,
   invoices: (id: string, page?: number, limit?: number) => ['company-invoices', id, page, limit] as const,
-  documents: (id: string) => ['company-documents', id] as const,
+  documents: (id: string, page?: number, limit?: number) => ['company-documents', id, page, limit] as const,
   hierarchy: (id: string) => ['company-hierarchy', id] as const,
 };
 
@@ -171,8 +171,8 @@ export async function getCompanyInvoicesApi(id: string, page = 1, limit = 15): P
   return fetchPaginated<InvoiceItem>(`/companies/${id}/invoices?page=${page}&limit=${limit}`);
 }
 
-export async function getCompanyDocumentsApi(id: string): Promise<DocumentItem[]> {
-  return apiClient.get<DocumentItem[]>(`/companies/${id}/documents`);
+export async function getCompanyDocumentsApi(id: string, page = 1, limit = 15): Promise<PaginatedResult<DocumentItem>> {
+  return fetchPaginated<DocumentItem>(`/companies/${id}/documents?page=${page}&limit=${limit}`);
 }
 
 export async function getCompanyHierarchyApi(id: string): Promise<CompanyHierarchy | null> {
@@ -244,10 +244,10 @@ export function useCompanyInvoicesQuery(id: string, enabled = true, page = 1, li
   });
 }
 
-export function useCompanyDocumentsQuery(id: string, enabled = true) {
+export function useCompanyDocumentsQuery(id: string, enabled = true, page = 1, limit = 15) {
   return useQuery({
-    queryKey: companyKeys.documents(id),
-    queryFn: () => getCompanyDocumentsApi(id),
+    queryKey: companyKeys.documents(id, page, limit),
+    queryFn: () => getCompanyDocumentsApi(id, page, limit),
     enabled: Boolean(id) && enabled,
   });
 }

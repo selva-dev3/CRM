@@ -15,6 +15,7 @@ from app.repositories.email_repository import EmailRepository
 from app.schemas.crm_schemas import EmailSendRequest
 from app.services.email_service import EmailDeliveryUnknownError, send_tracked_email
 from app.services.org_service import organization_service
+from app.services.record_access_service import record_access_service
 
 logger = get_logger(__name__)
 
@@ -101,8 +102,9 @@ class EmailDomainService:
         current_user: User,
     ) -> list[dict]:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        access = await record_access_service.resolve(db, current_user, "emails")
         emails = await self.repository.list_emails(
-            db, page=page, limit=limit, organization_id=org_id, search=search
+            db, page=page, limit=limit, organization_id=org_id, search=search, access=access
         )
         return [email_to_dict(e) for e in emails]
 
@@ -114,7 +116,10 @@ class EmailDomainService:
         current_user: User,
     ) -> int:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
-        return await self.repository.count_emails(db, organization_id=org_id, search=search)
+        access = await record_access_service.resolve(db, current_user, "emails")
+        return await self.repository.count_emails(
+            db, organization_id=org_id, search=search, access=access
+        )
 
     async def send_email(
         self,
@@ -136,6 +141,7 @@ class EmailDomainService:
             contact_id=payload.contact_id,
             company_id=payload.company_id,
             deal_id=payload.deal_id,
+            current_user=current_user,
         )
 
     async def queue_email(
@@ -151,6 +157,7 @@ class EmailDomainService:
         contact_id: str | None = None,
         company_id: str | None = None,
         deal_id: str | None = None,
+        current_user: User | None = None,
     ) -> dict:
         """Persist a truthful pending delivery; the worker owns provider I/O."""
         if not settings.BREVO_API_KEY:
@@ -166,7 +173,14 @@ class EmailDomainService:
                 code="EMAIL_RECIPIENT_REQUIRED",
                 message="At least one email recipient is required",
             )
-        from app.services.crm_relationship_service import validate_crm_relationships
+        from app.services.crm_relationship_service import (
+            resolve_crm_record_access,
+            validate_crm_relationships,
+        )
+
+        access_by_module = (
+            await resolve_crm_record_access(db, current_user) if current_user else None
+        )
 
         relationships = await validate_crm_relationships(
             db,
@@ -175,6 +189,7 @@ class EmailDomainService:
             contact_id=contact_id,
             company_id=company_id,
             deal_id=deal_id,
+            access_by_module=access_by_module,
         )
         request_hash = hashlib.sha256(
             json.dumps(
@@ -209,6 +224,7 @@ class EmailDomainService:
             db,
             data={
                 "organization_id": organization_id,
+                "created_by": current_user.id if current_user else None,
                 **relationships,
                 "from_email": settings.EMAILS_FROM_EMAIL,
                 "to_email": to_addr,
@@ -244,7 +260,8 @@ class EmailDomainService:
 
     async def list_drafts(self, db: AsyncSession, current_user: User) -> list[dict]:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
-        drafts = await self.repository.list_drafts(db, organization_id=org_id)
+        access = await record_access_service.resolve(db, current_user, "emails")
+        drafts = await self.repository.list_drafts(db, organization_id=org_id, access=access)
         return [email_response_to_dict(draft) for draft in drafts]
 
     async def save_draft(
@@ -255,6 +272,7 @@ class EmailDomainService:
             db,
             data={
                 "organization_id": org_id,
+                "created_by": current_user.id,
                 "from_email": settings.EMAILS_FROM_EMAIL,
                 "to_email": str(payload.to[0]),
                 "subject": payload.subject,
@@ -268,14 +286,20 @@ class EmailDomainService:
 
     async def get_draft(self, db: AsyncSession, draft_id: str, current_user: User) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
-        draft = await self.repository.get_email(db, email_id=draft_id, organization_id=org_id)
+        access = await record_access_service.resolve(db, current_user, "emails")
+        draft = await self.repository.get_email(
+            db, email_id=draft_id, organization_id=org_id, access=access
+        )
         if not draft or draft.status != "Draft":
             raise APIException(message="Email draft not found", status_code=404)
         return email_response_to_dict(draft)
 
     async def delete_draft(self, db: AsyncSession, draft_id: str, current_user: User) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
-        draft = await self.repository.get_email(db, email_id=draft_id, organization_id=org_id)
+        access = await record_access_service.resolve(db, current_user, "emails")
+        draft = await self.repository.get_email(
+            db, email_id=draft_id, organization_id=org_id, access=access
+        )
         if not draft or draft.status != "Draft":
             raise APIException(message="Email draft not found", status_code=404)
         await self.repository.delete(db, draft)
@@ -384,7 +408,8 @@ class EmailDomainService:
 
     async def bulk_delete(self, db: AsyncSession, ids: list[str], current_user: User) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
-        emails = await self.repository.list_by_ids(db, ids, org_id)
+        access = await record_access_service.resolve(db, current_user, "emails")
+        emails = await self.repository.list_by_ids(db, ids, org_id, access=access)
         for email in emails:
             await self.repository.delete(db, email)
         await self._commit(db, "Failed to bulk delete emails")
@@ -399,6 +424,12 @@ class EmailDomainService:
 
     async def retry_email(self, db: AsyncSession, email_id: str, current_user: User) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        access = await record_access_service.resolve(db, current_user, "emails")
+        visible_email = await self.repository.get_email(
+            db, email_id=email_id, organization_id=org_id, access=access
+        )
+        if not visible_email:
+            raise APIException(message="Email not found", status_code=404)
         email = await self.repository.retry_failed(db, email_id=email_id, organization_id=org_id)
         if not email:
             raise APIException(

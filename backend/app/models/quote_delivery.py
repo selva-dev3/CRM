@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -9,6 +9,9 @@ from app.db.base import Base
 
 class QuoteDeliveryAttempt(Base):
     __tablename__ = "quote_delivery_attempts"
+    __table_args__ = (
+        UniqueConstraint("delivery_id", name="uq_quote_delivery_attempts_delivery_id"),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     quote_id: Mapped[str] = mapped_column(
@@ -17,7 +20,7 @@ class QuoteDeliveryAttempt(Base):
     organization_id: Mapped[str] = mapped_column(
         String, ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=False
     )
-    delivery_id: Mapped[str] = mapped_column(String(36), unique=True, index=True, nullable=False)
+    delivery_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
     recipient_email: Mapped[str] = mapped_column(String(255), nullable=False)
     delivery_status: Mapped[str] = mapped_column(String(30), index=True, nullable=False)
     attempt_number: Mapped[int] = mapped_column(Integer, nullable=False)

@@ -43,10 +43,10 @@ class TeamMembership(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     team_id: Mapped[str] = mapped_column(
-        String, ForeignKey("teams.id", ondelete="CASCADE"), index=True
+        String, ForeignKey("teams.id", ondelete="CASCADE")
     )
     user_id: Mapped[str] = mapped_column(
-        String, ForeignKey("users.id", ondelete="CASCADE"), index=True
+        String, ForeignKey("users.id", ondelete="CASCADE")
     )
     is_primary: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())

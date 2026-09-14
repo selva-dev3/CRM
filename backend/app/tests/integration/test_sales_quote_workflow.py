@@ -36,7 +36,10 @@ from app.models import (
     Product,
     Quote,
     QuoteItem,
+    Role,
+    RoleRecordScope,
     User,
+    UserRole,
 )
 from app.models.payment import Payment
 from app.repositories.email_repository import EmailRepository
@@ -194,10 +197,33 @@ async def sales_database():
             price=100,
             is_active=True,
         )
+        role = Role(
+            id=str(uuid4()),
+            organization_id=org.id,
+            name=f"Sales workflow role {uuid4()}",
+        )
         db.add(org)
         await db.flush()
-        db.add_all([user, company, product])
+        db.add_all([user, company, product, role])
         await db.flush()
+        db.add(UserRole(user_id=user.id, role_id=role.id))
+        db.add_all(
+            RoleRecordScope(role_id=role.id, module=module, scope="all")
+            for module in (
+                "contacts",
+                "companies",
+                "deals",
+                "quotes",
+                "orders",
+                "invoices",
+                "payments",
+                "projects",
+                "tasks",
+                "tickets",
+                "documents",
+                "knowledge_base",
+            )
+        )
         db.add(contact)
         await db.flush()
         deal = Deal(

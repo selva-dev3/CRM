@@ -17,7 +17,6 @@ EXPECTED_NON_ROUTER_PERMISSIONS = {
     "contacts:bulk_update",
     "dashboard:export",
     "documents:share",
-    "projects:assign",
     "whatsapp:assign",
     "whatsapp:manage_ai",
     "whatsapp:read_all",

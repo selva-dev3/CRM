@@ -14,8 +14,8 @@ class Notification(Base):
     user_id: Mapped[str] = mapped_column(
         String, ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
-    organization_id: Mapped[str] = mapped_column(
-        String, ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    organization_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=True
     )
     event_name: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     entity_type: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)

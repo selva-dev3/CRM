@@ -12,6 +12,7 @@ from app.repositories.call_repository import CallRepository
 from app.schemas.crm_schemas import CallLogBase, CallLogUpdate
 from app.services.ai_domain_service import AIDomainService, ai_domain_service
 from app.services.org_service import organization_service
+from app.services.record_access_service import record_access_service
 from app.services.s3_service import s3_service
 
 
@@ -88,6 +89,7 @@ class CallService:
         current_user: User,
     ) -> list[dict]:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        access = await record_access_service.resolve(db, current_user, "calls")
         calls = await self.repository.list(
             db,
             page=page,
@@ -99,6 +101,7 @@ class CallService:
             contact_id=contact_id,
             company_id=company_id,
             deal_id=deal_id,
+            access=access,
         )
         return [call_to_dict(c) for c in calls]
 
@@ -115,6 +118,7 @@ class CallService:
         current_user: User,
     ) -> int:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        access = await record_access_service.resolve(db, current_user, "calls")
         return await self.repository.count(
             db,
             organization_id=org_id,
@@ -124,11 +128,13 @@ class CallService:
             contact_id=contact_id,
             company_id=company_id,
             deal_id=deal_id,
+            access=access,
         )
 
     async def get_call(self, db: AsyncSession, call_id: str, current_user: User) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
-        call = await self.repository.get_by_id(db, call_id, org_id)
+        access = await record_access_service.resolve(db, current_user, "calls")
+        call = await self.repository.get_by_id(db, call_id, org_id, access=access)
         if not call:
             raise NotFoundError(message=f"Call log '{call_id}' not found")
         return call_to_dict(call)
@@ -148,8 +154,12 @@ class CallService:
                 code="CONTACT_REQUIRED",
                 message="A related lead, contact, company, or deal is required to log a call",
             )
-        from app.services.crm_relationship_service import validate_crm_relationships
+        from app.services.crm_relationship_service import (
+            resolve_crm_record_access,
+            validate_crm_relationships,
+        )
 
+        module_access = await resolve_crm_record_access(db, current_user)
         relationships = await validate_crm_relationships(
             db,
             organization_id=org_id,
@@ -157,6 +167,7 @@ class CallService:
             contact_id=payload.contact_id,
             company_id=payload.company_id,
             deal_id=payload.deal_id,
+            access_by_module=module_access,
         )
         request_hash = _request_hash(payload)
         if idempotency_key:
@@ -227,7 +238,8 @@ class CallService:
         current_user: User,
     ) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
-        call = await self.repository.get_by_id(db, call_id, org_id)
+        access = await record_access_service.resolve(db, current_user, "calls")
+        call = await self.repository.get_by_id(db, call_id, org_id, access=access)
         if not call:
             raise NotFoundError(message=f"Call log '{call_id}' not found")
 
@@ -244,10 +256,17 @@ class CallService:
                 code="CONTACT_REQUIRED",
                 message="A related lead, contact, company, or deal is required to log a call",
             )
-        from app.services.crm_relationship_service import validate_crm_relationships
+        from app.services.crm_relationship_service import (
+            resolve_crm_record_access,
+            validate_crm_relationships,
+        )
 
+        module_access = await resolve_crm_record_access(db, current_user)
         relationships = await validate_crm_relationships(
-            db, organization_id=org_id, **relationship_values
+            db,
+            organization_id=org_id,
+            access_by_module=module_access,
+            **relationship_values,
         )
         data = payload.model_dump(exclude_unset=True)
         for name in ("subject", "notes", "next_action"):
@@ -275,7 +294,8 @@ class CallService:
 
     async def bulk_delete(self, db: AsyncSession, ids: list[str], current_user: User) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
-        calls = await self.repository.list_by_ids(db, ids, org_id)
+        access = await record_access_service.resolve(db, current_user, "calls")
+        calls = await self.repository.list_by_ids(db, ids, org_id, access=access)
         for call in calls:
             await self.repository.delete(db, call)
         await self._commit(db, "Failed to bulk delete call logs")
@@ -283,7 +303,8 @@ class CallService:
 
     async def delete_call(self, db: AsyncSession, call_id: str, current_user: User) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
-        call = await self.repository.get_by_id(db, call_id, org_id)
+        access = await record_access_service.resolve(db, current_user, "calls")
+        call = await self.repository.get_by_id(db, call_id, org_id, access=access)
         if not call:
             raise NotFoundError(message=f"Call log '{call_id}' not found")
         await self.repository.delete(db, call)
@@ -292,7 +313,8 @@ class CallService:
 
     async def require_call(self, db: AsyncSession, call_id: str, current_user: User) -> CallLog:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
-        call = await self.repository.get_by_id(db, call_id, org_id)
+        access = await record_access_service.resolve(db, current_user, "calls")
+        call = await self.repository.get_by_id(db, call_id, org_id, access=access)
         if not call:
             raise NotFoundError(message=f"Call log '{call_id}' not found")
         return call

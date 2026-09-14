@@ -20,6 +20,7 @@ from app.repositories.report_repository import (
 )
 from app.schemas.report_schemas import ReportTypeEnum
 from app.services.organization_storage_service import lock_organization_storage
+from app.services.record_access_service import record_access_service
 from app.services.s3_service import s3_service
 
 logger = get_logger(__name__)
@@ -180,6 +181,22 @@ class ReportService:
 
         return user_org
 
+    @staticmethod
+    async def _access(
+        db: AsyncSession,
+        current_user: User | None,
+        module: str,
+        *,
+        internal: bool,
+    ):
+        # Trusted scheduled-report jobs intentionally run with organization-wide
+        # scope; every request-facing path must resolve an explicit user scope.
+        if internal:
+            return None
+        if current_user is None:
+            raise ForbiddenError(message="Authenticated user context is required.")
+        return await record_access_service.resolve(db, current_user, module)
+
     async def get_sales_performance_report(
         self,
         db: AsyncSession,
@@ -189,8 +206,9 @@ class ReportService:
         internal: bool = False,
     ) -> dict:
         target_org = await self._resolve_org_id(db, org_id, current_user, internal=internal)
-        total_rev = await self.repository.total_won_revenue(db, target_org)
-        rows = await self.repository.rep_performance(db, target_org)
+        access = await self._access(db, current_user, "deals", internal=internal)
+        total_rev = await self.repository.total_won_revenue(db, target_org, access)
+        rows = await self.repository.rep_performance(db, target_org, access=access)
         quotas = await self.repository.quotas_by_user(db, target_org)
 
         table_rows = []
@@ -236,8 +254,9 @@ class ReportService:
         internal: bool = False,
     ) -> dict:
         target_org = await self._resolve_org_id(db, org_id, current_user, internal=internal)
-        rows = await self.repository.stage_age_breakdown(db, target_org)
-        cycle = await self.repository.closed_cycle_stats(db, target_org)
+        access = await self._access(db, current_user, "deals", internal=internal)
+        rows = await self.repository.stage_age_breakdown(db, target_org, access)
+        cycle = await self.repository.closed_cycle_stats(db, target_org, access)
 
         table_rows = []
         for stage_name, cnt, val, avg_age_sec in rows:
@@ -281,18 +300,25 @@ class ReportService:
         internal: bool = False,
     ) -> dict:
         target_org = await self._resolve_org_id(db, org_id, current_user, internal=internal)
-        won_count = await self.repository.count_deals_in_stage(db, target_org, CLOSED_WON_STAGE)
-        lost_count = await self.repository.count_deals_in_stage(db, target_org, CLOSED_LOST_STAGE)
+        access = await self._access(db, current_user, "deals", internal=internal)
+        won_count = await self.repository.count_deals_in_stage(
+            db, target_org, CLOSED_WON_STAGE, access
+        )
+        lost_count = await self.repository.count_deals_in_stage(
+            db, target_org, CLOSED_LOST_STAGE, access
+        )
         total_closed = won_count + lost_count
         overall_win_pct = round((won_count / total_closed * 100.0), 1) if total_closed > 0 else 0.0
         overall_loss_pct = round(100.0 - overall_win_pct, 1) if total_closed > 0 else 0.0
 
-        rows = await self.repository.win_loss_by_industry(db, target_org)
-        top_loss_reason = await self.repository.top_loss_reason(db, target_org)
+        rows = await self.repository.win_loss_by_industry(db, target_org, access=access)
+        top_loss_reason = await self.repository.top_loss_reason(db, target_org, access)
 
         # Modal loss reason per industry so each segment reports only reasons
         # actually recorded against its own deals (never the org-wide mode).
-        reason_rows = await self.repository.loss_reason_by_industry(db, target_org)
+        reason_rows = await self.repository.loss_reason_by_industry(
+            db, target_org, access=access
+        )
         industry_reason_counts: dict[str, tuple[str, int]] = {}
         for ind, reason, cnt in reason_rows:
             key = ind or "General Enterprise"
@@ -342,7 +368,8 @@ class ReportService:
         internal: bool = False,
     ) -> dict:
         target_org = await self._resolve_org_id(db, org_id, current_user, internal=internal)
-        rows = await self.repository.leads_by_source(db, target_org)
+        access = await self._access(db, current_user, "leads", internal=internal)
+        rows = await self.repository.leads_by_source(db, target_org, access=access)
 
         table_rows = []
         for src, total_l, conv_l, avg_s in rows:
@@ -374,7 +401,8 @@ class ReportService:
         internal: bool = False,
     ) -> dict:
         target_org = await self._resolve_org_id(db, org_id, current_user, internal=internal)
-        rows = await self.repository.rep_leaderboard(db, target_org)
+        access = await self._access(db, current_user, "deals", internal=internal)
+        rows = await self.repository.rep_leaderboard(db, target_org, access=access)
         quotas = await self.repository.quotas_by_user(db, target_org)
 
         table_rows = []
@@ -418,12 +446,13 @@ class ReportService:
         internal: bool = False,
     ) -> dict:
         target_org = await self._resolve_org_id(db, org_id, current_user, internal=internal)
-        committed_rev = await self.repository.total_won_revenue(db, target_org)
-        row = await self.repository.revenue_forecast(db, target_org)
+        access = await self._access(db, current_user, "deals", internal=internal)
+        committed_rev = await self.repository.total_won_revenue(db, target_org, access)
+        row = await self.repository.revenue_forecast(db, target_org, access)
         pipeline_total = float(row.total_pipeline if row else 0.0)
         weighted_pipeline = float(row.weighted if row else 0.0)
 
-        period_rows = await self.repository.forecast_by_period(db, target_org)
+        period_rows = await self.repository.forecast_by_period(db, target_org, access)
         table_rows = [
             {
                 "period": period,
@@ -454,11 +483,20 @@ class ReportService:
         internal: bool = False,
     ) -> dict:
         target_org = await self._resolve_org_id(db, org_id, current_user, internal=internal)
-        total_calls = await self.repository.count_calls(db, target_org)
-        call_duration_sec = await self.repository.total_call_duration_seconds(db, target_org)
-        total_emails = await self.repository.count_emails(db, target_org)
-        opened_emails = await self.repository.count_opened_emails(db, target_org)
-        total_meetings = await self.repository.count_meetings(db, target_org)
+        call_access = await self._access(db, current_user, "calls", internal=internal)
+        email_access = await self._access(db, current_user, "emails", internal=internal)
+        meeting_access = await self._access(db, current_user, "meetings", internal=internal)
+        total_calls = await self.repository.count_calls(db, target_org, call_access)
+        call_duration_sec = await self.repository.total_call_duration_seconds(
+            db, target_org, call_access
+        )
+        total_emails = await self.repository.count_emails(db, target_org, email_access)
+        opened_emails = await self.repository.count_opened_emails(
+            db, target_org, email_access
+        )
+        total_meetings = await self.repository.count_meetings(
+            db, target_org, meeting_access
+        )
 
         email_open_rate = (
             round(opened_emails / total_emails * 100.0, 1) if total_emails > 0 else 0.0
@@ -489,8 +527,9 @@ class ReportService:
         internal: bool = False,
     ) -> dict:
         target_org = await self._resolve_org_id(db, org_id, current_user, internal=internal)
-        cycle = await self.repository.closed_cycle_stats(db, target_org)
-        stage_rows = await self.repository.stage_age_breakdown(db, target_org)
+        access = await self._access(db, current_user, "deals", internal=internal)
+        cycle = await self.repository.closed_cycle_stats(db, target_org, access)
+        stage_rows = await self.repository.stage_age_breakdown(db, target_org, access)
 
         closed_won_cnt = int(cycle.closed_cnt if cycle else 0)
         avg_sec = float(cycle.avg_sec or 0.0) if cycle else 0.0
@@ -614,7 +653,8 @@ class ReportService:
         internal: bool = False,
     ) -> dict:
         target_org = await self._resolve_org_id(db, org_id, current_user, internal=internal)
-        rows = await self.repository.rep_quota(db, target_org)
+        access = await self._access(db, current_user, "deals", internal=internal)
+        rows = await self.repository.rep_quota(db, target_org, access=access)
         quotas = await self.repository.quotas_by_user(db, target_org)
 
         table_rows = []
@@ -669,8 +709,21 @@ class ReportService:
         internal: bool = False,
     ) -> dict:
         target_org = await self._resolve_org_id(db, org_id, current_user, internal=internal)
-        totals = await self.repository.financial_overview(db, target_org)
-        invoice_rows = await self.repository.invoice_status_breakdown(db, target_org)
+        deal_access = await self._access(db, current_user, "deals", internal=internal)
+        quote_access = await self._access(db, current_user, "quotes", internal=internal)
+        invoice_access = await self._access(db, current_user, "invoices", internal=internal)
+        payment_access = await self._access(db, current_user, "payments", internal=internal)
+        totals = await self.repository.financial_overview(
+            db,
+            target_org,
+            deal_access=deal_access,
+            quote_access=quote_access,
+            invoice_access=invoice_access,
+            payment_access=payment_access,
+        )
+        invoice_rows = await self.repository.invoice_status_breakdown(
+            db, target_org, invoice_access
+        )
         currency = await self.repository.organization_currency(db, target_org)
         return {
             "report_type": "Financial Overview",
@@ -705,10 +758,12 @@ class ReportService:
         internal: bool = False,
     ) -> dict:
         target_org = await self._resolve_org_id(db, org_id, current_user, internal=internal)
-        rows = await self.repository.quote_status_breakdown(db, target_org)
+        quote_access = await self._access(db, current_user, "quotes", internal=internal)
+        invoice_access = await self._access(db, current_user, "invoices", internal=internal)
+        rows = await self.repository.quote_status_breakdown(db, target_org, quote_access)
         currency = await self.repository.organization_currency(db, target_org)
         accepted_count, invoiced_count = await self.repository.quote_conversion_counts(
-            db, target_org
+            db, target_org, quote_access, invoice_access
         )
         total_quotes = sum(int(row.quote_count or 0) for row in rows)
         return {
@@ -815,8 +870,9 @@ class ReportService:
         if not report:
             raise NotFoundError(message=f"Custom report with id '{report_id}' not found.")
 
-        total_rev = await self.repository.total_won_revenue(db, target_org)
-        deals_count = await self.repository.count_deals(db, target_org)
+        deal_access = await self._access(db, current_user, "deals", internal=False)
+        total_rev = await self.repository.total_won_revenue(db, target_org, deal_access)
+        deals_count = await self.repository.count_deals(db, target_org, deal_access)
 
         raw_metrics = getattr(report, "metrics_included", None)
         metrics_included = raw_metrics.split(",") if raw_metrics else []
@@ -991,7 +1047,12 @@ class ReportService:
     ) -> dict:
         """Mint a fresh presigned URL for a previously generated export."""
         target_org = await self._resolve_org_id(db, org_id, current_user)
-        export = await self.repository.get_export(db, export_id, target_org)
+        export = await self.repository.get_export(
+            db,
+            export_id,
+            target_org,
+            None if getattr(current_user, "is_platform_admin", False) else current_user.id,
+        )
         if not export:
             raise NotFoundError(message=f"Export '{export_id}' not found")
 

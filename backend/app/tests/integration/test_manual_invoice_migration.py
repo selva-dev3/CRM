@@ -11,11 +11,9 @@ import pytest
 import sqlalchemy.ext.asyncio as async_sqlalchemy
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import insert, text
+from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
-
-from app.models import Organization
 
 
 @pytest.mark.asyncio
@@ -56,11 +54,13 @@ async def test_manual_billing_migration_preserves_populated_financial_history(mo
         await asyncio.to_thread(command.upgrade, config, "d7e8f9a0b1c2")
         assert_logging_preserved("historical upgrade")
         async with engine.begin() as db:
-            await db.execute(
-                insert(Organization).values(
-                    id="history-org", name="Historical tenant", currency="INR"
-                )
-            )
+            # Use only columns present at this historical revision; importing
+            # the current ORM model would inject defaults for later columns.
+            await db.execute(text("""
+                INSERT INTO organizations
+                    (id, name, plan, max_users, is_active, currency)
+                VALUES ('history-org', 'Historical tenant', 'professional', 25, true, 'INR')
+            """))
             await db.execute(text("""
                 INSERT INTO invoices
                     (id, organization_id, invoice_number, amount, paid_amount, currency,

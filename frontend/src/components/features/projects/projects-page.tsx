@@ -43,7 +43,6 @@ const EMPTY_FORM: ProjectPayload = {
   start_date: null,
   due_date: null,
   budget: null,
-  completion_percentage: 0,
 };
 
 function badgeClass(value: string): string {
@@ -109,7 +108,6 @@ export default function ProjectsPage(): React.JSX.Element {
       start_date: project.start_date?.slice(0, 10) ?? null,
       due_date: project.due_date?.slice(0, 10) ?? null,
       budget: project.budget ?? null,
-      completion_percentage: project.completion_percentage,
     });
     setError(null);
   };
@@ -209,7 +207,6 @@ export default function ProjectsPage(): React.JSX.Element {
           <div><label className="mb-1 block text-xs font-semibold">Start date</label><DatePicker value={form.start_date ?? ''} onValueChange={(value) => setForm((current) => ({ ...current, start_date: value || null }))} /></div>
           <div><label className="mb-1 block text-xs font-semibold">Due date</label><DatePicker value={form.due_date ?? ''} onValueChange={(value) => setForm((current) => ({ ...current, due_date: value || null }))} /></div>
           <div><label htmlFor="project-budget" className="mb-1 block text-xs font-semibold">Budget</label><Input id="project-budget" type="number" min="0" step="0.01" value={form.budget ?? ''} onChange={(event) => setForm((current) => ({ ...current, budget: event.target.value === '' ? null : Number(event.target.value) }))} /></div>
-          <div><label htmlFor="project-progress" className="mb-1 block text-xs font-semibold">Completion percentage</label><Input id="project-progress" type="number" min="0" max="100" value={form.completion_percentage ?? 0} onChange={(event) => setForm((current) => ({ ...current, completion_percentage: Number(event.target.value) }))} /></div>
         </div>
         {canSelectOwner && <div><label className="mb-1 block text-xs font-semibold">Owner</label><UserSelect value={form.owner_id ?? ''} onChange={(value) => setForm((current) => ({ ...current, owner_id: value || null }))} /></div>}
         <div className="grid gap-4 sm:grid-cols-3">

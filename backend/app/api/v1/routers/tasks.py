@@ -9,6 +9,8 @@ from app.schemas.crm_schemas import (
     BulkDeleteRequest,
     MessageResponse,
     TaskCreate,
+    TaskDependencyCreate,
+    TaskDependencyResponse,
     TaskResponse,
     TaskUpdate,
 )
@@ -195,6 +197,56 @@ async def get_task(
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     return await task_service.get_task(db, task_id, organization_id, current_user)
+
+
+@router.get(
+    "/{task_id}/dependencies",
+    response_model=list[TaskDependencyResponse],
+    dependencies=[Depends(require_permission("tasks:read"))],
+)
+async def list_task_dependencies(
+    task_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await task_service.list_dependencies(db, task_id, organization_id, current_user)
+
+
+@router.post(
+    "/{task_id}/dependencies",
+    response_model=TaskDependencyResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission("tasks:update"))],
+)
+async def add_task_dependency(
+    task_id: str,
+    payload: TaskDependencyCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    return await task_service.add_dependency(
+        db, task_id, payload.depends_on_task_id, organization_id, current_user
+    )
+
+
+@router.delete(
+    "/{task_id}/dependencies/{depends_on_task_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_permission("tasks:update"))],
+)
+async def remove_task_dependency(
+    task_id: str,
+    depends_on_task_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    organization_id = await organization_service.resolve_valid_org_id(db, current_user)
+    await task_service.remove_dependency(
+        db, task_id, depends_on_task_id, organization_id, current_user
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.put(

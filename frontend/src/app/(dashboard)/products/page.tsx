@@ -317,10 +317,7 @@ export default function ProductsPage() {
             </Button>
           </PermissionGate>
           <ActionMenu label="More" className="w-full text-xs font-semibold sm:w-auto" actions={[
-            { label: 'Export CSV (Not available)', permission: PERMISSIONS.PRODUCTS.EXPORT, disabled: true, onSelect: () => undefined },
-            { label: 'Import CSV (Not available)', permission: PERMISSIONS.PRODUCTS.IMPORT, disabled: true, onSelect: () => undefined },
             { label: 'Add category', permission: PERMISSIONS.PRODUCTS.CREATE, icon: <Layers className="w-4 h-4 text-purple-600" />, onSelect: () => setIsCategoryModalOpen(true) },
-            { label: 'Price book (Not available)', disabled: true, onSelect: () => undefined },
           ]} />
         </div>
       </div>

@@ -49,6 +49,8 @@ import {
 } from '@/lib/api/tasks';
 import { useUsersQuery } from '@/lib/api/users';
 
+const CSV_TRANSFER_AVAILABLE = false;
+
 export default function TasksPage() {
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
@@ -507,7 +509,7 @@ export default function TasksPage() {
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
-          <button
+          {CSV_TRANSFER_AVAILABLE && <button
             onClick={() => setIsImportModalOpen(true)}
             disabled
             title="Task CSV import is not available"
@@ -515,9 +517,9 @@ export default function TasksPage() {
           >
             <Upload className="w-4 h-4 text-slate-500" />
             Import CSV (Not available)
-          </button>
+          </button>}
 
-          <button
+          {CSV_TRANSFER_AVAILABLE && <button
             onClick={handleExportCsv}
             disabled
             title="Task CSV export is not available"
@@ -525,7 +527,7 @@ export default function TasksPage() {
           >
             <Download className="w-4 h-4 text-slate-500" />
             Export CSV (Not available)
-          </button>
+          </button>}
 
           <PermissionGate permission={PERMISSIONS.TASKS.CREATE}>
             <button

@@ -7,6 +7,17 @@ import pytest
 from app.core import live_events
 
 
+def test_live_events_do_not_pass_memory_rate_limit_backend_to_redis(monkeypatch):
+    from_url = MagicMock(return_value=MagicMock())
+    monkeypatch.setattr(live_events.Redis, "from_url", from_url)
+    monkeypatch.setattr(live_events.settings, "RATE_LIMIT_STORAGE_URI", "memory://")
+    monkeypatch.setattr(live_events.settings, "CELERY_BROKER_URL", "redis://redis:6379/0")
+
+    live_events._redis()
+
+    from_url.assert_called_once_with("redis://redis:6379/0")
+
+
 @pytest.mark.asyncio
 async def test_live_event_publish_contains_only_refresh_identifiers(monkeypatch):
     client = AsyncMock()

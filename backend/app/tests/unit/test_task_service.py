@@ -1,4 +1,5 @@
-from datetime import datetime
+from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -32,6 +33,8 @@ def _make_task(**overrides) -> Task:
 
 
 def _service_with(repo: TaskRepository) -> TaskService:
+    if "incomplete_dependency_ids" not in repo.__dict__:
+        repo.incomplete_dependency_ids = AsyncMock(return_value=[])
     return TaskService(repository=repo)
 
 
@@ -40,8 +43,10 @@ def _actor() -> User:
 
 
 def test_parse_datetime_handles_iso_date_and_invalid_input():
-    assert parse_datetime("2026-08-01") == datetime(2026, 8, 1)
-    assert parse_datetime("2026-08-01T10:30:00") == datetime(2026, 8, 1, 10, 30)
+    assert parse_datetime("2026-08-01") == datetime(2026, 8, 1, tzinfo=UTC)
+    assert parse_datetime("2026-08-01T10:30:00") == datetime(
+        2026, 8, 1, 10, 30, tzinfo=UTC
+    )
     parsed_utc = parse_datetime("2026-08-01T10:30:00Z")
     assert parsed_utc is not None
     assert parsed_utc.tzinfo is not None
@@ -347,6 +352,73 @@ async def test_update_task_applies_only_provided_fields():
     assert task.priority == "Medium"
     assert task.title == "Follow up"
     assert result["status"] == "Completed"
+
+
+@pytest.mark.asyncio
+async def test_update_task_rejects_project_move_when_dependencies_exist():
+    task = _make_task(project_id="project-1")
+    repo: Any = TaskRepository()
+    repo.get_by_id = AsyncMock(return_value=task)
+    repo.lock_dependency_projects = AsyncMock()
+    repo.has_dependencies = AsyncMock(return_value=True)
+    project_repository = AsyncMock()
+    project_repository.get.return_value = SimpleNamespace(id="project-2")
+    service = TaskService(repository=repo, project_repository=project_repository)
+    db = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(APIException, match="Remove task dependencies") as exc_info:
+        await service.update_task(
+            db,
+            "task-1",
+            TaskUpdate(project_id="project-2"),
+            "org-1",
+        )
+
+    assert exc_info.value.status_code == 409
+    repo.lock_dependency_projects.assert_awaited_once_with(
+        db,
+        project_ids={"project-1", "project-2"},
+        organization_id="org-1",
+    )
+    assert task.project_id == "project-1"
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_add_dependency_rejects_tasks_moved_after_project_lock(monkeypatch):
+    task = _make_task(id="task-1", project_id="project-old")
+    dependency_task = _make_task(id="task-2", project_id="project-old")
+    repo: Any = TaskRepository()
+    repo.get_by_id = AsyncMock(side_effect=[task, dependency_task])
+    repo.lock_dependency_projects = AsyncMock()
+    repo.get_dependency = AsyncMock(return_value=None)
+    repo.create_dependency = AsyncMock()
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    async def refresh_moved(record):
+        record.project_id = "project-new"
+
+    db.refresh.side_effect = refresh_moved
+    monkeypatch.setattr(record_access_service, "resolve", AsyncMock(return_value=None))
+
+    with pytest.raises(APIException, match="changed concurrently") as exc_info:
+        await service.add_dependency(
+            db,
+            task.id,
+            dependency_task.id,
+            "org-1",
+            _actor(),
+        )
+
+    assert exc_info.value.status_code == 409
+    repo.lock_dependency_projects.assert_awaited_once_with(
+        db,
+        project_ids={"project-old"},
+        organization_id="org-1",
+    )
+    repo.create_dependency.assert_not_awaited()
+    db.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio

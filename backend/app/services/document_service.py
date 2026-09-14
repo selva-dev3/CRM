@@ -189,6 +189,7 @@ def document_to_dict(document: Document, download_url: str = "") -> dict:
                 "invoice",
                 "payment",
                 "project",
+                "ticket",
             )
         },
     }
@@ -218,6 +219,27 @@ class DocumentService:
 
         return await record_access_service.resolve(db, current_user, "documents")
 
+    @staticmethod
+    async def _target_access(db: AsyncSession, current_user: User | None):
+        if not current_user:
+            return None
+        from app.services.record_access_service import record_access_service
+
+        return {
+            module: await record_access_service.resolve(db, current_user, module)
+            for module in (
+                "leads",
+                "contacts",
+                "companies",
+                "deals",
+                "quotes",
+                "invoices",
+                "payments",
+                "projects",
+                "tickets",
+            )
+        }
+
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
         try:
             await db.commit()
@@ -244,6 +266,7 @@ class DocumentService:
         invoice_id: str | None = None,
         payment_id: str | None = None,
         project_id: str | None = None,
+        ticket_id: str | None = None,
         project_linked: bool = False,
     ) -> list[dict]:
         org_id, _ = self._resolve_auth(current_user)
@@ -258,6 +281,7 @@ class DocumentService:
                 "invoice_id": invoice_id,
                 "payment_id": payment_id,
                 "project_id": project_id,
+                "ticket_id": ticket_id,
             }.items()
             if value is not None
         }
@@ -270,6 +294,7 @@ class DocumentService:
             **relationship_filters,
             project_linked=project_linked,
             access=await self._access(db, current_user),
+            target_access=await self._target_access(db, current_user),
         )
         out: list[dict] = []
         for doc in documents:
@@ -292,6 +317,7 @@ class DocumentService:
         invoice_id: str | None = None,
         payment_id: str | None = None,
         project_id: str | None = None,
+        ticket_id: str | None = None,
         project_linked: bool = False,
     ) -> int:
         org_id, _ = self._resolve_auth(current_user)
@@ -307,8 +333,10 @@ class DocumentService:
             invoice_id=invoice_id,
             payment_id=payment_id,
             project_id=project_id,
+            ticket_id=ticket_id,
             project_linked=project_linked,
             access=await self._access(db, current_user),
+            target_access=await self._target_access(db, current_user),
         )
 
     async def upload_document(
@@ -325,6 +353,7 @@ class DocumentService:
         invoice_id: str | None = None,
         payment_id: str | None = None,
         project_id: str | None = None,
+        ticket_id: str | None = None,
     ) -> dict:
         org_id, user_id = self._resolve_auth(current_user)
         if current_user is None:  # narrowed for static analysis; _resolve_auth already rejects it
@@ -341,6 +370,7 @@ class DocumentService:
             "invoices": invoice_id,
             "payments": payment_id,
             "projects": project_id,
+            "tickets": ticket_id,
         }
         relationship_permissions = {
             "leads": "leads:read",
@@ -354,6 +384,7 @@ class DocumentService:
             # payments:read permission.
             "payments": "invoices:read",
             "projects": "projects:read",
+            "tickets": "tickets:read",
         }
         if any(requested_relationships.values()):
             permissions = set(await auth_service.get_user_permissions(db, current_user))
@@ -382,6 +413,7 @@ class DocumentService:
             invoice_id=invoice_id,
             payment_id=payment_id,
             project_id=project_id,
+            ticket_id=ticket_id,
             access_by_module=access_by_module,
         )
 
@@ -449,7 +481,11 @@ class DocumentService:
                 **relationships,
             },
         )
-        await self._commit(db, "Failed to record uploaded document")
+        try:
+            await self._commit(db, "Failed to record uploaded document")
+        except APIException:
+            await _safe_delete_s3(stored_key, document.id)
+            raise
         await db.refresh(document)
         return document_to_dict(document, download_url)
 
@@ -458,7 +494,11 @@ class DocumentService:
     ) -> dict:
         org_id, _ = self._resolve_auth(current_user)
         document = await self.repository.get_document(
-            db, document_id, org_id, access=await self._access(db, current_user)
+            db,
+            document_id,
+            org_id,
+            access=await self._access(db, current_user),
+            target_access=await self._target_access(db, current_user),
         )
         if not document:
             raise NotFoundError(message=f"Document '{document_id}' not found")
@@ -471,7 +511,11 @@ class DocumentService:
     ) -> dict:
         org_id, _ = self._resolve_auth(current_user)
         document = await self.repository.get_document(
-            db, document_id, org_id, access=await self._access(db, current_user)
+            db,
+            document_id,
+            org_id,
+            access=await self._access(db, current_user),
+            target_access=await self._target_access(db, current_user),
         )
         if not document:
             raise NotFoundError(message=f"Document '{document_id}' not found")
@@ -495,7 +539,11 @@ class DocumentService:
     ) -> dict:
         org_id, _ = self._resolve_auth(current_user)
         document = await self.repository.get_document(
-            db, document_id, org_id, access=await self._access(db, current_user)
+            db,
+            document_id,
+            org_id,
+            access=await self._access(db, current_user),
+            target_access=await self._target_access(db, current_user),
         )
         if not document:
             raise NotFoundError(message=f"Document '{document_id}' not found")
@@ -523,7 +571,11 @@ class DocumentService:
     ) -> dict:
         org_id, _ = self._resolve_auth(current_user)
         documents = await self.repository.list_by_ids(
-            db, ids, org_id, access=await self._access(db, current_user)
+            db,
+            ids,
+            org_id,
+            access=await self._access(db, current_user),
+            target_access=await self._target_access(db, current_user),
         )
         s3_keys_to_cleanup: list[tuple[str, str]] = []
         try:

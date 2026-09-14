@@ -29,8 +29,8 @@ class ActivityLog(Base):
     organization_id: Mapped[str] = mapped_column(
         String, ForeignKey("organizations.id", ondelete="CASCADE"), index=True
     )
-    user_id: Mapped[str] = mapped_column(
-        String, ForeignKey("users.id", ondelete="CASCADE"), index=True
+    user_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("users.id", ondelete="SET NULL"), index=True
     )
     module: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     action_description: Mapped[str] = mapped_column(Text, nullable=False)

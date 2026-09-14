@@ -35,6 +35,7 @@ async def list_documents(
     invoice_id: str | None = Query(None),
     payment_id: str | None = Query(None),
     project_id: str | None = Query(None),
+    ticket_id: str | None = Query(None),
     project_linked: bool = Query(False),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -50,6 +51,7 @@ async def list_documents(
             "invoice_id": invoice_id,
             "payment_id": payment_id,
             "project_id": project_id,
+            "ticket_id": ticket_id,
         }.items()
         if isinstance(value, str) and value
     }
@@ -90,6 +92,7 @@ async def upload_document(
     invoice_id: str | None = Query(None),
     payment_id: str | None = Query(None),
     project_id: str | None = Query(None),
+    ticket_id: str | None = Query(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -105,6 +108,7 @@ async def upload_document(
         invoice_id=invoice_id,
         payment_id=payment_id,
         project_id=project_id,
+        ticket_id=ticket_id,
     )
 
 

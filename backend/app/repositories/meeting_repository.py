@@ -6,6 +6,7 @@ from datetime import datetime
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.record_access import RecordAccessContext, record_access_filter
 from app.models import Contact, Meeting, MeetingAttendee
 
 
@@ -24,8 +25,14 @@ class MeetingRepository:
         contact_id: str | None = None,
         company_id: str | None = None,
         deal_id: str | None = None,
+        access: RecordAccessContext | None = None,
     ) -> builtins.list[Meeting]:
         stmt = select(Meeting).where(Meeting.organization_id == organization_id)
+        access_filter = record_access_filter(
+            access, assigned_column=Meeting.created_by, created_column=Meeting.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         if search and search.strip():
             stmt = stmt.where(Meeting.title.ilike(f"%{search.strip()}%"))
         for column, value in (
@@ -54,12 +61,18 @@ class MeetingRepository:
         contact_id: str | None = None,
         company_id: str | None = None,
         deal_id: str | None = None,
+        access: RecordAccessContext | None = None,
     ) -> int:
         stmt = (
             select(func.count())
             .select_from(Meeting)
             .where(Meeting.organization_id == organization_id)
         )
+        access_filter = record_access_filter(
+            access, assigned_column=Meeting.created_by, created_column=Meeting.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         if search and search.strip():
             stmt = stmt.where(Meeting.title.ilike(f"%{search.strip()}%"))
         for column, value in (
@@ -73,17 +86,23 @@ class MeetingRepository:
         return int((await db.execute(stmt)).scalar_one())
 
     async def list_upcoming(
-        self, db: AsyncSession, *, organization_id: str, limit: int = 10
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        limit: int = 10,
+        access: RecordAccessContext | None = None,
     ) -> builtins.list[Meeting]:
-        result = await db.execute(
-            select(Meeting)
-            .where(
-                Meeting.organization_id == organization_id,
-                Meeting.status == "Scheduled",
-            )
-            .order_by(Meeting.start_time.asc())
-            .limit(limit)
+        stmt = select(Meeting).where(
+            Meeting.organization_id == organization_id,
+            Meeting.status == "Scheduled",
         )
+        access_filter = record_access_filter(
+            access, assigned_column=Meeting.created_by, created_column=Meeting.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
+        result = await db.execute(stmt.order_by(Meeting.start_time.asc()).limit(limit))
         return list(result.scalars().all())
 
     async def list_for_contact(
@@ -99,6 +118,7 @@ class MeetingRepository:
         start: datetime | None = None,
         end: datetime | None = None,
         newest_first: bool = False,
+        access: RecordAccessContext | None = None,
     ) -> builtins.list[Meeting]:
         """Return explicitly linked meetings and safe legacy attendee matches."""
         normalized_email = func.lower(func.trim(contact_email))
@@ -127,6 +147,11 @@ class MeetingRepository:
             )
             .distinct()
         )
+        access_filter = record_access_filter(
+            access, assigned_column=Meeting.created_by, created_column=Meeting.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         if search and search.strip():
             stmt = stmt.where(Meeting.title.ilike(f"%{search.strip()}%"))
         if statuses:
@@ -140,22 +165,42 @@ class MeetingRepository:
         return list(result.scalars().all())
 
     async def get_by_id(
-        self, db: AsyncSession, *, meeting_id: str, organization_id: str
+        self,
+        db: AsyncSession,
+        *,
+        meeting_id: str,
+        organization_id: str,
+        access: RecordAccessContext | None = None,
     ) -> Meeting | None:
-        result = await db.execute(
-            select(Meeting).where(
-                Meeting.id == meeting_id,
-                Meeting.organization_id == organization_id,
-            )
+        stmt = select(Meeting).where(
+            Meeting.id == meeting_id,
+            Meeting.organization_id == organization_id,
         )
+        access_filter = record_access_filter(
+            access, assigned_column=Meeting.created_by, created_column=Meeting.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
+        result = await db.execute(stmt)
         return result.scalars().first()
 
     async def list_by_ids(
-        self, db: AsyncSession, *, ids: builtins.list[str], organization_id: str
+        self,
+        db: AsyncSession,
+        *,
+        ids: builtins.list[str],
+        organization_id: str,
+        access: RecordAccessContext | None = None,
     ) -> builtins.list[Meeting]:
-        result = await db.execute(
-            select(Meeting).where(Meeting.id.in_(ids), Meeting.organization_id == organization_id)
+        stmt = select(Meeting).where(
+            Meeting.id.in_(ids), Meeting.organization_id == organization_id
         )
+        access_filter = record_access_filter(
+            access, assigned_column=Meeting.created_by, created_column=Meeting.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
+        result = await db.execute(stmt)
         return list(result.scalars().all())
 
     async def create(self, db: AsyncSession, *, data: dict) -> Meeting:

@@ -79,7 +79,7 @@ def test_system_role_record_scopes_are_complete_and_least_privilege():
     assert SYSTEM_ROLE_RECORD_SCOPES["Finance/Accounts"]["tickets"] == "none"
 
 
-def test_rbac_backfill_migration_is_a_frozen_copy_of_current_policy():
+def test_rbac_backfill_migration_remains_a_frozen_policy_snapshot():
     migration_path = (
         Path(__file__).parents[3]
         / "alembic"
@@ -92,7 +92,14 @@ def test_rbac_backfill_migration_is_a_frozen_copy_of_current_policy():
     spec.loader.exec_module(migration)
 
     assert migration.ROLE_PERMISSIONS == SYSTEM_ROLE_PERMISSIONS
-    assert migration.ROLE_SCOPES == SYSTEM_ROLE_RECORD_SCOPES
+    # Historical migrations are immutable snapshots. New scope modules are
+    # added by later additive migrations, so compare the original slice only.
+    assert set(migration.RECORD_SCOPE_MODULES) < set(RECORD_SCOPE_MODULES)
+    for role_name, historical_scopes in migration.ROLE_SCOPES.items():
+        assert historical_scopes == {
+            module: SYSTEM_ROLE_RECORD_SCOPES[role_name][module]
+            for module in migration.RECORD_SCOPE_MODULES
+        }
     assert migration.REMOVE_ROLE_PERMISSIONS["Project Member"] == {"projects:update"}
 
 

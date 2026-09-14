@@ -56,7 +56,7 @@ class Invoice(Base):
         String, ForeignKey("sales_orders.id", ondelete="SET NULL"), unique=True, index=True
     )
     deal_id: Mapped[str | None] = mapped_column(
-        String, ForeignKey("deals.id", ondelete="SET NULL"), index=True
+        String, ForeignKey("deals.id", ondelete="SET NULL")
     )
     company_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("companies.id", ondelete="SET NULL")
@@ -67,7 +67,7 @@ class Invoice(Base):
     created_by: Mapped[str | None] = mapped_column(
         String, ForeignKey("users.id", ondelete="SET NULL"), index=True
     )
-    invoice_number: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
+    invoice_number: Mapped[str] = mapped_column(String(100), nullable=False)
     currency: Mapped[str] = mapped_column(String(10), default="USD")
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
     subtotal: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)

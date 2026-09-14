@@ -6,6 +6,7 @@ from datetime import datetime
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.record_access import record_access_filter
 from app.models import CallLog
 
 
@@ -25,8 +26,16 @@ class CallRepository:
         contact_id: str | None = None,
         company_id: str | None = None,
         deal_id: str | None = None,
+        access=None,
     ) -> builtins.list[CallLog]:
         stmt = select(CallLog).where(CallLog.organization_id == organization_id)
+        access_filter = record_access_filter(
+            access,
+            assigned_column=CallLog.created_by,
+            created_column=CallLog.created_by,
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         if search and search.strip():
             term = f"%{search.strip()}%"
             stmt = stmt.where(or_(CallLog.subject.ilike(term), CallLog.notes.ilike(term)))
@@ -59,12 +68,20 @@ class CallRepository:
         contact_id: str | None = None,
         company_id: str | None = None,
         deal_id: str | None = None,
+        access=None,
     ) -> int:
         stmt = (
             select(func.count())
             .select_from(CallLog)
             .where(CallLog.organization_id == organization_id)
         )
+        access_filter = record_access_filter(
+            access,
+            assigned_column=CallLog.created_by,
+            created_column=CallLog.created_by,
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         if search and search.strip():
             term = f"%{search.strip()}%"
             stmt = stmt.where(or_(CallLog.subject.ilike(term), CallLog.notes.ilike(term)))
@@ -81,14 +98,20 @@ class CallRepository:
         return int((await db.execute(stmt)).scalar_one())
 
     async def get_by_id(
-        self, db: AsyncSession, call_id: str, organization_id: str
+        self, db: AsyncSession, call_id: str, organization_id: str, access=None
     ) -> CallLog | None:
-        result = await db.execute(
-            select(CallLog).where(
+        query = select(CallLog).where(
                 CallLog.id == call_id,
                 CallLog.organization_id == organization_id,
-            )
         )
+        access_filter = record_access_filter(
+            access,
+            assigned_column=CallLog.created_by,
+            created_column=CallLog.created_by,
+        )
+        if access_filter is not None:
+            query = query.where(access_filter)
+        result = await db.execute(query)
         return result.scalars().first()
 
     async def get_by_idempotency_key(
@@ -109,14 +132,20 @@ class CallRepository:
         return result.scalars().first()
 
     async def list_by_ids(
-        self, db: AsyncSession, ids: builtins.list[str], organization_id: str
+        self, db: AsyncSession, ids: builtins.list[str], organization_id: str, access=None
     ) -> builtins.list[CallLog]:
-        result = await db.execute(
-            select(CallLog).where(
+        query = select(CallLog).where(
                 CallLog.id.in_(ids),
                 CallLog.organization_id == organization_id,
-            )
         )
+        access_filter = record_access_filter(
+            access,
+            assigned_column=CallLog.created_by,
+            created_column=CallLog.created_by,
+        )
+        if access_filter is not None:
+            query = query.where(access_filter)
+        result = await db.execute(query)
         return list(result.scalars().all())
 
     async def list_by_contact(
@@ -130,11 +159,19 @@ class CallRepository:
         search: str | None = None,
         start: datetime | None = None,
         end: datetime | None = None,
+        access=None,
     ) -> builtins.list[CallLog]:
         stmt = select(CallLog).where(
             CallLog.contact_id == contact_id,
             CallLog.organization_id == organization_id,
         )
+        access_filter = record_access_filter(
+            access,
+            assigned_column=CallLog.created_by,
+            created_column=CallLog.created_by,
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         if search and search.strip():
             stmt = stmt.where(CallLog.subject.ilike(f"%{search.strip()}%"))
         if start is not None:
@@ -150,7 +187,7 @@ class CallRepository:
         return list(result.scalars().all())
 
     async def count_by_contact(
-        self, db: AsyncSession, *, contact_id: str, organization_id: str
+        self, db: AsyncSession, *, contact_id: str, organization_id: str, access=None
     ) -> int:
         stmt = (
             select(func.count())
@@ -160,6 +197,13 @@ class CallRepository:
                 CallLog.organization_id == organization_id,
             )
         )
+        access_filter = record_access_filter(
+            access,
+            assigned_column=CallLog.created_by,
+            created_column=CallLog.created_by,
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         return int((await db.execute(stmt)).scalar_one())
 
     async def create(self, db: AsyncSession, *, data: dict) -> CallLog:

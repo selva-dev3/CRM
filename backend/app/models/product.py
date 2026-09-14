@@ -4,7 +4,6 @@ from decimal import Decimal
 from sqlalchemy import (
     Boolean,
     DateTime,
-    Float,
     ForeignKey,
     Index,
     Integer,
@@ -22,6 +21,14 @@ from app.db.base import Base
 
 class ProductCategory(Base):
     __tablename__ = "product_categories"
+    __table_args__ = (
+        Index(
+            "uq_product_categories_org_lower_name",
+            "organization_id",
+            text("lower(btrim(name))"),
+            unique=True,
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     organization_id: Mapped[str] = mapped_column(
@@ -33,6 +40,7 @@ class ProductCategory(Base):
 
 class Product(Base):
     __tablename__ = "products"
+    __table_args__ = (Index("uq_products_org_sku", "organization_id", "sku", unique=True),)
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     organization_id: Mapped[str] = mapped_column(
@@ -42,8 +50,8 @@ class Product(Base):
         String, ForeignKey("product_categories.id", ondelete="SET NULL"), index=True
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    sku: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
-    price: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    sku: Mapped[str] = mapped_column(String(100), nullable=False)
+    price: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=Decimal("0.00"))
     in_stock_quantity: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -73,9 +81,11 @@ class PriceBook(Base):
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[DateTime] = mapped_column(
-        DateTime(timezone=True), onupdate=func.now(), server_default=func.now()
+    created_at: Mapped[DateTime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=True
+    )
+    updated_at: Mapped[DateTime | None] = mapped_column(
+        DateTime(timezone=True), onupdate=func.now(), server_default=func.now(), nullable=True
     )
 
 
@@ -94,7 +104,9 @@ class PriceBookEntry(Base):
     )
     unit_price: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[DateTime] = mapped_column(
-        DateTime(timezone=True), onupdate=func.now(), server_default=func.now()
+    created_at: Mapped[DateTime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=True
+    )
+    updated_at: Mapped[DateTime | None] = mapped_column(
+        DateTime(timezone=True), onupdate=func.now(), server_default=func.now(), nullable=True
     )

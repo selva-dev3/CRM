@@ -12,6 +12,7 @@ from app.repositories.dashboard_repository import DashboardRepository
 from app.repositories.setting_repository import SettingRepository
 from app.schemas.dashboard import DashboardKPIs
 from app.services.ai_domain_service import AIDomainService, ai_domain_service
+from app.services.record_access_service import record_access_service
 
 
 class DashboardService:
@@ -56,15 +57,35 @@ class DashboardService:
         *,
         start_at: datetime | None = None,
         end_at: datetime | None = None,
+        current_user: User | None = None,
     ) -> DashboardKPIs:
-        total_leads = await self.repository.count_leads(db, organization_id)
-        pipeline_revenue = await self.repository.sum_pipeline_deals(db, organization_id)
-        deals_won_amount = await self.repository.sum_won_deals(db, organization_id)
-        closed_deals = await self.repository.count_closed_deals(db, organization_id)
-        won_deals = await self.repository.count_won_deals(db, organization_id)
+        lead_access = (
+            await record_access_service.resolve(db, current_user, "leads") if current_user else None
+        )
+        deal_access = (
+            await record_access_service.resolve(db, current_user, "deals") if current_user else None
+        )
+        quote_access = (
+            await record_access_service.resolve(db, current_user, "quotes") if current_user else None
+        )
+        invoice_access = (
+            await record_access_service.resolve(db, current_user, "invoices")
+            if current_user
+            else None
+        )
+        payment_access = (
+            await record_access_service.resolve(db, current_user, "payments")
+            if current_user
+            else None
+        )
+        total_leads = await self.repository.count_leads(db, organization_id, lead_access)
+        pipeline_revenue = await self.repository.sum_pipeline_deals(db, organization_id, deal_access)
+        deals_won_amount = await self.repository.sum_won_deals(db, organization_id, deal_access)
+        closed_deals = await self.repository.count_closed_deals(db, organization_id, deal_access)
+        won_deals = await self.repository.count_won_deals(db, organization_id, deal_access)
         win_rate = round((won_deals / closed_deals * 100.0), 2) if closed_deals > 0 else 0.0
-        avg_score = await self.repository.avg_lead_score(db, organization_id)
-        scored_leads = await self.repository.count_scored_leads(db, organization_id)
+        avg_score = await self.repository.avg_lead_score(db, organization_id, lead_access)
+        scored_leads = await self.repository.count_scored_leads(db, organization_id, lead_access)
         currency, locale = await self.repository.get_organization_currency_locale(
             db, organization_id
         )
@@ -74,10 +95,13 @@ class DashboardService:
             currency=currency,
             start_at=start_at,
             end_at=end_at,
+            quote_access=quote_access,
+            invoice_access=invoice_access,
+            payment_access=payment_access,
         )
 
         recent_activity = []
-        for lead in await self.repository.recent_leads(db, organization_id):
+        for lead in await self.repository.recent_leads(db, organization_id, access=lead_access):
             recent_activity.append(
                 {
                     "action": "New Lead Added",
@@ -104,8 +128,13 @@ class DashboardService:
             recent_activity=recent_activity,
         )
 
-    async def get_sales_funnel(self, db: AsyncSession, organization_id: str) -> list[dict]:
-        rows = await self.repository.deal_stage_totals(db, organization_id)
+    async def get_sales_funnel(
+        self, db: AsyncSession, organization_id: str, current_user: User | None = None
+    ) -> list[dict]:
+        access = (
+            await record_access_service.resolve(db, current_user, "deals") if current_user else None
+        )
+        rows = await self.repository.deal_stage_totals(db, organization_id, access)
         stage_map = {
             stage: {"count": count, "value": value} for stage, count, value in rows if stage
         }
@@ -139,8 +168,13 @@ class DashboardService:
             ),
         )
 
-    async def get_top_performers(self, db: AsyncSession, organization_id: str) -> list[dict]:
-        rows = await self.repository.top_performers(db, organization_id)
+    async def get_top_performers(
+        self, db: AsyncSession, organization_id: str, current_user: User | None = None
+    ) -> list[dict]:
+        access = (
+            await record_access_service.resolve(db, current_user, "deals") if current_user else None
+        )
+        rows = await self.repository.top_performers(db, organization_id, access=access)
         result = []
         for owner_name, deals_count, revenue in rows:
             owner_name = owner_name or "Unassigned Rep"
@@ -155,8 +189,13 @@ class DashboardService:
             )
         return result
 
-    async def get_lead_conversions(self, db: AsyncSession, organization_id: str) -> list[dict]:
-        rows = await self.repository.lead_source_conversions(db, organization_id)
+    async def get_lead_conversions(
+        self, db: AsyncSession, organization_id: str, current_user: User | None = None
+    ) -> list[dict]:
+        access = (
+            await record_access_service.resolve(db, current_user, "leads") if current_user else None
+        )
+        rows = await self.repository.lead_source_conversions(db, organization_id, access)
         grouped: dict[str, dict[str, int]] = {}
         for source, lead_count, converted_count in rows:
             source_name = self._normalize_lead_source(source)
@@ -178,7 +217,9 @@ class DashboardService:
             for source, counts in grouped.items()
         ]
 
-    async def get_activities_summary(self, db: AsyncSession, organization_id: str) -> dict:
+    async def get_activities_summary(
+        self, db: AsyncSession, organization_id: str, current_user: User | None = None
+    ) -> dict:
         timezone_name = await self.repository.get_organization_timezone(db, organization_id)
         try:
             organization_timezone = ZoneInfo(timezone_name)
@@ -192,25 +233,38 @@ class DashboardService:
         local_end = local_start + timedelta(days=1)
         start_utc = local_start.astimezone(UTC)
         end_utc = local_end.astimezone(UTC)
+        access = {
+            module: await record_access_service.resolve(db, current_user, module)
+            for module in ("calls", "emails", "meetings", "tasks")
+        } if current_user else {}
 
         return {
             "calls_completed": await self.repository.count_calls(
-                db, organization_id, start_utc, end_utc
+                db, organization_id, start_utc, end_utc, access.get("calls")
             ),
             "emails_sent": await self.repository.count_emails(
-                db, organization_id, start_utc, end_utc
+                db, organization_id, start_utc, end_utc, access.get("emails")
             ),
             "meetings_held": await self.repository.count_meetings(
-                db, organization_id, start_utc, min(end_utc, now_utc)
+                db,
+                organization_id,
+                start_utc,
+                min(end_utc, now_utc),
+                access.get("meetings"),
             ),
             "tasks_completed": await self.repository.count_completed_tasks(
-                db, organization_id, start_utc, end_utc
+                db, organization_id, start_utc, end_utc, access.get("tasks")
             ),
             "period_label": f"Today · {timezone_name}",
         }
 
-    async def get_recent_deals(self, db: AsyncSession, organization_id: str) -> list[dict]:
-        deals = await self.repository.recent_deals(db, organization_id)
+    async def get_recent_deals(
+        self, db: AsyncSession, organization_id: str, current_user: User | None = None
+    ) -> list[dict]:
+        access = (
+            await record_access_service.resolve(db, current_user, "deals") if current_user else None
+        )
+        deals = await self.repository.recent_deals(db, organization_id, access=access)
         return [
             {
                 "deal_id": d.id,
@@ -225,10 +279,14 @@ class DashboardService:
 
     async def get_ai_insights(self, db: AsyncSession, current_user: User) -> dict:
         organization_id = current_user.organization_id or ""
-        total_leads = await self.repository.count_leads(db, organization_id)
-        total_deals, total_amount = await self.repository.count_deals_and_sum(db, organization_id)
+        lead_access = await record_access_service.resolve(db, current_user, "leads")
+        deal_access = await record_access_service.resolve(db, current_user, "deals")
+        total_leads = await self.repository.count_leads(db, organization_id, lead_access)
+        total_deals, total_amount = await self.repository.count_deals_and_sum(
+            db, organization_id, deal_access
+        )
         currency, _ = await self.repository.get_organization_currency_locale(db, organization_id)
-        recent_deal = await self.repository.top_deal(db, organization_id)
+        recent_deal = await self.repository.top_deal(db, organization_id, deal_access)
         context = {
             "metrics": {
                 "total_leads": total_leads,
@@ -253,10 +311,16 @@ class DashboardService:
         }
         return await self.ai_service.generate_dashboard_insights(db, context, current_user)
 
-    async def get_custom_widgets(self, db: AsyncSession, organization_id: str) -> list[dict]:
+    async def get_custom_widgets(
+        self, db: AsyncSession, organization_id: str, user_id: str | None = None
+    ) -> list[dict]:
         setting = await self.setting_repository.get_by_key(
-            db, f"dashboard_custom_widgets:{organization_id}"
+            db, f"dashboard_custom_widgets:{organization_id}:{user_id or 'shared'}"
         )
+        if not setting and user_id:
+            setting = await self.setting_repository.get_by_key(
+                db, f"dashboard_custom_widgets:{organization_id}"
+            )
         if setting and setting.value:
             try:
                 return json.loads(setting.value)
@@ -266,7 +330,11 @@ class DashboardService:
         return [widget.copy() for widget in self.DEFAULT_WIDGETS]
 
     async def save_custom_widgets(
-        self, db: AsyncSession, organization_id: str, widgets: list[dict]
+        self,
+        db: AsyncSession,
+        organization_id: str,
+        widgets: list[dict],
+        user_id: str | None = None,
     ) -> dict:
         try:
             serialized_widgets = json.dumps(widgets)
@@ -280,7 +348,7 @@ class DashboardService:
         try:
             await self.setting_repository.upsert(
                 db,
-                key=f"dashboard_custom_widgets:{organization_id}",
+                key=f"dashboard_custom_widgets:{organization_id}:{user_id or 'shared'}",
                 value=serialized_widgets,
             )
             await db.commit()

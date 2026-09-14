@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.record_access import RecordAccessContext, record_access_filter
 from app.models import Contact, Email, EmailTemplate
 
 
@@ -18,8 +19,14 @@ class EmailRepository:
         limit: int,
         organization_id: str,
         search: str | None = None,
+        access: RecordAccessContext | None = None,
     ) -> Sequence[Email]:
         stmt = select(Email).where(Email.organization_id == organization_id)
+        access_filter = record_access_filter(
+            access, assigned_column=Email.created_by, created_column=Email.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         if search and search.strip():
             term = f"%{search.strip()}%"
             stmt = stmt.where((Email.subject.ilike(term)) | (Email.to_email.ilike(term)))
@@ -37,19 +44,35 @@ class EmailRepository:
         *,
         organization_id: str,
         search: str | None = None,
+        access: RecordAccessContext | None = None,
     ) -> int:
         stmt = (
             select(func.count()).select_from(Email).where(Email.organization_id == organization_id)
         )
+        access_filter = record_access_filter(
+            access, assigned_column=Email.created_by, created_column=Email.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         if search and search.strip():
             term = f"%{search.strip()}%"
             stmt = stmt.where((Email.subject.ilike(term)) | (Email.to_email.ilike(term)))
         return int((await db.execute(stmt)).scalar_one())
 
     async def list_by_ids(
-        self, db: AsyncSession, ids: list[str], organization_id: str
+        self,
+        db: AsyncSession,
+        ids: list[str],
+        organization_id: str,
+        *,
+        access: RecordAccessContext | None = None,
     ) -> Sequence[Email]:
         stmt = select(Email).where(Email.id.in_(ids), Email.organization_id == organization_id)
+        access_filter = record_access_filter(
+            access, assigned_column=Email.created_by, created_column=Email.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         res = await db.execute(stmt)
         return res.scalars().all()
 
@@ -95,12 +118,18 @@ class EmailRepository:
         offset: int = 0,
         statuses: Sequence[str] | None = None,
         search: str | None = None,
+        access: RecordAccessContext | None = None,
     ) -> Sequence[Email]:
         stmt = self._for_contact_query(
             organization_id=organization_id,
             contact_id=contact_id,
             recipient_email=recipient_email,
         )
+        access_filter = record_access_filter(
+            access, assigned_column=Email.created_by, created_column=Email.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         if statuses:
             stmt = stmt.where(Email.status.in_(statuses))
         if search and search.strip():
@@ -128,12 +157,18 @@ class EmailRepository:
         recipient_email: str,
         statuses: Sequence[str] | None = None,
         search: str | None = None,
+        access: RecordAccessContext | None = None,
     ) -> int:
         base = self._for_contact_query(
             organization_id=organization_id,
             contact_id=contact_id,
             recipient_email=recipient_email,
         )
+        access_filter = record_access_filter(
+            access, assigned_column=Email.created_by, created_column=Email.created_by
+        )
+        if access_filter is not None:
+            base = base.where(access_filter)
         if statuses:
             base = base.where(Email.status.in_(statuses))
         if search and search.strip():
@@ -153,13 +188,21 @@ class EmailRepository:
         return email
 
     async def get_email(
-        self, db: AsyncSession, *, email_id: str, organization_id: str
+        self,
+        db: AsyncSession,
+        *,
+        email_id: str,
+        organization_id: str,
+        access: RecordAccessContext | None = None,
     ) -> Email | None:
+        access_filter = record_access_filter(
+            access, assigned_column=Email.created_by, created_column=Email.created_by
+        )
+        filters = [Email.id == email_id, Email.organization_id == organization_id]
+        if access_filter is not None:
+            filters.append(access_filter)
         result = await db.execute(
-            select(Email).where(
-                Email.id == email_id,
-                Email.organization_id == organization_id,
-            )
+            select(Email).where(*filters)
         )
         return result.scalars().first()
 
@@ -174,13 +217,22 @@ class EmailRepository:
         )
         return result.scalars().first()
 
-    async def list_drafts(self, db: AsyncSession, *, organization_id: str) -> Sequence[Email]:
-        result = await db.execute(
-            select(Email)
-            .where(Email.organization_id == organization_id, Email.status == "Draft")
-            .order_by(Email.updated_at.desc())
-            .limit(100)
+    async def list_drafts(
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        access: RecordAccessContext | None = None,
+    ) -> Sequence[Email]:
+        stmt = select(Email).where(
+            Email.organization_id == organization_id, Email.status == "Draft"
         )
+        access_filter = record_access_filter(
+            access, assigned_column=Email.created_by, created_column=Email.created_by
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
+        result = await db.execute(stmt.order_by(Email.updated_at.desc()).limit(100))
         return result.scalars().all()
 
     async def expire_delivery_claims(self, db: AsyncSession, now: datetime) -> None:

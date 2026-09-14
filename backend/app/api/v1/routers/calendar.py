@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
@@ -21,15 +21,33 @@ router = APIRouter()
     dependencies=[Depends(require_permission("calendar:read"))],
 )
 async def get_calendar_events(
+    response: Response,
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
     search: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await calendar_service.get_calendar_events(
-        db, search=search, current_user=current_user
+    events = await calendar_service.get_calendar_events(
+        db,
+        search=search,
+        page=page,
+        limit=limit,
+        start_date=start_date,
+        end_date=end_date,
+        current_user=current_user,
     )
+    total = await calendar_service.count_calendar_events(
+        db,
+        search=search,
+        start_date=start_date,
+        end_date=end_date,
+        current_user=current_user,
+    )
+    response.headers["X-Total-Count"] = str(total)
+    return events
 
 
 @router.post(

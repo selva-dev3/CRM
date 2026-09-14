@@ -33,8 +33,8 @@ class Deal(Base):
     loss_reason: Mapped[str | None] = mapped_column(String(255))
     expected_close_date: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
     closed_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), index=True)
-    assigned_to: Mapped[str] = mapped_column(
-        String, ForeignKey("users.id", ondelete="CASCADE"), index=True
+    assigned_to: Mapped[str | None] = mapped_column(
+        String, ForeignKey("users.id", ondelete="SET NULL"), index=True
     )
     created_by: Mapped[str | None] = mapped_column(
         String, ForeignKey("users.id", ondelete="SET NULL"), index=True

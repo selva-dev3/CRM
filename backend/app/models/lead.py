@@ -23,6 +23,12 @@ class Lead(Base):
     __table_args__ = (
         UniqueConstraint("organization_id", "id"),
         Index("ix_leads_org_normalized_phone", "organization_id", "normalized_phone"),
+        Index(
+            "ix_leads_org_active_created",
+            "organization_id",
+            "is_archived",
+            "created_at",
+        ),
     )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -153,7 +159,9 @@ class LeadNote(Base):
         String, ForeignKey("leads.id", ondelete="CASCADE"), index=True
     )
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    created_by: Mapped[str] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"))
+    created_by: Mapped[str | None] = mapped_column(
+        String, ForeignKey("users.id", ondelete="SET NULL")
+    )
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

@@ -20,7 +20,6 @@ import {
   DollarSign,
   PhoneCall,
   Lock,
-  RotateCcw,
   Pencil
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -250,19 +249,6 @@ export default function UserDetailPage() {
                   Activate Account
                 </>
               )}
-            </Button>
-          </PermissionGate>
-
-          <PermissionGate permission="users:reset_password">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled
-              title="Administrator password reset delivery is not configured"
-              className="border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold text-xs cursor-pointer"
-            >
-              <RotateCcw className="w-3.5 h-3.5 mr-1.5 text-blue-600" />
-              Reset Password (Not available)
             </Button>
           </PermissionGate>
 

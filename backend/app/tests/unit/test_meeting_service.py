@@ -1,11 +1,12 @@
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import ANY, AsyncMock
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, NotFoundError
+from app.core.record_access import RecordAccessContext
 from app.models import Meeting, User
 from app.repositories.meeting_repository import MeetingRepository
 from app.schemas.ai import MeetingSummaryResponse
@@ -36,9 +37,30 @@ def _actor() -> User:
     return User(id="user-1", email="user@example.com", organization_id="org-1")
 
 
+@pytest.fixture(autouse=True)
+def _stub_access_context(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.meeting_service.organization_service.resolve_valid_org_id",
+        AsyncMock(return_value="org-1"),
+    )
+    monkeypatch.setattr(
+        "app.services.meeting_service.record_access_service.resolve",
+        AsyncMock(
+            return_value=RecordAccessContext(
+                scope="all",
+                user_id="user-1",
+                team_ids=frozenset(),
+                team_user_ids=frozenset(),
+            )
+        ),
+    )
+
+
 def test_parse_datetime_handles_iso_date_and_empty():
-    assert parse_datetime("2026-08-01") == datetime(2026, 8, 1)
-    assert parse_datetime("2026-08-01T10:30:00") == datetime(2026, 8, 1, 10, 30)
+    assert parse_datetime("2026-08-01") == datetime(2026, 8, 1, tzinfo=UTC)
+    assert parse_datetime("2026-08-01T10:30:00") == datetime(
+        2026, 8, 1, 10, 30, tzinfo=UTC
+    )
     assert parse_datetime("2026-08-01T10:30:00Z").tzinfo is not None
     with pytest.raises(APIException) as exc_info:
         parse_datetime("not-a-date")
@@ -56,10 +78,10 @@ async def test_get_meeting_raises_not_found_when_missing():
     db = AsyncMock(spec=AsyncSession)
 
     with pytest.raises(NotFoundError):
-        await service.get_meeting(db, "missing-meeting", "org-1")
+        await service.get_meeting(db, "missing-meeting", "org-1", _actor())
 
     repo.get_by_id.assert_awaited_once_with(
-        db, meeting_id="missing-meeting", organization_id="org-1"
+        db, meeting_id="missing-meeting", organization_id="org-1", access=ANY
     )
 
 
@@ -166,7 +188,9 @@ async def test_rsvp_creates_missing_attendee():
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.rsvp(db, "mtg-1", "a@crm.com", "accepted", "org-1")
+    result = await service.rsvp(
+        db, "mtg-1", "a@crm.com", "accepted", "org-1", _actor()
+    )
 
     assert result["message"] == "RSVP 'accepted' recorded for a@crm.com"
     repo.create_attendee.assert_awaited_once()
@@ -204,7 +228,9 @@ async def test_get_ai_summary_is_tenant_scoped_and_has_no_fake_fallback():
 
     assert result["summary"] is None
     assert result["key_decisions"] == []
-    repo.get_by_id.assert_awaited_once_with(db, meeting_id="mtg-1", organization_id="org-1")
+    repo.get_by_id.assert_awaited_once_with(
+        db, meeting_id="mtg-1", organization_id="org-1", access=ANY
+    )
 
 
 @pytest.mark.asyncio

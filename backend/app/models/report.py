@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -17,7 +17,9 @@ class ReportExport(Base):
     file_format: Mapped[str] = mapped_column(String(20), default="csv")
     download_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     s3_key: Mapped[str | None] = mapped_column(String(1024), nullable=True, index=True)
-    requested_by: Mapped[str] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"))
+    requested_by: Mapped[str | None] = mapped_column(
+        String, ForeignKey("users.id", ondelete="SET NULL")
+    )
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -36,6 +38,7 @@ class CustomReport(Base):
 
 class ScheduledReport(Base):
     __tablename__ = "scheduled_reports"
+    __table_args__ = (Index("ix_scheduled_reports_claimable", "next_run"),)
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     organization_id: Mapped[str] = mapped_column(

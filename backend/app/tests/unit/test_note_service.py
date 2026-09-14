@@ -1,5 +1,5 @@
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import ANY, AsyncMock, MagicMock
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,7 +59,9 @@ async def test_get_note_raises_not_found_when_missing():
 
     with pytest.raises(NotFoundError):
         await service.get_note(db, "missing-note", _user())
-    repo.get_by_id.assert_awaited_once_with(db, "missing-note", "org-1")
+    repo.get_by_id.assert_awaited_once_with(
+        db, "missing-note", "org-1", access=ANY, target_access=ANY
+    )
 
 
 def _db_with_no_users() -> AsyncMock:

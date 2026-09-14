@@ -677,6 +677,15 @@ class TaskResponse(TaskBase):
     created_at: str
 
 
+class TaskDependencyCreate(BaseModel):
+    depends_on_task_id: str
+
+
+class TaskDependencyResponse(BaseModel):
+    task_id: str
+    depends_on_task_id: str
+
+
 # 10. Meeting Schemas
 class MeetingBase(BaseModel):
     title: str
@@ -872,18 +881,19 @@ class DocumentResponse(BaseModel):
     invoice_id: str | None = None
     payment_id: str | None = None
     project_id: str | None = None
+    ticket_id: str | None = None
 
 
 # 15. Product Catalog Schemas
 class ProductBase(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=255)
     code: str | None = "N/A"
-    sku: str | None = "N/A"
-    unit_price: float = 0.0
-    price: float | None = 0.0
-    quantity: int | None = 1
+    sku: str | None = Field(default="N/A", max_length=100)
+    unit_price: float = Field(default=0.0, ge=0)
+    price: float | None = Field(default=0.0, ge=0)
+    quantity: int | None = Field(default=1, ge=0)
     category: str | None = None
-    in_stock_quantity: int | None = 100
+    in_stock_quantity: int | None = Field(default=100, ge=0)
     is_active: bool | None = True
 
 
@@ -1191,6 +1201,7 @@ class CalendarEventResponse(BaseModel):
     end: str
     event_type: str
     description: str | None = None
+    status: str = "Scheduled"
 
 
 # 20. Integration Schemas

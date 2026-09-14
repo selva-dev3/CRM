@@ -62,6 +62,7 @@ async def test_update_and_delete_delegate_to_repository() -> None:
     repository.get = AsyncMock(return_value=project)
     repository.update = AsyncMock(return_value=project)
     repository.delete = AsyncMock()
+    repository.recalculate_progress = AsyncMock(return_value=20)
     service = ProjectService(repository)
     db = AsyncMock(spec=AsyncSession)
     user = _user()

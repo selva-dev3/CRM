@@ -51,6 +51,8 @@ import { SearchableCompanySelect } from '@/components/common/searchable-company-
 import { PageTabs } from '@/components/common/page-tabs';
 import { useEntityCustomFieldsQuery, type CustomFieldValue } from '@/lib/api/custom-fields';
 
+const UNSUPPORTED_CONTACT_ACTIONS_AVAILABLE = false;
+
 export default function ContactsPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'all' | 'starred'>('all');
@@ -405,7 +407,7 @@ export default function ContactsPage() {
             </Button>
           </PermissionGate>
 
-          <ActionMenu
+          {UNSUPPORTED_CONTACT_ACTIONS_AVAILABLE && <ActionMenu
             label="More"
             className="h-8 text-xs font-semibold"
             actions={[
@@ -431,7 +433,7 @@ export default function ContactsPage() {
                 onSelect: () => setIsMergeModalOpen(true),
               },
             ]}
-          />
+          />}
 
           {selectedIds.size > 0 && (
             <PermissionGate permission={PERMISSIONS.CONTACTS.BULK_DELETE}>

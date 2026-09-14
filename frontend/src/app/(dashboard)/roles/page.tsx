@@ -65,6 +65,8 @@ import { UserSelect } from '@/components/common/user-select';
 import { useHasPermission } from '@/hooks/use-has-permission';
 import { useAuth } from '@/providers/auth-provider';
 
+const ROLE_SCHEMA_TRANSFER_AVAILABLE = false;
+
 export default function RolesPage() {
   const router = useRouter();
   const { user } = useAuth();
@@ -587,7 +589,7 @@ export default function RolesPage() {
         </div>
 
         <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap w-full sm:w-auto">
-          <PermissionGate permission="roles:read">
+          {ROLE_SCHEMA_TRANSFER_AVAILABLE && <PermissionGate permission="roles:read">
             <button
               onClick={handleExportSchema}
               className="flex items-center justify-center gap-1.5 sm:gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg font-semibold text-xs transition-colors shadow-sm cursor-pointer flex-1 sm:flex-initial min-w-[110px] sm:min-w-0"
@@ -595,9 +597,9 @@ export default function RolesPage() {
               <Download className="w-4 h-4 text-slate-600 shrink-0" />
               <span>Export Schema</span>
             </button>
-          </PermissionGate>
+          </PermissionGate>}
 
-          <PermissionGate permission="roles:create">
+          {ROLE_SCHEMA_TRANSFER_AVAILABLE && <PermissionGate permission="roles:create">
             <button
               onClick={handleImportSchema}
               disabled={importRolesMutation.isPending}
@@ -606,7 +608,7 @@ export default function RolesPage() {
               {importRolesMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : <Upload className="w-4 h-4 text-indigo-600 shrink-0" />}
               <span>Import JSON</span>
             </button>
-          </PermissionGate>
+          </PermissionGate>}
 
           <PermissionGate permission="roles:read">
             <button

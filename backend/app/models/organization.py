@@ -12,6 +12,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
     text,
 )
@@ -82,13 +83,17 @@ class OrganizationSetting(Base):
 
 class OrganizationSubscription(Base):
     __tablename__ = "organization_subscriptions"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", name="uq_organization_subscriptions_organization_id"
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
 
     organization_id: Mapped[str] = mapped_column(
         String,
         ForeignKey("organizations.id", ondelete="CASCADE"),
-        unique=True,
         index=True,
         nullable=False,
     )
@@ -99,14 +104,16 @@ class OrganizationSubscription(Base):
 
     status: Mapped[str] = mapped_column(String(50), default="active", nullable=False)
 
-    billing_cycle: Mapped[str] = mapped_column(String(20), default="Monthly", nullable=False)
+    billing_cycle: Mapped[str | None] = mapped_column(
+        String(20), default="Monthly", nullable=True
+    )
 
-    amount: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    amount: Mapped[float | None] = mapped_column(Float, default=0.0, nullable=True)
 
-    currency: Mapped[str] = mapped_column(String(10), default="INR", nullable=False)
+    currency: Mapped[str | None] = mapped_column(String(10), default="INR", nullable=True)
 
     # Trial
-    trial: Mapped[bool] = mapped_column(Boolean, default=False)
+    trial: Mapped[bool | None] = mapped_column(Boolean, default=False, nullable=True)
 
     # Billing Dates
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -119,10 +126,12 @@ class OrganizationSubscription(Base):
 
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    auto_renew: Mapped[bool] = mapped_column(Boolean, default=True)
+    auto_renew: Mapped[bool | None] = mapped_column(Boolean, default=True, nullable=True)
 
     # Preserve the provider archive alongside current subscription billing state.
     legacy_provider_data: Mapped[dict | None] = mapped_column(JSON)
+    stripe_customer_id: Mapped[str | None] = mapped_column(String(255))
+    stripe_subscription_id: Mapped[str | None] = mapped_column(String(255))
     payment_provider: Mapped[str | None] = mapped_column(String(50))
 
     payment_method: Mapped[str | None] = mapped_column(String(100))
@@ -145,22 +154,26 @@ class OrganizationSubscription(Base):
     last_provider_request_id: Mapped[str | None] = mapped_column(String(120))
 
     # Usage
-    max_users: Mapped[int] = mapped_column(Integer, default=100)
+    max_users: Mapped[int | None] = mapped_column(Integer, default=100, nullable=True)
 
-    current_users: Mapped[int] = mapped_column(Integer, default=1)
+    current_users: Mapped[int | None] = mapped_column(Integer, default=1, nullable=True)
 
-    storage_limit_gb: Mapped[int] = mapped_column(Integer, default=500)
+    storage_limit_gb: Mapped[int | None] = mapped_column(Integer, default=500, nullable=True)
 
-    storage_used_gb: Mapped[float] = mapped_column(Float, default=0.5)
+    storage_used_gb: Mapped[float | None] = mapped_column(Float, default=0.5, nullable=True)
 
-    ai_credits: Mapped[int] = mapped_column(Integer, default=-1)
+    ai_credits: Mapped[int | None] = mapped_column(Integer, default=-1, nullable=True)
 
-    support_plan: Mapped[str] = mapped_column(String(50), default="Standard")
+    support_plan: Mapped[str | None] = mapped_column(
+        String(50), default="Standard", nullable=True
+    )
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=True
+    )
 
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=True
     )
 
 
@@ -179,19 +192,19 @@ class SubscriptionPlan(Base):
 
     billing_cycle: Mapped[str] = mapped_column(String(20), default="month", nullable=False)
 
-    price_monthly: Mapped[float] = mapped_column(Float, default=0)
+    price_monthly: Mapped[float | None] = mapped_column(Float, default=0, nullable=True)
 
-    price_yearly: Mapped[float] = mapped_column(Float, default=0)
+    price_yearly: Mapped[float | None] = mapped_column(Float, default=0, nullable=True)
 
-    max_users: Mapped[int] = mapped_column(Integer, default=3)
+    max_users: Mapped[int | None] = mapped_column(Integer, default=3, nullable=True)
 
-    max_storage_gb: Mapped[int] = mapped_column(Integer, default=5)
+    max_storage_gb: Mapped[int | None] = mapped_column(Integer, default=5, nullable=True)
 
-    ai_credits: Mapped[int] = mapped_column(Integer, default=0)
+    ai_credits: Mapped[int | None] = mapped_column(Integer, default=0, nullable=True)
 
     features: Mapped[str | None] = mapped_column(Text)
 
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_active: Mapped[bool | None] = mapped_column(Boolean, default=True, nullable=True)
 
     is_popular: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
@@ -227,4 +240,6 @@ class ProcessedWebhookEvent(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     event_id: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     event_type: Mapped[str] = mapped_column(String(100), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=True
+    )

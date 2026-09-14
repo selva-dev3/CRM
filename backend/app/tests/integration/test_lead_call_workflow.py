@@ -11,7 +11,16 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.errors import NotFoundError
-from app.models import CallLog, Contact, Lead, Organization, User
+from app.models import (
+    CallLog,
+    Contact,
+    Lead,
+    Organization,
+    Role,
+    RoleRecordScope,
+    User,
+    UserRole,
+)
 from app.schemas.crm_schemas import CallLogBase, CallLogUpdate
 from app.services.call_service import CallService
 from app.services.lead_service import LeadService
@@ -60,15 +69,29 @@ async def lead_call_database():
         name="Foreign buyer",
         email=f"{uuid4()}@example.com",
     )
+    role = Role(
+        id=str(uuid4()),
+        organization_id=org.id,
+        name=f"Call workflow role {uuid4()}",
+    )
     async with sessions() as db:
         db.add_all([org, foreign_org])
         await db.flush()
-        db.add_all([user, lead, contact, foreign_contact])
+        db.add_all([user, lead, contact, foreign_contact, role])
+        await db.flush()
+        db.add(UserRole(user_id=user.id, role_id=role.id))
+        db.add_all(
+            [
+                RoleRecordScope(role_id=role.id, module=module, scope="all")
+                for module in ("calls", "leads", "contacts", "companies", "deals")
+            ]
+        )
         await db.commit()
     try:
         yield sessions, org, user, lead, contact, foreign_contact
     finally:
         async with sessions() as db:
+            await db.execute(delete(UserRole).where(UserRole.role_id == role.id))
             await db.execute(delete(Organization).where(Organization.id.in_([org.id, foreign_org.id])))
             await db.commit()
         await engine.dispose()

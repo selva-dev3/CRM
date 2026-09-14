@@ -112,6 +112,7 @@ async def test_project_document_inherits_access_from_assigned_project_task():
 
     sql = str(db.execute.await_args.args[0])
     assert "documents.uploaded_by" in sql
-    assert "documents.project_id IS NULL" in sql
+    assert "documents.project_id IS NOT NULL" in sql
     assert "tasks.project_id = documents.project_id" in sql
     assert "tasks.assigned_to" in sql
+    assert "project_members.project_id = documents.project_id" in sql

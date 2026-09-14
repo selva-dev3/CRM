@@ -68,6 +68,11 @@ export interface SubtaskItem {
   created_at?: string;
 }
 
+export interface TaskDependency {
+  task_id: string;
+  depends_on_task_id: string;
+}
+
 // ---------------------------------------------------------------------------
 // Raw API Functions
 // ---------------------------------------------------------------------------
@@ -168,6 +173,22 @@ export async function setTaskReminderApi(taskId: string, reminderTime: string): 
   return apiClient.post<{ message: string; status: string }>(`/tasks/${taskId}/reminder?reminder_time=${encodeURIComponent(reminderTime)}`);
 }
 
+export function fetchTaskDependenciesApi(taskId: string): Promise<TaskDependency[]> {
+  return apiClient.get<TaskDependency[]>(`/tasks/${encodeURIComponent(taskId)}/dependencies`);
+}
+
+export function addTaskDependencyApi(taskId: string, dependsOnTaskId: string): Promise<TaskDependency> {
+  return apiClient.post<TaskDependency>(`/tasks/${encodeURIComponent(taskId)}/dependencies`, {
+    depends_on_task_id: dependsOnTaskId,
+  });
+}
+
+export function removeTaskDependencyApi(taskId: string, dependsOnTaskId: string): Promise<void> {
+  return apiClient.delete<void>(
+    `/tasks/${encodeURIComponent(taskId)}/dependencies/${encodeURIComponent(dependsOnTaskId)}`,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // TanStack Query Hooks
 // ---------------------------------------------------------------------------
@@ -193,6 +214,36 @@ export function useTaskQuery(id: string) {
     queryKey: ['task', id],
     queryFn: () => getTaskByIdApi(id),
     enabled: !!id,
+  });
+}
+
+export function useTaskDependenciesQuery(taskId: string) {
+  return useQuery({
+    queryKey: ['tasks', taskId, 'dependencies'],
+    queryFn: () => fetchTaskDependenciesApi(taskId),
+    enabled: Boolean(taskId),
+  });
+}
+
+export function useAddTaskDependencyMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, dependsOnTaskId }: { taskId: string; dependsOnTaskId: string }) =>
+      addTaskDependencyApi(taskId, dependsOnTaskId),
+    onSuccess: (_dependency, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['tasks', variables.taskId, 'dependencies'] });
+    },
+  });
+}
+
+export function useRemoveTaskDependencyMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, dependsOnTaskId }: { taskId: string; dependsOnTaskId: string }) =>
+      removeTaskDependencyApi(taskId, dependsOnTaskId),
+    onSuccess: (_result, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['tasks', variables.taskId, 'dependencies'] });
+    },
   });
 }
 

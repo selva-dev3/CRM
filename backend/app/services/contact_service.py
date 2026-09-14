@@ -173,9 +173,16 @@ class ContactService:
         return contact_to_dict(contact)
 
     async def get_billing_address(
-        self, db: AsyncSession, contact_id: str, *, organization_id: str
+        self,
+        db: AsyncSession,
+        contact_id: str,
+        *,
+        organization_id: str,
+        current_user: User,
     ) -> ContactAddressResponse:
-        await self.require_contact(db, contact_id, organization_id=organization_id)
+        await self.require_contact(
+            db, contact_id, organization_id=organization_id, current_user=current_user
+        )
         address = await self.repository.get_address(
             db, contact_id=contact_id, organization_id=organization_id
         )
@@ -190,8 +197,11 @@ class ContactService:
         payload: ContactAddressUpdate,
         *,
         organization_id: str,
+        current_user: User,
     ) -> ContactAddressResponse:
-        await self.require_contact(db, contact_id, organization_id=organization_id)
+        await self.require_contact(
+            db, contact_id, organization_id=organization_id, current_user=current_user
+        )
         address = await self.repository.get_address(
             db, contact_id=contact_id, organization_id=organization_id
         )
@@ -215,7 +225,9 @@ class ContactService:
         page: int = 1,
         limit: int = 15,
     ) -> list[ContactActivityResponse]:
-        contact = await self.require_contact(db, contact_id, organization_id=organization_id)
+        contact = await self.require_contact(
+            db, contact_id, organization_id=organization_id, current_user=current_user
+        )
         source_limit = page * limit
         notes = await self.note_repository.list_by_entity(
             db,
@@ -339,6 +351,7 @@ class ContactService:
         contact_id: str,
         *,
         organization_id: str,
+        current_user: User,
         page: int = 1,
         limit: int = 15,
     ) -> list[ContactEmailResponse]:
@@ -347,7 +360,12 @@ class ContactService:
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 message="limit is required when page is greater than 1",
             )
-        contact = await self.require_contact(db, contact_id, organization_id=organization_id)
+        contact = await self.require_contact(
+            db, contact_id, organization_id=organization_id, current_user=current_user
+        )
+        from app.services.record_access_service import record_access_service
+
+        email_access = await record_access_service.resolve(db, current_user, "emails")
         emails = await self.email_repository.list_for_contact(
             db,
             organization_id=organization_id,
@@ -355,6 +373,7 @@ class ContactService:
             recipient_email=contact.email,
             limit=limit,
             offset=(page - 1) * limit,
+            access=email_access,
         )
         return [
             ContactEmailResponse(
@@ -369,14 +388,25 @@ class ContactService:
         ]
 
     async def count_contact_emails(
-        self, db: AsyncSession, contact_id: str, *, organization_id: str
+        self,
+        db: AsyncSession,
+        contact_id: str,
+        *,
+        organization_id: str,
+        current_user: User,
     ) -> int:
-        contact = await self.require_contact(db, contact_id, organization_id=organization_id)
+        contact = await self.require_contact(
+            db, contact_id, organization_id=organization_id, current_user=current_user
+        )
+        from app.services.record_access_service import record_access_service
+
+        email_access = await record_access_service.resolve(db, current_user, "emails")
         return await self.email_repository.count_for_contact(
             db,
             organization_id=organization_id,
             contact_id=contact.id,
             recipient_email=contact.email,
+            access=email_access,
         )
 
     async def _build_name_parts(

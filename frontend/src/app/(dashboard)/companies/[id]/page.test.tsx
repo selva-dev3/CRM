@@ -2,8 +2,6 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ApiError } from '@/lib/api/client';
-
 const pushMock = vi.fn();
 const documentsQueryMock = vi.fn();
 
@@ -87,16 +85,21 @@ describe('CompanyDetailsPage relationship tabs', () => {
     vi.clearAllMocks();
     documentsQueryMock.mockImplementation((_id: string, enabled: boolean) => ({
       ...emptyQuery,
-      data: enabled ? [] : undefined,
-      isError: enabled,
-      error: enabled
-        ? new ApiError(
-            'Company documents are not linked to a CRM entity yet',
-            'http',
-            501,
-            'COMPANY_DOCUMENT_RELATION_UNAVAILABLE',
-          )
-        : null,
+      data: enabled
+        ? {
+            items: [
+              {
+                id: 'document-1',
+                filename: 'contract.pdf',
+                file_size: 2048,
+                mime_type: 'application/pdf',
+                download_url: 'https://files.example.test/contract.pdf',
+                uploaded_at: '2026-09-06T10:00:00Z',
+              },
+            ],
+            total: 1,
+          }
+        : undefined,
     }));
   });
 
@@ -106,7 +109,7 @@ describe('CompanyDetailsPage relationship tabs', () => {
     expect(screen.getByRole('table')).toBeInTheDocument();
     expect(screen.getByText('Jane Buyer')).toBeInTheDocument();
     expect(screen.queryByText(/Some related company records/)).not.toBeInTheDocument();
-    expect(documentsQueryMock).toHaveBeenCalledWith('company-1', false);
+    expect(documentsQueryMock).toHaveBeenCalledWith('company-1', false, 1, 15);
   });
 
   it('loads the selected tab and renders canonical quote fields', async () => {
@@ -118,14 +121,15 @@ describe('CompanyDetailsPage relationship tabs', () => {
     expect(screen.queryByText('quote-internal-id')).not.toBeInTheDocument();
   });
 
-  it('isolates the known Documents limitation to the Documents tab', async () => {
+  it('loads documents linked to the company', async () => {
     render(<CompanyDetailsPage />);
 
     await userEvent.click(screen.getByRole('tab', { name: 'Documents' }));
 
-    expect(screen.getByRole('alert')).toHaveTextContent(
-      'Documents are not linked to companies yet.',
+    expect(screen.getByText('contract.pdf')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Download' })).toHaveAttribute(
+      'href',
+      'https://files.example.test/contract.pdf',
     );
-    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
   });
 });

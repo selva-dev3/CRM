@@ -50,7 +50,6 @@ import {
   useCompanyHierarchyQuery,
   useAddCompanyNoteMutation,
 } from '@/lib/api/companies';
-import { ApiError } from '@/lib/api/client';
 import { CustomFieldValues } from '@/components/common/custom-field-values';
 import { CustomFields } from '@/components/common/custom-fields';
 import {
@@ -75,6 +74,7 @@ export default function CompanyDetailsPage() {
   const [notesPage, setNotesPage] = useState(1);
   const [quotesPage, setQuotesPage] = useState(1);
   const [invoicesPage, setInvoicesPage] = useState(1);
+  const [documentsPage, setDocumentsPage] = useState(1);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -108,7 +108,7 @@ export default function CompanyDetailsPage() {
   const notesQuery = useCompanyNotesQuery(companyId, activeTab === 'notes', notesPage, relationshipLimit);
   const quotesQuery = useCompanyQuotesQuery(companyId, activeTab === 'quotes', quotesPage, relationshipLimit);
   const invoicesQuery = useCompanyInvoicesQuery(companyId, activeTab === 'invoices', invoicesPage, relationshipLimit);
-  const documentsQuery = useCompanyDocumentsQuery(companyId, activeTab === 'documents');
+  const documentsQuery = useCompanyDocumentsQuery(companyId, activeTab === 'documents', documentsPage, relationshipLimit);
   const hierarchyQuery = useCompanyHierarchyQuery(companyId, activeTab === 'hierarchy');
 
   const contacts = contactsQuery.data?.items ?? [];
@@ -116,16 +116,13 @@ export default function CompanyDetailsPage() {
   const notes = notesQuery.data?.items ?? [];
   const quotes = quotesQuery.data?.items ?? [];
   const invoices = invoicesQuery.data?.items ?? [];
-  const documents = documentsQuery.data ?? [];
+  const documents = documentsQuery.data?.items ?? [];
   const hierarchy = hierarchyQuery.data;
 
   // Mutations
   const updateCompanyMutation = useUpdateCompanyMutation();
   const deleteCompanyMutation = useDeleteCompanyMutation();
   const addNoteMutation = useAddCompanyNoteMutation(companyId);
-  const isDocumentsUnavailable =
-    documentsQuery.error instanceof ApiError &&
-    documentsQuery.error.code === 'COMPANY_DOCUMENT_RELATION_UNAVAILABLE';
 
   const handleAddNote = () => {
     setErrorMessage(null);
@@ -456,11 +453,10 @@ export default function CompanyDetailsPage() {
           {documentsQuery.isError ? (
             <CompanyRelationshipError
               resourceName="Documents"
-              unavailable={isDocumentsUnavailable}
               onRetry={() => void documentsQuery.refetch()}
             />
           ) : (
-            <CompanyDocumentsTable data={documents} isLoading={documentsQuery.isLoading} />
+            <CompanyDocumentsTable data={documents} isLoading={documentsQuery.isLoading} pagination={{ pageIndex: documentsPage - 1, pageCount: Math.max(1, Math.ceil((documentsQuery.data?.total ?? 0) / relationshipLimit)), totalRecords: documentsQuery.data?.total ?? 0, onPageChange: (value) => setDocumentsPage(value + 1) }} />
           )}
         </div>
       )}

@@ -34,7 +34,6 @@ export interface ProjectPayload {
   start_date?: string | null;
   due_date?: string | null;
   budget?: number | null;
-  completion_percentage?: number;
 }
 
 export interface ProjectStakeholder {
@@ -42,6 +41,15 @@ export interface ProjectStakeholder {
   project_id: string;
   contact_id: string;
   role: string;
+}
+
+export interface ProjectMember {
+  id: string;
+  project_id: string;
+  user_id: string;
+  role: string;
+  added_by?: string | null;
+  created_at?: string | null;
 }
 
 export interface FetchProjectsParams {
@@ -105,6 +113,14 @@ export function useProjectStakeholdersQuery(id: string, enabled = true) {
   });
 }
 
+export function useProjectMembersQuery(id: string, enabled = true) {
+  return useQuery({
+    queryKey: ['project', id, 'members'],
+    queryFn: () => apiClient.get<ProjectMember[]>(`/projects/${encodeURIComponent(id)}/members`),
+    enabled: Boolean(id) && enabled,
+  });
+}
+
 function useInvalidateProjects() {
   const queryClient = useQueryClient();
   return () => {
@@ -149,5 +165,23 @@ export function useRemoveProjectStakeholderMutation() {
     mutationFn: ({ projectId, stakeholderId }: { projectId: string; stakeholderId: string }) =>
       apiClient.delete<void>(`/projects/${encodeURIComponent(projectId)}/stakeholders/${encodeURIComponent(stakeholderId)}`),
     onSuccess: (_item, variables) => queryClient.invalidateQueries({ queryKey: ['project', variables.projectId, 'stakeholders'] }),
+  });
+}
+
+export function useAddProjectMemberMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, userId, role }: { projectId: string; userId: string; role: string }) =>
+      apiClient.post<ProjectMember>(`/projects/${encodeURIComponent(projectId)}/members`, { user_id: userId, role }),
+    onSuccess: (_item, variables) => queryClient.invalidateQueries({ queryKey: ['project', variables.projectId, 'members'] }),
+  });
+}
+
+export function useRemoveProjectMemberMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, userId }: { projectId: string; userId: string }) =>
+      apiClient.delete<void>(`/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`),
+    onSuccess: (_item, variables) => queryClient.invalidateQueries({ queryKey: ['project', variables.projectId, 'members'] }),
   });
 }
