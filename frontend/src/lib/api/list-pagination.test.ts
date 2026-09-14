@@ -21,18 +21,35 @@ function response(status: number, data: unknown, total?: string) {
 }
 
 describe('company and contact list pagination', () => {
-  it.each([
-    [fetchCompaniesPageApi, '/companies'],
-    [fetchContactsPageApi, '/contacts'],
-  ] as const)('returns server pagination metadata', async (request, path) => {
+  it('returns server pagination metadata for companies', async () => {
     const fetchMock = vi.fn().mockResolvedValue(response(200, [{ id: 'record-1' }], '37'));
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(request(2, 15, 'Acme')).resolves.toEqual({
+    await expect(fetchCompaniesPageApi(2, 15, 'Acme')).resolves.toEqual({
       items: [{ id: 'record-1' }],
       total: 37,
     });
-    expect(fetchMock.mock.calls[0][0]).toContain(`${path}?page=2&limit=15&search=Acme`);
+    expect(fetchMock.mock.calls[0][0]).toContain('/companies?page=2&limit=15&search=Acme');
+  });
+
+  it('returns server pagination metadata for contacts with filters', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response(200, [{ id: 'record-1' }], '37'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchContactsPageApi({
+      page: 2,
+      limit: 15,
+      search: 'Acme',
+      companyId: 'company-1',
+      ownerId: 'owner-1',
+      isStarred: true,
+    })).resolves.toEqual({
+      items: [{ id: 'record-1' }],
+      total: 37,
+    });
+    expect(fetchMock.mock.calls[0][0]).toContain(
+      '/contacts?page=2&limit=15&search=Acme&company_id=company-1&owner_id=owner-1&is_starred=true',
+    );
   });
 
   it.each([fetchCompaniesApi, fetchContactsApi])(
@@ -58,12 +75,14 @@ describe('company and contact list pagination', () => {
     );
   });
 
-  it.each([fetchCompaniesPageApi, fetchContactsPageApi])(
-    'rejects missing pagination metadata',
-    async (request) => {
+  it('rejects missing pagination metadata for companies', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(200, [])));
+    await expect(fetchCompaniesPageApi()).rejects.toThrow('pagination metadata');
+  });
+
+  it('rejects missing pagination metadata for contacts', async () => {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(200, [])));
 
-      await expect(request()).rejects.toThrow('pagination metadata');
-    },
-  );
+      await expect(fetchContactsPageApi()).rejects.toThrow('pagination metadata');
+  });
 });

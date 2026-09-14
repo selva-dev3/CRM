@@ -71,11 +71,62 @@ async def test_count_contacts_is_scoped_to_current_organization(monkeypatch):
         organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
     )
 
-    result = await service.count_contacts(db, search="Jane", current_user=_make_user())
+    result = await service.count_contacts(
+        db,
+        search="Jane",
+        company_id="company-1",
+        owner_id="usr-2",
+        is_starred=True,
+        current_user=_make_user(),
+    )
 
     assert result == 19
     repo.count_by_org.assert_awaited_once_with(
-        db, organization_id="org-1", search="Jane", access=ANY
+        db,
+        organization_id="org-1",
+        search="Jane",
+        company_id="company-1",
+        owner_id="usr-2",
+        is_starred=True,
+        access=ANY,
+    )
+
+
+@pytest.mark.asyncio
+async def test_list_contacts_forwards_filters_with_organization_scope(monkeypatch):
+    repo: Any = ContactRepository()
+    repo.list_by_org = AsyncMock(return_value=[_make_contact()])
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    from app.services.contact_service import organization_service
+
+    monkeypatch.setattr(
+        organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
+    )
+
+    result = await service.list_contacts(
+        db,
+        page=2,
+        limit=15,
+        search="Jane",
+        company_id="company-1",
+        owner_id="usr-2",
+        is_starred=False,
+        current_user=_make_user(),
+    )
+
+    assert result[0]["id"] == "cnt-1"
+    repo.list_by_org.assert_awaited_once_with(
+        db,
+        organization_id="org-1",
+        page=2,
+        limit=15,
+        search="Jane",
+        company_id="company-1",
+        owner_id="usr-2",
+        is_starred=False,
+        access=ANY,
     )
 
 

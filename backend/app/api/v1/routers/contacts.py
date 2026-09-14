@@ -57,13 +57,30 @@ async def list_contacts(
     page: int = Query(1, ge=1),
     limit: int = Query(15, ge=1, le=100),
     search: str | None = Query(None),
+    company_id: str | None = Query(None),
+    owner_id: str | None = Query(None),
+    is_starred: bool | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     contacts = await contact_service.list_contacts(
-        db, page=page, limit=limit, search=search, current_user=current_user
+        db,
+        page=page,
+        limit=limit,
+        search=search,
+        company_id=company_id,
+        owner_id=owner_id,
+        is_starred=is_starred,
+        current_user=current_user,
     )
-    total = await contact_service.count_contacts(db, search=search, current_user=current_user)
+    total = await contact_service.count_contacts(
+        db,
+        search=search,
+        company_id=company_id,
+        owner_id=owner_id,
+        is_starred=is_starred,
+        current_user=current_user,
+    )
     response.headers["X-Total-Count"] = str(total)
     return contacts
 

@@ -38,6 +38,7 @@ def contact_to_dict(contact: Contact) -> dict:
         "phone": contact.phone,
         "position": contact.position,
         "company_id": contact.company_id,
+        "owner_id": contact.owner_id,
         "is_starred": is_starred,
         "status": "Star Contact" if is_starred else None,
         "created_at": str(contact.created_at) if contact.created_at else None,
@@ -84,6 +85,9 @@ class ContactService:
         page: int,
         limit: int,
         search: str | None,
+        company_id: str | None = None,
+        owner_id: str | None = None,
+        is_starred: bool | None = None,
         current_user: User,
     ) -> list[dict]:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
@@ -96,6 +100,9 @@ class ContactService:
             page=page,
             limit=limit,
             search=search,
+            company_id=company_id,
+            owner_id=owner_id,
+            is_starred=is_starred,
             access=access,
         )
         return [contact_to_dict(c) for c in contacts]
@@ -105,6 +112,9 @@ class ContactService:
         db: AsyncSession,
         *,
         search: str | None,
+        company_id: str | None = None,
+        owner_id: str | None = None,
+        is_starred: bool | None = None,
         current_user: User,
     ) -> int:
         organization_id = await organization_service.resolve_valid_org_id(db, current_user)
@@ -112,7 +122,13 @@ class ContactService:
 
         access = await record_access_service.resolve(db, current_user, "contacts")
         return await self.repository.count_by_org(
-            db, organization_id=organization_id, search=search, access=access
+            db,
+            organization_id=organization_id,
+            search=search,
+            company_id=company_id,
+            owner_id=owner_id,
+            is_starred=is_starred,
+            access=access,
         )
 
     async def get_starred_contacts(
