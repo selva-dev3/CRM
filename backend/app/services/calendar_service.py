@@ -8,6 +8,7 @@ from app.models import CalendarEventModel, User
 from app.repositories.calendar_repository import CalendarRepository
 from app.schemas.crm_schemas import CalendarEventCreatePayload
 from app.services.org_service import organization_service
+from app.services.record_access_service import record_access_service
 
 
 def parse_datetime(val: str | None) -> datetime:
@@ -19,7 +20,8 @@ def parse_datetime(val: str | None) -> datetime:
         )
     val_str = str(val).strip()
     try:
-        return datetime.fromisoformat(val_str.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(val_str.replace("Z", "+00:00"))
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
     except ValueError:
         try:
             d = date.fromisoformat(val_str)
@@ -40,6 +42,7 @@ def event_to_dict(event: CalendarEventModel) -> dict:
         "end": str(event.end_time),
         "event_type": event.event_type or "Meeting",
         "description": event.description,
+        "status": event.status,
     }
 
 
@@ -63,17 +66,66 @@ class CalendarService:
         db: AsyncSession,
         *,
         search: str | None = None,
+        page: int = 1,
+        limit: int = 50,
+        start_date: str | None = None,
+        end_date: str | None = None,
         current_user: User,
     ) -> list[dict]:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        access = await record_access_service.resolve(db, current_user, "calendar")
+        start = parse_datetime(start_date) if start_date else None
+        end = parse_datetime(end_date) if end_date else None
+        if start and end and end < start:
+            raise APIException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                code="INVALID_CALENDAR_RANGE",
+                message="Calendar end date must not be before start date",
+            )
         events = await self.repository.list_events(
-            db, organization_id=org_id, search=search
+            db,
+            organization_id=org_id,
+            search=search,
+            page=page,
+            limit=limit,
+            start=start,
+            end=end,
+            access=access,
         )
         return [event_to_dict(e) for e in events]
+
+    async def count_calendar_events(
+        self,
+        db: AsyncSession,
+        *,
+        search: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        current_user: User,
+    ) -> int:
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        access = await record_access_service.resolve(db, current_user, "calendar")
+        start = parse_datetime(start_date) if start_date else None
+        end = parse_datetime(end_date) if end_date else None
+        if start and end and end < start:
+            raise APIException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                code="INVALID_CALENDAR_RANGE",
+                message="Calendar end date must not be before start date",
+            )
+        return await self.repository.count_events(
+            db,
+            organization_id=org_id,
+            search=search,
+            start=start,
+            end=end,
+            access=access,
+        )
 
     async def create_calendar_event(
         self, db: AsyncSession, payload: CalendarEventCreatePayload, current_user: User
     ) -> dict:
+        org_id = await organization_service.resolve_valid_org_id(db, current_user)
         start_time = parse_datetime(payload.start)
         end_time = parse_datetime(payload.end)
         if end_time <= start_time:
@@ -86,6 +138,7 @@ class CalendarService:
             db,
             data={
                 "user_id": current_user.id,
+                "organization_id": org_id,
                 "title": payload.title,
                 "start_time": start_time,
                 "end_time": end_time,
@@ -101,7 +154,8 @@ class CalendarService:
         self, db: AsyncSession, event_id: str, current_user: User
     ) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
-        event = await self.repository.get_event(db, event_id, org_id)
+        access = await record_access_service.resolve(db, current_user, "calendar")
+        event = await self.repository.get_event(db, event_id, org_id, access=access)
         if not event:
             raise NotFoundError(message=f"Calendar event '{event_id}' not found")
         return event_to_dict(event)
@@ -114,7 +168,8 @@ class CalendarService:
         current_user: User,
     ) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
-        event = await self.repository.get_event(db, event_id, org_id)
+        access = await record_access_service.resolve(db, current_user, "calendar")
+        event = await self.repository.get_event(db, event_id, org_id, access=access)
         if not event:
             raise NotFoundError(message=f"Calendar event '{event_id}' not found")
         try:
@@ -137,15 +192,22 @@ class CalendarService:
             await db.commit()
             await db.refresh(event)
             return event_to_dict(event)
+        except APIException:
+            await db.rollback()
+            raise
         except Exception as e:
             await db.rollback()
-            raise APIException(status_code=status.HTTP_400_BAD_REQUEST, message=str(e)) from e
+            raise APIException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Failed to update calendar event",
+            ) from e
 
     async def delete_calendar_event(
         self, db: AsyncSession, event_id: str, current_user: User
     ) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
-        event = await self.repository.get_event(db, event_id, org_id)
+        access = await record_access_service.resolve(db, current_user, "calendar")
+        event = await self.repository.get_event(db, event_id, org_id, access=access)
         if not event:
             raise NotFoundError(message=f"Calendar event '{event_id}' not found")
         await self.repository.delete_event(db, event)

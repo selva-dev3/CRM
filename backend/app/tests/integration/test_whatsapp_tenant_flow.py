@@ -17,7 +17,16 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.config import settings
 from app.core.errors import APIException, ConflictError, NotFoundError
-from app.models import Contact, Integration, Lead, Organization, User
+from app.models import (
+    Contact,
+    Integration,
+    Lead,
+    Organization,
+    Role,
+    RoleRecordScope,
+    User,
+    UserRole,
+)
 from app.models.whatsapp import (
     WhatsAppContactIdentity,
     WhatsAppIntegration,
@@ -82,6 +91,24 @@ async def test_tenant_matching_idempotency_and_status_flow(monkeypatch):
                         hashed_password=UNUSED_PASSWORD_HASH,
                         organization_id="org-b",
                         is_active=True,
+                    ),
+                ]
+            )
+            await db.flush()
+            roles = [
+                Role(id="role-a", name="WhatsApp test role A", organization_id="org-a"),
+                Role(id="role-b", name="WhatsApp test role B", organization_id="org-b"),
+            ]
+            db.add_all(roles)
+            await db.flush()
+            db.add_all(
+                [
+                    UserRole(user_id="user-a", role_id="role-a"),
+                    UserRole(user_id="user-b", role_id="role-b"),
+                    *(
+                        RoleRecordScope(role_id=role_id, module=module, scope="all")
+                        for role_id in ("role-a", "role-b")
+                        for module in ("leads", "contacts", "companies", "deals")
                     ),
                 ]
             )

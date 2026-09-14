@@ -1,6 +1,16 @@
 import uuid
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, String, UniqueConstraint, func
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    UniqueConstraint,
+    func,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -11,6 +21,11 @@ class Contact(Base):
     __table_args__ = (
         UniqueConstraint("organization_id", "id"),
         Index("ix_contacts_org_normalized_phone", "organization_id", "normalized_phone"),
+        Index(
+            "ix_contacts_org_normalized_email",
+            "organization_id",
+            text("lower(btrim(email))"),
+        ),
     )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))

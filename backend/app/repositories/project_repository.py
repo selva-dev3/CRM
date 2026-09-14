@@ -1,7 +1,17 @@
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Company, Contact, Deal, Project, ProjectStakeholder, User
+from app.models import (
+    Company,
+    Contact,
+    Deal,
+    Project,
+    ProjectMember,
+    ProjectMilestone,
+    ProjectStakeholder,
+    Task,
+    User,
+)
 from app.repositories.project_access import project_record_access_filter
 
 
@@ -132,3 +142,58 @@ class ProjectRepository:
                 ProjectStakeholder.id == stakeholder_id, ProjectStakeholder.project_id == project_id
             )
         )
+
+    async def list_members(self, db: AsyncSession, project_id: str) -> list[ProjectMember]:
+        return list(
+            (
+                await db.scalars(
+                    select(ProjectMember)
+                    .where(ProjectMember.project_id == project_id)
+                    .order_by(ProjectMember.created_at, ProjectMember.id)
+                )
+            ).all()
+        )
+
+    async def get_member(
+        self, db: AsyncSession, project_id: str, user_id: str
+    ) -> ProjectMember | None:
+        return await db.scalar(
+            select(ProjectMember).where(
+                ProjectMember.project_id == project_id, ProjectMember.user_id == user_id
+            )
+        )
+
+    async def recalculate_progress(self, db: AsyncSession, project: Project) -> int:
+        task_total, task_completed = (
+            await db.execute(
+                select(
+                    func.count(Task.id),
+                    func.count(Task.id).filter(func.lower(Task.status) == "completed"),
+                ).where(Task.project_id == project.id, Task.organization_id == project.organization_id)
+            )
+        ).one()
+        milestone_total, milestone_completed = (
+            await db.execute(
+                select(
+                    func.count(ProjectMilestone.id),
+                    func.count(ProjectMilestone.id).filter(
+                        ProjectMilestone.status == "Completed"
+                    ),
+                ).where(
+                    ProjectMilestone.project_id == project.id,
+                    ProjectMilestone.organization_id == project.organization_id,
+                )
+            )
+        ).one()
+        total = int(task_total or 0) + int(milestone_total or 0)
+        completed = int(task_completed or 0) + int(milestone_completed or 0)
+        is_complete = total > 0 and completed >= total
+        if total == 0:
+            project.completion_percentage = 0
+        elif is_complete:
+            project.completion_percentage = 100
+        else:
+            project.completion_percentage = min(99, round(completed * 100 / total))
+        if project.status == "Completed" and not is_complete:
+            project.status = "In Progress"
+        return project.completion_percentage

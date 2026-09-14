@@ -111,16 +111,51 @@ class SupportRepository:
             filters.append(access_filter)
         return await db.scalar(select(Ticket).where(*filters))
 
-    async def list_comments(self, db: AsyncSession, ticket_id: str):
+    async def list_comments(
+        self, db: AsyncSession, ticket_id: str, *, offset: int = 0, limit: int = 50
+    ):
         return (
             await db.scalars(
                 select(TicketComment)
                 .where(TicketComment.ticket_id == ticket_id)
                 .order_by(TicketComment.created_at)
+                .offset(offset)
+                .limit(limit)
             )
         ).all()
 
-    async def list_ticket_articles(self, db: AsyncSession, ticket_id: str):
+    async def count_comments(self, db: AsyncSession, ticket_id: str) -> int:
+        return int(
+            await db.scalar(
+                select(func.count()).select_from(TicketComment).where(
+                    TicketComment.ticket_id == ticket_id
+                )
+            )
+            or 0
+        )
+
+    async def status_history(self, db: AsyncSession, ticket_id: str):
+        from app.models import TicketStatusHistory
+
+        return list(
+            (
+                await db.scalars(
+                    select(TicketStatusHistory)
+                    .where(TicketStatusHistory.ticket_id == ticket_id)
+                    .order_by(TicketStatusHistory.created_at, TicketStatusHistory.id)
+                )
+            ).all()
+        )
+
+    async def list_ticket_articles(self, db: AsyncSession, ticket_id: str, *, access=None):
+        filters = [TicketKnowledgeArticle.ticket_id == ticket_id]
+        access_filter = record_access_filter(
+            access,
+            assigned_column=KnowledgeArticle.author_id,
+            created_column=KnowledgeArticle.author_id,
+        )
+        if access_filter is not None:
+            filters.append(access_filter)
         return (
             await db.scalars(
                 select(KnowledgeArticle)
@@ -128,7 +163,7 @@ class SupportRepository:
                     TicketKnowledgeArticle,
                     TicketKnowledgeArticle.article_id == KnowledgeArticle.id,
                 )
-                .where(TicketKnowledgeArticle.ticket_id == ticket_id)
+                .where(*filters)
                 .order_by(KnowledgeArticle.title)
             )
         ).all()
@@ -152,8 +187,16 @@ class SupportRepository:
         status: str | None,
         offset: int,
         limit: int,
+        access=None,
     ):
         filters = [KnowledgeArticle.organization_id == organization_id]
+        access_filter = record_access_filter(
+            access,
+            assigned_column=KnowledgeArticle.author_id,
+            created_column=KnowledgeArticle.author_id,
+        )
+        if access_filter is not None:
+            filters.append(access_filter)
         if search:
             filters.append(
                 or_(
@@ -178,12 +221,22 @@ class SupportRepository:
         )
         return rows, total
 
-    async def article(self, db: AsyncSession, organization_id: str, article_id: str):
+    async def article(
+        self, db: AsyncSession, organization_id: str, article_id: str, *, access=None
+    ):
+        filters = [
+            KnowledgeArticle.id == article_id,
+            KnowledgeArticle.organization_id == organization_id,
+        ]
+        access_filter = record_access_filter(
+            access,
+            assigned_column=KnowledgeArticle.author_id,
+            created_column=KnowledgeArticle.author_id,
+        )
+        if access_filter is not None:
+            filters.append(access_filter)
         return await db.scalar(
-            select(KnowledgeArticle).where(
-                KnowledgeArticle.id == article_id,
-                KnowledgeArticle.organization_id == organization_id,
-            )
+            select(KnowledgeArticle).where(*filters)
         )
 
     async def public_article(self, db: AsyncSession, organization_slug: str, article_slug: str):

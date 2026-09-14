@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.currency import normalize_currency_code_or_default
 from app.core.locale import normalize_locale_or_default
+from app.core.record_access import record_access_filter
 from app.models import (
     CallLog,
     Deal,
@@ -29,12 +30,22 @@ SENT_EMAIL_STATUS = "sent"
 class DashboardRepository:
     """DB query layer for dashboard aggregate queries. No business logic here."""
 
-    async def count_leads(self, db: AsyncSession, organization_id: str) -> int:
+    @staticmethod
+    def _scoped(filters: list, access, *, assigned, created, team=None) -> list:
+        access_filter = record_access_filter(
+            access, assigned_column=assigned, created_column=created, team_column=team
+        )
+        return [*filters, access_filter] if access_filter is not None else filters
+
+    async def count_leads(self, db: AsyncSession, organization_id: str, access=None) -> int:
+        filters = self._scoped(
+            [Lead.organization_id == organization_id, Lead.is_archived.is_(False)],
+            access,
+            assigned=Lead.assigned_to,
+            created=Lead.created_by,
+        )
         result = await db.execute(
-            select(func.count(Lead.id)).where(
-                Lead.organization_id == organization_id,
-                Lead.is_archived.is_(False),
-            )
+            select(func.count(Lead.id)).where(*filters)
         )
         return result.scalar() or 0
 
@@ -46,6 +57,9 @@ class DashboardRepository:
         currency: str,
         start_at: datetime | None = None,
         end_at: datetime | None = None,
+        quote_access=None,
+        invoice_access=None,
+        payment_access=None,
     ) -> dict[str, float | int]:
         quote_filters = [
             Quote.organization_id == organization_id,
@@ -56,6 +70,15 @@ class DashboardRepository:
             Invoice.status != "Cancelled",
             func.upper(Invoice.currency) == currency,
         ]
+        quote_filters = self._scoped(
+            quote_filters, quote_access, assigned=Quote.created_by, created=Quote.created_by
+        )
+        invoice_filters = self._scoped(
+            invoice_filters,
+            invoice_access,
+            assigned=Invoice.created_by,
+            created=Invoice.created_by,
+        )
         if start_at is not None:
             quote_filters.append(Quote.created_at >= start_at)
             invoice_filters.append(Invoice.created_at >= start_at)
@@ -90,9 +113,15 @@ class DashboardRepository:
                 Payment.organization_id == organization_id,
                 Payment.status == "Succeeded",
             )
-            .group_by(Payment.invoice_id)
-            .subquery()
         )
+        payment_filter = record_access_filter(
+            payment_access,
+            assigned_column=Payment.recorded_by,
+            created_column=Payment.recorded_by,
+        )
+        if payment_filter is not None:
+            paid = paid.where(payment_filter)
+        paid = paid.group_by(Payment.invoice_id).subquery()
         paid_amount = func.coalesce(paid.c.paid_amount, 0)
         invoice_row = (
             await db.execute(
@@ -171,86 +200,131 @@ class DashboardRepository:
             else 0.0,
         }
 
-    async def sum_pipeline_deals(self, db: AsyncSession, organization_id: str) -> float:
-        result = await db.execute(
-            select(func.coalesce(func.sum(Deal.amount), 0.0)).where(
+    async def sum_pipeline_deals(self, db: AsyncSession, organization_id: str, access=None) -> float:
+        filters = self._scoped(
+            [
                 Deal.organization_id == organization_id,
                 Deal.stage.notin_(CLOSED_DEAL_STAGES),
-            )
+            ],
+            access,
+            assigned=Deal.assigned_to,
+            created=Deal.created_by,
+        )
+        result = await db.execute(
+            select(func.coalesce(func.sum(Deal.amount), 0.0)).where(*filters)
         )
         return float(result.scalar() or 0.0)
 
-    async def sum_won_deals(self, db: AsyncSession, organization_id: str) -> float:
+    async def sum_won_deals(self, db: AsyncSession, organization_id: str, access=None) -> float:
+        filters = self._scoped(
+            [Deal.organization_id == organization_id, Deal.stage == CLOSED_WON_STAGE],
+            access,
+            assigned=Deal.assigned_to,
+            created=Deal.created_by,
+        )
         result = await db.execute(
-            select(func.coalesce(func.sum(Deal.amount), 0.0)).where(
-                Deal.organization_id == organization_id,
-                Deal.stage == CLOSED_WON_STAGE,
-            )
+            select(func.coalesce(func.sum(Deal.amount), 0.0)).where(*filters)
         )
         return float(result.scalar() or 0.0)
 
-    async def count_closed_deals(self, db: AsyncSession, organization_id: str) -> int:
+    async def count_closed_deals(self, db: AsyncSession, organization_id: str, access=None) -> int:
+        filters = self._scoped(
+            [Deal.organization_id == organization_id, Deal.stage.in_(CLOSED_DEAL_STAGES)],
+            access,
+            assigned=Deal.assigned_to,
+            created=Deal.created_by,
+        )
         result = await db.execute(
-            select(func.count(Deal.id)).where(
-                Deal.organization_id == organization_id,
-                Deal.stage.in_(CLOSED_DEAL_STAGES),
-            )
+            select(func.count(Deal.id)).where(*filters)
         )
         return result.scalar() or 0
 
-    async def count_won_deals(self, db: AsyncSession, organization_id: str) -> int:
+    async def count_won_deals(self, db: AsyncSession, organization_id: str, access=None) -> int:
+        filters = self._scoped(
+            [Deal.organization_id == organization_id, Deal.stage == CLOSED_WON_STAGE],
+            access,
+            assigned=Deal.assigned_to,
+            created=Deal.created_by,
+        )
         result = await db.execute(
-            select(func.count(Deal.id)).where(
-                Deal.organization_id == organization_id,
-                Deal.stage == CLOSED_WON_STAGE,
-            )
+            select(func.count(Deal.id)).where(*filters)
         )
         return result.scalar() or 0
 
-    async def avg_lead_score(self, db: AsyncSession, organization_id: str) -> float:
+    async def avg_lead_score(self, db: AsyncSession, organization_id: str, access=None) -> float:
+        filters = self._scoped(
+            [Lead.organization_id == organization_id, Lead.is_archived.is_(False)],
+            access,
+            assigned=Lead.assigned_to,
+            created=Lead.created_by,
+        )
         result = await db.execute(
-            select(func.coalesce(func.avg(Lead.score), 0.0)).where(
-                Lead.organization_id == organization_id,
-                Lead.is_archived.is_(False),
-            )
+            select(func.coalesce(func.avg(Lead.score), 0.0)).where(*filters)
         )
         return round(float(result.scalar() or 0.0), 1)
 
-    async def count_scored_leads(self, db: AsyncSession, organization_id: str) -> int:
-        result = await db.execute(
-            select(func.count(Lead.id)).where(
+    async def count_scored_leads(self, db: AsyncSession, organization_id: str, access=None) -> int:
+        filters = self._scoped(
+            [
                 Lead.organization_id == organization_id,
                 Lead.is_archived.is_(False),
                 Lead.score.isnot(None),
-            )
+            ],
+            access,
+            assigned=Lead.assigned_to,
+            created=Lead.created_by,
+        )
+        result = await db.execute(
+            select(func.count(Lead.id)).where(*filters)
         )
         return result.scalar() or 0
 
     async def recent_leads(
-        self, db: AsyncSession, organization_id: str, limit: int = 3
+        self, db: AsyncSession, organization_id: str, limit: int = 3, access=None
     ) -> list[Lead]:
+        filters = self._scoped(
+            [Lead.organization_id == organization_id, Lead.is_archived.is_(False)],
+            access,
+            assigned=Lead.assigned_to,
+            created=Lead.created_by,
+        )
         result = await db.execute(
             select(Lead)
-            .where(
-                Lead.organization_id == organization_id,
-                Lead.is_archived.is_(False),
-            )
+            .where(*filters)
             .order_by(Lead.created_at.desc())
             .limit(limit)
         )
         return list(result.scalars().all())
 
-    async def deal_stage_totals(self, db: AsyncSession, organization_id: str) -> list[tuple]:
+    async def deal_stage_totals(
+        self, db: AsyncSession, organization_id: str, access=None
+    ) -> list[tuple]:
+        filters = self._scoped(
+            [Deal.organization_id == organization_id],
+            access,
+            assigned=Deal.assigned_to,
+            created=Deal.created_by,
+        )
         result = await db.execute(
             select(Deal.stage, func.count(Deal.id), func.coalesce(func.sum(Deal.amount), 0.0))
-            .where(Deal.organization_id == organization_id)
+            .where(*filters)
             .group_by(Deal.stage)
         )
         return [row._tuple() for row in result.all()]
 
     async def top_performers(
-        self, db: AsyncSession, organization_id: str, limit: int = 5
+        self, db: AsyncSession, organization_id: str, limit: int = 5, access=None
     ) -> list[tuple]:
+        filters = self._scoped(
+            [
+                Deal.organization_id == organization_id,
+                Deal.assigned_to.isnot(None),
+                Deal.stage == CLOSED_WON_STAGE,
+            ],
+            access,
+            assigned=Deal.assigned_to,
+            created=Deal.created_by,
+        )
         result = await db.execute(
             select(User.name, func.count(Deal.id), func.coalesce(func.sum(Deal.amount), 0.0))
             .join(
@@ -260,18 +334,16 @@ class DashboardRepository:
                     User.organization_id == organization_id,
                 ),
             )
-            .where(
-                Deal.organization_id == organization_id,
-                Deal.assigned_to.isnot(None),
-                Deal.stage == CLOSED_WON_STAGE,
-            )
+            .where(*filters)
             .group_by(User.id, User.name)
             .order_by(func.sum(Deal.amount).desc())
             .limit(limit)
         )
         return [row._tuple() for row in result.all()]
 
-    async def lead_source_conversions(self, db: AsyncSession, organization_id: str) -> list[tuple]:
+    async def lead_source_conversions(
+        self, db: AsyncSession, organization_id: str, access=None
+    ) -> list[tuple]:
         converted = case(
             (
                 Lead.status.ilike("%convert%") | Lead.status.ilike("%won%"),
@@ -279,73 +351,106 @@ class DashboardRepository:
             ),
             else_=0,
         )
+        filters = self._scoped(
+            [Lead.organization_id == organization_id, Lead.is_archived.is_(False)],
+            access,
+            assigned=Lead.assigned_to,
+            created=Lead.created_by,
+        )
         result = await db.execute(
             select(
                 Lead.source,
                 func.count(Lead.id),
                 func.coalesce(func.sum(converted), 0),
             )
-            .where(
-                Lead.organization_id == organization_id,
-                Lead.is_archived.is_(False),
-            )
+            .where(*filters)
             .group_by(Lead.source)
         )
         return [row._tuple() for row in result.all()]
 
     async def count_calls(
-        self, db: AsyncSession, organization_id: str, start: datetime, end: datetime
+        self, db: AsyncSession, organization_id: str, start: datetime, end: datetime, access=None
     ) -> int:
-        result = await db.execute(
-            select(func.count(CallLog.id)).where(
+        filters = self._scoped(
+            [
                 CallLog.organization_id == organization_id,
                 CallLog.timestamp >= start,
                 CallLog.timestamp < end,
-            )
+            ],
+            access,
+            assigned=CallLog.created_by,
+            created=CallLog.created_by,
+        )
+        result = await db.execute(
+            select(func.count(CallLog.id)).where(*filters)
         )
         return result.scalar() or 0
 
     async def count_emails(
-        self, db: AsyncSession, organization_id: str, start: datetime, end: datetime
+        self, db: AsyncSession, organization_id: str, start: datetime, end: datetime, access=None
     ) -> int:
-        result = await db.execute(
-            select(func.count(Email.id)).where(
+        filters = self._scoped(
+            [
                 Email.organization_id == organization_id,
                 Email.sent_at >= start,
                 Email.sent_at < end,
                 Email.status.ilike(SENT_EMAIL_STATUS),
-            )
+            ],
+            access,
+            assigned=Email.created_by,
+            created=Email.created_by,
+        )
+        result = await db.execute(
+            select(func.count(Email.id)).where(*filters)
         )
         return result.scalar() or 0
 
     async def count_meetings(
-        self, db: AsyncSession, organization_id: str, start: datetime, end: datetime
+        self, db: AsyncSession, organization_id: str, start: datetime, end: datetime, access=None
     ) -> int:
-        result = await db.execute(
-            select(func.count(Meeting.id)).where(
+        filters = self._scoped(
+            [
                 Meeting.organization_id == organization_id,
                 Meeting.start_time >= start,
                 Meeting.start_time < end,
-            )
+            ],
+            access,
+            assigned=Meeting.created_by,
+            created=Meeting.created_by,
+        )
+        result = await db.execute(
+            select(func.count(Meeting.id)).where(*filters)
         )
         return result.scalar() or 0
 
     async def count_completed_tasks(
-        self, db: AsyncSession, organization_id: str, start: datetime, end: datetime
+        self, db: AsyncSession, organization_id: str, start: datetime, end: datetime, access=None
     ) -> int:
-        result = await db.execute(
-            select(func.count(Task.id)).where(
+        filters = self._scoped(
+            [
                 Task.organization_id == organization_id,
                 Task.status == COMPLETED_TASK_STATUS,
                 Task.updated_at >= start,
                 Task.updated_at < end,
-            )
+            ],
+            access,
+            assigned=Task.assigned_to,
+            created=Task.created_by,
+        )
+        result = await db.execute(
+            select(func.count(Task.id)).where(*filters)
         )
         return result.scalar() or 0
 
     async def recent_deals(
-        self, db: AsyncSession, organization_id: str, limit: int = 5
+        self, db: AsyncSession, organization_id: str, limit: int = 5, access=None
     ) -> list[tuple[Deal, str | None]]:
+        filters = self._scoped(
+            [Deal.organization_id == organization_id],
+            access,
+            assigned=Deal.assigned_to,
+            created=Deal.created_by,
+        )
         result = await db.execute(
             select(Deal, User.name)
             .outerjoin(
@@ -356,31 +461,45 @@ class DashboardRepository:
                     User.is_active.is_(True),
                 ),
             )
-            .where(Deal.organization_id == organization_id)
+            .where(*filters)
             .order_by(Deal.updated_at.desc())
             .limit(limit)
         )
         return [row._tuple() for row in result.all()]
 
     async def count_deals_and_sum(
-        self, db: AsyncSession, organization_id: str
+        self, db: AsyncSession, organization_id: str, access=None
     ) -> tuple[int, float]:
-        result = await db.execute(
-            select(func.count(Deal.id), func.coalesce(func.sum(Deal.amount), 0.0)).where(
+        filters = self._scoped(
+            [
                 Deal.organization_id == organization_id,
                 Deal.stage.notin_(CLOSED_DEAL_STAGES),
+            ],
+            access,
+            assigned=Deal.assigned_to,
+            created=Deal.created_by,
+        )
+        result = await db.execute(
+            select(func.count(Deal.id), func.coalesce(func.sum(Deal.amount), 0.0)).where(
+                *filters
             )
         )
         row = result.first()
         return (row[0] if row else 0, float(row[1]) if row else 0.0)
 
-    async def top_deal(self, db: AsyncSession, organization_id: str) -> Deal | None:
-        result = await db.execute(
-            select(Deal)
-            .where(
+    async def top_deal(self, db: AsyncSession, organization_id: str, access=None) -> Deal | None:
+        filters = self._scoped(
+            [
                 Deal.organization_id == organization_id,
                 Deal.stage.notin_(CLOSED_DEAL_STAGES),
-            )
+            ],
+            access,
+            assigned=Deal.assigned_to,
+            created=Deal.created_by,
+        )
+        result = await db.execute(
+            select(Deal)
+            .where(*filters)
             .order_by(Deal.amount.desc())
             .limit(1)
         )

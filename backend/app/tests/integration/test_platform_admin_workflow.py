@@ -74,15 +74,23 @@ async def test_migration_singleton_provisioning_and_same_login_across_organizati
         await asyncio.to_thread(command.upgrade, config, "head")
         if not legacy_platform_role:
             async with engine.begin() as connection:
-                await connection.execute(text(
-                    "INSERT INTO roles (id,name,organization_id,is_system_role) "
-                    "VALUES ('tenant-role','Sales Executive','original-org',true)"
-                ))
-                await connection.execute(text("UPDATE users SET role='tenant-role' WHERE id='intended-user'"))
-                await connection.execute(text(
-                    "INSERT INTO user_roles (id,user_id,role_id) "
-                    "VALUES ('tenant-mapping','intended-user','tenant-role')"
-                ))
+                tenant_role_id = await connection.scalar(text("""
+                    SELECT id FROM roles
+                    WHERE organization_id='original-org'
+                      AND lower(btrim(name))='sales executive'
+                """))
+                assert tenant_role_id is not None
+                await connection.execute(
+                    text("UPDATE users SET role=:role_id WHERE id='intended-user'"),
+                    {"role_id": tenant_role_id},
+                )
+                await connection.execute(
+                    text("""
+                        INSERT INTO user_roles (id,user_id,role_id)
+                        VALUES ('tenant-mapping','intended-user',:role_id)
+                    """),
+                    {"role_id": tenant_role_id},
+                )
             async with sessions() as db:
                 failed_provisioner = PlatformAdminService()
                 failed_provisioner.repository.revoke_all_user_sessions = AsyncMock(
@@ -99,7 +107,7 @@ async def test_migration_singleton_provisioning_and_same_login_across_organizati
                 assert preserved.hashed_password == original_hash
                 assert await db.scalar(text(
                     "SELECT role_id FROM user_roles WHERE user_id='intended-user'"
-                )) == "tenant-role"
+                )) == tenant_role_id
         async with sessions() as db:
             user = await db.get(User, "intended-user")
             assert user.is_platform_admin is legacy_platform_role

@@ -11,6 +11,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -26,6 +27,12 @@ class Email(Base):
         ),
         UniqueConstraint("organization_id", "idempotency_key", name="uq_emails_org_idempotency"),
         Index("ix_emails_org_contact_sent_at", "organization_id", "contact_id", "sent_at"),
+        Index(
+            "ix_emails_org_normalized_recipient_sent_at",
+            "organization_id",
+            text("lower(btrim(to_email))"),
+            text("sent_at DESC"),
+        ),
     )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -43,6 +50,9 @@ class Email(Base):
     )
     deal_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("deals.id", ondelete="SET NULL"), index=True
+    )
+    created_by: Mapped[str | None] = mapped_column(
+        String, ForeignKey("users.id", ondelete="SET NULL"), index=True
     )
     from_email: Mapped[str] = mapped_column(String(255), nullable=False)
     to_email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)

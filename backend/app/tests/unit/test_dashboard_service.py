@@ -111,13 +111,16 @@ async def test_get_kpis_computes_win_rate():
     assert result.outstanding_amount == 2000.0
     assert result.currency == "INR"
     assert result.locale == "en-IN"
-    repo.count_leads.assert_awaited_once_with(db, "org-1")
+    repo.count_leads.assert_awaited_once_with(db, "org-1", None)
     repo.financial_kpis.assert_awaited_once_with(
         db,
         "org-1",
         currency="INR",
         start_at=None,
         end_at=None,
+        quote_access=None,
+        invoice_access=None,
+        payment_access=None,
     )
 
 
@@ -152,6 +155,9 @@ async def test_get_kpis_scopes_financial_values_to_currency_and_date_range():
         currency="EUR",
         start_at=start_at,
         end_at=end_at,
+        quote_access=None,
+        invoice_access=None,
+        payment_access=None,
     )
 
 
@@ -213,7 +219,9 @@ async def test_get_custom_widgets_returns_defaults_when_unset():
     assert len(result) == 5
     assert result[0]["id"] == "w-kpis"
     assert all(widget["id"] != "w-revenue" for widget in result)
-    setting_repo.get_by_key.assert_awaited_once_with(db, "dashboard_custom_widgets:org-1")
+    setting_repo.get_by_key.assert_awaited_once_with(
+        db, "dashboard_custom_widgets:org-1:shared"
+    )
 
 
 @pytest.mark.asyncio
@@ -239,7 +247,7 @@ async def test_save_custom_widgets_persists_preferences():
     assert result["status"] == "success"
     setting_repo.upsert.assert_awaited_once_with(
         db,
-        key="dashboard_custom_widgets:org-1",
+        key="dashboard_custom_widgets:org-1:shared",
         value='[{"id": "w-kpis", "enabled": true}]',
     )
 
@@ -326,7 +334,7 @@ async def test_get_lead_conversions_merges_equivalent_urls():
     result = await service.get_lead_conversions(db, "org-1")
 
     assert result == [{"source": "selv.in", "leads": 5, "converted": 3, "rate": 60.0}]
-    repo.lead_source_conversions.assert_awaited_once_with(db, "org-1")
+    repo.lead_source_conversions.assert_awaited_once_with(db, "org-1", None)
 
 
 @pytest.mark.asyncio

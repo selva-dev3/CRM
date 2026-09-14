@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Flag, Plus, Trash2 } from 'lucide-react';
 
 import { ModuleError, PageNavigator } from '@/components/common/module-page-state';
@@ -13,8 +14,9 @@ import { getErrorMessage } from '@/lib/utils';
 const LIMIT = 20;
 
 export default function MilestonesPage() {
+  const searchParams = useSearchParams();
   const { hasPermission } = useHasPermission();
-  const [projectId, setProjectId] = useState('');
+  const [projectId, setProjectId] = useState(() => searchParams.get('project_id') ?? '');
   const [projectSearch, setProjectSearch] = useState('');
   const [page, setPage] = useState(1);
   const [name, setName] = useState('');

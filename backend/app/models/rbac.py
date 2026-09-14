@@ -110,7 +110,7 @@ class RoleRecordScope(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     role_id: Mapped[str] = mapped_column(
-        String, ForeignKey("roles.id", ondelete="CASCADE"), index=True
+        String, ForeignKey("roles.id", ondelete="CASCADE")
     )
     module: Mapped[str] = mapped_column(String(50), nullable=False)
     scope: Mapped[str] = mapped_column(String(20), nullable=False, default="all")

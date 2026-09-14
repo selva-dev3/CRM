@@ -7,6 +7,8 @@ from app.models import User
 from app.schemas.crm_schemas import MessageResponse
 from app.schemas.project import (
     ProjectCreate,
+    ProjectMemberCreate,
+    ProjectMemberResponse,
     ProjectResponse,
     ProjectStakeholderCreate,
     ProjectStakeholderResponse,
@@ -94,6 +96,51 @@ async def delete_project(
     current_user: User = Depends(get_current_user),
 ):
     return await project_service.delete_project(db, current_user, project_id)
+
+
+@router.get(
+    "/{project_id}/members",
+    response_model=list[ProjectMemberResponse],
+    dependencies=[Depends(require_permission("projects:read"))],
+)
+async def list_project_members(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await project_service.list_members(db, current_user, project_id)
+
+
+@router.post(
+    "/{project_id}/members",
+    response_model=ProjectMemberResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission("projects:assign"))],
+)
+async def add_project_member(
+    project_id: str,
+    payload: ProjectMemberCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await project_service.add_member(
+        db, current_user, project_id, payload.user_id, payload.role
+    )
+
+
+@router.delete(
+    "/{project_id}/members/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_permission("projects:assign"))],
+)
+async def remove_project_member(
+    project_id: str,
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await project_service.remove_member(db, current_user, project_id, user_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get(

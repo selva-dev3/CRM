@@ -15,6 +15,7 @@ from app.models import Document, User
 from app.repositories.document_repository import DocumentRepository
 from app.services.auth_service import auth_service
 from app.services.document_service import DocumentService, document_to_dict
+from app.services.record_access_service import record_access_service
 
 
 @pytest.fixture(autouse=True)
@@ -89,17 +90,44 @@ async def test_list_documents_generates_fresh_presigned_url(monkeypatch):
     )
 
     repo.list_documents.assert_awaited_once_with(
-            db,
-            org_id="org-test",
-            page=1,
-            limit=20,
-            search="proposal",
-            project_linked=False,
-            access=ANY,
-        )
+        db,
+        org_id="org-test",
+        page=1,
+        limit=20,
+        search="proposal",
+        project_linked=False,
+        access=ANY,
+        target_access=ANY,
+    )
     assert result[0]["filename"] == "proposal.pdf"
     assert result[0]["mime_type"] == "application/pdf"
     assert result[0]["download_url"].startswith("https://s3.example/documents/org-test/abcdef.pdf")
+
+
+@pytest.mark.asyncio
+async def test_document_target_access_includes_ticket_scope(monkeypatch):
+    resolve = AsyncMock(
+        return_value=RecordAccessContext("all", "usr-123", frozenset(), frozenset())
+    )
+    monkeypatch.setattr(record_access_service, "resolve", resolve)
+    db = AsyncMock(spec=AsyncSession)
+    user = _make_user()
+
+    target_access = await DocumentService._target_access(db, user)
+
+    assert target_access is not None
+    assert set(target_access) == {
+        "leads",
+        "contacts",
+        "companies",
+        "deals",
+        "quotes",
+        "invoices",
+        "payments",
+        "projects",
+        "tickets",
+    }
+    assert any(call.args == (db, user, "tickets") for call in resolve.await_args_list)
 
 
 @pytest.mark.asyncio

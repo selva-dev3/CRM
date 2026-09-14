@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import ANY, AsyncMock
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -49,8 +49,8 @@ async def test_sales_performance_report_builds_rows_with_org():
 
     result = await service.get_sales_performance_report(db, current_user=user)
 
-    repo.total_won_revenue.assert_awaited_once_with(db, "org-acme")
-    repo.rep_performance.assert_awaited_once_with(db, "org-acme")
+    repo.total_won_revenue.assert_awaited_once_with(db, "org-acme", ANY)
+    repo.rep_performance.assert_awaited_once_with(db, "org-acme", access=ANY)
     assert result["report_type"] == "Sales Performance"
     assert result["metrics"]["total_revenue"] == 150000.0
     assert len(result["metrics"]["table_rows"]) == 2
@@ -111,8 +111,15 @@ async def test_financial_overview_separates_booked_and_collected_values():
 
     result = await service.get_financial_overview_report(db, current_user=user)
 
-    repo.financial_overview.assert_awaited_once_with(db, "org-finance")
-    repo.invoice_status_breakdown.assert_awaited_once_with(db, "org-finance")
+    repo.financial_overview.assert_awaited_once_with(
+        db,
+        "org-finance",
+        deal_access=ANY,
+        quote_access=ANY,
+        invoice_access=ANY,
+        payment_access=ANY,
+    )
+    repo.invoice_status_breakdown.assert_awaited_once_with(db, "org-finance", ANY)
     assert result["metrics"]["booked_value"] == 25000.0
     assert result["metrics"]["collected_revenue"] == 12000.0
     assert result["metrics"]["outstanding_amount"] == 8000.0
@@ -669,7 +676,9 @@ async def test_list_custom_reports_pagination():
     user = _make_user(org_id="org-test")
 
     await service.list_custom_reports(db, current_user=user, limit=15, offset=30)
-    repo.list_custom_reports.assert_awaited_once_with(db, "org-test", limit=15, offset=30)
+    repo.list_custom_reports.assert_awaited_once_with(
+        db, "org-test", limit=15, offset=30, search=None
+    )
 
 
 @pytest.mark.asyncio
@@ -681,7 +690,9 @@ async def test_list_scheduled_reports_pagination():
     user = _make_user(org_id="org-test")
 
     await service.list_scheduled_reports(db, current_user=user, limit=25, offset=50)
-    repo.list_scheduled_reports.assert_awaited_once_with(db, "org-test", limit=25, offset=50)
+    repo.list_scheduled_reports.assert_awaited_once_with(
+        db, "org-test", limit=25, offset=50, search=None
+    )
 
 
 @pytest.mark.asyncio
@@ -698,6 +709,7 @@ async def test_export_report_pdf_validates_type_and_user(monkeypatch):
         )
     )
     service = ReportService(repository=repo)
+    service._access = AsyncMock(return_value=None)
     db = AsyncMock(spec=AsyncSession)
     user = _make_user(org_id="org-sales", user_id="usr-alex")
 
@@ -708,6 +720,9 @@ async def test_export_report_pdf_validates_type_and_user(monkeypatch):
     monkeypatch.setattr(
         "app.services.report_service.s3_service.generate_presigned_url",
         lambda *a, **kw: "https://s3.example.com/exports/test.pdf",
+    )
+    monkeypatch.setattr(
+        "app.services.report_service.lock_organization_storage", AsyncMock(return_value=None)
     )
 
     result = await service.export_report_pdf(db, "sales-performance", current_user=user)
@@ -734,6 +749,7 @@ async def test_export_report_pdf_accepts_enum_report_type(monkeypatch):
     repo.quotas_by_user = AsyncMock(return_value={})
     repo.create_export = AsyncMock(return_value=Row(id="exp-2", download_url=None, s3_key="k"))
     service = ReportService(repository=repo)
+    service._access = AsyncMock(return_value=None)
     db = AsyncMock(spec=AsyncSession)
     user = _make_user(org_id="org-enum")
 
@@ -743,6 +759,9 @@ async def test_export_report_pdf_accepts_enum_report_type(monkeypatch):
     monkeypatch.setattr(
         "app.services.report_service.s3_service.generate_presigned_url",
         lambda *a, **kw: "https://s3.example/x",
+    )
+    monkeypatch.setattr(
+        "app.services.report_service.lock_organization_storage", AsyncMock(return_value=None)
     )
 
     result = await service.export_report_pdf(
@@ -795,6 +814,7 @@ async def test_export_report_pdf_raises_on_commit_failure(monkeypatch):
         return_value=Row(id="exp-pdf", download_url=None, s3_key="exports/test.pdf")
     )
     service = ReportService(repository=repo)
+    service._access = AsyncMock(return_value=None)
     db = AsyncMock(spec=AsyncSession)
     db.commit.side_effect = RuntimeError("DB connection lost")
     user = _make_user(org_id="org-fail", user_id="usr-1")
@@ -810,6 +830,9 @@ async def test_export_report_pdf_raises_on_commit_failure(monkeypatch):
     monkeypatch.setattr(
         "app.services.report_service._cleanup_export_object",
         delete_file,
+    )
+    monkeypatch.setattr(
+        "app.services.report_service.lock_organization_storage", AsyncMock(return_value=None)
     )
 
     with pytest.raises(APIException) as exc_info:
@@ -833,6 +856,7 @@ async def test_export_report_csv_sanitizes_formula_prefixes(monkeypatch):
         return_value=Row(id="exp-csv", download_url=None, s3_key="exports/org-safe/x.csv")
     )
     service = ReportService(repository=repo)
+    service._access = AsyncMock(return_value=None)
     db = AsyncMock(spec=AsyncSession)
     user = _make_user(org_id="org-safe", user_id="usr-1")
 
@@ -846,6 +870,9 @@ async def test_export_report_csv_sanitizes_formula_prefixes(monkeypatch):
     monkeypatch.setattr(
         "app.services.report_service.s3_service.generate_presigned_url",
         lambda *a, **kw: "https://s3.example.com/exports/csv.csv",
+    )
+    monkeypatch.setattr(
+        "app.services.report_service.lock_organization_storage", AsyncMock(return_value=None)
     )
 
     result = await service.export_report_csv(db, "sales-performance", current_user=user)
@@ -872,6 +899,7 @@ async def test_export_csv_reflects_requested_report_rows(monkeypatch):
         return_value=Row(id="exp-wl", download_url=None, s3_key="exports/org-1/x.csv")
     )
     service = ReportService(repository=repo)
+    service._access = AsyncMock(return_value=None)
     db = AsyncMock(spec=AsyncSession)
     user = _make_user(org_id="org-1", user_id="usr-1")
 
@@ -885,6 +913,9 @@ async def test_export_csv_reflects_requested_report_rows(monkeypatch):
     monkeypatch.setattr(
         "app.services.report_service.s3_service.generate_presigned_url",
         lambda *a, **kw: "https://s3.example/x.csv",
+    )
+    monkeypatch.setattr(
+        "app.services.report_service.lock_organization_storage", AsyncMock(return_value=None)
     )
 
     result = await service.export_report_csv(db, "win-loss-ratio", current_user=user)
@@ -908,7 +939,7 @@ async def test_build_report_csv_for_organization_internal(monkeypatch):
 
     assert '"source"' in csv_text
     assert '"Referral"' in csv_text
-    repo.leads_by_source.assert_awaited_once_with(db, "org-bg")
+    repo.leads_by_source.assert_awaited_once_with(db, "org-bg", access=None)
 
 
 @pytest.mark.asyncio
@@ -928,12 +959,16 @@ async def test_export_report_csv_raises_502_on_s3_error(monkeypatch):
     repo.rep_performance = AsyncMock(return_value=[])
     repo.quotas_by_user = AsyncMock(return_value={})
     service = ReportService(repository=repo)
+    service._access = AsyncMock(return_value=None)
     db = AsyncMock(spec=AsyncSession)
 
     def boom(*args, **kwargs):
         raise RuntimeError("S3 timeout")
 
     monkeypatch.setattr("app.services.report_service.s3_service.upload_file", boom)
+    monkeypatch.setattr(
+        "app.services.report_service.lock_organization_storage", AsyncMock(return_value=None)
+    )
 
     user = _make_user()
     with pytest.raises(APIException) as exc_info:
@@ -958,7 +993,7 @@ async def test_get_export_download_mints_fresh_presigned_url(monkeypatch):
 
     result = await service.get_export_download(db, export_id="exp-1", current_user=user)
 
-    repo.get_export.assert_awaited_once_with(db, "exp-1", "org-1")
+    repo.get_export.assert_awaited_once_with(db, "exp-1", "org-1", "user-1")
     assert result["download_url"] == "https://fresh.example/exports/org-1/abc.pdf?sig=new"
     assert result["expires_in"] == 3600
 
@@ -974,7 +1009,7 @@ async def test_get_export_download_cross_org_not_found():
     with pytest.raises(NotFoundError):
         await service.get_export_download(db, export_id="exp-from-org-B", current_user=user)
 
-    repo.get_export.assert_awaited_once_with(db, "exp-from-org-B", "org-A")
+    repo.get_export.assert_awaited_once_with(db, "exp-from-org-B", "org-A", "user-1")
 
 
 @pytest.mark.asyncio

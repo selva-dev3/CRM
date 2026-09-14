@@ -1,12 +1,13 @@
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import ANY, AsyncMock, Mock
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, ForbiddenError, NotFoundError
+from app.core.record_access import RecordAccessContext
 from app.models import Company, Contact, Deal, Lead, User
 from app.repositories.ai_repository import AIRepository
 from app.schemas.ai import (
@@ -167,7 +168,9 @@ async def test_evaluate_lead_score_is_tenant_scoped_and_persists_history():
     assert result["run_id"] == "run-1"
     instructions = runtime.execute.await_args.kwargs["user_prompt"]
     assert "return 70 for 70%, not 0.7" in instructions
-    repository.get_lead.assert_awaited_once_with(db, lead_id="lead-1", organization_id="org-1")
+    repository.get_lead.assert_awaited_once_with(
+        db, lead_id="lead-1", organization_id="org-1", access=ANY
+    )
     repository.save_lead_score.assert_awaited_once_with(
         db,
         lead=lead,
@@ -229,7 +232,9 @@ async def test_batch_lead_scoring_lists_only_current_organization():
     result = await service.batch_lead_scoring(db, _user())
 
     assert result == {"processed_count": 0, "updated_count": 0, "failures": []}
-    repository.list_leads.assert_awaited_once_with(db, organization_id="org-1")
+    repository.list_leads.assert_awaited_once_with(
+        db, organization_id="org-1", access=ANY
+    )
 
 
 @pytest.mark.asyncio
@@ -308,9 +313,11 @@ async def test_deal_intelligence_is_tenant_scoped():
     result = await service.predict_deal_forecast(db, "deal-1", _user())
 
     assert result["win_probability"] == 70
-    repository.get_deal.assert_awaited_once_with(db, deal_id="deal-1", organization_id="org-1")
+    repository.get_deal.assert_awaited_once_with(
+        db, deal_id="deal-1", organization_id="org-1", access=ANY
+    )
     repository.get_deal_signals.assert_awaited_once_with(
-        db, deal_id="deal-1", organization_id="org-1"
+        db, deal_id="deal-1", organization_id="org-1", access=ANY
     )
 
 
@@ -340,7 +347,7 @@ async def test_next_best_action_supports_tenant_scoped_contacts():
 
     assert result["entity_id"] == "contact-1"
     repository.get_contact.assert_awaited_once_with(
-        db, contact_id="contact-1", organization_id="org-1"
+        db, contact_id="contact-1", organization_id="org-1", access=ANY
     )
 
 
@@ -1118,6 +1125,7 @@ async def test_repository_company_city_filter_is_tenant_scoped():
         db,
         organization_id="org-1",
         entity_type="company",
+        related_access={"contact": None},
         filters=[{"field": "city", "operator": "equals", "value": "Chennai"}],
     )
 
@@ -1139,6 +1147,7 @@ async def test_repository_related_company_name_is_tenant_scoped():
         db,
         organization_id="org-1",
         entity_type="deal",
+        related_access={"company": None},
         filters=[{"field": "company_name", "operator": "contains", "value": "Acme"}],
         include_fields=["company_name"],
     )
@@ -1147,6 +1156,120 @@ async def test_repository_related_company_name_is_tenant_scoped():
     assert "deals.organization_id" in sql
     assert "companies.organization_id" in sql
     assert "companies.name" in sql
+
+
+@pytest.mark.asyncio
+async def test_repository_related_company_name_respects_related_record_scope():
+    db = AsyncMock(spec=AsyncSession)
+    query_result = Mock()
+    query_result.all.return_value = []
+    db.execute.return_value = query_result
+
+    await AIRepository().execute_search_plan(
+        db,
+        organization_id="org-1",
+        entity_type="deal",
+        related_access={
+            "company": RecordAccessContext(
+                scope="assigned",
+                user_id="user-1",
+                team_ids=frozenset(),
+                team_user_ids=frozenset(),
+            )
+        },
+        include_fields=["company_name"],
+    )
+
+    sql = str(db.execute.await_args.args[0])
+    assert "companies.owner_id" in sql
+
+
+@pytest.mark.asyncio
+async def test_repository_related_field_without_scope_fails_closed():
+    db = AsyncMock(spec=AsyncSession)
+    query_result = Mock()
+    query_result.all.return_value = []
+    db.execute.return_value = query_result
+
+    await AIRepository().execute_search_plan(
+        db,
+        organization_id="org-1",
+        entity_type="company",
+        include_fields=["open_deal_value"],
+    )
+
+    assert "WHERE false" in str(db.execute.await_args.args[0])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("entity_type", "expected_parent_column"),
+    (("note", "leads.assigned_to"), ("document", "tickets.assigned_to")),
+)
+async def test_repository_linked_content_respects_parent_record_scope(
+    entity_type, expected_parent_column
+):
+    db = AsyncMock(spec=AsyncSession)
+    query_result = Mock()
+    query_result.all.return_value = []
+    db.execute.return_value = query_result
+    assigned = RecordAccessContext(
+        scope="assigned",
+        user_id="user-1",
+        team_ids=frozenset(),
+        team_user_ids=frozenset(),
+    )
+    parent_modules = (
+        {"lead", "contact", "company", "deal"}
+        if entity_type == "note"
+        else {
+            "lead",
+            "contact",
+            "company",
+            "deal",
+            "quote",
+            "invoice",
+            "payment",
+            "project",
+            "ticket",
+        }
+    )
+
+    await AIRepository().execute_search_plan(
+        db,
+        organization_id="org-1",
+        current_user_id="user-1",
+        entity_type=entity_type,
+        access=assigned,
+        related_access=dict.fromkeys(parent_modules, assigned),
+    )
+
+    sql = str(db.execute.await_args.args[0])
+    assert expected_parent_column in sql
+
+
+@pytest.mark.asyncio
+async def test_document_search_resolves_every_supported_parent_scope(monkeypatch):
+    record_access = AsyncMock(return_value=object())
+    monkeypatch.setattr(AIDomainService, "_record_access", record_access)
+    db = AsyncMock(spec=AsyncSession)
+    user = _user()
+
+    result = await AIDomainService._related_record_access(
+        db, user, CRMSearchPlan(entity_type="document")
+    )
+
+    assert set(result) == {
+        "lead",
+        "contact",
+        "company",
+        "deal",
+        "quote",
+        "invoice",
+        "payment",
+        "project",
+        "ticket",
+    }
 
 
 @pytest.mark.asyncio
@@ -1287,7 +1410,11 @@ async def test_sales_coach_uses_tenant_scoped_recorded_metrics():
 
     assert result["strengths"] == ["Consistent wins"]
     repository.get_rep_metrics.assert_awaited_once_with(
-        db, user_id="user-1", organization_id="org-1"
+        db,
+        user_id="user-1",
+        organization_id="org-1",
+        deal_access=ANY,
+        activity_access=ANY,
     )
 
 

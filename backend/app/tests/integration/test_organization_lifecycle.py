@@ -491,7 +491,7 @@ async def test_failed_deletion_rolls_back_dependencies_audit_and_manifest(lifecy
                 .select_from(Role)
                 .where(Role.organization_id == organization["id"])
             )
-            == 6
+            == len(SYSTEM_ROLE_PERMISSIONS)
         )
 
 

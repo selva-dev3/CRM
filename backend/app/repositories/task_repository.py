@@ -6,8 +6,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.record_access import record_access_filter
+from app.models.project import Project
 from app.models.support import Ticket
-from app.models.task import Task
+from app.models.task import Task, TaskDependency
 from app.models.user import User
 
 
@@ -200,3 +201,80 @@ class TaskRepository:
             )
         )
         return result.scalars().first()
+
+    async def dependency_ids(self, db: AsyncSession, task_id: str) -> list[str]:
+        return list(
+            (
+                await db.scalars(
+                    select(TaskDependency.depends_on_task_id).where(
+                        TaskDependency.task_id == task_id
+                    )
+                )
+            ).all()
+        )
+
+    async def lock_dependency_projects(
+        self,
+        db: AsyncSession,
+        *,
+        project_ids: set[str],
+        organization_id: str,
+    ) -> None:
+        ordered_ids = sorted(project_id for project_id in project_ids if project_id)
+        if not ordered_ids:
+            return
+        await db.execute(
+            select(Project.id)
+            .where(
+                Project.organization_id == organization_id,
+                Project.id.in_(ordered_ids),
+            )
+            .order_by(Project.id)
+            .with_for_update()
+        )
+
+    async def has_dependencies(self, db: AsyncSession, task_id: str) -> bool:
+        count = await db.scalar(
+            select(func.count())
+            .select_from(TaskDependency)
+            .where(
+                (TaskDependency.task_id == task_id)
+                | (TaskDependency.depends_on_task_id == task_id)
+            )
+        )
+        return bool(count)
+
+    async def incomplete_dependency_ids(self, db: AsyncSession, task_id: str) -> list[str]:
+        return list(
+            (
+                await db.scalars(
+                    select(TaskDependency.depends_on_task_id)
+                    .join(Task, Task.id == TaskDependency.depends_on_task_id)
+                    .where(
+                        TaskDependency.task_id == task_id,
+                        func.lower(Task.status) != "completed",
+                    )
+                )
+            ).all()
+        )
+
+    async def create_dependency(
+        self, db: AsyncSession, *, task_id: str, depends_on_task_id: str, created_by: str
+    ) -> TaskDependency:
+        dependency = TaskDependency(
+            task_id=task_id,
+            depends_on_task_id=depends_on_task_id,
+            created_by=created_by,
+        )
+        db.add(dependency)
+        return dependency
+
+    async def get_dependency(
+        self, db: AsyncSession, *, task_id: str, depends_on_task_id: str
+    ) -> TaskDependency | None:
+        return await db.scalar(
+            select(TaskDependency).where(
+                TaskDependency.task_id == task_id,
+                TaskDependency.depends_on_task_id == depends_on_task_id,
+            )
+        )

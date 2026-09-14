@@ -15,7 +15,13 @@ LIVE_EVENTS_CHANNEL = "crm:live-events"
 
 
 def _redis() -> Redis:
-    return Redis.from_url(settings.RATE_LIMIT_STORAGE_URI or settings.CELERY_BROKER_URL)
+    rate_limit_url = settings.RATE_LIMIT_STORAGE_URI or ""
+    redis_url = (
+        rate_limit_url
+        if rate_limit_url.startswith(("redis://", "rediss://", "unix://"))
+        else settings.CELERY_BROKER_URL
+    )
+    return Redis.from_url(redis_url)
 
 
 async def publish_live_event(

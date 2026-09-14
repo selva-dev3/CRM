@@ -48,6 +48,7 @@ const EXTERNAL_CALENDAR_FEATURES_CONFIGURED = false;
 export default function CalendarPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+  const [page, setPage] = useState(1);
   const [viewMode, setViewMode] = useState<'table' | 'availability' | 'recurring'>('table');
 
   // Selected event for delete / edit
@@ -77,14 +78,19 @@ export default function CalendarPage() {
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedSearchTerm(searchTerm);
+      setPage(1);
     }, 250);
     return () => clearTimeout(handler);
   }, [searchTerm]);
 
   // Queries
-  const { data: events = [], isLoading: isEventsLoading } = useCalendarEventsQuery({
+  const { data: eventsPage, isLoading: isEventsLoading } = useCalendarEventsQuery({
     search: debouncedSearchTerm || undefined,
+    page,
+    limit: 20,
   });
+  const events = eventsPage?.items ?? [];
+  const totalEvents = eventsPage?.total ?? 0;
 
   const { data: availability } = useAvailabilityQuery(undefined, undefined, {
     enabled: EXTERNAL_CALENDAR_FEATURES_CONFIGURED,
@@ -332,7 +338,7 @@ export default function CalendarPage() {
         onValueChange={setViewMode}
         variant="default"
         tabs={[
-          { value: 'table', label: `Events List (${events.length})` },
+          { value: 'table', label: `Events List (${totalEvents})` },
         ]}
         listClassName="border-b border-slate-200 bg-transparent pb-2"
         triggerClassName="text-xs font-bold data-[state=active]:bg-indigo-600 data-[state=active]:text-white"
@@ -350,6 +356,12 @@ export default function CalendarPage() {
           onSearchChange={setSearchTerm}
           searchPlaceholder="Search event title..."
           isLoading={isEventsLoading}
+          pagination={{
+            pageIndex: page - 1,
+            pageCount: Math.max(1, Math.ceil(totalEvents / 20)),
+            onPageChange: (nextPage) => setPage(nextPage + 1),
+            totalRecords: totalEvents,
+          }}
         />
       )}
 

@@ -7,9 +7,10 @@ import pytest
 from pydantic import ValidationError
 
 from app.core.errors import ConflictError, NotFoundError
-from app.models import SalesOrder
+from app.models import Project, SalesOrder
 from app.repositories.order_repository import OrderRepository
 from app.repositories.price_book_repository import PriceBookRepository
+from app.repositories.project_repository import ProjectRepository
 from app.schemas.milestone import MilestoneCreate, MilestoneUpdate
 from app.schemas.price_book import PriceBookUpdate
 from app.services.order_service import OrderService
@@ -23,6 +24,7 @@ def accepted_quote(**overrides):
         "deal_id": "deal-1",
         "company_id": "company-1",
         "contact_id": "contact-1",
+        "created_by": "user-1",
         "currency": "USD",
         "status": "Accepted",
         "approved_at": datetime.now(UTC),
@@ -48,6 +50,28 @@ def quote_line(**overrides):
     }
     values.update(overrides)
     return SimpleNamespace(**values)
+
+
+@pytest.mark.asyncio
+async def test_project_progress_never_rounds_incomplete_work_to_100_percent():
+    repository = ProjectRepository()
+    project = Project(
+        id="project-1",
+        organization_id="org-1",
+        name="Large rollout",
+        status="Completed",
+    )
+    db = AsyncMock()
+    task_counts = MagicMock()
+    task_counts.one.return_value = (199, 198)
+    milestone_counts = MagicMock()
+    milestone_counts.one.return_value = (1, 1)
+    db.execute.side_effect = [task_counts, milestone_counts]
+
+    progress = await repository.recalculate_progress(db, project)
+
+    assert progress == 99
+    assert project.status == "In Progress"
 
 
 @pytest.mark.asyncio
@@ -106,13 +130,18 @@ async def test_order_lookup_does_not_leak_another_tenant_record():
     repository = MagicMock(spec=OrderRepository)
     repository.get = AsyncMock(return_value=None)
     service = OrderService(repository=repository)
-    user = SimpleNamespace(organization_id="org-1")
+    user = SimpleNamespace(
+        id="user-1",
+        organization_id=None,
+        is_platform_admin=True,
+        _request_organization_id="org-1",
+    )
 
     with pytest.raises(NotFoundError, match="Order not found"):
-        await service.get(MagicMock(), user, "other-org-order")
+        await service.get(AsyncMock(), user, "other-org-order")
 
     repository.get.assert_awaited_once_with(
-        ANY, order_id="other-org-order", organization_id="org-1"
+        ANY, order_id="other-org-order", organization_id="org-1", access=ANY
     )
 
 
@@ -139,10 +168,13 @@ async def test_legacy_invoice_is_linked_when_order_is_created_from_quote():
     repository.get_invoice_for_quote = AsyncMock(return_value=invoice)
     repository.list_items = AsyncMock(return_value=[])
     service = OrderService(repository=repository)
-    db = MagicMock()
-    db.commit = AsyncMock()
-    db.refresh = AsyncMock()
-    user = SimpleNamespace(organization_id="org-1")
+    db = AsyncMock()
+    user = SimpleNamespace(
+        id="user-1",
+        organization_id=None,
+        is_platform_admin=True,
+        _request_organization_id="org-1",
+    )
 
     result = await service.create_from_quote(db, user, quote.id)
 

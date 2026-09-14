@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Download, FolderOpen, Trash2, UploadCloud } from 'lucide-react';
 
 import { ModuleError, PageNavigator } from '@/components/common/module-page-state';
@@ -13,9 +14,10 @@ import { getErrorMessage } from '@/lib/utils';
 const LIMIT = 20;
 
 export default function ProjectDocumentsPage() {
+  const searchParams = useSearchParams();
   const { hasPermission } = useHasPermission();
   const input = useRef<HTMLInputElement>(null);
-  const [projectId, setProjectId] = useState('');
+  const [projectId, setProjectId] = useState(() => searchParams.get('project_id') ?? '');
   const [projectSearch, setProjectSearch] = useState('');
   const [page, setPage] = useState(1);
   const [error, setError] = useState('');

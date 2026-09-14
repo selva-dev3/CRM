@@ -50,3 +50,15 @@ class ProjectStakeholderCreate(BaseModel):
 class ProjectStakeholderResponse(ProjectStakeholderCreate):
     id: str
     project_id: str
+
+
+class ProjectMemberCreate(BaseModel):
+    user_id: str
+    role: str = Field(default="Member", min_length=1, max_length=50)
+
+
+class ProjectMemberResponse(ProjectMemberCreate):
+    id: str
+    project_id: str
+    added_by: str | None = None
+    created_at: str | None = None

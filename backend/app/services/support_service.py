@@ -22,11 +22,19 @@ from app.schemas.support import (
     TicketCreate,
     TicketUpdate,
 )
+from app.services.auth_service import api_key_scope_allows, auth_service
 from app.services.crm_relationship_service import validate_crm_relationships
 from app.services.record_access_service import record_access_service
 
 
 class SupportService:
+    STATUS_TRANSITIONS = {
+        "New": {"Open", "Pending", "Resolved"},
+        "Open": {"Pending", "Resolved"},
+        "Pending": {"Open", "Resolved"},
+        "Resolved": {"Open", "Closed"},
+        "Closed": {"Open"},
+    }
     @staticmethod
     def org(user: User) -> str:
         value = effective_organization_id(user)
@@ -67,17 +75,28 @@ class SupportService:
 
     async def create_ticket(self, db: AsyncSession, user: User, payload: TicketCreate):
         org = self.org(user)
+        if payload.assigned_to or payload.team_id:
+            permissions = set(await auth_service.get_user_permissions(db, user))
+            if "tickets:assign" not in permissions or not api_key_scope_allows(
+                user, "tickets:assign"
+            ):
+                from app.core.errors import ForbiddenError
+
+                raise ForbiddenError(message="Missing required permission: tickets:assign")
         links = payload.model_dump()
         invalid = await support_repository.validate_links(db, org, **links)
         if invalid:
             raise NotFoundError(
                 message=f"Related {invalid.removesuffix('_id').replace('_', ' ')} not found"
             )
+        from app.services.crm_relationship_service import resolve_crm_record_access
+
         await validate_crm_relationships(
             db,
             organization_id=org,
             contact_id=payload.contact_id,
             company_id=payload.company_id,
+            access_by_module=await resolve_crm_record_access(db, user),
         )
         now = datetime.now(UTC)
         response_hours, resolution_hours = 1, 24
@@ -134,13 +153,25 @@ class SupportService:
         invalid = await support_repository.validate_links(db, self.org(user), **data)
         if invalid:
             raise NotFoundError(message=f"Related {invalid.removesuffix('_id')} not found")
+        from app.services.crm_relationship_service import resolve_crm_record_access
+
         await validate_crm_relationships(
             db,
             organization_id=self.org(user),
             contact_id=data.get("contact_id", ticket.contact_id),
             company_id=data.get("company_id", ticket.company_id),
+            access_by_module=await resolve_crm_record_access(db, user),
         )
         old_status = ticket.status
+        requested_status = data.get("status")
+        if (
+            requested_status
+            and requested_status != old_status
+            and requested_status not in self.STATUS_TRANSITIONS.get(old_status, set())
+        ):
+            raise ConflictError(
+                message=f"Ticket cannot transition from {old_status} to {requested_status}"
+            )
         for key, value in data.items():
             setattr(ticket, key, value)
         if ticket.status != old_status:
@@ -155,8 +186,12 @@ class SupportService:
             )
             if ticket.status == "Resolved":
                 ticket.resolved_at = now
+                ticket.closed_at = None
             if ticket.status == "Closed":
                 ticket.closed_at = now
+            if ticket.status in {"New", "Open", "Pending"}:
+                ticket.resolved_at = None
+                ticket.closed_at = None
         if emit_workflow:
             from app.services.workflow_service import workflow_service
 
@@ -186,9 +221,12 @@ class SupportService:
         ticket.is_archived = True
         await db.commit()
 
-    async def comments(self, db, user, ticket_id):
+    async def comments(self, db, user, ticket_id, page: int = 1, limit: int = 50):
         await self.ticket(db, user, ticket_id)
-        return await support_repository.list_comments(db, ticket_id)
+        rows = await support_repository.list_comments(
+            db, ticket_id, offset=(page - 1) * limit, limit=limit
+        )
+        return rows, await support_repository.count_comments(db, ticket_id)
 
     async def add_comment(self, db, user, ticket_id, payload: TicketCommentCreate):
         ticket = await self.ticket(db, user, ticket_id)
@@ -200,9 +238,32 @@ class SupportService:
         await db.refresh(comment)
         return comment
 
+    async def history(self, db, user, ticket_id):
+        await self.ticket(db, user, ticket_id)
+        return await support_repository.status_history(db, ticket_id)
+
+    async def escalate(self, db, user, ticket_id, *, reason, assigned_to=None, team_id=None):
+        ticket = await self.ticket(db, user, ticket_id)
+        links = {"assigned_to": assigned_to, "team_id": team_id}
+        invalid = await support_repository.validate_links(db, self.org(user), **links)
+        if invalid:
+            raise NotFoundError(message=f"Related {invalid.removesuffix('_id')} not found")
+        ticket.priority = "Urgent"
+        ticket.escalated_at = datetime.now(UTC)
+        ticket.escalated_by = user.id
+        ticket.escalation_reason = reason.strip()
+        if assigned_to is not None:
+            ticket.assigned_to = assigned_to
+        if team_id is not None:
+            ticket.team_id = team_id
+        await db.commit()
+        await db.refresh(ticket)
+        return ticket
+
     async def ticket_articles(self, db, user, ticket_id):
         await self.ticket(db, user, ticket_id)
-        return await support_repository.list_ticket_articles(db, ticket_id)
+        access = await record_access_service.resolve(db, user, "knowledge_base")
+        return await support_repository.list_ticket_articles(db, ticket_id, access=access)
 
     async def link_ticket_article(self, db, user, ticket_id, article_id):
         await self.ticket(db, user, ticket_id)
@@ -218,6 +279,7 @@ class SupportService:
 
     async def unlink_ticket_article(self, db, user, ticket_id, article_id):
         await self.ticket(db, user, ticket_id)
+        await self.article(db, user, article_id)
         link = await support_repository.get_ticket_article_link(db, ticket_id, article_id)
         if not link:
             raise NotFoundError(message="Linked knowledge article not found")
@@ -225,6 +287,7 @@ class SupportService:
         await db.commit()
 
     async def list_articles(self, db, user, search, article_status, page, limit):
+        access = await record_access_service.resolve(db, user, "knowledge_base")
         return await support_repository.list_articles(
             db,
             self.org(user),
@@ -232,6 +295,7 @@ class SupportService:
             status=article_status,
             offset=(page - 1) * limit,
             limit=limit,
+            access=access,
         )
 
     async def list_customers(self, db, user, search, page, limit):
@@ -248,7 +312,10 @@ class SupportService:
         )
 
     async def article(self, db, user, article_id):
-        article = await support_repository.article(db, self.org(user), article_id)
+        access = await record_access_service.resolve(db, user, "knowledge_base")
+        article = await support_repository.article(
+            db, self.org(user), article_id, access=access
+        )
         if not article:
             raise NotFoundError(message="Knowledge article not found")
         return article

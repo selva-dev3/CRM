@@ -6,6 +6,7 @@ from app.models import User
 from app.models.note import Note
 from app.repositories.note_repository import NoteRepository
 from app.services.org_service import organization_service
+from app.services.record_access_service import record_access_service
 
 
 def note_to_dict(note: Note) -> dict:
@@ -28,6 +29,14 @@ class NoteService:
     def __init__(self, repository: NoteRepository | None = None) -> None:
         self.repository = repository or NoteRepository()
 
+    async def _access(self, db: AsyncSession, current_user: User):
+        from app.services.crm_relationship_service import resolve_crm_record_access
+
+        return (
+            await record_access_service.resolve(db, current_user, "notes"),
+            await resolve_crm_record_access(db, current_user),
+        )
+
     async def _commit(self, db: AsyncSession, error_message: str) -> None:
         try:
             await db.commit()
@@ -48,6 +57,7 @@ class NoteService:
         current_user: User,
     ) -> list[dict]:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        access, target_access = await self._access(db, current_user)
         notes = await self.repository.list(
             db,
             page=page,
@@ -55,6 +65,8 @@ class NoteService:
             organization_id=org_id,
             entity_type=entity_type,
             search=search,
+            access=access,
+            target_access=target_access,
         )
         return [note_to_dict(n) for n in notes]
 
@@ -67,11 +79,14 @@ class NoteService:
         current_user: User,
     ) -> int:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        access, target_access = await self._access(db, current_user)
         return await self.repository.count(
             db,
             organization_id=org_id,
             entity_type=entity_type,
             search=search,
+            access=access,
+            target_access=target_access,
         )
 
     async def create_note(
@@ -84,13 +99,17 @@ class NoteService:
         current_user: User,
     ) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
-        from app.services.crm_relationship_service import validate_polymorphic_crm_entity
+        from app.services.crm_relationship_service import (
+            resolve_crm_record_access,
+            validate_polymorphic_crm_entity,
+        )
 
         relationships = await validate_polymorphic_crm_entity(
             db,
             organization_id=org_id,
             entity_type=entity_type,
             entity_id=entity_id,
+            access_by_module=await resolve_crm_record_access(db, current_user),
         )
         note = await self.repository.create(
             db,
@@ -107,7 +126,10 @@ class NoteService:
 
     async def list_pinned(self, db: AsyncSession, current_user: User) -> list[dict]:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
-        notes = await self.repository.list_pinned(db, org_id)
+        access, target_access = await self._access(db, current_user)
+        notes = await self.repository.list_pinned(
+            db, org_id, access=access, target_access=target_access
+        )
         return [note_to_dict(n) for n in notes]
 
     async def get_notes_by_entity(
@@ -121,6 +143,7 @@ class NoteService:
         limit: int | None = None,
     ) -> list[dict]:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        access, target_access = await self._access(db, current_user)
         notes = await self.repository.list_by_entity(
             db,
             entity_type=entity_type,
@@ -128,12 +151,17 @@ class NoteService:
             organization_id=org_id,
             page=page,
             limit=limit,
+            access=access,
+            target_access=target_access,
         )
         return [note_to_dict(n) for n in notes]
 
     async def bulk_delete(self, db: AsyncSession, ids: list[str], current_user: User) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
-        notes = await self.repository.list_by_ids(db, ids, org_id)
+        access, target_access = await self._access(db, current_user)
+        notes = await self.repository.list_by_ids(
+            db, ids, org_id, access=access, target_access=target_access
+        )
         for note in notes:
             await self.repository.delete(db, note)
         await self._commit(db, "Failed to bulk delete notes")
@@ -141,7 +169,10 @@ class NoteService:
 
     async def get_note(self, db: AsyncSession, note_id: str, current_user: User) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
-        note = await self.repository.get_by_id(db, note_id, org_id)
+        access, target_access = await self._access(db, current_user)
+        note = await self.repository.get_by_id(
+            db, note_id, org_id, access=access, target_access=target_access
+        )
         if not note:
             raise NotFoundError(message=f"Note '{note_id}' not found")
         return note_to_dict(note)
@@ -150,7 +181,10 @@ class NoteService:
         self, db: AsyncSession, note_id: str, content: str, current_user: User
     ) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
-        note = await self.repository.get_by_id(db, note_id, org_id)
+        access, target_access = await self._access(db, current_user)
+        note = await self.repository.get_by_id(
+            db, note_id, org_id, access=access, target_access=target_access
+        )
         if not note:
             raise NotFoundError(message=f"Note '{note_id}' not found")
         note.content = content
@@ -160,7 +194,10 @@ class NoteService:
 
     async def delete_note(self, db: AsyncSession, note_id: str, current_user: User) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
-        note = await self.repository.get_by_id(db, note_id, org_id)
+        access, target_access = await self._access(db, current_user)
+        note = await self.repository.get_by_id(
+            db, note_id, org_id, access=access, target_access=target_access
+        )
         if not note:
             raise NotFoundError(message=f"Note '{note_id}' not found")
         await self.repository.delete(db, note)
@@ -171,7 +208,10 @@ class NoteService:
         self, db: AsyncSession, note_id: str, pinned: bool, current_user: User
     ) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
-        note = await self.repository.get_by_id(db, note_id, org_id)
+        access, target_access = await self._access(db, current_user)
+        note = await self.repository.get_by_id(
+            db, note_id, org_id, access=access, target_access=target_access
+        )
         if not note:
             raise NotFoundError(message=f"Note '{note_id}' not found")
         note.is_pinned = pinned
@@ -193,6 +233,7 @@ class NoteService:
         current_user: User,
     ) -> list[dict]:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        access, target_access = await self._access(db, current_user)
         notes = await self.repository.list_by_entity(
             db,
             entity_type=entity_type,
@@ -200,6 +241,8 @@ class NoteService:
             organization_id=org_id,
             page=page,
             limit=limit,
+            access=access,
+            target_access=target_access,
         )
         return [
             {
@@ -222,11 +265,14 @@ class NoteService:
         current_user: User,
     ) -> int:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
+        access, target_access = await self._access(db, current_user)
         return await self.repository.count_by_entity(
             db,
             entity_type=entity_type,
             entity_id=entity_id,
             organization_id=org_id,
+            access=access,
+            target_access=target_access,
         )
 
     async def add_for_entity(
@@ -239,13 +285,17 @@ class NoteService:
         current_user: User,
     ) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
-        from app.services.crm_relationship_service import validate_polymorphic_crm_entity
+        from app.services.crm_relationship_service import (
+            resolve_crm_record_access,
+            validate_polymorphic_crm_entity,
+        )
 
         relationships = await validate_polymorphic_crm_entity(
             db,
             organization_id=org_id,
             entity_type=entity_type,
             entity_id=entity_id,
+            access_by_module=await resolve_crm_record_access(db, current_user),
         )
         note = await self.repository.create(
             db,

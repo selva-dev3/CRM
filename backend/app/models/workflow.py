@@ -1,6 +1,17 @@
 import uuid
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -8,7 +19,9 @@ from app.db.base import Base
 
 class Workflow(Base):
     __tablename__ = "workflows"
-    __table_args__ = (Index("uq_workflows_org_name", "organization_id", "name", unique=True),)
+    __table_args__ = (
+        UniqueConstraint("organization_id", "name", name="uq_workflows_org_name"),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     organization_id: Mapped[str] = mapped_column(
@@ -65,7 +78,7 @@ class WorkflowEvent(Base):
 class WorkflowRun(Base):
     __tablename__ = "workflow_runs"
     __table_args__ = (
-        Index("uq_workflow_runs_event_workflow", "event_id", "workflow_id", unique=True),
+        UniqueConstraint("event_id", "workflow_id", name="uq_workflow_runs_event_workflow"),
     )
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     event_id: Mapped[str] = mapped_column(

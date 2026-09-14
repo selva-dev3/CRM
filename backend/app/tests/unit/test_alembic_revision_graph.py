@@ -8,7 +8,13 @@ from app.models import RolePermission, UserRole
 
 BACKEND_ROOT = Path(__file__).resolve().parents[3]
 MERGE_REVISION = "e8f9a0b1c2d3"
-HEAD_REVISION = "d0e1f2a3b4c5"
+HEAD_REVISION = "j7f9b1d3e5a6"
+TENANT_CATEGORY_REVISION = "i6e8a0b2c4d5"
+TICKET_DOCUMENT_REVISION = "h5d7f9a1c3e4"
+PROJECT_MEMBERS_REVISION = "g4c6e8f0b2d3"
+COMMUNICATION_OWNER_REVISION = "f3b5d7e9a1c2"
+DATA_SAFETY_REVISION = "e2a4c6d8f0b1"
+RBAC_BACKFILL_REVISION = "d0e1f2a3b4c5"
 TASK_DUE_DATE_REVISION = "c9e0f1a2b3c4"
 CRM_FOUNDATION_REVISION = "c9d8e7f6a5b4"
 SALES_PROJECTS_REVISION = "p1r2o3j4s5f6"
@@ -43,6 +49,12 @@ def test_rbac_revision_resolves_existing_database_stamp():
         for migration in script.iterate_revisions("heads", "p9e0f1a2b3c4")
     ] == [
         HEAD_REVISION,
+        TENANT_CATEGORY_REVISION,
+        TICKET_DOCUMENT_REVISION,
+        PROJECT_MEMBERS_REVISION,
+        COMMUNICATION_OWNER_REVISION,
+        DATA_SAFETY_REVISION,
+        RBAC_BACKFILL_REVISION,
         TASK_DUE_DATE_REVISION,
         CRM_FOUNDATION_REVISION,
         SALES_PROJECTS_REVISION,
@@ -62,6 +74,12 @@ def test_rbac_revision_resolves_existing_database_stamp():
         migration.revision for migration in script.iterate_revisions("heads", "o8d9e0f1a2b3")
     ] == [
         HEAD_REVISION,
+        TENANT_CATEGORY_REVISION,
+        TICKET_DOCUMENT_REVISION,
+        PROJECT_MEMBERS_REVISION,
+        COMMUNICATION_OWNER_REVISION,
+        DATA_SAFETY_REVISION,
+        RBAC_BACKFILL_REVISION,
         TASK_DUE_DATE_REVISION,
         CRM_FOUNDATION_REVISION,
         SALES_PROJECTS_REVISION,

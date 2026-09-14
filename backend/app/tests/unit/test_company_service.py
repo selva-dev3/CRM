@@ -274,3 +274,50 @@ async def test_get_company_deals_requires_existing_company():
 
     with pytest.raises(NotFoundError):
         await service.get_company_deals(db, "missing-company", organization_id="org-1")
+
+
+@pytest.mark.asyncio
+async def test_company_documents_use_canonical_scoped_document_service(monkeypatch):
+    repo: Any = CompanyRepository()
+    service = _service_with(repo)
+    service.require_company = AsyncMock(return_value=_make_company())
+    db = AsyncMock(spec=AsyncSession)
+    user = AsyncMock()
+
+    from app.services.document_service import document_service
+
+    list_documents = AsyncMock(return_value=[{"id": "document-1"}])
+    count_documents = AsyncMock(return_value=1)
+    monkeypatch.setattr(document_service, "list_documents", list_documents)
+    monkeypatch.setattr(document_service, "count_documents", count_documents)
+
+    documents = await service.get_company_documents(
+        db,
+        "cmp-1",
+        organization_id="org-1",
+        page=2,
+        limit=10,
+        current_user=user,
+    )
+    count = await service.count_company_documents(
+        db,
+        "cmp-1",
+        organization_id="org-1",
+        current_user=user,
+    )
+
+    assert documents == [{"id": "document-1"}]
+    assert count == 1
+    assert service.require_company.await_count == 2
+    list_documents.assert_awaited_once_with(
+        db,
+        page=2,
+        limit=10,
+        company_id="cmp-1",
+        current_user=user,
+    )
+    count_documents.assert_awaited_once_with(
+        db,
+        company_id="cmp-1",
+        current_user=user,
+    )

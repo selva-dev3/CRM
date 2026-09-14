@@ -245,6 +245,12 @@ RECORD_SCOPE_MODULES = (
     "orders",
     "invoices",
     "payments",
+    "calls",
+    "emails",
+    "calendar",
+    "meetings",
+    "notes",
+    "knowledge_base",
 )
 
 
@@ -269,9 +275,10 @@ SYSTEM_ROLE_RECORD_SCOPES = {
             "payments",
         ),
     ),
-    "Customer Support": _record_scopes(
-        "assigned", none=("deals", "projects", "quotes", "payments")
-    ),
+    "Customer Support": {
+        **_record_scopes("assigned", none=("deals", "projects", "quotes", "payments")),
+        "knowledge_base": "all",
+    },
     "Read Only": _record_scopes("all"),
     "Project Manager": _record_scopes(
         "team", none=("leads", "tickets", "quotes", "orders", "invoices", "payments")
@@ -279,9 +286,13 @@ SYSTEM_ROLE_RECORD_SCOPES = {
     "Project Member": _record_scopes(
         "assigned", none=("leads", "tickets", "quotes", "orders", "invoices", "payments")
     ),
-    "Support Manager": _record_scopes(
-        "team", none=("leads", "deals", "projects", "quotes", "orders", "invoices", "payments")
-    ),
+    "Support Manager": {
+        **_record_scopes(
+            "team",
+            none=("leads", "deals", "projects", "quotes", "orders", "invoices", "payments"),
+        ),
+        "knowledge_base": "all",
+    },
     "Finance/Accounts": _record_scopes(
         "all", none=("leads", "tasks", "activities", "projects", "tickets")
     ),

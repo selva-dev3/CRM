@@ -62,6 +62,10 @@ class TicketResponse(BaseModel):
     first_response_due_at: datetime | None
     resolution_due_at: datetime | None
     resolved_at: datetime | None
+    closed_at: datetime | None = None
+    escalated_at: datetime | None = None
+    escalated_by: str | None = None
+    escalation_reason: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -73,9 +77,23 @@ class TicketCommentCreate(BaseModel):
 
 class TicketCommentResponse(BaseModel):
     id: str
-    user_id: str
+    user_id: str | None
     body: str
     is_internal: bool
+    created_at: datetime
+
+
+class TicketEscalationCreate(BaseModel):
+    reason: str = Field(min_length=1, max_length=500)
+    assigned_to: str | None = None
+    team_id: str | None = None
+
+
+class TicketStatusHistoryResponse(BaseModel):
+    id: str
+    from_status: str | None
+    to_status: str
+    changed_by: str | None
     created_at: datetime
 
 

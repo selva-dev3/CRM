@@ -7,6 +7,7 @@ import {
   clearSessionToken,
   invalidateAuthSession,
   markAuthSessionActive,
+  openApiStream,
   resolveApiBaseUrl,
 } from './client';
 
@@ -268,8 +269,191 @@ describe('apiClient cookie authentication', () => {
     invalidateAuthSession();
     releaseRefresh?.();
 
-    await expect(request).rejects.toMatchObject({ status: 401 });
+    await expect(request).rejects.toMatchObject({ name: 'AbortError' });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not apply a successful response that completes after logout', async () => {
+    let releaseRequest: ((response: object) => void) | undefined;
+    const pendingResponse = new Promise<object>((resolve) => {
+      releaseRequest = resolve;
+    });
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(pendingResponse));
+
+    const request = apiClient.get('/contacts');
+    invalidateAuthSession();
+    releaseRequest?.({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: vi.fn().mockResolvedValue([{ id: 'account-a-contact' }]),
+    });
+
+    await expect(request).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('does not apply a response body decoded after an account switch', async () => {
+    let releaseBody: ((value: object) => void) | undefined;
+    const body = new Promise<object>((resolve) => {
+      releaseBody = resolve;
+    });
+    const json = vi.fn().mockReturnValue(body);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json,
+    }));
+
+    const request = apiClient.get('/contacts');
+    await vi.waitFor(() => expect(json).toHaveBeenCalledOnce());
+    invalidateAuthSession();
+    markAuthSessionActive();
+    releaseBody?.([{ id: 'account-a-contact' }]);
+
+    await expect(request).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('does not apply a delayed error body to a replacement session', async () => {
+    let releaseBody: ((value: object) => void) | undefined;
+    const body = new Promise<object>((resolve) => {
+      releaseBody = resolve;
+    });
+    const json = vi.fn().mockReturnValue(body);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 403, json }));
+    const unavailable = vi.fn();
+    window.addEventListener('organization:unavailable', unavailable);
+
+    const request = apiClient.get('/contacts');
+    await vi.waitFor(() => expect(json).toHaveBeenCalledOnce());
+    invalidateAuthSession();
+    markAuthSessionActive();
+    sessionStorage.setItem('user', 'account-b');
+    releaseBody?.({ code: 'ORGANIZATION_UNAVAILABLE', message: 'Old account error' });
+
+    await expect(request).rejects.toMatchObject({ name: 'AbortError' });
+    expect(sessionStorage.getItem('user')).toBe('account-b');
+    expect(unavailable).not.toHaveBeenCalled();
+    window.removeEventListener('organization:unavailable', unavailable);
+  });
+
+  it('stops consuming an authenticated stream after an account switch', async () => {
+    let streamController: ReadableStreamDefaultController<Uint8Array> | undefined;
+    const source = new ReadableStream<Uint8Array>({
+      start(controller) {
+        streamController = controller;
+      },
+    });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(source, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    })));
+
+    const response = await openApiStream('/ai/chat', { prompt: 'Pipeline summary' });
+    const bodyRead = response.text();
+    const rejection = expect(bodyRead).rejects.toMatchObject({ name: 'AbortError' });
+    invalidateAuthSession();
+    markAuthSessionActive();
+
+    await rejection;
+    expect(() => streamController?.enqueue(new Uint8Array())).toThrow();
+  });
+
+  it('does not expose a prefetched stream chunk after an account switch', async () => {
+    const source = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('data: private account-a\n\n'));
+        controller.close();
+      },
+    });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(source, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    })));
+
+    const response = await openApiStream('/ai/chat', { prompt: 'Private pipeline' });
+    await Promise.resolve();
+    invalidateAuthSession();
+    markAuthSessionActive();
+
+    await expect(response.text()).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('continues streaming while the authenticated session is unchanged', async () => {
+    const source = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('data: permitted\n\n'));
+        controller.close();
+      },
+    });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(source, { status: 200 })));
+
+    const response = await openApiStream('/ai/chat', { prompt: 'Pipeline' });
+
+    await expect(response.text()).resolves.toBe('data: permitted\n\n');
+  });
+
+  it('does not refresh or redirect when an account changes before a delayed 401', async () => {
+    let releaseRequest: ((response: object) => void) | undefined;
+    const pendingResponse = new Promise<object>((resolve) => {
+      releaseRequest = resolve;
+    });
+    const fetchMock = vi.fn().mockReturnValue(pendingResponse);
+    vi.stubGlobal('fetch', fetchMock);
+    const unauthorized = vi.fn();
+    window.addEventListener('auth:unauthorized', unauthorized);
+
+    const request = apiClient.get('/contacts');
+    markAuthSessionActive();
+    releaseRequest?.({
+      ok: false,
+      status: 401,
+      json: vi.fn().mockResolvedValue({ message: 'Old session expired' }),
+    });
+
+    await expect(request).rejects.toMatchObject({ name: 'AbortError' });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(unauthorized).not.toHaveBeenCalled();
+    window.removeEventListener('auth:unauthorized', unauthorized);
+  });
+
+  it('does not retry account A request with account B after a refresh race', async () => {
+    let releaseRefresh: (() => void) | undefined;
+    const refreshResponse = new Promise<{ ok: boolean; status: number }>((resolve) => {
+      releaseRefresh = () => resolve({ ok: true, status: 200 });
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 401, json: vi.fn().mockResolvedValue({}) })
+      .mockReturnValueOnce(refreshResponse);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const request = apiClient.get('/contacts');
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    markAuthSessionActive();
+    releaseRefresh?.();
+
+    await expect(request).rejects.toMatchObject({ name: 'AbortError' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('treats same-user logout and login as a new session generation', async () => {
+    let releaseRequest: ((response: object) => void) | undefined;
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise<object>((resolve) => {
+      releaseRequest = resolve;
+    })));
+
+    const oldRequest = apiClient.get('/contacts');
+    invalidateAuthSession();
+    markAuthSessionActive();
+    releaseRequest?.({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: vi.fn().mockResolvedValue([{ id: 'old-session-contact' }]),
+    });
+
+    await expect(oldRequest).rejects.toMatchObject({ name: 'AbortError' });
   });
 
   it('blocks new refresh attempts while explicit logout is in progress', async () => {
@@ -281,9 +465,8 @@ describe('apiClient cookie authentication', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(apiClient.get('/users')).rejects.toMatchObject({ status: 401 });
-    expect(fetchMock).toHaveBeenCalledOnce();
-    expect(fetchMock.mock.calls[0][0]).toBe(`${BASE_URL}/users`);
+    await expect(apiClient.get('/users')).rejects.toMatchObject({ name: 'AbortError' });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('preserves FormData when retrying after refresh', async () => {

@@ -84,7 +84,11 @@ def test_plan_catalog_fields_and_one_subscription_constraint_are_modeled():
         "sort_order",
     ):
         assert field in columns
-    assert OrganizationSubscription.__table__.c.organization_id.unique is True
+    assert any(
+        isinstance(constraint, sa.UniqueConstraint)
+        and tuple(column.name for column in constraint.columns) == ("organization_id",)
+        for constraint in OrganizationSubscription.__table__.constraints
+    )
 
 
 def test_catalog_migration_preserves_existing_terms_and_backfills_only_free_organizations():

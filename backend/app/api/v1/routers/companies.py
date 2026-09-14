@@ -433,10 +433,27 @@ async def add_company_note(
 )
 async def get_company_documents(
     company_id: str,
+    response: Response,
+    page: int = Query(1, ge=1),
+    limit: int = Query(15, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await company_service.get_company_documents(
-        db, company_id, organization_id=organization_id
+    items = await company_service.get_company_documents(
+        db,
+        company_id,
+        organization_id=organization_id,
+        page=page,
+        limit=limit,
+        current_user=current_user,
     )
+    response.headers["X-Total-Count"] = str(
+        await company_service.count_company_documents(
+            db,
+            company_id,
+            organization_id=organization_id,
+            current_user=current_user,
+        )
+    )
+    return items

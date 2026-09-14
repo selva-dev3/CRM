@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import ANY, AsyncMock
 
 import pytest
 from pydantic import ValidationError
@@ -72,7 +72,7 @@ async def test_get_inbox_maps_emails():
     assert result[0]["to"] == ["client@example.com"]
     assert result[0]["from_email"] == "rep@company.com"
     repo.list_emails.assert_awaited_once_with(
-        db, page=1, limit=20, organization_id="org-1", search="hi"
+        db, page=1, limit=20, organization_id="org-1", search="hi", access=ANY
     )
 
 

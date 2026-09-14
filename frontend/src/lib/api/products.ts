@@ -18,13 +18,6 @@ export interface ProductCreatePayload {
   category?: string;
 }
 
-export interface PriceBookItem {
-  id: string;
-  name: string;
-  currency: string;
-  is_default: boolean;
-}
-
 export interface TaxRateItem {
   id: string;
   name: string;
@@ -76,14 +69,6 @@ export async function fetchProductCategoriesApi(): Promise<string[]> {
 
 export async function createProductCategoryApi(name: string): Promise<MessageResponse> {
   return apiClient.post<MessageResponse>(`/products/categories?name=${encodeURIComponent(name)}`);
-}
-
-export async function fetchPriceBooksApi(): Promise<PriceBookItem[]> {
-  return apiClient.get<PriceBookItem[]>('/products/price-books');
-}
-
-export async function createPriceBookApi(name: string, currency: string = 'USD'): Promise<PriceBookItem> {
-  return apiClient.post<PriceBookItem>(`/products/price-books?name=${encodeURIComponent(name)}&currency=${encodeURIComponent(currency)}`);
 }
 
 export async function fetchTaxRatesApi(): Promise<TaxRateItem[]> {
@@ -162,15 +147,6 @@ export function useProductCategoriesQuery(options?: Omit<UseQueryOptions<string[
   });
 }
 
-export function usePriceBooksQuery(options?: Omit<UseQueryOptions<PriceBookItem[]>, 'queryKey' | 'queryFn'>) {
-  return useQuery<PriceBookItem[]>({
-    queryKey: ['products', 'price-books'],
-    queryFn: fetchPriceBooksApi,
-    staleTime: 1000 * 60 * 5,
-    ...options,
-  });
-}
-
 export function useTaxRatesQuery(options?: Omit<UseQueryOptions<TaxRateItem[]>, 'queryKey' | 'queryFn'>) {
   return useQuery<TaxRateItem[]>({
     queryKey: ['products', 'tax-rates'],
@@ -240,17 +216,6 @@ export function useCreateCategoryMutation(options?: UseMutationOptions<MessageRe
     mutationFn: createProductCategoryApi,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products', 'categories'] });
-    },
-    ...options,
-  });
-}
-
-export function useCreatePriceBookMutation(options?: UseMutationOptions<PriceBookItem, Error, { name: string; currency?: string }>) {
-  const queryClient = useQueryClient();
-  return useMutation<PriceBookItem, Error, { name: string; currency?: string }>({
-    mutationFn: ({ name, currency }) => createPriceBookApi(name, currency),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['products', 'price-books'] });
     },
     ...options,
   });

@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthProvider, useAuth } from './auth-provider';
 import type { CurrentUserResponse } from '@/lib/api/auth';
+import { apiClient } from '@/lib/api/client';
 import { getOrganizationContext, setOrganizationContext } from '@/lib/organization-context';
 import { AUTH_SESSION_BROADCAST_KEY } from '@/lib/auth-session';
 
@@ -50,6 +51,10 @@ describe('AuthProvider', () => {
     mocks.logoutApi.mockResolvedValue(undefined);
   });
 
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('ignores an unavailable response from an organization that is no longer selected', async () => {
     const queryClient = new QueryClient();
     renderProvider(queryClient);
@@ -74,6 +79,17 @@ describe('AuthProvider', () => {
     expect(queryClient.getQueryData(['contacts'])).toBeUndefined();
     expect(localStorage.getItem('user')).toBeNull();
     expect(sessionStorage.getItem('user')).toBeNull();
+  });
+
+  it('clears the previous account cache when a new session is installed', async () => {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(['contacts'], [{ id: 'account-a-contact' }]);
+    renderProvider(queryClient);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Set session' }));
+
+    expect(queryClient.getQueryData(['contacts'])).toBeUndefined();
+    expect(screen.getByText('alex@crm.com')).toBeInTheDocument();
   });
 
   it('reacts immediately to logout from another browser tab', async () => {
@@ -127,6 +143,34 @@ describe('AuthProvider', () => {
 
     expect(await screen.findByText('alex@crm.com')).toBeInTheDocument();
     await waitFor(() => expect(queryClient.getQueryData(['contacts'])).toBeUndefined());
+  });
+
+  it('does not treat an ordinary profile verification as a new login session', async () => {
+    let releaseRequest: ((response: object) => void) | undefined;
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise<object>((resolve) => {
+      releaseRequest = resolve;
+    })));
+    mocks.getCurrentUserApi.mockResolvedValue({
+      id: 'user-1',
+      name: 'Updated Alex',
+      email: 'alex@crm.com',
+      role: 'Admin',
+      permissions: [],
+    });
+    renderProvider();
+    await userEvent.click(screen.getByRole('button', { name: 'Set session' }));
+
+    const pendingRequest = apiClient.get('/contacts');
+    await userEvent.click(screen.getByRole('button', { name: 'Verify' }));
+    expect(await screen.findByText('alex@crm.com')).toBeInTheDocument();
+    releaseRequest?.({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: vi.fn().mockResolvedValue([{ id: 'current-session-contact' }]),
+    });
+
+    await expect(pendingRequest).resolves.toEqual([{ id: 'current-session-contact' }]);
   });
 
   it('clears local state when backend logout fails', async () => {

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.errors import APIException, ForbiddenError, NotFoundError
 from app.core.logging import get_logger
+from app.core.rbac_matrix import RECORD_SCOPE_MODULES
 from app.models import User
 from app.repositories.ai_repository import AIRepository
 from app.schemas.ai import (
@@ -57,6 +58,7 @@ from app.schemas.dashboard import DashboardAiInsightsResponse
 from app.services.ai_provider_service import ai_provider_gateway
 from app.services.ai_runtime_service import AIRuntimeService, ai_runtime_service
 from app.services.auth_service import auth_service
+from app.services.record_access_service import record_access_service
 from app.services.report_service import ReportService, report_service
 from app.services.task_service import TaskService, task_service
 
@@ -500,6 +502,25 @@ class AIDomainService:
         ("invoice", "deal_title"): ("deals:read",),
         ("activity", "user_name"): ("users:read",),
     }
+    _RELATED_FIELD_ENTITIES = {
+        ("contact", "company_name"): ("company",),
+        ("contact", "last_contact_at"): ("call",),
+        ("company", "city"): ("contact",),
+        ("company", "last_contact_at"): ("contact", "call"),
+        ("company", "open_deal_value"): ("deal",),
+        ("deal", "company_name"): ("company",),
+        ("deal", "contact_name"): ("contact",),
+        ("deal", "project_name"): ("project",),
+        ("task", "project_name"): ("project",),
+        ("project", "pending_task_count"): ("task",),
+        ("project", "deal_count"): ("deal",),
+        ("project", "deal_value"): ("deal",),
+        ("call", "contact_name"): ("contact",),
+        ("quote", "deal_title"): ("deal",),
+        ("invoice", "company_name"): ("company",),
+        ("invoice", "contact_name"): ("contact",),
+        ("invoice", "deal_title"): ("deal",),
+    }
     _REPORT_GETTERS = {
         "sales-performance": "get_sales_performance_report",
         "pipeline-velocity": "get_pipeline_velocity_report",
@@ -554,6 +575,57 @@ class AIDomainService:
 
     async def _permission_keys(self, db: AsyncSession, current_user: User) -> set[str]:
         return set(await auth_service.get_user_permissions(db, current_user))
+
+    @staticmethod
+    async def _record_access(db: AsyncSession, current_user: User, entity_type: str):
+        module = {
+            "company": "companies",
+            "calendar_event": "calendar",
+            "activity": "activities",
+            "user": "users",
+        }.get(entity_type, f"{entity_type}s")
+        if module not in RECORD_SCOPE_MODULES:
+            return None
+        return await record_access_service.resolve(db, current_user, module)
+
+    @classmethod
+    async def _related_record_access(
+        cls, db: AsyncSession, current_user: User, plan: CRMSearchPlan
+    ) -> dict[str, object]:
+        fields = set(plan.include_fields or [])
+        fields.update(str(item.field) for item in plan.filters or [])
+        fields.update(field for field in (plan.sort_by, plan.group_by) if field)
+        if plan.inactive_days:
+            fields.add("last_contact_at")
+        if plan.minimum_open_deal_amount is not None and plan.entity_type == "company":
+            fields.add("open_deal_value")
+        entities = {
+            related_entity
+            for field in fields
+            for related_entity in cls._RELATED_FIELD_ENTITIES.get(
+                (plan.entity_type, field), ()
+            )
+        }
+        if plan.entity_type == "note":
+            entities.update({"lead", "contact", "company", "deal"})
+        elif plan.entity_type == "document":
+            entities.update(
+                {
+                    "lead",
+                    "contact",
+                    "company",
+                    "deal",
+                    "quote",
+                    "invoice",
+                    "payment",
+                    "project",
+                    "ticket",
+                }
+            )
+        return {
+            entity: await cls._record_access(db, current_user, entity)
+            for entity in sorted(entities)
+        }
 
     @staticmethod
     def _require_permission(permission_keys: set[str], permission: str) -> None:
@@ -821,7 +893,12 @@ class AIDomainService:
 
     async def evaluate_lead_score(self, db: AsyncSession, lead_id: str, current_user: User) -> dict:
         organization_id = current_user.organization_id or ""
-        lead = await self.repository.get_lead(db, lead_id=lead_id, organization_id=organization_id)
+        lead = await self.repository.get_lead(
+            db,
+            lead_id=lead_id,
+            organization_id=organization_id,
+            access=await self._record_access(db, current_user, "lead"),
+        )
         if not lead:
             raise NotFoundError(message=f"Lead with ID '{lead_id}' not found")
         permissions = await self._permission_keys(db, current_user)
@@ -877,7 +954,9 @@ class AIDomainService:
 
     async def batch_lead_scoring(self, db: AsyncSession, current_user: User) -> dict:
         leads = await self.repository.list_leads(
-            db, organization_id=current_user.organization_id or ""
+            db,
+            organization_id=current_user.organization_id or "",
+            access=await self._record_access(db, current_user, "lead"),
         )
         succeeded = 0
         failures: list[dict[str, str]] = []
@@ -906,22 +985,34 @@ class AIDomainService:
         if entity_type == "lead":
             self._require_permission(permissions, "leads:read")
             entity = await self.repository.get_lead(
-                db, lead_id=entity_id, organization_id=organization_id
+                db,
+                lead_id=entity_id,
+                organization_id=organization_id,
+                access=await self._record_access(db, current_user, "lead"),
             )
         elif entity_type == "deal":
             self._require_permission(permissions, "deals:read")
             entity = await self.repository.get_deal(
-                db, deal_id=entity_id, organization_id=organization_id
+                db,
+                deal_id=entity_id,
+                organization_id=organization_id,
+                access=await self._record_access(db, current_user, "deal"),
             )
         elif entity_type == "company":
             self._require_permission(permissions, "companies:read")
             entity = await self.repository.get_company(
-                db, company_id=entity_id, organization_id=organization_id
+                db,
+                company_id=entity_id,
+                organization_id=organization_id,
+                access=await self._record_access(db, current_user, "company"),
             )
         elif entity_type == "contact":
             self._require_permission(permissions, "contacts:read")
             entity = await self.repository.get_contact(
-                db, contact_id=entity_id, organization_id=organization_id
+                db,
+                contact_id=entity_id,
+                organization_id=organization_id,
+                access=await self._record_access(db, current_user, "contact"),
             )
         else:
             raise APIException(
@@ -993,6 +1084,7 @@ class AIDomainService:
             db,
             deal_id=deal_id,
             organization_id=current_user.organization_id or "",
+            access=await self._record_access(db, current_user, "deal"),
         )
         if not deal:
             raise NotFoundError(message=f"Deal with ID '{deal_id}' not found")
@@ -1000,6 +1092,7 @@ class AIDomainService:
             db,
             deal_id=deal.id,
             organization_id=current_user.organization_id or "",
+            access=await self._record_access(db, current_user, "deal"),
         )
         output, run = await self._run(
             db,
@@ -1095,6 +1188,12 @@ class AIDomainService:
                     db,
                     organization_id=organization_id,
                     current_user_id=current_user.id,
+                    access=await self._record_access(
+                        db, current_user, operation.entity_type
+                    ),
+                    related_access=await self._related_record_access(
+                        db, current_user, operation
+                    ),
                     **operation.model_dump(exclude={"result_key", "title", "report_type"}),
                 )
             explanation, result_count = self._search_explanation(operation, results)
@@ -1350,6 +1449,7 @@ class AIDomainService:
             db,
             meeting_id=meeting_id,
             organization_id=current_user.organization_id or "",
+            access=await self._record_access(db, current_user, "meeting"),
         )
         if not meeting:
             raise NotFoundError(message=f"Meeting '{meeting_id}' not found")
@@ -1381,6 +1481,14 @@ class AIDomainService:
     async def get_meeting_intelligence(
         self, db: AsyncSession, meeting_id: str, current_user: User
     ) -> MeetingSummaryResponse | None:
+        meeting = await self.repository.get_meeting(
+            db,
+            meeting_id=meeting_id,
+            organization_id=current_user.organization_id or "",
+            access=await self._record_access(db, current_user, "meeting"),
+        )
+        if not meeting:
+            raise NotFoundError(message=f"Meeting '{meeting_id}' not found")
         generated = await self.repository.get_latest_generated_content(
             db,
             organization_id=current_user.organization_id or "",
@@ -1504,6 +1612,7 @@ class AIDomainService:
             db,
             lead_id=lead_id,
             organization_id=current_user.organization_id or "",
+            access=await self._record_access(db, current_user, "lead"),
         )
         if not lead:
             raise NotFoundError(message=f"Lead with ID '{lead_id}' not found")
@@ -1553,6 +1662,7 @@ class AIDomainService:
             db,
             company_id=company_id,
             organization_id=current_user.organization_id or "",
+            access=await self._record_access(db, current_user, "company"),
         )
         if not company:
             raise NotFoundError(message=f"Company with ID '{company_id}' not found")
@@ -1564,6 +1674,9 @@ class AIDomainService:
             organization_id=current_user.organization_id or "",
             include_deals="deals:read" in permissions,
             include_calls="calls:read" in permissions,
+            entity_access=await self._record_access(db, current_user, "company"),
+            deal_access=await self._record_access(db, current_user, "deal"),
+            call_access=await self._record_access(db, current_user, "call"),
         )
         output, run = await self._run(
             db,
@@ -1585,6 +1698,7 @@ class AIDomainService:
             db,
             deal_id=deal_id,
             organization_id=current_user.organization_id or "",
+            access=await self._record_access(db, current_user, "deal"),
         )
         if not deal:
             raise NotFoundError(message=f"Deal with ID '{deal_id}' not found")
@@ -1592,6 +1706,7 @@ class AIDomainService:
             db,
             deal_id=deal.id,
             organization_id=current_user.organization_id or "",
+            access=await self._record_access(db, current_user, "deal"),
         )
         output, run = await self._run(
             db,
@@ -1636,6 +1751,7 @@ class AIDomainService:
                     db,
                     call_id=source_id or "",
                     organization_id=current_user.organization_id or "",
+                    access=await self._record_access(db, current_user, "call"),
                 )
             elif source_type == "meeting":
                 self._require_permission(permissions, "meetings:read")
@@ -1643,6 +1759,7 @@ class AIDomainService:
                     db,
                     meeting_id=source_id or "",
                     organization_id=current_user.organization_id or "",
+                    access=await self._record_access(db, current_user, "meeting"),
                 )
             else:
                 raise APIException(
@@ -1698,6 +1815,8 @@ class AIDomainService:
             query=query,
             allowed_source_types=allowed_source_types,
             allow_unlinked="calls:recording" in permissions,
+            call_access=await self._record_access(db, current_user, "call"),
+            meeting_access=await self._record_access(db, current_user, "meeting"),
         )
         return [
             {
@@ -1779,6 +1898,8 @@ class AIDomainService:
             db,
             organization_id=current_user.organization_id or "",
             current_user_id=current_user.id,
+            access=await self._record_access(db, current_user, plan.entity_type),
+            related_access=await self._related_record_access(db, current_user, plan),
             **plan.model_dump(exclude={"result_key", "title"}),
         )
         logger.info(
@@ -1876,6 +1997,8 @@ class AIDomainService:
             db,
             user_id=user.id,
             organization_id=current_user.organization_id or "",
+            deal_access=await self._record_access(db, current_user, "deal"),
+            activity_access=await self._record_access(db, current_user, "activity"),
         )
         output, run = await self._run(
             db,
@@ -1964,6 +2087,7 @@ class AIDomainService:
                 db,
                 organization_id=current_user.organization_id or "",
                 entity_type=payload.entity_type,
+                access=await self._record_access(db, current_user, payload.entity_type),
             )
         )
         findings: list[DataQualityFinding] = []
@@ -2051,6 +2175,9 @@ class AIDomainService:
             organization_id=current_user.organization_id or "",
             include_deals=include_deals,
             include_calls=include_calls,
+            entity_access=await self._record_access(db, current_user, entity_type),
+            deal_access=await self._record_access(db, current_user, "deal"),
+            call_access=await self._record_access(db, current_user, "call"),
         )
         if not context:
             raise NotFoundError(message=f"{entity_type.title()} '{entity_id}' not found")

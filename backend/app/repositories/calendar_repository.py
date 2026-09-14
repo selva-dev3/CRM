@@ -1,9 +1,11 @@
 from collections.abc import Sequence
+from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import CalendarEventModel, User
+from app.core.record_access import RecordAccessContext, record_access_filter
+from app.models import CalendarEventModel
 
 
 class CalendarRepository:
@@ -15,29 +17,74 @@ class CalendarRepository:
         *,
         organization_id: str,
         search: str | None = None,
+        page: int = 1,
+        limit: int = 50,
+        start: datetime | None = None,
+        end: datetime | None = None,
+        access: RecordAccessContext | None = None,
     ) -> Sequence[CalendarEventModel]:
-        stmt = (
-            select(CalendarEventModel)
-            .join(User, User.id == CalendarEventModel.user_id)
-            .where(User.organization_id == organization_id)
+        stmt = select(CalendarEventModel).where(
+            CalendarEventModel.organization_id == organization_id
         )
-        if search and search.strip():
-            stmt = stmt.where(CalendarEventModel.title.ilike(f"%{search.strip()}%"))
-        stmt = stmt.order_by(CalendarEventModel.start_time.asc()).limit(50)
+        stmt = self._apply_filters(stmt, search=search, start=start, end=end, access=access)
+        stmt = (
+            stmt.order_by(CalendarEventModel.start_time.asc(), CalendarEventModel.id.asc())
+            .offset((page - 1) * limit)
+            .limit(limit)
+        )
         res = await db.execute(stmt)
         return res.scalars().all()
 
-    async def get_event(
-        self, db: AsyncSession, event_id: str, organization_id: str
-    ) -> CalendarEventModel | None:
-        stmt = (
-            select(CalendarEventModel)
-            .join(User, User.id == CalendarEventModel.user_id)
-            .where(
-                CalendarEventModel.id == event_id,
-                User.organization_id == organization_id,
-            )
+    async def count_events(
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        search: str | None = None,
+        start: datetime | None = None,
+        end: datetime | None = None,
+        access: RecordAccessContext | None = None,
+    ) -> int:
+        stmt = select(func.count()).select_from(CalendarEventModel).where(
+            CalendarEventModel.organization_id == organization_id
         )
+        stmt = self._apply_filters(stmt, search=search, start=start, end=end, access=access)
+        return int((await db.execute(stmt)).scalar_one())
+
+    @staticmethod
+    def _apply_filters(stmt, *, search, start, end, access):
+        if search and search.strip():
+            stmt = stmt.where(CalendarEventModel.title.ilike(f"%{search.strip()}%"))
+        if start is not None:
+            stmt = stmt.where(CalendarEventModel.end_time >= start)
+        if end is not None:
+            stmt = stmt.where(CalendarEventModel.start_time <= end)
+        access_filter = record_access_filter(
+            access,
+            assigned_column=CalendarEventModel.user_id,
+            created_column=CalendarEventModel.user_id,
+        )
+        return stmt.where(access_filter) if access_filter is not None else stmt
+
+    async def get_event(
+        self,
+        db: AsyncSession,
+        event_id: str,
+        organization_id: str,
+        *,
+        access: RecordAccessContext | None = None,
+    ) -> CalendarEventModel | None:
+        stmt = select(CalendarEventModel).where(
+            CalendarEventModel.id == event_id,
+            CalendarEventModel.organization_id == organization_id,
+        )
+        access_filter = record_access_filter(
+            access,
+            assigned_column=CalendarEventModel.user_id,
+            created_column=CalendarEventModel.user_id,
+        )
+        if access_filter is not None:
+            stmt = stmt.where(access_filter)
         res = await db.execute(stmt)
         return res.scalars().first()
 

@@ -658,7 +658,12 @@ class LeadService:
         organization_id = current_user.organization_id
         if not organization_id:
             raise ForbiddenError(message="Organization membership is required")
-        lead = await self.require_lead(db, lead_id, organization_id=organization_id)
+        lead = await self.require_lead(
+            db,
+            lead_id,
+            organization_id=organization_id,
+            current_user=current_user,
+        )
         self._require_active_lead(lead)
         if lead.status == "Qualified":
             return lead_to_dict(lead)
@@ -1371,9 +1376,15 @@ class LeadService:
         payload: EmailSendRequest,
         *,
         organization_id: str,
+        current_user: User,
         idempotency_key: str | None = None,
     ) -> dict:
-        lead = await self.require_lead(db, lead_id, organization_id=organization_id)
+        lead = await self.require_lead(
+            db,
+            lead_id,
+            organization_id=organization_id,
+            current_user=current_user,
+        )
         try:
             lead_email = str(EMAIL_ADAPTER.validate_python((lead.email or "").strip()))
         except ValidationError as exc:
@@ -1401,6 +1412,7 @@ class LeadService:
             body=payload.body or "",
             idempotency_key=idempotency_key,
             lead_id=lead.id,
+            current_user=current_user,
         )
 
     async def get_calls(

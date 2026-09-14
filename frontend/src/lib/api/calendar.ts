@@ -1,5 +1,6 @@
 ﻿import { useQuery, useMutation, useQueryClient, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import { fetchPaginated, type PaginatedResult } from '@/lib/api/pagination';
 
 export interface CalendarEventItem {
   id: string;
@@ -40,13 +41,15 @@ export interface MessageResponse {
 // API Client Functions
 // ---------------------------------------------------------------------------
 
-export async function fetchCalendarEventsApi(params?: { start_date?: string; end_date?: string; search?: string }): Promise<CalendarEventItem[]> {
+export async function fetchCalendarEventsApi(params?: { start_date?: string; end_date?: string; search?: string; page?: number; limit?: number }): Promise<PaginatedResult<CalendarEventItem>> {
   const query = new URLSearchParams();
+  query.set('page', String(params?.page ?? 1));
+  query.set('limit', String(params?.limit ?? 20));
   if (params?.start_date) query.append('start_date', params.start_date);
   if (params?.end_date) query.append('end_date', params.end_date);
   if (params?.search) query.append('search', params.search);
   const endpoint = `/calendar/events${query.toString() ? `?${query.toString()}` : ''}`;
-  return apiClient.get<CalendarEventItem[]>(endpoint);
+  return fetchPaginated<CalendarEventItem>(endpoint);
 }
 
 export async function createCalendarEventApi(payload: CalendarEventCreatePayload): Promise<CalendarEventItem> {
@@ -92,8 +95,8 @@ export async function createRecurringEventApi(title: string, rrule: string): Pro
 // TanStack Query Hooks
 // ---------------------------------------------------------------------------
 
-export function useCalendarEventsQuery(params?: { start_date?: string; end_date?: string; search?: string }, options?: Omit<UseQueryOptions<CalendarEventItem[]>, 'queryKey' | 'queryFn'>) {
-  return useQuery<CalendarEventItem[]>({
+export function useCalendarEventsQuery(params?: { start_date?: string; end_date?: string; search?: string; page?: number; limit?: number }, options?: Omit<UseQueryOptions<PaginatedResult<CalendarEventItem>>, 'queryKey' | 'queryFn'>) {
+  return useQuery<PaginatedResult<CalendarEventItem>>({
     queryKey: ['calendar', 'events', params],
     queryFn: () => fetchCalendarEventsApi(params),
     staleTime: 1000 * 60 * 2,

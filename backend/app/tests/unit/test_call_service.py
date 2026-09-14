@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import ANY, AsyncMock
 
 import pytest
 from pydantic import ValidationError
@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, NotFoundError
+from app.core.record_access import RecordAccessContext
 from app.models import CallLog, Contact, Lead, User
 from app.repositories.call_repository import CallRepository
 from app.repositories.contact_repository import ContactRepository
@@ -54,6 +55,17 @@ def _stub_organization_resolution(monkeypatch):
         "app.services.call_service.organization_service.resolve_valid_org_id",
         AsyncMock(return_value="org-1"),
     )
+    monkeypatch.setattr(
+        "app.services.record_access_service.record_access_service.resolve",
+        AsyncMock(
+            return_value=RecordAccessContext(
+                scope="all",
+                user_id="user-1",
+                team_ids=frozenset(),
+                team_user_ids=frozenset(),
+            )
+        ),
+    )
 
 
 @pytest.mark.asyncio
@@ -65,7 +77,7 @@ async def test_get_call_raises_not_found_when_missing():
 
     with pytest.raises(NotFoundError):
         await service.get_call(db, "missing-call", _user())
-    repo.get_by_id.assert_awaited_once_with(db, "missing-call", "org-1")
+    repo.get_by_id.assert_awaited_once_with(db, "missing-call", "org-1", access=ANY)
 
 
 @pytest.mark.asyncio
@@ -302,7 +314,7 @@ async def test_update_call_rejects_cross_organization_call_id():
     with pytest.raises(NotFoundError):
         await service.update_call(db, "foreign-call", CallLogUpdate(notes="Changed"), _user())
 
-    repo.get_by_id.assert_awaited_once_with(db, "foreign-call", "org-1")
+    repo.get_by_id.assert_awaited_once_with(db, "foreign-call", "org-1", access=ANY)
     repo.update.assert_not_called()
 
 
@@ -317,7 +329,7 @@ async def test_delete_call_rejects_cross_organization_call_id():
     with pytest.raises(NotFoundError):
         await service.delete_call(db, "foreign-call", _user())
 
-    repo.get_by_id.assert_awaited_once_with(db, "foreign-call", "org-1")
+    repo.get_by_id.assert_awaited_once_with(db, "foreign-call", "org-1", access=ANY)
     repo.delete.assert_not_called()
 
 

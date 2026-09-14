@@ -49,13 +49,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const setSession = useCallback((nextUser: CurrentUserResponse, remember?: boolean) => {
+    void queryClient.cancelQueries();
+    queryClient.clear();
     setOrganizationContext(null);
     markAuthSessionActive();
     authGenerationRef.current += 1;
     persistSessionUser(nextUser, { remember });
     setUser(nextUser);
     setStatus('authenticated');
-  }, []);
+  }, [queryClient]);
 
   const verifySession = useCallback(async () => {
     const requestGeneration = authGenerationRef.current;
@@ -64,7 +66,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (requestGeneration !== authGenerationRef.current || isLoggingOutRef.current) {
         throw new Error('Session verification was superseded by logout');
       }
-      markAuthSessionActive();
       persistSessionUser(currentUser, { broadcast: false });
       setUser(currentUser);
       setStatus('authenticated');
@@ -175,7 +176,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         resetLocalSession(false);
       } else if (action === 'login') {
         setOrganizationContext(null);
+        void queryClient.cancelQueries();
         queryClient.clear();
+        markAuthSessionActive();
+        authGenerationRef.current += 1;
         void verifySession().catch(() => resetLocalSession(false));
       } else if (action === 'refresh') {
         void refreshAuthorization().catch(() => resetLocalSession(false));

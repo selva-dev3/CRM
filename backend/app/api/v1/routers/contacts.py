@@ -196,7 +196,7 @@ async def get_contact_billing_address(
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     return await contact_service.get_billing_address(
-        db, contact_id, organization_id=organization_id
+        db, contact_id, organization_id=organization_id, current_user=current_user
     )
 
 
@@ -442,10 +442,15 @@ async def get_contact_emails(
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     emails = await contact_service.list_contact_emails(
-        db, contact_id, organization_id=organization_id, page=page, limit=limit
+        db,
+        contact_id,
+        organization_id=organization_id,
+        current_user=current_user,
+        page=page,
+        limit=limit,
     )
     total = await contact_service.count_contact_emails(
-        db, contact_id, organization_id=organization_id
+        db, contact_id, organization_id=organization_id, current_user=current_user
     )
     response.headers["X-Total-Count"] = str(total)
     return emails

@@ -2,9 +2,10 @@ from collections.abc import Sequence
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, false, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.record_access import RecordAccessContext, record_access_filter
 from app.models import (
     ActivityLog,
     AIAction,
@@ -37,78 +38,132 @@ from app.models import (
     Task,
     User,
 )
+from app.repositories.document_repository import DocumentRepository
+from app.repositories.note_repository import NoteRepository
+from app.repositories.project_access import project_record_access_filter
 
 
 class AIRepository:
     """Tenant-scoped query and persistence layer for AI features."""
 
     async def get_lead(
-        self, db: AsyncSession, *, lead_id: str, organization_id: str
+        self,
+        db: AsyncSession,
+        *,
+        lead_id: str,
+        organization_id: str,
+        access: RecordAccessContext | None = None,
     ) -> Lead | None:
+        access_filter = record_access_filter(
+            access, assigned_column=Lead.assigned_to, created_column=Lead.created_by
+        )
+        filters = [Lead.id == lead_id, Lead.organization_id == organization_id]
+        if access_filter is not None:
+            filters.append(access_filter)
         result = await db.execute(
-            select(Lead).where(
-                Lead.id == lead_id,
-                Lead.organization_id == organization_id,
-            )
+            select(Lead).where(*filters)
         )
         return result.scalars().first()
 
     async def list_leads(
-        self, db: AsyncSession, *, organization_id: str, limit: int = 500
+        self,
+        db: AsyncSession,
+        *,
+        organization_id: str,
+        limit: int = 500,
+        access: RecordAccessContext | None = None,
     ) -> Sequence[Lead]:
+        access_filter = record_access_filter(
+            access, assigned_column=Lead.assigned_to, created_column=Lead.created_by
+        )
+        filters = [Lead.organization_id == organization_id]
+        if access_filter is not None:
+            filters.append(access_filter)
         result = await db.execute(
             select(Lead)
-            .where(Lead.organization_id == organization_id)
+            .where(*filters)
             .order_by(Lead.created_at.desc())
             .limit(limit)
         )
         return result.scalars().all()
 
     async def get_deal(
-        self, db: AsyncSession, *, deal_id: str, organization_id: str
+        self,
+        db: AsyncSession,
+        *,
+        deal_id: str,
+        organization_id: str,
+        access: RecordAccessContext | None = None,
     ) -> Deal | None:
+        access_filter = record_access_filter(
+            access, assigned_column=Deal.assigned_to, created_column=Deal.created_by
+        )
+        filters = [Deal.id == deal_id, Deal.organization_id == organization_id]
+        if access_filter is not None:
+            filters.append(access_filter)
         result = await db.execute(
-            select(Deal).where(
-                Deal.id == deal_id,
-                Deal.organization_id == organization_id,
-            )
+            select(Deal).where(*filters)
         )
         return result.scalars().first()
 
     async def get_company(
-        self, db: AsyncSession, *, company_id: str, organization_id: str
+        self,
+        db: AsyncSession,
+        *,
+        company_id: str,
+        organization_id: str,
+        access: RecordAccessContext | None = None,
     ) -> Company | None:
+        access_filter = record_access_filter(
+            access, assigned_column=Company.owner_id, created_column=Company.created_by
+        )
+        filters = [Company.id == company_id, Company.organization_id == organization_id]
+        if access_filter is not None:
+            filters.append(access_filter)
         result = await db.execute(
-            select(Company).where(
-                Company.id == company_id,
-                Company.organization_id == organization_id,
-            )
+            select(Company).where(*filters)
         )
         return result.scalars().first()
 
     async def get_contact(
-        self, db: AsyncSession, *, contact_id: str, organization_id: str
+        self,
+        db: AsyncSession,
+        *,
+        contact_id: str,
+        organization_id: str,
+        access: RecordAccessContext | None = None,
     ) -> Contact | None:
+        access_filter = record_access_filter(
+            access, assigned_column=Contact.owner_id, created_column=Contact.created_by
+        )
+        filters = [Contact.id == contact_id, Contact.organization_id == organization_id]
+        if access_filter is not None:
+            filters.append(access_filter)
         result = await db.execute(
-            select(Contact).where(
-                Contact.id == contact_id,
-                Contact.organization_id == organization_id,
-            )
+            select(Contact).where(*filters)
         )
         return result.scalars().first()
 
     async def get_deal_signals(
-        self, db: AsyncSession, *, deal_id: str, organization_id: str
+        self,
+        db: AsyncSession,
+        *,
+        deal_id: str,
+        organization_id: str,
+        access: RecordAccessContext | None = None,
     ) -> dict[str, object]:
+        access_filter = record_access_filter(
+            access, assigned_column=Deal.assigned_to, created_column=Deal.created_by
+        )
+        filters = [DealActivity.deal_id == deal_id, Deal.organization_id == organization_id]
+        if access_filter is not None:
+            filters.append(access_filter)
         activities = (
             (
                 await db.execute(
                     select(DealActivity)
                     .join(Deal, Deal.id == DealActivity.deal_id)
-                    .where(
-                        DealActivity.deal_id == deal_id,
-                        Deal.organization_id == organization_id,
-                    )
+                    .where(*filters)
                     .order_by(DealActivity.timestamp.desc())
                     .limit(20)
                 )
@@ -123,17 +178,27 @@ class AIRepository:
         }
 
     async def get_pricing_signals(
-        self, db: AsyncSession, *, deal_id: str, organization_id: str
+        self,
+        db: AsyncSession,
+        *,
+        deal_id: str,
+        organization_id: str,
+        access: RecordAccessContext | None = None,
     ) -> dict[str, object]:
+        access_filter = record_access_filter(
+            access, assigned_column=Deal.assigned_to, created_column=Deal.created_by
+        )
+        product_filters = [DealProduct.deal_id == deal_id, Deal.organization_id == organization_id]
+        history_filters = [Deal.organization_id == organization_id]
+        if access_filter is not None:
+            product_filters.append(access_filter)
+            history_filters.append(access_filter)
         products = (
             (
                 await db.execute(
                     select(DealProduct)
                     .join(Deal, Deal.id == DealProduct.deal_id)
-                    .where(
-                        DealProduct.deal_id == deal_id,
-                        Deal.organization_id == organization_id,
-                    )
+                    .where(*product_filters)
                 )
             )
             .scalars()
@@ -145,7 +210,7 @@ class AIRepository:
                 func.avg(Deal.amount).filter(Deal.stage == "Closed Lost"),
                 func.count(Deal.id).filter(Deal.stage == "Closed Won"),
                 func.count(Deal.id).filter(Deal.stage == "Closed Lost"),
-            ).where(Deal.organization_id == organization_id)
+            ).where(*history_filters)
         )
         won_average, lost_average, won_count, lost_count = history.one()
         return {
@@ -167,24 +232,40 @@ class AIRepository:
         }
 
     async def get_meeting(
-        self, db: AsyncSession, *, meeting_id: str, organization_id: str
+        self,
+        db: AsyncSession,
+        *,
+        meeting_id: str,
+        organization_id: str,
+        access: RecordAccessContext | None = None,
     ) -> Meeting | None:
+        access_filter = record_access_filter(
+            access, assigned_column=Meeting.created_by, created_column=Meeting.created_by
+        )
+        filters = [Meeting.id == meeting_id, Meeting.organization_id == organization_id]
+        if access_filter is not None:
+            filters.append(access_filter)
         result = await db.execute(
-            select(Meeting).where(
-                Meeting.id == meeting_id,
-                Meeting.organization_id == organization_id,
-            )
+            select(Meeting).where(*filters)
         )
         return result.scalars().first()
 
     async def get_call(
-        self, db: AsyncSession, *, call_id: str, organization_id: str
+        self,
+        db: AsyncSession,
+        *,
+        call_id: str,
+        organization_id: str,
+        access: RecordAccessContext | None = None,
     ) -> CallLog | None:
+        access_filter = record_access_filter(
+            access, assigned_column=CallLog.created_by, created_column=CallLog.created_by
+        )
+        filters = [CallLog.id == call_id, CallLog.organization_id == organization_id]
+        if access_filter is not None:
+            filters.append(access_filter)
         result = await db.execute(
-            select(CallLog).where(
-                CallLog.id == call_id,
-                CallLog.organization_id == organization_id,
-            )
+            select(CallLog).where(*filters)
         )
         return result.scalars().first()
 
@@ -200,26 +281,46 @@ class AIRepository:
         return result.scalars().first()
 
     async def get_rep_metrics(
-        self, db: AsyncSession, *, user_id: str, organization_id: str
+        self,
+        db: AsyncSession,
+        *,
+        user_id: str,
+        organization_id: str,
+        deal_access: RecordAccessContext | None = None,
+        activity_access: RecordAccessContext | None = None,
     ) -> dict[str, object]:
+        deal_filter = record_access_filter(
+            deal_access, assigned_column=Deal.assigned_to, created_column=Deal.created_by
+        )
+        deal_conditions = [
+            Deal.organization_id == organization_id,
+            Deal.assigned_to == user_id,
+        ]
+        if deal_filter is not None:
+            deal_conditions.append(deal_filter)
         result = await db.execute(
             select(
                 func.count(Deal.id),
                 func.count(Deal.id).filter(Deal.stage == "Closed Won"),
                 func.count(Deal.id).filter(Deal.stage == "Closed Lost"),
                 func.coalesce(func.sum(Deal.amount).filter(Deal.stage == "Closed Won"), 0.0),
-            ).where(
-                Deal.organization_id == organization_id,
-                Deal.assigned_to == user_id,
-            )
+            ).where(*deal_conditions)
         )
         total, won, lost, won_revenue = result.one()
+        activity_filter = record_access_filter(
+            activity_access,
+            assigned_column=ActivityLog.user_id,
+            created_column=ActivityLog.user_id,
+        )
+        activity_conditions = [
+            ActivityLog.organization_id == organization_id,
+            ActivityLog.user_id == user_id,
+        ]
+        if activity_filter is not None:
+            activity_conditions.append(activity_filter)
         activity_count = (
             await db.execute(
-                select(func.count(ActivityLog.id)).where(
-                    ActivityLog.organization_id == organization_id,
-                    ActivityLog.user_id == user_id,
-                )
+                select(func.count(ActivityLog.id)).where(*activity_conditions)
             )
         ).scalar_one()
         return {
@@ -276,10 +377,22 @@ class AIRepository:
         organization_id: str,
         entity_type: str,
         limit: int = 500,
+        access: RecordAccessContext | None = None,
     ) -> Sequence[Lead | Contact | Company]:
         model = {"lead": Lead, "contact": Contact, "company": Company}[entity_type]
+        assigned, created = {
+            "lead": (Lead.assigned_to, Lead.created_by),
+            "contact": (Contact.owner_id, Contact.created_by),
+            "company": (Company.owner_id, Company.created_by),
+        }[entity_type]
+        access_filter = record_access_filter(
+            access, assigned_column=assigned, created_column=created
+        )
+        filters = [model.organization_id == organization_id]
+        if access_filter is not None:
+            filters.append(access_filter)
         result = await db.execute(
-            select(model).where(model.organization_id == organization_id).limit(limit)
+            select(model).where(*filters).limit(limit)
         )
         return result.scalars().all()
 
@@ -292,19 +405,28 @@ class AIRepository:
         organization_id: str,
         include_deals: bool,
         include_calls: bool,
+        entity_access: RecordAccessContext | None = None,
+        deal_access: RecordAccessContext | None = None,
+        call_access: RecordAccessContext | None = None,
     ) -> dict[str, object] | None:
         if entity_type == "company":
             entity = await self.get_company(
-                db, company_id=entity_id, organization_id=organization_id
+                db,
+                company_id=entity_id,
+                organization_id=organization_id,
+                access=entity_access,
             )
             company_id = entity_id
         else:
-            result = await db.execute(
-                select(Contact).where(
-                    Contact.id == entity_id,
-                    Contact.organization_id == organization_id,
-                )
+            contact_filter = record_access_filter(
+                entity_access,
+                assigned_column=Contact.owner_id,
+                created_column=Contact.created_by,
             )
+            filters = [Contact.id == entity_id, Contact.organization_id == organization_id]
+            if contact_filter is not None:
+                filters.append(contact_filter)
+            result = await db.execute(select(Contact).where(*filters))
             entity = result.scalars().first()
             company_id = entity.company_id if entity else None
         if not entity:
@@ -317,14 +439,20 @@ class AIRepository:
             }
         }
         if include_deals and company_id:
+            deal_filter = record_access_filter(
+                deal_access, assigned_column=Deal.assigned_to, created_column=Deal.created_by
+            )
+            deal_filters = [
+                Deal.organization_id == organization_id,
+                Deal.company_id == company_id,
+            ]
+            if deal_filter is not None:
+                deal_filters.append(deal_filter)
             deals = (
                 (
                     await db.execute(
                         select(Deal)
-                        .where(
-                            Deal.organization_id == organization_id,
-                            Deal.company_id == company_id,
-                        )
+                        .where(*deal_filters)
                         .order_by(Deal.updated_at.desc())
                         .limit(20)
                     )
@@ -351,14 +479,22 @@ class AIRepository:
                     else Contact.company_id == company_id
                 ),
             )
+            call_filter = record_access_filter(
+                call_access,
+                assigned_column=CallLog.created_by,
+                created_column=CallLog.created_by,
+            )
+            call_filters = [
+                CallLog.organization_id == organization_id,
+                CallLog.contact_id.in_(contact_ids),
+            ]
+            if call_filter is not None:
+                call_filters.append(call_filter)
             calls = (
                 (
                     await db.execute(
                         select(CallLog)
-                        .where(
-                            CallLog.organization_id == organization_id,
-                            CallLog.contact_id.in_(contact_ids),
-                        )
+                        .where(*call_filters)
                         .order_by(CallLog.timestamp.desc())
                         .limit(20)
                     )
@@ -550,6 +686,8 @@ class AIRepository:
         query: str,
         allowed_source_types: set[str],
         allow_unlinked: bool,
+        call_access: RecordAccessContext | None = None,
+        meeting_access: RecordAccessContext | None = None,
         limit: int = 20,
     ) -> Sequence[AITranscript]:
         statement = select(AITranscript).where(
@@ -558,9 +696,47 @@ class AIRepository:
         )
         source_conditions = []
         if allow_unlinked:
-            source_conditions.append(AITranscript.source_type.is_(None))
-        if allowed_source_types:
-            source_conditions.append(AITranscript.source_type.in_(allowed_source_types))
+            source_conditions.append(
+                and_(AITranscript.source_type.is_(None), AITranscript.user_id == call_access.user_id)
+                if call_access is not None
+                else AITranscript.source_type.is_(None)
+            )
+        if "call" in allowed_source_types:
+            call_filter = record_access_filter(
+                call_access,
+                assigned_column=CallLog.created_by,
+                created_column=CallLog.created_by,
+            )
+            call_conditions = [
+                CallLog.id == AITranscript.source_id,
+                CallLog.organization_id == organization_id,
+            ]
+            if call_filter is not None:
+                call_conditions.append(call_filter)
+            source_conditions.append(
+                and_(
+                    AITranscript.source_type == "call",
+                    select(CallLog.id).where(*call_conditions).exists(),
+                )
+            )
+        if "meeting" in allowed_source_types:
+            meeting_filter = record_access_filter(
+                meeting_access,
+                assigned_column=Meeting.created_by,
+                created_column=Meeting.created_by,
+            )
+            meeting_conditions = [
+                Meeting.id == AITranscript.source_id,
+                Meeting.organization_id == organization_id,
+            ]
+            if meeting_filter is not None:
+                meeting_conditions.append(meeting_filter)
+            source_conditions.append(
+                and_(
+                    AITranscript.source_type == "meeting",
+                    select(Meeting.id).where(*meeting_conditions).exists(),
+                )
+            )
         if not source_conditions:
             return []
         statement = statement.where(or_(*source_conditions))
@@ -905,6 +1081,8 @@ class AIRepository:
         *,
         organization_id: str,
         current_user_id: str | None = None,
+        access: RecordAccessContext | None = None,
+        related_access: dict[str, RecordAccessContext | None] | None = None,
         entity_type: str,
         intent: str = "list",
         text_query: str | None = None,
@@ -944,12 +1122,40 @@ class AIRepository:
             "user": User,
         }
         model: Any = models[entity_type]
+
+        def related_filter(related_entity: str) -> Any:
+            """Fail closed when a selected related field lacks record scope."""
+            contexts = related_access or {}
+            if related_entity not in contexts:
+                return false()
+            context = contexts[related_entity]
+            if related_entity == "project":
+                return project_record_access_filter(context)
+            access_columns: dict[str, tuple[Any, Any]] = {
+                "contact": (Contact.owner_id, Contact.created_by),
+                "company": (Company.owner_id, Company.created_by),
+                "deal": (Deal.assigned_to, Deal.created_by),
+                "task": (Task.assigned_to, Task.created_by),
+                "call": (CallLog.created_by, CallLog.created_by),
+            }
+            assigned, created = access_columns[related_entity]
+            return record_access_filter(
+                context,
+                assigned_column=assigned,
+                created_column=created,
+            )
+
+        def related_conditions(related_entity: str) -> list[Any]:
+            condition = related_filter(related_entity)
+            return [condition] if condition is not None else []
+
         open_deal_value = (
             select(func.coalesce(func.sum(Deal.amount), 0.0))
             .where(
                 Deal.organization_id == organization_id,
                 Deal.company_id == Company.id,
                 Deal.stage.not_in(("Closed Won", "Closed Lost")),
+                *related_conditions("deal"),
             )
             .correlate(Company)
             .scalar_subquery()
@@ -961,6 +1167,8 @@ class AIRepository:
                 Contact.organization_id == organization_id,
                 CallLog.organization_id == organization_id,
                 Contact.company_id == Company.id,
+                *related_conditions("contact"),
+                *related_conditions("call"),
             )
             .correlate(Company)
             .scalar_subquery()
@@ -970,6 +1178,7 @@ class AIRepository:
             .where(
                 CallLog.organization_id == organization_id,
                 CallLog.contact_id == Contact.id,
+                *related_conditions("call"),
             )
             .correlate(Contact)
             .scalar_subquery()
@@ -981,6 +1190,7 @@ class AIRepository:
                 Contact.organization_id == organization_id,
                 Contact.company_id == Company.id,
                 ContactAddress.city.is_not(None),
+                *related_conditions("contact"),
             )
             .limit(1)
             .correlate(Company)
@@ -1019,31 +1229,48 @@ class AIRepository:
             .where(
                 Company.id == Contact.company_id,
                 Company.organization_id == organization_id,
+                *related_conditions("company"),
             )
             .correlate(Contact)
             .scalar_subquery()
         )
         deal_company_name = (
             select(Company.name)
-            .where(Company.id == Deal.company_id, Company.organization_id == organization_id)
+            .where(
+                Company.id == Deal.company_id,
+                Company.organization_id == organization_id,
+                *related_conditions("company"),
+            )
             .correlate(Deal)
             .scalar_subquery()
         )
         deal_contact_name = (
             select(Contact.name)
-            .where(Contact.id == Deal.contact_id, Contact.organization_id == organization_id)
+            .where(
+                Contact.id == Deal.contact_id,
+                Contact.organization_id == organization_id,
+                *related_conditions("contact"),
+            )
             .correlate(Deal)
             .scalar_subquery()
         )
         deal_project_name = (
             select(Project.name)
-            .where(Project.id == Deal.project_id, Project.organization_id == organization_id)
+            .where(
+                Project.id == Deal.project_id,
+                Project.organization_id == organization_id,
+                *related_conditions("project"),
+            )
             .correlate(Deal)
             .scalar_subquery()
         )
         task_project_name = (
             select(Project.name)
-            .where(Project.id == Task.project_id, Project.organization_id == organization_id)
+            .where(
+                Project.id == Task.project_id,
+                Project.organization_id == organization_id,
+                *related_conditions("project"),
+            )
             .correlate(Task)
             .scalar_subquery()
         )
@@ -1053,25 +1280,38 @@ class AIRepository:
                 Task.organization_id == organization_id,
                 Task.project_id == Project.id,
                 func.lower(Task.status) != "completed",
+                *related_conditions("task"),
             )
             .correlate(Project)
             .scalar_subquery()
         )
         project_deal_count = (
             select(func.count(Deal.id))
-            .where(Deal.organization_id == organization_id, Deal.project_id == Project.id)
+            .where(
+                Deal.organization_id == organization_id,
+                Deal.project_id == Project.id,
+                *related_conditions("deal"),
+            )
             .correlate(Project)
             .scalar_subquery()
         )
         project_deal_value = (
             select(func.coalesce(func.sum(Deal.amount), 0.0))
-            .where(Deal.organization_id == organization_id, Deal.project_id == Project.id)
+            .where(
+                Deal.organization_id == organization_id,
+                Deal.project_id == Project.id,
+                *related_conditions("deal"),
+            )
             .correlate(Project)
             .scalar_subquery()
         )
         call_contact_name = (
             select(Contact.name)
-            .where(Contact.id == CallLog.contact_id, Contact.organization_id == organization_id)
+            .where(
+                Contact.id == CallLog.contact_id,
+                Contact.organization_id == organization_id,
+                *related_conditions("contact"),
+            )
             .correlate(CallLog)
             .scalar_subquery()
         )
@@ -1083,25 +1323,41 @@ class AIRepository:
         )
         quote_deal_title = (
             select(Deal.title)
-            .where(Deal.id == Quote.deal_id, Deal.organization_id == organization_id)
+            .where(
+                Deal.id == Quote.deal_id,
+                Deal.organization_id == organization_id,
+                *related_conditions("deal"),
+            )
             .correlate(Quote)
             .scalar_subquery()
         )
         invoice_company_name = (
             select(Company.name)
-            .where(Company.id == Invoice.company_id, Company.organization_id == organization_id)
+            .where(
+                Company.id == Invoice.company_id,
+                Company.organization_id == organization_id,
+                *related_conditions("company"),
+            )
             .correlate(Invoice)
             .scalar_subquery()
         )
         invoice_contact_name = (
             select(Contact.name)
-            .where(Contact.id == Invoice.contact_id, Contact.organization_id == organization_id)
+            .where(
+                Contact.id == Invoice.contact_id,
+                Contact.organization_id == organization_id,
+                *related_conditions("contact"),
+            )
             .correlate(Invoice)
             .scalar_subquery()
         )
         invoice_deal_title = (
             select(Deal.title)
-            .where(Deal.id == Invoice.deal_id, Deal.organization_id == organization_id)
+            .where(
+                Deal.id == Invoice.deal_id,
+                Deal.organization_id == organization_id,
+                *related_conditions("deal"),
+            )
             .correlate(Invoice)
             .scalar_subquery()
         )
@@ -1297,6 +1553,7 @@ class AIRepository:
                         Contact.organization_id == organization_id,
                         Contact.company_id == Company.id,
                         city_condition,
+                        *related_conditions("contact"),
                     )
                     .correlate(Company)
                     .exists()
@@ -1370,6 +1627,78 @@ class AIRepository:
                 else model.organization_id == organization_id
             )
         ]
+        target_access = (
+            {
+                {
+                    "lead": "leads",
+                    "contact": "contacts",
+                    "company": "companies",
+                    "deal": "deals",
+                    "quote": "quotes",
+                    "invoice": "invoices",
+                    "payment": "payments",
+                    "project": "projects",
+                    "ticket": "tickets",
+                }[entity]: context
+                for entity, context in related_access.items()
+                if entity
+                in {
+                    "lead",
+                    "contact",
+                    "company",
+                    "deal",
+                    "quote",
+                    "invoice",
+                    "payment",
+                    "project",
+                    "ticket",
+                }
+            }
+            if related_access is not None
+            else None
+        )
+        target_filter = None
+        if entity_type == "project":
+            access_filter = project_record_access_filter(access)
+        elif entity_type == "document":
+            access_filter = (
+                DocumentRepository._access_filter(access, target_access)
+                if target_access is not None
+                else false()
+            )
+        else:
+            access_columns: dict[str, tuple[Any, Any]] = {
+                "lead": (Lead.assigned_to, Lead.created_by),
+                "contact": (Contact.owner_id, Contact.created_by),
+                "company": (Company.owner_id, Company.created_by),
+                "deal": (Deal.assigned_to, Deal.created_by),
+                "task": (Task.assigned_to, Task.created_by),
+                "call": (CallLog.created_by, CallLog.created_by),
+                "meeting": (Meeting.created_by, Meeting.created_by),
+                "email": (Email.created_by, Email.created_by),
+                "note": (Note.created_by, Note.created_by),
+                "document": (Document.uploaded_by, Document.uploaded_by),
+                "quote": (Quote.created_by, Quote.created_by),
+                "invoice": (Invoice.created_by, Invoice.created_by),
+                "calendar_event": (CalendarEventModel.user_id, CalendarEventModel.user_id),
+                "activity": (ActivityLog.user_id, ActivityLog.user_id),
+            }
+            assigned, created = access_columns.get(entity_type, (None, None))
+            access_filter = record_access_filter(
+                access,
+                assigned_column=assigned,
+                created_column=created,
+            )
+            if entity_type == "note":
+                target_filter = (
+                    NoteRepository._target_access_filter(target_access)
+                    if target_access is not None
+                    else false()
+                )
+        if access_filter is not None:
+            conditions.append(access_filter)
+        if target_filter is not None:
+            conditions.append(target_filter)
         searchable = {
             "lead": (Lead.title, Lead.company, Lead.contact_name),
             "contact": (Contact.name, Contact.email),

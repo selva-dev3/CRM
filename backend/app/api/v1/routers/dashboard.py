@@ -50,6 +50,7 @@ async def get_dashboard_kpis(
         current_user.organization_id,
         start_at=start_at,
         end_at=end_at,
+        current_user=current_user,
     )
 
 
@@ -62,7 +63,9 @@ async def get_dashboard_kpis(
 async def get_sales_funnel(
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
-    return await dashboard_service.get_sales_funnel(db, current_user.organization_id)
+    return await dashboard_service.get_sales_funnel(
+        db, current_user.organization_id, current_user
+    )
 
 
 @router.get(
@@ -92,7 +95,9 @@ async def get_revenue_chart(
 async def get_top_performers(
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
-    return await dashboard_service.get_top_performers(db, current_user.organization_id)
+    return await dashboard_service.get_top_performers(
+        db, current_user.organization_id, current_user
+    )
 
 
 @router.get(
@@ -104,7 +109,9 @@ async def get_top_performers(
 async def get_lead_conversions(
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
-    return await dashboard_service.get_lead_conversions(db, current_user.organization_id)
+    return await dashboard_service.get_lead_conversions(
+        db, current_user.organization_id, current_user
+    )
 
 
 @router.get(
@@ -116,7 +123,9 @@ async def get_lead_conversions(
 async def get_activities_summary(
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
-    return await dashboard_service.get_activities_summary(db, current_user.organization_id)
+    return await dashboard_service.get_activities_summary(
+        db, current_user.organization_id, current_user
+    )
 
 
 @router.get(
@@ -128,7 +137,9 @@ async def get_activities_summary(
 async def get_recent_deals(
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
-    return await dashboard_service.get_recent_deals(db, current_user.organization_id)
+    return await dashboard_service.get_recent_deals(
+        db, current_user.organization_id, current_user
+    )
 
 
 @router.get(
@@ -155,7 +166,9 @@ async def get_dashboard_ai_insights(
 async def get_custom_widgets(
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
-    return await dashboard_service.get_custom_widgets(db, current_user.organization_id)
+    return await dashboard_service.get_custom_widgets(
+        db, current_user.organization_id, current_user.id
+    )
 
 
 @router.post(
@@ -173,4 +186,5 @@ async def save_custom_widgets(
         db,
         current_user.organization_id,
         [widget.model_dump() for widget in widgets],
+        current_user.id,
     )

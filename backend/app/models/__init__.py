@@ -55,7 +55,7 @@ from app.models.organization import (
 from app.models.organization_deletion import OrganizationDeletion, OrganizationFileCleanup
 from app.models.payment import Payment
 from app.models.product import PriceBook, PriceBookEntry, Product, ProductCategory
-from app.models.project import Project, ProjectMilestone, ProjectStakeholder
+from app.models.project import Project, ProjectMember, ProjectMilestone, ProjectStakeholder
 from app.models.quote import Quote, QuoteItem
 from app.models.quote_delivery import QuoteDeliveryAttempt
 from app.models.rbac import Permission, Role, RolePermission, RoleRecordScope, UserRole
@@ -79,7 +79,7 @@ from app.models.system import (
     SystemSetting,
     Timezone,
 )
-from app.models.task import Task, TaskAttachment, TaskComment
+from app.models.task import Task, TaskAttachment, TaskComment, TaskDependency
 from app.models.team import Team, TeamMembership
 from app.models.user import User, UserInvitation
 from app.models.user_quota import UserQuota
@@ -163,6 +163,7 @@ __all__ = [
     "Task",
     "TaskComment",
     "TaskAttachment",
+    "TaskDependency",
     "Meeting",
     "MeetingAttendee",
     "CallLog",
@@ -212,6 +213,7 @@ __all__ = [
     "Language",
     "Timezone",
     "Project",
+    "ProjectMember",
     "ProjectMilestone",
     "ProjectStakeholder",
 ]

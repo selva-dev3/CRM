@@ -35,6 +35,15 @@ class Meeting(Base):
     deal_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("deals.id", ondelete="SET NULL"), index=True
     )
+    created_by: Mapped[str | None] = mapped_column(
+        String, ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    calendar_event_id: Mapped[str | None] = mapped_column(
+        String,
+        ForeignKey("calendar_events.id", ondelete="SET NULL"),
+        unique=True,
+        index=True,
+    )
     ai_summary: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

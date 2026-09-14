@@ -131,6 +131,7 @@ async def test_send_email_uses_the_leads_primary_email(monkeypatch):
         lead.id,
         EmailSendRequest(to=[lead.email], subject="Hello", body="Hi Jane"),
         organization_id=lead.organization_id,
+        current_user=_make_user(),
     )
 
     queue_email.assert_awaited_once_with(
@@ -141,6 +142,7 @@ async def test_send_email_uses_the_leads_primary_email(monkeypatch):
         body="Hi Jane",
         idempotency_key=None,
         lead_id=lead.id,
+        current_user=ANY,
     )
 
 
@@ -162,6 +164,7 @@ async def test_send_email_rejects_recipient_override(monkeypatch):
             lead.id,
             EmailSendRequest(to=["other@example.com"], subject="Hello", body="Hi Jane"),
             organization_id=lead.organization_id,
+            current_user=_make_user(),
         )
 
     queue_email.assert_not_awaited()
@@ -188,6 +191,7 @@ async def test_send_email_rejects_multiple_recipients(monkeypatch):
                 body="Body",
             ),
             organization_id=lead.organization_id,
+            current_user=_make_user(),
         )
 
     queue_email.assert_not_awaited()
@@ -211,6 +215,7 @@ async def test_send_email_rejects_lead_without_valid_email(monkeypatch):
             lead.id,
             EmailSendRequest(to=["lead@example.com"], subject="Hello", body="Hi Jane"),
             organization_id=lead.organization_id,
+            current_user=_make_user(),
         )
 
     queue_email.assert_not_awaited()

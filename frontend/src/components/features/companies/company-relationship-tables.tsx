@@ -269,7 +269,7 @@ export function CompanyInvoicesTable({
   );
 }
 
-export function CompanyDocumentsTable({ data, isLoading }: RelationshipTableProps<DocumentItem>) {
+export function CompanyDocumentsTable({ data, isLoading, pagination }: RelationshipTableProps<DocumentItem>) {
   return (
     <DataTable
       columns={documentColumns}
@@ -278,7 +278,7 @@ export function CompanyDocumentsTable({ data, isLoading }: RelationshipTableProp
       emptyTitle="No attached documents"
       emptyDescription="No files or contract documents are attached to this company."
       isLoading={isLoading}
-      pagination={{ pageSize: 15 }}
+      pagination={pagination}
     />
   );
 }

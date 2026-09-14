@@ -1,20 +1,17 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import func, select
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
 from app.core.errors import APIException
 from app.db.session import get_db
-from app.models import Product, ProductCategory, User
+from app.models import User
 from app.schemas.crm_schemas import (
     BulkActionResponse,
     BulkDeleteRequest,
     MessageResponse,
     ProductBase,
 )
-from app.schemas.price_book import PriceBookCreate, PriceBookResponse
-from app.services.org_service import organization_service
-from app.services.price_book_service import price_book_service
+from app.services.product_service import product_service
 
 router = APIRouter()
 
@@ -33,41 +30,11 @@ async def list_products(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    try:
-        organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-        filters = [Product.organization_id == organization_id]
-        if search and search.strip():
-            search_filter = (Product.name.ilike(f"%{search.strip()}%")) | (
-                Product.sku.ilike(f"%{search.strip()}%")
-            )
-            filters.append(search_filter)
-
-        count_result = await db.execute(select(func.count()).select_from(Product).where(*filters))
-        response.headers["X-Total-Count"] = str(count_result.scalar_one())
-
-        result = await db.execute(
-            select(Product)
-            .where(*filters)
-            .order_by(Product.name, Product.id)
-            .offset((page - 1) * limit)
-            .limit(limit)
-        )
-        products = result.scalars().all()
-        return [
-            {
-                "id": product.id,
-                "name": product.name,
-                "sku": product.sku or f"SKU-{product.id[:6]}",
-                "price": product.price or 0.0,
-                "category": category or "Software",
-                "in_stock_quantity": getattr(product, "in_stock_quantity", 100) or 100,
-            }
-            for product in products
-        ]
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)
-        ) from exc
+    products, total = await product_service.list_products(
+        db, user=current_user, page=page, limit=limit, category=category, search=search
+    )
+    response.headers["X-Total-Count"] = str(total)
+    return products
 
 
 @router.post(
@@ -80,31 +47,7 @@ async def create_product(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    try:
-        p = Product(
-            organization_id=current_user.organization_id,
-            name=payload.name,
-            sku=payload.sku or f"SKU-{payload.name[:4].upper()}",
-            price=payload.price or 0.0,
-            in_stock_quantity=100,
-        )
-        db.add(p)
-        await db.commit()
-        await db.refresh(p)
-        return {
-            "id": p.id,
-            "name": p.name,
-            "sku": p.sku,
-            "price": p.price,
-            "category": payload.category or "Software",
-            "in_stock_quantity": p.in_stock_quantity,
-        }
-    except Exception as exc:
-        await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to create product: {exc}",
-        ) from exc
+    return await product_service.create_product(db, payload=payload, user=current_user)
 
 
 @router.get(
@@ -116,15 +59,7 @@ async def get_product_categories(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    res = await db.execute(
-        select(ProductCategory).where(
-            ProductCategory.organization_id == current_user.organization_id
-        )
-    )
-    cats = res.scalars().all()
-    if not cats:
-        return ["Software", "Hardware", "Professional Services", "Subscription", "Support Tier"]
-    return [c.name for c in cats]
+    return await product_service.list_categories(db, user=current_user)
 
 
 @router.post(
@@ -138,46 +73,7 @@ async def create_product_category(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    try:
-        cat = ProductCategory(organization_id=current_user.organization_id, name=name)
-        db.add(cat)
-        await db.commit()
-        return {"message": f"Category '{name}' created", "status": "success"}
-    except Exception as exc:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-
-
-@router.get(
-    "/price-books",
-    response_model=list[PriceBookResponse],
-    summary="List custom price books",
-    dependencies=[Depends(require_permission("products:read"))],
-)
-async def list_price_books(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Backward-compatible alias for the canonical /price-books endpoint."""
-    return await price_book_service.list(db, current_user)
-
-
-@router.post(
-    "/price-books",
-    response_model=PriceBookResponse,
-    summary="Create new price book",
-    dependencies=[Depends(require_permission("products:create"))],
-)
-async def create_price_book(
-    name: str,
-    currency: str = "USD",
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Backward-compatible alias for the canonical /price-books endpoint."""
-    return await price_book_service.create(
-        db, current_user, PriceBookCreate(name=name, currency=currency)
-    )
+    return await product_service.create_category(db, name=name, user=current_user)
 
 
 @router.get(
@@ -231,20 +127,8 @@ async def bulk_delete_products(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    try:
-        stmt = select(Product).where(
-            Product.id.in_(payload.ids),
-            Product.organization_id == current_user.organization_id,
-        )
-        res = await db.execute(stmt)
-        items = res.scalars().all()
-        for item in items:
-            await db.delete(item)
-        await db.commit()
-        return {"affected_count": len(items), "message": "Products deleted successfully"}
-    except Exception as exc:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    count = await product_service.delete_products(db, ids=payload.ids, user=current_user)
+    return {"affected_count": count, "message": "Products deleted successfully"}
 
 
 @router.get(
@@ -257,26 +141,7 @@ async def get_product(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    res = await db.execute(
-        select(Product).where(
-            Product.id == product_id,
-            Product.organization_id == current_user.organization_id,
-        )
-    )
-    p = res.scalars().first()
-    if not p:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Product with ID '{product_id}' not found",
-        )
-    return {
-        "id": p.id,
-        "name": p.name,
-        "sku": p.sku or f"SKU-{p.id[:6]}",
-        "price": p.price or 0.0,
-        "category": "Software",
-        "in_stock_quantity": getattr(p, "in_stock_quantity", 100) or 100,
-    }
+    return await product_service.get_product(db, product_id=product_id, user=current_user)
 
 
 @router.put(
@@ -290,35 +155,9 @@ async def update_product(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    res = await db.execute(
-        select(Product).where(
-            Product.id == product_id,
-            Product.organization_id == current_user.organization_id,
-        )
+    return await product_service.update_product(
+        db, product_id=product_id, payload=payload, user=current_user
     )
-    p = res.scalars().first()
-    if not p:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Product with ID '{product_id}' not found",
-        )
-    try:
-        p.name = payload.name
-        p.sku = payload.sku or "N/A"
-        p.price = payload.price if payload.price is not None else 0.0
-        await db.commit()
-        await db.refresh(p)
-        return {
-            "id": p.id,
-            "name": p.name,
-            "sku": p.sku,
-            "price": p.price,
-            "category": payload.category or "Software",
-            "in_stock_quantity": getattr(p, "in_stock_quantity", 100) or 100,
-        }
-    except Exception as exc:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.delete(
@@ -332,25 +171,8 @@ async def delete_product(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    res = await db.execute(
-        select(Product).where(
-            Product.id == product_id,
-            Product.organization_id == current_user.organization_id,
-        )
-    )
-    p = res.scalars().first()
-    if not p:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Product with ID '{product_id}' not found",
-        )
-    try:
-        await db.delete(p)
-        await db.commit()
-        return {"message": f"Product {product_id} deleted successfully", "status": "success"}
-    except Exception as exc:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    await product_service.delete_product(db, product_id=product_id, user=current_user)
+    return {"message": f"Product {product_id} deleted successfully", "status": "success"}
 
 
 @router.get(
@@ -363,24 +185,7 @@ async def get_product_inventory(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    res = await db.execute(
-        select(Product).where(
-            Product.id == product_id,
-            Product.organization_id == current_user.organization_id,
-        )
-    )
-    p = res.scalars().first()
-    if not p:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Product with ID '{product_id}' not found",
-        )
-    return {
-        "product_id": product_id,
-        "in_stock_quantity": getattr(p, "in_stock_quantity", 100) or 100,
-        "reorder_level": None,
-        "warehouse_location": None,
-    }
+    return await product_service.inventory(db, product_id=product_id, user=current_user)
 
 
 @router.post(
@@ -395,26 +200,6 @@ async def update_product_inventory(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    res = await db.execute(
-        select(Product).where(
-            Product.id == product_id,
-            Product.organization_id == current_user.organization_id,
-        )
+    return await product_service.adjust_inventory(
+        db, product_id=product_id, quantity_delta=quantity_delta, user=current_user
     )
-    p = res.scalars().first()
-    if not p:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Product with ID '{product_id}' not found",
-        )
-    try:
-        if hasattr(p, "in_stock_quantity") and p.in_stock_quantity is not None:
-            p.in_stock_quantity += quantity_delta
-        await db.commit()
-        return {
-            "message": f"Updated inventory for {product_id} by {quantity_delta}",
-            "status": "success",
-        }
-    except Exception as exc:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

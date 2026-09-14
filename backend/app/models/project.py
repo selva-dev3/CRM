@@ -1,6 +1,16 @@
 import uuid
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -63,16 +73,18 @@ class ProjectMilestone(Base):
     status: Mapped[str] = mapped_column(String(30), default="Pending", server_default="Pending")
     due_date: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), index=True)
     completed_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[DateTime] = mapped_column(
-        DateTime(timezone=True), onupdate=func.now(), server_default=func.now()
+    created_at: Mapped[DateTime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=True
+    )
+    updated_at: Mapped[DateTime | None] = mapped_column(
+        DateTime(timezone=True), onupdate=func.now(), server_default=func.now(), nullable=True
     )
 
 
 class ProjectStakeholder(Base):
     __tablename__ = "project_stakeholders"
     __table_args__ = (
-        CheckConstraint("length(role) <= 100", name="ck_project_stakeholders_role_length"),
+        UniqueConstraint("project_id", "contact_id", name="uq_project_stakeholder_pair"),
     )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -84,4 +96,24 @@ class ProjectStakeholder(Base):
     )
     role: Mapped[str] = mapped_column(
         String(100), default="Stakeholder", server_default="Stakeholder"
+    )
+
+
+class ProjectMember(Base):
+    __tablename__ = "project_members"
+    __table_args__ = (UniqueConstraint("project_id", "user_id", name="uq_project_members_user"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id: Mapped[str] = mapped_column(
+        String, ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        String, ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    role: Mapped[str] = mapped_column(String(50), default="Member", server_default="Member")
+    added_by: Mapped[str | None] = mapped_column(
+        String, ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )

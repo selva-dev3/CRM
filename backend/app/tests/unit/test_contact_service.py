@@ -100,7 +100,9 @@ async def test_get_billing_address_is_scoped_to_contact_and_organization():
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.get_billing_address(db, "cnt-1", organization_id="org-1")
+    result = await service.get_billing_address(
+        db, "cnt-1", organization_id="org-1", current_user=_make_user()
+    )
 
     assert result.street == "123 Main Street"
     assert result.country == "IN"
@@ -122,6 +124,7 @@ async def test_update_billing_address_creates_missing_address():
         "cnt-1",
         ContactAddressUpdate(street="123 Main Street", country="IN"),
         organization_id="org-1",
+        current_user=_make_user(),
     )
 
     assert result.street == "123 Main Street"
@@ -237,7 +240,9 @@ async def test_list_contact_emails_matches_contact_recipient():
     )
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.list_contact_emails(db, "cnt-1", organization_id="org-1")
+    result = await service.list_contact_emails(
+        db, "cnt-1", organization_id="org-1", current_user=_make_user()
+    )
 
     assert result[0].subject == "Follow-up"
     assert result[0].body == "Checking in"
@@ -248,6 +253,7 @@ async def test_list_contact_emails_matches_contact_recipient():
         recipient_email="jane@acme.com",
         limit=15,
         offset=0,
+        access=ANY,
     )
 
 
@@ -265,6 +271,7 @@ async def test_list_contact_emails_requires_limit_for_later_pages():
             organization_id="org-1",
             page=2,
             limit=None,
+            current_user=_make_user(),
         )
 
     assert exc.value.status_code == 422
@@ -281,11 +288,18 @@ async def test_list_contact_deals_is_scoped_and_serialized():
     )
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.list_contact_deals(db, "cnt-1", organization_id="org-1")
+    result = await service.list_contact_deals(
+        db, "cnt-1", organization_id="org-1", current_user=_make_user()
+    )
 
     assert result[0]["id"] == "deal-1"
     service.deal_repository.list_by_contact.assert_awaited_once_with(
-        db, contact_id="cnt-1", organization_id="org-1", page=1, limit=15
+        db,
+        contact_id="cnt-1",
+        organization_id="org-1",
+        page=1,
+        limit=15,
+        access=ANY,
     )
 
 

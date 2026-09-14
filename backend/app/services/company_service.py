@@ -490,13 +490,49 @@ class CompanyService:
         )
 
     async def get_company_documents(
-        self, db: AsyncSession, company_id: str, *, organization_id: str
+        self,
+        db: AsyncSession,
+        company_id: str,
+        *,
+        organization_id: str,
+        page: int = 1,
+        limit: int = 15,
+        current_user: User,
     ) -> list:
-        await self.require_company(db, company_id, organization_id=organization_id)
-        raise APIException(
-            message="Company documents are not linked to a CRM entity yet",
-            code="COMPANY_DOCUMENT_RELATION_UNAVAILABLE",
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        await self.require_company(
+            db,
+            company_id,
+            organization_id=organization_id,
+            current_user=current_user,
+        )
+        from app.services.document_service import document_service
+
+        return await document_service.list_documents(
+            db,
+            page=page,
+            limit=limit,
+            company_id=company_id,
+            current_user=current_user,
+        )
+
+    async def count_company_documents(
+        self,
+        db: AsyncSession,
+        company_id: str,
+        *,
+        organization_id: str,
+        current_user: User,
+    ) -> int:
+        await self.require_company(
+            db,
+            company_id,
+            organization_id=organization_id,
+            current_user=current_user,
+        )
+        from app.services.document_service import document_service
+
+        return await document_service.count_documents(
+            db, company_id=company_id, current_user=current_user
         )
 
     async def get_company_hierarchy(

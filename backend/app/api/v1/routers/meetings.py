@@ -53,12 +53,14 @@ async def list_meetings(
         page=page,
         limit=limit,
         organization_id=organization_id,
+        current_user=current_user,
         search=search,
         **relationship_filters,
     )
     total = await meeting_service.count_meetings(
         db,
         organization_id=organization_id,
+        current_user=current_user,
         search=search,
         **relationship_filters,
     )
@@ -91,7 +93,7 @@ async def get_upcoming_meetings(
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await meeting_service.get_upcoming_meetings(db, organization_id)
+    return await meeting_service.get_upcoming_meetings(db, organization_id, current_user)
 
 
 @router.post(
@@ -133,7 +135,7 @@ async def bulk_cancel_meetings(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await meeting_service.bulk_cancel(db, payload.ids, organization_id)
+    return await meeting_service.bulk_cancel(db, payload.ids, organization_id, current_user)
 
 
 @router.get(
@@ -148,7 +150,7 @@ async def get_meeting(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await meeting_service.get_meeting(db, meeting_id, organization_id)
+    return await meeting_service.get_meeting(db, meeting_id, organization_id, current_user)
 
 
 @router.put(
@@ -164,7 +166,9 @@ async def update_meeting(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await meeting_service.update_meeting(db, meeting_id, payload, organization_id)
+    return await meeting_service.update_meeting(
+        db, meeting_id, payload, organization_id, current_user
+    )
 
 
 @router.delete(
@@ -179,7 +183,7 @@ async def cancel_meeting(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await meeting_service.cancel_meeting(db, meeting_id, organization_id)
+    return await meeting_service.cancel_meeting(db, meeting_id, organization_id, current_user)
 
 
 @router.post(
@@ -193,7 +197,7 @@ async def complete_meeting(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await meeting_service.complete_meeting(db, meeting_id, organization_id)
+    return await meeting_service.complete_meeting(db, meeting_id, organization_id, current_user)
 
 
 @router.post(
@@ -211,7 +215,7 @@ async def reschedule_meeting(
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     return await meeting_service.reschedule_meeting(
-        db, meeting_id, new_start_time, new_end_time, organization_id
+        db, meeting_id, new_start_time, new_end_time, organization_id, current_user
     )
 
 
@@ -229,7 +233,9 @@ async def meeting_rsvp(
     current_user: User = Depends(get_current_user),
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
-    return await meeting_service.rsvp(db, meeting_id, email, response, organization_id)
+    return await meeting_service.rsvp(
+        db, meeting_id, email, response, organization_id, current_user
+    )
 
 
 @router.post(
