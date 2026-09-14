@@ -783,9 +783,9 @@ export default function LeadDetailPage() {
   const leadScore = typeof lead.score === 'number' ? lead.score : null;
 
   return (
-    <div className="w-full space-y-6 text-[#374151] pb-16 px-1 sm:px-2">
+    <div className="mx-auto w-full max-w-[1600px] space-y-5 pb-16 text-[#374151]">
       {/* Breadcrumb Navigation */}
-      <nav className="flex items-center gap-2 text-caption font-medium text-[#6B7280]">
+      <nav aria-label="Breadcrumb" className="flex items-center gap-2 px-1 text-caption font-medium text-[#6B7280] sm:px-0">
         <Link href="/leads" className="hover:text-[#2563EB] transition flex items-center gap-1">
           <ArrowLeft className="w-3.5 h-3.5" /> Leads
         </Link>
@@ -794,6 +794,28 @@ export default function LeadDetailPage() {
           {lead.contact_name}
         </span>
       </nav>
+
+      {/* Primary record navigation stays visible while users move through a long detail page. */}
+      <PageTabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        variant="default"
+        className="sticky top-0 z-30 -mx-4 border-y border-[#E5E7EB] bg-slate-50/95 px-4 py-2 shadow-[0_1px_2px_rgba(15,23,42,0.04)] backdrop-blur-sm sm:-mx-6 sm:px-6 lg:-mx-6 lg:px-6"
+        tabs={[
+          { value: 'overview', icon: <Briefcase className="size-4" />, label: 'Overview & Details' },
+          { value: 'timeline', icon: <History className="size-4" />, label: `Timeline (${timelinePageData?.total ?? 0})` },
+          { value: 'notes', icon: <FileText className="size-4" />, label: `Notes (${notesPageData?.total ?? 0})` },
+          { value: 'tasks', icon: <CheckSquare className="size-4" />, label: `Tasks (${tasksPageData?.total ?? 0})` },
+          { value: 'emails', icon: <Send className="size-4" />, label: `Emails (${emailsPageData?.total ?? 0})` },
+          ...(canReadCalls
+            ? [{ value: 'calls' as const, icon: <PhoneCall className="size-4" />, label: `Calls (${callsPageData?.total ?? 0})` }]
+            : []),
+          { value: 'documents', icon: <Paperclip className="size-4" />, label: `Documents (${documentsPageData?.total ?? 0})` },
+          { value: 'actions', icon: <Zap className="size-4" />, label: 'Actions & Convert' },
+        ]}
+        listClassName="bg-transparent pb-0"
+        triggerClassName="border border-[#E5E7EB] bg-white text-button data-[state=active]:border-[#2563EB] data-[state=active]:bg-[#2563EB] data-[state=active]:text-white"
+      />
 
       {/* Success Banner */}
       {successMessage && (
@@ -813,22 +835,22 @@ export default function LeadDetailPage() {
       )}
 
       {/* Header Banner */}
-      <div className="bg-white border border-[#E5E7EB] shadow-saas-sm rounded-card p-5 sm:p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-5">
-        <div className="flex items-start sm:items-center gap-4">
-          <div className="w-14 h-14 rounded-btn bg-[#2563EB] flex items-center justify-center text-white font-semibold text-xl shadow-saas-sm shrink-0">
+      <div className="flex flex-col gap-5 rounded-card border border-[#E5E7EB] bg-white p-4 shadow-saas-sm sm:p-5 md:flex-row md:items-center md:justify-between">
+        <div className="flex min-w-0 items-start gap-4 sm:items-center">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-btn bg-[#2563EB] text-xl font-semibold text-white shadow-saas-sm">
             {lead.contact_name ? lead.contact_name.charAt(0).toUpperCase() : 'L'}
           </div>
-          <div className="space-y-1">
+          <div className="min-w-0 space-y-1">
             <div className="flex items-center flex-wrap gap-2.5">
-              <h1 className="text-page-title text-[#111827]">
+              <h1 className="text-page-title truncate text-[#111827]">
                 {lead.contact_name}
               </h1>
               <span className="px-2.5 py-0.5 rounded-full bg-[#2563EB]/10 border border-[#2563EB]/20 text-[#2563EB] text-badge font-semibold">
                 {lead.status}
               </span>
             </div>
-            <p className="text-body font-medium text-[#6B7280] flex items-center gap-2 flex-wrap">
-              <span>{lead.title}</span>
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-body font-medium text-[#6B7280]">
+              <span className="truncate">{lead.title}</span>
               <span className="text-[#9CA3AF]" aria-hidden="true">•</span>
               <span className="text-[#2563EB] font-semibold">{lead.company}</span>
             </p>
@@ -836,13 +858,13 @@ export default function LeadDetailPage() {
         </div>
 
         {/* Header Actions */}
-        <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+        <div className="flex w-full shrink-0 flex-wrap items-center gap-2.5 md:w-auto">
           <Button
             type="button"
             variant="outline"
             size="default"
             onClick={handleOpenEditModal}
-            className="text-button font-medium cursor-pointer"
+            className="text-button w-full font-medium cursor-pointer sm:w-auto"
           >
             <Pencil className="w-4 h-4 mr-2" /> Edit Lead
           </Button>
@@ -851,33 +873,12 @@ export default function LeadDetailPage() {
             variant="outline"
             size="default"
             onClick={() => setIsDeleteModalOpen(true)}
-            className="border-rose-200 text-rose-700 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-800 text-button font-medium cursor-pointer"
+            className="text-button w-full border-rose-200 font-medium text-rose-700 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-800 sm:w-auto"
           >
             <Trash2 className="w-4 h-4 mr-2" /> Delete Lead
           </Button>
         </div>
       </div>
-
-      <PageTabs
-        value={activeTab}
-        onValueChange={setActiveTab}
-        variant="default"
-        className="sticky top-0 z-20 -mx-1 border-b border-[#E5E7EB] bg-slate-50/95 px-1 pt-2 backdrop-blur-sm sm:-mx-2 sm:px-2"
-        tabs={[
-          { value: 'overview', icon: <Briefcase className="size-4" />, label: 'Overview & Details' },
-          { value: 'timeline', icon: <History className="size-4" />, label: `Timeline (${timelinePageData?.total ?? 0})` },
-          { value: 'notes', icon: <FileText className="size-4" />, label: `Notes (${notesPageData?.total ?? 0})` },
-          { value: 'tasks', icon: <CheckSquare className="size-4" />, label: `Tasks (${tasksPageData?.total ?? 0})` },
-          { value: 'emails', icon: <Send className="size-4" />, label: `Emails (${emailsPageData?.total ?? 0})` },
-          ...(canReadCalls
-            ? [{ value: 'calls' as const, icon: <PhoneCall className="size-4" />, label: `Calls (${callsPageData?.total ?? 0})` }]
-            : []),
-          { value: 'documents', icon: <Paperclip className="size-4" />, label: `Documents (${documentsPageData?.total ?? 0})` },
-          { value: 'actions', icon: <Zap className="size-4" />, label: 'Actions & Convert' },
-        ]}
-        listClassName="bg-transparent pb-1"
-        triggerClassName="border border-[#E5E7EB] bg-white text-button data-[state=active]:border-[#2563EB] data-[state=active]:bg-[#2563EB] data-[state=active]:text-white"
-      />
 
       {/* TAB CONTENTS */}
 

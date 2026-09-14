@@ -183,6 +183,15 @@ beforeEach(() => {
 });
 
 describe('LeadDetailPage call permissions', () => {
+  it('places the primary tabs before the lead summary', () => {
+    render(<LeadDetailPage />);
+
+    const tabs = screen.getByRole('tab', { name: /Overview & Details/ });
+    const summary = screen.getByRole('heading', { name: 'Jane Doe' });
+
+    expect(tabs.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('hides the Calls tab and disables its query without calls:read', () => {
     window.localStorage.setItem(
       'user',
