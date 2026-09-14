@@ -31,6 +31,7 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),
+  useQuery: () => ({ data: null, isFetching: false }),
 }));
 
 vi.mock('@/components/ui/select', () => ({
@@ -62,12 +63,16 @@ vi.mock('@/components/ui/select', () => ({
   ),
 }));
 
-vi.mock('@/lib/api/client', () => ({ BASE_URL: 'http://localhost:3000/api/v1' }));
+vi.mock('@/lib/api/client', () => ({
+  BASE_URL: 'http://localhost:3000/api/v1',
+  ApiError: class ApiError extends Error {},
+}));
 
 vi.mock('@/lib/api/leads', () => ({
   useLeadQuery: (...args: unknown[]) => useLeadQueryMock(...args),
   useLeadTimelineQuery: (...args: unknown[]) => useLeadTimelineQueryMock(...args),
   useCreateLeadMutation: () => ({ mutateAsync: vi.fn() }),
+  checkLeadDuplicateApi: vi.fn(),
   useUpdateLeadMutation: () => ({ mutateAsync: updateLeadMutateAsync }),
   useDeleteLeadMutation: () => ({ mutateAsync: vi.fn() }),
   useLeadNotesQuery: () => emptyQuery,
@@ -99,6 +104,8 @@ vi.mock('@/lib/api/organizations', () => ({
 
 vi.mock('@/lib/api/companies', () => ({
   useCompaniesQuery: () => ({ data: [], isLoading: false }),
+  companyKeys: { list: () => ['companies'] },
+  fetchCompaniesApi: vi.fn(),
 }));
 
 vi.mock('@/lib/api/users', () => ({
@@ -211,10 +218,12 @@ describe('LeadDetailPage custom fields', () => {
     render(<LeadDetailPage />);
 
     await user.click(screen.getByRole('button', { name: 'Edit Lead' }));
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
     expect(screen.getByLabelText('Territory')).toHaveValue('North');
     await user.clear(screen.getByLabelText('Territory'));
     await user.type(screen.getByLabelText('Territory'), 'South');
-    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
 
     await waitFor(() => {
       expect(updateLeadMutateAsync).toHaveBeenCalledWith(

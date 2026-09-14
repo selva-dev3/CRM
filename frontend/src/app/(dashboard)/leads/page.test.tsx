@@ -17,6 +17,10 @@ vi.mock('@/components/common/permission-gate', () => ({
   PermissionGate: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
+vi.mock('@/components/features/leads/lead-form-dialog', () => ({
+  LeadFormDialog: () => null,
+}));
+
 vi.mock('@/lib/api/leads', () => ({
   useLeadsQuery: (...args: unknown[]) => useLeadsQueryMock(...args),
   useCreateLeadMutation: () => idleMutation(),

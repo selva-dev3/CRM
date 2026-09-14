@@ -13,6 +13,7 @@ from starlette.datastructures import Headers
 
 from app.core.config import settings
 from app.core.errors import APIException, ForbiddenError, NotFoundError
+from app.core.record_access import RecordAccessContext
 from app.models import Lead, User
 from app.repositories.lead_repository import LeadRepository
 from app.schemas.crm_schemas import (
@@ -101,6 +102,68 @@ async def test_count_leads_forwards_filters():
     repo.count_leads.assert_awaited_once_with(
         db, organization_id="org-1", search="Acme", status="New"
     )
+
+
+@pytest.mark.asyncio
+async def test_duplicate_check_forwards_resolved_record_scope(monkeypatch):
+    repo: Any = LeadRepository()
+    repo.get_by_email = AsyncMock(return_value=None)
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+    user = _make_user()
+    access = RecordAccessContext(
+        scope="assigned",
+        user_id=user.id,
+        team_ids=frozenset(),
+        team_user_ids=frozenset(),
+    )
+    monkeypatch.setattr(
+        "app.services.lead_service.record_access_service.resolve",
+        AsyncMock(return_value=access),
+    )
+
+    result = await service.check_duplicate(
+        db,
+        "hidden@example.com",
+        organization_id="org-1",
+        current_user=user,
+    )
+
+    assert result == {"is_duplicate": False, "matched_lead_id": None}
+    repo.get_by_email.assert_awaited_once_with(
+        db,
+        "hidden@example.com",
+        organization_id="org-1",
+        access=access,
+    )
+
+
+@pytest.mark.asyncio
+async def test_duplicate_repository_query_restricts_assigned_records():
+    repository = LeadRepository()
+    db = AsyncMock(spec=AsyncSession)
+    result = MagicMock()
+    result.scalars.return_value.first.return_value = None
+    db.execute.return_value = result
+    access = RecordAccessContext(
+        scope="assigned",
+        user_id="usr-1",
+        team_ids=frozenset(),
+        team_user_ids=frozenset(),
+    )
+
+    duplicate = await repository.get_by_email(
+        db,
+        "hidden@example.com",
+        organization_id="org-1",
+        access=access,
+    )
+
+    assert duplicate is None
+    statement = db.execute.await_args.args[0]
+    sql = str(statement.compile(compile_kwargs={"literal_binds": True}))
+    assert "leads.organization_id = 'org-1'" in sql
+    assert "leads.assigned_to = 'usr-1'" in sql
 
 
 @pytest.mark.asyncio

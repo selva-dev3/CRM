@@ -18,9 +18,11 @@ import { cn } from '@/lib/utils';
 export interface UserSelectProps {
   value: string;
   onChange: (val: string) => void;
+  disabled?: boolean;
+  ariaLabel?: string;
 }
 
-export function UserSelect({ value, onChange }: UserSelectProps) {
+export function UserSelect({ value, onChange, disabled = false, ariaLabel }: UserSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -71,14 +73,15 @@ export function UserSelect({ value, onChange }: UserSelectProps) {
   };
 
   return (
-    <Popover open={isOpen} onOpenChange={setIsOpen}>
+    <Popover open={isOpen} onOpenChange={(open) => !disabled && setIsOpen(open)}>
       <PopoverTrigger asChild>
         <Button
           type="button"
           variant="outline"
           role="combobox"
           aria-expanded={isOpen}
-          aria-label={triggerLabel}
+          aria-label={ariaLabel ?? triggerLabel}
+          disabled={disabled}
           className="h-9 w-full justify-between border-slate-200 px-3 text-xs font-medium"
         >
           <span className={cn('truncate', !selectedUser && 'text-slate-400')}>
