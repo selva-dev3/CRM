@@ -50,6 +50,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { SearchableCompanySelect } from '@/components/common/searchable-company-select';
 import { CustomFieldValues } from '@/components/common/custom-field-values';
 import { CustomFields } from '@/components/common/custom-fields';
+import { useHasPermission } from '@/hooks/use-has-permission';
+import { PERMISSIONS } from '@/lib/permissions';
 import {
   useEntityCustomFieldsQuery,
   type CustomFieldValue,
@@ -97,6 +99,7 @@ const callColumns: DataTableColumn<RelatedRecord>[] = [
 export default function ContactDetailsPage() {
   const params = useParams();
   const router = useRouter();
+  const { hasPermission } = useHasPermission();
   const queryClient = useQueryClient();
   const contactId = params?.id as string;
 
@@ -133,6 +136,7 @@ export default function ContactDetailsPage() {
 
   // Add Note Form State
   const [newNoteContent, setNewNoteContent] = useState('');
+  const [isAddNoteModalOpen, setIsAddNoteModalOpen] = useState(false);
 
   // Queries
   const { data: contact, isLoading, refetch: refetchContact } = useContactQuery(contactId);
@@ -514,29 +518,13 @@ export default function ContactDetailsPage() {
       {/* TAB CONTENT: Notes */}
       {activeTab === 'notes' && (
         <div className="space-y-4">
-          <div className="p-4 bg-white rounded-2xl border border-slate-200 space-y-3">
-            <Label className="font-semibold text-slate-700 text-xs">Add New Note</Label>
-            <Input
-              type="text"
-              placeholder="Type note details for this contact profile..."
-              value={newNoteContent}
-              onChange={(e) => setNewNoteContent(e.target.value)}
-              className="h-9 text-xs"
-            />
-            <div className="flex justify-end">
-              <Button
-                size="sm"
-                onClick={() => addNoteMutation.mutate(newNoteContent)}
-                disabled={!newNoteContent.trim() || addNoteMutation.isPending}
-                className="bg-blue-600 text-white font-semibold text-xs gap-1 cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Add Note</span>
-              </Button>
-            </div>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-sm font-bold text-slate-900">Saved Notes</h2>
+            {hasPermission(PERMISSIONS.NOTES.CREATE) && <Button size="sm" onClick={() => { setNewNoteContent(''); setIsAddNoteModalOpen(true); }} className="gap-1.5">
+              <Plus className="size-4" /> Add Note
+            </Button>}
           </div>
 
-          <h2 className="text-sm font-bold text-slate-900 pt-2">Saved Notes</h2>
           <DataTable
             columns={noteColumns}
             data={notes}
@@ -550,6 +538,25 @@ export default function ContactDetailsPage() {
               totalRecords: notesPage?.total ?? 0,
             }}
           />
+
+          <ModalShell
+            isOpen={isAddNoteModalOpen}
+            onClose={() => !addNoteMutation.isPending && setIsAddNoteModalOpen(false)}
+            title="Create Note"
+            ariaLabel="Create note for contact"
+          >
+            <form onSubmit={(event) => { event.preventDefault(); if (newNoteContent.trim()) addNoteMutation.mutate(newNoteContent.trim(), { onSuccess: () => setIsAddNoteModalOpen(false) }); }} className="space-y-4">
+              <div>
+                <Label htmlFor="contact-note-content">Note content</Label>
+                <textarea id="contact-note-content" autoFocus required maxLength={10000} value={newNoteContent} onChange={(event) => setNewNoteContent(event.target.value)} placeholder="Type note details for this contact profile..." className="mt-1 min-h-32 w-full rounded-lg border border-slate-300 p-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+              </div>
+              {errorMessage && <p role="alert" className="text-sm text-rose-700">{errorMessage}</p>}
+              <div className="flex flex-col-reverse justify-end gap-2 border-t pt-4 sm:flex-row">
+                <Button type="button" variant="outline" disabled={addNoteMutation.isPending} onClick={() => setIsAddNoteModalOpen(false)}>Cancel</Button>
+                <Button type="submit" disabled={!newNoteContent.trim() || addNoteMutation.isPending}>{addNoteMutation.isPending ? 'Creating…' : 'Create Note'}</Button>
+              </div>
+            </form>
+          </ModalShell>
         </div>
       )}
 

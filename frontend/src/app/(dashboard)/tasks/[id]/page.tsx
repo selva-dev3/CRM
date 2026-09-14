@@ -65,6 +65,7 @@ export default function TaskDetailPage() {
 
   // State
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isSubtaskModalOpen, setIsSubtaskModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
   const [reminderTime, setReminderTime] = useState('');
@@ -152,16 +153,18 @@ export default function TaskDetailPage() {
     }
   };
 
-  const handleAddSubtaskSubmit = async (e: React.FormEvent) => {
+  const handleAddSubtaskSubmit = async (e: React.FormEvent): Promise<boolean> => {
     e.preventDefault();
-    if (!newSubtaskTitle.trim()) return;
+    if (!newSubtaskTitle.trim()) return false;
     try {
       await addSubtaskMutation.mutateAsync({ taskId, title: newSubtaskTitle.trim() });
       setSuccessMessage(`Subtask "${newSubtaskTitle.trim()}" added.`);
       setNewSubtaskTitle('');
       refetchSubtasks();
+      return true;
     } catch (err: unknown) {
       setErrorMessage(getErrorMessage(err, 'Failed to add subtask.'));
+      return false;
     }
   };
 
@@ -365,25 +368,7 @@ export default function TaskDetailPage() {
               <span>Sub-tasks ({subtasks.length})</span>
             </h3>
 
-            <PermissionGate permission={PERMISSIONS.TASKS.CREATE}>
-            <form onSubmit={handleAddSubtaskSubmit} className="flex gap-2">
-              <Input
-                type="text"
-                value={newSubtaskTitle}
-                onChange={(e) => setNewSubtaskTitle(e.target.value)}
-                placeholder="Add a new subtask..."
-                className="flex-1 bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-              <button
-                type="submit"
-                disabled={addSubtaskMutation.isPending}
-                className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
-              >
-                <Plus className="w-4 h-4" />
-                Add Subtask
-              </button>
-            </form>
-            </PermissionGate>
+            <PermissionGate permission={PERMISSIONS.TASKS.CREATE}><button type="button" onClick={() => { setNewSubtaskTitle(''); setIsSubtaskModalOpen(true); }} className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white"><Plus className="size-4" />Add Subtask</button></PermissionGate>
 
             <div className="space-y-2 pt-1">
               {subtasks.length === 0 ? (
@@ -399,6 +384,8 @@ export default function TaskDetailPage() {
             </div>
           </div>
         </div>
+
+        <ModalShell isOpen={isSubtaskModalOpen} onClose={() => !addSubtaskMutation.isPending && setIsSubtaskModalOpen(false)} title="Create subtask" footer={<><button type="button" className="rounded-lg border px-4 py-2 text-sm font-semibold" disabled={addSubtaskMutation.isPending} onClick={() => setIsSubtaskModalOpen(false)}>Cancel</button><button type="submit" form="create-subtask-form" className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" disabled={addSubtaskMutation.isPending}>{addSubtaskMutation.isPending ? 'Creating…' : 'Create subtask'}</button></>}><form id="create-subtask-form" onSubmit={(event) => { void handleAddSubtaskSubmit(event).then((success) => { if (success) setIsSubtaskModalOpen(false); }); }} className="space-y-4 py-4"><div><label htmlFor="subtask-title" className="mb-1 block text-sm font-medium">Subtask title</label><Input id="subtask-title" autoFocus required value={newSubtaskTitle} onChange={(event) => setNewSubtaskTitle(event.target.value)} placeholder="Describe the next step" /></div>{errorMessage && <p role="alert" className="text-sm text-rose-700">{errorMessage}</p>}</form></ModalShell>
 
         {/* Right Column: Assignee & Automated Reminder Controls */}
         <div className="space-y-6">
