@@ -35,11 +35,14 @@ export function UserSelect({ value, onChange }: UserSelectProps) {
     100,
     debouncedSearch.trim() || undefined
   );
+  const selectedUserIsInList = fetchedUsers.some((user) => user.id === value);
   const {
     data: selectedUserById,
     isLoading: isSelectedUserLoading,
     isError: isSelectedUserError,
-  } = useUserQuery(value, { enabled: Boolean(value) });
+  } = useUserQuery(value, {
+    enabled: Boolean(value) && !isLoading && !selectedUserIsInList,
+  });
   const users = useMemo(() => {
     if (!selectedUserById || fetchedUsers.some((user) => user.id === selectedUserById.id)) {
       return fetchedUsers;
@@ -50,6 +53,16 @@ export function UserSelect({ value, onChange }: UserSelectProps) {
     () => users.find((user: UserItem) => user.id === value),
     [users, value]
   );
+
+  const triggerLabel = selectedUser
+    ? `${selectedUser.name} (${selectedUser.email || selectedUser.id})`
+    : value && isSelectedUserLoading
+      ? 'Loading selected user...'
+      : value && isSelectedUserError
+        ? 'Unable to load selected user'
+        : value
+          ? `Unknown user (${value})`
+          : '-- Select User Account --';
 
   const selectUser = (userId: string) => {
     onChange(userId);
@@ -65,23 +78,11 @@ export function UserSelect({ value, onChange }: UserSelectProps) {
           variant="outline"
           role="combobox"
           aria-expanded={isOpen}
-          aria-label={
-            selectedUser
-              ? `${selectedUser.name} (${selectedUser.email || selectedUser.id})`
-              : 'Select User Account'
-          }
+          aria-label={triggerLabel}
           className="h-9 w-full justify-between border-slate-200 px-3 text-xs font-medium"
         >
           <span className={cn('truncate', !selectedUser && 'text-slate-400')}>
-            {selectedUser
-              ? `${selectedUser.name} (${selectedUser.email || selectedUser.id})`
-              : value && isSelectedUserLoading
-                ? 'Loading selected user...'
-                : value && isSelectedUserError
-                  ? 'Unable to load selected user'
-                  : value
-                    ? `Unknown user (${value})`
-                    : '-- Select User Account --'}
+            {triggerLabel}
           </span>
           <ChevronsUpDown className="size-3.5 shrink-0 text-slate-400" />
         </Button>
