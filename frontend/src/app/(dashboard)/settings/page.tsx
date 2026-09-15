@@ -23,6 +23,7 @@ import {
   FileSpreadsheet,
   Building,
   Layers,
+  ArrowLeft,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -343,6 +344,14 @@ export default function SettingsPage() {
         </div>
 
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3 w-full sm:w-auto shrink-0">
+          <Link
+            href="/dashboard"
+            className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-4 py-2 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer w-full sm:w-auto"
+          >
+            <ArrowLeft className="w-4 h-4 text-slate-500 shrink-0" />
+            <span>Back to Dashboard</span>
+          </Link>
+
           <PermissionGate permission={PERMISSIONS.ORGANIZATION.READ}>
             <Link
               href="/organization"

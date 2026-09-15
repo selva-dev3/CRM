@@ -376,13 +376,22 @@ export default function IntegrationsPage() {
           </p>
         </div>
 
-        <Link
-          href="/settings"
-          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 font-semibold text-xs transition shadow-xs cursor-pointer"
-        >
-          <ArrowLeft className="w-4 h-4 text-slate-500" />
-          <span>Back to Settings</span>
-        </Link>
+        <div className="flex flex-col sm:flex-row items-stretch gap-2">
+          <Link
+            href="/settings"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 font-semibold text-xs transition shadow-xs cursor-pointer"
+          >
+            <ArrowLeft className="w-4 h-4 text-slate-500" />
+            <span>Back to Settings</span>
+          </Link>
+          <Link
+            href="/dashboard"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 font-semibold text-xs transition shadow-xs cursor-pointer"
+          >
+            <ArrowLeft className="w-4 h-4 text-slate-500" />
+            <span>Back to Dashboard</span>
+          </Link>
+        </div>
       </div>
 
       {/* Alert */}
