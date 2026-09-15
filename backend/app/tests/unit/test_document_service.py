@@ -16,6 +16,7 @@ from app.repositories.document_repository import DocumentRepository
 from app.services.auth_service import auth_service
 from app.services.document_service import DocumentService, document_to_dict
 from app.services.record_access_service import record_access_service
+from app.tests.mock_helpers import as_async_mock, as_mock, replace_attr, require_await
 
 
 @pytest.fixture(autouse=True)
@@ -68,7 +69,7 @@ def _upload_file(
     async def read_inline(read_size: int = -1) -> bytes:
         return stream.read(read_size)
 
-    f.read = read_inline  # type: ignore[method-assign]
+    replace_attr(f, "read", read_inline)
     return f
 
 
@@ -89,7 +90,7 @@ async def test_list_documents_generates_fresh_presigned_url(monkeypatch):
         db, page=1, limit=20, search="proposal", current_user=user
     )
 
-    repo.list_documents.assert_awaited_once_with(
+    as_async_mock(repo.list_documents).assert_awaited_once_with(
         db,
         org_id="org-test",
         page=1,
@@ -258,8 +259,8 @@ async def test_delete_document_commits_then_cleans_s3(monkeypatch):
 
     result = await service.delete_document(db, "doc-1", current_user=user)
 
-    repo.delete_document.assert_awaited_once_with(db, document)
-    db.commit.assert_awaited_once()
+    as_async_mock(repo.delete_document).assert_awaited_once_with(db, document)
+    as_async_mock(db.commit).assert_awaited_once()
     assert delete_calls == [document.s3_key]
     assert result["status"] == "success"
 
@@ -279,8 +280,8 @@ async def test_delete_document_swallows_post_commit_s3_failure(monkeypatch):
     monkeypatch.setattr("app.services.document_service.s3_service.delete_file", boom)
 
     result = await service.delete_document(db, "doc-1", current_user=_make_user())
-    repo.delete_document.assert_awaited_once()
-    db.commit.assert_awaited_once()
+    as_async_mock(repo.delete_document).assert_awaited_once()
+    as_async_mock(db.commit).assert_awaited_once()
     assert result["status"] == "success"
 
 
@@ -305,7 +306,7 @@ async def test_bulk_delete_commits_then_cleans_s3(monkeypatch):
     result = await service.bulk_delete(db, ["doc-1", "doc-2"], current_user=_make_user())
 
     assert result["affected_count"] == 2
-    db.commit.assert_awaited_once()
+    as_async_mock(db.commit).assert_awaited_once()
     assert delete_calls == ["documents/org-test/abcdef.pdf", "documents/org-test/zzz.pdf"]
 
 
@@ -325,7 +326,7 @@ async def test_bulk_delete_swallows_post_commit_s3_failures(monkeypatch):
 
     result = await service.bulk_delete(db, ["doc-1", "doc-2"], current_user=_make_user())
     assert result["affected_count"] == 2
-    db.commit.assert_awaited_once()
+    as_async_mock(db.commit).assert_awaited_once()
 
 
 def test_document_to_dict_uses_fallbacks():
@@ -366,15 +367,15 @@ async def test_upload_document_stores_s3_key_not_presigned_url(monkeypatch):
 
     result = await service.upload_document(db, file, current_user=user)
 
-    assert repo.create_document.await_args is not None
-    data = repo.create_document.await_args_list[-1].kwargs["data"]
+    assert require_await(repo.create_document) is not None
+    data = as_async_mock(repo.create_document).await_args_list[-1].kwargs["data"]
     assert data["organization_id"] == "org-test"
     assert data["uploaded_by"] == "usr-123"
     assert data["filename"] == "report.png"
     assert data["mime_type"] == "image/png"
     assert data["s3_key"] == "documents/org-test/abc.png"
     assert data["file_url"] is None
-    assert db.commit.await_count == 1
+    assert as_async_mock(db.commit).await_count == 1
     assert result["filename"] == "report.png"
     assert result["download_url"].startswith("https://s3.example/")
 
@@ -383,7 +384,7 @@ async def test_upload_document_stores_s3_key_not_presigned_url(monkeypatch):
 async def test_project_upload_rejects_project_outside_record_scope(monkeypatch):
     service = DocumentService(repository=DocumentRepository())
     db = AsyncMock(spec=AsyncSession)
-    db.scalar.return_value = None
+    as_mock(db.scalar).return_value = None
     no_access = RecordAccessContext(
         scope="none",
         user_id="usr-123",
@@ -432,7 +433,7 @@ async def test_upload_rejects_inaccessible_relationship_before_storage(
     if relationship in {"lead_id", "contact_id", "company_id", "deal_id"}:
         db.scalar.side_effect = [SimpleNamespace(id="private-record"), None]
     else:
-        db.scalar.return_value = None
+        as_mock(db.scalar).return_value = None
     no_access = RecordAccessContext(
         scope="none",
         user_id="usr-123",
@@ -466,7 +467,7 @@ async def test_upload_rejects_inaccessible_relationship_before_storage(
     expected_queries = (
         2 if relationship in {"lead_id", "contact_id", "company_id", "deal_id"} else 1
     )
-    assert db.scalar.await_count == expected_queries
+    assert as_async_mock(db.scalar).await_count == expected_queries
 
 
 @pytest.mark.asyncio
@@ -490,9 +491,7 @@ async def test_upload_requires_linked_module_read_permission_before_record_or_st
     db = AsyncMock(spec=AsyncSession)
     monkeypatch.setattr(auth_service, "get_user_permissions", AsyncMock(return_value=[]))
     resolve = AsyncMock()
-    monkeypatch.setattr(
-        "app.services.record_access_service.record_access_service.resolve", resolve
-    )
+    monkeypatch.setattr("app.services.record_access_service.record_access_service.resolve", resolve)
     upload = MagicMock()
     monkeypatch.setattr("app.services.document_service.s3_service.upload_file", upload)
 
@@ -505,7 +504,7 @@ async def test_upload_requires_linked_module_read_permission_before_record_or_st
         )
 
     resolve.assert_not_awaited()
-    db.scalar.assert_not_awaited()
+    as_async_mock(db.scalar).assert_not_awaited()
     upload.assert_not_called()
 
 
@@ -519,9 +518,7 @@ async def test_upload_relationship_requires_read_scope_for_api_key(monkeypatch):
         auth_service, "get_user_permissions", AsyncMock(return_value=["leads:read"])
     )
     resolve = AsyncMock()
-    monkeypatch.setattr(
-        "app.services.record_access_service.record_access_service.resolve", resolve
-    )
+    monkeypatch.setattr("app.services.record_access_service.record_access_service.resolve", resolve)
     upload = MagicMock()
     monkeypatch.setattr("app.services.document_service.s3_service.upload_file", upload)
 
@@ -534,7 +531,7 @@ async def test_upload_relationship_requires_read_scope_for_api_key(monkeypatch):
         )
 
     resolve.assert_not_awaited()
-    db.scalar.assert_not_awaited()
+    as_async_mock(db.scalar).assert_not_awaited()
     upload.assert_not_called()
 
 
@@ -572,8 +569,8 @@ async def test_upload_document_sanitizes_filename_and_uses_uuid(monkeypatch):
     stem = seg.rsplit(".", 1)[0]
     assert len(stem) == 32  # uuid4 hex
     # Filename persisted is sanitized
-    assert repo.create_document.await_args is not None
-    persisted = repo.create_document.await_args_list[-1].kwargs["data"]["filename"]
+    assert require_await(repo.create_document) is not None
+    persisted = as_async_mock(repo.create_document).await_args_list[-1].kwargs["data"]["filename"]
     assert ".." not in persisted
     assert "/" not in persisted
 
@@ -594,8 +591,8 @@ async def test_upload_document_rejects_traversal_filename(monkeypatch):
 
     file = _upload_file(b"x", filename="../../something.png", content_type="image/png")
     await service.upload_document(db, file, current_user=_make_user())
-    assert repo.create_document.await_args is not None
-    persisted = repo.create_document.await_args_list[-1].kwargs["data"]["filename"]
+    assert require_await(repo.create_document) is not None
+    persisted = as_async_mock(repo.create_document).await_args_list[-1].kwargs["data"]["filename"]
     assert ".." not in persisted and "/" not in persisted
 
 
@@ -657,7 +654,7 @@ async def test_upload_document_rejects_oversize_during_stream(monkeypatch):
     with pytest.raises(APIException) as exc:
         await service.upload_document(db, f, current_user=_make_user())
     assert exc.value.status_code == 413
-    repo.create_document.assert_not_awaited()
+    as_async_mock(repo.create_document).assert_not_awaited()
 
 
 @pytest.mark.asyncio

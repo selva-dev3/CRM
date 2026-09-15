@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, func, text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -22,8 +23,8 @@ class Team(Base):
         String, ForeignKey("users.id", ondelete="SET NULL"), index=True
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[DateTime] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), onupdate=func.now(), server_default=func.now()
     )
 
@@ -42,11 +43,7 @@ class TeamMembership(Base):
     )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    team_id: Mapped[str] = mapped_column(
-        String, ForeignKey("teams.id", ondelete="CASCADE")
-    )
-    user_id: Mapped[str] = mapped_column(
-        String, ForeignKey("users.id", ondelete="CASCADE")
-    )
+    team_id: Mapped[str] = mapped_column(String, ForeignKey("teams.id", ondelete="CASCADE"))
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"))
     is_primary: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -23,7 +23,6 @@ class CreateOrganizationInvitationRequest(BaseModel):
         return value.strip() if isinstance(value, str) else value
 
 
-
 class InvitationResponse(BaseModel):
     id: str
     organization_id: str | None = None
@@ -51,13 +50,14 @@ class NewOrganizationInviteResponse(BaseModel):
 class AcceptInvitationRequest(BaseModel):
     password: str = Field(..., min_length=8, max_length=72, examples=["Password123!"])
     full_name: str | None = Field(None, min_length=1, max_length=255, examples=["Jane Smith"])
-    organization_name: str | None = Field(None, min_length=1, max_length=255, examples=["Acme Corporation"])
+    organization_name: str | None = Field(
+        None, min_length=1, max_length=255, examples=["Acme Corporation"]
+    )
     domain: str | None = Field(None, max_length=255, examples=["acme.crm.com"])
     industry: str | None = Field(None, max_length=100, examples=["Technology"])
     country: str | None = Field(None, max_length=100, examples=["India"])
     city: str | None = Field(None, max_length=100, examples=["Chennai"])
     phone: str | None = Field(None, max_length=50, examples=["+91 9876543210"])
-
 
     @field_validator("organization_name", "full_name", mode="before")
     @classmethod

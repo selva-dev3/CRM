@@ -316,9 +316,7 @@ class ReportService:
 
         # Modal loss reason per industry so each segment reports only reasons
         # actually recorded against its own deals (never the org-wide mode).
-        reason_rows = await self.repository.loss_reason_by_industry(
-            db, target_org, access=access
-        )
+        reason_rows = await self.repository.loss_reason_by_industry(db, target_org, access=access)
         industry_reason_counts: dict[str, tuple[str, int]] = {}
         for ind, reason, cnt in reason_rows:
             key = ind or "General Enterprise"
@@ -491,12 +489,8 @@ class ReportService:
             db, target_org, call_access
         )
         total_emails = await self.repository.count_emails(db, target_org, email_access)
-        opened_emails = await self.repository.count_opened_emails(
-            db, target_org, email_access
-        )
-        total_meetings = await self.repository.count_meetings(
-            db, target_org, meeting_access
-        )
+        opened_emails = await self.repository.count_opened_emails(db, target_org, email_access)
+        total_meetings = await self.repository.count_meetings(db, target_org, meeting_access)
 
         email_open_rate = (
             round(opened_emails / total_emails * 100.0, 1) if total_emails > 0 else 0.0
@@ -1051,7 +1045,11 @@ class ReportService:
             db,
             export_id,
             target_org,
-            None if getattr(current_user, "is_platform_admin", False) else current_user.id,
+            (
+                None
+                if current_user is None or getattr(current_user, "is_platform_admin", False)
+                else current_user.id
+            ),
         )
         if not export:
             raise NotFoundError(message=f"Export '{export_id}' not found")

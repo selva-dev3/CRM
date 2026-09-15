@@ -128,7 +128,7 @@ async def test_invitation_lookup_limits_varying_tokens_by_endpoint(monkeypatch):
 
     response = await rate_limit_exceeded_handler(limited_request, exc_info.value)
     assert response.status_code == 429
-    assert json.loads(response.body) == {
+    assert json.loads(bytes(response.body)) == {
         "code": "RATE_LIMITED",
         "message": "Too many requests. Please try again later.",
         "fields": None,

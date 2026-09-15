@@ -5,6 +5,8 @@ message bodies, documents, recordings, custom fields and other contacts are not
 valid WhatsApp AI context.
 """
 
+from __future__ import annotations
+
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any

@@ -129,11 +129,7 @@ async def accept_invitation(
     result = await accept_organization_invitation(db, token, payload)
     set_auth_cookie(response, result["access_token"])
     set_refresh_cookie(response, result["refresh_token"])
-    return {
-        key: value
-        for key, value in result.items()
-        if key != "refresh_token"
-    }
+    return {key: value for key, value in result.items() if key != "refresh_token"}
 
 
 # 5. POST /api/v1/organizations/invitations/{id}/resend - Resend invitation (Protected)

@@ -61,8 +61,16 @@ class WhatsAppService:
             raise
 
     @staticmethod
+    def organization_id(user: User) -> str:
+        organization_id = user.organization_id
+        if not organization_id:
+            raise ForbiddenError(message="Select an active organization.")
+        return organization_id
+
+    @staticmethod
     async def permissions(db: AsyncSession, user: User, required: str | None = None) -> set[str]:
-        if not user.organization_id or not user.is_active:
+        WhatsAppService.organization_id(user)
+        if not user.is_active:
             raise ForbiddenError(message="Select an active organization.")
         permissions = set(await auth_service.get_user_permissions(db, user))
         if required and required not in permissions:
@@ -129,12 +137,14 @@ class WhatsAppService:
         permissions = await self.permissions(db, user)
         if not {"integrations:read", "integrations:manage"} & permissions:
             raise ForbiddenError(message="Integration access is not permitted.")
-        config = await self.repository.configuration(db, user.organization_id)
+        config = await self.repository.configuration(db, WhatsAppService.organization_id(user))
         if not config:
             return IntegrationRead()
         catalog = await self.repository.catalog(db, config)
         worker_status, worker_last_seen_at = await worker_heartbeat()
-        oldest_pending_at = await self.repository.oldest_pending_at(db, user.organization_id)
+        oldest_pending_at = await self.repository.oldest_pending_at(
+            db, WhatsAppService.organization_id(user)
+        )
         backlog_age_seconds = (
             max(0, int((datetime.now(UTC) - oldest_pending_at).total_seconds()))
             if oldest_pending_at
@@ -212,20 +222,24 @@ class WhatsAppService:
     ) -> IntegrationRead:
         self.available()
         await self.permissions(db, user, "integrations:manage")
-        await enforce_rate_limit("configure:" + user.organization_id, 10)
+        await enforce_rate_limit("configure:" + WhatsAppService.organization_id(user), 10)
         if settings.WHATSAPP_API_VERSION and payload.api_version != settings.WHATSAPP_API_VERSION:
             raise ConflictError(
                 message="The API version must match the WhatsApp version configured for this deployment."
             )
         for user_id in (payload.ai_user_id, payload.default_assignee_id):
-            if user_id and not await self.repository.user(db, user.organization_id, user_id):
+            if user_id and not await self.repository.user(
+                db, WhatsAppService.organization_id(user), user_id
+            ):
                 raise NotFoundError(message="User not found.")
         if payload.default_phone_region:
             import phonenumbers
 
             if payload.default_phone_region not in phonenumbers.SUPPORTED_REGIONS:
                 raise APIException(message="Invalid ISO phone region.")
-        config = await self.repository.configuration(db, user.organization_id, lock=True)
+        config = await self.repository.configuration(
+            db, WhatsAppService.organization_id(user), lock=True
+        )
         created = config is None
         if config:
             if (
@@ -265,7 +279,7 @@ class WhatsAppService:
             try:
                 catalog, config = await self.repository.create_configuration(
                     db,
-                    user.organization_id,
+                    WhatsAppService.organization_id(user),
                     payload.business_account_id,
                     payload.phone_number_id,
                     payload.api_version,
@@ -294,7 +308,7 @@ class WhatsAppService:
         config.default_assignee_id = payload.default_assignee_id
         self.audit(
             db,
-            user.organization_id,
+            WhatsAppService.organization_id(user),
             "integration_created" if created else "integration_updated",
             config.id,
             user.id,
@@ -331,14 +345,14 @@ class WhatsAppService:
     async def verify(self, db: AsyncSession, user: User) -> IntegrationRead:
         self.available()
         await self.permissions(db, user, "integrations:manage")
-        await enforce_rate_limit("verify:" + user.organization_id, 10)
-        config = await self.repository.configuration(db, user.organization_id)
+        await enforce_rate_limit("verify:" + WhatsAppService.organization_id(user), 10)
+        config = await self.repository.configuration(db, WhatsAppService.organization_id(user))
         if config is None:
             raise NotFoundError(message="WhatsApp integration not found.")
         catalog = await self.repository.catalog(db, config)
         account_revision = self.account_revision(config, catalog)
         default_assignee = await self.repository.user(
-            db, user.organization_id, config.default_assignee_id
+            db, WhatsAppService.organization_id(user), config.default_assignee_id
         )
         if not config.default_assignee_id or default_assignee is None:
             raise ConflictError(
@@ -350,7 +364,9 @@ class WhatsAppService:
                 message="The default assignee must be permitted to read WhatsApp conversations."
             )
         if config.ai_user_id:
-            ai_user = await self.repository.user(db, user.organization_id, config.ai_user_id)
+            ai_user = await self.repository.user(
+                db, WhatsAppService.organization_id(user), config.ai_user_id
+            )
             if ai_user is None:
                 raise ConflictError(message="Select an active AI service user.")
             ai_permissions = await self.permissions(db, ai_user)
@@ -420,13 +436,17 @@ class WhatsAppService:
         config.enabled = True
         catalog.status = "connected"
         catalog.is_connected = True
-        self.audit(db, user.organization_id, "integration_verified", config.id, user.id)
+        self.audit(
+            db, WhatsAppService.organization_id(user), "integration_verified", config.id, user.id
+        )
         await self.commit(db)
         return await self.status(db, user)
 
     async def disconnect(self, db: AsyncSession, user: User) -> None:
         await self.permissions(db, user, "integrations:manage")
-        config = await self.repository.configuration(db, user.organization_id, lock=True)
+        config = await self.repository.configuration(
+            db, WhatsAppService.organization_id(user), lock=True
+        )
         if config is None:
             return
         catalog = await self.repository.catalog(db, config)
@@ -434,13 +454,19 @@ class WhatsAppService:
         catalog.status = "disconnected"
         catalog.is_connected = False
         config.enabled = False
-        self.audit(db, user.organization_id, "integration_disconnected", config.id, user.id)
+        self.audit(
+            db,
+            WhatsAppService.organization_id(user),
+            "integration_disconnected",
+            config.id,
+            user.id,
+        )
         await self.commit(db)
 
     async def sync_templates(self, db: AsyncSession, user: User):
         self.available()
         await self.permissions(db, user, "integrations:manage")
-        config = await self.repository.configuration(db, user.organization_id)
+        config = await self.repository.configuration(db, WhatsAppService.organization_id(user))
         if config is None or not config.enabled:
             raise ConflictError(message="Verify WhatsApp before syncing templates.")
         catalog = await self.repository.catalog(db, config)
@@ -482,9 +508,11 @@ class WhatsAppService:
             )
         config, _ = await self.lock_account_revision(db, config.organization_id, account_revision)
         await self.repository.replace_templates(db, config, records)
-        self.audit(db, user.organization_id, "templates_synced", config.id, user.id)
+        self.audit(
+            db, WhatsAppService.organization_id(user), "templates_synced", config.id, user.id
+        )
         await self.commit(db)
-        return await self.repository.templates(db, user.organization_id)
+        return await self.repository.templates(db, WhatsAppService.organization_id(user))
 
     async def eligible_assignee(
         self, db: AsyncSession, organization_id: str, user_id: str | None
@@ -515,8 +543,10 @@ class WhatsAppService:
 
     async def assignees(self, db: AsyncSession, user: User) -> list[User]:
         await self.permissions(db, user, "whatsapp:assign")
-        candidates = await self.repository.assignees(db, user.organization_id)
-        permissions = await auth_service.get_users_permissions(db, candidates, user.organization_id)
+        candidates = await self.repository.assignees(db, WhatsAppService.organization_id(user))
+        permissions = await auth_service.get_users_permissions(
+            db, candidates, WhatsAppService.organization_id(user)
+        )
         return [
             candidate
             for candidate in candidates
@@ -525,7 +555,7 @@ class WhatsAppService:
 
     async def templates(self, db: AsyncSession, user: User):
         await self.permissions(db, user, "whatsapp:send")
-        return await self.repository.templates(db, user.organization_id)
+        return await self.repository.templates(db, WhatsAppService.organization_id(user))
 
     async def conversations(
         self, db: AsyncSession, user: User, search: str, offset: int, limit: int
@@ -534,7 +564,7 @@ class WhatsAppService:
         if not {"whatsapp:read_all", "whatsapp:read_assigned"} & permissions:
             raise ForbiddenError(message="Conversation access is not permitted.")
         return await self.repository.list_conversations(
-            db, user.organization_id, user.id, permissions, search, offset, limit
+            db, WhatsAppService.organization_id(user), user.id, permissions, search, offset, limit
         )
 
     async def count_conversations(self, db: AsyncSession, user: User, search: str) -> int:
@@ -542,7 +572,7 @@ class WhatsAppService:
         if not {"whatsapp:read_all", "whatsapp:read_assigned"} & permissions:
             raise ForbiddenError(message="Conversation access is not permitted.")
         return await self.repository.count_conversations(
-            db, user.organization_id, user.id, permissions, search
+            db, WhatsAppService.organization_id(user), user.id, permissions, search
         )
 
     async def conversation_payload(
@@ -580,7 +610,12 @@ class WhatsAppService:
     ) -> WhatsAppConversation:
         permissions = await self.permissions(db, user, required)
         return await self.repository.conversation(
-            db, user.organization_id, conversation_id, user.id, permissions, lock=lock
+            db,
+            WhatsAppService.organization_id(user),
+            conversation_id,
+            user.id,
+            permissions,
+            lock=lock,
         )
 
     async def send(
@@ -591,7 +626,10 @@ class WhatsAppService:
             db, user, conversation_id, required="whatsapp:send", lock=True
         )
         prior = await self.repository.message_by_idempotency(
-            db, user.organization_id, conversation.integration_id, payload.idempotency_key
+            db,
+            WhatsAppService.organization_id(user),
+            conversation.integration_id,
+            payload.idempotency_key,
         )
         if prior:
             if (
@@ -601,7 +639,7 @@ class WhatsAppService:
             ):
                 raise ConflictError(message="Idempotency key was already used for another request.")
             return prior
-        config = await self.repository.configuration(db, user.organization_id)
+        config = await self.repository.configuration(db, WhatsAppService.organization_id(user))
         identity = await self.repository.identity(db, conversation)
         if config is None or not config.enabled:
             raise APIException(message="Connect WhatsApp before sending messages.")
@@ -615,12 +653,13 @@ class WhatsAppService:
         if not payload.body.strip():
             raise APIException(message="Message cannot be empty.")
         await enforce_rate_limit(
-            "manual:" + user.organization_id, settings.WHATSAPP_SEND_RATE_PER_MINUTE
+            "manual:" + WhatsAppService.organization_id(user),
+            settings.WHATSAPP_SEND_RATE_PER_MINUTE,
         )
         message = self.repository.create_message(
             db,
             id=str(uuid4()),
-            organization_id=user.organization_id,
+            organization_id=WhatsAppService.organization_id(user),
             integration_id=config.id,
             conversation_id=conversation.id,
             idempotency_key=payload.idempotency_key,
@@ -638,7 +677,9 @@ class WhatsAppService:
         conversation.ai_enabled = False
         conversation.status = "HUMAN_HANDOFF"
         conversation.last_message_at = datetime.now(UTC)
-        self.audit(db, user.organization_id, "outbound_queued", message.id, user.id)
+        self.audit(
+            db, WhatsAppService.organization_id(user), "outbound_queued", message.id, user.id
+        )
         await self.commit(db)
         return message
 
@@ -650,16 +691,21 @@ class WhatsAppService:
             db, user, conversation_id, required="whatsapp:send", lock=True
         )
         prior = await self.repository.message_by_idempotency(
-            db, user.organization_id, conversation.integration_id, payload.idempotency_key
+            db,
+            WhatsAppService.organization_id(user),
+            conversation.integration_id,
+            payload.idempotency_key,
         )
         requested = {"template_id": payload.template_id, "parameters": payload.parameters}
         if prior:
             if prior.conversation_id != conversation.id or prior.template_payload != requested:
                 raise ConflictError(message="Idempotency key was already used for another request.")
             return prior
-        config = await self.repository.configuration(db, user.organization_id)
+        config = await self.repository.configuration(db, WhatsAppService.organization_id(user))
         identity = await self.repository.identity(db, conversation)
-        template = await self.repository.template(db, user.organization_id, payload.template_id)
+        template = await self.repository.template(
+            db, WhatsAppService.organization_id(user), payload.template_id
+        )
         if config is None or not config.enabled or template.integration_id != config.id:
             raise ConflictError(message="WhatsApp is not connected.")
         if template.status != "APPROVED":
@@ -675,12 +721,13 @@ class WhatsAppService:
                 message="Customer communication preferences prohibit this template."
             )
         await enforce_rate_limit(
-            "manual:" + user.organization_id, settings.WHATSAPP_SEND_RATE_PER_MINUTE
+            "manual:" + WhatsAppService.organization_id(user),
+            settings.WHATSAPP_SEND_RATE_PER_MINUTE,
         )
         message = self.repository.create_message(
             db,
             id=str(uuid4()),
-            organization_id=user.organization_id,
+            organization_id=WhatsAppService.organization_id(user),
             integration_id=config.id,
             conversation_id=conversation.id,
             idempotency_key=payload.idempotency_key,
@@ -696,7 +743,9 @@ class WhatsAppService:
         )
         conversation.ai_enabled = False
         conversation.status = "HUMAN_HANDOFF"
-        self.audit(db, user.organization_id, "template_queued", message.id, user.id)
+        self.audit(
+            db, WhatsAppService.organization_id(user), "template_queued", message.id, user.id
+        )
         await self.commit(db)
         return message
 
@@ -708,7 +757,7 @@ class WhatsAppService:
             db, user, conversation_id, required="whatsapp:send", lock=True
         )
         message = await self.repository.message(
-            db, user.organization_id, conversation.id, message_id
+            db, WhatsAppService.organization_id(user), conversation.id, message_id
         )
         if message is None or message.direction != "OUTBOUND":
             raise NotFoundError(message="Message not found.")
@@ -722,7 +771,7 @@ class WhatsAppService:
                 message="This message is not eligible for a safe retry.",
                 code="WHATSAPP_MESSAGE_NOT_RETRYABLE",
             )
-        config = await self.repository.configuration(db, user.organization_id)
+        config = await self.repository.configuration(db, WhatsAppService.organization_id(user))
         identity = await self.repository.identity(db, conversation)
         if config is None or not config.enabled or identity.consent == "OPTED_OUT":
             raise ConflictError(message="WhatsApp sending is not currently available.")
@@ -734,7 +783,9 @@ class WhatsAppService:
         message.error_code = None
         message.error_message = None
         message.failed_at = None
-        self.audit(db, user.organization_id, "outbound_retry_queued", message.id, user.id)
+        self.audit(
+            db, WhatsAppService.organization_id(user), "outbound_retry_queued", message.id, user.id
+        )
         await self.commit(db)
         return message
 
@@ -759,11 +810,17 @@ class WhatsAppService:
             if "whatsapp:assign" not in permissions:
                 raise ForbiddenError(message="Assignment permission required.")
             if payload.assigned_user_id and not await self.eligible_assignee(
-                db, user.organization_id, payload.assigned_user_id
+                db, WhatsAppService.organization_id(user), payload.assigned_user_id
             ):
                 raise NotFoundError(message="User not found.")
             conversation.assigned_user_id = payload.assigned_user_id
-            self.audit(db, user.organization_id, "conversation_assigned", conversation.id, user.id)
+            self.audit(
+                db,
+                WhatsAppService.organization_id(user),
+                "conversation_assigned",
+                conversation.id,
+                user.id,
+            )
         if payload.ai_enabled is not None:
             if "whatsapp:manage_ai" not in permissions:
                 raise ForbiddenError(message="AI management permission required.")
@@ -779,7 +836,7 @@ class WhatsAppService:
                 conversation.status = "OPEN"
             self.audit(
                 db,
-                user.organization_id,
+                WhatsAppService.organization_id(user),
                 "ai_enabled" if payload.ai_enabled else "ai_disabled",
                 conversation.id,
                 user.id,
@@ -790,7 +847,13 @@ class WhatsAppService:
             conversation.status = payload.status
             if payload.status != "OPEN":
                 conversation.ai_enabled = False
-            self.audit(db, user.organization_id, "status_changed", conversation.id, user.id)
+            self.audit(
+                db,
+                WhatsAppService.organization_id(user),
+                "status_changed",
+                conversation.id,
+                user.id,
+            )
         await self.commit(db)
         return conversation
 
@@ -804,7 +867,9 @@ class WhatsAppService:
         conversation.status = "HUMAN_HANDOFF"
         if not conversation.assigned_user_id and not user.is_platform_admin:
             conversation.assigned_user_id = user.id
-        self.audit(db, user.organization_id, "human_takeover", conversation.id, user.id)
+        self.audit(
+            db, WhatsAppService.organization_id(user), "human_takeover", conversation.id, user.id
+        )
         await self.notify(db, conversation, "A human agent has taken over this conversation.")
         await self.commit(db)
         return conversation
@@ -815,7 +880,7 @@ class WhatsAppService:
         conversation = await self.conversation(db, user, conversation_id)
         message = await self.repository.message(
             db,
-            user.organization_id,
+            WhatsAppService.organization_id(user),
             conversation.id,
             message_id,
             inbound_only=True,
@@ -833,15 +898,19 @@ class WhatsAppService:
         await self.permissions(
             db, user, "contacts:update" if payload.entity_type == "contact" else "leads:update"
         )
-        await self.repository.lock_phone_guard(db, user.organization_id)
+        await self.repository.lock_phone_guard(db, WhatsAppService.organization_id(user))
         identity = await self.repository.identity_by_id(
-            db, user.organization_id, identity_id, lock=True
+            db, WhatsAppService.organization_id(user), identity_id, lock=True
         )
         if identity is None:
             raise NotFoundError(message="Identity not found.")
-        config = await self.repository.configuration(db, user.organization_id)
+        config = await self.repository.configuration(db, WhatsAppService.organization_id(user))
         record = await self.repository.crm_record(
-            db, user.organization_id, payload.entity_type, payload.entity_id, lock=True
+            db,
+            WhatsAppService.organization_id(user),
+            payload.entity_type,
+            payload.entity_id,
+            lock=True,
         )
         if record is None or config is None:
             raise NotFoundError(message="CRM record not found.")
@@ -859,7 +928,7 @@ class WhatsAppService:
             raise ConflictError(
                 message="The CRM mobile does not match the provider-verified sender."
             )
-        await self.repository.prepare_crm_phone(db, user.organization_id, record)
+        await self.repository.prepare_crm_phone(db, WhatsAppService.organization_id(user), record)
         record.whatsapp_phone_verified_at = datetime.now(UTC)
         await self.repository.flush(db)
         state, contact_id, lead_id = await self.repository.match(db, config, phone)
@@ -868,7 +937,9 @@ class WhatsAppService:
                 message="Phone identity remains ambiguous; resolve duplicate CRM records first."
             )
         identity.state, identity.contact_id, identity.lead_id = state, contact_id, lead_id
-        self.audit(db, user.organization_id, "identity_verified", identity.id, user.id)
+        self.audit(
+            db, WhatsAppService.organization_id(user), "identity_verified", identity.id, user.id
+        )
         await self.commit(db)
 
     async def set_consent(
@@ -876,7 +947,7 @@ class WhatsAppService:
     ) -> None:
         await self.permissions(db, user, "integrations:manage")
         identity = await self.repository.identity_by_id(
-            db, user.organization_id, identity_id, lock=True
+            db, WhatsAppService.organization_id(user), identity_id, lock=True
         )
         if identity is None:
             raise NotFoundError(message="Identity not found.")
@@ -884,11 +955,13 @@ class WhatsAppService:
         identity.consent_updated_at = datetime.now(UTC)
         if consent == "OPTED_OUT":
             conversations = await self.repository.conversations_for_identity(
-                db, user.organization_id, identity.id, lock=True
+                db, WhatsAppService.organization_id(user), identity.id, lock=True
             )
             for conversation in conversations:
                 conversation.ai_enabled = False
-        self.audit(db, user.organization_id, "consent_updated", identity.id, user.id)
+        self.audit(
+            db, WhatsAppService.organization_id(user), "consent_updated", identity.id, user.id
+        )
         await self.commit(db)
 
     async def media_url(
@@ -896,7 +969,7 @@ class WhatsAppService:
     ) -> str:
         conversation = await self.conversation(db, user, conversation_id)
         message = await self.repository.message(
-            db, user.organization_id, conversation.id, message_id
+            db, WhatsAppService.organization_id(user), conversation.id, message_id
         )
         if message is None or not message.media_s3_key:
             raise NotFoundError(message="WhatsApp media not found.")
@@ -908,7 +981,9 @@ class WhatsAppService:
 
     async def backfill(self, db: AsyncSession, user: User) -> IntegrationRead:
         await self.permissions(db, user, "integrations:manage")
-        config = await self.repository.configuration(db, user.organization_id, lock=True)
+        config = await self.repository.configuration(
+            db, WhatsAppService.organization_id(user), lock=True
+        )
         if config is None:
             raise NotFoundError(message="WhatsApp integration not found.")
         await self.repository.backfill_phone_batch(db, config)

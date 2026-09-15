@@ -18,19 +18,14 @@ class TeamRepository:
             query, count = query.where(condition), count.where(condition)
         rows = (await db.scalars(query.order_by(Team.name).offset(offset).limit(limit))).all()
         total = int((await db.scalar(count)) or 0)
-        member_counts = (
-            dict(
-                (
-                    await db.execute(
-                        select(TeamMembership.team_id, func.count())
-                        .where(TeamMembership.team_id.in_([r.id for r in rows]))
-                        .group_by(TeamMembership.team_id)
-                    )
-                ).all()
+        member_counts: dict[str, int] = {}
+        if rows:
+            count_rows = await db.execute(
+                select(TeamMembership.team_id, func.count())
+                .where(TeamMembership.team_id.in_([row.id for row in rows]))
+                .group_by(TeamMembership.team_id)
             )
-            if rows
-            else {}
-        )
+            member_counts = dict(count_rows.tuples().all())
         return rows, total, member_counts
 
     async def get(self, db: AsyncSession, team_id: str, organization_id: str):

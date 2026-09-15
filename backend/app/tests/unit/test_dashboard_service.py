@@ -219,9 +219,7 @@ async def test_get_custom_widgets_returns_defaults_when_unset():
     assert len(result) == 5
     assert result[0]["id"] == "w-kpis"
     assert all(widget["id"] != "w-revenue" for widget in result)
-    setting_repo.get_by_key.assert_awaited_once_with(
-        db, "dashboard_custom_widgets:org-1:shared"
-    )
+    setting_repo.get_by_key.assert_awaited_once_with(db, "dashboard_custom_widgets:org-1:shared")
 
 
 @pytest.mark.asyncio

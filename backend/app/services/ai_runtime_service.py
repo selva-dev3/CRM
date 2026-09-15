@@ -40,7 +40,8 @@ class AIRuntimeService:
         config = await self.repository.get_organization_config(db, organization_id)
         if config and not config.enabled:
             raise ForbiddenError(
-                code="AI_FEATURES_DISABLED", message="AI features are disabled for this organization."
+                code="AI_FEATURES_DISABLED",
+                message="AI features are disabled for this organization.",
             )
         return config
 
@@ -149,14 +150,15 @@ class AIRuntimeService:
                 code="AI_RATE_LIMITED",
                 message="The organization AI request rate limit has been reached.",
             )
-        if subscription.ai_credits == 0:
+        ai_credits = subscription.ai_credits
+        if ai_credits == 0:
             raise APIException(
                 status_code=429,
                 code="AI_CREDITS_EXHAUSTED",
                 message="The organization has no AI credits remaining.",
             )
-        if subscription.ai_credits > 0:
-            subscription.ai_credits -= 1
+        if ai_credits is not None and ai_credits > 0:
+            subscription.ai_credits = ai_credits - 1
 
         configured_provider, configured_model = self.configured_provider_model(organization_config)
         provider = provider_override or configured_provider

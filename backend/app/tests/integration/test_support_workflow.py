@@ -2,8 +2,9 @@ from io import BytesIO
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from fastapi import UploadFile
 from sqlalchemy import func, select
-from starlette.datastructures import Headers, UploadFile
+from starlette.datastructures import Headers
 
 from app.core.errors import ConflictError
 from app.models import Document, Ticket, TicketComment, TicketStatusHistory
@@ -80,15 +81,11 @@ async def test_customer_ticket_assignment_comment_attachment_resolution_and_reop
         )
         assert document["ticket_id"] == ticket_id
 
-        resolved = await service.update_ticket(
-            db, user, ticket_id, TicketUpdate(status="Resolved")
-        )
+        resolved = await service.update_ticket(db, user, ticket_id, TicketUpdate(status="Resolved"))
         first_resolved_at = resolved.resolved_at
         assert first_resolved_at is not None
 
-        reopened = await service.update_ticket(
-            db, user, ticket_id, TicketUpdate(status="Open")
-        )
+        reopened = await service.update_ticket(db, user, ticket_id, TicketUpdate(status="Open"))
         assert reopened.resolved_at is None
         assert reopened.closed_at is None
 
@@ -96,29 +93,34 @@ async def test_customer_ticket_assignment_comment_attachment_resolution_and_reop
             db, user, ticket_id, TicketUpdate(status="Resolved")
         )
         assert resolved_again.resolved_at is not None
-        closed = await service.update_ticket(
-            db, user, ticket_id, TicketUpdate(status="Closed")
-        )
+        closed = await service.update_ticket(db, user, ticket_id, TicketUpdate(status="Closed"))
         assert closed.closed_at is not None
         with pytest.raises(ConflictError):
-            await service.update_ticket(
-                db, user, ticket_id, TicketUpdate(status="Resolved")
-            )
+            await service.update_ticket(db, user, ticket_id, TicketUpdate(status="Resolved"))
         await db.rollback()
 
     async with sessions() as db:
         persisted = await db.get(Ticket, ticket_id)
         assert persisted is not None and persisted.status == "Closed"
-        assert await db.scalar(
-            select(func.count()).select_from(TicketComment).where(
-                TicketComment.ticket_id == ticket_id
+        assert (
+            await db.scalar(
+                select(func.count())
+                .select_from(TicketComment)
+                .where(TicketComment.ticket_id == ticket_id)
             )
-        ) == 1
-        assert await db.scalar(
-            select(func.count()).select_from(Document).where(Document.ticket_id == ticket_id)
-        ) == 1
-        assert await db.scalar(
-            select(func.count()).select_from(TicketStatusHistory).where(
-                TicketStatusHistory.ticket_id == ticket_id
+            == 1
+        )
+        assert (
+            await db.scalar(
+                select(func.count()).select_from(Document).where(Document.ticket_id == ticket_id)
             )
-        ) == 5
+            == 1
+        )
+        assert (
+            await db.scalar(
+                select(func.count())
+                .select_from(TicketStatusHistory)
+                .where(TicketStatusHistory.ticket_id == ticket_id)
+            )
+            == 5
+        )

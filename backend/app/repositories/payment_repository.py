@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, false, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.selectable import Subquery
 
@@ -136,7 +136,7 @@ class PaymentRepository:
             condition = self._payment_status_condition(
                 status, func.coalesce(paid.c.paid_amount, 0), Invoice.amount
             )
-            stmt = stmt.where(condition) if condition is not None else stmt.where(False)
+            stmt = stmt.where(condition) if condition is not None else stmt.where(false())
         if search and search.strip():
             term = f"%{search.strip()}%"
             stmt = stmt.where(
@@ -197,7 +197,7 @@ class PaymentRepository:
             condition = self._payment_status_condition(
                 status, func.coalesce(paid.c.paid_amount, 0), Invoice.amount
             )
-            stmt = stmt.where(condition) if condition is not None else stmt.where(False)
+            stmt = stmt.where(condition) if condition is not None else stmt.where(false())
         if search and search.strip():
             term = f"%{search.strip()}%"
             stmt = stmt.where(

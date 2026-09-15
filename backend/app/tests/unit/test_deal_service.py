@@ -13,6 +13,7 @@ from app.schemas.crm_schemas import DealCreate, DealCustomFieldDefinition, DealU
 from app.services.deal_service import DealService, deal_to_dict
 from app.services.integration_service import integration_service
 from app.services.quote_service import QuoteService
+from app.tests.mock_helpers import as_async_mock, as_mock, replace_attr, require_await
 
 
 def _make_deal(**overrides) -> Deal:
@@ -42,10 +43,10 @@ def _service_with(repo: DealRepository) -> DealService:
         deal.closed_at = datetime.now(UTC) if stage in {"Closed Won", "Closed Lost"} else None
         return True
 
-    repo.transition_stage = AsyncMock(side_effect=transition_stage)
-    repo.create_initial_stage_history = AsyncMock()
+    replace_attr(repo, "transition_stage", AsyncMock(side_effect=transition_stage))
+    replace_attr(repo, "create_initial_stage_history", AsyncMock())
     if "list_stages" not in repo.__dict__:
-        repo.list_stages = AsyncMock(return_value=[])
+        replace_attr(repo, "list_stages", AsyncMock(return_value=[]))
     return DealService(repository=repo)
 
 
@@ -65,7 +66,7 @@ async def test_list_deals_serializes_rows():
     assert len(result) == 1
     assert result[0]["id"] == "deal-1"
     assert result[0]["title"] == "Acme Corp Deal"
-    repo.list.assert_awaited_once()
+    as_async_mock(repo.list).assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -101,7 +102,7 @@ async def test_deal_timeline_reads_only_scoped_activities():
     result = await service.get_deal_timeline(db, "deal-1", organization_id="org-1")
 
     assert result[0]["action"] == "Deal won; quote QUO-1 created"
-    repo.list_activities.assert_awaited_once_with(
+    as_async_mock(repo.list_activities).assert_awaited_once_with(
         db, deal_id="deal-1", organization_id="org-1", page=1, limit=15
     )
 
@@ -129,7 +130,7 @@ async def test_create_deal_defaults_to_authenticated_user(monkeypatch):
     result = await service.create_deal(db, payload, _user())
 
     assert result["id"] == "deal-1"
-    created = repo.create.await_args_list[-1].kwargs["data"]
+    created = as_async_mock(repo.create).await_args_list[-1].kwargs["data"]
     assert created["assigned_to"] == "user-1"
     assert created["stage"] == "Qualification"
 
@@ -156,7 +157,7 @@ async def test_create_deal_rejects_contact_without_company(monkeypatch):
 
     assert exc_info.value.code == "DEAL_COMPANY_REQUIRED"
     assert exc_info.value.status_code == 422
-    repo.create.assert_not_awaited()
+    as_async_mock(repo.create).assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -188,13 +189,13 @@ async def test_create_deal_rejects_contact_linked_to_different_company(monkeypat
 
     assert exc_info.value.code == "DEAL_CONTACT_COMPANY_MISMATCH"
     assert exc_info.value.status_code == 422
-    repo.contact_belongs_to_company.assert_awaited_once_with(
+    as_async_mock(repo.contact_belongs_to_company).assert_awaited_once_with(
         db,
         "contact-1",
         "company-1",
         organization_id="org-1",
     )
-    repo.create.assert_not_awaited()
+    as_async_mock(repo.create).assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -202,7 +203,7 @@ async def test_create_deal_rejects_project_outside_current_organization(monkeypa
     repo: Any = DealRepository()
     repo.create = AsyncMock()
     project_repository = AsyncMock()
-    project_repository.get.return_value = None
+    as_mock(project_repository.get).return_value = None
     service = DealService(repository=repo, project_repository=project_repository)
     db = AsyncMock(spec=AsyncSession)
 
@@ -219,10 +220,10 @@ async def test_create_deal_rejects_project_outside_current_organization(monkeypa
             _user(),
         )
 
-    project_repository.get.assert_awaited_once_with(
+    as_async_mock(project_repository.get).assert_awaited_once_with(
         db, project_id="project-2", organization_id="org-1"
     )
-    repo.create.assert_not_awaited()
+    as_async_mock(repo.create).assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -234,7 +235,7 @@ async def test_create_deal_validates_and_persists_custom_fields(monkeypatch):
     repo.company_exists = AsyncMock(return_value=True)
     repo.contact_exists = AsyncMock(return_value=True)
     field_repo = AsyncMock()
-    field_repo.list_custom_fields.return_value = [
+    as_mock(field_repo.list_custom_fields).return_value = [
         type(
             "Field",
             (),
@@ -264,7 +265,7 @@ async def test_create_deal_validates_and_persists_custom_fields(monkeypatch):
         _user(),
     )
 
-    assert repo.create.await_args.kwargs["data"]["custom_fields"] == {"decision_maker": "CTO"}
+    assert require_await(repo.create).kwargs["data"]["custom_fields"] == {"decision_maker": "CTO"}
     assert result["custom_fields"] == {"decision_maker": "CTO"}
 
 
@@ -272,7 +273,7 @@ async def test_create_deal_validates_and_persists_custom_fields(monkeypatch):
 async def test_list_custom_fields_returns_typed_definitions(monkeypatch):
     repo: Any = DealRepository()
     field_repo = AsyncMock()
-    field_repo.list_custom_fields.return_value = [
+    as_mock(field_repo.list_custom_fields).return_value = [
         type(
             "Field",
             (),
@@ -303,7 +304,7 @@ async def test_list_custom_fields_returns_typed_definitions(monkeypatch):
             options=["North", "South"],
         )
     ]
-    field_repo.list_custom_fields.assert_awaited_once_with(
+    as_async_mock(field_repo.list_custom_fields).assert_awaited_once_with(
         db, organization_id="org-1", entity_type="Deal"
     )
 
@@ -329,7 +330,7 @@ async def test_create_deal_stage_uses_current_organization(monkeypatch):
         current_user=_user(),
     )
 
-    repo.create_stage.assert_awaited_once_with(
+    as_async_mock(repo.create_stage).assert_awaited_once_with(
         db,
         organization_id="org-2",
         name="Discovery",
@@ -360,7 +361,7 @@ async def test_list_deal_stages_is_scoped_to_current_organization(monkeypatch):
         "Closed Won",
         "Closed Lost",
     ]
-    repo.list_stages.assert_awaited_once_with(db, organization_id="org-2")
+    as_async_mock(repo.list_stages).assert_awaited_once_with(db, organization_id="org-2")
 
 
 @pytest.mark.asyncio
@@ -368,7 +369,7 @@ async def test_create_deal_rejects_unknown_custom_field(monkeypatch):
     repo: Any = DealRepository()
     repo.create = AsyncMock()
     field_repo = AsyncMock()
-    field_repo.list_custom_fields.return_value = []
+    as_mock(field_repo.list_custom_fields).return_value = []
     service = DealService(repository=repo, setting_repository=field_repo)
     db = AsyncMock(spec=AsyncSession)
 
@@ -386,7 +387,7 @@ async def test_create_deal_rejects_unknown_custom_field(monkeypatch):
         )
 
     assert getattr(exc_info.value, "code", None) == "INVALID_CUSTOM_FIELDS"
-    repo.create.assert_not_awaited()
+    as_async_mock(repo.create).assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -522,8 +523,8 @@ async def test_mark_deal_won_does_not_commit_if_quote_creation_fails(monkeypatch
         await service.mark_deal_won(
             db, "deal-1", 30000.0, organization_id="org-1", actor_id="user-1"
         )
-    db.commit.assert_not_awaited()
-    db.rollback.assert_awaited_once()
+    as_async_mock(db.commit).assert_not_awaited()
+    as_async_mock(db.rollback).assert_awaited_once()
     notify.assert_not_awaited()
 
 
@@ -607,14 +608,14 @@ async def test_recalculate_deal_amount_uses_transaction_helper():
     )
     repo.get_by_id_scoped = AsyncMock(return_value=deal)
     service = _service_with(repo)
-    service._commit = AsyncMock()
+    replace_attr(service, "_commit", AsyncMock())
     db = AsyncMock(spec=AsyncSession)
 
     await service._recalculate_deal_amount(db, "deal-1", organization_id="org-1", force=True)
 
     assert deal.amount == 1000.0
-    service._commit.assert_awaited_once_with(db, "Failed to recalculate deal amount")
-    db.commit.assert_not_awaited()
+    as_async_mock(service._commit).assert_awaited_once_with(db, "Failed to recalculate deal amount")
+    as_async_mock(db.commit).assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -658,10 +659,10 @@ async def test_custom_deal_product_uses_deal_organization():
         organization_id="org-2",
     )
 
-    repo.create_product.assert_awaited_once()
-    assert repo.create_product.await_args.kwargs["organization_id"] == "org-2"
-    assert repo.create_product.await_args.kwargs["name"] == "Implementation"
-    assert repo.create_product.await_args.kwargs["sku"].startswith("CUSTOM-")
+    as_async_mock(repo.create_product).assert_awaited_once()
+    assert require_await(repo.create_product).kwargs["organization_id"] == "org-2"
+    assert require_await(repo.create_product).kwargs["name"] == "Implementation"
+    assert require_await(repo.create_product).kwargs["sku"].startswith("CUSTOM-")
 
 
 @pytest.mark.asyncio
@@ -827,7 +828,7 @@ async def test_update_deal_fires_probability_changed_event(monkeypatch):
 async def test_predict_win_rate_uses_shared_ai_service():
     repo: Any = DealRepository()
     ai_service = AsyncMock()
-    ai_service.predict_deal_forecast.return_value = {
+    as_mock(ai_service.predict_deal_forecast).return_value = {
         "win_probability": 81.0,
         "key_drivers": ["Recent executive meeting"],
         "next_action": "Confirm procurement timeline",
@@ -848,7 +849,7 @@ async def test_predict_win_rate_uses_shared_ai_service():
         "risk_factors": ["No legal review date"],
         "run_id": "run-1",
     }
-    ai_service.predict_deal_forecast.assert_awaited_once_with(db, "deal-1", actor)
+    as_async_mock(ai_service.predict_deal_forecast).assert_awaited_once_with(db, "deal-1", actor)
 
 
 @pytest.mark.asyncio
@@ -856,15 +857,17 @@ async def test_get_deal_quotes_uses_scoped_deal_and_quote_service():
     repo: Any = DealRepository()
     repo.get_by_id_scoped = AsyncMock(return_value=_make_deal())
     quotes = AsyncMock(spec=QuoteService)
-    quotes.list_quotes_for_deal.return_value = [{"id": "quote-1"}]
+    as_mock(quotes.list_quotes_for_deal).return_value = [{"id": "quote-1"}]
     service = DealService(repository=repo, quote_service_instance=quotes)
     db = AsyncMock(spec=AsyncSession)
 
     result = await service.get_deal_quotes(db, "deal-1", "org-1")
 
     assert result == [{"id": "quote-1"}]
-    repo.get_by_id_scoped.assert_awaited_once_with(db, deal_id="deal-1", organization_id="org-1")
-    quotes.list_quotes_for_deal.assert_awaited_once_with(
+    as_async_mock(repo.get_by_id_scoped).assert_awaited_once_with(
+        db, deal_id="deal-1", organization_id="org-1"
+    )
+    as_async_mock(quotes.list_quotes_for_deal).assert_awaited_once_with(
         db, deal_id="deal-1", organization_id="org-1", page=1, limit=15
     )
 
@@ -881,5 +884,7 @@ async def test_get_deal_quotes_hides_foreign_and_missing_deals(deal_id):
     with pytest.raises(NotFoundError):
         await service.get_deal_quotes(db, deal_id, "org-1")
 
-    repo.get_by_id_scoped.assert_awaited_once_with(db, deal_id=deal_id, organization_id="org-1")
-    quotes.list_quotes_for_deal.assert_not_awaited()
+    as_async_mock(repo.get_by_id_scoped).assert_awaited_once_with(
+        db, deal_id=deal_id, organization_id="org-1"
+    )
+    as_async_mock(quotes.list_quotes_for_deal).assert_not_awaited()

@@ -1,3 +1,4 @@
+import typing
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -28,7 +29,7 @@ def test_email_contact_query_keeps_only_unambiguous_legacy_fallback_scoped():
 @pytest.mark.asyncio
 async def test_email_contact_history_applies_limit_offset_status_and_search():
     result = SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: []))
-    db = SimpleNamespace(execute=AsyncMock(return_value=result))
+    db: typing.Any = SimpleNamespace(execute=AsyncMock(return_value=result))
 
     await EmailRepository().list_for_contact(
         db,
@@ -51,7 +52,7 @@ async def test_email_contact_history_applies_limit_offset_status_and_search():
 @pytest.mark.asyncio
 async def test_meeting_contact_history_allows_only_unambiguous_attendee_fallback():
     result = SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: []))
-    db = SimpleNamespace(execute=AsyncMock(return_value=result))
+    db: typing.Any = SimpleNamespace(execute=AsyncMock(return_value=result))
 
     await MeetingRepository().list_for_contact(
         db,
@@ -74,7 +75,7 @@ async def test_meeting_contact_history_allows_only_unambiguous_attendee_fallback
 @pytest.mark.asyncio
 async def test_call_contact_history_applies_contact_scope_and_limit():
     result = SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: []))
-    db = SimpleNamespace(execute=AsyncMock(return_value=result))
+    db: typing.Any = SimpleNamespace(execute=AsyncMock(return_value=result))
 
     await CallRepository().list_by_contact(
         db,

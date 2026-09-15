@@ -63,8 +63,8 @@ class Quote(Base):
     recipient_email: Mapped[str | None] = mapped_column(String(255))
     provider_message_id: Mapped[str | None] = mapped_column(String(255))
     pdf_s3_key: Mapped[str | None] = mapped_column(String(500))
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[DateTime] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), onupdate=func.now(), server_default=func.now()
     )
 

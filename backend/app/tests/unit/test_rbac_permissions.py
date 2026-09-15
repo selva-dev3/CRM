@@ -80,7 +80,7 @@ async def test_require_permission_passes_when_user_has_key():
 @pytest.mark.asyncio
 async def test_api_key_requires_scope_in_addition_to_owner_rbac():
     user = _make_user()
-    user._api_key_scopes = {"leads:read"}
+    user._api_key_scopes = {"leads:read"}  # type: ignore[attr-defined]
 
     with pytest.raises(ForbiddenError, match="API key is missing required scope"):
         await _run_permission_dependency("deals:read", user, ["deals:read"])
@@ -89,7 +89,7 @@ async def test_api_key_requires_scope_in_addition_to_owner_rbac():
 @pytest.mark.asyncio
 async def test_api_key_broad_read_scope_does_not_authorize_writes():
     user = _make_user()
-    user._api_key_scopes = {"api:read"}
+    user._api_key_scopes = {"api:read"}  # type: ignore[attr-defined]
 
     assert await _run_permission_dependency("deals:read", user, ["deals:read"]) is user
     with pytest.raises(ForbiddenError, match="API key is missing required scope"):
@@ -99,7 +99,7 @@ async def test_api_key_broad_read_scope_does_not_authorize_writes():
 @pytest.mark.asyncio
 async def test_api_key_broad_write_scope_authorizes_rbac_allowed_mutation():
     user = _make_user()
-    user._api_key_scopes = {"api:write"}
+    user._api_key_scopes = {"api:write"}  # type: ignore[attr-defined]
 
     assert await _run_permission_dependency("deals:update", user, ["deals:update"]) is user
 
@@ -152,19 +152,15 @@ async def test_user_invite_role_assignment_requires_both_permissions():
     organization_invite_route = next(
         route
         for route in invitations.router.routes
-        if isinstance(route, APIRoute)
-        and route.path == ""
-        and "POST" in (route.methods or set())
+        if isinstance(route, APIRoute) and route.path == "" and "POST" in (route.methods or set())
     )
     organization_invite_permissions = {
         cell.cell_contents
         for dependency in organization_invite_route.dependencies
-        for cell in (dependency.dependency.__closure__ or ())
+        for cell in (dependency.dependency.__closure__ or ())  # type: ignore[union-attr]
         if isinstance(cell.cell_contents, str)
     }
-    assert {"invitations:create", "users:assign_roles"}.issubset(
-        organization_invite_permissions
-    )
+    assert {"invitations:create", "users:assign_roles"}.issubset(organization_invite_permissions)
 
 
 @pytest.mark.asyncio
@@ -410,14 +406,12 @@ def _route_permissions(router, path: str, method: str) -> set[str]:
     route = next(
         item
         for item in router.router.routes
-        if isinstance(item, APIRoute)
-        and item.path == path
-        and method in (item.methods or set())
+        if isinstance(item, APIRoute) and item.path == path and method in (item.methods or set())
     )
     return {
         cell.cell_contents
         for dependency in route.dependencies
-        for cell in (dependency.dependency.__closure__ or ())
+        for cell in (dependency.dependency.__closure__ or ())  # type: ignore[union-attr]
         if isinstance(cell.cell_contents, str)
     }
 
@@ -427,9 +421,7 @@ def test_role_user_access_and_assignment_routes_use_exact_permissions():
         "roles:read",
         "users:roles",
     }
-    assert _route_permissions(roles, "/users/{user_id}/role", "PUT") == {
-        "users:assign_roles"
-    }
+    assert _route_permissions(roles, "/users/{user_id}/role", "PUT") == {"users:assign_roles"}
     assert _route_permissions(roles, "/check-permission", "POST") == {
         "roles:read",
         "users:roles",
@@ -445,9 +437,7 @@ def test_role_user_access_and_assignment_routes_use_exact_permissions():
     )
     from app.api.v1.routers import auth as auth_router
 
-    assert _route_permissions(auth_router, "/api-keys/{key_id}", "DELETE") == {
-        "api_keys:revoke"
-    }
+    assert _route_permissions(auth_router, "/api-keys/{key_id}", "DELETE") == {"api_keys:revoke"}
 
 
 def test_role_grant_mutations_require_roles_assign():
@@ -489,9 +479,9 @@ def test_all_routes_have_permission_dependency(router):
                 for d in dependencies
                 if getattr(d, "dependency", None) is not None
             }
-            assert "permission_dependency" in dep_names, (
-                f"{router.__name__} {method} {path} is missing require_permission"
-            )
+            assert (
+                "permission_dependency" in dep_names
+            ), f"{router.__name__} {method} {path} is missing require_permission"
 
 
 def test_self_service_auth_endpoints_require_authentication():
@@ -626,7 +616,7 @@ async def test_api_key_cannot_access_account_or_credential_management():
     from app.db.session import get_db
 
     user = _make_user()
-    user._api_key_scopes = {"leads:read"}
+    user._api_key_scopes = {"leads:read"}  # type: ignore[attr-defined]
     app = FastAPI()
     app.include_router(auth_router.router, prefix="/auth")
     app.include_router(users.router, prefix="/users")
@@ -636,7 +626,21 @@ async def test_api_key_cannot_access_account_or_credential_management():
     with pytest.raises(ForbiddenError):
         await require_user_session(user)
     for router, names in (
-        (auth_router, {"get_current_user_me", "change_password", "setup_2fa", "verify_2fa", "disable_2fa", "list_sessions", "revoke_session", "list_api_keys", "create_api_key", "revoke_api_key"}),
+        (
+            auth_router,
+            {
+                "get_current_user_me",
+                "change_password",
+                "setup_2fa",
+                "verify_2fa",
+                "disable_2fa",
+                "list_sessions",
+                "revoke_session",
+                "list_api_keys",
+                "create_api_key",
+                "revoke_api_key",
+            },
+        ),
         (users, {"get_my_profile", "update_my_profile", "upload_avatar"}),
     ):
         for route in router.router.routes:
@@ -656,7 +660,6 @@ async def test_human_login_session_retains_account_access():
 
     user = _make_user()
     assert await require_user_session(user) is user
-
 
 
 @pytest.mark.asyncio

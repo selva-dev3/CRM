@@ -90,19 +90,13 @@ def test_upgrade_reuses_existing_global_alias_and_marks_it_protected(monkeypatch
                 "VALUES ('existing-super', NULL, 'super_admin', FALSE, CURRENT_TIMESTAMP)"
             )
         )
-        connection.execute(
-            sa.text("INSERT INTO users (id, role) VALUES ('user-1', 'Super Admin')")
-        )
+        connection.execute(sa.text("INSERT INTO users (id, role) VALUES ('user-1', 'Super Admin')"))
         monkeypatch.setattr(migration.op, "get_bind", lambda: connection)
 
         migration.upgrade()
 
-        role = connection.execute(
-            sa.text("SELECT id, is_system_role FROM roles")
-        ).one()
-        mapping = connection.execute(
-            sa.text("SELECT user_id, role_id FROM user_roles")
-        ).one()
+        role = connection.execute(sa.text("SELECT id, is_system_role FROM roles")).one()
+        mapping = connection.execute(sa.text("SELECT user_id, role_id FROM user_roles")).one()
 
     assert role.id == "existing-super"
     assert bool(role.is_system_role) is True
@@ -121,9 +115,7 @@ def test_upgrade_does_not_treat_tenant_role_as_platform_super_admin(monkeypatch)
                 "VALUES ('tenant-super', 'org-1', 'Super Admin', FALSE, CURRENT_TIMESTAMP)"
             )
         )
-        connection.execute(
-            sa.text("INSERT INTO users (id, role) VALUES ('user-1', 'super_admin')")
-        )
+        connection.execute(sa.text("INSERT INTO users (id, role) VALUES ('user-1', 'super_admin')"))
         monkeypatch.setattr(migration.op, "get_bind", lambda: connection)
 
         migration.upgrade()
@@ -131,9 +123,7 @@ def test_upgrade_does_not_treat_tenant_role_as_platform_super_admin(monkeypatch)
         global_role = connection.execute(
             sa.text("SELECT id FROM roles WHERE organization_id IS NULL")
         ).one()
-        mapping = connection.execute(
-            sa.text("SELECT user_id, role_id FROM user_roles")
-        ).one()
+        mapping = connection.execute(sa.text("SELECT user_id, role_id FROM user_roles")).one()
 
     assert global_role.id != "tenant-super"
     assert mapping == ("user-1", global_role.id)

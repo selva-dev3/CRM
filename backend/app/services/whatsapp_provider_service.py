@@ -228,7 +228,7 @@ class WhatsAppProviderService:
                     code="WHATSAPP_MEDIA_UNAVAILABLE",
                     status_code=502,
                 ) from exc
-        if expected_sha256 and not matches_media_sha256(content, expected_sha256):
+        if expected_sha256 and not matches_media_sha256(bytes(content), expected_sha256):
             raise APIException(
                 message="WhatsApp media integrity check failed.",
                 code="WHATSAPP_MEDIA_INVALID",

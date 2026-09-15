@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import builtins
+from decimal import Decimal
+
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -44,7 +47,7 @@ class PriceBookService:
             await db.rollback()
             raise APIException(message="Failed to save price book", status_code=400) from error
 
-    async def list(self, db: AsyncSession, current_user: User) -> list[dict]:
+    async def list(self, db: AsyncSession, current_user: User) -> builtins.list[dict]:
         rows = await self.repository.list(db, organization_id=self.organization_id(current_user))
         return [price_book_to_dict(book, count) for book, count in rows]
 
@@ -105,7 +108,9 @@ class PriceBookService:
         await self._commit(db)
         return {"message": "Price book deleted", "status": "success"}
 
-    async def entries(self, db: AsyncSession, current_user: User, price_book_id: str) -> list[dict]:
+    async def entries(
+        self, db: AsyncSession, current_user: User, price_book_id: str
+    ) -> builtins.list[dict]:
         organization_id = self.organization_id(current_user)
         if not await self.repository.get(
             db, price_book_id=price_book_id, organization_id=organization_id
@@ -148,7 +153,7 @@ class PriceBookService:
             db, price_book_id=price_book_id, product_id=product_id
         )
         if entry:
-            entry.unit_price = payload.unit_price
+            entry.unit_price = Decimal(str(payload.unit_price))
             entry.is_active = payload.is_active
         else:
             entry = PriceBookEntry(

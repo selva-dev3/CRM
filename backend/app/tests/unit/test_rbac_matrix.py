@@ -16,6 +16,7 @@ from app.core.rbac_matrix import (
     canonical_system_role_name,
 )
 from app.repositories.role_repository import RoleRepository
+from app.tests.mock_helpers import as_async_mock, as_mock, replace_attr
 
 
 def test_approved_counts_and_read_only_policy():
@@ -136,14 +137,14 @@ def test_system_role_aliases_resolve_to_one_canonical_role(alias, canonical):
 
 def _result(values):
     result = MagicMock()
-    result.scalars.return_value = values
+    as_mock(result.scalars).return_value = values
     return result
 
 
 @pytest.mark.asyncio
 async def test_repeated_initialization_preserves_scopes_and_only_restores_missing_grants():
     repository = RoleRepository()
-    repository.add_role_permission = AsyncMock()
+    replace_attr(repository, "add_role_permission", AsyncMock())
     roles = [
         SimpleNamespace(id=name, name=name, organization_id="tenant-1")
         for name in SYSTEM_ROLE_PERMISSIONS
@@ -164,7 +165,9 @@ async def test_repeated_initialization_preserves_scopes_and_only_restores_missin
             responses.extend([None, _result(existing)])
         db.execute = AsyncMock(side_effect=responses)
         await repository.synchronize_system_roles(db)
-    repository.add_role_permission.assert_awaited_once_with(db, "Sales Executive", "emails:send")
+    as_async_mock(repository.add_role_permission).assert_awaited_once_with(
+        db, "Sales Executive", "emails:send"
+    )
     db.add.assert_not_called()
     db.commit.assert_not_called()
 
@@ -188,7 +191,7 @@ async def test_initialization_rejects_incomplete_catalog():
 async def test_initialization_rejects_global_tenant_role():
     global_admin = SimpleNamespace(id="admin", name="Admin", organization_id=None)
     no_collision = MagicMock()
-    no_collision.scalar_one_or_none.return_value = None
+    as_mock(no_collision.scalar_one_or_none).return_value = None
     db = MagicMock()
     db.flush = AsyncMock()
     db.execute = AsyncMock(

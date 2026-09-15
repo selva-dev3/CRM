@@ -1,3 +1,4 @@
+import typing
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
@@ -11,6 +12,7 @@ from app.core.errors import APIException, ForbiddenError
 from app.models import User
 from app.repositories.setting_repository import SettingRepository
 from app.services.settings_service import SettingsService
+from app.tests.mock_helpers import as_async_mock, replace_attr, require_await
 
 TEST_HASH = "test-hash"
 
@@ -43,7 +45,7 @@ async def test_get_system_settings_requires_authenticated_organization(monkeypat
     monkeypatch.setattr(organization_service.repository, "get_first", AsyncMock(return_value=None))
 
     with pytest.raises(ForbiddenError):
-        await service.get_system_settings(db, None)
+        await service.get_system_settings(db, typing.cast(typing.Any, None))
 
 
 @pytest.mark.asyncio
@@ -62,7 +64,7 @@ async def test_get_system_settings_never_uses_another_organization(monkeypatch):
     monkeypatch.setattr(organization_service.repository, "get_first", AsyncMock(return_value=None))
 
     with pytest.raises(ForbiddenError):
-        await service.get_system_settings(db, None)
+        await service.get_system_settings(db, typing.cast(typing.Any, None))
 
 
 @pytest.mark.asyncio
@@ -100,7 +102,7 @@ async def test_get_system_settings_falls_back_for_invalid_organization_currency(
     result = await service.get_system_settings(db, current_user)
 
     assert result["currency"] == "INR"
-    requested_keys = [call.args[1] for call in repo.get_by_key.await_args_list]
+    requested_keys = [call.args[1] for call in as_async_mock(repo.get_by_key).await_args_list]
     assert "system_currency" not in requested_keys
 
 
@@ -120,7 +122,7 @@ async def test_get_system_settings_does_not_use_bootstrap_currency_for_organizat
     result = await service.get_system_settings(db, current_user)
 
     assert result["currency"] == "INR"
-    requested_keys = [call.args[1] for call in repo.get_by_key.await_args_list]
+    requested_keys = [call.args[1] for call in as_async_mock(repo.get_by_key).await_args_list]
     assert "system_currency" not in requested_keys
 
 
@@ -175,8 +177,11 @@ async def test_update_system_settings_persists_currency_on_organization(monkeypa
 
     assert org.name == "Acme CRM"
     assert org.currency == "INR"
-    db.commit.assert_awaited_once()
-    assert all(call.kwargs.get("key") != "system_currency" for call in repo.upsert.await_args_list)
+    as_async_mock(db.commit).assert_awaited_once()
+    assert all(
+        call.kwargs.get("key") != "system_currency"
+        for call in as_async_mock(repo.upsert).await_args_list
+    )
 
 
 @pytest.mark.asyncio
@@ -203,9 +208,9 @@ async def test_update_system_settings_rejects_missing_organization_context(
                 smtp_enabled=True,
                 ai_features_enabled=True,
             ),
-            None,
+            typing.cast(typing.Any, None),
         )
-    db.commit.assert_not_awaited()
+    as_async_mock(db.commit).assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -233,8 +238,8 @@ async def test_update_system_settings_rolls_back_when_setting_upsert_fails(monke
 
     assert exc_info.value.status_code == 500
     assert exc_info.value.code == "SETTINGS_UPDATE_FAILED"
-    db.rollback.assert_awaited_once()
-    db.commit.assert_not_awaited()
+    as_async_mock(db.rollback).assert_awaited_once()
+    as_async_mock(db.commit).assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -261,8 +266,8 @@ async def test_update_system_settings_rolls_back_when_commit_fails(monkeypatch):
 
     assert exc_info.value.status_code == 500
     assert exc_info.value.code == "SETTINGS_UPDATE_FAILED"
-    db.rollback.assert_awaited_once()
-    db.commit.assert_awaited_once()
+    as_async_mock(db.rollback).assert_awaited_once()
+    as_async_mock(db.commit).assert_awaited_once()
 
 
 @pytest.mark.parametrize("currency", ["$", "US Dollar", "   ", "USDX", "XYZ"])
@@ -302,8 +307,8 @@ async def test_reset_database_cannot_recreate_platform_identity():
     with pytest.raises(APIException) as exc:
         await service.reset_database(db, confirm=True)
     assert exc.value.status_code == 501
-    db.execute.assert_not_awaited()
-    db.commit.assert_not_awaited()
+    as_async_mock(db.execute).assert_not_awaited()
+    as_async_mock(db.commit).assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -330,7 +335,7 @@ async def test_create_custom_field_resolves_org(monkeypatch):
     )
 
     assert result["status"] == "success"
-    repo.create_custom_field.assert_awaited_once()
+    as_async_mock(repo.create_custom_field).assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -356,7 +361,7 @@ async def test_create_custom_field_normalizes_entity_type(monkeypatch):
         current_user=_current_user(),
     )
 
-    assert repo.create_custom_field.await_args.kwargs["data"]["entity_type"] == "Lead"
+    assert require_await(repo.create_custom_field).kwargs["data"]["entity_type"] == "Lead"
 
 
 @pytest.mark.asyncio
@@ -374,7 +379,7 @@ async def test_list_custom_fields_is_scoped_to_current_organization(monkeypatch)
 
     await service.list_custom_fields(db, "Deal", _current_user())
 
-    repo.list_custom_fields.assert_awaited_once_with(
+    as_async_mock(repo.list_custom_fields).assert_awaited_once_with(
         db, organization_id="org-1", entity_type="Deal"
     )
 
@@ -404,7 +409,7 @@ async def test_create_select_custom_field_requires_options(monkeypatch):
         )
 
     assert exc_info.value.code == "CUSTOM_FIELD_OPTIONS_REQUIRED"
-    repo.create_custom_field.assert_not_awaited()
+    as_async_mock(repo.create_custom_field).assert_not_awaited()
 
 
 def test_resolve_username_prefers_existing_user():
@@ -419,7 +424,7 @@ async def test_webhook_registration_persists_for_delivery_engine():
     repo: Any = SettingRepository()
     repo.create_webhook = AsyncMock()
     service = _service_with(repo)
-    service._resolve_org_id = AsyncMock(return_value="org-1")
+    replace_attr(service, "_resolve_org_id", AsyncMock(return_value="org-1"))
     db = AsyncMock(spec=AsyncSession)
 
     result = await service.create_webhook(
@@ -430,8 +435,8 @@ async def test_webhook_registration_persists_for_delivery_engine():
     )
 
     assert result["status"] == "success"
-    repo.create_webhook.assert_awaited_once()
-    db.commit.assert_awaited_once()
+    as_async_mock(repo.create_webhook).assert_awaited_once()
+    as_async_mock(db.commit).assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -448,11 +453,9 @@ async def test_existing_webhook_reports_persisted_active_state():
         ]
     )
     service = _service_with(repo)
-    service._resolve_org_id = AsyncMock(return_value="org-1")
+    replace_attr(service, "_resolve_org_id", AsyncMock(return_value="org-1"))
 
-    result = await service.list_webhooks(
-        AsyncMock(spec=AsyncSession), _current_user()
-    )
+    result = await service.list_webhooks(AsyncMock(spec=AsyncSession), _current_user())
 
     assert result[0]["is_active"] is True
 
@@ -477,17 +480,13 @@ async def test_webhook_test_connects_to_validated_ip_with_original_sni(monkeypat
     repo: Any = SettingRepository()
     repo.get_webhook = AsyncMock(return_value=webhook)
     service = _service_with(repo)
-    service._resolve_org_id = AsyncMock(return_value="org-1")
+    replace_attr(service, "_resolve_org_id", AsyncMock(return_value="org-1"))
     captured = {}
 
     monkeypatch.setattr(
         asyncio,
         "to_thread",
-        AsyncMock(
-            return_value=[
-            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", 443))
-            ]
-        ),
+        AsyncMock(return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", 443))]),
     )
 
     class FakeClient:
@@ -503,9 +502,7 @@ async def test_webhook_test_connects_to_validated_ip_with_original_sni(monkeypat
             return SimpleNamespace(status_code=204, text="", is_error=False)
 
     monkeypatch.setattr(httpx, "AsyncClient", lambda **_kwargs: FakeClient())
-    result = await service.test_webhook(
-        AsyncMock(spec=AsyncSession), "webhook-1", _current_user()
-    )
+    result = await service.test_webhook(AsyncMock(spec=AsyncSession), "webhook-1", _current_user())
 
     assert result["status"] == "success"
     assert captured["url"].host == "8.8.8.8"

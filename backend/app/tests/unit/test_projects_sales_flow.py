@@ -1,3 +1,4 @@
+import typing
 from datetime import UTC, datetime
 from decimal import Decimal
 from types import SimpleNamespace
@@ -130,7 +131,7 @@ async def test_order_lookup_does_not_leak_another_tenant_record():
     repository = MagicMock(spec=OrderRepository)
     repository.get = AsyncMock(return_value=None)
     service = OrderService(repository=repository)
-    user = SimpleNamespace(
+    user: typing.Any = SimpleNamespace(
         id="user-1",
         organization_id=None,
         is_platform_admin=True,
@@ -161,7 +162,7 @@ async def test_legacy_invoice_is_linked_when_order_is_created_from_quote():
         total=Decimal("107"),
         confirmed_at=datetime.now(UTC),
     )
-    invoice = SimpleNamespace(order_id=None)
+    invoice: typing.Any = SimpleNamespace(order_id=None)
     repository = MagicMock(spec=OrderRepository)
     repository.get_quote = AsyncMock(return_value=quote)
     repository.get_by_quote = AsyncMock(return_value=order)
@@ -169,7 +170,7 @@ async def test_legacy_invoice_is_linked_when_order_is_created_from_quote():
     repository.list_items = AsyncMock(return_value=[])
     service = OrderService(repository=repository)
     db = AsyncMock()
-    user = SimpleNamespace(
+    user: typing.Any = SimpleNamespace(
         id="user-1",
         organization_id=None,
         is_platform_admin=True,
@@ -204,11 +205,9 @@ async def test_price_book_context_returns_tenant_sales_currency():
     repository = MagicMock(spec=PriceBookRepository)
     repository.get_organization_currency = AsyncMock(return_value="inr")
     service = PriceBookService(repository=repository)
-    user = SimpleNamespace(organization_id="org-1")
+    user: typing.Any = SimpleNamespace(organization_id="org-1")
 
     result = await service.context(MagicMock(), user)
 
     assert result == {"currency": "INR"}
-    repository.get_organization_currency.assert_awaited_once_with(
-        ANY, organization_id="org-1"
-    )
+    repository.get_organization_currency.assert_awaited_once_with(ANY, organization_id="org-1")

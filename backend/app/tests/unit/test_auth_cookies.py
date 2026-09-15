@@ -235,17 +235,13 @@ async def test_revoked_session_is_rejected_before_organization_context():
     result.scalars.return_value.first.return_value = user
     db = AsyncMock(spec=AsyncSession)
     db.execute = AsyncMock(return_value=result)
-    db.get = AsyncMock(
-        return_value=UserSession(id="session-1", user_id=user.id, is_current=False)
-    )
+    db.get = AsyncMock(return_value=UserSession(id="session-1", user_id=user.id, is_current=False))
 
     with pytest.raises(HTTPException) as exc_info:
         await get_current_user(request=request, credentials=None, db=db)
 
     assert exc_info.value.status_code == 401
-    db.get.assert_awaited_once_with(
-        UserSession, sha256(token.encode("utf-8")).hexdigest()
-    )
+    db.get.assert_awaited_once_with(UserSession, sha256(token.encode("utf-8")).hexdigest())
 
 
 @pytest.mark.asyncio

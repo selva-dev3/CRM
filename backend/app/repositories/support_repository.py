@@ -26,6 +26,8 @@ class SupportRepository:
         org = await db.scalar(
             select(Organization).where(Organization.id == organization_id).with_for_update()
         )
+        if org is None:
+            raise ValueError("Organization not found while allocating ticket number")
         org.ticket_sequence += 1
         return f"{org.ticket_prefix}-{org.ticket_sequence:06d}"
 
@@ -40,12 +42,31 @@ class SupportRepository:
         for key, value in links.items():
             if value is None or key not in models:
                 continue
-            model = models[key]
-            org_column = User._organization_id if model is User else model.organization_id
-            filters = [model.id == value, org_column == organization_id]
-            if model in {User, Team}:
-                filters.append(model.is_active.is_(True))
-            if not await db.scalar(select(model.id).where(*filters)):
+            if key == "contact_id":
+                exists_query = select(Contact.id).where(
+                    Contact.id == value, Contact.organization_id == organization_id
+                )
+            elif key == "company_id":
+                exists_query = select(Company.id).where(
+                    Company.id == value, Company.organization_id == organization_id
+                )
+            elif key == "assigned_to":
+                exists_query = select(User.id).where(
+                    User.id == value,
+                    User._organization_id == organization_id,
+                    User.is_active.is_(True),
+                )
+            elif key == "team_id":
+                exists_query = select(Team.id).where(
+                    Team.id == value,
+                    Team.organization_id == organization_id,
+                    Team.is_active.is_(True),
+                )
+            else:
+                exists_query = select(SLAPolicy.id).where(
+                    SLAPolicy.id == value, SLAPolicy.organization_id == organization_id
+                )
+            if not await db.scalar(exists_query):
                 return key
         return None
 
@@ -127,9 +148,9 @@ class SupportRepository:
     async def count_comments(self, db: AsyncSession, ticket_id: str) -> int:
         return int(
             await db.scalar(
-                select(func.count()).select_from(TicketComment).where(
-                    TicketComment.ticket_id == ticket_id
-                )
+                select(func.count())
+                .select_from(TicketComment)
+                .where(TicketComment.ticket_id == ticket_id)
             )
             or 0
         )
@@ -235,9 +256,7 @@ class SupportRepository:
         )
         if access_filter is not None:
             filters.append(access_filter)
-        return await db.scalar(
-            select(KnowledgeArticle).where(*filters)
-        )
+        return await db.scalar(select(KnowledgeArticle).where(*filters))
 
     async def public_article(self, db: AsyncSession, organization_slug: str, article_slug: str):
         from app.models import Organization

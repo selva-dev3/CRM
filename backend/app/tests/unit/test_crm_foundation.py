@@ -1,3 +1,4 @@
+import typing
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -19,6 +20,7 @@ from app.services.auth_service import AuthService
 from app.services.record_access_service import RecordAccessService
 from app.services.support_service import SupportService
 from app.services.workflow_service import WorkflowService
+from app.tests.mock_helpers import replace_attr
 
 
 def _context(scope: str) -> RecordAccessContext:
@@ -73,7 +75,7 @@ async def test_record_access_resolution_fails_closed_without_mapping(monkeypatch
         "user_ids_for_teams",
         AsyncMock(return_value=frozenset()),
     )
-    user = SimpleNamespace(id="user-1", is_platform_admin=False)
+    user: typing.Any = SimpleNamespace(id="user-1", is_platform_admin=False)
 
     context = await RecordAccessService().resolve(AsyncMock(), user, "leads")
 
@@ -82,7 +84,7 @@ async def test_record_access_resolution_fails_closed_without_mapping(monkeypatch
 
 @pytest.mark.asyncio
 async def test_platform_admin_record_access_bypasses_tenant_scopes():
-    user = SimpleNamespace(id="platform-1", is_platform_admin=True)
+    user: typing.Any = SimpleNamespace(id="platform-1", is_platform_admin=True)
 
     context = await RecordAccessService().resolve(AsyncMock(), user, "leads")
 
@@ -196,9 +198,9 @@ async def test_active_workflow_definition_edit_rebinds_execution_user():
         is_active=True,
         activated_by="admin-1",
     )
-    service.get = AsyncMock(return_value=workflow)
-    service._validate = AsyncMock()
-    db = SimpleNamespace(commit=AsyncMock(), refresh=AsyncMock())
+    replace_attr(service, "get", AsyncMock(return_value=workflow))
+    replace_attr(service, "_validate", AsyncMock())
+    db: typing.Any = SimpleNamespace(commit=AsyncMock(), refresh=AsyncMock())
     editor = SimpleNamespace(id="editor-1")
 
     await service.update(
@@ -216,7 +218,7 @@ async def test_workflow_lead_status_uses_domain_service(monkeypatch):
     update_lead = AsyncMock()
     monkeypatch.setattr("app.services.lead_service.lead_service.update_lead", update_lead)
     db = AsyncMock()
-    actor = SimpleNamespace(id="user-1")
+    actor: typing.Any = SimpleNamespace(id="user-1")
     event = SimpleNamespace(module="leads", organization_id="org-1")
     entity = SimpleNamespace(id="lead-1")
 
@@ -229,10 +231,10 @@ async def test_workflow_lead_status_uses_domain_service(monkeypatch):
     )
 
     update_lead.assert_awaited_once()
-    assert update_lead.await_args.args[1] == "lead-1"
-    assert update_lead.await_args.args[2].status == "Contacted"
-    assert update_lead.await_args.args[3] is actor
-    assert update_lead.await_args.kwargs == {"emit_workflow": False}
+    assert update_lead.await_args.args[1] == "lead-1"  # type: ignore[union-attr]
+    assert update_lead.await_args.args[2].status == "Contacted"  # type: ignore[union-attr]
+    assert update_lead.await_args.args[3] is actor  # type: ignore[union-attr]
+    assert update_lead.await_args.kwargs == {"emit_workflow": False}  # type: ignore[union-attr]
 
 
 @pytest.mark.asyncio
@@ -244,7 +246,7 @@ async def test_failed_workflow_run_discards_uncommitted_action_progress():
         error=None,
         finished_at=None,
     )
-    db = SimpleNamespace(commit=AsyncMock(), add=MagicMock())
+    db: typing.Any = SimpleNamespace(commit=AsyncMock(), add=MagicMock())
 
     await service._record_failed_run(
         db,
@@ -264,8 +266,8 @@ async def test_failed_workflow_run_discards_uncommitted_action_progress():
 async def test_internal_ticket_comment_does_not_satisfy_first_response_sla():
     service = SupportService()
     ticket = SimpleNamespace(id="ticket-1", first_responded_at=None)
-    service.ticket = AsyncMock(return_value=ticket)
-    db = SimpleNamespace(add=MagicMock(), commit=AsyncMock(), refresh=AsyncMock())
+    replace_attr(service, "ticket", AsyncMock(return_value=ticket))
+    db: typing.Any = SimpleNamespace(add=MagicMock(), commit=AsyncMock(), refresh=AsyncMock())
 
     await service.add_comment(
         db,

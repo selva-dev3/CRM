@@ -45,7 +45,12 @@ class IntegrationRead(BaseModel):
     worker_last_seen_at: datetime | None = None
     backlog_age_seconds: int = 0
     ai_status: Literal[
-        "NOT_CONFIGURED", "USER_INVALID", "PERMISSION_MISSING", "PROVIDER_UNAVAILABLE", "DISABLED", "READY"
+        "NOT_CONFIGURED",
+        "USER_INVALID",
+        "PERMISSION_MISSING",
+        "PROVIDER_UNAVAILABLE",
+        "DISABLED",
+        "READY",
     ] = "NOT_CONFIGURED"
     ready: bool = False
 

@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
@@ -27,8 +28,8 @@ class Company(Base):
         String, ForeignKey("users.id", ondelete="SET NULL"), index=True
     )
     custom_fields: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[DateTime] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), onupdate=func.now(), server_default=func.now()
     )
 

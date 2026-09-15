@@ -44,9 +44,7 @@ class DashboardRepository:
             assigned=Lead.assigned_to,
             created=Lead.created_by,
         )
-        result = await db.execute(
-            select(func.count(Lead.id)).where(*filters)
-        )
+        result = await db.execute(select(func.count(Lead.id)).where(*filters))
         return result.scalar() or 0
 
     async def financial_kpis(
@@ -104,15 +102,12 @@ class DashboardRepository:
             )
         ).one()
 
-        paid = (
-            select(
-                Payment.invoice_id.label("invoice_id"),
-                func.sum(Payment.amount).label("paid_amount"),
-            )
-            .where(
-                Payment.organization_id == organization_id,
-                Payment.status == "Succeeded",
-            )
+        paid_stmt = select(
+            Payment.invoice_id.label("invoice_id"),
+            func.sum(Payment.amount).label("paid_amount"),
+        ).where(
+            Payment.organization_id == organization_id,
+            Payment.status == "Succeeded",
         )
         payment_filter = record_access_filter(
             payment_access,
@@ -120,8 +115,8 @@ class DashboardRepository:
             created_column=Payment.recorded_by,
         )
         if payment_filter is not None:
-            paid = paid.where(payment_filter)
-        paid = paid.group_by(Payment.invoice_id).subquery()
+            paid_stmt = paid_stmt.where(payment_filter)
+        paid = paid_stmt.group_by(Payment.invoice_id).subquery()
         paid_amount = func.coalesce(paid.c.paid_amount, 0)
         invoice_row = (
             await db.execute(
@@ -182,11 +177,9 @@ class DashboardRepository:
         return {
             "quote_count": int(quote_row[0] or 0),
             "quote_value": float(quote_row[1] or 0),
-            "quote_conversion_percentage": round(
-                accepted_quotes / delivered_quotes * 100, 2
-            )
-            if delivered_quotes
-            else 0.0,
+            "quote_conversion_percentage": (
+                round(accepted_quotes / delivered_quotes * 100, 2) if delivered_quotes else 0.0
+            ),
             "invoice_count": int(invoice_row[0] or 0),
             "invoice_total": invoice_total,
             "paid_amount": collected,
@@ -195,12 +188,14 @@ class DashboardRepository:
             "partially_paid_invoice_count": int(invoice_row[5] or 0),
             "paid_invoice_count": int(invoice_row[6] or 0),
             "revenue": collected,
-            "collection_rate_percentage": round(collected / invoice_total * 100, 2)
-            if invoice_total
-            else 0.0,
+            "collection_rate_percentage": (
+                round(collected / invoice_total * 100, 2) if invoice_total else 0.0
+            ),
         }
 
-    async def sum_pipeline_deals(self, db: AsyncSession, organization_id: str, access=None) -> float:
+    async def sum_pipeline_deals(
+        self, db: AsyncSession, organization_id: str, access=None
+    ) -> float:
         filters = self._scoped(
             [
                 Deal.organization_id == organization_id,
@@ -210,9 +205,7 @@ class DashboardRepository:
             assigned=Deal.assigned_to,
             created=Deal.created_by,
         )
-        result = await db.execute(
-            select(func.coalesce(func.sum(Deal.amount), 0.0)).where(*filters)
-        )
+        result = await db.execute(select(func.coalesce(func.sum(Deal.amount), 0.0)).where(*filters))
         return float(result.scalar() or 0.0)
 
     async def sum_won_deals(self, db: AsyncSession, organization_id: str, access=None) -> float:
@@ -222,9 +215,7 @@ class DashboardRepository:
             assigned=Deal.assigned_to,
             created=Deal.created_by,
         )
-        result = await db.execute(
-            select(func.coalesce(func.sum(Deal.amount), 0.0)).where(*filters)
-        )
+        result = await db.execute(select(func.coalesce(func.sum(Deal.amount), 0.0)).where(*filters))
         return float(result.scalar() or 0.0)
 
     async def count_closed_deals(self, db: AsyncSession, organization_id: str, access=None) -> int:
@@ -234,9 +225,7 @@ class DashboardRepository:
             assigned=Deal.assigned_to,
             created=Deal.created_by,
         )
-        result = await db.execute(
-            select(func.count(Deal.id)).where(*filters)
-        )
+        result = await db.execute(select(func.count(Deal.id)).where(*filters))
         return result.scalar() or 0
 
     async def count_won_deals(self, db: AsyncSession, organization_id: str, access=None) -> int:
@@ -246,9 +235,7 @@ class DashboardRepository:
             assigned=Deal.assigned_to,
             created=Deal.created_by,
         )
-        result = await db.execute(
-            select(func.count(Deal.id)).where(*filters)
-        )
+        result = await db.execute(select(func.count(Deal.id)).where(*filters))
         return result.scalar() or 0
 
     async def avg_lead_score(self, db: AsyncSession, organization_id: str, access=None) -> float:
@@ -258,9 +245,7 @@ class DashboardRepository:
             assigned=Lead.assigned_to,
             created=Lead.created_by,
         )
-        result = await db.execute(
-            select(func.coalesce(func.avg(Lead.score), 0.0)).where(*filters)
-        )
+        result = await db.execute(select(func.coalesce(func.avg(Lead.score), 0.0)).where(*filters))
         return round(float(result.scalar() or 0.0), 1)
 
     async def count_scored_leads(self, db: AsyncSession, organization_id: str, access=None) -> int:
@@ -274,9 +259,7 @@ class DashboardRepository:
             assigned=Lead.assigned_to,
             created=Lead.created_by,
         )
-        result = await db.execute(
-            select(func.count(Lead.id)).where(*filters)
-        )
+        result = await db.execute(select(func.count(Lead.id)).where(*filters))
         return result.scalar() or 0
 
     async def recent_leads(
@@ -289,10 +272,7 @@ class DashboardRepository:
             created=Lead.created_by,
         )
         result = await db.execute(
-            select(Lead)
-            .where(*filters)
-            .order_by(Lead.created_at.desc())
-            .limit(limit)
+            select(Lead).where(*filters).order_by(Lead.created_at.desc()).limit(limit)
         )
         return list(result.scalars().all())
 
@@ -381,9 +361,7 @@ class DashboardRepository:
             assigned=CallLog.created_by,
             created=CallLog.created_by,
         )
-        result = await db.execute(
-            select(func.count(CallLog.id)).where(*filters)
-        )
+        result = await db.execute(select(func.count(CallLog.id)).where(*filters))
         return result.scalar() or 0
 
     async def count_emails(
@@ -400,9 +378,7 @@ class DashboardRepository:
             assigned=Email.created_by,
             created=Email.created_by,
         )
-        result = await db.execute(
-            select(func.count(Email.id)).where(*filters)
-        )
+        result = await db.execute(select(func.count(Email.id)).where(*filters))
         return result.scalar() or 0
 
     async def count_meetings(
@@ -418,9 +394,7 @@ class DashboardRepository:
             assigned=Meeting.created_by,
             created=Meeting.created_by,
         )
-        result = await db.execute(
-            select(func.count(Meeting.id)).where(*filters)
-        )
+        result = await db.execute(select(func.count(Meeting.id)).where(*filters))
         return result.scalar() or 0
 
     async def count_completed_tasks(
@@ -437,9 +411,7 @@ class DashboardRepository:
             assigned=Task.assigned_to,
             created=Task.created_by,
         )
-        result = await db.execute(
-            select(func.count(Task.id)).where(*filters)
-        )
+        result = await db.execute(select(func.count(Task.id)).where(*filters))
         return result.scalar() or 0
 
     async def recent_deals(
@@ -480,9 +452,7 @@ class DashboardRepository:
             created=Deal.created_by,
         )
         result = await db.execute(
-            select(func.count(Deal.id), func.coalesce(func.sum(Deal.amount), 0.0)).where(
-                *filters
-            )
+            select(func.count(Deal.id), func.coalesce(func.sum(Deal.amount), 0.0)).where(*filters)
         )
         row = result.first()
         return (row[0] if row else 0, float(row[1]) if row else 0.0)
@@ -498,10 +468,7 @@ class DashboardRepository:
             created=Deal.created_by,
         )
         result = await db.execute(
-            select(Deal)
-            .where(*filters)
-            .order_by(Deal.amount.desc())
-            .limit(1)
+            select(Deal).where(*filters).order_by(Deal.amount.desc()).limit(1)
         )
         return result.scalars().first()
 

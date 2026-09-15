@@ -150,9 +150,7 @@ class CalendarService:
         await db.refresh(event)
         return event_to_dict(event)
 
-    async def get_calendar_event(
-        self, db: AsyncSession, event_id: str, current_user: User
-    ) -> dict:
+    async def get_calendar_event(self, db: AsyncSession, event_id: str, current_user: User) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
         access = await record_access_service.resolve(db, current_user, "calendar")
         event = await self.repository.get_event(db, event_id, org_id, access=access)

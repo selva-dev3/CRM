@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 from sqlalchemy import (
     JSON,
@@ -19,9 +20,7 @@ from app.db.base import Base
 
 class Workflow(Base):
     __tablename__ = "workflows"
-    __table_args__ = (
-        UniqueConstraint("organization_id", "name", name="uq_workflows_org_name"),
-    )
+    __table_args__ = (UniqueConstraint("organization_id", "name", name="uq_workflows_org_name"),)
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     organization_id: Mapped[str] = mapped_column(
@@ -42,8 +41,8 @@ class Workflow(Base):
     activated_by: Mapped[str | None] = mapped_column(
         String, ForeignKey("users.id", ondelete="SET NULL")
     )
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[DateTime] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), onupdate=func.now(), server_default=func.now()
     )
 
@@ -68,11 +67,11 @@ class WorkflowEvent(Base):
         String(20), default="Pending", server_default="Pending", index=True
     )
     attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
-    next_attempt_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
-    claimed_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(String(500))
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    processed_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class WorkflowRun(Base):
@@ -90,5 +89,5 @@ class WorkflowRun(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="Running")
     action_results: Mapped[list[dict]] = mapped_column(JSON, nullable=False, default=list)
     error: Mapped[str | None] = mapped_column(String(500))
-    started_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    finished_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

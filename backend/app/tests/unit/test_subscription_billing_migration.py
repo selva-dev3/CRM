@@ -69,7 +69,7 @@ def test_request_hash_migration_upgrades_existing_checkout_state():
                 "checkout_request_hash": None,
             }
             column = restored.c.checkout_request_hash
-            assert column.nullable and column.type.length == 64
+            assert column.nullable and column.type.length == 64  # type: ignore[attr-defined]
             digest = "a" * 64
             connection.execute(restored.update().values(checkout_request_hash=digest))
             assert connection.scalar(sa.select(column)) == digest
@@ -212,13 +212,13 @@ def test_model_recovery_fields_and_event_uniqueness():
         ("checkout_request_hash", 64),
         ("checkout_plan_slug", 100),
     ):
-        assert columns[name].type.length == length
+        assert columns[name].type.length == length  # type: ignore[attr-defined]
         assert columns[name].nullable
-    assert columns.checkout_expires_at.type.timezone
+    assert columns.checkout_expires_at.type.timezone  # type: ignore[attr-defined]
     assert columns.checkout_expires_at.nullable
     assert any(
         index.unique and list(index.columns.keys()) == ["event_id"]
-        for index in ProcessedWebhookEvent.__table__.indexes
+        for index in ProcessedWebhookEvent.__table__.indexes  # type: ignore[attr-defined]
     )
 
 

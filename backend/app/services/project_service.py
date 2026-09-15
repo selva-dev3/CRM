@@ -1,4 +1,5 @@
 from datetime import UTC, date, datetime
+from typing import Any
 
 from fastapi import status
 from sqlalchemy.exc import SQLAlchemyError
@@ -20,8 +21,8 @@ def parse_project_datetime(value: str | None) -> datetime | None:
         return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
     except ValueError:
         try:
-            parsed = date.fromisoformat(value)
-            return datetime(parsed.year, parsed.month, parsed.day, tzinfo=UTC)
+            parsed_date = date.fromisoformat(value)
+            return datetime(parsed_date.year, parsed_date.month, parsed_date.day, tzinfo=UTC)
         except ValueError as error:
             raise APIException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -69,7 +70,7 @@ class ProjectService:
             raise APIException(status_code=400, message="Failed to save project.") from error
 
     async def list_projects(
-        self, db: AsyncSession, current_user: User, **filters: object
+        self, db: AsyncSession, current_user: User, **filters: Any
     ) -> list[dict]:
         from app.services.record_access_service import record_access_service
 
@@ -218,9 +219,7 @@ class ProjectService:
             )
         if updates.get("owner_id") and updates["owner_id"] != project.owner_id:
             if project.owner_id:
-                previous_owner = await self.repository.get_member(
-                    db, project.id, project.owner_id
-                )
+                previous_owner = await self.repository.get_member(db, project.id, project.owner_id)
                 if previous_owner and previous_owner.role == "Owner":
                     previous_owner.role = "Member"
             member = await self.repository.get_member(db, project.id, updates["owner_id"])
@@ -309,7 +308,9 @@ class ProjectService:
 
     async def list_members(self, db: AsyncSession, current_user: User, project_id: str):
         await self.get_project(db, current_user, project_id)
-        return [self._member_to_dict(row) for row in await self.repository.list_members(db, project_id)]
+        return [
+            self._member_to_dict(row) for row in await self.repository.list_members(db, project_id)
+        ]
 
     async def add_member(
         self,
@@ -325,7 +326,9 @@ class ProjectService:
             db, user_id=user_id, organization_id=self.organization_id(current_user)
         )
         if not user:
-            raise NotFoundError(message="Project member must be an active user in this organization")
+            raise NotFoundError(
+                message="Project member must be an active user in this organization"
+            )
         existing = await self.repository.get_member(db, project_id, user_id)
         if existing:
             existing.role = role.strip()

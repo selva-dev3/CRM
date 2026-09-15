@@ -144,9 +144,7 @@ async def test_http_approval_permission_and_tenant_scope(sales_database, monkeyp
         blocked = await client.post(endpoint)
         assert blocked.status_code == 409
         permission.return_value = ["quotes:update"]
-        submitted = await client.post(
-            f"/api/v1/quotes/{result['quote_id']}/submit-for-review"
-        )
+        submitted = await client.post(f"/api/v1/quotes/{result['quote_id']}/submit-for-review")
         assert submitted.status_code == 200
         assert submitted.json()["status"] == "Pending Approval"
         permission.return_value = ["quotes:approve"]

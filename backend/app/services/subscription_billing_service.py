@@ -94,6 +94,8 @@ class SubscriptionBillingService:
         billing_cycle = row.billing_cycle.strip().lower()
         if len(currency) != 3 or not currency.isalpha() or billing_cycle != "month":
             raise APIException(message="Subscription plan billing terms are invalid")
+        if row.max_users is None or row.max_storage_gb is None or row.ai_credits is None:
+            raise APIException(message="Subscription plan entitlements are invalid")
         return BillingPlan(
             row.slug,
             row.name,
@@ -534,8 +536,8 @@ class SubscriptionBillingService:
                 (archive.get("subscription_id") and archive["subscription_id"] != remote.get("id"))
                 or (archive.get("customer_id") and archive["customer_id"] != customer_id)
                 or Decimal(str(local.amount)) != plan.amount
-                or local.currency.lower() != plan.currency
-                or local.billing_cycle.lower().removesuffix("ly") != plan.billing_cycle
+                or (local.currency or "").lower() != plan.currency
+                or (local.billing_cycle or "").lower().removesuffix("ly") != plan.billing_cycle
             ):
                 raise ConflictError(
                     message="Legacy subscription terms require billing reconciliation"
@@ -921,9 +923,7 @@ class SubscriptionBillingService:
                     and had_paid_access
                 )
                 if not pending_paid_upgrade:
-                    sub.status = (
-                        "cancelled" if remote.get("status") == "canceled" else "past_due"
-                    )
+                    sub.status = "cancelled" if remote.get("status") == "canceled" else "past_due"
                 if sub.status == "cancelled":
                     sub.auto_renew = False
                     sub.next_billing = None

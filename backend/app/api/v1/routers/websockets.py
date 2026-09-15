@@ -2,8 +2,9 @@ import asyncio
 from datetime import UTC, datetime
 from hashlib import sha256
 
+import jwt
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, status
-from jose import JWTError, jwt
+from jwt import InvalidTokenError as JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import apply_organization_context
@@ -60,9 +61,7 @@ async def _authenticate_websocket(
         socket_scheme = "https" if websocket.url.scheme == "wss" else "http"
         same_origin = origin == f"{socket_scheme}://{websocket.url.netloc}"
         if not origin or (origin not in settings.cors_origins_list and not same_origin):
-            await websocket.close(
-                code=status.WS_1008_POLICY_VIOLATION, reason="Origin denied"
-            )
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Origin denied")
             return None
     if not raw_token and authorization.lower().startswith("bearer "):
         raw_token = authorization[7:].strip()
@@ -76,7 +75,7 @@ async def _authenticate_websocket(
             algorithms=[ALGORITHM],
             issuer=settings.JWT_ISSUER,
             audience=settings.JWT_AUDIENCE,
-            options={"require_sub": True, "require_exp": True, "require_iat": True, "require_jti": True},
+            options={"require": ["sub", "exp", "iat", "jti"]},
         )
         if payload.get("token_type") != "access":
             raise JWTError("wrong token type")
@@ -157,11 +156,15 @@ async def _run_socket(
                     and current_user.organization_id != organization_id
                 )
             ):
-                await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Authorization revoked")
+                await websocket.close(
+                    code=status.WS_1008_POLICY_VIOLATION, reason="Authorization revoked"
+                )
                 return
             permissions = await auth_service.get_user_permissions(db, current_user)
             if not required_permissions.intersection(permissions):
-                await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Permission revoked")
+                await websocket.close(
+                    code=status.WS_1008_POLICY_VIOLATION, reason="Permission revoked"
+                )
                 return
             # End the read transaction before waiting on the network so each
             # long-lived socket does not reserve a pooled database connection.

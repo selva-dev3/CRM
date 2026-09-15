@@ -1,7 +1,6 @@
 import asyncio
 import io
 from datetime import datetime
-from types import SimpleNamespace
 from typing import Any
 from unittest.mock import ANY, AsyncMock, MagicMock, create_autospec
 
@@ -25,6 +24,7 @@ from app.schemas.crm_schemas import (
 )
 from app.services.integration_service import integration_service
 from app.services.lead_service import LeadService
+from app.tests.mock_helpers import loose_fixture
 
 
 def _make_lead(**overrides) -> Lead:
@@ -55,7 +55,7 @@ def _make_lead(**overrides) -> Lead:
 
 
 def _service_with(repo: LeadRepository) -> LeadService:
-    whatsapp = SimpleNamespace(prepare_crm_phone=AsyncMock(), detach_crm_identities=AsyncMock())
+    whatsapp = loose_fixture(prepare_crm_phone=AsyncMock(), detach_crm_identities=AsyncMock())
     return LeadService(repository=repo, whatsapp_repository=whatsapp)
 
 
@@ -290,14 +290,14 @@ async def test_get_timeline_passes_lead_id_to_email_and_call_repositories(with_c
     lead = _make_lead(created_at=datetime(2026, 9, 1))
     calls = (
         [
-            SimpleNamespace(
+            loose_fixture(
                 id="call-1",
                 call_type="Outbound",
                 notes="Discussed proposal\n[Lead:lead-1]",
                 duration_seconds=60,
                 timestamp=datetime(2026, 9, 2),
             ),
-            SimpleNamespace(
+            loose_fixture(
                 id="call-2",
                 call_type="Inbound",
                 notes=None,
@@ -365,7 +365,7 @@ async def test_get_timeline_passes_lead_id_to_email_and_call_repositories(with_c
 @pytest.mark.asyncio
 async def test_get_timeline_uses_global_creation_activity_existence(monkeypatch):
     lead = _make_lead(created_at=datetime(2026, 9, 1))
-    activity = SimpleNamespace(
+    activity = loose_fixture(
         id="update-z",
         action="Lead updated",
         details="Status changed",
@@ -425,9 +425,7 @@ async def test_count_timeline_includes_missing_legacy_creation_activity(monkeypa
     )
 
     assert total == 2
-    repo.has_activity.assert_awaited_once_with(
-        db, lead.id, action="Lead created"
-    )
+    repo.has_activity.assert_awaited_once_with(db, lead.id, action="Lead created")
 
 
 @pytest.mark.asyncio
@@ -475,7 +473,7 @@ async def test_create_lead_resolves_org_and_serializes(monkeypatch):
     lead = _make_lead()
     repo: Any = LeadRepository()
     repo.create = AsyncMock(return_value=lead)
-    repo.get_organization = AsyncMock(return_value=SimpleNamespace(id="org-1"))
+    repo.get_organization = AsyncMock(return_value=loose_fixture(id="org-1"))
     repo.get_user = AsyncMock(return_value=None)
     service = _service_with(repo)
     monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())
@@ -496,13 +494,13 @@ async def test_create_lead_validates_and_persists_custom_fields(monkeypatch):
     lead = _make_lead(custom_fields={"territory": "South"})
     repo: Any = LeadRepository()
     repo.create = AsyncMock(return_value=lead)
-    repo.get_organization = AsyncMock(return_value=SimpleNamespace(id="org-1"))
+    repo.get_organization = AsyncMock(return_value=loose_fixture(id="org-1"))
     custom_fields = AsyncMock()
     custom_fields.validate_values.return_value = {"territory": "South"}
     service = LeadService(
         repository=repo,
         custom_field_service_instance=custom_fields,
-        whatsapp_repository=SimpleNamespace(
+        whatsapp_repository=loose_fixture(
             prepare_crm_phone=AsyncMock(), detach_crm_identities=AsyncMock()
         ),
     )
@@ -533,7 +531,7 @@ async def test_create_lead_fires_lead_created_event(monkeypatch):
     lead = _make_lead()
     repo: Any = LeadRepository()
     repo.create = AsyncMock(return_value=lead)
-    repo.get_organization = AsyncMock(return_value=SimpleNamespace(id="org-1"))
+    repo.get_organization = AsyncMock(return_value=loose_fixture(id="org-1"))
     repo.get_user = AsyncMock(return_value=None)
     service = _service_with(repo)
     notify = AsyncMock()
@@ -570,9 +568,7 @@ async def test_update_lead_only_applies_provided_fields(monkeypatch):
     assert result["status"] == "Contacted"
     assert lead.status == "Contacted"
     assert lead.title == "Acme Corp"
-    repo.get_by_id_for_org.assert_awaited_once_with(
-        db, "lead-1", "org-1", access=ANY
-    )
+    repo.get_by_id_for_org.assert_awaited_once_with(db, "lead-1", "org-1", access=ANY)
     repo.record_activity.assert_awaited_once()
 
 
@@ -588,7 +584,7 @@ async def test_phone_update_takes_guard_before_reading_lead(monkeypatch):
 
     repo.get_by_id_for_org = AsyncMock(side_effect=read_lead)
     repo.record_activity = AsyncMock()
-    whatsapp = SimpleNamespace(
+    whatsapp = loose_fixture(
         lock_phone_guard=AsyncMock(side_effect=lambda *_args: calls.append("guard")),
         prepare_crm_phone=AsyncMock(side_effect=lambda *_args: calls.append("prepare")),
         detach_crm_identities=AsyncMock(),
@@ -850,7 +846,7 @@ async def test_download_document_rejects_attachment_from_another_lead():
 
 @pytest.mark.asyncio
 async def test_download_document_reads_s3_off_event_loop(monkeypatch):
-    attachment = SimpleNamespace(
+    attachment = loose_fixture(
         id="doc-1",
         lead_id="lead-1",
         filename="proposal.pdf",
@@ -862,7 +858,7 @@ async def test_download_document_reads_s3_off_event_loop(monkeypatch):
     repo.get_attachment_for_lead = AsyncMock(return_value=attachment)
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
-    body = SimpleNamespace(read=MagicMock(return_value=b"pdf bytes"))
+    body = loose_fixture(read=MagicMock(return_value=b"pdf bytes"))
     get_object = MagicMock(return_value={"Body": body})
     monkeypatch.setattr("app.services.lead_service.s3_service.s3_client.get_object", get_object)
     to_thread = AsyncMock(side_effect=lambda function, *args, **kwargs: function(*args, **kwargs))

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import json
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -102,8 +103,7 @@ class WorkflowService:
     def _record_is_accessible(access, entity) -> bool:
         return record_access_service.allows(
             access,
-            assigned_to=getattr(entity, "assigned_to", None)
-            or getattr(entity, "owner_id", None),
+            assigned_to=getattr(entity, "assigned_to", None) or getattr(entity, "owner_id", None),
             created_by=getattr(entity, "created_by", None),
             team_id=getattr(entity, "team_id", None),
         )
@@ -445,7 +445,7 @@ class WorkflowService:
         workflow_id: str,
         run,
         error: str,
-        results: list[dict] | None = None,
+        results: builtins.list[dict] | None = None,
     ):
         if run is None:
             run = WorkflowRun(

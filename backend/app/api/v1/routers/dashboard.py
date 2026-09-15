@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
+from app.core.errors import ForbiddenError
+from app.core.permissions import effective_organization_id
 from app.db.session import get_db
 from app.models import User
 from app.schemas.crm_schemas import MessageResponse
@@ -23,6 +25,13 @@ from app.schemas.dashboard import (
 from app.services.dashboard_service import dashboard_service
 
 router = APIRouter()
+
+
+def _organization_id(user: User) -> str:
+    organization_id = effective_organization_id(user)
+    if not organization_id:
+        raise ForbiddenError(message="Authenticated organization context is required")
+    return organization_id
 
 
 @router.get(
@@ -47,7 +56,7 @@ async def get_dashboard_kpis(
         )
     return await dashboard_service.get_kpis(
         db,
-        current_user.organization_id,
+        _organization_id(current_user),
         start_at=start_at,
         end_at=end_at,
         current_user=current_user,
@@ -64,7 +73,7 @@ async def get_sales_funnel(
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     return await dashboard_service.get_sales_funnel(
-        db, current_user.organization_id, current_user
+        db, _organization_id(current_user), current_user
     )
 
 
@@ -83,7 +92,7 @@ async def get_sales_funnel(
 async def get_revenue_chart(
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
-    return await dashboard_service.get_revenue_chart(db, current_user.organization_id)
+    return await dashboard_service.get_revenue_chart(db, _organization_id(current_user))
 
 
 @router.get(
@@ -96,7 +105,7 @@ async def get_top_performers(
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     return await dashboard_service.get_top_performers(
-        db, current_user.organization_id, current_user
+        db, _organization_id(current_user), current_user
     )
 
 
@@ -110,7 +119,7 @@ async def get_lead_conversions(
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     return await dashboard_service.get_lead_conversions(
-        db, current_user.organization_id, current_user
+        db, _organization_id(current_user), current_user
     )
 
 
@@ -124,7 +133,7 @@ async def get_activities_summary(
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     return await dashboard_service.get_activities_summary(
-        db, current_user.organization_id, current_user
+        db, _organization_id(current_user), current_user
     )
 
 
@@ -138,7 +147,7 @@ async def get_recent_deals(
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     return await dashboard_service.get_recent_deals(
-        db, current_user.organization_id, current_user
+        db, _organization_id(current_user), current_user
     )
 
 
@@ -167,7 +176,7 @@ async def get_custom_widgets(
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     return await dashboard_service.get_custom_widgets(
-        db, current_user.organization_id, current_user.id
+        db, _organization_id(current_user), current_user.id
     )
 
 
@@ -184,7 +193,7 @@ async def save_custom_widgets(
 ):
     return await dashboard_service.save_custom_widgets(
         db,
-        current_user.organization_id,
+        _organization_id(current_user),
         [widget.model_dump() for widget in widgets],
         current_user.id,
     )

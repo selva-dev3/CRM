@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import (
@@ -54,8 +55,8 @@ class Product(Base):
     price: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=Decimal("0.00"))
     in_stock_quantity: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[DateTime] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), onupdate=func.now(), server_default=func.now()
     )
 
@@ -81,10 +82,10 @@ class PriceBook(Base):
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
-    created_at: Mapped[DateTime | None] = mapped_column(
+    created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=True
     )
-    updated_at: Mapped[DateTime | None] = mapped_column(
+    updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), onupdate=func.now(), server_default=func.now(), nullable=True
     )
 
@@ -104,9 +105,9 @@ class PriceBookEntry(Base):
     )
     unit_price: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
-    created_at: Mapped[DateTime | None] = mapped_column(
+    created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=True
     )
-    updated_at: Mapped[DateTime | None] = mapped_column(
+    updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), onupdate=func.now(), server_default=func.now(), nullable=True
     )

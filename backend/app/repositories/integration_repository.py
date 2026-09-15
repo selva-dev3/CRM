@@ -10,17 +10,16 @@ class IntegrationRepository:
     """Query layer for the Integration domain — no business logic."""
 
     async def resolve_org_id(self, db: AsyncSession, current_user: User | None = None) -> str:
-        if current_user and getattr(current_user, "organization_id", None):
-            return current_user.organization_id
+        organization_id = current_user.organization_id if current_user else None
+        if organization_id:
+            return organization_id
         raise ValueError("Authenticated organization context is required")
 
     async def list_all(
         self, db: AsyncSession, organization_id: str, limit: int = 20
     ) -> Sequence[Integration]:
         res = await db.execute(
-            select(Integration)
-            .where(Integration.organization_id == organization_id)
-            .limit(limit)
+            select(Integration).where(Integration.organization_id == organization_id).limit(limit)
         )
         return res.scalars().all()
 
@@ -61,9 +60,7 @@ class IntegrationRepository:
         db.add(integration)
         return integration
 
-    async def queue_delivery(
-        self, db: AsyncSession, *, data: dict
-    ) -> IntegrationDelivery:
+    async def queue_delivery(self, db: AsyncSession, *, data: dict) -> IntegrationDelivery:
         delivery = IntegrationDelivery(**data)
         db.add(delivery)
         return delivery

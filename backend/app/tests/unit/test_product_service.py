@@ -1,5 +1,4 @@
 from decimal import Decimal
-from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -10,6 +9,7 @@ from app.repositories.product_repository import ProductRepository
 from app.schemas.crm_schemas import ProductBase
 from app.services import product_service as product_module
 from app.services.product_service import ProductService, product_to_dict
+from app.tests.mock_helpers import loose_fixture
 
 
 def _product(**overrides):
@@ -23,7 +23,7 @@ def _product(**overrides):
         "category_id": None,
     }
     values.update(overrides)
-    return SimpleNamespace(**values)
+    return loose_fixture(**values)
 
 
 def test_product_response_preserves_zero_stock():
@@ -51,7 +51,7 @@ async def test_update_without_real_sku_preserves_existing_sku(monkeypatch):
         db,
         product_id=product.id,
         payload=ProductBase(name="Updated", sku="N/A", price=30, in_stock_quantity=0),
-        user=SimpleNamespace(id="user-1"),
+        user=loose_fixture(id="user-1"),
     )
 
     assert product.sku == "SUP-1"
@@ -75,7 +75,7 @@ async def test_inventory_adjustment_is_locked_and_cannot_go_negative(monkeypatch
             db,
             product_id="product-1",
             quantity_delta=-3,
-            user=SimpleNamespace(id="user-1"),
+            user=loose_fixture(id="user-1"),
         )
 
     repository.get.assert_awaited_once_with(
@@ -97,5 +97,7 @@ async def test_direct_delete_of_unknown_or_foreign_product_is_not_success(monkey
 
     with pytest.raises(NotFoundError):
         await ProductService(repository).delete_product(
-            db, product_id="foreign-product", user=SimpleNamespace(id="user-1")
+            db,
+            product_id="foreign-product",
+            user=loose_fixture(id="user-1"),
         )

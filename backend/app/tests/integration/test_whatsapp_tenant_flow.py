@@ -40,6 +40,7 @@ from app.schemas.whatsapp import InboundEvent, IntegrationWrite, StatusEvent
 from app.services.contact_service import ContactService
 from app.services.lead_service import LeadService
 from app.services.whatsapp_service import WhatsAppService
+from app.tests.mock_helpers import replace_attr
 
 UNUSED_PASSWORD_HASH = "unused-test-hash"  # noqa: S105 - no authentication occurs
 
@@ -188,8 +189,8 @@ async def test_tenant_matching_idempotency_and_status_flow(monkeypatch):
             organization_id: str, user_id: str, business_id: str, phone_id: str
         ):
             service = WhatsAppService()
-            service.permissions = AsyncMock(return_value={"integrations:manage"})
-            service.status = AsyncMock(return_value="configured")
+            replace_attr(service, "permissions", AsyncMock(return_value={"integrations:manage"}))
+            replace_attr(service, "status", AsyncMock(return_value="configured"))
             payload = IntegrationWrite(
                 business_account_id=business_id,
                 phone_number_id=phone_id,
@@ -226,9 +227,7 @@ async def test_tenant_matching_idempotency_and_status_flow(monkeypatch):
             configure_for("org-b", "user-b", "1002", "3003"),
             return_exceptions=True,
         )
-        assert sum(result == "configured" for result in concurrent_results) == 1, (
-            concurrent_results
-        )
+        assert sum(result == "configured" for result in concurrent_results) == 1, concurrent_results
         conflicts = [result for result in concurrent_results if isinstance(result, ConflictError)]
         assert len(conflicts) == 1
         assert conflicts[0].code == "WHATSAPP_PHONE_ALREADY_CONNECTED"
@@ -269,10 +268,12 @@ async def test_tenant_matching_idempotency_and_status_flow(monkeypatch):
 
             client.request = AsyncMock(side_effect=provider_request)
             service = WhatsAppService()
-            service.permissions = AsyncMock(
-                return_value={"integrations:manage", "whatsapp:read_assigned"}
+            replace_attr(
+                service,
+                "permissions",
+                AsyncMock(return_value={"integrations:manage", "whatsapp:read_assigned"}),
             )
-            service.provider = AsyncMock(return_value=client)
+            replace_attr(service, "provider", AsyncMock(return_value=client))
             user = type(
                 "IntegrationUser",
                 (),
@@ -284,9 +285,7 @@ async def test_tenant_matching_idempotency_and_status_flow(monkeypatch):
                 )
                 await asyncio.wait_for(remote_complete.wait(), timeout=5)
                 async with sessions() as correction_db:
-                    config = await repository.configuration(
-                        correction_db, "org-a", lock=True
-                    )
+                    config = await repository.configuration(correction_db, "org-a", lock=True)
                     assert config is not None
                     config.business_account_id = "4004"
                     config.phone_number_id = "5005"
@@ -311,6 +310,8 @@ async def test_tenant_matching_idempotency_and_status_flow(monkeypatch):
         async with sessions() as db:
             config_a = await repository.configuration(db, "org-a", lock=True)
             config_b = await repository.configuration(db, "org-b", lock=True)
+            assert config_a is not None
+            assert config_b is not None
             assert not await repository.has_account_records(db, config_a)
             assert not await repository.has_account_records(db, config_b)
             db.add(
@@ -372,8 +373,7 @@ async def test_tenant_matching_idempotency_and_status_flow(monkeypatch):
         async with sessions() as db:
             await db.execute(
                 text(
-                    "UPDATE organizations SET is_active=false, status='suspended' "
-                    "WHERE id='org-a'"
+                    "UPDATE organizations SET is_active=false, status='suspended' WHERE id='org-a'"
                 )
             )
             await db.execute(text("UPDATE whatsapp_integrations SET phone_index_ready=false"))
@@ -386,7 +386,7 @@ async def test_tenant_matching_idempotency_and_status_flow(monkeypatch):
 
         async with sessions() as db:
             await db.execute(
-                text("UPDATE organizations SET is_active=true, status='active' " "WHERE id='org-a'")
+                text("UPDATE organizations SET is_active=true, status='active' WHERE id='org-a'")
             )
             await db.execute(text("UPDATE whatsapp_integrations SET phone_index_ready=true"))
             await db.commit()
@@ -918,7 +918,7 @@ async def test_tenant_matching_idempotency_and_status_flow(monkeypatch):
             await db.commit()
 
         async with sessions() as stale_db:
-            stale_contact = await stale_db.get(Contact, "contact-stale-verification")
+            stale_contact = await stale_db.get(Contact, "contact-stale-verification")  # type: ignore[assignment]
             assert stale_contact is not None
             async with sessions() as change_db:
                 await ContactService().update_contact(

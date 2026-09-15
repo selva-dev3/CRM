@@ -37,7 +37,7 @@ async def test_subscription_provider_routes_present_and_direct_upgrade_blocked()
     db = AsyncMock(spec=AsyncSession)
     app.dependency_overrides[organizations.get_db] = lambda: db
     for route in organizations.router.routes:
-        for dependency in route.dependencies:
+        for dependency in route.dependencies:  # type: ignore[attr-defined]
             app.dependency_overrides[dependency.dependency] = lambda: None
     for method, path in (
         ("POST", "/subscription/checkout"),
@@ -229,7 +229,7 @@ async def test_checkout_boundary_rejects_invalid_requests(monkeypatch, payload, 
         id="user", organization_id="org"
     )
     for route in organizations.router.routes:
-        for dependency in route.dependencies:
+        for dependency in route.dependencies:  # type: ignore[attr-defined]
             app.dependency_overrides[dependency.dependency] = lambda: None
     checkout = AsyncMock()
     monkeypatch.setattr(organizations.subscription_billing_service, "create_checkout", checkout)

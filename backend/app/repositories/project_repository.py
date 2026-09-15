@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import builtins
+
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,7 +31,7 @@ class ProjectRepository:
         priority: str | None = None,
         search: str | None = None,
         access=None,
-    ) -> list[Project]:
+    ) -> builtins.list[Project]:
         conditions = [Project.organization_id == organization_id]
         access_filter = project_record_access_filter(access)
         if access_filter is not None:
@@ -145,7 +147,7 @@ class ProjectRepository:
             )
         )
 
-    async def list_members(self, db: AsyncSession, project_id: str) -> list[ProjectMember]:
+    async def list_members(self, db: AsyncSession, project_id: str) -> builtins.list[ProjectMember]:
         return list(
             (
                 await db.scalars(
@@ -171,16 +173,16 @@ class ProjectRepository:
                 select(
                     func.count(Task.id),
                     func.count(Task.id).filter(func.lower(Task.status) == "completed"),
-                ).where(Task.project_id == project.id, Task.organization_id == project.organization_id)
+                ).where(
+                    Task.project_id == project.id, Task.organization_id == project.organization_id
+                )
             )
         ).one()
         milestone_total, milestone_completed = (
             await db.execute(
                 select(
                     func.count(ProjectMilestone.id),
-                    func.count(ProjectMilestone.id).filter(
-                        ProjectMilestone.status == "Completed"
-                    ),
+                    func.count(ProjectMilestone.id).filter(ProjectMilestone.status == "Completed"),
                 ).where(
                     ProjectMilestone.project_id == project.id,
                     ProjectMilestone.organization_id == project.organization_id,

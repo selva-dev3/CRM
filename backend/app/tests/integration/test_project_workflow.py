@@ -3,8 +3,9 @@ from io import BytesIO
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from fastapi import UploadFile
 from sqlalchemy import func, select
-from starlette.datastructures import Headers, UploadFile
+from starlette.datastructures import Headers
 
 from app.core.errors import APIException
 from app.models.task import TaskDependency
@@ -46,9 +47,7 @@ async def test_project_members_tasks_dependencies_milestones_documents_and_compl
         )
         project_id = project["id"]
         members = await project_service.list_members(db, user, project_id)
-        assert [(member["user_id"], member["role"]) for member in members] == [
-            (user.id, "Manager")
-        ]
+        assert [(member["user_id"], member["role"]) for member in members] == [(user.id, "Manager")]
 
         prerequisite = await task_service.create_task(
             db,
@@ -68,9 +67,7 @@ async def test_project_members_tasks_dependencies_milestones_documents_and_compl
             ),
             user,
         )
-        await task_service.add_dependency(
-            db, dependent["id"], prerequisite["id"], org.id, user
-        )
+        await task_service.add_dependency(db, dependent["id"], prerequisite["id"], org.id, user)
         with pytest.raises(APIException, match="dependencies"):
             await task_service.complete_task(db, dependent["id"], org.id, user)
         await db.rollback()
@@ -163,9 +160,7 @@ async def test_concurrent_reciprocal_task_dependencies_cannot_create_cycle(
 
     async def add_dependency(task_id: str, dependency_id: str):
         async with sessions() as db:
-            return await TaskService().add_dependency(
-                db, task_id, dependency_id, org.id, user
-            )
+            return await TaskService().add_dependency(db, task_id, dependency_id, org.id, user)
 
     results = await asyncio.gather(
         add_dependency(first["id"], second["id"]),
@@ -178,8 +173,8 @@ async def test_concurrent_reciprocal_task_dependencies_cannot_create_cycle(
     assert error.status_code == 409
     async with sessions() as db:
         edge_count = await db.scalar(
-            select(func.count()).select_from(TaskDependency).where(
-                TaskDependency.task_id.in_([first["id"], second["id"]])
-            )
+            select(func.count())
+            .select_from(TaskDependency)
+            .where(TaskDependency.task_id.in_([first["id"], second["id"]]))
         )
     assert edge_count == 1

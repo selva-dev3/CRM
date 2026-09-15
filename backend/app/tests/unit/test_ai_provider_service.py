@@ -1,3 +1,4 @@
+import typing
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
@@ -16,6 +17,7 @@ from app.schemas.ai import CRMChatPlan, CRMSearchPlan
 from app.schemas.dashboard import DashboardAiInsightsResponse
 from app.services.ai_provider_service import AIProviderGateway, AIProviderResult
 from app.services.ai_runtime_service import AIRuntimeService
+from app.tests.mock_helpers import as_async_mock, as_mock, replace_attr, require_await
 
 
 class ScoreOutput(BaseModel):
@@ -60,7 +62,7 @@ async def test_susanoox_generation_uses_strict_schema_and_validates_output(monke
     assert result.output == ScoreOutput(score=82)
     assert result.provider == "susanoox"
     assert result.total_tokens == 16
-    request = client.chat.completions.create.await_args.kwargs
+    request = require_await(client.chat.completions.create).kwargs
     assert request["model"] == "susanoox-fast"
     assert request["messages"] == [
         {"role": "system", "content": "system"},
@@ -75,7 +77,7 @@ async def test_susanoox_generation_uses_strict_schema_and_validates_output(monke
     assert str(client_options["base_url"]) == "https://llm.herd.casa/v1"
     assert client_options["timeout"] == 30.0
     assert client_options["max_retries"] == 0
-    client.close.assert_awaited_once()
+    as_async_mock(client.close).assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -134,7 +136,7 @@ async def test_susanoox_rejects_refusal_or_empty_content(monkeypatch, message):
         )
 
     assert exc_info.value.code == "AI_INVALID_RESPONSE"
-    client.close.assert_awaited_once()
+    as_async_mock(client.close).assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -148,15 +150,19 @@ async def test_susanoox_uses_ordered_fallback_for_retryable_failures(monkeypatch
         output_tokens=5,
         latency_ms=20,
     )
-    gateway._generate_once = AsyncMock(
-        side_effect=[
-            APIException(
-                status_code=429,
-                code="AI_PROVIDER_RATE_LIMITED",
-                message="The AI provider is temporarily rate limited.",
-            ),
-            successful,
-        ]
+    replace_attr(
+        gateway,
+        "_generate_once",
+        AsyncMock(
+            side_effect=[
+                APIException(
+                    status_code=429,
+                    code="AI_PROVIDER_RATE_LIMITED",
+                    message="The AI provider is temporarily rate limited.",
+                ),
+                successful,
+            ]
+        ),
     )
     monkeypatch.setattr(
         "app.services.ai_provider_service.settings.SUSANOOX_MODEL_POOL",
@@ -174,7 +180,9 @@ async def test_susanoox_uses_ordered_fallback_for_retryable_failures(monkeypatch
     assert result.model == "model-b"
     assert result.fallback_used is True
     assert result.attempted_models == ("model-a", "model-b")
-    assert [call.kwargs["model"] for call in gateway._generate_once.await_args_list] == [
+    assert [
+        call.kwargs["model"] for call in as_async_mock(gateway._generate_once).await_args_list
+    ] == [
         "model-a",
         "model-b",
     ]
@@ -183,10 +191,10 @@ async def test_susanoox_uses_ordered_fallback_for_retryable_failures(monkeypatch
 def test_susanoox_schema_requires_non_nullable_fields_only():
     schema = AIProviderGateway._strict_json_schema(CRMChatPlan)
 
-    assert set(schema["required"]) == {"operations", "needs_clarification"}
-    assert "clarification_question" not in schema["required"]
+    assert set(schema["required"]) == {"operations", "needs_clarification"}  # type: ignore[call-overload]
+    assert "clarification_question" not in schema["required"]  # type: ignore[operator]
 
-    operation_schema = schema["$defs"]["CRMSearchPlan"]
+    operation_schema = schema["$defs"]["CRMSearchPlan"]  # type: ignore[index]
     assert set(operation_schema["required"]) == {
         "intent",
         "entity_type",
@@ -233,8 +241,10 @@ async def test_susanoox_provider_errors_use_application_error_contract(
         request=httpx.Request("POST", "https://llm.herd.casa/v1/chat/completions"),
     )
     gateway = AIProviderGateway()
-    gateway._susanoox_generate = AsyncMock(
-        side_effect=error_type("provider error", response=response, body={})
+    replace_attr(
+        gateway,
+        "_susanoox_generate",
+        AsyncMock(side_effect=error_type("provider error", response=response, body={})),
     )
     monkeypatch.setattr("app.services.ai_provider_service.settings.SUSANOOX_AI_KEY", "set")
 
@@ -253,7 +263,7 @@ async def test_susanoox_provider_errors_use_application_error_contract(
 @pytest.mark.asyncio
 async def test_susanoox_timeout_uses_application_error_contract(monkeypatch):
     gateway = AIProviderGateway()
-    gateway._susanoox_generate = AsyncMock(side_effect=TimeoutError())
+    replace_attr(gateway, "_susanoox_generate", AsyncMock(side_effect=TimeoutError()))
     monkeypatch.setattr("app.services.ai_provider_service.settings.SUSANOOX_AI_KEY", "set")
 
     with pytest.raises(APIException) as exc_info:
@@ -355,12 +365,12 @@ async def test_gemini_generation_uses_configured_model_and_validates_output(monk
     assert result.provider == "gemini"
     assert result.model == "configured-gemini-model"
     assert result.total_tokens == 16
-    assert generate_content.await_args.kwargs["model"] == "configured-gemini-model"
-    config = generate_content.await_args.kwargs["config"]
+    assert generate_content.await_args.kwargs["model"] == "configured-gemini-model"  # type: ignore[union-attr]
+    config = generate_content.await_args.kwargs["config"]  # type: ignore[union-attr]
     assert config.response_schema is ScoreOutput
     assert config.response_mime_type == "application/json"
     assert config.automatic_function_calling.disable is True
-    client.aio.aclose.assert_awaited_once()
+    as_async_mock(client.aio.aclose).assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -413,10 +423,10 @@ async def test_gemini_grounded_output_uses_provider_grounding_urls(monkeypatch):
         web_search=True,
     )
 
-    assert result.output.sources == ["https://source.example/company"]
+    assert result.output.sources == ["https://source.example/company"]  # type: ignore[attr-defined]
     assert result.total_tokens == 30
-    assert generate_content.await_args.kwargs["model"] == "configured-research-model"
-    assert generate_content.await_args.kwargs["config"].tools
+    assert generate_content.await_args.kwargs["model"] == "configured-research-model"  # type: ignore[union-attr]
+    assert generate_content.await_args.kwargs["config"].tools  # type: ignore[union-attr]
 
 
 @pytest.mark.asyncio
@@ -448,10 +458,10 @@ async def test_gemini_transcription_preserves_response_contract(monkeypatch):
         model="configured-transcription-model",
     )
 
-    assert result.output.text == "Hello customer"
-    assert result.output.segments[0].end_seconds == 2.5
+    assert result.output.text == "Hello customer"  # type: ignore[attr-defined]
+    assert result.output.segments[0].end_seconds == 2.5  # type: ignore[attr-defined]
     assert result.total_tokens == 20
-    assert generate_content.await_args.kwargs["model"] == "configured-transcription-model"
+    assert generate_content.await_args.kwargs["model"] == "configured-transcription-model"  # type: ignore[union-attr]
 
 
 @pytest.mark.asyncio
@@ -491,7 +501,7 @@ async def test_gemini_provider_failures_use_application_error_contract(
     expected_status,
 ):
     gateway = AIProviderGateway()
-    gateway._gemini_generate = AsyncMock(side_effect=provider_error)
+    replace_attr(gateway, "_gemini_generate", AsyncMock(side_effect=provider_error))
     monkeypatch.setattr("app.services.ai_provider_service.settings.OPENAI_API_KEY", None)
     monkeypatch.setattr("app.services.ai_provider_service.settings.ANTHROPIC_API_KEY", None)
 
@@ -551,7 +561,9 @@ async def test_openai_status_errors_are_classified_and_safely_logged(
 ):
     response = httpx.Response(
         upstream_status,
-        request=httpx.Request("POST", "https://api.openai.com/v1/responses"),
+        request=typing.cast(
+            typing.Any, httpx.Request("POST", "https://api.openai.com/v1/responses")
+        ),
         headers={"x-request-id": "req_safe123"},
     )
     provider_error = error_type(
@@ -560,7 +572,7 @@ async def test_openai_status_errors_are_classified_and_safely_logged(
         body={"error": {"code": "provider_error_code", "message": "sk-secret-value"}},
     )
     gateway = AIProviderGateway()
-    gateway._openai_generate = AsyncMock(side_effect=provider_error)
+    replace_attr(gateway, "_openai_generate", AsyncMock(side_effect=provider_error))
     monkeypatch.setattr("app.services.ai_provider_service.settings.ANTHROPIC_API_KEY", None)
 
     with pytest.raises(APIException) as exc_info:
@@ -588,10 +600,12 @@ async def test_openai_connection_error_is_classified_without_logging_message(
 ):
     provider_error = openai.APIConnectionError(
         message="connection failed with sk-secret-value",
-        request=httpx.Request("POST", "https://api.openai.com/v1/responses"),
+        request=typing.cast(
+            typing.Any, httpx.Request("POST", "https://api.openai.com/v1/responses")
+        ),
     )
     gateway = AIProviderGateway()
-    gateway._openai_generate = AsyncMock(side_effect=provider_error)
+    replace_attr(gateway, "_openai_generate", AsyncMock(side_effect=provider_error))
     monkeypatch.setattr("app.services.ai_provider_service.settings.ANTHROPIC_API_KEY", None)
 
     with pytest.raises(APIException) as exc_info:
@@ -611,10 +625,12 @@ async def test_openai_connection_error_is_classified_without_logging_message(
 @pytest.mark.asyncio
 async def test_openai_timeout_is_classified(monkeypatch):
     provider_error = openai.APITimeoutError(
-        request=httpx.Request("POST", "https://api.openai.com/v1/responses")
+        request=typing.cast(
+            typing.Any, httpx.Request("POST", "https://api.openai.com/v1/responses")
+        )
     )
     gateway = AIProviderGateway()
-    gateway._openai_generate = AsyncMock(side_effect=provider_error)
+    replace_attr(gateway, "_openai_generate", AsyncMock(side_effect=provider_error))
     monkeypatch.setattr("app.services.ai_provider_service.settings.ANTHROPIC_API_KEY", None)
 
     with pytest.raises(APIException) as exc_info:
@@ -650,9 +666,9 @@ async def test_openai_generation_uses_native_structured_output(monkeypatch):
         output_schema=ScoreOutput,
     )
 
-    assert result.output.score == 82
+    assert result.output.score == 82  # type: ignore[attr-defined]
     assert result.total_tokens == 16
-    assert parse.await_args.kwargs["text_format"] is ScoreOutput
+    assert parse.await_args.kwargs["text_format"] is ScoreOutput  # type: ignore[union-attr]
 
 
 @pytest.mark.asyncio
@@ -677,8 +693,8 @@ async def test_openai_transcription_maps_real_provider_response(monkeypatch):
         model="configured-transcription-model",
     )
 
-    assert result.output.text == "Hello customer"
-    assert result.output.segments[0].end_seconds == 2.5
+    assert result.output.text == "Hello customer"  # type: ignore[attr-defined]
+    assert result.output.segments[0].end_seconds == 2.5  # type: ignore[attr-defined]
     create.assert_awaited_once()
 
 
@@ -727,13 +743,13 @@ async def test_openai_grounded_output_uses_only_provider_source_urls(monkeypatch
         web_search=True,
     )
 
-    assert result.output.sources == [
+    assert result.output.sources == [  # type: ignore[attr-defined]
         "https://source.example/company",
         "https://source.example/news",
     ]
     assert result.total_tokens == 30
-    assert parse.await_args.kwargs["tool_choice"] == "required"
-    assert parse.await_args.kwargs["include"] == ["web_search_call.action.sources"]
+    assert parse.await_args.kwargs["tool_choice"] == "required"  # type: ignore[union-attr]
+    assert parse.await_args.kwargs["include"] == ["web_search_call.action.sources"]  # type: ignore[union-attr]
 
 
 @pytest.mark.asyncio
@@ -759,18 +775,22 @@ async def test_provider_uses_configured_fallback(monkeypatch):
         code="AI_PROVIDER_ERROR",
         message="Primary failed",
     )
-    gateway._generate_once = AsyncMock(
-        side_effect=[
-            primary_error,
-            AIProviderResult(
-                output=ScoreOutput(score=81),
-                provider="anthropic",
-                model="claude-3-5-sonnet-latest",
-                input_tokens=10,
-                output_tokens=5,
-                latency_ms=20,
-            ),
-        ]
+    replace_attr(
+        gateway,
+        "_generate_once",
+        AsyncMock(
+            side_effect=[
+                primary_error,
+                AIProviderResult(
+                    output=ScoreOutput(score=81),
+                    provider="anthropic",
+                    model="claude-3-5-sonnet-latest",
+                    input_tokens=10,
+                    output_tokens=5,
+                    latency_ms=20,
+                ),
+            ]
+        ),
     )
     monkeypatch.setattr("app.services.ai_provider_service.settings.ANTHROPIC_API_KEY", "set")
     monkeypatch.setattr(
@@ -787,18 +807,22 @@ async def test_provider_uses_configured_fallback(monkeypatch):
     )
 
     assert result.provider == "anthropic"
-    assert gateway._generate_once.await_count == 2
+    assert as_async_mock(gateway._generate_once).await_count == 2
 
 
 @pytest.mark.asyncio
 async def test_provider_preserves_error_when_no_fallback_is_configured(monkeypatch):
     gateway = AIProviderGateway()
-    gateway._generate_once = AsyncMock(
-        side_effect=APIException(
-            status_code=502,
-            code="AI_PROVIDER_ERROR",
-            message="Primary failed",
-        )
+    replace_attr(
+        gateway,
+        "_generate_once",
+        AsyncMock(
+            side_effect=APIException(
+                status_code=502,
+                code="AI_PROVIDER_ERROR",
+                message="Primary failed",
+            )
+        ),
     )
     monkeypatch.setattr("app.services.ai_provider_service.settings.ANTHROPIC_API_KEY", None)
     monkeypatch.setattr(
@@ -815,7 +839,7 @@ async def test_provider_preserves_error_when_no_fallback_is_configured(monkeypat
         )
 
     assert exc_info.value.code == "AI_PROVIDER_ERROR"
-    gateway._generate_once.assert_awaited_once()
+    as_async_mock(gateway._generate_once).assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -836,26 +860,26 @@ async def test_runtime_rejects_user_without_organization():
 @pytest.mark.asyncio
 async def test_readiness_resolves_org_provider_and_disabled_flags(monkeypatch):
     repository = _repository()
-    config = SimpleNamespace(enabled=True, provider="gemini", model_name="tenant-model")
-    repository.get_organization_config.return_value = config
+    config: typing.Any = SimpleNamespace(enabled=True, provider="gemini", model_name="tenant-model")
+    as_mock(repository.get_organization_config).return_value = config
     monkeypatch.setattr("app.services.ai_runtime_service.settings.AI_PROVIDER", "susanoox")
     monkeypatch.setattr("app.services.ai_runtime_service.settings.SUSANOOX_AI_KEY", "synthetic-key")
     monkeypatch.setattr("app.services.ai_runtime_service.settings.GEMINI_API_KEY", None)
     service = AIRuntimeService(repository=repository, provider_gateway=AIProviderGateway())
     db = AsyncMock(spec=AsyncSession)
     assert await service.configuration_readiness(db, "org-a") == "PROVIDER_UNAVAILABLE"
-    repository.get_organization_config.assert_awaited_with(db, "org-a")
+    as_async_mock(repository.get_organization_config).assert_awaited_with(db, "org-a")
     monkeypatch.setattr("app.services.ai_runtime_service.settings.GEMINI_API_KEY", "synthetic-key")
     assert await service.configuration_readiness(db, "org-a") == "READY"
     config.enabled = False
     assert await service.configuration_readiness(db, "org-a") == "DISABLED"
-    repository.create_run.assert_not_awaited()
+    as_async_mock(repository.create_run).assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_runtime_overrides_stale_gemini_org_config_for_crm_search(monkeypatch):
     repository = _repository()
-    repository.get_organization_config.return_value = SimpleNamespace(
+    as_mock(repository.get_organization_config).return_value = SimpleNamespace(
         enabled=True,
         provider="gemini",
         model_name="old-gemini-model",
@@ -874,7 +898,7 @@ async def test_runtime_overrides_stale_gemini_org_config_for_crm_search(monkeypa
         provider_override="susanoox",
     )
 
-    kwargs = repository.create_run.await_args.kwargs
+    kwargs = require_await(repository.create_run).kwargs
     assert kwargs["provider"] == "susanoox"
     assert kwargs["model_name"] == "susanoox-fast"
 
@@ -882,7 +906,7 @@ async def test_runtime_overrides_stale_gemini_org_config_for_crm_search(monkeypa
 @pytest.mark.asyncio
 async def test_runtime_enforces_ai_credits_before_provider_call():
     repository = _repository()
-    repository.get_subscription_for_update.return_value.ai_credits = 0
+    as_mock(repository.get_subscription_for_update).return_value.ai_credits = 0
     provider = AsyncMock()
     service = AIRuntimeService(repository=repository, provider_gateway=provider)
 
@@ -897,7 +921,7 @@ async def test_runtime_enforces_ai_credits_before_provider_call():
         )
 
     assert exc_info.value.code == "AI_CREDITS_EXHAUSTED"
-    provider.generate_structured.assert_not_awaited()
+    as_async_mock(provider.generate_structured).assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -905,7 +929,7 @@ async def test_runtime_enforces_organization_rate_limit_before_provider_call(
     monkeypatch,
 ):
     repository = _repository()
-    repository.recent_run_count.return_value = 2
+    as_mock(repository.recent_run_count).return_value = 2
     provider = AsyncMock()
     service = AIRuntimeService(repository=repository, provider_gateway=provider)
     monkeypatch.setattr("app.services.ai_runtime_service.settings.AI_RATE_LIMIT", "2/minute")
@@ -921,15 +945,15 @@ async def test_runtime_enforces_organization_rate_limit_before_provider_call(
         )
 
     assert exc_info.value.code == "AI_RATE_LIMITED"
-    provider.generate_structured.assert_not_awaited()
+    as_async_mock(provider.generate_structured).assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_runtime_tracks_success_and_consumes_one_credit():
     repository = _repository()
-    subscription = repository.get_subscription_for_update.return_value
+    subscription = as_mock(repository.get_subscription_for_update).return_value
     provider = AsyncMock()
-    provider.generate_structured.return_value = AIProviderResult(
+    as_mock(provider.generate_structured).return_value = AIProviderResult(
         output=ScoreOutput(score=88),
         provider="openai",
         model="gpt-4o-mini",
@@ -951,18 +975,18 @@ async def test_runtime_tracks_success_and_consumes_one_credit():
         entity_id="lead-1",
     )
 
-    assert output.score == 88
+    assert output.score == 88  # type: ignore[attr-defined]
     assert subscription.ai_credits == 4
     assert run.status == "succeeded"
     assert run.total_tokens == 120
-    assert db.commit.await_count == 2
+    assert as_async_mock(db.commit).await_count == 2
 
 
 @pytest.mark.asyncio
 async def test_runtime_uses_dedicated_grounded_research_model(monkeypatch):
     repository = _repository()
     provider = AsyncMock()
-    provider.generate_structured.return_value = AIProviderResult(
+    as_mock(provider.generate_structured).return_value = AIProviderResult(
         output=ResearchOutput(summary="Grounded", sources=["https://source.example"]),
         provider="gemini",
         model="research-model",
@@ -987,9 +1011,9 @@ async def test_runtime_uses_dedicated_grounded_research_model(monkeypatch):
         web_search=True,
     )
 
-    assert repository.create_run.await_args.kwargs["provider"] == "gemini"
-    assert repository.create_run.await_args.kwargs["model_name"] == "research-model"
-    assert provider.generate_structured.await_args.kwargs["web_search"] is True
+    assert require_await(repository.create_run).kwargs["provider"] == "gemini"
+    assert require_await(repository.create_run).kwargs["model_name"] == "research-model"
+    assert require_await(provider.generate_structured).kwargs["web_search"] is True
 
 
 @pytest.mark.asyncio
@@ -1014,8 +1038,8 @@ async def test_runtime_audits_provider_failure_without_fabricating_result():
             output_schema=ScoreOutput,
         )
 
-    run = repository.create_run.return_value
+    run = as_mock(repository.create_run).return_value
     assert exc_info.value.code == "AI_PROVIDER_ERROR"
     assert run.status == "failed"
     assert run.error_code == "AI_PROVIDER_ERROR"
-    assert db.commit.await_count == 2
+    assert as_async_mock(db.commit).await_count == 2

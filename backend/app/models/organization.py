@@ -23,7 +23,9 @@ from app.db.base import Base
 
 class Organization(Base):
     __tablename__ = "organizations"
-    __table_args__ = (Index("uq_organizations_normalized_name", text("lower(btrim(name))"), unique=True),)
+    __table_args__ = (
+        Index("uq_organizations_normalized_name", text("lower(btrim(name))"), unique=True),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -84,9 +86,7 @@ class OrganizationSetting(Base):
 class OrganizationSubscription(Base):
     __tablename__ = "organization_subscriptions"
     __table_args__ = (
-        UniqueConstraint(
-            "organization_id", name="uq_organization_subscriptions_organization_id"
-        ),
+        UniqueConstraint("organization_id", name="uq_organization_subscriptions_organization_id"),
     )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -104,9 +104,7 @@ class OrganizationSubscription(Base):
 
     status: Mapped[str] = mapped_column(String(50), default="active", nullable=False)
 
-    billing_cycle: Mapped[str | None] = mapped_column(
-        String(20), default="Monthly", nullable=True
-    )
+    billing_cycle: Mapped[str | None] = mapped_column(String(20), default="Monthly", nullable=True)
 
     amount: Mapped[float | None] = mapped_column(Float, default=0.0, nullable=True)
 
@@ -164,9 +162,7 @@ class OrganizationSubscription(Base):
 
     ai_credits: Mapped[int | None] = mapped_column(Integer, default=-1, nullable=True)
 
-    support_plan: Mapped[str | None] = mapped_column(
-        String(50), default="Standard", nullable=True
-    )
+    support_plan: Mapped[str | None] = mapped_column(String(50), default="Standard", nullable=True)
 
     created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=True

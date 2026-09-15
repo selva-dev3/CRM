@@ -221,9 +221,7 @@ async def list_custom_reports(
         db, current_user=current_user, limit=limit, offset=offset, search=search
     )
     response.headers["X-Total-Count"] = str(
-        await report_service.count_custom_reports(
-            db, current_user=current_user, search=search
-        )
+        await report_service.count_custom_reports(db, current_user=current_user, search=search)
     )
     return reports
 
@@ -367,9 +365,7 @@ async def list_scheduled_reports(
         db, current_user=current_user, limit=limit, offset=offset, search=search
     )
     response.headers["X-Total-Count"] = str(
-        await report_service.count_scheduled_reports(
-            db, current_user=current_user, search=search
-        )
+        await report_service.count_scheduled_reports(db, current_user=current_user, search=search)
     )
     return reports
 

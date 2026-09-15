@@ -110,8 +110,12 @@ async def reconcile_organization_storage(
         )
         deleted += 1
 
-    for key, row in existing.items():
-        if key[0] not in {"orphan", "missing"} or key in findings or row.status == "resolved":
+    for reconciliation_key, row in existing.items():
+        if (
+            reconciliation_key[0] not in {"orphan", "missing"}
+            or reconciliation_key in findings
+            or row.status == "resolved"
+        ):
             continue
         row.status = "resolved"
         row.resolved_at = now

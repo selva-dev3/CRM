@@ -22,7 +22,7 @@ class AIConversation(Base):
     )
     title: Mapped[str | None] = mapped_column(String(255))
     model_name: Mapped[str] = mapped_column(String(100), default="gpt-4o")
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class AIPrompt(Base):
@@ -41,7 +41,7 @@ class AIPrompt(Base):
     result_blocks_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
     evidence_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
     follow_up_questions_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class AIGeneratedContent(Base):
@@ -61,7 +61,7 @@ class AIGeneratedContent(Base):
         String(150), nullable=False
     )  # email, battlecard, summary
     generated_text: Mapped[str] = mapped_column(Text, nullable=False)
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class AILeadScore(Base):
@@ -74,7 +74,7 @@ class AILeadScore(Base):
     score: Mapped[float] = mapped_column(Float, nullable=False)
     confidence: Mapped[float] = mapped_column(Float, default=0.9)
     reasons_json: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class AIMeetingSummary(Base):
@@ -86,7 +86,7 @@ class AIMeetingSummary(Base):
     )
     summary_text: Mapped[str] = mapped_column(Text, nullable=False)
     action_items_json: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class AIOrganizationConfig(Base):

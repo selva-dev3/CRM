@@ -66,8 +66,8 @@ class User(Base):
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     two_factor_secret: Mapped[str | None] = mapped_column(String(512), nullable=True)
     two_factor_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[DateTime] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), onupdate=func.now(), server_default=func.now()
     )
 
@@ -83,7 +83,7 @@ class UserInvitation(Base):
         String, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
     )
     status: Mapped[str] = mapped_column(String(50), default="pending")  # pending, accepted, expired
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class UserProfile(Base):
@@ -112,10 +112,10 @@ class UserSession(Base):
     user_agent: Mapped[str | None] = mapped_column(Text)
     is_current: Mapped[bool] = mapped_column(Boolean, default=True)
     family_id: Mapped[str | None] = mapped_column(String(36), index=True)
-    expires_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), index=True)
-    revoked_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), index=True)
-    last_used_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class RefreshToken(Base):
@@ -128,15 +128,17 @@ class RefreshToken(Base):
     token: Mapped[str] = mapped_column(String(500), unique=True, index=True)
     is_revoked: Mapped[bool] = mapped_column(Boolean, default=False)
     is_persistent: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    expires_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     family_id: Mapped[str] = mapped_column(
         String(36), index=True, nullable=False, default=lambda: str(uuid.uuid4())
     )
     generation: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    absolute_expires_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), index=True)
-    revoked_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), index=True)
+    absolute_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), index=True
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     replaced_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class MagicLinkToken(Base):
@@ -165,8 +167,8 @@ class PasswordReset(Base):
     )
     token: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     is_used: Mapped[bool] = mapped_column(Boolean, default=False)
-    expires_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class EmailVerification(Base):
@@ -178,7 +180,7 @@ class EmailVerification(Base):
     )
     token: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class OTPVerification(Base):
@@ -191,5 +193,5 @@ class OTPVerification(Base):
     otp_code: Mapped[str] = mapped_column(String(10), nullable=False)
     secret_key: Mapped[str | None] = mapped_column(String(255))
     is_used: Mapped[bool] = mapped_column(Boolean, default=False)
-    expires_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -322,7 +322,10 @@ class OrganizationLifecycleService:
                 ):
                     owned_prefixes.update(storage_prefixes(kind, identifier))
                     if len(owned_prefixes) > 64:
-                        raise ConflictError(message="Tenant storage prefix inventory exceeds online limits; use a reviewed maintenance deletion", code="ORGANIZATION_STORAGE_CONFLICT")
+                        raise ConflictError(
+                            message="Tenant storage prefix inventory exceeds online limits; use a reviewed maintenance deletion",
+                            code="ORGANIZATION_STORAGE_CONFLICT",
+                        )
                 # Collapse nested prefixes, then compare adjacent sorted entries to
                 # detect sanitized-ID and legacy underscore-prefix collisions.
                 prefixes: list[str] = []
@@ -330,7 +333,10 @@ class OrganizationLifecycleService:
                     if not prefixes or not prefix.startswith(prefixes[-1]):
                         prefixes.append(prefix)
                 if await self.repository.storage_prefix_conflict(db, organization_id, prefixes):
-                    raise ConflictError(message="Storage owner prefixes overlap another organization; review before deletion", code="ORGANIZATION_STORAGE_CONFLICT")
+                    raise ConflictError(
+                        message="Storage owner prefixes overlap another organization; review before deletion",
+                        code="ORGANIZATION_STORAGE_CONFLICT",
+                    )
                 for prefix in prefixes:
                     try:
                         files = await asyncio.to_thread(
@@ -340,9 +346,13 @@ class OrganizationLifecycleService:
                             keys,
                         )
                     except ValueError as exc:
-                        raise ConflictError(message="Tenant storage inventory exceeds online limits; use a reviewed maintenance deletion", code="ORGANIZATION_STORAGE_CONFLICT") from exc
+                        raise ConflictError(
+                            message="Tenant storage inventory exceeds online limits; use a reviewed maintenance deletion",
+                            code="ORGANIZATION_STORAGE_CONFLICT",
+                        ) from exc
                     if any(
-                        not key.startswith(prefix) or storage_key(key, "key") != key for key in files
+                        not key.startswith(prefix) or storage_key(key, "key") != key
+                        for key in files
                     ):
                         raise ConflictError(
                             message="Stored object ownership requires review",
@@ -396,7 +406,11 @@ class OrganizationLifecycleService:
             raise
         except TimeoutError as exc:
             await self._rollback(db)
-            raise APIException(message="Deletion preparation timed out; no changes were committed. Retry during a maintenance window.", code="ORGANIZATION_DELETION_TIMEOUT", status_code=503) from exc
+            raise APIException(
+                message="Deletion preparation timed out; no changes were committed. Retry during a maintenance window.",
+                code="ORGANIZATION_DELETION_TIMEOUT",
+                status_code=503,
+            ) from exc
         except SQLAlchemyError as exc:
             await self._rollback(db)
             logger.error(

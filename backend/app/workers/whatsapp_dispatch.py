@@ -20,9 +20,7 @@ def enqueue_webhook_event(event_id: str, organization_id: str) -> None:
         logger.warning("whatsapp.event_dispatch_failed", extra={"request_id": event_id})
 
 
-def enqueue_message(
-    message_id: str, organization_id: str, *, delay_seconds: int = 0
-) -> None:
+def enqueue_message(message_id: str, organization_id: str, *, delay_seconds: int = 0) -> None:
     delay_seconds = max(0, delay_seconds)
     options = {
         "queue": WHATSAPP_QUEUE,

@@ -15,7 +15,9 @@ def decimal_value(value: object, *, maximum: Decimal = MAX_MONEY) -> Decimal:
     except (InvalidOperation, ValueError) as exc:
         raise APIException(message="Invalid financial value", code="INVALID_AMOUNT") from exc
     if not result.is_finite() or result < 0 or result > maximum:
-        raise APIException(message="Financial value is outside the permitted range", code="INVALID_AMOUNT")
+        raise APIException(
+            message="Financial value is outside the permitted range", code="INVALID_AMOUNT"
+        )
     return result
 
 
@@ -32,8 +34,9 @@ class LineTotals:
     total: Decimal
 
 
-def calculate_line(quantity: int, unit_price: object, discount_percent: object = 0,
-                   tax_percent: object = 0) -> LineTotals:
+def calculate_line(
+    quantity: int, unit_price: object, discount_percent: object = 0, tax_percent: object = 0
+) -> LineTotals:
     if isinstance(quantity, bool) or not isinstance(quantity, int) or not 1 <= quantity <= 1000000:
         raise APIException(message="Quantity must be a positive integer", code="INVALID_QUANTITY")
     price = rounded_value(unit_price)

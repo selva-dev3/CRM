@@ -3,7 +3,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-
 # Keep collection and unit tests runnable from a fresh checkout without
 # requiring developer credentials. CI and local service variables override
 # these defaults through the environment.

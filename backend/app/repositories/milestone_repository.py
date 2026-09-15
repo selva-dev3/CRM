@@ -26,7 +26,8 @@ class MilestoneRepository:
         if status:
             conditions.append(ProjectMilestone.status == status)
         result = await db.execute(
-            select(ProjectMilestone).join(Project, Project.id == ProjectMilestone.project_id)
+            select(ProjectMilestone)
+            .join(Project, Project.id == ProjectMilestone.project_id)
             .where(*conditions)
             .order_by(ProjectMilestone.due_date.asc(), ProjectMilestone.created_at.desc())
             .offset((page - 1) * limit)
@@ -66,8 +67,8 @@ class MilestoneRepository:
         self, db: AsyncSession, *, milestone_id: str, organization_id: str, access=None
     ) -> ProjectMilestone | None:
         conditions = [
-                ProjectMilestone.id == milestone_id,
-                ProjectMilestone.organization_id == organization_id,
+            ProjectMilestone.id == milestone_id,
+            ProjectMilestone.organization_id == organization_id,
         ]
         access_filter = project_record_access_filter(access)
         if access_filter is not None:
@@ -82,8 +83,8 @@ class MilestoneRepository:
         self, db: AsyncSession, *, project_id: str, organization_id: str, access=None
     ) -> Project | None:
         conditions = [
-                Project.id == project_id,
-                Project.organization_id == organization_id,
+            Project.id == project_id,
+            Project.organization_id == organization_id,
         ]
         access_filter = project_record_access_filter(access)
         if access_filter is not None:

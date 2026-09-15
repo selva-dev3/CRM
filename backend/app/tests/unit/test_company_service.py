@@ -11,6 +11,7 @@ from app.repositories.company_repository import CompanyRepository
 from app.schemas.crm_schemas import CompanyCreate, CompanyUpdate
 from app.services.company_service import CompanyService
 from app.services.integration_service import integration_service
+from app.tests.mock_helpers import as_async_mock, as_mock, replace_attr, require_await
 
 
 def _make_company(**overrides) -> Company:
@@ -28,9 +29,9 @@ def _make_company(**overrides) -> Company:
 
 def _service_with(repo: CompanyRepository) -> CompanyService:
     if "lock_organization" not in repo.__dict__:
-        repo.lock_organization = AsyncMock()
+        replace_attr(repo, "lock_organization", AsyncMock())
     if "find_duplicate" not in repo.__dict__:
-        repo.find_duplicate = AsyncMock(return_value=None)
+        replace_attr(repo, "find_duplicate", AsyncMock(return_value=None))
     return CompanyService(repository=repo)
 
 
@@ -52,7 +53,7 @@ async def test_list_companies_is_scoped_to_current_organization(monkeypatch):
     )
 
     assert result[0]["id"] == "cmp-1"
-    repo.list_by_org.assert_awaited_once_with(
+    as_async_mock(repo.list_by_org).assert_awaited_once_with(
         db,
         organization_id="org-1",
         page=2,
@@ -78,7 +79,7 @@ async def test_count_companies_is_scoped_to_current_organization(monkeypatch):
     result = await service.count_companies(db, search="Acme", current_user=AsyncMock())
 
     assert result == 23
-    repo.count_by_org.assert_awaited_once_with(
+    as_async_mock(repo.count_by_org).assert_awaited_once_with(
         db, organization_id="org-1", search="Acme", access=ANY
     )
 
@@ -100,15 +101,17 @@ async def test_get_company_deals_is_scoped_and_serialized():
     repo: Any = CompanyRepository()
     repo.get_by_id_scoped = AsyncMock(return_value=company)
     service = _service_with(repo)
-    service.deal_repository.list_by_company = AsyncMock(
-        return_value=[Deal(id="deal-1", organization_id="org-1", title="Expansion")]
+    replace_attr(
+        service.deal_repository,
+        "list_by_company",
+        AsyncMock(return_value=[Deal(id="deal-1", organization_id="org-1", title="Expansion")]),
     )
     db = AsyncMock(spec=AsyncSession)
 
     result = await service.get_company_deals(db, "cmp-1", organization_id="org-1")
 
     assert result[0]["id"] == "deal-1"
-    service.deal_repository.list_by_company.assert_awaited_once_with(
+    as_async_mock(service.deal_repository.list_by_company).assert_awaited_once_with(
         db, company_id="cmp-1", organization_id="org-1", page=1, limit=15
     )
 
@@ -171,7 +174,7 @@ async def test_create_company_serializes_domain_and_size(monkeypatch):
     assert result["id"] == "cmp-1"
     assert result["domain"] == "acme.com"
     assert result["size"] == "250"
-    repo.create.assert_awaited_once()
+    as_async_mock(repo.create).assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -182,7 +185,7 @@ async def test_create_company_validates_and_persists_custom_fields(monkeypatch):
     repo.lock_organization = AsyncMock()
     repo.find_duplicate = AsyncMock(return_value=None)
     custom_fields = AsyncMock()
-    custom_fields.validate_values.return_value = {"account_tier": "Gold"}
+    as_mock(custom_fields.validate_values).return_value = {"account_tier": "Gold"}
     service = CompanyService(repository=repo, custom_field_service_instance=custom_fields)
     monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())
     db = AsyncMock(spec=AsyncSession)
@@ -198,13 +201,13 @@ async def test_create_company_validates_and_persists_custom_fields(monkeypatch):
         CompanyCreate(name="Acme Inc", custom_fields={"account_tier": "Gold"}),
     )
 
-    custom_fields.validate_values.assert_awaited_once_with(
+    as_async_mock(custom_fields.validate_values).assert_awaited_once_with(
         db,
         organization_id="org-1",
         entity_type="Company",
         values={"account_tier": "Gold"},
     )
-    assert repo.create.await_args.kwargs["data"]["custom_fields"] == {"account_tier": "Gold"}
+    assert require_await(repo.create).kwargs["data"]["custom_fields"] == {"account_tier": "Gold"}
     assert result["custom_fields"] == {"account_tier": "Gold"}
 
 
@@ -280,7 +283,7 @@ async def test_get_company_deals_requires_existing_company():
 async def test_company_documents_use_canonical_scoped_document_service(monkeypatch):
     repo: Any = CompanyRepository()
     service = _service_with(repo)
-    service.require_company = AsyncMock(return_value=_make_company())
+    replace_attr(service, "require_company", AsyncMock(return_value=_make_company()))
     db = AsyncMock(spec=AsyncSession)
     user = AsyncMock()
 
@@ -308,7 +311,7 @@ async def test_company_documents_use_canonical_scoped_document_service(monkeypat
 
     assert documents == [{"id": "document-1"}]
     assert count == 1
-    assert service.require_company.await_count == 2
+    assert as_async_mock(service.require_company).await_count == 2
     list_documents.assert_awaited_once_with(
         db,
         page=2,

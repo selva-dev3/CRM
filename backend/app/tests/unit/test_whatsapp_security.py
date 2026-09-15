@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -15,7 +16,7 @@ class _RedisClient:
     def __init__(self, value=None, error: Exception | None = None):
         self.value = value
         self.error = error
-        self.set_calls = []
+        self.set_calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
 
     async def get(self, _key):
         if self.error:

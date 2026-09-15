@@ -11,9 +11,10 @@ from hashlib import sha256
 from urllib.parse import quote
 
 import httpx
+import jwt
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import status
-from jose import JWTError, jwt
+from jwt import PyJWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -63,8 +64,13 @@ class AuthService:
             ) from e
 
     async def _create_refresh_token(
-        self, db: AsyncSession, user_id: str, *, is_persistent: bool = True,
-        family_id: str | None = None, generation: int = 0,
+        self,
+        db: AsyncSession,
+        user_id: str,
+        *,
+        is_persistent: bool = True,
+        family_id: str | None = None,
+        generation: int = 0,
         absolute_expires_at: datetime | None = None,
     ) -> str:
         refresh_token = generate_random_code(48)
@@ -129,9 +135,7 @@ class AuthService:
                 return "User"
 
             if raw_role:
-                role_db = await self.repository.get_role_name_by_id(
-                    db, raw_role, organization_id
-                )
+                role_db = await self.repository.get_role_name_by_id(db, raw_role, organization_id)
                 if role_db:
                     return role_db
                 if await self.repository.role_ids_by_name(db, raw_role, organization_id):
@@ -153,12 +157,14 @@ class AuthService:
         approved catalog. Unknown mappings, multiple mappings, global roles on
         tenant users, and resolution failures all yield an empty set.
         """
-        permission_keys = set()
+        permission_keys: set[str] = set()
         try:
             if getattr(user, "is_platform_admin", False) is True:
                 return sorted(APPROVED_PERMISSION_KEYS)
             organization_id = self._require_organization_id(user)
-            mapped_role_ids = list(dict.fromkeys(await self.repository.role_ids_for_user(db, user.id)))
+            mapped_role_ids = list(
+                dict.fromkeys(await self.repository.role_ids_for_user(db, user.id))
+            )
             if len(mapped_role_ids) > 1:
                 logger.error("User %s has multiple role mappings; denying permissions", user.id)
                 return []
@@ -203,7 +209,7 @@ class AuthService:
         This follows the same deny-closed mapping and legacy-role rules as
         ``get_user_permissions`` and exists for permission-filtered user lists.
         """
-        resolved = {user.id: set() for user in users}
+        resolved: dict[str, set[str]] = {user.id: set() for user in users}
         candidates = [
             user
             for user in users
@@ -631,11 +637,22 @@ class AuthService:
                     metadata = metadata_response.json()
                     jwks_response = await client.get(metadata["jwks_uri"])
                     jwks_response.raise_for_status()
-                    jwks = jwks_response.json()
+                jwks = jwks_response.json()
+                if not isinstance(jwks, dict) or not isinstance(jwks.get("keys"), list):
+                    raise ValueError("Malformed Microsoft JWKS document")
                 header = jwt.get_unverified_header(id_token)
-                key = next(key for key in jwks["keys"] if key.get("kid") == header.get("kid"))
-                claims = jwt.decode(id_token, key, algorithms=["RS256"], audience=client_id)
-            except (httpx.HTTPError, KeyError, StopIteration, JWTError, ValueError) as exc:
+                key = next(
+                    key
+                    for key in jwks["keys"]
+                    if isinstance(key, dict) and key.get("kid") == header.get("kid")
+                )
+                claims = jwt.decode(
+                    id_token,
+                    jwt.PyJWK.from_dict(key).key,
+                    algorithms=["RS256"],
+                    audience=client_id,
+                )
+            except (httpx.HTTPError, KeyError, StopIteration, PyJWTError, ValueError) as exc:
                 raise APIException(
                     status_code=401, message="Invalid Microsoft identity token"
                 ) from exc
@@ -690,14 +707,18 @@ class AuthService:
             raise APIException(
                 status_code=status.HTTP_400_BAD_REQUEST, message="Authorization code is required"
             )
-        return await self._oauth_issue_token(db, "google", payload.id_token, payload.two_factor_code)
+        return await self._oauth_issue_token(
+            db, "google", payload.id_token, payload.two_factor_code
+        )
 
     async def microsoft_oauth(self, db: AsyncSession, payload: OAuthLoginRequest) -> dict:
         if not payload.id_token:
             raise APIException(
                 status_code=status.HTTP_400_BAD_REQUEST, message="Authorization code is required"
             )
-        return await self._oauth_issue_token(db, "microsoft", payload.id_token, payload.two_factor_code)
+        return await self._oauth_issue_token(
+            db, "microsoft", payload.id_token, payload.two_factor_code
+        )
 
     async def get_auth_invitation_details(self, db: AsyncSession, token: str) -> dict:
         inv = await self.repository.get_invitation_by_token(db, token)
@@ -760,7 +781,9 @@ class AuthService:
             )
         from app.core.permissions import ensure_can_assign_role, is_super_admin_role
 
-        ensure_can_assign_role(actor_is_super_admin=False, target_is_super_admin=is_super_admin_role(role))
+        ensure_can_assign_role(
+            actor_is_super_admin=False, target_is_super_admin=is_super_admin_role(role)
+        )
         return role
 
     async def accept_auth_user_invitation(
@@ -816,12 +839,19 @@ class AuthService:
 
             lifecycle = OrganizationLifecycleRepository()
             organization = await self.repository.get_organization_by_id(db, target_org_id)
+            if organization is None:
+                raise NotFoundError(message="Organization not found")
             member_count = await lifecycle.tenant_member_count(db, target_org_id)
             if member_count >= organization.max_users:
-                raise ConflictError(code="ORGANIZATION_MEMBER_LIMIT", message="The organization has reached its member limit")
+                raise ConflictError(
+                    code="ORGANIZATION_MEMBER_LIMIT",
+                    message="The organization has reached its member limit",
+                )
             subscription = await lifecycle.subscription_for_membership(db, target_org_id)
             if subscription is None:
-                raise ConflictError(message="The organization subscription requires administrator reconciliation")
+                raise ConflictError(
+                    message="The organization subscription requires administrator reconciliation"
+                )
             user = await self.repository.create_user(
                 db,
                 data={
@@ -842,17 +872,23 @@ class AuthService:
             access_token = await self._create_access_token(db, user.id, family_id=family_id)
             inv.status = "accepted"
             subscription.current_users = member_count + 1
-            db.add(AuditLog(
-                organization_id=target_org_id,
-                user_id=user.id,
-                action="ROLE_ASSIGNED_TO_USER",
-                details=json.dumps({
-                    "target_type": "user", "target_id": user.id,
-                    "invitation_id": inv.id,
-                    "before": {"role_id": None},
-                    "after": {"role_id": role.id, "role_name": role.name},
-                }, sort_keys=True),
-            ))
+            db.add(
+                AuditLog(
+                    organization_id=target_org_id,
+                    user_id=user.id,
+                    action="ROLE_ASSIGNED_TO_USER",
+                    details=json.dumps(
+                        {
+                            "target_type": "user",
+                            "target_id": user.id,
+                            "invitation_id": inv.id,
+                            "before": {"role_id": None},
+                            "after": {"role_id": role.id, "role_name": role.name},
+                        },
+                        sort_keys=True,
+                    ),
+                )
+            )
 
             user_permissions = await self.get_user_permissions(
                 db, user, resolved_role_name=role.name
@@ -1057,7 +1093,9 @@ class AuthService:
         if not normalized or any(
             len(scope) > 100
             or ":" not in scope
-            or not all(part.replace("-", "").replace("_", "").isalnum() for part in scope.split(":"))
+            or not all(
+                part.replace("-", "").replace("_", "").isalnum() for part in scope.split(":")
+            )
             for scope in normalized
         ):
             raise APIException(
@@ -1069,9 +1107,7 @@ class AuthService:
 
     async def revoke_api_key(self, db: AsyncSession, key_id: str, current_user: User) -> dict:
         organization_id = self._require_organization_id(current_user)
-        key = await self.repository.get_api_key(
-            db, key_id=key_id, organization_id=organization_id
-        )
+        key = await self.repository.get_api_key(db, key_id=key_id, organization_id=organization_id)
         if key is None:
             raise NotFoundError(message="API key not found")
         key.is_active = False

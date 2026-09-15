@@ -3,11 +3,12 @@
 import hashlib
 import json
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
-from sqlalchemy import and_, delete, exists, func, or_, select, text, update
+from sqlalchemy import and_, delete, exists, false, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import NotFoundError
@@ -51,7 +52,6 @@ from app.schemas.whatsapp import InboundEvent, StatusEvent, WebhookIngestResult,
 
 
 class WhatsAppRepository:
-
     async def has_account_records(self, db: AsyncSession, config: Configuration) -> bool:
         """Check all account-bound records, including completed events and detached identities."""
         return bool(
@@ -297,6 +297,11 @@ class WhatsAppRepository:
                 isinstance(v, str) and v for v in (provider_id, name, language, category, status)
             ):
                 raise ValueError("Malformed provider template")
+            provider_id = cast(str, provider_id)
+            name = cast(str, name)
+            language = cast(str, language)
+            category = cast(str, category)
+            status = cast(str, status)
             components = record.get("components", [])
             if not isinstance(components, list):
                 raise ValueError("Malformed provider template components")
@@ -410,7 +415,7 @@ class WhatsAppRepository:
                 )
                 return (
                     f"Your task is {task.status} and due {task.due_date.date().isoformat()}."
-                    if task
+                    if task and task.due_date
                     else None
                 )
             return None
@@ -421,7 +426,7 @@ class WhatsAppRepository:
         ):
             return None
         if topic == "invoice" and "invoices:read" in permissions:
-            rows = (
+            invoice_rows = (
                 (
                     await db.execute(
                         select(Invoice)
@@ -441,42 +446,46 @@ class WhatsAppRepository:
             return (
                 "\n\n".join(
                     f"Invoice {r.invoice_number}: {r.payment_status}\nTotal: {r.currency} {r.amount:.2f}\nPaid: {r.currency} {r.paid_amount:.2f}\nOutstanding: {r.currency} {r.amount - r.paid_amount:.2f}\nDue: {r.due_date.date().isoformat()}"
-                    for r in rows
+                    for r in invoice_rows
                 )
                 or None
             )
         if topic == "payment" and "invoices:read" in permissions:
-            rows = (
-                await db.execute(
-                    select(Payment, Invoice.invoice_number)
-                    .join(
-                        Invoice,
-                        and_(
-                            Invoice.id == Payment.invoice_id,
-                            Invoice.organization_id == Payment.organization_id,
-                        ),
+            payment_rows = (
+                (
+                    await db.execute(
+                        select(Payment, Invoice.invoice_number)
+                        .join(
+                            Invoice,
+                            and_(
+                                Invoice.id == Payment.invoice_id,
+                                Invoice.organization_id == Payment.organization_id,
+                            ),
+                        )
+                        .where(
+                            Payment.organization_id == config.organization_id,
+                            Invoice.contact_id == contact_id,
+                            Invoice.sent_at.is_not(None),
+                            Payment.status == "Succeeded",
+                        )
+                        .order_by(Payment.paid_at.desc(), Payment.id.desc())
+                        .limit(3)
                     )
-                    .where(
-                        Payment.organization_id == config.organization_id,
-                        Invoice.contact_id == contact_id,
-                        Invoice.sent_at.is_not(None),
-                        Payment.status == "Succeeded",
-                    )
-                    .order_by(Payment.paid_at.desc(), Payment.id.desc())
-                    .limit(3)
                 )
-            ).all()
+                .tuples()
+                .all()
+            )
             return (
                 "\n".join(
                     f"Payment {payment.payment_number} for invoice {invoice_number}: "
                     f"{payment.currency} {payment.amount:.2f} received on "
                     f"{payment.payment_date.isoformat()}."
-                    for payment, invoice_number in rows
+                    for payment, invoice_number in payment_rows
                 )
                 or None
             )
         if topic == "quote" and "quotes:read" in permissions:
-            rows = (
+            quote_rows = (
                 (
                     await db.execute(
                         select(Quote)
@@ -496,12 +505,12 @@ class WhatsAppRepository:
             return (
                 "\n\n".join(
                     f"Quote {r.quote_number}: {r.status}\nTotal: {r.currency or ''} {r.total_amount:.2f}"
-                    for r in rows
+                    for r in quote_rows
                 )
                 or None
             )
         if topic == "meeting" and "meetings:read" in permissions:
-            rows = (
+            meeting_rows = (
                 (
                     await db.execute(
                         select(Meeting)
@@ -519,7 +528,9 @@ class WhatsAppRepository:
                 .all()
             )
             return (
-                "\n".join(f"Your upcoming meeting is at {r.start_time.isoformat()}." for r in rows)
+                "\n".join(
+                    f"Your upcoming meeting is at {r.start_time.isoformat()}." for r in meeting_rows
+                )
                 or None
             )
         if topic == "deal" and "deals:read" in permissions:
@@ -627,15 +638,18 @@ class WhatsAppRepository:
         await db.flush()
         if same_identity:
             model = Contact if isinstance(record, Contact) else Lead
-            restored = await db.execute(
-                update(model)
-                .where(
-                    model.organization_id == organization_id,
-                    model.id == record.id,
-                    model.phone == expected_phone,
-                    model.normalized_phone == normalized,
-                )
-                .values(whatsapp_phone_verified_at=previous_verification)
+            restored = cast(
+                CursorResult[Any],
+                await db.execute(
+                    update(model)
+                    .where(
+                        model.organization_id == organization_id,
+                        model.id == record.id,
+                        model.phone == expected_phone,
+                        model.normalized_phone == normalized,
+                    )
+                    .values(whatsapp_phone_verified_at=previous_verification)
+                ),
             )
             if restored.rowcount != 1:
                 # A stale ORM instance must never transfer verification onto a
@@ -782,7 +796,7 @@ class WhatsAppRepository:
         if "whatsapp:read_all" in permissions:
             return tenant
         if "whatsapp:read_assigned" not in permissions:
-            return and_(tenant, False)
+            return and_(tenant, false())
         related = exists(
             select(Identity.id).where(
                 Identity.id == Conversation.identity_id,
@@ -999,13 +1013,13 @@ class WhatsAppRepository:
                     ("status", change.value.statuses),
                 ):
                     for event in events:
-                        data = {
+                        data: dict[str, Any] = {
                             "kind": kind,
                             "data": event.model_dump(by_alias=True, exclude_none=True),
                         }
                         # Provider message identity is stable even when Meta retries
                         # it inside a slightly different envelope.
-                        event_data = data["data"]
+                        event_data = cast(dict[str, Any], data["data"])
                         identity = {"kind": kind, "id": event_data.get("id")}
                         if kind == "status":
                             identity.update(
@@ -1079,15 +1093,16 @@ class WhatsAppRepository:
                 except ValueError:
                     continue
         # Include unverified duplicates when determining ambiguity. No first-row guessing.
-        for model, state in ((Contact, "MATCHED_CONTACT"), (Lead, "MATCHED_LEAD")):
+        for record_model, state in ((Contact, "MATCHED_CONTACT"), (Lead, "MATCHED_LEAD")):
             query = (
-                select(model)
+                select(record_model)
                 .where(
-                    model.organization_id == config.organization_id, model.normalized_phone == phone
+                    record_model.organization_id == config.organization_id,
+                    record_model.normalized_phone == phone,
                 )
                 .limit(2)
             )
-            rows = (await db.execute(query)).scalars().all()
+            rows: Any = (await db.execute(query)).scalars().all()
             if len(rows) > 1:
                 return "AMBIGUOUS", None, None
             if rows:
@@ -1100,8 +1115,8 @@ class WhatsAppRepository:
                     continue
                 return (
                     state,
-                    row.id if model is Contact else None,
-                    row.id if model is Lead else None,
+                    row.id if record_model is Contact else None,
+                    row.id if record_model is Lead else None,
                 )
         return "UNKNOWN", None, None
 
@@ -1116,7 +1131,7 @@ class WhatsAppRepository:
         """Bounded resumable normalization; never infer ownership from legacy data."""
         if config.phone_index_ready:
             return True
-        model = Contact if config.phone_backfill_stage == "contacts" else Lead
+        model: Any = Contact if config.phone_backfill_stage == "contacts" else Lead
         query = select(model).where(model.organization_id == config.organization_id)
         if config.phone_backfill_cursor:
             query = query.where(model.id > config.phone_backfill_cursor)
@@ -1248,6 +1263,9 @@ class WhatsAppRepository:
         lead_id: str | None = None,
         limit: int = 100,
     ) -> list[Message]:
+        organization_id = user.organization_id
+        if not organization_id:
+            raise ValueError("Authenticated organization context is required")
         query = (
             select(Message)
             .join(
@@ -1265,8 +1283,8 @@ class WhatsAppRepository:
                 ),
             )
             .where(
-                Message.organization_id == user.organization_id,
-                self.access_clause(user.organization_id, user.id, permissions),
+                Message.organization_id == organization_id,
+                self.access_clause(organization_id, user.id, permissions),
             )
         )
         query = (
@@ -1296,6 +1314,9 @@ class WhatsAppRepository:
         contact_id: str | None = None,
         lead_id: str | None = None,
     ) -> int:
+        organization_id = user.organization_id
+        if not organization_id:
+            raise ValueError("Authenticated organization context is required")
         query = (
             select(func.count())
             .select_from(Message)
@@ -1314,8 +1335,8 @@ class WhatsAppRepository:
                 ),
             )
             .where(
-                Message.organization_id == user.organization_id,
-                self.access_clause(user.organization_id, user.id, permissions),
+                Message.organization_id == organization_id,
+                self.access_clause(organization_id, user.id, permissions),
             )
         )
         query = (

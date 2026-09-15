@@ -2,9 +2,10 @@ import json
 from datetime import UTC, datetime
 from hashlib import sha256
 
+import jwt
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
+from jwt import InvalidTokenError as JWTError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -95,12 +96,7 @@ async def get_current_user(
             algorithms=[ALGORITHM],
             issuer=settings.JWT_ISSUER,
             audience=settings.JWT_AUDIENCE,
-            options={
-                "require_sub": True,
-                "require_exp": True,
-                "require_iat": True,
-                "require_jti": True,
-            },
+            options={"require": ["sub", "exp", "iat", "jti"]},
         )
         if payload.get("token_type") != "access":
             raise JWTError("wrong token type")
@@ -153,7 +149,11 @@ async def apply_organization_context(
     if platform_admin:
         user.__dict__.pop("_request_organization_id", None)
     organization_id = requested_organization_id or user.organization_id
-    if requested_organization_id and not platform_admin and requested_organization_id != user.organization_id:
+    if (
+        requested_organization_id
+        and not platform_admin
+        and requested_organization_id != user.organization_id
+    ):
         raise ForbiddenError(message="You cannot select another organization")
     if not organization_id:
         if platform_admin:
@@ -161,7 +161,10 @@ async def apply_organization_context(
         raise ForbiddenError(message="Authenticated user has no current organization")
     organization = await db.get(Organization, organization_id)
     if not organization or not organization.is_active or organization.status != "active":
-        raise ForbiddenError(message="Selected organization is inactive or unavailable", code="ORGANIZATION_UNAVAILABLE")
+        raise ForbiddenError(
+            message="Selected organization is inactive or unavailable",
+            code="ORGANIZATION_UNAVAILABLE",
+        )
     if platform_admin:
         user.__dict__["_request_organization_id"] = organization_id
 
@@ -174,9 +177,10 @@ async def require_user_session(current_user: User = Depends(get_current_user)) -
 
 
 async def require_platform_admin(current_user: User = Depends(get_current_user)) -> User:
-    if getattr(current_user, "is_platform_admin", False) is not True or getattr(
-        current_user, "_api_key_scopes", None
-    ) is not None:
+    if (
+        getattr(current_user, "is_platform_admin", False) is not True
+        or getattr(current_user, "_api_key_scopes", None) is not None
+    ):
         raise ForbiddenError(message="Platform Super Admin access is required")
     return current_user
 

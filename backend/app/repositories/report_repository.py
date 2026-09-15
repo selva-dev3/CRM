@@ -68,9 +68,7 @@ class ReportRepository:
             assigned=Deal.assigned_to,
             created=Deal.created_by,
         )
-        res = await db.execute(
-            select(func.coalesce(func.sum(Deal.amount), 0.0)).where(*filters)
-        )
+        res = await db.execute(select(func.coalesce(func.sum(Deal.amount), 0.0)).where(*filters))
         return float(res.scalar() or 0.0)
 
     async def quotas_by_user(self, db: AsyncSession, org_id: str) -> dict[str, float]:
@@ -198,9 +196,7 @@ class ReportRepository:
             assigned=Deal.assigned_to,
             created=Deal.created_by,
         )
-        res = await db.execute(
-            select(func.count(Deal.id)).where(*filters)
-        )
+        res = await db.execute(select(func.count(Deal.id)).where(*filters))
         return res.scalar() or 0
 
     async def win_loss_by_industry(
@@ -435,9 +431,7 @@ class ReportRepository:
             assigned=CallLog.created_by,
             created=CallLog.created_by,
         )
-        res = await db.execute(
-            select(func.count(CallLog.id)).where(*filters)
-        )
+        res = await db.execute(select(func.count(CallLog.id)).where(*filters))
         return res.scalar() or 0
 
     async def total_call_duration_seconds(
@@ -492,9 +486,7 @@ class ReportRepository:
             assigned=Meeting.created_by,
             created=Meeting.created_by,
         )
-        res = await db.execute(
-            select(func.count(Meeting.id)).where(*filters)
-        )
+        res = await db.execute(select(func.count(Meeting.id)).where(*filters))
         return res.scalar() or 0
 
     # --- Deal Duration / CAC / LTV / Churn ---
@@ -804,8 +796,7 @@ class ReportRepository:
             term = f"%{search.strip()}%"
             stmt = stmt.where(or_(CustomReport.name.ilike(term), CustomReport.filters.ilike(term)))
         stmt = (
-            stmt
-            .order_by(CustomReport.created_at.desc(), CustomReport.id.desc())
+            stmt.order_by(CustomReport.created_at.desc(), CustomReport.id.desc())
             .offset(offset)
             .limit(limit)
         )
@@ -815,8 +806,10 @@ class ReportRepository:
     async def count_custom_reports(
         self, db: AsyncSession, org_id: str, *, search: str | None = None
     ) -> int:
-        stmt = select(func.count()).select_from(CustomReport).where(
-            CustomReport.organization_id == org_id
+        stmt = (
+            select(func.count())
+            .select_from(CustomReport)
+            .where(CustomReport.organization_id == org_id)
         )
         if search and search.strip():
             term = f"%{search.strip()}%"
@@ -890,8 +883,7 @@ class ReportRepository:
                 )
             )
         stmt = (
-            stmt
-            .order_by(ScheduledReport.created_at.desc(), ScheduledReport.id.desc())
+            stmt.order_by(ScheduledReport.created_at.desc(), ScheduledReport.id.desc())
             .offset(offset)
             .limit(limit)
         )
@@ -901,8 +893,10 @@ class ReportRepository:
     async def count_scheduled_reports(
         self, db: AsyncSession, org_id: str, *, search: str | None = None
     ) -> int:
-        stmt = select(func.count()).select_from(ScheduledReport).where(
-            ScheduledReport.organization_id == org_id
+        stmt = (
+            select(func.count())
+            .select_from(ScheduledReport)
+            .where(ScheduledReport.organization_id == org_id)
         )
         if search and search.strip():
             term = f"%{search.strip()}%"

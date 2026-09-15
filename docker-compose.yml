@@ -34,7 +34,7 @@ services:
       - crm_network
 
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     container_name: crm_minio
     restart: unless-stopped
     ports:
@@ -47,7 +47,7 @@ services:
     volumes:
       - minio_data:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "mc", "ready", "local"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -55,7 +55,7 @@ services:
       - crm_network
 
   createbuckets:
-    image: minio/mc:latest
+    image: quay.io/minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
     container_name: crm_minio_init
     depends_on:
       minio:

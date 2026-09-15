@@ -218,7 +218,11 @@ async def get_company_contacts(
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     items = await company_service.get_company_contacts(
-        db, company_id, organization_id=organization_id, page=page, limit=limit,
+        db,
+        company_id,
+        organization_id=organization_id,
+        page=page,
+        limit=limit,
         current_user=current_user,
     )
     total = await company_service.count_company_contacts(
@@ -247,7 +251,11 @@ async def get_company_deals(
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     items = await company_service.get_company_deals(
-        db, company_id, organization_id=organization_id, page=page, limit=limit,
+        db,
+        company_id,
+        organization_id=organization_id,
+        page=page,
+        limit=limit,
         current_user=current_user,
     )
     total = await company_service.count_company_deals(
@@ -313,7 +321,11 @@ async def get_company_quotes(
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     items = await company_service.get_company_quotes(
-        db, company_id, organization_id=organization_id, page=page, limit=limit,
+        db,
+        company_id,
+        organization_id=organization_id,
+        page=page,
+        limit=limit,
         current_user=current_user,
     )
     total = await company_service.count_company_quotes(

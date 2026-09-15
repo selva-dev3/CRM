@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
@@ -19,7 +20,7 @@ class AuditLog(Base):
     action: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     ip_address: Mapped[str | None] = mapped_column(String(45))
     details: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class ActivityLog(Base):
@@ -34,4 +35,4 @@ class ActivityLog(Base):
     )
     module: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     action_description: Mapped[str] = mapped_column(Text, nullable=False)
-    timestamp: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

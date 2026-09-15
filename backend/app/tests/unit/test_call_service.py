@@ -1,3 +1,4 @@
+import typing
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import ANY, AsyncMock
@@ -41,7 +42,7 @@ def _service_with(
 ) -> CallService:
     service = CallService(repository=repo, ai_service_instance=ai_service)
     if contact_repository is not None:
-        service.contact_repository = contact_repository
+        service.contact_repository = contact_repository  # type: ignore[attr-defined]
     return service
 
 
@@ -296,7 +297,7 @@ async def test_update_call_rejects_cross_organization_relationship(relationship)
         await service.update_call(
             db,
             "call-1",
-            CallLogUpdate(**{relationship: "foreign-record"}),
+            typing.cast(typing.Any, CallLogUpdate)(**{relationship: "foreign-record"}),
             _user(),
         )
 
@@ -345,7 +346,9 @@ async def test_log_call_rejects_cross_organization_relationship(relationship):
     with pytest.raises(NotFoundError):
         await service.log_call(
             db,
-            CallLogBase(**{relationship: "foreign-record"}, notes="Call back"),
+            typing.cast(typing.Any, CallLogBase)(
+                **{relationship: "foreign-record"}, notes="Call back"
+            ),
             _user(),
         )
 

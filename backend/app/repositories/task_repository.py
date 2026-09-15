@@ -202,7 +202,7 @@ class TaskRepository:
         )
         return result.scalars().first()
 
-    async def dependency_ids(self, db: AsyncSession, task_id: str) -> list[str]:
+    async def dependency_ids(self, db: AsyncSession, task_id: str) -> builtins.list[str]:
         return list(
             (
                 await db.scalars(
@@ -238,13 +238,12 @@ class TaskRepository:
             select(func.count())
             .select_from(TaskDependency)
             .where(
-                (TaskDependency.task_id == task_id)
-                | (TaskDependency.depends_on_task_id == task_id)
+                (TaskDependency.task_id == task_id) | (TaskDependency.depends_on_task_id == task_id)
             )
         )
         return bool(count)
 
-    async def incomplete_dependency_ids(self, db: AsyncSession, task_id: str) -> list[str]:
+    async def incomplete_dependency_ids(self, db: AsyncSession, task_id: str) -> builtins.list[str]:
         return list(
             (
                 await db.scalars(

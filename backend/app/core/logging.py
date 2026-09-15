@@ -18,17 +18,17 @@ class RequestIDFilter(logging.Filter):
 class SensitiveDataFilter(logging.Filter):
     """Redact credentials that may appear in URLs, headers, or exception text."""
 
-    _quoted_value = r'''(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')'''
+    _quoted_value = r"""(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')"""
     _authorization_pattern = re.compile(
-        r'''(?i)(authorization)(['"]?\s*[:=]\s*)(?:'''
+        r"""(?i)(authorization)(['"]?\s*[:=]\s*)(?:"""
         + _quoted_value
-        + r'''|(?:(?:bearer|basic)\s+)?[^&\s,;}]+)'''
+        + r"""|(?:(?:bearer|basic)\s+)?[^&\s,;}]+)"""
     )
     _pattern = re.compile(
         r"(?i)(password|secret|token|id_token|access_token|refresh_token|api_key)"
-        + r'''(['"]?\s*[:=]\s*)(?:'''
+        + r"""(['"]?\s*[:=]\s*)(?:"""
         + _quoted_value
-        + r'''|[^&\s,;}]+)'''
+        + r"""|[^&\s,;}]+)"""
     )
 
     def filter(self, record: logging.LogRecord) -> bool:
@@ -55,22 +55,48 @@ class WhatsAppDiagnosticFormatter(logging.Formatter):
     """Append only channel diagnostic fields; arbitrary extras may contain customer data."""
 
     counter_fields = (
-        "matched_changes", "unmatched_changes", "inserted_messages", "inserted_statuses",
+        "matched_changes",
+        "unmatched_changes",
+        "inserted_messages",
+        "inserted_statuses",
         "duplicate_events",
     )
     state_fields = ("event_status", "message_status", "error_code")
     enum_fields = {
-        "message_type": {"text", "image", "audio", "video", "document", "template",
-                         "location", "interactive", "button", "contacts", "reaction"},
-        "topic": {"greeting", "lead", "deal", "invoice", "payment", "quote", "meeting",
-                  "task", "account_owner", "human", "sensitive", "unknown"},
+        "message_type": {
+            "text",
+            "image",
+            "audio",
+            "video",
+            "document",
+            "template",
+            "location",
+            "interactive",
+            "button",
+            "contacts",
+            "reaction",
+        },
+        "topic": {
+            "greeting",
+            "lead",
+            "deal",
+            "invoice",
+            "payment",
+            "quote",
+            "meeting",
+            "task",
+            "account_owner",
+            "human",
+            "sensitive",
+            "unknown",
+        },
     }
 
     def format(self, record: logging.LogRecord) -> str:
         rendered = super().format(record)
         if not record.getMessage().startswith("whatsapp."):
             return rendered
-        diagnostics = {}
+        diagnostics: dict[str, int | str | bool] = {}
         for field in self.counter_fields:
             value = getattr(record, field, None)
             if type(value) is int and value >= 0:
@@ -79,8 +105,9 @@ class WhatsAppDiagnosticFormatter(logging.Formatter):
             value = getattr(record, field, None)
             if isinstance(value, str) and re.fullmatch(r"[A-Z0-9_]{1,80}", value):
                 diagnostics[field] = value
-        if type(getattr(record, "handoff", None)) is bool:
-            diagnostics["handoff"] = record.handoff
+        handoff = getattr(record, "handoff", None)
+        if type(handoff) is bool:
+            diagnostics["handoff"] = handoff
         for field, allowed in self.enum_fields.items():
             value = getattr(record, field, None)
             if isinstance(value, str) and value in allowed:

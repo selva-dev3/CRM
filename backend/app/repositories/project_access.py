@@ -26,9 +26,7 @@ def project_record_access_filter(
             else result
         )
     assignees = (
-        (access.user_id,)
-        if access.scope in {"own", "assigned"}
-        else tuple(access.team_user_ids)
+        (access.user_id,) if access.scope in {"own", "assigned"} else tuple(access.team_user_ids)
     )
     if not assignees:
         return base if base is not None else false()

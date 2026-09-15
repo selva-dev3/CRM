@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 from sqlalchemy import (
     CheckConstraint,
@@ -42,12 +43,12 @@ class Project(Base):
     created_by: Mapped[str | None] = mapped_column(
         String, ForeignKey("users.id", ondelete="SET NULL"), index=True
     )
-    start_date: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
-    due_date: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), index=True)
+    start_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    due_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     budget: Mapped[float | None] = mapped_column(Numeric(14, 2))
     completion_percentage: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[DateTime] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), onupdate=func.now(), server_default=func.now()
     )
 
@@ -71,12 +72,12 @@ class ProjectMilestone(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(30), default="Pending", server_default="Pending")
-    due_date: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), index=True)
-    completed_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[DateTime | None] = mapped_column(
+    due_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=True
     )
-    updated_at: Mapped[DateTime | None] = mapped_column(
+    updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), onupdate=func.now(), server_default=func.now(), nullable=True
     )
 
@@ -114,6 +115,6 @@ class ProjectMember(Base):
     added_by: Mapped[str | None] = mapped_column(
         String, ForeignKey("users.id", ondelete="SET NULL")
     )
-    created_at: Mapped[DateTime] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

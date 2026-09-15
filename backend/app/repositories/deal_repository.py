@@ -504,7 +504,13 @@ class DealRepository:
         return int(result.scalar_one())
 
     async def create_deal_product(
-        self, db: AsyncSession, *, deal_id: str, product_id: str, quantity: int, unit_price: float
+        self,
+        db: AsyncSession,
+        *,
+        deal_id: str,
+        product_id: str,
+        quantity: int,
+        unit_price: float | Decimal,
     ) -> DealProduct:
         dp = DealProduct(
             deal_id=deal_id, product_id=product_id, quantity=quantity, unit_price=unit_price

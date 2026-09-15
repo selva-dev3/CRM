@@ -9,7 +9,7 @@ from app.services.organization_service import organization_domain_service
 
 
 def test_current_organization_route_precedes_dynamic_org_route():
-    route_paths = [route.path for route in organizations.router.routes]
+    route_paths = [route.path for route in organizations.router.routes]  # type: ignore[attr-defined]
 
     assert route_paths.index("/current") < route_paths.index("/{org_id}")
 

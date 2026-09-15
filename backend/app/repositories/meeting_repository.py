@@ -139,8 +139,7 @@ class MeetingRepository:
                     Meeting.contact_id == contact_id,
                     and_(
                         Meeting.contact_id.is_(None),
-                        func.lower(func.trim(MeetingAttendee.email))
-                        == normalized_email,
+                        func.lower(func.trim(MeetingAttendee.email)) == normalized_email,
                         matching_contact_count == 1,
                     ),
                 ),

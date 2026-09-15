@@ -19,18 +19,30 @@ def test_unit_price_rounding_matches_numeric_storage():
 
 
 def test_percentage_rounding_matches_numeric_storage():
-    assert calculate_line(2, "100", "10.125", "18.125") == calculate_line(2, "100", "10.13", "18.13")
+    assert calculate_line(2, "100", "10.125", "18.125") == calculate_line(
+        2, "100", "10.13", "18.13"
+    )
 
 
 def test_zero_price_is_valid_and_does_not_fall_back_to_catalog_price():
     assert calculate_line(2, 0).total == Decimal("0.00")
 
 
-@pytest.mark.parametrize("quantity,price,discount,tax", [
-    (0, 1, 0, 0), (-1, 1, 0, 0), (True, 1, 0, 0), (1.5, 1, 0, 0),
-    (1, -1, 0, 0), (1, "NaN", 0, 0), (1, "Infinity", 0, 0),
-    (1, 1, 101, 0), (1, 1, 0, -1), (1000000, "999999999999.99", 0, 0),
-])
+@pytest.mark.parametrize(
+    "quantity,price,discount,tax",
+    [
+        (0, 1, 0, 0),
+        (-1, 1, 0, 0),
+        (True, 1, 0, 0),
+        (1.5, 1, 0, 0),
+        (1, -1, 0, 0),
+        (1, "NaN", 0, 0),
+        (1, "Infinity", 0, 0),
+        (1, 1, 101, 0),
+        (1, 1, 0, -1),
+        (1000000, "999999999999.99", 0, 0),
+    ],
+)
 def test_invalid_financial_input_is_rejected(quantity, price, discount, tax):
     with pytest.raises(APIException):
         calculate_line(quantity, price, discount, tax)

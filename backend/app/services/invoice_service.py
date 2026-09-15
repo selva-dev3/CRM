@@ -562,7 +562,11 @@ class InvoiceService:
         return invoice_to_dict(invoice, items)
 
     async def list_invoices_for_deal(
-        self, db: AsyncSession, *, deal_id: str, organization_id: str,
+        self,
+        db: AsyncSession,
+        *,
+        deal_id: str,
+        organization_id: str,
         current_user: User | None = None,
     ) -> list[dict]:
         deal = await self.repository.get_deal_scoped(
@@ -576,7 +580,9 @@ class InvoiceService:
             else None
         )
         invoice = await self.repository.get_by_deal_scoped(
-            db, deal_id=deal_id, organization_id=organization_id,
+            db,
+            deal_id=deal_id,
+            organization_id=organization_id,
             **({"access": access} if access is not None else {}),
         )
         if invoice is None:
@@ -607,8 +613,10 @@ class InvoiceService:
             if not company or not contact or contact.company_id != company.id:
                 raise APIException(message="Invoice customer is invalid")
             snapshot = invoice.billing_snapshot or {}
-            if any(snapshot.get(key) is not None and not isinstance(snapshot[key], str)
-                   for key in ("city", "state", "postal_code")):
+            if any(
+                snapshot.get(key) is not None and not isinstance(snapshot[key], str)
+                for key in ("city", "state", "postal_code")
+            ):
                 raise APIException(message="Billing city, state and postal code must be text")
             if not all(
                 isinstance(snapshot.get(key), str) and snapshot[key].strip()
@@ -676,9 +684,7 @@ class InvoiceService:
             invoice.status = "Finalized"
             invoice.finalized_at = datetime.now(UTC)
             invoice.finalized_by = user_id
-            await self.repository.record_event(
-                db, invoice, "invoice.finalized", user_id=user_id
-            )
+            await self.repository.record_event(db, invoice, "invoice.finalized", user_id=user_id)
             result = invoice_to_dict(invoice, items)
             await db.commit()
             return result
@@ -757,7 +763,7 @@ class InvoiceService:
         *,
         invoice_id: str,
         organization_id: str,
-        amount: float | None,
+        amount: float | Decimal | None,
         status: str | None,
         due_date: datetime | None,
         billing_snapshot: dict | None = None,

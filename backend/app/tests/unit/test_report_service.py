@@ -9,6 +9,7 @@ from app.core.errors import APIException, ForbiddenError, NotFoundError
 from app.models.user import User
 from app.repositories.report_repository import ReportRepository
 from app.services.report_service import ReportService, compute_next_run, today_str
+from app.tests.mock_helpers import as_async_mock, replace_attr, require_await
 
 TEST_HASH = "hash"
 
@@ -49,8 +50,8 @@ async def test_sales_performance_report_builds_rows_with_org():
 
     result = await service.get_sales_performance_report(db, current_user=user)
 
-    repo.total_won_revenue.assert_awaited_once_with(db, "org-acme", ANY)
-    repo.rep_performance.assert_awaited_once_with(db, "org-acme", access=ANY)
+    as_async_mock(repo.total_won_revenue).assert_awaited_once_with(db, "org-acme", ANY)
+    as_async_mock(repo.rep_performance).assert_awaited_once_with(db, "org-acme", access=ANY)
     assert result["report_type"] == "Sales Performance"
     assert result["metrics"]["total_revenue"] == 150000.0
     assert len(result["metrics"]["table_rows"]) == 2
@@ -111,7 +112,7 @@ async def test_financial_overview_separates_booked_and_collected_values():
 
     result = await service.get_financial_overview_report(db, current_user=user)
 
-    repo.financial_overview.assert_awaited_once_with(
+    as_async_mock(repo.financial_overview).assert_awaited_once_with(
         db,
         "org-finance",
         deal_access=ANY,
@@ -119,7 +120,7 @@ async def test_financial_overview_separates_booked_and_collected_values():
         invoice_access=ANY,
         payment_access=ANY,
     )
-    repo.invoice_status_breakdown.assert_awaited_once_with(db, "org-finance", ANY)
+    as_async_mock(repo.invoice_status_breakdown).assert_awaited_once_with(db, "org-finance", ANY)
     assert result["metrics"]["booked_value"] == 25000.0
     assert result["metrics"]["collected_revenue"] == 12000.0
     assert result["metrics"]["outstanding_amount"] == 8000.0
@@ -397,8 +398,8 @@ async def test_cac_is_unavailable_without_marketing_spend():
     assert metrics["available"] is False
     assert "spend" in metrics["reason"]
     assert metrics["table_rows"] == []
-    repo.count_deals_in_stage.assert_not_awaited()
-    repo.total_won_revenue.assert_not_awaited()
+    as_async_mock(repo.count_deals_in_stage).assert_not_awaited()
+    as_async_mock(repo.total_won_revenue).assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -415,7 +416,7 @@ async def test_ltv_is_unavailable_without_customer_payment_history():
     assert metrics["available"] is False
     assert "payment history" in metrics["reason"]
     assert metrics["table_rows"] == []
-    repo.won_aggregate.assert_not_awaited()
+    as_async_mock(repo.won_aggregate).assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -433,9 +434,9 @@ async def test_churn_is_unavailable_without_subscription_lifecycle():
     assert result["metrics"]["available"] is False
     assert "Closed Lost deals are not churn" in result["metrics"]["reason"]
     assert result["metrics"]["table_rows"] == []
-    repo.lost_aggregate.assert_not_awaited()
-    repo.count_deals.assert_not_awaited()
-    repo.top_loss_reason.assert_not_awaited()
+    as_async_mock(repo.lost_aggregate).assert_not_awaited()
+    as_async_mock(repo.count_deals).assert_not_awaited()
+    as_async_mock(repo.top_loss_reason).assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -493,13 +494,13 @@ async def test_create_custom_report_validates_and_commits():
 
     result = await service.create_custom_report(db, "My Report", "filter_x", current_user=user)
 
-    assert repo.create_custom_report.await_args is not None
-    data = repo.create_custom_report.await_args_list[-1].kwargs["data"]
+    assert require_await(repo.create_custom_report) is not None
+    data = as_async_mock(repo.create_custom_report).await_args_list[-1].kwargs["data"]
     assert data["organization_id"] == "org-target"
     assert data["name"] == "My Report"
     assert data["filters"] == "filter_x"
     assert result["status"] == "success"
-    db.commit.assert_awaited_once()
+    as_async_mock(db.commit).assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -574,8 +575,8 @@ async def test_delete_custom_report_success():
 
     result = await service.delete_custom_report(db, "r1", current_user=user)
 
-    repo.delete_custom_report.assert_awaited_once_with(db, mock_report)
-    db.commit.assert_awaited_once()
+    as_async_mock(repo.delete_custom_report).assert_awaited_once_with(db, mock_report)
+    as_async_mock(db.commit).assert_awaited_once()
     assert result["status"] == "success"
 
 
@@ -620,8 +621,8 @@ async def test_schedule_report_email_sets_next_run():
         db, "sales-performance", "lead@company.com", "Daily", current_user=user
     )
 
-    assert repo.create_scheduled_report.await_args is not None
-    data = repo.create_scheduled_report.await_args_list[-1].kwargs["data"]
+    assert require_await(repo.create_scheduled_report) is not None
+    data = as_async_mock(repo.create_scheduled_report).await_args_list[-1].kwargs["data"]
     assert data["organization_id"] == "org-custom"
     assert data["email"] == "lead@company.com"
     assert data["frequency"] == "Daily"
@@ -641,8 +642,8 @@ async def test_delete_scheduled_report():
 
     result = await service.delete_scheduled_report(db, "s1", current_user=user)
 
-    repo.delete_scheduled_report.assert_awaited_once_with(db, mock_sched)
-    db.commit.assert_awaited_once()
+    as_async_mock(repo.delete_scheduled_report).assert_awaited_once_with(db, mock_sched)
+    as_async_mock(db.commit).assert_awaited_once()
     assert result["status"] == "success"
 
 
@@ -676,7 +677,7 @@ async def test_list_custom_reports_pagination():
     user = _make_user(org_id="org-test")
 
     await service.list_custom_reports(db, current_user=user, limit=15, offset=30)
-    repo.list_custom_reports.assert_awaited_once_with(
+    as_async_mock(repo.list_custom_reports).assert_awaited_once_with(
         db, "org-test", limit=15, offset=30, search=None
     )
 
@@ -690,7 +691,7 @@ async def test_list_scheduled_reports_pagination():
     user = _make_user(org_id="org-test")
 
     await service.list_scheduled_reports(db, current_user=user, limit=25, offset=50)
-    repo.list_scheduled_reports.assert_awaited_once_with(
+    as_async_mock(repo.list_scheduled_reports).assert_awaited_once_with(
         db, "org-test", limit=25, offset=50, search=None
     )
 
@@ -709,7 +710,7 @@ async def test_export_report_pdf_validates_type_and_user(monkeypatch):
         )
     )
     service = ReportService(repository=repo)
-    service._access = AsyncMock(return_value=None)
+    replace_attr(service, "_access", AsyncMock(return_value=None))
     db = AsyncMock(spec=AsyncSession)
     user = _make_user(org_id="org-sales", user_id="usr-alex")
 
@@ -727,8 +728,8 @@ async def test_export_report_pdf_validates_type_and_user(monkeypatch):
 
     result = await service.export_report_pdf(db, "sales-performance", current_user=user)
 
-    assert repo.create_export.await_args is not None
-    data = repo.create_export.await_args_list[-1].kwargs["data"]
+    assert require_await(repo.create_export) is not None
+    data = as_async_mock(repo.create_export).await_args_list[-1].kwargs["data"]
     assert data["organization_id"] == "org-sales"
     assert data["requested_by"] == "usr-alex"
     assert data["file_format"] == "pdf"
@@ -749,7 +750,7 @@ async def test_export_report_pdf_accepts_enum_report_type(monkeypatch):
     repo.quotas_by_user = AsyncMock(return_value={})
     repo.create_export = AsyncMock(return_value=Row(id="exp-2", download_url=None, s3_key="k"))
     service = ReportService(repository=repo)
-    service._access = AsyncMock(return_value=None)
+    replace_attr(service, "_access", AsyncMock(return_value=None))
     db = AsyncMock(spec=AsyncSession)
     user = _make_user(org_id="org-enum")
 
@@ -767,8 +768,8 @@ async def test_export_report_pdf_accepts_enum_report_type(monkeypatch):
     result = await service.export_report_pdf(
         db, ReportTypeEnum.SALES_PERFORMANCE, current_user=user
     )
-    assert repo.create_export.await_args is not None
-    data = repo.create_export.await_args_list[-1].kwargs["data"]
+    assert require_await(repo.create_export) is not None
+    data = as_async_mock(repo.create_export).await_args_list[-1].kwargs["data"]
     assert data["report_type"] == "sales-performance"
     assert "pdf_url" in result
 
@@ -814,7 +815,7 @@ async def test_export_report_pdf_raises_on_commit_failure(monkeypatch):
         return_value=Row(id="exp-pdf", download_url=None, s3_key="exports/test.pdf")
     )
     service = ReportService(repository=repo)
-    service._access = AsyncMock(return_value=None)
+    replace_attr(service, "_access", AsyncMock(return_value=None))
     db = AsyncMock(spec=AsyncSession)
     db.commit.side_effect = RuntimeError("DB connection lost")
     user = _make_user(org_id="org-fail", user_id="usr-1")
@@ -856,7 +857,7 @@ async def test_export_report_csv_sanitizes_formula_prefixes(monkeypatch):
         return_value=Row(id="exp-csv", download_url=None, s3_key="exports/org-safe/x.csv")
     )
     service = ReportService(repository=repo)
-    service._access = AsyncMock(return_value=None)
+    replace_attr(service, "_access", AsyncMock(return_value=None))
     db = AsyncMock(spec=AsyncSession)
     user = _make_user(org_id="org-safe", user_id="usr-1")
 
@@ -877,8 +878,8 @@ async def test_export_report_csv_sanitizes_formula_prefixes(monkeypatch):
 
     result = await service.export_report_csv(db, "sales-performance", current_user=user)
 
-    assert repo.create_export.await_args is not None
-    data = repo.create_export.await_args_list[-1].kwargs["data"]
+    assert require_await(repo.create_export) is not None
+    data = as_async_mock(repo.create_export).await_args_list[-1].kwargs["data"]
     assert data["download_url"] is None  # never persist presigned URL
     assert data["s3_key"].startswith("exports/org-safe/")
     assert "csv_url" in result
@@ -899,7 +900,7 @@ async def test_export_csv_reflects_requested_report_rows(monkeypatch):
         return_value=Row(id="exp-wl", download_url=None, s3_key="exports/org-1/x.csv")
     )
     service = ReportService(repository=repo)
-    service._access = AsyncMock(return_value=None)
+    replace_attr(service, "_access", AsyncMock(return_value=None))
     db = AsyncMock(spec=AsyncSession)
     user = _make_user(org_id="org-1", user_id="usr-1")
 
@@ -939,7 +940,7 @@ async def test_build_report_csv_for_organization_internal(monkeypatch):
 
     assert '"source"' in csv_text
     assert '"Referral"' in csv_text
-    repo.leads_by_source.assert_awaited_once_with(db, "org-bg", access=None)
+    as_async_mock(repo.leads_by_source).assert_awaited_once_with(db, "org-bg", access=None)
 
 
 @pytest.mark.asyncio
@@ -959,7 +960,7 @@ async def test_export_report_csv_raises_502_on_s3_error(monkeypatch):
     repo.rep_performance = AsyncMock(return_value=[])
     repo.quotas_by_user = AsyncMock(return_value={})
     service = ReportService(repository=repo)
-    service._access = AsyncMock(return_value=None)
+    replace_attr(service, "_access", AsyncMock(return_value=None))
     db = AsyncMock(spec=AsyncSession)
 
     def boom(*args, **kwargs):
@@ -993,7 +994,7 @@ async def test_get_export_download_mints_fresh_presigned_url(monkeypatch):
 
     result = await service.get_export_download(db, export_id="exp-1", current_user=user)
 
-    repo.get_export.assert_awaited_once_with(db, "exp-1", "org-1", "user-1")
+    as_async_mock(repo.get_export).assert_awaited_once_with(db, "exp-1", "org-1", "user-1")
     assert result["download_url"] == "https://fresh.example/exports/org-1/abc.pdf?sig=new"
     assert result["expires_in"] == 3600
 
@@ -1009,7 +1010,7 @@ async def test_get_export_download_cross_org_not_found():
     with pytest.raises(NotFoundError):
         await service.get_export_download(db, export_id="exp-from-org-B", current_user=user)
 
-    repo.get_export.assert_awaited_once_with(db, "exp-from-org-B", "org-A", "user-1")
+    as_async_mock(repo.get_export).assert_awaited_once_with(db, "exp-from-org-B", "org-A", "user-1")
 
 
 @pytest.mark.asyncio

@@ -104,7 +104,9 @@ async def test_cleanup_inventories_retained_files_once_per_batch(monkeypatch):
         OrganizationLifecycleRepository, "claim_file", AsyncMock(side_effect=[*items, None])
     )
     monkeypatch.setattr(OrganizationLifecycleRepository, "finish_file", AsyncMock())
-    monkeypatch.setattr(OrganizationLifecycleRepository, "renew_file_claim", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        OrganizationLifecycleRepository, "renew_file_claim", AsyncMock(return_value=True)
+    )
     monkeypatch.setattr(
         OrganizationLifecycleRepository,
         "get_deletion",
@@ -128,9 +130,12 @@ async def test_cleanup_inventories_retained_files_once_per_batch(monkeypatch):
 @pytest.mark.asyncio
 async def test_prefix_collision_check_returns_exists_without_streaming_platform_owners():
     from app.repositories.organization_lifecycle_repository import OrganizationLifecycleRepository
+
     db = AsyncMock()
     db.scalar.return_value = None
-    assert not await OrganizationLifecycleRepository().storage_prefix_conflict(db, 'org-1', ['documents/org-1/', 'branding/org-1_'])
+    assert not await OrganizationLifecycleRepository().storage_prefix_conflict(
+        db, "org-1", ["documents/org-1/", "branding/org-1_"]
+    )
     assert db.scalar.await_count == 4
     db.stream.assert_not_awaited()
     db.stream_scalars.assert_not_awaited()
@@ -145,15 +150,31 @@ async def test_cleanup_does_not_delete_after_another_worker_reclaims_lease(monke
     from app.services.organization_cleanup_service import cleanup_organization_files
 
     db = AsyncMock()
-    item = SimpleNamespace(id='item', operation_id='operation', object_key='controlled/file', endpoint=settings.AWS_ENDPOINT_URL, bucket=settings.AWS_S3_BUCKET)
-    monkeypatch.setattr(OrganizationLifecycleRepository, 'claim_file', AsyncMock(side_effect=[item, None]))
-    monkeypatch.setattr(OrganizationLifecycleRepository, 'get_deletion', AsyncMock(return_value=SimpleNamespace(organization_id='deleted')))
-    monkeypatch.setattr(OrganizationLifecycleRepository, 'renew_file_claim', AsyncMock(return_value=False))
+    item = SimpleNamespace(
+        id="item",
+        operation_id="operation",
+        object_key="controlled/file",
+        endpoint=settings.AWS_ENDPOINT_URL,
+        bucket=settings.AWS_S3_BUCKET,
+    )
+    monkeypatch.setattr(
+        OrganizationLifecycleRepository, "claim_file", AsyncMock(side_effect=[item, None])
+    )
+    monkeypatch.setattr(
+        OrganizationLifecycleRepository,
+        "get_deletion",
+        AsyncMock(return_value=SimpleNamespace(organization_id="deleted")),
+    )
+    monkeypatch.setattr(
+        OrganizationLifecycleRepository, "renew_file_claim", AsyncMock(return_value=False)
+    )
+
     async def references(*args):
-        yield False, 'unrelated/file', 'key'
-    monkeypatch.setattr(OrganizationLifecycleRepository, 'storage_references', references)
+        yield False, "unrelated/file", "key"
+
+    monkeypatch.setattr(OrganizationLifecycleRepository, "storage_references", references)
     remove = Mock()
-    monkeypatch.setattr('app.services.organization_cleanup_service.s3_service.delete_file', remove)
+    monkeypatch.setattr("app.services.organization_cleanup_service.s3_service.delete_file", remove)
     assert await cleanup_organization_files(db) == 0
     remove.assert_not_called()
 
@@ -161,13 +182,16 @@ async def test_cleanup_does_not_delete_after_another_worker_reclaims_lease(monke
 @pytest.mark.asyncio
 async def test_deletion_preparation_timeout_rolls_back(monkeypatch):
     from app.core.errors import APIException
-    monkeypatch.setattr(settings, 'ORGANIZATION_DELETION_ENABLED', True)
+
+    monkeypatch.setattr(settings, "ORGANIZATION_DELETION_ENABLED", True)
     service = OrganizationLifecycleService()
-    monkeypatch.setattr(service.repository, 'set_lock_timeout', AsyncMock(side_effect=TimeoutError))
+    monkeypatch.setattr(service.repository, "set_lock_timeout", AsyncMock(side_effect=TimeoutError))
     db = AsyncMock()
     with pytest.raises(APIException) as error:
-        await service.delete(db, 'org-test', User(id='platform', is_platform_admin=True, organization_id=None))
+        await service.delete(
+            db, "org-test", User(id="platform", is_platform_admin=True, organization_id=None)
+        )
     assert error.value.status_code == 503
-    assert error.value.code == 'ORGANIZATION_DELETION_TIMEOUT'
+    assert error.value.code == "ORGANIZATION_DELETION_TIMEOUT"
     db.rollback.assert_awaited_once()
     db.commit.assert_not_awaited()

@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 from sqlalchemy import (
     JSON,
@@ -41,7 +42,7 @@ class Lead(Base):
     email: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
     phone: Mapped[str | None] = mapped_column(String(50))
     normalized_phone: Mapped[str | None] = mapped_column(String(16))
-    whatsapp_phone_verified_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
+    whatsapp_phone_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     website: Mapped[str | None] = mapped_column(String(255))
     industry: Mapped[str | None] = mapped_column(String(100))
     company_size: Mapped[str | None] = mapped_column(String(50))
@@ -71,22 +72,22 @@ class Lead(Base):
         String, ForeignKey("deals.id", ondelete="RESTRICT")
     )
     qualification_reason: Mapped[str | None] = mapped_column(Text)
-    qualified_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
+    qualified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     qualified_by: Mapped[str | None] = mapped_column(
         String, ForeignKey("users.id", ondelete="SET NULL")
     )
-    disqualified_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
+    disqualified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     disqualified_by: Mapped[str | None] = mapped_column(
         String, ForeignKey("users.id", ondelete="SET NULL")
     )
-    converted_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
+    converted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     converted_by: Mapped[str | None] = mapped_column(
         String, ForeignKey("users.id", ondelete="SET NULL")
     )
-    next_follow_up_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), index=True)
-    archived_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[DateTime] = mapped_column(
+    next_follow_up_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), onupdate=func.now(), server_default=func.now()
     )
 
@@ -121,7 +122,7 @@ class LeadScore(Base):
     )
     score: Mapped[float] = mapped_column(Float, nullable=False)
     reason_factors: Mapped[str | None] = mapped_column(Text)
-    calculated_at: Mapped[DateTime] = mapped_column(
+    calculated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 
@@ -148,7 +149,7 @@ class LeadActivity(Base):
     performed_by: Mapped[str | None] = mapped_column(
         String, ForeignKey("users.id", ondelete="SET NULL")
     )
-    timestamp: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class LeadNote(Base):
@@ -162,7 +163,7 @@ class LeadNote(Base):
     created_by: Mapped[str | None] = mapped_column(
         String, ForeignKey("users.id", ondelete="SET NULL")
     )
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class LeadAttachment(Base):
@@ -176,6 +177,6 @@ class LeadAttachment(Base):
     file_url: Mapped[str] = mapped_column(String(500), nullable=False)
     file_size: Mapped[int | None] = mapped_column(Integer, default=0)
     mime_type: Mapped[str | None] = mapped_column(String(100))
-    uploaded_at: Mapped[DateTime] = mapped_column(
+    uploaded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

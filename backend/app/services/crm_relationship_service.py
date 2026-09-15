@@ -1,3 +1,5 @@
+from typing import Any
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -6,7 +8,7 @@ from app.core.record_access import RecordAccessContext, record_access_filter
 from app.models import Company, Contact, Deal, Invoice, Lead, Payment, Project, Quote, Ticket, User
 from app.repositories.project_access import project_record_access_filter
 
-CRM_ENTITY_MODELS = {
+CRM_ENTITY_MODELS: dict[str, Any] = {
     "lead": Lead,
     "contact": Contact,
     "company": Company,
@@ -34,7 +36,7 @@ async def validate_crm_relationships(
     for entity_type, entity_id in values.items():
         if not entity_id:
             continue
-        model = CRM_ENTITY_MODELS[entity_type]
+        model: Any = CRM_ENTITY_MODELS[entity_type]
         query = select(model).where(
             model.id == entity_id,
             model.organization_id == organization_id,
@@ -178,7 +180,7 @@ async def validate_document_relationships(
                 query = query.where(access_filter)
             if not await db.scalar(query):
                 raise NotFoundError(message=f"Related {name} not found")
-    for name, entity_id, model in (
+    for name, entity_id, document_model in (
         ("quote", quote_id, Quote),
         ("invoice", invoice_id, Invoice),
         ("payment", payment_id, Payment),
@@ -188,9 +190,9 @@ async def validate_document_relationships(
         if not entity_id:
             relationships[f"{name}_id"] = entity_id
             continue
-        query = select(model.id).where(
-            model.id == entity_id,
-            model.organization_id == organization_id,
+        query = select(document_model.id).where(
+            document_model.id == entity_id,
+            document_model.organization_id == organization_id,
         )
         if access_by_module is not None:
             access = access_by_module[f"{name}s"]

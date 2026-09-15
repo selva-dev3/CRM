@@ -1,3 +1,4 @@
+import typing
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
@@ -28,7 +29,7 @@ def payment_payload(amount="40.00", **kwargs):
 
 @pytest.fixture
 def payment_context(monkeypatch):
-    invoice = SimpleNamespace(
+    invoice: typing.Any = SimpleNamespace(
         id="invoice",
         organization_id="org",
         amount=Decimal("100.00"),
@@ -225,7 +226,7 @@ def test_payment_detail_includes_invoice_balance_and_customer():
 
 
 def test_eligible_invoice_mapping_exposes_server_balance():
-    invoice = SimpleNamespace(
+    invoice: typing.Any = SimpleNamespace(
         id="invoice",
         invoice_number="INV-1",
         amount=Decimal("100.00"),
@@ -233,9 +234,7 @@ def test_eligible_invoice_mapping_exposes_server_balance():
         currency="INR",
         payment_status="Partially Paid",
     )
-    result = eligible_invoice_to_dict(
-        (invoice, "Acme", "Ada", "ada@example.com", Decimal("40.00"))
-    )
+    result = eligible_invoice_to_dict((invoice, "Acme", "Ada", "ada@example.com", Decimal("40.00")))
     assert result["invoice_number"] == "INV-1"
     assert result["outstanding_amount"] == Decimal("60.00")
 
@@ -258,7 +257,7 @@ def test_calculate_payment_balance_is_the_canonical_status_source(
 
 
 def test_invoice_summary_represents_pending_without_a_fake_payment():
-    invoice = SimpleNamespace(
+    invoice: typing.Any = SimpleNamespace(
         id="invoice",
         invoice_number="INV-1",
         amount=Decimal("100.00"),
@@ -296,9 +295,7 @@ async def test_reconciliation_repairs_persisted_invoice_aggregate(payment_contex
     repo.sum_succeeded.return_value = Decimal("40.00")
     repo.record_reconciliation_audit = AsyncMock()
 
-    repaired = await service.reconcile_invoice(
-        db, invoice_id="invoice", organization_id="org"
-    )
+    repaired = await service.reconcile_invoice(db, invoice_id="invoice", organization_id="org")
 
     assert repaired is True
     assert invoice.paid_amount == Decimal("40.00")
@@ -313,9 +310,7 @@ async def test_reconciliation_does_not_write_when_aggregate_matches(payment_cont
     repo.sum_succeeded.return_value = Decimal("0.00")
     repo.record_reconciliation_audit = AsyncMock()
 
-    repaired = await service.reconcile_invoice(
-        db, invoice_id="invoice", organization_id="org"
-    )
+    repaired = await service.reconcile_invoice(db, invoice_id="invoice", organization_id="org")
 
     assert repaired is False
     repo.record_reconciliation_audit.assert_not_awaited()

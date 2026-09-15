@@ -1,4 +1,5 @@
 import os
+import typing
 
 import pytest
 from pydantic import ValidationError
@@ -41,7 +42,7 @@ def test_settings_validator_passes_async_url_to_database_clients():
 
 
 def test_enabled_whatsapp_requires_exact_https_callback_and_version():
-    common = {
+    common: dict[str, typing.Any] = {
         "SECRET_KEY": "test-secret",
         "DATABASE_URL": "postgresql://user:pass@host/db",
         "REDIS_PORT": 6379,

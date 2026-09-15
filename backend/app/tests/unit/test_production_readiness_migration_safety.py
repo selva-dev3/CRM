@@ -96,9 +96,7 @@ def test_knowledge_scope_downgrade_deletes_only_migration_owned_rows(monkeypatch
         ),
     ),
 )
-def test_business_data_blocks_destructive_downgrade(
-    monkeypatch, filename, error, expected_drop
-):
+def test_business_data_blocks_destructive_downgrade(monkeypatch, filename, error, expected_drop):
     migration = _load_migration(filename)
     connection = MagicMock()
     connection.execute.return_value = _result(scalar=True)

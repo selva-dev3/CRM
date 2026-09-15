@@ -15,6 +15,7 @@ from app.services.auth_service import auth_service
 from app.services.integration_service import integration_service
 from app.services.record_access_service import record_access_service
 from app.services.task_service import TaskService, parse_datetime
+from app.tests.mock_helpers import as_async_mock, as_mock, replace_attr, require_await
 
 
 def _make_task(**overrides) -> Task:
@@ -34,7 +35,7 @@ def _make_task(**overrides) -> Task:
 
 def _service_with(repo: TaskRepository) -> TaskService:
     if "incomplete_dependency_ids" not in repo.__dict__:
-        repo.incomplete_dependency_ids = AsyncMock(return_value=[])
+        replace_attr(repo, "incomplete_dependency_ids", AsyncMock(return_value=[]))
     return TaskService(repository=repo)
 
 
@@ -44,9 +45,7 @@ def _actor() -> User:
 
 def test_parse_datetime_handles_iso_date_and_invalid_input():
     assert parse_datetime("2026-08-01") == datetime(2026, 8, 1, tzinfo=UTC)
-    assert parse_datetime("2026-08-01T10:30:00") == datetime(
-        2026, 8, 1, 10, 30, tzinfo=UTC
-    )
+    assert parse_datetime("2026-08-01T10:30:00") == datetime(2026, 8, 1, 10, 30, tzinfo=UTC)
     parsed_utc = parse_datetime("2026-08-01T10:30:00Z")
     assert parsed_utc is not None
     assert parsed_utc.tzinfo is not None
@@ -64,7 +63,9 @@ async def test_get_task_raises_not_found_when_missing():
     with pytest.raises(NotFoundError):
         await service.get_task(db, "missing-task", "org-1")
 
-    repo.get_by_id.assert_awaited_once_with(db, task_id="missing-task", organization_id="org-1")
+    as_async_mock(repo.get_by_id).assert_awaited_once_with(
+        db, task_id="missing-task", organization_id="org-1"
+    )
 
 
 @pytest.mark.asyncio
@@ -89,9 +90,9 @@ async def test_create_task_resolves_org_and_serializes(monkeypatch):
     assert result["id"] == "task-1"
     assert result["status"] == "Pending"
     assert result["priority"] == "Medium"
-    repo.create.assert_awaited_once()
-    assert repo.create.await_args.kwargs["data"]["assigned_to"] == "usr-1"
-    assert repo.create.await_args.kwargs["data"]["due_date"] is None
+    as_async_mock(repo.create).assert_awaited_once()
+    assert require_await(repo.create).kwargs["data"]["assigned_to"] == "usr-1"
+    assert require_await(repo.create).kwargs["data"]["due_date"] is None
 
 
 @pytest.mark.asyncio
@@ -109,10 +110,12 @@ async def test_create_task_rejects_invalid_due_date(monkeypatch):
     )
 
     with pytest.raises(APIException) as exc_info:
-        await service.create_task(db, TaskCreate(title="Follow up", due_date="not-a-date"), _actor())
+        await service.create_task(
+            db, TaskCreate(title="Follow up", due_date="not-a-date"), _actor()
+        )
 
     assert exc_info.value.status_code == 422
-    repo.create.assert_not_awaited()
+    as_async_mock(repo.create).assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -121,7 +124,7 @@ async def test_create_task_rejects_project_outside_current_organization(monkeypa
     repo.create = AsyncMock()
     repo.get_user_by_id_name_email = AsyncMock(return_value=None)
     project_repository = AsyncMock()
-    project_repository.get.return_value = None
+    as_mock(project_repository.get).return_value = None
     service = TaskService(repository=repo, project_repository=project_repository)
     db = AsyncMock(spec=AsyncSession)
 
@@ -131,22 +134,20 @@ async def test_create_task_rejects_project_outside_current_organization(monkeypa
         organization_service, "resolve_valid_org_id", AsyncMock(return_value="org-1")
     )
     project_access = object()
-    monkeypatch.setattr(
-        record_access_service, "resolve", AsyncMock(return_value=project_access)
-    )
+    monkeypatch.setattr(record_access_service, "resolve", AsyncMock(return_value=project_access))
 
     with pytest.raises(NotFoundError):
         await service.create_task(
             db, TaskCreate(title="Follow up", project_id="project-2"), _actor()
         )
 
-    project_repository.get.assert_awaited_once_with(
+    as_async_mock(project_repository.get).assert_awaited_once_with(
         db,
         project_id="project-2",
         organization_id="org-1",
         access=project_access,
     )
-    repo.create.assert_not_awaited()
+    as_async_mock(repo.create).assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -155,7 +156,7 @@ async def test_create_task_cannot_bootstrap_access_to_an_inaccessible_project(mo
     repo.create = AsyncMock()
     repo.get_user_by_id_name_email = AsyncMock(return_value=None)
     project_repository = AsyncMock()
-    project_repository.get.return_value = None
+    as_mock(project_repository.get).return_value = None
     service = TaskService(repository=repo, project_repository=project_repository)
     db = AsyncMock(spec=AsyncSession)
 
@@ -177,13 +178,13 @@ async def test_create_task_cannot_bootstrap_access_to_an_inaccessible_project(mo
         )
 
     resolve.assert_awaited_once_with(db, actor, "projects")
-    project_repository.get.assert_awaited_once_with(
+    as_async_mock(project_repository.get).assert_awaited_once_with(
         db,
         project_id="private-project",
         organization_id="org-1",
         access=assigned_scope,
     )
-    repo.create.assert_not_awaited()
+    as_async_mock(repo.create).assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -208,7 +209,7 @@ async def test_create_task_requires_assign_permission_for_another_user(monkeypat
             _actor(),
         )
 
-    repo.create.assert_not_awaited()
+    as_async_mock(repo.create).assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -229,9 +230,7 @@ async def test_create_task_allows_another_user_with_assign_permission(monkeypatc
         auth_service, "get_user_permissions", AsyncMock(return_value=["tasks:assign"])
     )
     monkeypatch.setattr(integration_service, "notify_slack_event", AsyncMock())
-    monkeypatch.setattr(
-        "app.services.task_service.notification_service.notify", AsyncMock()
-    )
+    monkeypatch.setattr("app.services.task_service.notification_service.notify", AsyncMock())
 
     result = await service.create_task(
         db,
@@ -240,7 +239,7 @@ async def test_create_task_allows_another_user_with_assign_permission(monkeypatc
     )
 
     assert result["assigned_to"] == "usr-2"
-    assert repo.create.await_args.kwargs["data"]["assigned_to"] == "usr-2"
+    assert require_await(repo.create).kwargs["data"]["assigned_to"] == "usr-2"
 
 
 @pytest.mark.asyncio
@@ -263,7 +262,7 @@ async def test_update_task_requires_assign_permission_when_assignee_changes(monk
         )
 
     assert task.assigned_to == "usr-1"
-    db.commit.assert_not_awaited()
+    as_async_mock(db.commit).assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -290,7 +289,7 @@ async def test_update_task_allows_self_assignment_without_assign_permission(monk
     assert result["assigned_to"] == actor.id
     assert task.assigned_to == actor.id
     permissions.assert_not_awaited()
-    db.commit.assert_awaited_once()
+    as_async_mock(db.commit).assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -355,6 +354,21 @@ async def test_update_task_applies_only_provided_fields():
 
 
 @pytest.mark.asyncio
+async def test_update_task_allows_unrelated_changes_when_assignee_was_deleted():
+    task = _make_task(assigned_to=None)
+    repo: Any = TaskRepository()
+    repo.get_by_id = AsyncMock(return_value=task)
+    service = _service_with(repo)
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.update_task(db, "task-1", TaskUpdate(status="Completed"), "org-1")
+
+    assert task.assigned_to is None
+    assert result["status"] == "Completed"
+    as_async_mock(db.commit).assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_update_task_rejects_project_move_when_dependencies_exist():
     task = _make_task(project_id="project-1")
     repo: Any = TaskRepository()
@@ -362,7 +376,7 @@ async def test_update_task_rejects_project_move_when_dependencies_exist():
     repo.lock_dependency_projects = AsyncMock()
     repo.has_dependencies = AsyncMock(return_value=True)
     project_repository = AsyncMock()
-    project_repository.get.return_value = SimpleNamespace(id="project-2")
+    as_mock(project_repository.get).return_value = SimpleNamespace(id="project-2")
     service = TaskService(repository=repo, project_repository=project_repository)
     db = AsyncMock(spec=AsyncSession)
 
@@ -375,13 +389,13 @@ async def test_update_task_rejects_project_move_when_dependencies_exist():
         )
 
     assert exc_info.value.status_code == 409
-    repo.lock_dependency_projects.assert_awaited_once_with(
+    as_async_mock(repo.lock_dependency_projects).assert_awaited_once_with(
         db,
         project_ids={"project-1", "project-2"},
         organization_id="org-1",
     )
     assert task.project_id == "project-1"
-    db.commit.assert_not_awaited()
+    as_async_mock(db.commit).assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -412,13 +426,13 @@ async def test_add_dependency_rejects_tasks_moved_after_project_lock(monkeypatch
         )
 
     assert exc_info.value.status_code == 409
-    repo.lock_dependency_projects.assert_awaited_once_with(
+    as_async_mock(repo.lock_dependency_projects).assert_awaited_once_with(
         db,
         project_ids={"project-old"},
         organization_id="org-1",
     )
-    repo.create_dependency.assert_not_awaited()
-    db.commit.assert_not_awaited()
+    as_async_mock(repo.create_dependency).assert_not_awaited()
+    as_async_mock(db.commit).assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -451,7 +465,7 @@ async def test_assign_task_resolves_user_id(monkeypatch):
 
     assert task.assigned_to == "usr-9"
     assert result["status"] == "success"
-    repo.get_user_by_id_name_email.assert_awaited_once_with(
+    as_async_mock(repo.get_user_by_id_name_email).assert_awaited_once_with(
         db, value="usr-9", organization_id="org-1"
     )
 

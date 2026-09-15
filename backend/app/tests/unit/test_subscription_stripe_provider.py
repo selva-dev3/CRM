@@ -40,9 +40,9 @@ async def test_provider_errors_are_actionable_without_sensitive_data(
         pass
 
     failure = StripeError("credential-and-customer-data-must-not-appear")
-    failure.http_status = http_status
-    failure.code = code
-    failure.request_id = "req_TestRequest123"
+    failure.http_status = http_status  # type: ignore[attr-defined]
+    failure.code = code  # type: ignore[attr-defined]
+    failure.request_id = "req_TestRequest123"  # type: ignore[attr-defined]
     endpoint = SimpleNamespace(retrieve=Mock(side_effect=failure))
     sdk = SimpleNamespace(
         StripeError=StripeError,
@@ -86,7 +86,7 @@ async def test_provider_diagnostics_reject_untrusted_metadata(provider, monkeypa
     )
     with pytest.raises(APIException) as exc:
         await provider.retrieve_subscription("private-reference")
-    assert exc.value.fields["provider_request_id"] is None
+    assert exc.value.fields["provider_request_id"] is None  # type: ignore[index]
     assert "code=unknown" in caplog.text
     assert "unsafe" not in caplog.text
     assert "secret" not in caplog.text

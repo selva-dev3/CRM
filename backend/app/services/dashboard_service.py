@@ -66,7 +66,9 @@ class DashboardService:
             await record_access_service.resolve(db, current_user, "deals") if current_user else None
         )
         quote_access = (
-            await record_access_service.resolve(db, current_user, "quotes") if current_user else None
+            await record_access_service.resolve(db, current_user, "quotes")
+            if current_user
+            else None
         )
         invoice_access = (
             await record_access_service.resolve(db, current_user, "invoices")
@@ -79,7 +81,9 @@ class DashboardService:
             else None
         )
         total_leads = await self.repository.count_leads(db, organization_id, lead_access)
-        pipeline_revenue = await self.repository.sum_pipeline_deals(db, organization_id, deal_access)
+        pipeline_revenue = await self.repository.sum_pipeline_deals(
+            db, organization_id, deal_access
+        )
         deals_won_amount = await self.repository.sum_won_deals(db, organization_id, deal_access)
         closed_deals = await self.repository.count_closed_deals(db, organization_id, deal_access)
         won_deals = await self.repository.count_won_deals(db, organization_id, deal_access)
@@ -233,10 +237,14 @@ class DashboardService:
         local_end = local_start + timedelta(days=1)
         start_utc = local_start.astimezone(UTC)
         end_utc = local_end.astimezone(UTC)
-        access = {
-            module: await record_access_service.resolve(db, current_user, module)
-            for module in ("calls", "emails", "meetings", "tasks")
-        } if current_user else {}
+        access = (
+            {
+                module: await record_access_service.resolve(db, current_user, module)
+                for module in ("calls", "emails", "meetings", "tasks")
+            }
+            if current_user
+            else {}
+        )
 
         return {
             "calls_completed": await self.repository.count_calls(
