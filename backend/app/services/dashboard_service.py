@@ -20,9 +20,13 @@ class DashboardService:
 
     DEFAULT_WIDGETS = [
         {"id": "w-kpis", "title": "Executive KPIs", "enabled": True},
-        {"id": "w-funnel", "title": "Sales Stage Funnel", "enabled": True},
-        {"id": "w-top", "title": "Top Sales Performers", "enabled": True},
-        {"id": "w-deals", "title": "Priority Deals", "enabled": True},
+        {"id": "w-revenue", "title": "Won Revenue Trend", "enabled": True},
+        {"id": "w-funnel", "title": "Sales Pipeline", "enabled": True},
+        {"id": "w-conversions", "title": "Lead Channels", "enabled": True},
+        {"id": "w-activity", "title": "Activity Summary", "enabled": True},
+        {"id": "w-contacts", "title": "Recent Contacts", "enabled": True},
+        {"id": "w-deals", "title": "Recent Deals", "enabled": True},
+        {"id": "w-top", "title": "Top Performers", "enabled": True},
         {"id": "w-ai", "title": "AI Recommendations", "enabled": True},
     ]
 
@@ -49,6 +53,15 @@ class DashboardService:
             return f"{hostname}{path}" if hostname else raw_source
 
         return raw_source
+
+    @staticmethod
+    def _comparison(current: float, previous: float) -> dict:
+        return {
+            "previous_value": previous,
+            "change_percentage": (
+                round((current - previous) / previous * 100.0, 1) if previous > 0 else None
+            ),
+        }
 
     async def get_kpis(
         self,
@@ -80,16 +93,20 @@ class DashboardService:
             if current_user
             else None
         )
-        total_leads = await self.repository.count_leads(db, organization_id, lead_access)
-        pipeline_revenue = await self.repository.sum_pipeline_deals(
-            db, organization_id, deal_access
+        lead_metrics = await self.repository.lead_kpi_metrics(
+            db, organization_id, lead_access, start_at=start_at, end_at=end_at
         )
-        deals_won_amount = await self.repository.sum_won_deals(db, organization_id, deal_access)
-        closed_deals = await self.repository.count_closed_deals(db, organization_id, deal_access)
-        won_deals = await self.repository.count_won_deals(db, organization_id, deal_access)
+        deal_metrics = await self.repository.deal_kpi_metrics(
+            db, organization_id, deal_access, start_at=start_at, end_at=end_at
+        )
+        total_leads = int(lead_metrics["total_leads"])
+        avg_score = float(lead_metrics["average_score"])
+        scored_leads = int(lead_metrics["scored_leads"])
+        pipeline_revenue = float(deal_metrics["pipeline_revenue"])
+        deals_won_amount = float(deal_metrics["deals_won_amount"])
+        closed_deals = int(deal_metrics["closed_deals"])
+        won_deals = int(deal_metrics["won_deals"])
         win_rate = round((won_deals / closed_deals * 100.0), 2) if closed_deals > 0 else 0.0
-        avg_score = await self.repository.avg_lead_score(db, organization_id, lead_access)
-        scored_leads = await self.repository.count_scored_leads(db, organization_id, lead_access)
         currency, locale = await self.repository.get_organization_currency_locale(
             db, organization_id
         )
@@ -104,18 +121,43 @@ class DashboardService:
             payment_access=payment_access,
         )
 
-        recent_activity = []
-        for lead in await self.repository.recent_leads(db, organization_id, access=lead_access):
-            recent_activity.append(
-                {
-                    "action": "New Lead Added",
-                    "title": lead.contact_name or lead.title or lead.email,
-                    "user": "System API",
-                    "timestamp": (
-                        str(lead.created_at)[:16] if getattr(lead, "created_at", None) else "Recent"
-                    ),
-                }
+        comparisons = None
+        if start_at is not None and end_at is not None:
+            duration = end_at - start_at
+            previous_start, previous_end = start_at - duration, start_at
+            previous_lead_metrics = await self.repository.lead_kpi_metrics(
+                db, organization_id, lead_access, start_at=previous_start, end_at=previous_end
             )
+            previous_deal_metrics = await self.repository.deal_kpi_metrics(
+                db, organization_id, deal_access, start_at=previous_start, end_at=previous_end
+            )
+            previous_leads = int(previous_lead_metrics["total_leads"])
+            previous_won_amount = float(previous_deal_metrics["deals_won_amount"])
+            previous_closed = int(previous_deal_metrics["closed_deals"])
+            previous_won = int(previous_deal_metrics["won_deals"])
+            previous_win_rate = (
+                round(previous_won / previous_closed * 100.0, 2) if previous_closed else 0.0
+            )
+            previous_financial = await self.repository.financial_kpis(
+                db,
+                organization_id,
+                currency=currency,
+                start_at=previous_start,
+                end_at=previous_end,
+                quote_access=quote_access,
+                invoice_access=invoice_access,
+                payment_access=payment_access,
+            )
+            comparisons = {
+                "total_leads": self._comparison(total_leads, previous_leads),
+                "deals_won_amount": self._comparison(deals_won_amount, previous_won_amount),
+                "won_deals_count": self._comparison(won_deals, previous_won),
+                "win_rate_percentage": self._comparison(win_rate, previous_win_rate),
+                "quote_value": self._comparison(
+                    financial["quote_value"], previous_financial["quote_value"]
+                ),
+                "revenue": self._comparison(financial["revenue"], previous_financial["revenue"]),
+            }
 
         return DashboardKPIs(
             total_leads=total_leads,
@@ -129,7 +171,9 @@ class DashboardService:
             **financial,
             currency=currency,
             locale=locale,
-            recent_activity=recent_activity,
+            recent_activity=[],
+            period={"start_at": start_at, "end_at": end_at} if start_at and end_at else None,
+            comparisons=comparisons,
         )
 
     async def get_sales_funnel(
@@ -162,23 +206,50 @@ class DashboardService:
 
         return result
 
-    async def get_revenue_chart(self, db: AsyncSession, organization_id: str) -> dict:
-        raise APIException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            code="METRIC_UNAVAILABLE",
-            message=(
-                "Monthly revenue is unavailable until closed-deal timestamps and "
-                "organization revenue targets are recorded."
-            ),
+    async def get_revenue_chart(
+        self,
+        db: AsyncSession,
+        organization_id: str,
+        *,
+        start_at: datetime,
+        end_at: datetime,
+        current_user: User | None = None,
+    ) -> dict:
+        access = (
+            await record_access_service.resolve(db, current_user, "deals") if current_user else None
         )
+        rows = await self.repository.monthly_won_revenue(
+            db, organization_id, start_at, end_at, access
+        )
+        revenue_by_month = {(month.year, month.month): float(value or 0.0) for month, value in rows}
+        cursor = datetime(start_at.year, start_at.month, 1, tzinfo=start_at.tzinfo)
+        months: list[str] = []
+        actual: list[float] = []
+        while cursor < end_at:
+            months.append(cursor.strftime("%b %Y"))
+            actual.append(revenue_by_month.get((cursor.year, cursor.month), 0.0))
+            cursor = (
+                cursor.replace(year=cursor.year + 1, month=1)
+                if cursor.month == 12
+                else cursor.replace(month=cursor.month + 1)
+            )
+        return {"months": months, "actual": actual, "target": []}
 
     async def get_top_performers(
-        self, db: AsyncSession, organization_id: str, current_user: User | None = None
+        self,
+        db: AsyncSession,
+        organization_id: str,
+        current_user: User | None = None,
+        *,
+        start_at: datetime | None = None,
+        end_at: datetime | None = None,
     ) -> list[dict]:
         access = (
             await record_access_service.resolve(db, current_user, "deals") if current_user else None
         )
-        rows = await self.repository.top_performers(db, organization_id, access=access)
+        rows = await self.repository.top_performers(
+            db, organization_id, access=access, start_at=start_at, end_at=end_at
+        )
         result = []
         for owner_name, deals_count, revenue in rows:
             owner_name = owner_name or "Unassigned Rep"
@@ -194,12 +265,20 @@ class DashboardService:
         return result
 
     async def get_lead_conversions(
-        self, db: AsyncSession, organization_id: str, current_user: User | None = None
+        self,
+        db: AsyncSession,
+        organization_id: str,
+        current_user: User | None = None,
+        *,
+        start_at: datetime | None = None,
+        end_at: datetime | None = None,
     ) -> list[dict]:
         access = (
             await record_access_service.resolve(db, current_user, "leads") if current_user else None
         )
-        rows = await self.repository.lead_source_conversions(db, organization_id, access)
+        rows = await self.repository.lead_source_conversions(
+            db, organization_id, access, start_at=start_at, end_at=end_at
+        )
         grouped: dict[str, dict[str, int]] = {}
         for source, lead_count, converted_count in rows:
             source_name = self._normalize_lead_source(source)
@@ -222,7 +301,13 @@ class DashboardService:
         ]
 
     async def get_activities_summary(
-        self, db: AsyncSession, organization_id: str, current_user: User | None = None
+        self,
+        db: AsyncSession,
+        organization_id: str,
+        current_user: User | None = None,
+        *,
+        start_at: datetime | None = None,
+        end_at: datetime | None = None,
     ) -> dict:
         timezone_name = await self.repository.get_organization_timezone(db, organization_id)
         try:
@@ -232,11 +317,15 @@ class DashboardService:
             organization_timezone = ZoneInfo("UTC")
 
         now_utc = datetime.now(UTC)
-        local_now = now_utc.astimezone(organization_timezone)
-        local_start = datetime.combine(local_now.date(), time.min, tzinfo=organization_timezone)
-        local_end = local_start + timedelta(days=1)
-        start_utc = local_start.astimezone(UTC)
-        end_utc = local_end.astimezone(UTC)
+        if start_at is not None and end_at is not None:
+            start_utc, end_utc = start_at, end_at
+            period_label = f"Selected period · {timezone_name}"
+        else:
+            local_now = now_utc.astimezone(organization_timezone)
+            local_start = datetime.combine(local_now.date(), time.min, tzinfo=organization_timezone)
+            local_end = local_start + timedelta(days=1)
+            start_utc, end_utc = local_start.astimezone(UTC), local_end.astimezone(UTC)
+            period_label = f"Today · {timezone_name}"
         access = (
             {
                 module: await record_access_service.resolve(db, current_user, module)
@@ -263,16 +352,24 @@ class DashboardService:
             "tasks_completed": await self.repository.count_completed_tasks(
                 db, organization_id, start_utc, end_utc, access.get("tasks")
             ),
-            "period_label": f"Today · {timezone_name}",
+            "period_label": period_label,
         }
 
     async def get_recent_deals(
-        self, db: AsyncSession, organization_id: str, current_user: User | None = None
+        self,
+        db: AsyncSession,
+        organization_id: str,
+        current_user: User | None = None,
+        *,
+        start_at: datetime | None = None,
+        end_at: datetime | None = None,
     ) -> list[dict]:
         access = (
             await record_access_service.resolve(db, current_user, "deals") if current_user else None
         )
-        deals = await self.repository.recent_deals(db, organization_id, access=access)
+        deals = await self.repository.recent_deals(
+            db, organization_id, limit=10, access=access, start_at=start_at, end_at=end_at
+        )
         return [
             {
                 "deal_id": d.id,
@@ -285,8 +382,9 @@ class DashboardService:
             for d, owner_name in deals
         ]
 
-    async def get_ai_insights(self, db: AsyncSession, current_user: User) -> dict:
-        organization_id = current_user.organization_id or ""
+    async def get_ai_insights(
+        self, db: AsyncSession, organization_id: str, current_user: User
+    ) -> dict:
         lead_access = await record_access_service.resolve(db, current_user, "leads")
         deal_access = await record_access_service.resolve(db, current_user, "deals")
         total_leads = await self.repository.count_leads(db, organization_id, lead_access)
@@ -331,7 +429,26 @@ class DashboardService:
             )
         if setting and setting.value:
             try:
-                return json.loads(setting.value)
+                saved = json.loads(setting.value)
+                saved_by_id = {
+                    item.get("id"): item
+                    for item in saved
+                    if isinstance(item, dict) and isinstance(item.get("id"), str)
+                }
+                merged = []
+                for widget in self.DEFAULT_WIDGETS:
+                    saved_enabled = saved_by_id.get(widget["id"], {}).get("enabled")
+                    merged.append(
+                        {
+                            **widget,
+                            "enabled": (
+                                saved_enabled
+                                if isinstance(saved_enabled, bool)
+                                else widget["enabled"]
+                            ),
+                        }
+                    )
+                return merged
             except ValueError:
                 # JSONDecodeError inherits from ValueError.
                 return [widget.copy() for widget in self.DEFAULT_WIDGETS]

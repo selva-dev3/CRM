@@ -46,6 +46,17 @@ let explicitLogoutInProgress = false;
 let refreshChannel: BroadcastChannel | null = null;
 const activeGuardedStreams = new Set<() => void>();
 
+declare const authSessionGenerationBrand: unique symbol;
+export type AuthSessionGeneration = number & { readonly [authSessionGenerationBrand]: true };
+
+export function captureAuthSessionGeneration(): AuthSessionGeneration {
+  return authGeneration as AuthSessionGeneration;
+}
+
+export function isAuthSessionGenerationCurrent(generation: AuthSessionGeneration): boolean {
+  return !explicitLogoutInProgress && generation === authGeneration;
+}
+
 function cancelActiveGuardedStreams(): void {
   for (const cancel of Array.from(activeGuardedStreams)) cancel();
 }

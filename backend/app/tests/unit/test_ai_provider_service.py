@@ -858,6 +858,31 @@ async def test_runtime_rejects_user_without_organization():
 
 
 @pytest.mark.asyncio
+async def test_runtime_uses_platform_admin_selected_organization():
+    repository = _repository()
+    service = AIRuntimeService(repository=repository, provider_gateway=AsyncMock())
+    actor = User(
+        id="platform-admin",
+        email="admin@example.com",
+        is_platform_admin=True,
+    )
+    actor._request_organization_id = "selected-org"
+    db = AsyncMock(spec=AsyncSession)
+
+    await service._prepare_run(
+        db,
+        current_user=actor,
+        feature="dashboard_insights",
+        entity_type=None,
+        entity_id=None,
+        prompt_version="v1",
+    )
+
+    as_async_mock(repository.get_organization_config).assert_awaited_once_with(db, "selected-org")
+    assert require_await(repository.create_run).kwargs["organization_id"] == "selected-org"
+
+
+@pytest.mark.asyncio
 async def test_readiness_resolves_org_provider_and_disabled_flags(monkeypatch):
     repository = _repository()
     config: typing.Any = SimpleNamespace(enabled=True, provider="gemini", model_name="tenant-model")
