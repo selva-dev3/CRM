@@ -16,6 +16,10 @@ interface PageTabsProps<TValue extends string> {
   onValueChange: (value: TValue) => void;
   tabs: readonly PageTab<TValue>[];
   variant?: 'default' | 'line';
+  /** Use the shared record-detail treatment for tabs that anchor a long profile page. */
+  detail?: boolean;
+  /** Keep the tab bar visible while the detail content scrolls. */
+  sticky?: boolean;
   className?: string;
   listClassName?: string;
   triggerClassName?: string;
@@ -27,6 +31,8 @@ export function PageTabs<TValue extends string>({
   onValueChange,
   tabs,
   variant = 'line',
+  detail = false,
+  sticky = false,
   className,
   listClassName,
   triggerClassName,
@@ -35,17 +41,29 @@ export function PageTabs<TValue extends string>({
     <Tabs
       value={value}
       onValueChange={(nextValue) => onValueChange(nextValue as TValue)}
-      className={cn('w-full overflow-x-auto', className)}
+      className={cn(
+        'w-full overflow-x-auto',
+        sticky && 'sticky top-0 z-20 -mx-4 bg-slate-50/95 px-4 py-2 backdrop-blur-sm sm:-mx-6 sm:px-6',
+        className,
+      )}
     >
       <TabsList
         variant={variant}
-        className={cn('min-w-max justify-start', listClassName)}
+        className={cn(
+          'min-w-max justify-start',
+          detail && 'border-b border-slate-200 bg-transparent pb-0',
+          listClassName,
+        )}
       >
         {tabs.map((tab) => (
           <TabsTrigger
             key={tab.value}
             value={tab.value}
-            className={cn('shrink-0 gap-2 whitespace-nowrap', triggerClassName)}
+            className={cn(
+              'shrink-0 gap-2 whitespace-nowrap',
+              detail && 'text-button text-slate-500 data-[state=active]:text-blue-600',
+              triggerClassName,
+            )}
           >
             {tab.icon}
             {tab.label}

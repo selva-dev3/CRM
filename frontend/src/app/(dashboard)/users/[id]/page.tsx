@@ -266,6 +266,20 @@ export default function UserDetailPage() {
         </div>
       </div>
 
+      <PageTabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        detail
+        sticky
+        tabs={[
+          { value: 'profile', label: 'Profile' },
+          { value: 'performance', label: 'Sales Quota & Performance' },
+          ...(canReadUserPermissions
+            ? [{ value: 'security' as const, label: 'Security & Permissions' }]
+            : []),
+        ]}
+      />
+
       {/* Feedback Banners */}
       {successMessage && (
         <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-sm font-medium flex items-center gap-2 animate-in fade-in-50">
@@ -400,19 +414,6 @@ export default function UserDetailPage() {
           </div>
         </Card>
       </div>
-
-      <PageTabs
-        value={activeTab}
-        onValueChange={setActiveTab}
-        tabs={[
-          { value: 'profile', label: 'Profile' },
-          { value: 'performance', label: 'Sales Quota & Performance' },
-          ...(canReadUserPermissions
-            ? [{ value: 'security' as const, label: 'Security & Permissions' }]
-            : []),
-        ]}
-        listClassName="border-b border-slate-200"
-      />
 
       {/* Tab Contents */}
       {activeTab === 'profile' && (

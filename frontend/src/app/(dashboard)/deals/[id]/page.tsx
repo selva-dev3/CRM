@@ -489,6 +489,20 @@ export default function DealDetailsPage() {
         </div>
       </div>
 
+      <PageTabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        detail
+        sticky
+        tabs={[
+          { value: 'products', icon: <Package className="size-4" />, label: `Products (${productsPageData?.total ?? 0})` },
+          { value: 'timeline', icon: <History className="size-4" />, label: `Stage History (${timelinePageData?.total ?? 0})` },
+          { value: 'notes', icon: <FileText className="size-4" />, label: `Notes (${notesPageData?.total ?? 0})` },
+          { value: 'quotes', icon: <DollarSign className="size-4" />, label: `Quotes (${quotesPageData?.total ?? 0})` },
+          { value: 'commission', icon: <Calculator className="size-4" />, label: 'Rep Commission Split' },
+        ]}
+      />
+
       {/* Feedback Notifications */}
       {successMessage && (
         <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-medium flex items-center gap-2 animate-in fade-in-50">
@@ -568,19 +582,6 @@ export default function DealDetailsPage() {
       </div>
 
       <CustomFieldValues fields={customFields} values={deal.custom_fields ?? {}} />
-
-      <PageTabs
-        value={activeTab}
-        onValueChange={setActiveTab}
-        tabs={[
-          { value: 'products', icon: <Package className="size-4" />, label: `Products (${productsPageData?.total ?? 0})` },
-          { value: 'timeline', icon: <History className="size-4" />, label: `Stage History (${timelinePageData?.total ?? 0})` },
-          { value: 'notes', icon: <FileText className="size-4" />, label: `Notes (${notesPageData?.total ?? 0})` },
-          { value: 'quotes', icon: <DollarSign className="size-4" />, label: `Quotes (${quotesPageData?.total ?? 0})` },
-          { value: 'commission', icon: <Calculator className="size-4" />, label: 'Rep Commission Split' },
-        ]}
-        listClassName="border-b border-slate-200"
-      />
 
       {/* TAB CONTENT: Products */}
       {activeTab === 'products' && (
