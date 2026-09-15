@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
@@ -87,7 +87,7 @@ vi.mock('@/lib/api/custom-fields', () => ({
   }),
 }));
 
-import { useDealQuery } from '@/lib/api/deals';
+import { addDealNoteApi, useDealQuery } from '@/lib/api/deals';
 
 function setStoredUser(permissions: string[]): void {
   window.localStorage.setItem(
@@ -232,5 +232,34 @@ describe('DealDetailsPage invoice lifecycle UX', () => {
 
     expect(screen.getByText('Select a company before marking this deal won.')).toBeInTheDocument();
     expect(markWonMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('opens the note creation modal and saves a deal note', async () => {
+    const user = userEvent.setup();
+    vi.mocked(addDealNoteApi).mockResolvedValue({
+      id: 'note-1',
+      entity_type: 'deal',
+      entity_id: 'deal-1',
+      content: 'Confirm procurement timeline',
+      created_at: '2026-09-15T10:00:00Z',
+    });
+    renderPage();
+
+    await user.click(await screen.findByRole('tab', { name: /Notes \(0\)/i }));
+    await user.click(screen.getByRole('button', { name: 'Add Note' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Create note for deal' });
+    await user.type(
+      within(dialog).getByLabelText('Note content'),
+      'Confirm procurement timeline',
+    );
+    await user.click(within(dialog).getByRole('button', { name: 'Create Note' }));
+
+    await waitFor(() => {
+      expect(addDealNoteApi).toHaveBeenCalledWith({
+        id: 'deal-1',
+        content: 'Confirm procurement timeline',
+      });
+    });
   });
 });

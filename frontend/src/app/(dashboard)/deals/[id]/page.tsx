@@ -85,6 +85,7 @@ export default function DealDetailsPage() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isAddProductModalOpen, setIsAddProductModalOpen] = useState(false);
+  const [isAddNoteModalOpen, setIsAddNoteModalOpen] = useState(false);
   const [aiPrediction, setAiPrediction] = useState<DealPredictionResponse | null>(null);
 
   // Add Product Form State
@@ -252,6 +253,7 @@ export default function DealDetailsPage() {
     onSuccess: () => {
       setSuccessMessage('Deal note added successfully.');
       setNewNoteContent('');
+      setIsAddNoteModalOpen(false);
       refetchNotes();
       queryClient.invalidateQueries({ queryKey: ['deal-notes', dealId] });
     },
@@ -698,29 +700,22 @@ export default function DealDetailsPage() {
       {/* TAB CONTENT: Notes */}
       {activeTab === 'notes' && (
         <div className="space-y-4">
-          <div className="p-4 bg-white rounded-2xl border border-slate-200 space-y-3">
-            <Label className="font-semibold text-slate-700 text-xs">Add New Deal Note</Label>
-            <Input
-              type="text"
-              placeholder="Type deal notes, negotiation terms, or client requirements..."
-              value={newNoteContent}
-              onChange={(e) => setNewNoteContent(e.target.value)}
-              className="h-9 text-xs"
-            />
-            <div className="flex justify-end">
-              <Button
-                size="sm"
-                onClick={() => addNoteMutation.mutate(newNoteContent)}
-                disabled={!newNoteContent.trim() || addNoteMutation.isPending}
-                className="bg-blue-600 text-white font-semibold text-xs gap-1 cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Add Note</span>
-              </Button>
-            </div>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-sm font-bold text-slate-900">Deal Notes Log</h2>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                setNewNoteContent('');
+                setIsAddNoteModalOpen(true);
+              }}
+              className="gap-1.5"
+            >
+              <Plus className="size-4" />
+              Add Note
+            </Button>
           </div>
 
-          <h2 className="text-sm font-bold text-slate-900 pt-2">Saved Deal Notes</h2>
           {notes.length === 0 ? (
             <div className="p-6 bg-white rounded-xl border border-slate-200 text-xs text-slate-500">
               No notes logged for this deal yet. Add your first note above.
@@ -736,6 +731,49 @@ export default function DealDetailsPage() {
             </div>
           )}
           {paginationControls(notesPageData?.total ?? 0, notesPage, setNotesPage)}
+
+          <ModalShell
+            isOpen={isAddNoteModalOpen}
+            onClose={() => !addNoteMutation.isPending && setIsAddNoteModalOpen(false)}
+            title="Create Note"
+            ariaLabel="Create note for deal"
+          >
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (newNoteContent.trim()) addNoteMutation.mutate(newNoteContent.trim());
+              }}
+              className="space-y-4 py-4"
+            >
+              <div>
+                <Label htmlFor="deal-note-content">Note content</Label>
+                <textarea
+                  id="deal-note-content"
+                  autoFocus
+                  required
+                  maxLength={10000}
+                  value={newNoteContent}
+                  onChange={(event) => setNewNoteContent(event.target.value)}
+                  placeholder="Type note details for this deal..."
+                  className="mt-1 min-h-32 w-full rounded-lg border border-slate-300 p-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              {errorMessage && <p role="alert" className="text-sm text-rose-700">{errorMessage}</p>}
+              <div className="flex flex-col-reverse justify-end gap-2 border-t pt-4 sm:flex-row">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={addNoteMutation.isPending}
+                  onClick={() => setIsAddNoteModalOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={!newNoteContent.trim() || addNoteMutation.isPending}>
+                  {addNoteMutation.isPending ? 'Creating…' : 'Create Note'}
+                </Button>
+              </div>
+            </form>
+          </ModalShell>
         </div>
       )}
 
