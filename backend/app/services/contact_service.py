@@ -2,6 +2,7 @@ from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.concurrency import ensure_fresh_record
 from app.core.errors import APIException, NotFoundError
 from app.models import User
 from app.models.contact import Contact
@@ -42,6 +43,7 @@ def contact_to_dict(contact: Contact) -> dict:
         "is_starred": is_starred,
         "status": "Star Contact" if is_starred else None,
         "created_at": str(contact.created_at) if contact.created_at else None,
+        "updated_at": str(contact.updated_at) if contact.updated_at else None,
         "custom_fields": contact.custom_fields or {},
     }
 
@@ -541,6 +543,7 @@ class ContactService:
             populate_existing=phone_change_requested,
             current_user=current_user,
         )
+        await ensure_fresh_record(db, contact, payload.expected_updated_at, "contact")
 
         candidate_email = payload.email if payload.email is not None else contact.email
         candidate_phone = payload.phone if payload.phone is not None else contact.phone

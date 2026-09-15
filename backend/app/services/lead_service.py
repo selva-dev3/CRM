@@ -8,6 +8,7 @@ from pydantic import EmailStr, TypeAdapter, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.concurrency import ensure_fresh_record
 from app.core.errors import APIException, ForbiddenError, NotFoundError
 from app.models import Lead, User
 from app.repositories.company_repository import CompanyRepository
@@ -369,6 +370,7 @@ class LeadService:
             raise ForbiddenError(message="Organization context is required.")
 
         updates = payload.model_dump(exclude_unset=True)
+        updates.pop("expected_updated_at", None)
         if settings.WHATSAPP_ENABLED and "phone" in updates:
             # Serialize before reading the Lead so a concurrent conversion cannot
             # leave this request validating and mutating a stale pre-conversion row.
@@ -381,6 +383,7 @@ class LeadService:
         )
         if not lead:
             raise NotFoundError(message=f"Lead '{lead_id}' not found")
+        await ensure_fresh_record(db, lead, payload.expected_updated_at, "lead")
 
         self._require_active_lead(lead)
         requested_org = updates.pop("organization_id", organization_id)

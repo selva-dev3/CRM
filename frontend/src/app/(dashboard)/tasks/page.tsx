@@ -171,6 +171,7 @@ export default function TasksPage() {
       status,
       due_date: dueDate ? (dueDate.includes('T') ? dueDate : `${dueDate}T00:00:00Z`) : undefined,
       assigned_to: assignedTo.trim() || undefined,
+      expected_updated_at: editingTask?.updated_at,
     };
 
     try {

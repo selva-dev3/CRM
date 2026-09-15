@@ -199,6 +199,7 @@ export default function ContactsPage() {
           position: formPosition || undefined,
           job_title: formJobTitle || formPosition || undefined,
           custom_fields: formCustomFields,
+          expected_updated_at: contactToEdit.updated_at,
         },
       });
       setSuccessMessage(`Contact '${displayName}' updated successfully.`);

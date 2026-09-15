@@ -173,6 +173,7 @@ export default function DealsPage() {
           contact_id: formContactId,
           assigned_to: formAssignedTo || undefined,
           custom_fields: formCustomFields,
+          expected_updated_at: dealToEdit.updated_at,
         },
       });
       setSuccessMessage(`Deal '${formTitle}' updated successfully.`);

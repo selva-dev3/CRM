@@ -30,6 +30,7 @@ export interface DealItem {
   assigned_to?: string;
   organization_id?: string;
   created_at?: string;
+  updated_at?: string;
   custom_fields?: Record<string, CustomFieldValue>;
   project_id?: string;
 }
@@ -49,6 +50,7 @@ export interface DealCreatePayload {
 }
 
 export interface DealUpdatePayload {
+  expected_updated_at?: string;
   title?: string;
   amount?: number;
   stage?: string;

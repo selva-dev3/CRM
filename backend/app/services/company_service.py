@@ -3,6 +3,7 @@ from urllib.parse import urlsplit
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.concurrency import ensure_fresh_record
 from app.core.errors import APIException, NotFoundError
 from app.models import User
 from app.models.company import Company
@@ -28,6 +29,7 @@ def company_to_dict(company: Company) -> dict:
         "size": str(company.employee_count) if company.employee_count else None,
         "employee_count": company.employee_count,
         "created_at": str(company.created_at),
+        "updated_at": str(company.updated_at) if company.updated_at else None,
         "custom_fields": company.custom_fields or {},
     }
 
@@ -215,6 +217,7 @@ class CompanyService:
         )
         if not company:
             raise NotFoundError(message=f"Company '{company_id}' not found")
+        await ensure_fresh_record(db, company, payload.expected_updated_at, "company")
 
         name = getattr(payload, "name", None)
         website = getattr(payload, "website", None) or getattr(payload, "domain", None)

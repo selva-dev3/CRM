@@ -3,6 +3,7 @@ from datetime import UTC, date, datetime
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.concurrency import ensure_fresh_record
 from app.core.errors import APIException, ForbiddenError, NotFoundError
 from app.models import User
 from app.models.task import Task
@@ -46,6 +47,7 @@ def task_to_dict(task: Task) -> dict:
         "deal_id": task.deal_id,
         "ticket_id": task.ticket_id,
         "created_at": str(task.created_at) if task.created_at else None,
+        "updated_at": str(task.updated_at) if task.updated_at else None,
     }
 
 
@@ -417,11 +419,13 @@ class TaskService:
         )
         if not task:
             raise NotFoundError(message=f"Task '{task_id}' not found")
+        await ensure_fresh_record(db, task, payload.expected_updated_at, "task")
 
         prev_priority = task.priority
         prev_status = task.status
         previous_project_id = task.project_id
         updates = payload.model_dump(exclude_unset=True)
+        updates.pop("expected_updated_at", None)
         if "project_id" in updates:
             target_project_id = await self._validate_project(
                 db, updates["project_id"], task.organization_id, current_user

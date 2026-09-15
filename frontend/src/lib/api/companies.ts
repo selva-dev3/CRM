@@ -18,6 +18,7 @@ export interface CompanyItem {
   size?: string;
   employee_count?: number;
   created_at?: string;
+  updated_at?: string;
   custom_fields?: Record<string, CustomFieldValue>;
 }
 
@@ -32,6 +33,7 @@ export interface CompanyCreatePayload {
 }
 
 export interface CompanyUpdatePayload {
+  expected_updated_at?: string;
   name?: string;
   domain?: string;
   website?: string;

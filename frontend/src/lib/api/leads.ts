@@ -49,6 +49,7 @@ export interface Lead {
 }
 
 export interface CreateLeadPayload {
+  expected_updated_at?: string;
   title: string;
   company: string;
   contact_name: string;
@@ -73,6 +74,7 @@ export interface CreateLeadPayload {
 }
 
 export interface UpdateLeadPayload {
+  expected_updated_at?: string;
   title?: string;
   company?: string;
   contact_name?: string;
