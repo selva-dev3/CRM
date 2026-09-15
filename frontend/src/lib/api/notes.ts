@@ -20,6 +20,20 @@ export interface NoteCreatePayload {
   content: string;
 }
 
+export type NoteEntityType = 'lead' | 'contact' | 'deal' | 'company';
+
+const noteEntityQueryPrefixes: Record<NoteEntityType, string> = {
+  lead: 'lead-notes',
+  contact: 'contact-notes',
+  deal: 'deal-notes',
+  company: 'company-notes',
+};
+
+export function normalizeNoteEntityType(entityType?: string): string | undefined {
+  const normalized = entityType?.trim().toLowerCase();
+  return normalized || undefined;
+}
+
 export interface BulkActionResponse {
   affected_count: number;
   message: string;
@@ -38,14 +52,18 @@ export async function fetchNotesApi(params?: { page?: number; limit?: number; en
   const query = new URLSearchParams();
   if (params?.page) query.append('page', String(params.page));
   if (params?.limit) query.append('limit', String(params.limit));
-  if (params?.entity_type) query.append('entity_type', params.entity_type);
+  const normalizedEntityType = normalizeNoteEntityType(params?.entity_type);
+  if (normalizedEntityType) query.append('entity_type', normalizedEntityType);
   if (params?.search) query.append('search', params.search);
   const endpoint = `/notes${query.toString() ? `?${query.toString()}` : ''}`;
   return fetchPaginated<NoteItem>(endpoint);
 }
 
 export async function createNoteApi(payload: NoteCreatePayload): Promise<NoteItem> {
-  return apiClient.post<NoteItem>('/notes', payload);
+  return apiClient.post<NoteItem>('/notes', {
+    ...payload,
+    entity_type: normalizeNoteEntityType(payload.entity_type),
+  });
 }
 
 export async function fetchPinnedNotesApi(): Promise<NoteItem[]> {
@@ -124,10 +142,18 @@ export function useCreateNoteMutation(options?: UseMutationOptions<NoteItem, Err
   const queryClient = useQueryClient();
   return useMutation<NoteItem, Error, NoteCreatePayload>({
     mutationFn: createNoteApi,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['notes'] });
-    },
     ...options,
+    onSuccess: (data, variables, context, mutation) => {
+      queryClient.invalidateQueries({ queryKey: ['notes'] });
+      const entityType = normalizeNoteEntityType(data.entity_type || variables.entity_type);
+      const entityId = data.entity_id || variables.entity_id;
+      if (entityId && entityType && entityType in noteEntityQueryPrefixes) {
+        const queryPrefix = noteEntityQueryPrefixes[entityType as NoteEntityType];
+        queryClient.invalidateQueries({ queryKey: [queryPrefix, entityId] });
+        queryClient.invalidateQueries({ queryKey: ['notes', 'entity', entityType, entityId] });
+      }
+      options?.onSuccess?.(data, variables, context, mutation);
+    },
   });
 }
 
