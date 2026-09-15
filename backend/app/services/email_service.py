@@ -1,4 +1,5 @@
 import html
+from typing import Any
 
 import requests
 
@@ -18,22 +19,24 @@ def send_tracked_email(
     """Brevo receipt, not an assertion of inbox delivery. Never log message contents."""
     if not settings.BREVO_API_KEY:
         raise ValueError("Email provider is not configured")
+    api_key = settings.BREVO_API_KEY
+    payload: dict[str, Any] = {
+        "sender": {"name": settings.EMAILS_FROM_NAME, "email": settings.EMAILS_FROM_EMAIL},
+        "to": [{"email": to_email}],
+        "subject": subject,
+        "htmlContent": html_content,
+        "headers": {"idempotencyKey": idempotency_key},
+    }
     try:
         response = requests.post(
             "https://api.brevo.com/v3/smtp/email",
             timeout=30,
             headers={
                 "accept": "application/json",
-                "api-key": settings.BREVO_API_KEY,
+                "api-key": api_key,
                 "content-type": "application/json",
             },
-            json={
-                "sender": {"name": settings.EMAILS_FROM_NAME, "email": settings.EMAILS_FROM_EMAIL},
-                "to": [{"email": to_email}],
-                "subject": subject,
-                "htmlContent": html_content,
-                "headers": {"idempotencyKey": idempotency_key},
-            },
+            json=payload,
         )
     except requests.RequestException as exc:
         raise EmailDeliveryUnknownError("Email delivery outcome is unknown") from exc
