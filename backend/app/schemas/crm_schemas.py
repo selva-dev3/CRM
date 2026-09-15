@@ -557,7 +557,9 @@ class ContactResponse(BaseModel):
     phone: str | None = None
     position: str | None = None
     company_id: str | None = None
+    company_name: str | None = None
     owner_id: str | None = None
+    owner_name: str | None = None
     is_starred: bool | None = False
     status: str | None = None
     created_at: str | None = None

@@ -1,10 +1,20 @@
+from dataclasses import dataclass
+
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.record_access import record_access_filter
+from app.models.auth import User
 from app.models.company import Company
 from app.models.contact import Contact, ContactAddress
 from app.models.organization import Organization
+
+
+@dataclass(frozen=True)
+class ContactListRecord:
+    contact: Contact
+    company_name: str | None
+    owner_name: str | None
 
 
 class ContactRepository:
@@ -22,8 +32,20 @@ class ContactRepository:
         owner_id: str | None = None,
         is_starred: bool | None = None,
         access=None,
-    ) -> list[Contact]:
-        stmt = select(Contact).where(Contact.organization_id == organization_id)
+    ) -> list[ContactListRecord]:
+        stmt = (
+            select(Contact, Company.name, User.name)
+            .outerjoin(
+                Company,
+                (Company.id == Contact.company_id)
+                & (Company.organization_id == Contact.organization_id),
+            )
+            .outerjoin(
+                User,
+                (User.id == Contact.owner_id) & (User.organization_id == Contact.organization_id),
+            )
+            .where(Contact.organization_id == organization_id)
+        )
         access_filter = record_access_filter(
             access, assigned_column=Contact.owner_id, created_column=Contact.created_by
         )
@@ -40,7 +62,10 @@ class ContactRepository:
 
         stmt = stmt.offset((page - 1) * limit).limit(limit).order_by(Contact.created_at.desc())
         result = await db.execute(stmt)
-        return list(result.scalars().all())
+        return [
+            ContactListRecord(contact=row[0], company_name=row[1], owner_name=row[2])
+            for row in result.all()
+        ]
 
     async def count_by_org(
         self,

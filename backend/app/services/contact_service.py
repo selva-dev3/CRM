@@ -1,8 +1,8 @@
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.core.concurrency import ensure_fresh_record
+from app.core.config import settings
 from app.core.errors import APIException, NotFoundError
 from app.models import User
 from app.models.contact import Contact
@@ -27,7 +27,12 @@ from app.services.notification_service import notification_service
 from app.services.org_service import organization_service
 
 
-def contact_to_dict(contact: Contact) -> dict:
+def contact_to_dict(
+    contact: Contact,
+    *,
+    company_name: str | None = None,
+    owner_name: str | None = None,
+) -> dict:
     parts = contact.name.split() if contact.name else []
     is_starred = bool(getattr(contact, "is_starred", False))
     return {
@@ -39,7 +44,9 @@ def contact_to_dict(contact: Contact) -> dict:
         "phone": contact.phone,
         "position": contact.position,
         "company_id": contact.company_id,
+        "company_name": company_name,
         "owner_id": contact.owner_id,
+        "owner_name": owner_name,
         "is_starred": is_starred,
         "status": "Star Contact" if is_starred else None,
         "created_at": str(contact.created_at) if contact.created_at else None,
@@ -107,7 +114,14 @@ class ContactService:
             is_starred=is_starred,
             access=access,
         )
-        return [contact_to_dict(c) for c in contacts]
+        return [
+            contact_to_dict(
+                record.contact,
+                company_name=record.company_name,
+                owner_name=record.owner_name,
+            )
+            for record in contacts
+        ]
 
     async def count_contacts(
         self,

@@ -10,7 +10,7 @@ from app.core.errors import APIException, NotFoundError
 from app.models import User
 from app.models.contact import Contact, ContactAddress
 from app.models.deal import Deal
-from app.repositories.contact_repository import ContactRepository
+from app.repositories.contact_repository import ContactListRecord, ContactRepository
 from app.schemas.crm_schemas import ContactAddressUpdate, ContactCreate, ContactUpdate
 from app.services.contact_service import ContactService
 from app.services.integration_service import integration_service
@@ -102,7 +102,15 @@ async def test_count_contacts_is_scoped_to_current_organization(monkeypatch):
 @pytest.mark.asyncio
 async def test_list_contacts_forwards_filters_with_organization_scope(monkeypatch):
     repo: Any = ContactRepository()
-    repo.list_by_org = AsyncMock(return_value=[_make_contact()])
+    repo.list_by_org = AsyncMock(
+        return_value=[
+            ContactListRecord(
+                contact=_make_contact(company_id="company-1", owner_id="usr-2"),
+                company_name="Acme",
+                owner_name="Alex Morgan",
+            )
+        ]
+    )
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
@@ -124,6 +132,8 @@ async def test_list_contacts_forwards_filters_with_organization_scope(monkeypatc
     )
 
     assert result[0]["id"] == "cnt-1"
+    assert result[0]["company_name"] == "Acme"
+    assert result[0]["owner_name"] == "Alex Morgan"
     as_async_mock(repo.list_by_org).assert_awaited_once_with(
         db,
         organization_id="org-1",
