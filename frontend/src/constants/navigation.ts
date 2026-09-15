@@ -87,8 +87,6 @@ export const navigationSections: NavSection[] = [
       { title: 'Roles & Permissions', href: '/roles', icon: 'ShieldCheck', permission: PERMISSIONS.ROLES.READ },
       { title: 'Custom Fields', href: '/custom-fields', icon: 'ListPlus', permission: PERMISSIONS.SETTINGS.READ },
       { title: 'Workflows / Automation', href: '/workflows', icon: 'Workflow', permission: PERMISSIONS.WORKFLOWS.READ },
-      { title: 'Integrations', href: '/integrations', icon: 'Plug', permission: PERMISSIONS.INTEGRATIONS.READ },
-      { title: 'Settings', href: '/settings', icon: 'Settings', permission: PERMISSIONS.SETTINGS.READ }
     ]
   }
 ];
