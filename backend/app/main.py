@@ -1,6 +1,7 @@
 import asyncio
 from contextlib import asynccontextmanager, suppress
 
+import redis.asyncio as redis
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -137,6 +138,59 @@ app.include_router(
 )
 
 
+HEALTH_TIMEOUT_SECONDS = 2.0
+
+
+async def _database_ready() -> bool:
+    async def probe() -> None:
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("SELECT 1"))
+
+    try:
+        await asyncio.wait_for(probe(), timeout=HEALTH_TIMEOUT_SECONDS)
+    except Exception:
+        logger.warning("Readiness dependency unavailable", extra={"dependency": "database"})
+        return False
+    return True
+
+
+async def _redis_ready() -> bool:
+    client = redis.from_url(
+        settings.CELERY_BROKER_URL,
+        socket_connect_timeout=HEALTH_TIMEOUT_SECONDS,
+        socket_timeout=HEALTH_TIMEOUT_SECONDS,
+    )
+    try:
+        await asyncio.wait_for(client.ping(), timeout=HEALTH_TIMEOUT_SECONDS)
+    except Exception:
+        logger.warning("Readiness dependency unavailable", extra={"dependency": "redis"})
+        return False
+    finally:
+        await client.aclose()
+    return True
+
+
+@app.get("/health/live", tags=["Health"])
+async def liveness():
+    """Return process liveness without requiring external dependencies."""
+    return {"status": "ok"}
+
+
+@app.get("/health/ready", tags=["Health"])
+async def readiness():
+    """Return dependency-aware readiness within a bounded latency budget."""
+    database_ok, redis_ok = await asyncio.gather(_database_ready(), _redis_ready())
+    checks = {
+        "database": "ok" if database_ok else "unavailable",
+        "redis": "ok" if redis_ok else "unavailable",
+    }
+    ready = database_ok and redis_ok
+    return JSONResponse(
+        status_code=status.HTTP_200_OK if ready else status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={"status": "ok" if ready else "error", "checks": checks},
+    )
+
+
 @app.get("/")
 async def root():
     return {
@@ -149,14 +203,8 @@ async def root():
 
 @app.get("/health", tags=["Health"])
 async def health():
-    """Health check that verifies database connectivity, not just process liveness."""
-    try:
-        async with AsyncSessionLocal() as session:
-            await session.execute(text("SELECT 1"))
-    except Exception as e:
-        logger.error("Health check failed: database unreachable: %s", e)
-        return JSONResponse(
-            status_code=503,
-            content={"status": "error", "database": "unreachable"},
-        )
-    return {"status": "ok", "database": "ok"}
+    """Backward-compatible alias for the dependency-aware readiness probe."""
+    response = await readiness()
+    if isinstance(response, JSONResponse):
+        return response
+    return response
