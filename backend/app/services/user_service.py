@@ -764,7 +764,7 @@ class UserService:
         user = await self._require_same_org_user(db, user_id, current_user)
         if target_amount < 0:
             raise APIException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 message="Quota target must not be negative.",
             )
         if not user.organization_id:

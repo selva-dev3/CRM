@@ -14,7 +14,7 @@ from app.services.record_access_service import record_access_service
 def parse_datetime(val: str | None) -> datetime:
     if not val or not str(val).strip():
         raise APIException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             code="CALENDAR_DATETIME_REQUIRED",
             message="Calendar event date and time are required",
         )
@@ -28,7 +28,7 @@ def parse_datetime(val: str | None) -> datetime:
             return datetime(d.year, d.month, d.day, tzinfo=UTC)
         except ValueError as exc:
             raise APIException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 code="INVALID_CALENDAR_DATETIME",
                 message="Calendar event date and time must be valid ISO-8601 values",
             ) from exc
@@ -78,7 +78,7 @@ class CalendarService:
         end = parse_datetime(end_date) if end_date else None
         if start and end and end < start:
             raise APIException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 code="INVALID_CALENDAR_RANGE",
                 message="Calendar end date must not be before start date",
             )
@@ -109,7 +109,7 @@ class CalendarService:
         end = parse_datetime(end_date) if end_date else None
         if start and end and end < start:
             raise APIException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 code="INVALID_CALENDAR_RANGE",
                 message="Calendar end date must not be before start date",
             )
@@ -130,7 +130,7 @@ class CalendarService:
         end_time = parse_datetime(payload.end)
         if end_time <= start_time:
             raise APIException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 code="INVALID_CALENDAR_RANGE",
                 message="Calendar event end time must be after its start time",
             )
@@ -181,7 +181,7 @@ class CalendarService:
                 event.end_time = parse_datetime(payload.end)
             if event.end_time <= event.start_time:
                 raise APIException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                     code="INVALID_CALENDAR_RANGE",
                     message="Calendar event end time must be after its start time",
                 )

@@ -24,7 +24,7 @@ def parse_project_datetime(value: str | None) -> datetime | None:
             return datetime(parsed.year, parsed.month, parsed.day, tzinfo=UTC)
         except ValueError as error:
             raise APIException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 message="Project dates must be valid ISO dates.",
             ) from error
 
@@ -376,7 +376,7 @@ class ProjectService:
     def _validate_dates(start_date: datetime | None, due_date: datetime | None) -> None:
         if start_date and due_date and due_date < start_date:
             raise APIException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 message="Project due date must not be before its start date.",
             )
 
@@ -405,7 +405,7 @@ class ProjectService:
         )
         if not owner:
             raise APIException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 message="Project owner must be an active user in the current organization.",
             )
 

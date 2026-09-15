@@ -78,7 +78,7 @@ class MilestoneService:
             or (project.due_date and due_date > project.due_date)
         ):
             raise APIException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 message="Milestone due date must fall within the project date range.",
             )
         milestone = ProjectMilestone(
@@ -132,7 +132,7 @@ class MilestoneService:
                 or (project.due_date and due_date > project.due_date)
             ):
                 raise APIException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                     message="Milestone due date must fall within the project date range.",
                 )
         if updates.get("status") == "Completed" and milestone.status != "Completed":

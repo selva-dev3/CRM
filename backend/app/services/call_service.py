@@ -347,7 +347,7 @@ class CallService:
         call = await self.require_call(db, call_id, current_user)
         if not call.notes or not call.notes.strip():
             raise APIException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 code="AI_CALL_TEXT_UNAVAILABLE",
                 message="This call has no transcript or notes to analyze.",
             )
