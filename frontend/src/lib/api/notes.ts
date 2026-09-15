@@ -6,9 +6,11 @@ export interface NoteItem {
   id: string;
   entity_type: string;
   entity_id: string;
+  entity_label?: string | null;
   content: string;
   is_pinned?: boolean;
-  created_by?: string;
+  created_by?: string | null;
+  created_by_name?: string | null;
   created_at: string;
 }
 

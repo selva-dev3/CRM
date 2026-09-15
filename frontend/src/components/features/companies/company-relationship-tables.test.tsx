@@ -6,6 +6,7 @@ import {
   CompanyContactsTable,
   CompanyDocumentsTable,
   CompanyInvoicesTable,
+  CompanyNotesTable,
   CompanyQuotesTable,
   CompanyRelationshipError,
 } from './company-relationship-tables';
@@ -101,6 +102,26 @@ describe('Company relationship tables', () => {
       'href',
       'https://files.example.test/contract.pdf',
     );
+  });
+
+  it('renders a note author name instead of the internal user ID', () => {
+    render(
+      <CompanyNotesTable
+        data={[{
+          id: 'note-1',
+          entity_type: 'company',
+          entity_id: 'company-1',
+          content: 'Renewal approved',
+          created_by: 'internal-user-id',
+          created_by_name: 'Ada Lovelace',
+          created_at: '2026-09-15T08:30:00Z',
+        }]}
+        isLoading={false}
+      />,
+    );
+
+    expect(screen.getByText('Ada Lovelace')).toBeInTheDocument();
+    expect(screen.queryByText('internal-user-id')).not.toBeInTheDocument();
   });
 
   it('does not offer a pointless retry for a known unavailable relationship', () => {

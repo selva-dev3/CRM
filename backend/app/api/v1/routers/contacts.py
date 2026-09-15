@@ -396,7 +396,6 @@ async def get_contact_notes(
         db,
         entity_type="contact",
         entity_id=contact_id,
-        created_by_default=current_user.id,
         page=page,
         limit=limit,
         current_user=current_user,

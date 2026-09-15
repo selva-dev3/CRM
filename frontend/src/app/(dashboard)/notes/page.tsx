@@ -6,6 +6,7 @@ import { ActionMenu } from '@/components/common/action-menu';
 import { Textarea } from '@/components/ui/textarea';
 import { getErrorMessage } from '@/lib/utils';
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import {
   FileText,
   Pin,
@@ -41,6 +42,24 @@ import {
   NoteItem,
   NoteCreatePayload
 } from '@/lib/api/notes';
+
+const NOTE_ENTITY_ROUTES: Record<string, string> = {
+  lead: '/leads',
+  contact: '/contacts',
+  deal: '/deals',
+  company: '/companies',
+};
+
+function getEntityPresentation(note: NoteItem) {
+  const normalizedType = (note.entity_type || 'record').trim().toLowerCase();
+  const displayType = normalizedType.charAt(0).toUpperCase() + normalizedType.slice(1);
+  const label = note.entity_label?.trim() || `Unavailable ${normalizedType}`;
+  const route = NOTE_ENTITY_ROUTES[normalizedType];
+  const href = note.entity_label && route && note.entity_id
+    ? `${route}/${encodeURIComponent(note.entity_id)}`
+    : null;
+  return { normalizedType, displayType, label, href };
+}
 
 export default function NotesPage() {
   const { hasPermission } = useHasPermission();
@@ -116,8 +135,12 @@ export default function NotesPage() {
 
   const handleOpenEditModal = (n: NoteItem) => {
     setEditingNote(n);
-    setEntityType((n.entity_type || 'Lead') as EntityReferenceType);
+    const matchingType = ENTITY_REFERENCE_TYPES.find(
+      ({ value }) => value.toLowerCase() === n.entity_type?.toLowerCase(),
+    );
+    setEntityType(matchingType?.value ?? 'Lead');
     setEntityId(n.entity_id || '');
+    setEntityLabel(n.entity_label || '');
     setContent(n.content || '');
     setIsNoteModalOpen(true);
   };
@@ -145,7 +168,7 @@ export default function NotesPage() {
         setSuccessMessage('Note content updated.');
       } else {
         const payload: NoteCreatePayload = {
-          entity_type: entityType,
+          entity_type: entityType.toLowerCase(),
           entity_id: entityId,
           content: content.trim(),
         };
@@ -201,21 +224,23 @@ export default function NotesPage() {
       id: 'entity_type',
       header: 'ENTITY LINKED',
       cell: (item) => {
-        const type = item.entity_type || 'General';
+        const { normalizedType, displayType, label, href } = getEntityPresentation(item);
         const style =
-          type === 'Lead'
+          normalizedType === 'lead'
             ? 'bg-blue-50 text-blue-700 border-blue-200'
-            : type === 'Contact'
+            : normalizedType === 'contact'
             ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-            : type === 'Deal'
+            : normalizedType === 'deal'
             ? 'bg-amber-50 text-amber-700 border-amber-200'
             : 'bg-purple-50 text-purple-700 border-purple-200';
         return (
           <div>
             <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${style}`}>
-              {type}
+              {displayType}
             </span>
-            <div className="text-[11px] text-slate-400 font-mono mt-1">ID: {item.entity_id}</div>
+            <div className="mt-1 text-xs font-medium text-slate-700">
+              {href ? <Link href={href} className="hover:text-indigo-700 hover:underline">{label}</Link> : label}
+            </div>
           </div>
         );
       },
@@ -234,7 +259,9 @@ export default function NotesPage() {
       id: 'created_by',
       header: 'AUTHOR',
       cell: (item) => (
-        <div className="text-xs text-slate-700 font-semibold">{item.created_by || 'Sales Rep'}</div>
+        <div className="text-xs text-slate-700 font-semibold">
+          {item.created_by_name || 'System / former user'}
+        </div>
       ),
     },
     {
@@ -308,10 +335,10 @@ export default function NotesPage() {
             className="bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold text-slate-700 outline-none shadow-xs"
           >
             <option value="">All Entity Types</option>
-            <option value="Lead">Leads</option>
-            <option value="Contact">Contacts</option>
-            <option value="Deal">Deals</option>
-            <option value="Company">Companies</option>
+            <option value="lead">Leads</option>
+            <option value="contact">Contacts</option>
+            <option value="deal">Deals</option>
+            <option value="company">Companies</option>
           </ResponsiveSelect>
 
           {canReferenceEntity && <PermissionGate permission={PERMISSIONS.NOTES.CREATE}>
@@ -337,17 +364,25 @@ export default function NotesPage() {
           </h3>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {pinnedNotes.map((p) => (
-              <div key={p.id} className="p-3.5 bg-white rounded-xl border border-amber-200 shadow-2xs space-y-2">
-                <div className="flex justify-between items-center text-[11px] font-bold text-slate-500">
-                  <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded font-mono">{p.entity_type}</span>
-                  <PermissionGate permission={PERMISSIONS.NOTES.UPDATE}><button onClick={() => handleTogglePin(p)} className="text-amber-600 hover:text-amber-800 cursor-pointer">
-                    <PinOff className="w-3.5 h-3.5" />
-                  </button></PermissionGate>
+            {pinnedNotes.map((p) => {
+              const entity = getEntityPresentation(p);
+              return (
+                <div key={p.id} className="p-3.5 bg-white rounded-xl border border-amber-200 shadow-2xs space-y-2">
+                  <div className="flex justify-between items-center text-[11px] font-bold text-slate-500">
+                    <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded">
+                      {entity.displayType}
+                    </span>
+                    <PermissionGate permission={PERMISSIONS.NOTES.UPDATE}><button onClick={() => handleTogglePin(p)} className="text-amber-600 hover:text-amber-800 cursor-pointer">
+                      <PinOff className="w-3.5 h-3.5" />
+                    </button></PermissionGate>
+                  </div>
+                  {entity.href
+                    ? <Link href={entity.href} className="block truncate text-xs font-semibold text-indigo-700 hover:underline">{entity.label}</Link>
+                    : <span className="block truncate text-xs font-semibold text-slate-600">{entity.label}</span>}
+                  <p className="text-xs text-slate-800 font-medium line-clamp-2">{p.content}</p>
                 </div>
-                <p className="text-xs text-slate-800 font-medium line-clamp-2">{p.content}</p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
