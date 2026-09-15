@@ -42,7 +42,8 @@ async def test_platform_api_keys_cannot_provision_or_delete():
 
 
 @pytest.mark.parametrize(
-    "key", ["../other", "/absolute", "a/../b", "a//b", "bad\x00key", "a" * 1025]
+    "key",
+    ["../other", "/absolute", "a/../b", "a//b", "bad\x00key", "bad\ufffdkey", "a" * 1025],
 )
 def test_storage_keys_reject_unsafe_paths(key):
     assert storage_key(key, "key") is None
@@ -58,6 +59,7 @@ def test_storage_urls_are_limited_to_configured_bucket(monkeypatch):
     assert storage_key("https://external.example.com/crm-test/tenant/file.txt", "url") is None
     assert storage_key("https://storage.example.com/another-bucket/file.txt", "url") is None
     assert storage_key("https://storage.example.com/crm-test/%2e%2e/file.txt", "url") is None
+    assert storage_key("https://storage.example.com/crm-test/tenant/%FF.txt", "url") is None
 
 
 def test_prefix_inventory_counts_only_keys_not_already_referenced():
@@ -139,6 +141,19 @@ async def test_prefix_collision_check_returns_exists_without_streaming_platform_
     assert db.scalar.await_count == 4
     db.stream.assert_not_awaited()
     db.stream_scalars.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_prefix_collision_check_batches_large_prefix_inventories():
+    from app.repositories.organization_lifecycle_repository import OrganizationLifecycleRepository
+
+    db = AsyncMock()
+    db.scalar.return_value = None
+    prefixes = [f"leads/lead-{index}/" for index in range(101)]
+    assert not await OrganizationLifecycleRepository().storage_prefix_conflict(
+        db, "org-1", prefixes
+    )
+    assert db.scalar.await_count == 8
 
 
 @pytest.mark.asyncio

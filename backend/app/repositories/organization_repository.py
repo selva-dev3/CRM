@@ -54,6 +54,14 @@ class OrganizationRepository:
         result = await db.execute(select(Organization))
         return list(result.scalars().all())
 
+    async def list_ids_for_reconciliation(
+        self, db: AsyncSession, *, after_id: str | None = None, limit: int = 200
+    ) -> list[str]:
+        statement = select(Organization.id).order_by(Organization.id).limit(limit)
+        if after_id:
+            statement = statement.where(Organization.id > after_id)
+        return list(await db.scalars(statement))
+
     async def list_with_member_counts(
         self, db: AsyncSession, *, limit: int, offset: int
     ) -> list[tuple[Organization, int]]:

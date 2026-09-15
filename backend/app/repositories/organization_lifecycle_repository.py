@@ -3,7 +3,7 @@
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import ColumnElement, delete, func, or_, select, text, update
+from sqlalchemy import ColumnElement, delete, func, literal, or_, select, text, union_all, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.base import Base
@@ -465,16 +465,83 @@ class OrganizationLifecycleRepository:
                 "leads": ["leads/" + identifier + "/"],
                 "scheduled_reports": ["exports/scheduled/" + identifier + "/"],
             }[name]
-            overlaps = [
-                or_(func.starts_with(expression, prefix), func.starts_with(prefix, expression))
-                for expression in expressions
-                for prefix in prefixes
-            ]
-            if await db.scalar(
-                select(identifier).where(owned.is_not(True), or_(*overlaps)).limit(1)
-            ):
-                return True
+            for offset in range(0, len(prefixes), 100):
+                overlaps = [
+                    or_(
+                        func.starts_with(expression, prefix),
+                        func.starts_with(prefix, expression),
+                    )
+                    for expression in expressions
+                    for prefix in prefixes[offset : offset + 100]
+                ]
+                if await db.scalar(
+                    select(identifier).where(owned.is_not(True), or_(*overlaps)).limit(1)
+                ):
+                    return True
         return False
+
+    async def storage_key_prefix_conflict(
+        self, db: AsyncSession, organization_id: str, object_key: str
+    ) -> bool:
+        """Return whether one key falls under any other tenant owner's prefix."""
+        predicates = tenant_predicates(organization_id)
+        checks = []
+        for name in ("organizations", "users", "leads", "scheduled_reports"):
+            table = Base.metadata.tables[name]
+            identifier = table.c.id
+            safe_org = func.left(func.regexp_replace(identifier, "[^A-Za-z0-9_-]", "_", "g"), 64)
+            expressions = {
+                "organizations": [
+                    "documents/" + safe_org + "/",
+                    "exports/" + safe_org + "/",
+                    "branding/" + identifier + "_",
+                    identifier + "/quotes/",
+                    identifier + "/invoices/",
+                    identifier + "/receipts/",
+                ],
+                "users": ["avatars/" + identifier + "_"],
+                "leads": ["leads/" + identifier + "/"],
+                "scheduled_reports": ["exports/scheduled/" + identifier + "/"],
+            }[name]
+            checks.append(
+                select(literal(1).label("found")).where(
+                    predicates[name].is_not(True),
+                    or_(*(func.starts_with(object_key, expression) for expression in expressions)),
+                )
+            )
+        combined = union_all(*checks).subquery()
+        return bool(await db.scalar(select(combined.c.found).limit(1)))
+
+    async def storage_reference_exists(
+        self,
+        db: AsyncSession,
+        *,
+        object_key: str,
+        object_url_pattern: str,
+    ) -> bool:
+        """Perform one bounded, platform-wide existence query for a storage key."""
+        checks = []
+        for name, columns in STORAGE_COLUMNS.items():
+            table = Base.metadata.tables[name]
+            for column, kind in columns.items():
+                value = table.c[column]
+                if kind == "key":
+                    predicate = value == object_key
+                else:
+                    # urllib removes leading WHATWG C0/space characters and
+                    # strips tab/newline characters before parsing. Apply a
+                    # conservative SQL equivalent before matching so legacy
+                    # URL spellings cannot hide a live reference.
+                    normalized = func.regexp_replace(
+                        func.regexp_replace(value, "^[[:cntrl:] ]+", "", "g"),
+                        "[\t\n\r]",
+                        "",
+                        "g",
+                    )
+                    predicate = normalized.op("~")(object_url_pattern)
+                checks.append(select(literal(1).label("found")).where(predicate))
+        combined = union_all(*checks).subquery()
+        return bool(await db.scalar(select(combined.c.found).limit(1)))
 
     async def create_deletion(
         self, db: AsyncSession, *, organization: Organization, actor_id: str
