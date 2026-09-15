@@ -690,8 +690,8 @@ export default function LeadDetailPage() {
       <PageTabs
         value={activeTab}
         onValueChange={setActiveTab}
-        variant="default"
-        className="sticky top-0 z-30 -mx-4 border-y border-[#E5E7EB] bg-slate-50/95 px-4 py-2 shadow-[0_1px_2px_rgba(15,23,42,0.04)] backdrop-blur-sm sm:-mx-6 sm:px-6 lg:-mx-6 lg:px-6"
+        detail
+        sticky
         tabs={[
           { value: 'overview', icon: <Briefcase className="size-4" />, label: 'Overview & Details' },
           { value: 'timeline', icon: <History className="size-4" />, label: `Timeline (${timelinePageData?.total ?? 0})` },
@@ -704,8 +704,6 @@ export default function LeadDetailPage() {
           { value: 'documents', icon: <Paperclip className="size-4" />, label: `Documents (${documentsPageData?.total ?? 0})` },
           { value: 'actions', icon: <Zap className="size-4" />, label: 'Actions & Convert' },
         ]}
-        listClassName="bg-transparent pb-0"
-        triggerClassName="border border-[#E5E7EB] bg-white text-button data-[state=active]:border-[#2563EB] data-[state=active]:bg-[#2563EB] data-[state=active]:text-white"
       />
 
       {/* Success Banner */}

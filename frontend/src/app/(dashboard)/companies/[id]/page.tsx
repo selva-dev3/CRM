@@ -256,6 +256,22 @@ export default function CompanyDetailsPage() {
         </div>
       </div>
 
+      <PageTabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        detail
+        sticky
+        tabs={[
+          { value: 'contacts', icon: <User className="size-4" />, label: contactsQuery.data ? `Contacts (${contactsQuery.data.total})` : 'Contacts' },
+          { value: 'deals', icon: <Briefcase className="size-4" />, label: dealsQuery.data ? `Deals (${dealsQuery.data.total})` : 'Deals' },
+          { value: 'notes', icon: <FileText className="size-4" />, label: notesQuery.data ? `Notes (${notesQuery.data.total})` : 'Notes' },
+          { value: 'quotes', icon: <DollarSign className="size-4" />, label: quotesQuery.data ? `Quotes (${quotesQuery.data.total})` : 'Quotes' },
+          { value: 'invoices', icon: <FileSpreadsheet className="size-4" />, label: invoicesQuery.data ? `Invoices (${invoicesQuery.data.total})` : 'Invoices' },
+          { value: 'documents', icon: <Folder className="size-4" />, label: documentsQuery.data ? `Documents (${documents.length})` : 'Documents' },
+          { value: 'hierarchy', icon: <Network className="size-4" />, label: 'Corporate Hierarchy' },
+        ]}
+      />
+
       {/* Feedback Notifications */}
       {successMessage && (
         <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-medium flex items-center gap-2 animate-in fade-in-50">
@@ -317,21 +333,6 @@ export default function CompanyDetailsPage() {
       </div>
 
       <CustomFieldValues fields={customFields} values={company.custom_fields ?? {}} />
-
-      <PageTabs
-        value={activeTab}
-        onValueChange={setActiveTab}
-        tabs={[
-          { value: 'contacts', icon: <User className="size-4" />, label: contactsQuery.data ? `Contacts (${contactsQuery.data.total})` : 'Contacts' },
-          { value: 'deals', icon: <Briefcase className="size-4" />, label: dealsQuery.data ? `Deals (${dealsQuery.data.total})` : 'Deals' },
-          { value: 'notes', icon: <FileText className="size-4" />, label: notesQuery.data ? `Notes (${notesQuery.data.total})` : 'Notes' },
-          { value: 'quotes', icon: <DollarSign className="size-4" />, label: quotesQuery.data ? `Quotes (${quotesQuery.data.total})` : 'Quotes' },
-          { value: 'invoices', icon: <FileSpreadsheet className="size-4" />, label: invoicesQuery.data ? `Invoices (${invoicesQuery.data.total})` : 'Invoices' },
-          { value: 'documents', icon: <Folder className="size-4" />, label: documentsQuery.data ? `Documents (${documents.length})` : 'Documents' },
-          { value: 'hierarchy', icon: <Network className="size-4" />, label: 'Corporate Hierarchy' },
-        ]}
-        listClassName="border-b border-slate-200"
-      />
 
       {/* TAB CONTENT: Contacts */}
       {activeTab === 'contacts' && (

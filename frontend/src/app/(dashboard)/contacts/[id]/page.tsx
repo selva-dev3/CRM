@@ -370,6 +370,20 @@ export default function ContactDetailsPage() {
         </div>
       </div>
 
+      <PageTabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        detail
+        sticky
+        tabs={[
+          { value: 'overview', icon: <Activity className="size-4" />, label: `Overview & Timeline (${activitiesPage?.total ?? 0})` },
+          { value: 'deals', icon: <Briefcase className="size-4" />, label: `Deals (${dealsPage?.total ?? 0})` },
+          { value: 'notes', icon: <FileText className="size-4" />, label: `Notes (${notesPage?.total ?? 0})` },
+          { value: 'emails', icon: <MessageSquare className="size-4" />, label: `Emails (${emailsPage?.total ?? 0})` },
+          { value: 'calls', icon: <PhoneCall className="size-4" />, label: `Call Logs (${callsPage?.total ?? 0})` },
+        ]}
+      />
+
       {/* Feedback Banners */}
       {successMessage && (
         <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-sm font-medium flex items-center gap-2 animate-in fade-in-50">
@@ -455,19 +469,6 @@ export default function ContactDetailsPage() {
       </div>
 
       <CustomFieldValues fields={customFields} values={contact.custom_fields ?? {}} />
-
-      <PageTabs
-        value={activeTab}
-        onValueChange={setActiveTab}
-        tabs={[
-          { value: 'overview', icon: <Activity className="size-4" />, label: `Overview & Timeline (${activitiesPage?.total ?? 0})` },
-          { value: 'deals', icon: <Briefcase className="size-4" />, label: `Deals (${dealsPage?.total ?? 0})` },
-          { value: 'notes', icon: <FileText className="size-4" />, label: `Notes (${notesPage?.total ?? 0})` },
-          { value: 'emails', icon: <MessageSquare className="size-4" />, label: `Emails (${emailsPage?.total ?? 0})` },
-          { value: 'calls', icon: <PhoneCall className="size-4" />, label: `Call Logs (${callsPage?.total ?? 0})` },
-        ]}
-        listClassName="border-b border-slate-200"
-      />
 
       {hasRelationshipError && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs font-medium text-amber-900">
