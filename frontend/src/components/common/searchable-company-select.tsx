@@ -19,12 +19,16 @@ export interface SearchableCompanySelectProps {
   value: string;
   onChange: (val: string) => void;
   companies: Pick<CompanyItem, 'id' | 'name'>[];
+  id?: string;
+  ariaLabel?: string;
 }
 
 export function SearchableCompanySelect({
   value,
   onChange,
   companies,
+  id,
+  ariaLabel = 'Select Company',
 }: SearchableCompanySelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const selectedCompany = companies.find((company) => company.id === value);
@@ -38,11 +42,12 @@ export function SearchableCompanySelect({
     <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger asChild>
         <Button
+          id={id}
           type="button"
           variant="outline"
           role="combobox"
           aria-expanded={isOpen}
-          aria-label={selectedCompany?.name ?? 'Select Company'}
+          aria-label={selectedCompany ? `${ariaLabel}: ${selectedCompany.name}` : ariaLabel}
           className="h-9 w-full justify-between border-slate-200 px-3 text-xs font-medium"
         >
           <span className={cn('truncate', !selectedCompany && 'text-slate-400')}>

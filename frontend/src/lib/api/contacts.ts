@@ -11,7 +11,9 @@ export interface ContactItem {
   phone?: string;
   position?: string;
   company_id?: string;
+  company_name?: string;
   owner_id?: string;
+  owner_name?: string;
   is_starred?: boolean;
   status?: string;
   created_at?: string;

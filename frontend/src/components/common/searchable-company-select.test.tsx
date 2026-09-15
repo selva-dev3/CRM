@@ -44,4 +44,22 @@ describe('SearchableCompanySelect', () => {
 
     expect(screen.getByText('No matching companies')).toBeInTheDocument();
   });
+
+  it('connects a custom field label to the combobox trigger', () => {
+    render(
+      <div>
+        <label htmlFor="contact-company">Company</label>
+        <SearchableCompanySelect
+          id="contact-company"
+          ariaLabel="Select company for contact"
+          value="company-1"
+          onChange={vi.fn()}
+          companies={companies}
+        />
+      </div>,
+    );
+
+    expect(screen.getByRole('combobox', { name: /Select company for contact: Acme Corporation/ }))
+      .toHaveAttribute('id', 'contact-company');
+  });
 });

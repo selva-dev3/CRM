@@ -2,12 +2,10 @@
 
 import { ResponsiveSelect } from '@/components/common/responsive-select';
 
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
-  Mail,
-  Phone,
   Building,
   User,
   Plus,
@@ -19,6 +17,7 @@ import {
   Edit,
   CheckCircle2,
   AlertCircle,
+  RotateCw,
 } from 'lucide-react';
 import { ActionMenu } from '@/components/common/action-menu';
 import { Button } from '@/components/ui/button';
@@ -33,7 +32,6 @@ import { ModalShell } from '@/components/common/modal-shell';
 import { CustomFields } from '@/components/common/custom-fields';
 import {
   useContactsPageQuery,
-  useStarredContactsQuery,
   useCreateContactMutation,
   useUpdateContactMutation,
   useDeleteContactMutation,
@@ -46,23 +44,34 @@ import {
   ContactItem,
 } from '@/lib/api/contacts';
 import { useUsersQuery } from '@/lib/api/users';
-import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
 import { useCompaniesQuery } from '@/lib/api/companies';
 import { SearchableCompanySelect } from '@/components/common/searchable-company-select';
 import { PageTabs } from '@/components/common/page-tabs';
 import { useEntityCustomFieldsQuery, type CustomFieldValue } from '@/lib/api/custom-fields';
+import { updateContactDirectoryParams } from '@/components/features/contacts/contact-directory-params';
 
 const UNSUPPORTED_CONTACT_ACTIONS_AVAILABLE = false;
 
 export default function ContactsPage() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'all' | 'starred'>('all');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
-  const [page, setPage] = useState(1);
-  const [companyFilter, setCompanyFilter] = useState('');
-  const [ownerFilter, setOwnerFilter] = useState('');
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const queryString = searchParams.toString();
+  const directoryParamsRef = useRef(queryString);
+  const activeTab = searchParams.get('view') === 'starred' ? 'starred' : 'all';
+  const requestedPage = Number.parseInt(searchParams.get('page') ?? '1', 10);
+  const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+  const companyFilter = searchParams.get('company') ?? '';
+  const ownerFilter = searchParams.get('owner') ?? '';
+  const urlSearchTerm = searchParams.get('search') ?? '';
+  const [searchTerm, setSearchTerm] = useState(urlSearchTerm);
   const limit = 15;
+
+  const updateDirectoryUrl = useCallback((changes: Record<string, string | null>) => {
+    const nextQuery = updateContactDirectoryParams(directoryParamsRef.current, changes);
+    directoryParamsRef.current = nextQuery;
+    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
+  }, [pathname, router]);
 
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -102,37 +111,41 @@ export default function ContactsPage() {
     setFormCustomFields({});
   };
 
-  // Search Debounce
   useEffect(() => {
+    directoryParamsRef.current = queryString;
+  }, [queryString]);
+
+  useEffect(() => {
+    const handler = window.setTimeout(() => setSearchTerm(urlSearchTerm), 0);
+    return () => window.clearTimeout(handler);
+  }, [urlSearchTerm]);
+
+  useEffect(() => {
+    if (searchTerm === urlSearchTerm) return;
     const handler = setTimeout(() => {
-      setDebouncedSearchTerm(searchTerm);
-      setPage(1);
+      updateDirectoryUrl({ search: searchTerm.trim() || null, page: null });
     }, 250);
     return () => clearTimeout(handler);
-  }, [searchTerm]);
+  }, [searchTerm, updateDirectoryUrl, urlSearchTerm]);
 
   // Queries
   const {
     data: contactsPage,
+    isLoading: isContactsLoading,
+    isFetching: isContactsFetching,
     isError: isContactsError,
     refetch: refetchAll,
   } = useContactsPageQuery(
     {
       page,
       limit,
-      search: debouncedSearchTerm,
+      search: urlSearchTerm,
       companyId: companyFilter || undefined,
       ownerId: ownerFilter || undefined,
+      isStarred: activeTab === 'starred' ? true : undefined,
     },
   );
   const allContacts = contactsPage?.items ?? [];
-  const {
-    data: starredContacts = [],
-    isError: isStarredContactsError,
-    refetch: refetchStarred,
-  } = useStarredContactsQuery();
-  const { data: currentOrganization } = useCurrentOrganizationQuery();
-  const organizations = currentOrganization ? [currentOrganization] : [];
   const { data: companiesList = [] } = useCompaniesQuery(1, 100);
   const { data: usersList = [] } = useUsersQuery(1, 100);
   const {
@@ -141,8 +154,15 @@ export default function ContactsPage() {
     isError: isCustomFieldsError,
   } = useEntityCustomFieldsQuery('Contact', isCreateModalOpen || isEditModalOpen);
 
-  const contacts = activeTab === 'starred' ? starredContacts : allContacts;
-  const totalContacts = activeTab === 'starred' ? starredContacts.length : contactsPage?.total ?? 0;
+  const contacts = allContacts;
+  const totalContacts = contactsPage?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(totalContacts / limit));
+
+  useEffect(() => {
+    if (!isContactsLoading && contactsPage && page > pageCount) {
+      updateDirectoryUrl({ page: String(pageCount) });
+    }
+  }, [contactsPage, isContactsLoading, page, pageCount, updateDirectoryUrl]);
 
   // Mutations
   const createContactMutation = useCreateContactMutation();
@@ -157,8 +177,12 @@ export default function ContactsPage() {
   // Handlers
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const displayName = formName || `${formFirstName} ${formLastName}`.trim() || 'Contact';
-    const emailVal = formEmail || 'user@example.com';
+    const displayName = (formName || `${formFirstName} ${formLastName}`).trim();
+    const emailVal = formEmail.trim();
+    if (!displayName || !emailVal) {
+      setErrorMessage('Contact name and email are required.');
+      return;
+    }
     try {
       setErrorMessage(null);
       await createContactMutation.mutateAsync({
@@ -184,16 +208,21 @@ export default function ContactsPage() {
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!contactToEdit) return;
+    const displayName = (formName || `${formFirstName} ${formLastName}`).trim();
+    const email = formEmail.trim();
+    if (!displayName || !email) {
+      setErrorMessage('Contact name and email are required.');
+      return;
+    }
     try {
       setErrorMessage(null);
-      const displayName = formName || `${formFirstName} ${formLastName}`.trim() || 'Contact';
       await updateContactMutation.mutateAsync({
         id: contactToEdit.id,
         data: {
           first_name: formFirstName || undefined,
           last_name: formLastName || undefined,
           name: displayName,
-          email: formEmail,
+          email,
           phone: formPhone || undefined,
           company_id: formCompanyId || undefined,
           position: formPosition || undefined,
@@ -238,7 +267,6 @@ export default function ContactsPage() {
         setSuccessMessage(`Starred contact '${item.name}'.`);
       }
       refetchAll();
-      refetchStarred();
     } catch {
       setErrorMessage('Failed to update star status.');
     }
@@ -318,33 +346,37 @@ export default function ContactsPage() {
     {
       id: 'star',
       header: '',
+      className: 'w-12 text-center',
       cell: (item) => (
         <button
           type="button"
+          disabled={starContactMutation.isPending || unstarContactMutation.isPending}
           onClick={(e) => {
             e.stopPropagation();
-            handleToggleStar(item);
+            void handleToggleStar(item);
           }}
-          className="p-1 rounded text-amber-400 hover:text-amber-500 hover:bg-amber-50 transition cursor-pointer"
-          title={item.is_starred ? 'Unstar Contact' : 'Star Contact'}
+          className="mx-auto flex size-9 items-center justify-center rounded-md text-slate-400 transition hover:bg-amber-50 hover:text-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+          aria-label={item.is_starred ? `Unstar ${item.name}` : `Star ${item.name}`}
         >
-          <Star className={`w-4 h-4 ${item.is_starred ? 'fill-amber-400' : ''}`} />
+          <Star className={item.is_starred ? 'size-3.5 fill-amber-400 text-amber-500' : 'size-3.5'} />
         </button>
       ),
     },
     {
       id: 'name',
-      header: 'Contact Name',
+      header: 'Name',
       cell: (item) => (
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-blue-700 font-bold text-xs shrink-0">
+        <div className="flex min-w-40 items-center gap-2.5">
+          <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-blue-100 text-[10px] font-semibold text-blue-700">
             {item.name ? item.name.charAt(0).toUpperCase() : 'C'}
           </div>
-          <div>
-            <Link href={`/contacts/${item.id}`} className="font-bold text-slate-900 text-xs hover:text-blue-600 hover:underline">
+          <div className="min-w-0">
+            <Link
+              href={`/contacts/${item.id}`}
+              className="block truncate text-xs font-semibold text-slate-900 hover:text-blue-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            >
               {item.name}
             </Link>
-            <div className="text-[11px] text-slate-500">{item.position || 'Representative'}</div>
           </div>
         </div>
       ),
@@ -353,55 +385,87 @@ export default function ContactsPage() {
       id: 'email',
       header: 'Email Address',
       cell: (item) => (
-        <div className="flex items-center gap-1.5 text-slate-700 text-xs font-semibold">
-          <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-          <span>{item.email}</span>
-        </div>
+        <span className="block max-w-52 truncate text-xs text-slate-600">{item.email || '—'}</span>
       ),
     },
     {
       id: 'phone',
       header: 'Phone Number',
       cell: (item) => (
-        <div className="flex items-center gap-1.5 text-slate-600 text-xs font-medium">
-          <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-          <span>{item.phone || 'N/A'}</span>
-        </div>
+        <span className="text-xs text-slate-600">{item.phone || '—'}</span>
+      ),
+    },
+    {
+      id: 'position',
+      header: 'Job Title',
+      enableHiding: true,
+      cell: (item) => (
+        <span className="inline-flex items-center gap-2 text-xs text-slate-700">
+          <span className="size-1.5 rounded-full bg-blue-500" aria-hidden="true" />
+          {item.position || 'Not specified'}
+        </span>
       ),
     },
     {
       id: 'company',
-      header: 'Company / Org',
-      cell: (item) => {
-        const foundCompany = companiesList.find((c) => c.id === item.company_id);
-        const foundOrg = organizations.find((o) => o.id === item.company_id);
-        const companyLabel = foundCompany?.name || foundOrg?.name || (item.company_id ? 'Enterprise Partner' : 'Primary Org');
-        return (
-          <div className="flex items-center gap-1.5 text-slate-700 text-xs font-semibold">
-            <Building className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-            <span>{companyLabel}</span>
-          </div>
-        );
-      },
+      header: 'Company',
+      cell: (item) => (
+        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-700">
+          <Building className="size-3.5 shrink-0 text-slate-400" aria-hidden="true" />
+          {item.company_name || 'Unassociated'}
+        </span>
+      ),
+    },
+    {
+      id: 'owner',
+      header: 'Contact Owner',
+      enableHiding: true,
+      cell: (item) => (
+        <span className="text-xs text-slate-600">{item.owner_name || 'Unassigned'}</span>
+      ),
+    },
+    {
+      id: 'status',
+      header: 'Status',
+      enableHiding: true,
+      cell: (item) => (
+        <Badge
+          variant="outline"
+          className={item.is_starred
+            ? 'border-amber-200 bg-amber-50 text-[10px] font-medium text-amber-700'
+            : 'border-emerald-200 bg-emerald-50 text-[10px] font-medium text-emerald-700'}
+        >
+          {item.is_starred ? 'Starred' : 'Active'}
+        </Badge>
+      ),
     },
   ];
 
   return (
-    <div className="space-y-6">
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2.5">
-            <User className="w-6 h-6 text-blue-600" />
-            <span>Contact Directory</span>
-          </h1>
-          <p className="text-xs font-medium text-slate-500 mt-1">
-            Manage customer contacts, starred profiles, contact merges, and bulk operations.
-          </p>
-        </div>
+    <div className="mx-auto w-full max-w-[1600px] space-y-3 pb-8">
+      <h1 className="sr-only">Contacts</h1>
 
-        {/* Action Buttons */}
-        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+      <div className="flex flex-col gap-3 border-b border-slate-200 pb-2 lg:flex-row lg:items-center lg:justify-between">
+        <PageTabs
+          value={activeTab}
+          onValueChange={(tab) => {
+            updateDirectoryUrl({ view: tab === 'all' ? null : tab, page: null });
+            setSelectedIds(new Set());
+          }}
+          tabs={[
+            { value: 'all', icon: <User className="size-3.5" />, label: 'All Contacts' },
+            { value: 'starred', icon: <Star className="size-3.5" />, label: 'Starred' },
+          ]}
+          className="min-w-0 lg:flex-1"
+          listClassName="border-0"
+          triggerClassName="h-9 px-3 text-xs font-medium"
+        />
+
+        <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto lg:justify-end">
+          <Button size="sm" variant="outline" className="h-9" onClick={() => void refetchAll()} disabled={isContactsFetching}>
+            <RotateCw className={isContactsFetching ? 'size-3.5 animate-spin' : 'size-3.5'} aria-hidden="true" />
+            <span className="hidden sm:inline">Refresh</span>
+          </Button>
           <PermissionGate permission={PERMISSIONS.CONTACTS.CREATE}>
             <Button
               size="sm"
@@ -409,10 +473,10 @@ export default function ContactsPage() {
                 resetForm();
                 setIsCreateModalOpen(true);
               }}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs gap-1.5 cursor-pointer"
+              className="h-9 gap-1.5 bg-slate-950 text-xs font-semibold text-white hover:bg-slate-800"
             >
-              <Plus className="w-4 h-4" />
-              <span>Add Contact</span>
+              <Plus className="size-3.5" aria-hidden="true" />
+              <span>Create Contact</span>
             </Button>
           </PermissionGate>
 
@@ -450,7 +514,7 @@ export default function ContactsPage() {
                 size="sm"
                 variant="outline"
                 onClick={handleBulkDelete}
-                className="border-rose-300 text-rose-600 hover:bg-rose-50 font-semibold text-xs gap-1 cursor-pointer"
+                className="h-9 gap-1 border-rose-300 text-xs font-semibold text-rose-600 hover:bg-rose-50"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>Delete Selected ({selectedIds.size})</span>
@@ -460,53 +524,28 @@ export default function ContactsPage() {
         </div>
       </div>
 
-      {/* Feedback Banners */}
       {successMessage && (
-        <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-sm font-medium flex items-center gap-2 animate-in fade-in-50">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+        <div role="status" className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-900">
+          <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />
           <span>{successMessage}</span>
+          <button type="button" onClick={() => setSuccessMessage(null)} className="ml-auto rounded px-2 py-1 hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500">Dismiss</button>
         </div>
       )}
       {errorMessage && (
-        <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-sm font-medium flex items-center gap-2 animate-in fade-in-50">
-          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+        <div role="alert" className="flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-900">
+          <AlertCircle className="size-4 shrink-0 text-rose-600" />
           <span>{errorMessage}</span>
+          <button type="button" onClick={() => setErrorMessage(null)} className="ml-auto rounded px-2 py-1 hover:bg-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500">Dismiss</button>
         </div>
       )}
-      {activeTab === 'all' && isContactsError && (
-        <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-sm font-medium flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+      {isContactsError && (
+        <div role="alert" className="flex flex-wrap items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-900">
+          <AlertCircle className="size-4 shrink-0 text-rose-600" />
           <span>Contacts could not be loaded. Please try again.</span>
-        </div>
-      )}
-      {activeTab === 'starred' && isStarredContactsError && (
-        <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-sm font-medium flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-          <span>Starred contacts could not be loaded. Please try again.</span>
+          <Button size="sm" variant="outline" className="ml-auto h-8" onClick={() => void refetchAll()}>Try again</Button>
         </div>
       )}
 
-      <PageTabs
-        value={activeTab}
-        onValueChange={(tab) => {
-          setActiveTab(tab);
-          setPage(1);
-        }}
-        tabs={[
-          {
-            value: 'all',
-            label: <><span>All Contacts</span><Badge variant="outline" className="bg-slate-100 text-[10px] text-slate-700">{allContacts.length}</Badge></>,
-          },
-          {
-            value: 'starred',
-            icon: <Star className="size-3.5 fill-amber-400 text-amber-500" />,
-            label: <><span>Starred Contacts</span><Badge variant="outline" className="border-amber-200 bg-amber-50 text-[10px] text-amber-700">{starredContacts.length}</Badge></>,
-          },
-        ]}
-        listClassName="border-b border-slate-200"
-      />
-
-      {/* Contacts DataTable */}
       <DataTable
         columns={columns}
         data={contacts}
@@ -514,8 +553,8 @@ export default function ContactsPage() {
         onRowClick={(item) => router.push(`/contacts/${item.id}`)}
         searchValue={searchTerm}
         onSearchChange={setSearchTerm}
-        searchPlaceholder="Search contacts by name or email..."
-        filters={activeTab === 'all' ? [
+        searchPlaceholder="Search name, phone, email, or job title..."
+        filters={[
           {
             label: companyFilter
               ? `Company: ${companiesList.find((company) => company.id === companyFilter)?.name ?? 'Selected'}`
@@ -526,8 +565,7 @@ export default function ContactsPage() {
               ...companiesList.map((company) => ({ label: company.name, value: company.id })),
             ],
             onChange: (value) => {
-              setCompanyFilter(value);
-              setPage(1);
+              updateDirectoryUrl({ company: value || null, page: null });
               setSelectedIds(new Set());
             },
           },
@@ -541,18 +579,15 @@ export default function ContactsPage() {
               ...usersList.map((user) => ({ label: user.name, value: user.id })),
             ],
             onChange: (value) => {
-              setOwnerFilter(value);
-              setPage(1);
+              updateDirectoryUrl({ owner: value || null, page: null });
               setSelectedIds(new Set());
             },
           },
-        ] : undefined}
-        hasActiveFilters={activeTab === 'all' && Boolean(searchTerm || companyFilter || ownerFilter)}
+        ]}
+        hasActiveFilters={Boolean(searchTerm || companyFilter || ownerFilter)}
         onClearFilters={() => {
           setSearchTerm('');
-          setCompanyFilter('');
-          setOwnerFilter('');
-          setPage(1);
+          updateDirectoryUrl({ search: null, company: null, owner: null, page: null });
           setSelectedIds(new Set());
         }}
         actionVariant="menu"
@@ -572,8 +607,11 @@ export default function ContactsPage() {
           },
         ]}
         emptyTitle="No contacts found"
-        emptyDescription="Create your first contact profile or import CSV data."
+        emptyDescription={searchTerm || companyFilter || ownerFilter || activeTab === 'starred'
+          ? 'Try changing your search, filters, or contact view.'
+          : 'Create your first contact to start building your customer directory.'}
         showCheckbox
+        getSelectionLabel={(item) => `Select ${item.name}`}
         selectedIds={selectedIds}
         onToggleAllRows={(checked) => {
           if (checked) {
@@ -590,10 +628,17 @@ export default function ContactsPage() {
         }}
         pagination={{
           pageIndex: page - 1,
-          pageCount: Math.ceil(totalContacts / limit) || 1,
-          onPageChange: (pIndex) => setPage(pIndex + 1),
+          pageCount,
+          onPageChange: (pIndex) => {
+            updateDirectoryUrl({ page: String(pIndex + 1) });
+            setSelectedIds(new Set());
+          },
           totalRecords: totalContacts,
         }}
+        isLoading={isContactsLoading}
+        loadingLabel="Loading contacts"
+        className="overflow-hidden rounded-lg shadow-none"
+        tableClassName="min-w-[980px]"
       />
 
       {/* CREATE CONTACT MODAL */}
@@ -610,8 +655,9 @@ export default function ContactsPage() {
         <form onSubmit={handleCreateSubmit} className="space-y-4 text-xs">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label className="font-semibold text-slate-700">First Name</Label>
+              <Label htmlFor="contact-create-first-name" className="font-semibold text-slate-700">First Name</Label>
               <Input
+                id="contact-create-first-name"
                 type="text"
                 placeholder="e.g. selva"
                 value={formFirstName}
@@ -620,8 +666,9 @@ export default function ContactsPage() {
               />
             </div>
             <div className="space-y-1">
-              <Label className="font-semibold text-slate-700">Last Name</Label>
+              <Label htmlFor="contact-create-last-name" className="font-semibold text-slate-700">Last Name</Label>
               <Input
+                id="contact-create-last-name"
                 type="text"
                 placeholder="e.g. kumar"
                 value={formLastName}
@@ -632,8 +679,9 @@ export default function ContactsPage() {
           </div>
 
           <div className="space-y-1">
-            <Label className="font-semibold text-slate-700">Full Name</Label>
+            <Label htmlFor="contact-create-full-name" className="font-semibold text-slate-700">Full Name</Label>
             <Input
+              id="contact-create-full-name"
               type="text"
               placeholder="e.g. selvakumar"
               value={formName}
@@ -644,9 +692,11 @@ export default function ContactsPage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label className="font-semibold text-slate-700">Email Address</Label>
+              <Label htmlFor="contact-create-email" className="font-semibold text-slate-700">Email Address</Label>
               <Input
-                type="text"
+                id="contact-create-email"
+                type="email"
+                required
                 placeholder="user@example.com"
                 value={formEmail}
                 onChange={(e) => setFormEmail(e.target.value)}
@@ -654,8 +704,9 @@ export default function ContactsPage() {
               />
             </div>
             <div className="space-y-1">
-              <Label className="font-semibold text-slate-700">Phone Number</Label>
+              <Label htmlFor="contact-create-phone" className="font-semibold text-slate-700">Phone Number</Label>
               <Input
+                id="contact-create-phone"
                 type="text"
                 placeholder="7374837284"
                 value={formPhone}
@@ -666,8 +717,10 @@ export default function ContactsPage() {
           </div>
 
           <div className="space-y-1">
-            <Label className="font-semibold text-slate-700">Company</Label>
+            <Label htmlFor="contact-create-company" className="font-semibold text-slate-700">Company</Label>
             <SearchableCompanySelect
+              id="contact-create-company"
+              ariaLabel="Select company for new contact"
               value={formCompanyId}
               onChange={setFormCompanyId}
               companies={companiesList}
@@ -676,8 +729,9 @@ export default function ContactsPage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label className="font-semibold text-slate-700">Position</Label>
+              <Label htmlFor="contact-create-position" className="font-semibold text-slate-700">Position</Label>
               <Input
+                id="contact-create-position"
                 type="text"
                 placeholder="e.g. frontend"
                 value={formPosition}
@@ -686,8 +740,9 @@ export default function ContactsPage() {
               />
             </div>
             <div className="space-y-1">
-              <Label className="font-semibold text-slate-700">Job Title</Label>
+              <Label htmlFor="contact-create-job-title" className="font-semibold text-slate-700">Job Title</Label>
               <Input
+                id="contact-create-job-title"
                 type="text"
                 placeholder="e.g. software"
                 value={formJobTitle}
@@ -733,8 +788,9 @@ export default function ContactsPage() {
         <form onSubmit={handleEditSubmit} className="space-y-4 text-xs">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label className="font-semibold text-slate-700">First Name</Label>
+              <Label htmlFor="contact-edit-first-name" className="font-semibold text-slate-700">First Name</Label>
               <Input
+                id="contact-edit-first-name"
                 type="text"
                 value={formFirstName}
                 onChange={(e) => setFormFirstName(e.target.value)}
@@ -742,8 +798,9 @@ export default function ContactsPage() {
               />
             </div>
             <div className="space-y-1">
-              <Label className="font-semibold text-slate-700">Last Name</Label>
+              <Label htmlFor="contact-edit-last-name" className="font-semibold text-slate-700">Last Name</Label>
               <Input
+                id="contact-edit-last-name"
                 type="text"
                 value={formLastName}
                 onChange={(e) => setFormLastName(e.target.value)}
@@ -753,8 +810,9 @@ export default function ContactsPage() {
           </div>
 
           <div className="space-y-1">
-            <Label className="font-semibold text-slate-700">Full Name</Label>
+            <Label htmlFor="contact-edit-full-name" className="font-semibold text-slate-700">Full Name</Label>
             <Input
+              id="contact-edit-full-name"
               type="text"
               value={formName}
               onChange={(e) => setFormName(e.target.value)}
@@ -764,17 +822,20 @@ export default function ContactsPage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label className="font-semibold text-slate-700">Email Address</Label>
+              <Label htmlFor="contact-edit-email" className="font-semibold text-slate-700">Email Address</Label>
               <Input
-                type="text"
+                id="contact-edit-email"
+                type="email"
+                required
                 value={formEmail}
                 onChange={(e) => setFormEmail(e.target.value)}
                 className="h-9 text-xs"
               />
             </div>
             <div className="space-y-1">
-              <Label className="font-semibold text-slate-700">Phone Number</Label>
+              <Label htmlFor="contact-edit-phone" className="font-semibold text-slate-700">Phone Number</Label>
               <Input
+                id="contact-edit-phone"
                 type="text"
                 value={formPhone}
                 onChange={(e) => setFormPhone(e.target.value)}
@@ -784,8 +845,10 @@ export default function ContactsPage() {
           </div>
 
           <div className="space-y-1">
-            <Label className="font-semibold text-slate-700">Company</Label>
+            <Label htmlFor="contact-edit-company" className="font-semibold text-slate-700">Company</Label>
             <SearchableCompanySelect
+              id="contact-edit-company"
+              ariaLabel="Select company for contact"
               value={formCompanyId}
               onChange={setFormCompanyId}
               companies={companiesList}
@@ -794,8 +857,9 @@ export default function ContactsPage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label className="font-semibold text-slate-700">Position</Label>
+              <Label htmlFor="contact-edit-position" className="font-semibold text-slate-700">Position</Label>
               <Input
+                id="contact-edit-position"
                 type="text"
                 value={formPosition}
                 onChange={(e) => setFormPosition(e.target.value)}
@@ -803,8 +867,9 @@ export default function ContactsPage() {
               />
             </div>
             <div className="space-y-1">
-              <Label className="font-semibold text-slate-700">Job Title</Label>
+              <Label htmlFor="contact-edit-job-title" className="font-semibold text-slate-700">Job Title</Label>
               <Input
+                id="contact-edit-job-title"
                 type="text"
                 value={formJobTitle}
                 onChange={(e) => setFormJobTitle(e.target.value)}
