@@ -838,7 +838,7 @@ class ReportService:
         clean_name = (name or "").strip()
         if not clean_name:
             raise APIException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 message="Report name must not be empty.",
             )
 
@@ -931,7 +931,7 @@ class ReportService:
         getter_name = _REPORT_GETTERS.get(report_type_value)
         if not getter_name:
             raise APIException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 message=f"No report implementation registered for '{report_type_value}'.",
             )
         if target_org:
@@ -959,7 +959,7 @@ class ReportService:
         report_type_value = _normalize_report_type(report_type)
         if report_type_value not in VALID_REPORT_TYPES:
             raise APIException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 message=f"Invalid report type '{report_type_value}'. Valid types: {sorted(VALID_REPORT_TYPES)}",
             )
 
@@ -1132,7 +1132,7 @@ class ReportService:
         report_type_value = _normalize_report_type(report_type)
         if report_type_value not in VALID_REPORT_TYPES:
             raise APIException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 message=f"Invalid report type '{report_type_value}'. Valid types: {sorted(VALID_REPORT_TYPES)}",
             )
         payload = await self._build_report_payload(
@@ -1152,7 +1152,7 @@ class ReportService:
         report_type_value = _normalize_report_type(report_type)
         if report_type_value not in VALID_REPORT_TYPES:
             raise APIException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 message=f"Invalid report type '{report_type_value}'. Valid types: {sorted(VALID_REPORT_TYPES)}",
             )
 
@@ -1230,21 +1230,21 @@ class ReportService:
         clean_email = (email or "").strip()
         if not clean_email or not EMAIL_REGEX.match(clean_email):
             raise APIException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 message=f"Invalid email address '{email}'. Please provide a valid email format.",
             )
 
         clean_freq = (frequency or "Weekly").capitalize()
         if clean_freq not in VALID_FREQUENCIES:
             raise APIException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 message=f"Invalid frequency '{frequency}'. Must be one of: {sorted(VALID_FREQUENCIES)}",
             )
 
         report_type_value = _normalize_report_type(report_type)
         if report_type_value not in VALID_REPORT_TYPES:
             raise APIException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 message=f"Invalid report type '{report_type_value}'. Valid types: {sorted(VALID_REPORT_TYPES)}",
             )
 

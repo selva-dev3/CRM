@@ -1061,7 +1061,7 @@ class AuthService:
             for scope in normalized
         ):
             raise APIException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 code="INVALID_API_KEY_SCOPE",
                 message="API key scopes must be non-empty colon-delimited permission names",
             )

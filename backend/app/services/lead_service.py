@@ -1404,7 +1404,7 @@ class LeadService:
             raise APIException(
                 message="This lead does not have a valid email address.",
                 code="LEAD_EMAIL_INVALID",
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             ) from exc
 
         requested_recipient = str(payload.to[0]).strip() if payload.to else lead_email
@@ -1412,7 +1412,7 @@ class LeadService:
             raise APIException(
                 message="Lead emails must be sent to the lead's primary email address.",
                 code="LEAD_RECIPIENT_MISMATCH",
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             )
 
         from app.services.email_domain_service import email_domain_service

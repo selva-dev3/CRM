@@ -17,7 +17,7 @@ from app.services.record_access_service import record_access_service
 def parse_datetime(val: str | None) -> datetime:
     if not val or not str(val).strip():
         raise APIException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             code="MEETING_DATETIME_REQUIRED",
             message="Meeting date and time are required",
         )
@@ -31,7 +31,7 @@ def parse_datetime(val: str | None) -> datetime:
             return datetime(d.year, d.month, d.day, tzinfo=UTC)
         except ValueError as exc:
             raise APIException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 code="INVALID_MEETING_DATETIME",
                 message="Meeting date and time must be valid ISO-8601 values",
             ) from exc
@@ -167,7 +167,7 @@ class MeetingService:
         end_time = parse_datetime(payload.end_time)
         if end_time <= start_time:
             raise APIException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 code="INVALID_MEETING_RANGE",
                 message="Meeting end time must be after its start time",
             )
@@ -282,7 +282,7 @@ class MeetingService:
             meeting.end_time = parse_datetime(updates["end_time"])
         if meeting.end_time <= meeting.start_time:
             raise APIException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 code="INVALID_MEETING_RANGE",
                 message="Meeting end time must be after its start time",
             )
@@ -364,7 +364,7 @@ class MeetingService:
         end_time = parse_datetime(new_end_time)
         if end_time <= start_time:
             raise APIException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 code="INVALID_MEETING_RANGE",
                 message="Meeting end time must be after its start time",
             )

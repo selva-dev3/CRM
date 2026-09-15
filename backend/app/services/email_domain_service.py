@@ -169,7 +169,7 @@ class EmailDomainService:
         to_addr = to_email.strip()
         if not to_addr:
             raise APIException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 code="EMAIL_RECIPIENT_REQUIRED",
                 message="At least one email recipient is required",
             )

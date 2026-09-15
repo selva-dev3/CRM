@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.schemas.crm_schemas import validate_password_bytes
 
@@ -39,8 +39,7 @@ class InvitationResponse(BaseModel):
     created_at: str
     invite_url: str | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class NewOrganizationInviteResponse(BaseModel):

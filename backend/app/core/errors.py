@@ -86,7 +86,7 @@ async def _validation_exception_handler(request: Request, exc: Exception) -> JSO
         loc = ".".join(str(part) for part in err.get("loc", []))
         fields[loc or "body"] = err.get("msg", "Invalid value")
     return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         content=_error_payload("VALIDATION_ERROR", "Request validation failed", fields),
     )
 

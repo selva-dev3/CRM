@@ -126,7 +126,7 @@ class TaskService:
             db, project_id, assigned_to
         ):
             raise APIException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 message="A project task can only be assigned to a project member.",
             )
 
@@ -147,7 +147,7 @@ class TaskService:
             or (project.due_date and due_date > project.due_date)
         ):
             raise APIException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 message="Project task due date must fall within the project date range.",
             )
 
@@ -278,7 +278,7 @@ class TaskService:
         due_dt = parse_datetime(payload.due_date)
         if payload.due_date and due_dt is None:
             raise APIException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 message="Invalid due_date. Use an ISO date or datetime.",
                 fields={"due_date": "Must be a valid ISO date or datetime."},
             )
@@ -759,7 +759,7 @@ class TaskService:
             raise NotFoundError(message="Task dependency record not found")
         if not task.project_id or task.project_id != dependency_task.project_id:
             raise APIException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 message="Task dependencies must belong to the same project.",
             )
         locked_project_id = task.project_id
