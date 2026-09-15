@@ -1,6 +1,28 @@
+import os
 from unittest.mock import AsyncMock
 
 import pytest
+
+
+# Keep collection and unit tests runnable from a fresh checkout without
+# requiring developer credentials. CI and local service variables override
+# these defaults through the environment.
+os.environ.setdefault("CRM_DISABLE_DOTENV", "1")
+os.environ.setdefault(
+    "DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/crm_test"
+)
+os.environ.setdefault(
+    "CRM_WORKFLOW_TEST_DATABASE_URL",
+    "postgresql+asyncpg://postgres:postgres@localhost:5432/crm_test",
+)
+os.environ.setdefault("AWS_ENDPOINT_URL", "http://localhost:9000")
+os.environ.setdefault("AWS_ACCESS_KEY_ID", "minioadmin")
+os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "minioadmin")
+os.environ.setdefault("AWS_S3_BUCKET", "crm-test-bucket")
+os.environ.setdefault("AWS_REGION", "us-east-1")
+os.environ.setdefault("REDIS_HOST", "localhost")
+os.environ.setdefault("REDIS_PORT", "6379")
+os.environ.setdefault("RATE_LIMIT_STORAGE_URI", "memory://")
 
 
 @pytest.fixture(autouse=True)
@@ -24,3 +46,11 @@ def isolate_notification_dispatch(monkeypatch):
         "exists_unread",
         AsyncMock(return_value=True),
     )
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Make missing integration services fail CI instead of being skipped."""
+    terminal_reporter = session.config.pluginmanager.get_plugin("terminalreporter")
+    skipped = terminal_reporter.stats.get("skipped", []) if terminal_reporter else []
+    if skipped:
+        session.exitstatus = 1
