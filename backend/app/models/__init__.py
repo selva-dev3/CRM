@@ -53,6 +53,7 @@ from app.models.organization import (
     SubscriptionPlan,
 )
 from app.models.organization_deletion import OrganizationDeletion, OrganizationFileCleanup
+from app.models.storage_reconciliation import StorageReconciliation
 from app.models.payment import Payment
 from app.models.product import PriceBook, PriceBookEntry, Product, ProductCategory
 from app.models.project import Project, ProjectMember, ProjectMilestone, ProjectStakeholder
@@ -106,6 +107,7 @@ __all__ = [
     "WhatsAppWebhookEvent",
     "OrganizationDeletion",
     "OrganizationFileCleanup",
+    "StorageReconciliation",
     "Payment",
     "SalesOrder",
     "SalesOrderItem",

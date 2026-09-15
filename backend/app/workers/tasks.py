@@ -85,6 +85,25 @@ async def _cleanup_deleted_organization_files() -> int:
         await engine.dispose()
 
 
+@celery_app.task(name="app.workers.tasks.reconcile_object_storage", ignore_result=True)
+def reconcile_object_storage():
+    return asyncio.run(_reconcile_object_storage())
+
+
+async def _reconcile_object_storage() -> dict[str, int]:
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.core.config import settings
+    from app.services.storage_reconciliation_service import reconcile_all_organizations
+
+    engine = create_async_engine(settings.DATABASE_URL, pool_pre_ping=True)
+    try:
+        async with async_sessionmaker(engine, expire_on_commit=False)() as db:
+            return await reconcile_all_organizations(db)
+    finally:
+        await engine.dispose()
+
+
 @celery_app.task(name="app.workers.tasks.deliver_pending_integration_events", ignore_result=True)
 def deliver_pending_integration_events():
     return asyncio.run(_deliver_pending_integration_events())

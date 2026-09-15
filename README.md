@@ -71,6 +71,9 @@ CI runs the same suite with pinned development dependencies and fails on test
 errors, failures, unexpected skips, and deprecation/resource/runtime warnings.
 The release smoke check validates both `/health/live` and dependency-aware
 `/health/ready` within a five-second latency budget.
+Document uploads are capped at 10 MiB and read in bounded 1 MiB chunks; the
+scheduled object-storage reconciler records missing references and only removes
+orphaned objects after a 24-hour grace period.
 
 ### AI provider configuration
 
