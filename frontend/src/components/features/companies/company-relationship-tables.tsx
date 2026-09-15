@@ -80,7 +80,7 @@ const noteColumns: readonly DataTableColumn<NoteItem>[] = [
   {
     id: 'created_by',
     header: 'Created By',
-    cell: (note) => note.created_by || 'System user',
+    cell: (note) => note.created_by_name || 'System / former user',
   },
   {
     id: 'created_at',

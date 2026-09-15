@@ -6,7 +6,7 @@ from sqlalchemy import and_, false, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.record_access import RecordAccessContext, record_access_filter
-from app.models import Company, Contact, Deal, Lead
+from app.models import Company, Contact, Deal, Lead, User
 from app.models.note import Note
 
 
@@ -29,7 +29,7 @@ class NoteRepository:
         stmt = self._apply_access(stmt, access)
         stmt = self._apply_target_access(stmt, target_access)
         if entity_type and entity_type.strip():
-            stmt = stmt.where(Note.entity_type == entity_type.strip())
+            stmt = stmt.where(self._entity_type_filter(entity_type))
         if search and search.strip():
             stmt = stmt.where(Note.content.ilike(f"%{search.strip()}%"))
         stmt = (
@@ -54,7 +54,7 @@ class NoteRepository:
         stmt = self._apply_access(stmt, access)
         stmt = self._apply_target_access(stmt, target_access)
         if entity_type and entity_type.strip():
-            stmt = stmt.where(Note.entity_type == entity_type.strip())
+            stmt = stmt.where(self._entity_type_filter(entity_type))
         if search and search.strip():
             stmt = stmt.where(Note.content.ilike(f"%{search.strip()}%"))
         return int((await db.execute(stmt)).scalar_one())
@@ -74,7 +74,7 @@ class NoteRepository:
         stmt = (
             select(Note)
             .where(
-                Note.entity_type == entity_type,
+                self._entity_type_filter(entity_type),
                 Note.entity_id == entity_id,
                 Note.organization_id == organization_id,
             )
@@ -101,7 +101,7 @@ class NoteRepository:
             select(func.count())
             .select_from(Note)
             .where(
-                Note.entity_type == entity_type,
+                self._entity_type_filter(entity_type),
                 Note.entity_id == entity_id,
                 Note.organization_id == organization_id,
             )
@@ -175,6 +175,71 @@ class NoteRepository:
 
     async def delete(self, db: AsyncSession, note: Note) -> None:
         await db.delete(note)
+
+    async def get_display_context(
+        self,
+        db: AsyncSession,
+        notes: builtins.list[Note],
+        organization_id: str,
+    ) -> dict[str, dict[str, str | None]]:
+        note_ids = [note.id for note in notes]
+        if not note_ids:
+            return {}
+        stmt = (
+            select(
+                Note.id,
+                Lead.contact_name.label("lead_name"),
+                Lead.title.label("lead_title"),
+                Contact.name.label("contact_name"),
+                Company.name.label("company_name"),
+                Deal.title.label("deal_title"),
+                User.name.label("creator_name"),
+                User.email.label("creator_email"),
+            )
+            .select_from(Note)
+            .outerjoin(
+                Lead,
+                and_(Lead.id == Note.lead_id, Lead.organization_id == organization_id),
+            )
+            .outerjoin(
+                Contact,
+                and_(Contact.id == Note.contact_id, Contact.organization_id == organization_id),
+            )
+            .outerjoin(
+                Company,
+                and_(Company.id == Note.company_id, Company.organization_id == organization_id),
+            )
+            .outerjoin(
+                Deal,
+                and_(Deal.id == Note.deal_id, Deal.organization_id == organization_id),
+            )
+            .outerjoin(
+                User,
+                and_(
+                    User.id == Note.created_by,
+                    or_(User.organization_id == organization_id, User.is_platform_admin.is_(True)),
+                ),
+            )
+            .where(Note.id.in_(note_ids), Note.organization_id == organization_id)
+        )
+        rows = (await db.execute(stmt)).mappings().all()
+        return {
+            row["id"]: {
+                "lead_name": row["lead_name"],
+                "lead_title": row["lead_title"],
+                "contact_name": row["contact_name"],
+                "company_name": row["company_name"],
+                "deal_title": row["deal_title"],
+                "creator_name": row["creator_name"],
+                "creator_email": row["creator_email"],
+            }
+            for row in rows
+        }
+
+    @staticmethod
+    def _entity_type_filter(entity_type: str):
+        normalized = entity_type.strip().casefold()
+        return func.lower(func.trim(Note.entity_type)) == normalized
 
     @staticmethod
     def _apply_access(stmt, access: RecordAccessContext | None):

@@ -72,7 +72,11 @@ const dealColumns: DataTableColumn<RelatedRecord>[] = [
 
 const noteColumns: DataTableColumn<RelatedRecord>[] = [
   { id: 'content', header: 'Note', cell: (note) => note.content || 'Empty note' },
-  { id: 'created_by', header: 'Created By', cell: (note) => note.created_by || 'System User' },
+  {
+    id: 'created_by',
+    header: 'Created By',
+    cell: (note) => note.created_by_name || 'System / former user',
+  },
   { id: 'created_at', header: 'Created Date', cell: (note) => note.created_at || 'N/A' },
 ];
 

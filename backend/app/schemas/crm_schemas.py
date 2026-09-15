@@ -863,7 +863,10 @@ class NoteBase(BaseModel):
 
 class NoteResponse(NoteBase):
     id: str
-    created_by: str
+    entity_label: str | None = None
+    is_pinned: bool = False
+    created_by: str | None = None
+    created_by_name: str | None = None
     created_at: str
 
 
