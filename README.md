@@ -64,10 +64,13 @@ export AWS_ACCESS_KEY_ID=minioadmin
 export AWS_SECRET_ACCESS_KEY=minioadmin
 export AWS_S3_BUCKET=crm-test-bucket
 pytest -q --cov=app --cov-report=term-missing --cov-report=xml
+python scripts/check_health.py
 ```
 
 CI runs the same suite with pinned development dependencies and fails on test
 errors, failures, unexpected skips, and deprecation/resource/runtime warnings.
+The release smoke check validates both `/health/live` and dependency-aware
+`/health/ready` within a five-second latency budget.
 
 ### AI provider configuration
 
